@@ -12,13 +12,12 @@ package cmd
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewStatusCommand(fs afero.Fs) *cobra.Command {
+func NewStatusCommand() *cobra.Command {
 	return common.Deprecated(
-		debug.NewInfoCommand(fs),
+		debug.NewInfoCommand(),
 		"rpk debug info",
 	)
 }

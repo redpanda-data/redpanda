@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -185,7 +184,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 
 			updateConfigWithFlags(cfg, cmd.Flags())
 
-			env := api.EnvironmentPayload{}
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
 				// env var.
@@ -199,7 +197,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(seedServers) != 0 {
@@ -218,7 +215,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(kafkaAPI) > 0 {
@@ -237,7 +233,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(proxyAPI) > 0 {
@@ -259,7 +254,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.DefaultSchemaRegPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(schemaRegAPI) > 0 {
@@ -278,7 +272,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if rpcServer != nil {
@@ -297,7 +290,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
@@ -317,7 +309,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advProxyAPI != nil {
@@ -336,7 +327,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advRPCApi != nil {
@@ -344,7 +334,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			installDirectory, err := getOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -356,7 +345,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				!prestartCfg.checkEnabled,
 			)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
@@ -364,27 +352,15 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				cfg.Redpanda.Directory = config.Default().Redpanda.Directory
 			}
 
-			checkPayloads, tunerPayloads, err := prestart(
-				fs,
-				rpArgs,
-				cfg,
-				prestartCfg,
-				timeout,
-			)
-			env.Checks = checkPayloads
-			env.Tuners = tunerPayloads
+			err = prestart(fs, rpArgs, cfg, prestartCfg, timeout)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
 			err = cfg.Write(fs)
 			if err != nil {
-				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
 			}
-
-			sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, nil)
 			rpArgs.ExtraArgs = args
 			fmt.Println(common.FeedbackMsg)
 			fmt.Println("Starting redpanda...")
@@ -549,26 +525,23 @@ func prestart(
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
-) ([]api.CheckPayload, []api.TunerPayload, error) {
-	var err error
-	checkPayloads := []api.CheckPayload{}
-	tunerPayloads := []api.TunerPayload{}
+) error {
 	if prestartCfg.checkEnabled {
-		checkPayloads, err = check(fs, conf, timeout, checkFailedActions(args))
+		err := check(fs, conf, timeout, checkFailedActions(args))
 		if err != nil {
-			return checkPayloads, tunerPayloads, err
+			return err
 		}
-		log.Info("System check - PASSED")
+		fmt.Println("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
 		cpuset := fmt.Sprint(args.SeastarFlags[cpuSetFlag])
-		tunerPayloads, err = tuneAll(fs, cpuset, conf, timeout)
+		err := tuneAll(fs, cpuset, conf, timeout)
 		if err != nil {
-			return checkPayloads, tunerPayloads, err
+			return err
 		}
-		log.Info("System tune - PASSED")
+		fmt.Println("System tune - PASSED")
 	}
-	return checkPayloads, tunerPayloads, nil
+	return nil
 }
 
 func buildRedpandaFlags(
@@ -737,60 +710,50 @@ func resolveWellKnownIo(
 
 func tuneAll(
 	fs afero.Fs, cpuSet string, conf *config.Config, timeout time.Duration,
-) ([]api.TunerPayload, error) {
+) error {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
-			return []api.TunerPayload{}, err
+			return err
 		}
 		params.CPUMask = cpuMask
 	} else {
 		cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
 		if err != nil {
-			return []api.TunerPayload{}, err
+			return err
 		}
 		params.CPUMask = cpuMask
 	}
 
 	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
 	if err != nil {
-		return []api.TunerPayload{}, err
+		return err
 	}
 
 	availableTuners := factory.AvailableTuners()
-	tunerPayloads := make([]api.TunerPayload, len(availableTuners))
 
 	for _, tunerName := range availableTuners {
 		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
-		payload := api.TunerPayload{
-			Name:      tunerName,
-			Enabled:   enabled,
-			Supported: supported,
-		}
 		if !enabled {
-			log.Infof("Skipping disabled tuner %s", tunerName)
-			tunerPayloads = append(tunerPayloads, payload)
+			fmt.Printf("Skipping disabled tuner %s\n", tunerName)
 			continue
 		}
 		if !supported {
 			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
-			tunerPayloads = append(tunerPayloads, payload)
 			continue
 		}
 		log.Debugf("Tuner parameters %+v", params)
 		result := tuner.Tune()
 		if result.IsFailed() {
-			payload.ErrorMsg = result.Error().Error()
-			tunerPayloads = append(tunerPayloads, payload)
-			return tunerPayloads, result.Error()
+			return result.Error()
 		}
 	}
-	return tunerPayloads, nil
+	return nil
 }
 
 type checkFailedAction func(*tuners.CheckResult)
@@ -811,22 +774,12 @@ func check(
 	conf *config.Config,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
-) ([]api.CheckPayload, error) {
-	payloads := make([]api.CheckPayload, 0)
+) error {
 	results, err := tuners.Check(fs, conf, timeout)
 	if err != nil {
-		return payloads, err
+		return err
 	}
 	for _, result := range results {
-		payload := api.CheckPayload{
-			Name:     result.Desc,
-			Current:  result.Current,
-			Required: result.Required,
-		}
-		if result.Err != nil {
-			payload.ErrorMsg = result.Err.Error()
-		}
-		payloads = append(payloads, payload)
 		if !result.IsOk {
 			if action, exists := checkFailedActions[result.CheckerID]; exists {
 				action(&result)
@@ -834,12 +787,12 @@ func check(
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				result.Desc, result.Required, result.Current)
 			if result.Severity == tuners.Fatal {
-				return payloads, fmt.Errorf(msg)
+				return fmt.Errorf(msg)
 			}
-			log.Warn(msg)
+			fmt.Println(msg)
 		}
 	}
-	return payloads, nil
+	return nil
 }
 
 func parseFlags(flags []string) map[string]string {
@@ -1016,16 +969,6 @@ func splitAddressAuthN(str string) (addr string, authn *string, err error) {
 		authn = &bits[1]
 	}
 	return
-}
-
-func sendEnv(fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, skipChecks bool, err error) {
-	if err != nil {
-		env.ErrorMsg = err.Error()
-	}
-	err = api.SendEnvironment(fs, env, *conf, skipChecks)
-	if err != nil {
-		log.Debugf("couldn't send environment data: %v", err)
-	}
 }
 
 func stringOr(a, b string) string {

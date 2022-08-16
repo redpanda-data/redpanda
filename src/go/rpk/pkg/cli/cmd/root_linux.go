@@ -26,7 +26,7 @@ func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
 	cmd.AddCommand(NewConfigCommand(fs))
 	cmd.AddCommand(NewModeCommand(fs))
 	cmd.AddCommand(NewStartCommand(fs, rp.NewLauncher()))
-	cmd.AddCommand(NewStatusCommand(fs))
+	cmd.AddCommand(NewStatusCommand())
 	cmd.AddCommand(NewStopCommand(fs))
 	cmd.AddCommand(NewTuneCommand(fs))
 }
