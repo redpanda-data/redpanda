@@ -177,7 +177,7 @@ class WasmTest(RedpandaTest):
                              self._output_consumer.results.num_records())
             batch_total = self._input_consumer.results.num_records()
             if batch_total > 0:
-                self.records_recieved(batch_total)
+                self.records_received(batch_total)
 
             return self._input_consumer.is_finished() \
                 and self._output_consumer.is_finished()
@@ -217,7 +217,7 @@ class WasmTest(RedpandaTest):
 
         return (self._input_consumer.results, self._output_consumer.results)
 
-    def records_recieved(self, output_recieved):
+    def records_received(self, output_received):
         """
         Called when a traunch of records has been returned from consumers
         """
