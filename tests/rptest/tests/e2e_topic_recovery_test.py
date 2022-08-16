@@ -15,7 +15,7 @@ from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.util import Scale, segments_count
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from ducktape.utils.util import wait_until
 import time
 import json
@@ -62,15 +62,15 @@ class EndToEndTopicRecovery(RedpandaTest):
         self.logger.info(f"Verifier node name: {self._verifier_node.name}")
 
     def init_producer(self, msg_size, num_messages):
-        self._producer = FranzGoVerifiableProducer(self._ctx, self.redpanda,
-                                                   self.topic, msg_size,
-                                                   num_messages,
-                                                   [self._verifier_node])
+        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
+                                             self.topic, msg_size,
+                                             num_messages,
+                                             [self._verifier_node])
 
     def init_consumer(self, msg_size):
-        self._consumer = FranzGoVerifiableSeqConsumer(self._ctx, self.redpanda,
-                                                      self.topic, msg_size,
-                                                      [self._verifier_node])
+        self._consumer = KgoVerifierSeqConsumer(self._ctx, self.redpanda,
+                                                self.topic, msg_size,
+                                                [self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()

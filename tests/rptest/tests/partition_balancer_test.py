@@ -18,7 +18,7 @@ from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import (
-    FranzGoVerifiableProducer,
+    KgoVerifierProducer,
     await_minimum_produced_records,
 )
 from rptest.tests.end_to_end import EndToEndTest
@@ -426,11 +426,11 @@ class PartitionBalancerTest(EndToEndTest):
 
         # produce around 2GB of data, this should be enough to fill node disks
         # to a bit more than 70% usage on average
-        producer = FranzGoVerifiableProducer(self.test_context,
-                                             self.redpanda,
-                                             self.topic,
-                                             msg_size=102_400,
-                                             msg_count=19_000)
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=102_400,
+                                       msg_count=19_000)
         producer.start(clean=False)
 
         wait_until(lambda: get_total_disk_usage() / 5 / disk_size > 0.7,

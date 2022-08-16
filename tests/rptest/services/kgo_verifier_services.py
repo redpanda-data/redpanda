@@ -26,9 +26,9 @@ class ServiceStatus(Enum):
     FINISH = 3
 
 
-class FranzGoVerifiableService(BackgroundThreadService):
+class KgoVerifierServiceService(BackgroundThreadService):
     """
-    FranzGoVerifiableService is kgo-verifier service.
+    KgoVerifierServiceService is kgo-verifier service.
     To validate produced record user should run consumer and producer in one node.
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
@@ -41,7 +41,7 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self.use_custom_node:
             nodes_for_allocate = 0
 
-        super(FranzGoVerifiableService,
+        super(KgoVerifierServiceService,
               self).__init__(context, num_nodes=nodes_for_allocate)
 
         # Should check that BackgroundThreadService did not allocate anything
@@ -127,13 +127,13 @@ class FranzGoVerifiableService(BackgroundThreadService):
         if self.use_custom_node:
             return
         else:
-            return super(FranzGoVerifiableService, self).allocate_nodes()
+            return super(KgoVerifierServiceService, self).allocate_nodes()
 
     def free(self):
         if self.use_custom_node:
             return
         else:
-            return super(FranzGoVerifiableService, self).free()
+            return super(KgoVerifierServiceService, self).free()
 
 
 class ConsumerStatus:
@@ -152,9 +152,9 @@ class ConsumerStatus:
         return f"ConsumerStatus<{self.valid_reads} {self.invalid_reads} {self.out_of_scope_invalid_reads}>"
 
 
-class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
+class KgoVerifierServiceSeqConsumer(KgoVerifierServiceService):
     def __init__(self, context, redpanda, topic, msg_size, nodes=None):
-        super(FranzGoVerifiableSeqConsumer,
+        super(KgoVerifierServiceSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes)
 
         self._shutting_down = threading.Event()
@@ -192,7 +192,7 @@ class FranzGoVerifiableSeqConsumer(FranzGoVerifiableService):
             self.status = ServiceStatus.FINISH
 
 
-class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
+class KgoVerifierServiceRandomConsumer(KgoVerifierServiceService):
     def __init__(self,
                  context,
                  redpanda,
@@ -201,7 +201,7 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
                  rand_read_msgs,
                  parallel,
                  nodes=None):
-        super(FranzGoVerifiableRandomConsumer,
+        super(KgoVerifierServiceRandomConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
@@ -237,7 +237,7 @@ class FranzGoVerifiableRandomConsumer(FranzGoVerifiableService):
             self.status = ServiceStatus.FINISH
 
 
-class FranzGoVerifiableConsumerGroupConsumer(FranzGoVerifiableService):
+class KgoVerifierServiceConsumerGroupConsumer(KgoVerifierServiceService):
     def __init__(self,
                  context,
                  redpanda,
@@ -245,7 +245,7 @@ class FranzGoVerifiableConsumerGroupConsumer(FranzGoVerifiableService):
                  msg_size,
                  readers,
                  nodes=None):
-        super(FranzGoVerifiableConsumerGroupConsumer,
+        super(KgoVerifierServiceConsumerGroupConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes)
 
         self._readers = readers
@@ -293,7 +293,7 @@ class ProduceStatus:
         return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts}>"
 
 
-class FranzGoVerifiableProducer(FranzGoVerifiableService):
+class KgoVerifierServiceProducer(KgoVerifierServiceService):
     def __init__(self,
                  context,
                  redpanda,
@@ -302,7 +302,7 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
                  msg_count,
                  custom_node=None,
                  batch_max_bytes=None):
-        super(FranzGoVerifiableProducer,
+        super(KgoVerifierServiceProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node)
         self._msg_count = msg_count
         self._status = ProduceStatus(0, 0, 0, 0)
@@ -345,7 +345,7 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
 # Block until the producer has
 # written a minimum amount of data.
 def await_minimum_produced_records(redpanda: RedpandaService,
-                                   producer: FranzGoVerifiableProducer,
+                                   producer: KgoVerifierServiceProducer,
                                    min_acked: int = 0) -> None:
     wait_until(lambda: producer.produce_status.acked >= min_acked,
                timeout_sec=300,
