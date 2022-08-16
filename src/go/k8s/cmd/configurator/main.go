@@ -40,6 +40,7 @@ const (
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
+	skipClusterSeedInitEnvVar           = "SKIP_CLUSTER_SEED_INIT"
 )
 
 type brokerID int
@@ -55,6 +56,7 @@ type configuratorConfig struct {
 	redpandaRPCPort      int
 	hostPort             int
 	proxyHostPort        int
+	skipClusterSeedInit  bool
 }
 
 func (c *configuratorConfig) String() string {
@@ -126,9 +128,9 @@ func main() {
 
 	cfg.Redpanda.Id = int(hostIndex)
 
-	// First Redpanda node need to have cleared seed servers in order
-	// to form raft group 0
-	if hostIndex == 0 {
+	// Unless the cluster is configured to skip this phase, the first Redpanda node
+	// needs to have seed servers cleared in order to form raft group 0.
+	if !c.skipClusterSeedInit && hostIndex == 0 {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
 	}
 
@@ -367,6 +369,15 @@ func checkEnvVars() (configuratorConfig, error) {
 		c.proxyHostPort, err = strconv.Atoi(proxyHostPort)
 		if err != nil {
 			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
+		}
+	}
+
+	// Existing cluster env var is optional
+	skipInit, exist := os.LookupEnv(skipClusterSeedInitEnvVar)
+	if exist && skipInit != "" {
+		c.skipClusterSeedInit, err = strconv.ParseBool(skipInit)
+		if err != nil {
+			result = multierror.Append(result, fmt.Errorf("unable to convert the skip cluster seed init flag (%q) from string to bool: %w", skipInit, err))
 		}
 	}
 

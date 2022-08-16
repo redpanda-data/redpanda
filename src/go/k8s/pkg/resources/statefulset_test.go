@@ -69,7 +69,18 @@ func TestEnsure(t *testing.T) {
 	// Remove shadow-indexing-cache from the volume claim templates
 	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
 
-	var tests = []struct {
+	skipInitCluster := cluster.DeepCopy()
+	if skipInitCluster.Annotations == nil {
+		skipInitCluster.Annotations = make(map[string]string)
+	}
+	skipInitCluster.Annotations["redpanda.vectorized.io/skip-cluster-seed-init"] = "true"
+	skipInitSts := stsFromCluster(skipInitCluster)
+	skipInitSts.Spec.Template.Spec.InitContainers[0].Env = append(skipInitSts.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
+		Name:  "SKIP_CLUSTER_SEED_INIT",
+		Value: "true",
+	})
+
+	tests := []struct {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster
@@ -81,6 +92,7 @@ func TestEnsure(t *testing.T) {
 		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
 		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
+		{"skip seed init cluster", nil, skipInitCluster, skipInitSts},
 	}
 
 	for _, tt := range tests {
@@ -152,8 +164,27 @@ func TestEnsure(t *testing.T) {
 				actual.Spec.VolumeClaimTemplates[i].Labels = nil
 			}
 			assert.Equal(t, tt.expectedObject.Spec.VolumeClaimTemplates, actual.Spec.VolumeClaimTemplates)
+
+			assert.Equal(t, len(tt.expectedObject.Spec.Template.Spec.InitContainers), len(actual.Spec.Template.Spec.InitContainers))
+			for i := range tt.expectedObject.Spec.Template.Spec.InitContainers {
+				expEnv := envAsMap(tt.expectedObject.Spec.Template.Spec.InitContainers[i].Env)
+				actEnv := envAsMap(actual.Spec.Template.Spec.InitContainers[i].Env)
+				// assert that the subset of expected envs matches
+				for k, v := range expEnv {
+					assert.Equal(t, v, actEnv[k])
+				}
+			}
 		})
 	}
+}
+
+func envAsMap(envs []corev1.EnvVar) map[string]string {
+	m := make(map[string]string, len(envs))
+	for _, e := range envs {
+		// Ignoring value from for the tests
+		m[e.Name] = e.Value
+	}
+	return m
 }
 
 func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {

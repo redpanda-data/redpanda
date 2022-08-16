@@ -65,6 +65,10 @@ const (
 
 var (
 	configMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
+
+	// SkipClusterSeedInitAnnotationKey is used to tell the configurator to avoid clearing
+	// the seeds server list because the cluster was already initialized.
+	SkipClusterSeedInitAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/skip-cluster-seed-init"
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -466,6 +470,13 @@ func (r *StatefulSetResource) obj(
 				},
 			},
 		},
+	}
+
+	if skipInit, ok := r.pandaCluster.Annotations[SkipClusterSeedInitAnnotationKey]; ok {
+		ss.Spec.Template.Spec.InitContainers[0].Env = append(ss.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
+			Name:  "SKIP_CLUSTER_SEED_INIT",
+			Value: skipInit,
+		})
 	}
 
 	setCloudStorage(ss, r.pandaCluster)
