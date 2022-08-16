@@ -11,7 +11,7 @@ import threading
 from time import sleep
 import requests
 from rptest.clients.types import TopicSpec
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
 
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest

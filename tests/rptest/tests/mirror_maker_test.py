@@ -14,7 +14,7 @@ from ducktape.mark import parametrize
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kafka import KafkaServiceAdapter

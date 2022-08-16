@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
 
 
 class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):

@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import ResourceSettings
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer
 from rptest.services.kaf_consumer import KafConsumer
 from rptest.services.metrics_check import MetricCheck
 

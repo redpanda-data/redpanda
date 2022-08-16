@@ -11,7 +11,7 @@ import requests
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer, await_minimum_produced_records
+from rptest.services.kgo_verifier_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer, await_minimum_produced_records
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec

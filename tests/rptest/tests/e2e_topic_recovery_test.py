@@ -15,7 +15,7 @@ from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.util import Scale, segments_count
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer
 from ducktape.utils.util import wait_until
 import time
 import json
