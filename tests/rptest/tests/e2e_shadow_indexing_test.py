@@ -18,8 +18,8 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.cluster import cluster
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
-from rptest.services.franz_go_verifiable_services import ServiceStatus, await_minimum_produced_records
+from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import ServiceStatus, await_minimum_produced_records
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.redpanda import SISettings
 from rptest.tests.end_to_end import EndToEndTest

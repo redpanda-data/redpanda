@@ -14,7 +14,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.franz_go_verifiable_services import (
+from rptest.services.kgo_verifier_services import (
     FranzGoVerifiableProducer,
     FranzGoVerifiableSeqConsumer,
     FranzGoVerifiableRandomConsumer,

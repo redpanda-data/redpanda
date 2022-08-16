@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, LoggingConfig
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
