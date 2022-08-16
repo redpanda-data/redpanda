@@ -334,31 +334,32 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
       config().ntp(),
       cfg);
     // find first not compacted segment
-    auto segit = std::find_if(
-      _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
-          return !s->has_appender() && s->is_compacted_segment()
-                 && !s->finished_self_compaction();
-      });
+
     // loop until we compact segment or reached end of segments set
-    for (; segit != _segs.end(); ++segit) {
-        auto seg = *segit;
-        if (
-          seg->has_appender() || seg->finished_self_compaction()
-          || !seg->is_compacted_segment()) {
-            continue;
+    while (!_segs.empty()) {
+        const auto end_it = std::prev(_segs.end());
+        auto seg_it = std::find_if(
+          _segs.begin(), end_it, [](ss::lw_shared_ptr<segment>& s) {
+              return !s->has_appender() && s->is_compacted_segment()
+                     && !s->finished_self_compaction();
+          });
+        // nothing to compact
+        if (seg_it == end_it) {
+            break;
         }
 
+        auto segment = *seg_it;
         auto result = co_await storage::internal::self_compact_segment(
-          seg, cfg, _probe, *_readers_cache, _manager.resources());
+          segment, cfg, _probe, *_readers_cache, _manager.resources());
+
         vlog(
           gclog.debug,
           "[{}] segment {} compaction result: {}",
           config().ntp(),
-          seg->reader().filename(),
+          segment->reader().filename(),
           result);
-        _compaction_ratio.update(result.compaction_ratio());
-        // if we compacted segment return, otherwise loop
         if (result.did_compact()) {
+            _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
     }
