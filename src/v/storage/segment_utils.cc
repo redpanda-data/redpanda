@@ -518,61 +518,57 @@ ss::future<compaction_result> self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources) {
     if (s->has_appender()) {
-        return ss::make_exception_future<compaction_result>(
-          std::runtime_error(fmt::format(
-            "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+        throw std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
     }
+
     if (s->finished_self_compaction()) {
-        return ss::make_ready_future<compaction_result>(s->size_bytes());
+        co_return compaction_result{s->size_bytes()};
     }
+
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
-    return detect_compaction_index_state(idx_path, cfg)
-      .then([idx_path, s, cfg, &pb, &readers_cache, &resources](
-              compacted_index::recovery_state state) mutable {
-          vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
-          switch (state) {
-          case compacted_index::recovery_state::already_compacted: {
-              vlog(gclog.debug, "detected {} is already compacted", idx_path);
-              return ss::make_ready_future<compaction_result>(s->size_bytes());
-          }
-          case compacted_index::recovery_state::index_recovered:
-              return do_self_compact_segment(
-                       s, cfg, pb, readers_cache, resources)
-                .then([before = s->size_bytes(), &pb](size_t sz_after) {
-                    pb.segment_compacted();
-                    return compaction_result(before, sz_after);
-                });
-          case compacted_index::recovery_state::index_missing:
-              [[fallthrough]];
-          case compacted_index::recovery_state::index_needs_rebuild: {
-              vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
-              pb.corrupted_compaction_index();
-              return s->read_lock()
-                .then(
-                  [s, cfg, &pb, idx_path, &resources](ss::rwlock::holder h) {
-                      return rebuild_compaction_index(
-                        create_segment_full_reader(s, cfg, pb, std::move(h)),
-                        idx_path,
-                        cfg,
-                        resources);
-                  })
-                .then([s, cfg, &pb, idx_path, &readers_cache, &resources] {
-                    vlog(
-                      gclog.info,
-                      "rebuilt index: {}, attempting compaction again",
-                      idx_path);
-                    return self_compact_segment(
-                      s, cfg, pb, readers_cache, resources);
-                });
-          }
-          }
-          __builtin_unreachable();
-      })
-      .then([s](compaction_result r) {
-          s->mark_as_finished_self_compaction();
-          return r;
-      });
+
+    auto state = co_await detect_compaction_index_state(idx_path, cfg);
+
+    vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
+
+    switch (state) {
+    case compacted_index::recovery_state::already_compacted: {
+        vlog(gclog.debug, "detected {} is already compacted", idx_path);
+        s->mark_as_finished_self_compaction();
+        co_return compaction_result{s->size_bytes()};
+    }
+    case compacted_index::recovery_state::index_recovered: {
+        auto sz_before = s->size_bytes();
+        auto sz_after = co_await do_self_compact_segment(
+          s, cfg, pb, readers_cache, resources);
+        pb.segment_compacted();
+        s->mark_as_finished_self_compaction();
+        co_return compaction_result(sz_before, sz_after);
+    }
+    case compacted_index::recovery_state::index_missing:
+        [[fallthrough]];
+    case compacted_index::recovery_state::index_needs_rebuild: {
+        vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
+        pb.corrupted_compaction_index();
+        auto h = co_await s->read_lock();
+
+        co_await rebuild_compaction_index(
+          create_segment_full_reader(s, cfg, pb, std::move(h)),
+          idx_path,
+          cfg,
+          resources);
+
+        vlog(
+          gclog.info,
+          "rebuilt index: {}, attempting compaction again",
+          idx_path);
+        co_return co_await self_compact_segment(
+          s, cfg, pb, readers_cache, resources);
+    }
+    }
+    __builtin_unreachable();
 }
 
 ss::future<
