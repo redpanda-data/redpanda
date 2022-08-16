@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -343,7 +342,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			if advRPCApi != nil {
 				cfg.Redpanda.AdvertisedRPCAPI = advRPCApi
 			}
-			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
+			installDirectory, err := getOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
 				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
 				return err
@@ -1100,6 +1099,17 @@ func setContainerModeCfgFields(cfg *config.Config) {
 	cfg.Redpanda.Other["group_topic_partitions"] = 3
 	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
 	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
+}
+
+func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
+	if installDir != "" {
+		return installDir, nil
+	}
+	foundConfig, err := rp.FindInstallDir(fs)
+	if err != nil {
+		return "", fmt.Errorf("unable to find redpanda installation. Please provide the install directory with flag --install-dir")
+	}
+	return foundConfig, nil
 }
 
 const helpMode = `Mode uses well-known configuration properties for development or tests 

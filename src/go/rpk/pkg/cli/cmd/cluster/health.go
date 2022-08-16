@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
+func newHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		watch bool
 		exit  bool

@@ -57,7 +57,7 @@ type consumer struct {
 	cl *kgo.Client
 }
 
-func NewConsumeCommand(fs afero.Fs) *cobra.Command {
+func newConsumeCommand(fs afero.Fs) *cobra.Command {
 	var (
 		c      consumer
 		offset string

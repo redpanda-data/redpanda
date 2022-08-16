@@ -22,10 +22,17 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/topic"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
@@ -67,17 +74,16 @@ func Execute() {
 		"v", false, "Enable verbose logging (default: false)")
 
 	root.AddCommand(
-		NewGenerateCommand(fs),
-		NewVersionCommand(),
-		NewWasmCommand(fs),
-		NewContainerCommand(),
-		NewTopicCommand(fs),
-		NewClusterCommand(fs),
-		NewACLCommand(fs),
-
+		acl.NewCommand(fs),
+		cluster.NewCommand(fs),
+		container.NewCommand(),
 		debug.NewCommand(fs),
+		generate.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
+		topic.NewCommand(fs),
+		version.NewCommand(),
+		wasm.NewCommand(fs),
 	)
 
 	addPlatformDependentCmds(fs, root)
@@ -92,7 +98,7 @@ func Execute() {
 	// rpk command. We do not want `rpk-acl-foo` to exec a plugin, when
 	// `rpk acl` exists and the single argument foo may be important. We
 	// block rpk command shadowing by not keeping any plugin that shares an
-	// argument search path with an rpk command.
+	// argument search path with a rpk command.
 	//
 	// Further, unlike kubectl, we do not allow one plugin to be at the end
 	// of another plugin (rpk foo bar cannot exist if rpk foo does). This

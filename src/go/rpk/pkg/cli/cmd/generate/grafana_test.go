@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package generate_test
+package generate
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +22,7 @@ import (
 func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
-	cmd := generate.NewGrafanaDashboardCmd()
+	cmd := newGrafanaDashboardCmd()
 	cmd.SetArgs([]string{
 		"--prometheus-url", "localhost:8888/metrics",
 		"--datasource", "prometheus",
@@ -34,7 +33,7 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 func TestGrafanaHostNoServer(t *testing.T) {
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
-	cmd := generate.NewGrafanaDashboardCmd()
+	cmd := newGrafanaDashboardCmd()
 	cmd.SetArgs([]string{
 		"--metrics-endpoint", "localhost:8888/metrics",
 		"--datasource", "prometheus",
@@ -75,7 +74,7 @@ vectorized_memory_allocated_memory_bytes{shard="1",type="bytes"} 36986880
 	)
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
-	cmd := generate.NewGrafanaDashboardCmd()
+	cmd := newGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
 	cmd.SetArgs([]string{
 		"--metrics-endpoint", ts.URL,
@@ -99,7 +98,7 @@ vectorized_vectorized_in
 	)
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
-	cmd := generate.NewGrafanaDashboardCmd()
+	cmd := newGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
 	cmd.SetArgs([]string{
 		"--metrics-endpoint", ts.URL,

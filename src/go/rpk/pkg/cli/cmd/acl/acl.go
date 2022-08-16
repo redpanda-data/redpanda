@@ -7,18 +7,17 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package acl
 
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewACLCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		brokers                []string
 		configFile             string
@@ -72,10 +71,10 @@ func NewACLCommand(fs afero.Fs) *cobra.Command {
 		&adminAPITruststoreFile,
 	)
 
-	command.AddCommand(acl.NewCreateCommand(fs))
-	command.AddCommand(acl.NewListCommand(fs))
-	command.AddCommand(acl.NewDeleteCommand(fs))
-	command.AddCommand(acl.NewUserCommand(fs))
+	command.AddCommand(newCreateCommand(fs))
+	command.AddCommand(newDeleteCommand(fs))
+	command.AddCommand(newListCommand(fs))
+	command.AddCommand(newUserCommand(fs))
 	return command
 }
 

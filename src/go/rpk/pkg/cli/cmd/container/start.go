@@ -50,7 +50,7 @@ func collectFlags(args []string, flag string) []string {
 	return flags
 }
 
-func Start() *cobra.Command {
+func newStartCommand() *cobra.Command {
 	var (
 		nodes   uint
 		retries uint

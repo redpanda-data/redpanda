@@ -42,7 +42,7 @@ type TLSConfig struct {
 	KeyFile  string `yaml:"key_file,omitempty"`
 }
 
-func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
+func newPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 	var (
 		jobName    string
 		nodeAddrs  []string

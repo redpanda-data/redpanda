@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs) *cobra.Command {
 	var (
 		detailed bool
 		internal bool

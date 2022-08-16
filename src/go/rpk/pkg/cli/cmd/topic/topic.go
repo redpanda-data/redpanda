@@ -7,16 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package topic
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/topic"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewTopicCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		brokers        []string
 		configFile     string
@@ -36,14 +35,14 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &enableTLS, &certFile, &keyFile, &truststoreFile, &brokers)
 
 	command.AddCommand(
-		topic.NewAddPartitionsCommand(fs),
-		topic.NewAlterConfigCommand(fs),
-		topic.NewConsumeCommand(fs),
-		topic.NewCreateCommand(fs),
-		topic.NewDeleteCommand(fs),
-		topic.NewDescribeCommand(fs),
-		topic.NewListCommand(fs),
-		topic.NewProduceCommand(fs),
+		newAddPartitionsCommand(fs),
+		newAlterConfigCommand(fs),
+		newConsumeCommand(fs),
+		newCreateCommand(fs),
+		newDeleteCommand(fs),
+		newDescribeCommand(fs),
+		newListCommand(fs),
+		newProduceCommand(fs),
 	)
 
 	return command

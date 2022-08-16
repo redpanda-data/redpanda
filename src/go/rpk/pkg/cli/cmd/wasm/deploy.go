@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDeployCommand(fs afero.Fs) *cobra.Command {
+func newDeployCommand(fs afero.Fs) *cobra.Command {
 	var (
 		description string
 		name        string

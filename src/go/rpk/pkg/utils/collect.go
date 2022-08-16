@@ -32,12 +32,3 @@ func GetKeysFromStringMap(setMap map[string]string) []string {
 	}
 	return keys
 }
-
-func ContainsInt(slice []int, elem int) bool {
-	for _, n := range slice {
-		if elem == n {
-			return true
-		}
-	}
-	return false
-}

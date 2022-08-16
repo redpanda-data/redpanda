@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func Stop() *cobra.Command {
+func newStopCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop an existing local container cluster",

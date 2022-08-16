@@ -27,7 +27,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func NewDescribeCommand(fs afero.Fs) *cobra.Command {
+func newDescribeCommand(fs afero.Fs) *cobra.Command {
 	var (
 		all        bool
 		summary    bool

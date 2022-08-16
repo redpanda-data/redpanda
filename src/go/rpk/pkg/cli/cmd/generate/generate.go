@@ -7,24 +7,20 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package generate
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewVersionCommand() *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "version",
-		Short: "Check the current version",
-		Long:  "",
-		Run: func(_ *cobra.Command, _ []string) {
-			log.SetFormatter(cli.NewNoopFormatter())
-			log.Infof("%s\n", version.Pretty())
-		},
+		Use:   "generate [template]",
+		Short: "Generate a configuration template for related services",
 	}
+	command.AddCommand(newGrafanaDashboardCmd())
+	command.AddCommand(newPrometheusConfigCmd(fs))
+	command.AddCommand(newShellCompletionCommand())
 	return command
 }

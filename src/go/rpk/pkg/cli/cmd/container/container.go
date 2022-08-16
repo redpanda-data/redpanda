@@ -7,22 +7,21 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package container
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 	"github.com/spf13/cobra"
 )
 
-func NewContainerCommand() *cobra.Command {
+func NewCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "container",
 		Short: "Manage a local container cluster",
 	}
 
-	command.AddCommand(container.Start())
-	command.AddCommand(container.Stop())
-	command.AddCommand(container.Purge())
+	command.AddCommand(newStartCommand())
+	command.AddCommand(newStopCommand())
+	command.AddCommand(newPurgeCommand())
 
 	return command
 }

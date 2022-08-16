@@ -7,10 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package cluster
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/license"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/maintenance"
@@ -21,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewClusterCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		brokers        []string
 		configFile     string
@@ -50,15 +49,16 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 		&truststoreFile,
 		&brokers,
 	)
-	command.AddCommand(cluster.NewMetadataCommand(fs))
 
 	offsets := group.NewDescribeCommand(fs)
 	offsets.Deprecated = "replaced by 'rpk group describe'"
 	offsets.Hidden = true
 	offsets.Use = "offsets"
 	command.AddCommand(
-		cluster.NewHealthOverviewCommand(fs),
-		cluster.NewLogdirsCommand(fs),
+		newHealthOverviewCommand(fs),
+		newLogdirsCommand(fs),
+		newMetadataCommand(fs),
+
 		config.NewConfigCommand(fs),
 		license.NewLicenseCommand(fs),
 		maintenance.NewMaintenanceCommand(fs),
