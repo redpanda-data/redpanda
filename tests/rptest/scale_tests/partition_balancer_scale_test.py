@@ -12,7 +12,7 @@ import requests
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.kgo_verifier_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer, await_minimum_produced_records
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, await_minimum_produced_records
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
@@ -40,7 +40,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             **kwargs)
 
     def _start_producer(self, topic_name, msg_cnt, msg_size):
-        self.producer = FranzGoVerifiableProducer(
+        self.producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -55,7 +55,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
 
     def _start_consumer(self, topic_name, msg_size, consumers):
 
-        self.consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
             topic_name,

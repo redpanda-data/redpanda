@@ -19,14 +19,14 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings
-from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
 
 
 class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
     """
     The test checks that SI cache doesn't exhibit a resource leak.
     In order to do this the test puts pressure to SI cache by settings its
-    size to the minimum value. Then it uses FranzGoVerifiableProducer(Consumer)
+    size to the minimum value. Then it uses KgoVerifierProducer(Consumer)
     to produce and consume data via SI. The retention on the topic has to be
     small enough in order for SI to be involved. The test checks that no segment
     files are opened in the cache directory.
@@ -64,15 +64,16 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         )
 
     def init_producer(self, msg_size, num_messages):
-        self._producer = FranzGoVerifiableProducer(self._ctx, self.redpanda,
-                                                   self.topic, msg_size,
-                                                   num_messages,
-                                                   [self._verifier_node])
+        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
+                                             self.topic, msg_size,
+                                             num_messages,
+                                             [self._verifier_node])
 
     def init_consumer(self, msg_size, num_messages, concurrency):
-        self._consumer = FranzGoVerifiableRandomConsumer(
-            self._ctx, self.redpanda, self.topic, msg_size, num_messages,
-            concurrency, [self._verifier_node])
+        self._consumer = KgoVerifierRandomConsumer(self._ctx, self.redpanda,
+                                                   self.topic, msg_size,
+                                                   num_messages, concurrency,
+                                                   [self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()

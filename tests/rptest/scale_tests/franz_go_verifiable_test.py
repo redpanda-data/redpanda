@@ -15,17 +15,17 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import (
-    FranzGoVerifiableProducer,
-    FranzGoVerifiableSeqConsumer,
-    FranzGoVerifiableRandomConsumer,
-    FranzGoVerifiableConsumerGroupConsumer,
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierConsumerGroupConsumer,
 )
 from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 
 
-class FranzGoVerifiableBase(PreallocNodesTest):
+class KgoVerifierBase(PreallocNodesTest):
     """
     Base class for the common logic that allocates a shared
     node for several services and instantiates them.
@@ -43,18 +43,19 @@ class FranzGoVerifiableBase(PreallocNodesTest):
                          *args,
                          **kwargs)
 
-        self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
-                                                   self.topic, self.MSG_SIZE,
-                                                   self.PRODUCE_COUNT,
-                                                   self.preallocated_nodes)
-        self._seq_consumer = FranzGoVerifiableSeqConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.preallocated_nodes)
-        self._rand_consumer = FranzGoVerifiableRandomConsumer(
+        self._producer = KgoVerifierProducer(test_context, self.redpanda,
+                                             self.topic, self.MSG_SIZE,
+                                             self.PRODUCE_COUNT,
+                                             self.preallocated_nodes)
+        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
+                                                    self.redpanda, self.topic,
+                                                    self.MSG_SIZE,
+                                                    self.preallocated_nodes)
+        self._rand_consumer = KgoVerifierRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self.preallocated_nodes)
-        self._cg_consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self._cg_consumer = KgoVerifierConsumerGroupConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
 
@@ -63,7 +64,7 @@ class FranzGoVerifiableBase(PreallocNodesTest):
         ]
 
 
-class FranzGoVerifiableTest(FranzGoVerifiableBase):
+class KgoVerifierTest(KgoVerifierBase):
     MSG_SIZE = 120000
     PRODUCE_COUNT = 100000
     RANDOM_READ_COUNT = 1000
@@ -113,7 +114,7 @@ KGO_LOG_ALLOW_LIST = [
 KGO_RESTART_LOG_ALLOW_LIST = KGO_LOG_ALLOW_LIST + RESTART_LOG_ALLOW_LIST
 
 
-class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
+class KgoVerifierWithSiTest(KgoVerifierBase):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 20000
     RANDOM_READ_COUNT = 1000
@@ -131,7 +132,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.cloud_storage_cache_size or self.RANDOM_READ_PARALLEL *
             self.segment_size))
 
-        super(FranzGoVerifiableWithSiTest, self).__init__(
+        super(KgoVerifierWithSiTest, self).__init__(
             test_context=ctx,
             num_brokers=3,
             extra_rp_conf={
@@ -210,7 +211,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         self._workload(self.segment_size)
 
 
-class FranzGoVerifiableWithSiTestLargeSegments(FranzGoVerifiableWithSiTest):
+class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
     def test_si_without_timeboxed(self):
         self.without_timeboxed()
@@ -220,7 +221,7 @@ class FranzGoVerifiableWithSiTestLargeSegments(FranzGoVerifiableWithSiTest):
         self.with_timeboxed()
 
 
-class FranzGoVerifiableWithSiTestSmallSegments(FranzGoVerifiableWithSiTest):
+class KgoVerifierWithSiTestSmallSegments(KgoVerifierWithSiTest):
     segment_size = 20 * 2**20
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)

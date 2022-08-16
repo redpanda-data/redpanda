@@ -18,7 +18,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
 from rptest.services.kgo_verifier_services import ServiceStatus, await_minimum_produced_records
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.redpanda import SISettings
@@ -194,18 +194,19 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         msg_count = 500000 if self.redpanda.dedicated_nodes else 100000
         timeout = 600
 
-        producer = FranzGoVerifiableProducer(self.test_context, self.redpanda,
-                                             self.topic, msg_size, msg_count,
-                                             self.preallocated_nodes)
+        producer = KgoVerifierProducer(self.test_context, self.redpanda,
+                                       self.topic, msg_size, msg_count,
+                                       self.preallocated_nodes)
         producer.start(clean=False)
         # Block until a subset of records are produced
         await_minimum_produced_records(self.redpanda,
                                        producer,
                                        min_acked=msg_count // 100)
 
-        rand_consumer = FranzGoVerifiableRandomConsumer(
-            self.test_context, self.redpanda, self.topic, msg_size, 100, 10,
-            self.preallocated_nodes)
+        rand_consumer = KgoVerifierRandomConsumer(self.test_context,
+                                                  self.redpanda, self.topic,
+                                                  msg_size, 100, 10,
+                                                  self.preallocated_nodes)
 
         rand_consumer.start(clean=False)
 

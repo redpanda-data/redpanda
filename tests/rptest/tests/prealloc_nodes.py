@@ -20,7 +20,7 @@ class PreallocNodesTest(RedpandaTest):
 
     Having some explicitly allocated nodes is useful for
     re-using those nodes to run multiple services at once, or to
-    run services that need to be on the same host (e.g. the FranzGoVerifiable
+    run services that need to be on the same host (e.g. the KgoVerifier
     producer/consumers that coordinate via a local file)
     """
     def __init__(self, test_context: TestContext, node_prealloc_count: int,
@@ -60,7 +60,7 @@ class PreallocNodesTest(RedpandaTest):
 
             # Some tests may open huge numbers of connections, which can interfere
             # with subsequent tests' use of the node. Clear them down first.
-            # For example, those tests that use FranzGoVerifiableProducer.
+            # For example, those tests that use KgoVerifierProducer.
             for node in self.preallocated_nodes:
                 wait_until(lambda: self.redpanda.sockets_clear(node),
                            timeout_sec=120,
