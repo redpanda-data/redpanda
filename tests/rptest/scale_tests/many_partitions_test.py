@@ -581,7 +581,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             parallel=rand_parallel,
             nodes=[self.preallocated_nodes[1]])
         rand_consumer.start(clean=False)
-        rand_consumer.shutdown()
         rand_consumer.wait()
 
         fast_producer.stop()
@@ -593,10 +592,9 @@ class ManyPartitionsTest(PreallocNodesTest):
                                               target_topic, 0,
                                               [self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
-        seq_consumer.shutdown()
         seq_consumer.wait()
-        assert seq_consumer.consumer_status.invalid_reads == 0
-        assert seq_consumer.consumer_status.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
+        assert seq_consumer.consumer_status.validator.invalid_reads == 0
+        assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
 
         self.free_preallocated_nodes()
 

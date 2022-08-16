@@ -168,11 +168,6 @@ class TestMirrorMakerService(EndToEndTest):
         producer = KgoVerifierProducer(self.test_context, self.source_broker,
                                        self.topic.name, msg_size, msg_cnt)
         producer.start()
-
-        wait_until(lambda: producer.produce_status.acked >= msg_cnt,
-                   timeout_sec=180,
-                   backoff_sec=1)
-        producer.shutdown()
         producer.wait()
 
         consumer = KgoVerifierConsumerGroupConsumer(self.test_context,
@@ -181,9 +176,10 @@ class TestMirrorMakerService(EndToEndTest):
                                                     msg_size,
                                                     readers=4)
         consumer.start()
-        wait_until(lambda: consumer.consumer_status.valid_reads >= msg_cnt,
-                   timeout_sec=180,
-                   backoff_sec=1)
+        wait_until(
+            lambda: consumer.consumer_status.validator.valid_reads >= msg_cnt,
+            timeout_sec=180,
+            backoff_sec=1)
 
         self.logger.info(
             f"source message count: {producer.produce_status.acked}")

@@ -174,12 +174,11 @@ class EndToEndTopicRecovery(RedpandaTest):
         self.init_consumer(message_size)
         self._consumer.start(clean=False)
 
-        self._consumer.shutdown()
         self._consumer.wait()
 
         produce_acked = self._producer.produce_status.acked
-        consume_total = self._consumer.consumer_status.total_reads
-        consume_valid = self._consumer.consumer_status.valid_reads
+        consume_total = self._consumer.consumer_status.validator.total_reads
+        consume_valid = self._consumer.consumer_status.validator.valid_reads
         self.logger.info(f"Producer acked {produce_acked} messages")
         self.logger.info(f"Consumer read {consume_total} messages")
         assert produce_acked >= num_messages

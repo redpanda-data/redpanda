@@ -17,10 +17,8 @@ from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    await_minimum_produced_records,
-)
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
+
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException

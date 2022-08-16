@@ -97,13 +97,11 @@ class KgoVerifierTest(KgoVerifierBase):
         assert self._producer.produce_status.acked == self.PRODUCE_COUNT
 
         for consumer in self._consumers:
-            consumer.shutdown()
-        for consumer in self._consumers:
             consumer.wait()
 
-        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.validator.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
 
 KGO_LOG_ALLOW_LIST = [
@@ -186,13 +184,11 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         # Wait for last iteration of consumers to finish: if they are currently
         # mid-run, they'll run to completion.
         for consumer in self._consumers:
-            consumer.shutdown()
-        for consumer in self._consumers:
             consumer.wait()
 
-        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.validator.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
     @skip_debug_mode
     def without_timeboxed(self):

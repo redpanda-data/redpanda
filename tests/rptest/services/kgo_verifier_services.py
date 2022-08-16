@@ -234,6 +234,15 @@ class StatusThread(threading.Thread):
         for s in worker_statuses[1:]:
             reduced.merge(self._status_cls(**s))
 
+        if self._status_cls == ProduceStatus:
+            progress = (worker_statuses[0]['sent'] /
+                        float(self._parent._msg_count))
+            self.logger.info(
+                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {self._parent._status}"
+            )
+        else:
+            self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
+
         self._parent._status = reduced
 
     def await_ready(self):
@@ -261,13 +270,6 @@ class StatusThread(threading.Thread):
             r.raise_for_status()
             worker_statuses = r.json()
             self._ingest_status(worker_statuses)
-
-            if self._status_cls == ProduceStatus:
-                progress = (worker_statuses[0]['sent'] /
-                            float(self._parent._msg_count))
-                self.logger.info(
-                    f"Producer {self.who_am_i} progress: {progress*100:.2f}% {self._parent._status}"
-                )
 
             if drop_out:
                 # We were asked to clean shutdown and we have done our final

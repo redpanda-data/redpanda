@@ -135,11 +135,10 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
-        self._consumer.shutdown()
         self._consumer.wait()
 
         assert self._producer.produce_status.acked >= num_messages
-        assert self._consumer.consumer_status.total_reads == num_read * concurrency
+        assert self._consumer.consumer_status.validator.total_reads >= num_read * concurrency
 
         assert cache_files_closed() == False
         # Wait until all files are closed. The SI evicts all unused segments
