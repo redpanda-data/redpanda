@@ -488,6 +488,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     s->force_set_commit_offset_from_index();
     s->release_batch_cache_index();
     co_await s->index().flush();
+    s->advance_generation();
     co_return s->size_bytes();
 }
 
