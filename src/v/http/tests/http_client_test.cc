@@ -855,8 +855,7 @@ SEASTAR_THREAD_TEST_CASE(test_header_redacted) {
     request_header.set(boost::beast::http::field::authorization, "password");
     request_header.set("x-amz-content-sha256", "pigeon");
     request_header.set("x-amz-security-token", "capetown");
-    auto redacted = http::redacted_header(request_header);
-    auto s = fmt::format("{}", redacted);
+    auto s = fmt::format("{}", request_header);
     BOOST_REQUIRE(s.find("password") == std::string::npos);
     BOOST_REQUIRE(s.find("pigeon") == std::string::npos);
     BOOST_REQUIRE(s.find("capetown") == std::string::npos);
