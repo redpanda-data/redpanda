@@ -149,7 +149,7 @@ class TestMirrorMakerService(EndToEndTest):
 
     @cluster(num_nodes=10)
     @parametrize(source_type=kafka_source)
-    #@parametrize(source_type=redpanda_source)
+    @parametrize(source_type=redpanda_source)
     def test_consumer_group_mirroring(self, source_type):
         # start redpanda
         self.start_brokers(source_type=source_type)
