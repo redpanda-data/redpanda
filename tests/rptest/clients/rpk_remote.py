@@ -53,6 +53,13 @@ class RpkRemoteTool:
     def mode_set(self, mode):
         return self._execute([self._rpk_binary(), 'redpanda', 'mode', mode])
 
+    def redpanda_start(self, additional_args="", env_vars="", log_file=""):
+        return self._execute([
+            env_vars,
+            self._rpk_binary(), "redpanda", "start", "-v", additional_args,
+            ">>", log_file, "2>&1", "&"
+        ])
+
     def _run_config(self, cmd, path=None, timeout=30):
         cmd = [self._rpk_binary(), 'redpanda', 'config'] + cmd
 
