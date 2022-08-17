@@ -378,8 +378,7 @@ std::error_code signature_v4::sign_header(
       canonical_headers.value().signed_headers,
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
-    vlog(
-      clrl_log.trace, "\n[signed-header]\n\n{}", http::redacted_header(header));
+    vlog(clrl_log.trace, "\n[signed-header]\n\n{}", header);
     return {};
 }
 
