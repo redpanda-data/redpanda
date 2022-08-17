@@ -851,12 +851,25 @@ SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_header_redacted) {
+    ss::logger string_logger("s");
     http::client::request_header request_header;
     request_header.set(boost::beast::http::field::authorization, "password");
     request_header.set("x-amz-content-sha256", "pigeon");
     request_header.set("x-amz-security-token", "capetown");
-    auto s = fmt::format("{}", request_header);
-    BOOST_REQUIRE(s.find("password") == std::string::npos);
-    BOOST_REQUIRE(s.find("pigeon") == std::string::npos);
-    BOOST_REQUIRE(s.find("capetown") == std::string::npos);
+
+    std::stringstream stream;
+    ss::logger::set_ostream(stream);
+    vlog(string_logger.info, "{}", request_header);
+    ss::logger::set_ostream(std::cerr);
+
+    auto s = stream.str();
+    BOOST_REQUIRE(
+      s.find("password") == std::string::npos
+      && s.find("Authorization") != std::string::npos);
+    BOOST_REQUIRE(
+      s.find("pigeon") == std::string::npos
+      && s.find("x-amz-content-sha256") != std::string::npos);
+    BOOST_REQUIRE(
+      s.find("capetown") == std::string::npos
+      && s.find("x-amz-security-token") != std::string::npos);
 }
