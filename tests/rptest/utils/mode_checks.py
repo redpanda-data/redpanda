@@ -9,7 +9,7 @@ def allocate_and_free(cluster, logger):
     spec = ClusterSpec.simple_linux(num_nodes)
     nodes = cluster.alloc(spec)
     logger.debug(f'skip_debug_mode:: freeing up {num_nodes} nodes')
-    cluster.free_nodes(nodes)
+    cluster.free(nodes)
 
 
 def cleanup_on_early_exit(caller):
