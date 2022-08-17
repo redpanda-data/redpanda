@@ -301,18 +301,6 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, config_resource_type t) {
-    switch (t) {
-    case config_resource_type::topic:
-        return os << "{topic}";
-    case config_resource_type::broker:
-        [[fallthrough]];
-    case config_resource_type::broker_logger:
-        break;
-    }
-    return os << "{unknown type}";
-}
-
 std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
     switch (t) {
     case config_resource_operation::set:

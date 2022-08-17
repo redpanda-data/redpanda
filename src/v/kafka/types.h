@@ -156,7 +156,17 @@ enum class config_resource_type : int8_t {
     broker_logger = 8,
 };
 
-std::ostream& operator<<(std::ostream& os, config_resource_type);
+inline std::ostream& operator<<(std::ostream& os, config_resource_type t) {
+    switch (t) {
+    case config_resource_type::topic:
+        return os << "{topic}";
+    case config_resource_type::broker:
+        [[fallthrough]];
+    case config_resource_type::broker_logger:
+        break;
+    }
+    return os << "{unknown type}";
+}
 
 enum class config_resource_operation : int8_t {
     set = 0,
