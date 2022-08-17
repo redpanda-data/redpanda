@@ -1147,6 +1147,7 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
+    auto initial_generation_id = last->get_generation_id();
 
     // an unchecked reader is created which does not enforce the logical
     // starting offset. this is needed because we really do want to read
@@ -1156,6 +1157,19 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     auto phs = co_await std::move(reader).consume(
       internal::offset_to_filepos_consumer(cfg.base_offset, initial_size),
       model::no_timeout);
+    auto last_ptr = _segs.back();
+
+    if (initial_generation_id != last_ptr->get_generation_id()) {
+        vlog(
+          stlog.debug,
+          "segment generation changed during truncation, retrying with "
+          "configuration: {}, initial generation: {}, current "
+          "generation: {}",
+          cfg,
+          initial_generation_id,
+          last_ptr->get_generation_id());
+        co_return co_await do_truncate(cfg);
+    }
 
     if (!phs) {
         throw std::runtime_error(fmt_with_ctx(
@@ -1168,7 +1182,6 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
           *this));
     }
     auto [prev_last_offset, file_position] = phs.value();
-    auto last_ptr = _segs.back();
 
     if (file_position == 0) {
         _segs.pop_back();
