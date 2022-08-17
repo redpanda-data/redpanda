@@ -21,16 +21,19 @@ class RecoveryScale(BaseCase):
     This test case covers normal recovery process at a larger scale, using a
     bigger cluster and creating more partitions.
     """
+    # TODO until we have weekly/bi-weekly schedules, this test
+    # is scaled down to run with CDT nightlies.
+    NIGHTLY_SCALE_DOWN = 2
 
     # TODO rookie numbers
-    NODE_COUNT = 6
+    NODE_COUNT = 5
     # More partitions cause the test take a long time to run, hitting some
     # bottlenecks in the existing test, such as serial computation of file
     # checksums, etc.
-    PARTITONS = NODE_COUNT * 200
+    PARTITONS = NODE_COUNT * 200 // NIGHTLY_SCALE_DOWN
     NUM_TOPICS = 2
     PRODUCERS_PER_TOPIC = 1
-    MESSAGE_COUNT = 50 * 1000 * PARTITONS
+    MESSAGE_COUNT = 50 * 1000 * PARTITONS // NIGHTLY_SCALE_DOWN
     MSG_SIZE = 1023
 
     # Scale tests run ducktape on dedicated nodes, so we can expect some
@@ -166,7 +169,7 @@ class ExtremeRecoveryTest(TopicRecoveryTest):
     def tearDown(self):
         super(ExtremeRecoveryTest, self).tearDown()
 
-    @cluster(num_nodes=9, log_allow_list=TRANSIENT_ERRORS)
+    @cluster(num_nodes=8, log_allow_list=TRANSIENT_ERRORS)
     def test_recovery_scale(self):
         # This test requires dedicated system resources
         assert self.redpanda.dedicated_nodes
