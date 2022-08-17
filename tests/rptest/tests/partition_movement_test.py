@@ -660,7 +660,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             try:
                 partition_info = admin.get_partitions(topic, partition)
             except requests.exceptions.HTTPError as e:
-                if e.errno == 404:
+                if e.response.status_code == 404:
                     self.logger.info(
                         f"topic {topic}/{partition} not found, retrying")
                     return None
