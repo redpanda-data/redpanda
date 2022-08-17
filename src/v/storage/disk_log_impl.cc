@@ -334,31 +334,32 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
       config().ntp(),
       cfg);
     // find first not compacted segment
-    auto segit = std::find_if(
-      _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
-          return !s->has_appender() && s->is_compacted_segment()
-                 && !s->finished_self_compaction();
-      });
+
     // loop until we compact segment or reached end of segments set
-    for (; segit != _segs.end(); ++segit) {
-        auto seg = *segit;
-        if (
-          seg->has_appender() || seg->finished_self_compaction()
-          || !seg->is_compacted_segment()) {
-            continue;
+    while (!_segs.empty()) {
+        const auto end_it = std::prev(_segs.end());
+        auto seg_it = std::find_if(
+          _segs.begin(), end_it, [](ss::lw_shared_ptr<segment>& s) {
+              return !s->has_appender() && s->is_compacted_segment()
+                     && !s->finished_self_compaction();
+          });
+        // nothing to compact
+        if (seg_it == end_it) {
+            break;
         }
 
+        auto segment = *seg_it;
         auto result = co_await storage::internal::self_compact_segment(
-          seg, cfg, _probe, *_readers_cache, _manager.resources());
+          segment, cfg, _probe, *_readers_cache, _manager.resources());
+
         vlog(
           gclog.debug,
           "[{}] segment {} compaction result: {}",
           config().ntp(),
-          seg->reader().filename(),
+          segment->reader().filename(),
           result);
-        _compaction_ratio.update(result.compaction_ratio());
-        // if we compacted segment return, otherwise loop
         if (result.did_compact()) {
+            _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
     }
@@ -474,8 +475,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // log operations are later identified before committing changes.
     auto staging_path = std::filesystem::path(
       fmt::format("{}.compaction.staging", target->reader().filename()));
-    auto replacement = co_await storage::internal::make_concatenated_segment(
-      staging_path, segments, cfg, _manager.resources());
+    auto [replacement, generations]
+      = co_await storage::internal::make_concatenated_segment(
+        staging_path, segments, cfg, _manager.resources());
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -510,11 +512,28 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     // fast check if we should abandon all the expensive i/o work if we happened
     // to be racing with an operation like truncation or shutdown.
+    vassert(
+      generations.size() == segments.size(),
+      "Each segment must have corresponding generation");
+    auto gen_it = generations.begin();
     for (const auto& segment : segments) {
+        // check generation id under write lock
+        if (unlikely(segment->get_generation_id() != *gen_it)) {
+            vlog(
+              gclog.info,
+              "Aborting compaction of a segment: {}. Generation id mismatch, "
+              "previous generation: {}",
+              *segment,
+              *gen_it);
+            ret.executed_compaction = false;
+            ret.size_after = ret.size_before;
+            co_return ret;
+        }
         if (unlikely(segment->is_closed())) {
             throw std::runtime_error(fmt::format(
               "Aborting compaction of closed segment: {}", *segment));
         }
+        ++gen_it;
     }
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
