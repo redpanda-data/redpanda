@@ -27,16 +27,6 @@
 
 namespace kafka {
 
-std::ostream& operator<<(std::ostream& os, const offset_fetch_request& r) {
-    os << r.data;
-    return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
-    os << r.data;
-    return os;
-}
-
 template<>
 ss::future<response_ptr>
 offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
