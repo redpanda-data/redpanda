@@ -1676,6 +1676,35 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     // we commit only if a provided tx_seq matches prepared tx_seq
 
+    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
+    // Problem is group_*_tx contains only producer_id in key, so compaction
+    // save only last records for this events. We need only save in logs
+    // consumed offset after commit_txs. For this we can write store_offset
+    // event together with group_commit_tx.
+    //
+    // Problem: this 2 events contains different record batch type. So we can
+    // not put it in one batch and write on disk atomically. But it is not a
+    // problem, because client got ok for commit_request (see
+    // tx_gateway_frontend). So redpanda will eventually finish commit and
+    // complete write for both this events.
+    model::record_batch_reader::data_t batches;
+    batches.reserve(2);
+
+    cluster::simple_batch_builder store_offset_builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+        update_store_offset_builder(
+          store_offset_builder,
+          tp.topic,
+          tp.partition,
+          metadata.offset,
+          metadata.committed_leader_epoch,
+          metadata.metadata,
+          model::timestamp{-1});
+    }
+
+    batches.push_back(std::move(store_offset_builder).build());
+
     group_log_commit_tx commit_tx;
     commit_tx.group_id = r.group_id;
     // TODO: https://app.clubhouse.io/vectorized/story/2200
@@ -1687,7 +1716,9 @@ group::commit_tx(cluster::commit_group_tx_request r) {
       r.pid,
       std::move(commit_tx));
 
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    batches.push_back(std::move(batch));
+
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
 
     auto e = co_await _partition->raft()->replicate(
       _term,
