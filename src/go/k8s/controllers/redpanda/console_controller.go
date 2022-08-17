@@ -86,6 +86,10 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, err
 	}
+	if cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType).Status != corev1.ConditionTrue {
+		log.Info("Cluster not yet configured, requeueing", "redpandacluster", client.ObjectKeyFromObject(cluster).String())
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	var s state
 	switch {
