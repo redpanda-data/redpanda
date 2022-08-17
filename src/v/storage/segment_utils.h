@@ -199,10 +199,7 @@ struct clean_segment_value
 inline bool is_compactible(const model::record_batch& b) {
     return !(
       b.header().type == model::record_batch_type::raft_configuration
-      || b.header().type == model::record_batch_type::archival_metadata
-      || b.header().type == model::record_batch_type::group_abort_tx
-      || b.header().type == model::record_batch_type::group_commit_tx
-      || b.header().type == model::record_batch_type::group_prepare_tx);
+      || b.header().type == model::record_batch_type::archival_metadata);
 }
 
 } // namespace storage::internal
