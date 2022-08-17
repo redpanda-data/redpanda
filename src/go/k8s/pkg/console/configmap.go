@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/cloudhut/common/rest"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
@@ -105,7 +106,7 @@ func (cm *ConfigMap) generateConsoleConfig(ctx context.Context, username, passwo
 	consoleConfig := &ConsoleConfig{
 		MetricsNamespace: cm.consoleobj.Spec.MetricsNamespace,
 		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
-		Server:           cm.consoleobj.Spec.Server,
+		Server:           cm.genServer(),
 		Kafka:            cm.genKafka(username, password),
 	}
 
@@ -120,6 +121,22 @@ func (cm *ConfigMap) generateConsoleConfig(ctx context.Context, username, passwo
 		return "", err
 	}
 	return string(config), nil
+}
+
+func (cm *ConfigMap) genServer() rest.Config {
+	server := cm.consoleobj.Spec.Server
+	return rest.Config{
+		ServerGracefulShutdownTimeout:   server.ServerGracefulShutdownTimeout.Duration,
+		HTTPListenAddress:               server.HTTPListenAddress,
+		HTTPListenPort:                  server.HTTPListenPort,
+		HTTPServerReadTimeout:           server.HTTPServerReadTimeout.Duration,
+		HTTPServerWriteTimeout:          server.HTTPServerWriteTimeout.Duration,
+		HTTPServerIdleTimeout:           server.HTTPServerIdleTimeout.Duration,
+		CompressionLevel:                server.CompressionLevel,
+		BasePath:                        server.BasePath,
+		SetBasePathFromXForwardedPrefix: server.SetBasePathFromXForwardedPrefix,
+		StripPrefix:                     server.StripPrefix,
+	}
 }
 
 var (

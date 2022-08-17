@@ -74,7 +74,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				Spec: corev1.PodSpec{
 					Volumes:                       d.getVolumes(ss),
 					Containers:                    d.getContainers(),
-					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout),
+					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout.Duration),
 					ServiceAccountName:            sa,
 				},
 			},
@@ -238,13 +238,8 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
 	return secret.GetName(), nil
 }
 
-func getGracePeriod(period string) *int64 {
-	duration, err := time.ParseDuration(period)
-	if err != nil {
-		// Defaults to 30s
-		return nil
-	}
-	gracePeriod := duration.Nanoseconds() / time.Second.Nanoseconds()
+func getGracePeriod(period time.Duration) *int64 {
+	gracePeriod := period.Nanoseconds() / time.Second.Nanoseconds()
 	return &gracePeriod
 }
 

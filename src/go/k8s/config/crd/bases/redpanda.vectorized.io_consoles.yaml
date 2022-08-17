@@ -301,9 +301,11 @@ spec:
                     type: integer
                   gracefulShutdownTimeout:
                     default: 30s
+                    format: duration
                     type: string
                   idleTimeout:
                     default: 30s
+                    format: duration
                     type: string
                   listenAddress:
                     type: string
@@ -312,6 +314,7 @@ spec:
                     type: integer
                   readTimeout:
                     default: 30s
+                    format: duration
                     type: string
                   setBasePathFromXForwardedPrefix:
                     default: true
@@ -321,6 +324,7 @@ spec:
                     type: boolean
                   writeTimeout:
                     default: 30s
+                    format: duration
                     type: string
                 type: object
             required:

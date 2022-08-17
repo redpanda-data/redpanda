@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/banzaicloud/k8s-objectmatcher v1.7.0
+	github.com/cloudhut/common v0.6.0
 	github.com/go-logr/logr v0.4.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jetstack/cert-manager v1.4.4
@@ -42,7 +43,6 @@ require (
 	github.com/basgys/goxml2json v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
-	github.com/cloudhut/common v0.6.0 // indirect
 	github.com/cloudhut/connect-client v0.0.0-20211109055846-c9f53449bdc5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.4.1-0.20201116162257-a2a8dda75c91 // indirect

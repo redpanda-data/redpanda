@@ -36,33 +36,41 @@ type ConsoleSpec struct {
 
 // Server is the Console app HTTP server config
 type Server struct {
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
-	ServerGracefulShutdownTimeout string `json:"gracefulShutdownTimeout,omitempty" yaml:"gracefulShutdownTimeout,omitempty"`
+	ServerGracefulShutdownTimeout *metav1.Duration `json:"gracefulShutdownTimeout,omitempty"`
 
-	HTTPListenAddress string `json:"listenAddress,omitempty" yaml:"listenAddress,omitempty"`
+	HTTPListenAddress string `json:"listenAddress,omitempty"`
 
 	// +kubebuilder:default=8080
-	HTTPListenPort int `json:"listenPort,omitempty" yaml:"listenPort,omitempty"`
+	HTTPListenPort int `json:"listenPort,omitempty"`
 
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
-	HTTPServerReadTimeout string `json:"readTimeout,omitempty" yaml:"readTimeout,omitempty"`
+	HTTPServerReadTimeout *metav1.Duration `json:"readTimeout,omitempty"`
 
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
-	HTTPServerWriteTimeout string `json:"writeTimeout,omitempty" yaml:"writeTimeout,omitempty"`
+	HTTPServerWriteTimeout *metav1.Duration `json:"writeTimeout,omitempty"`
 
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
-	HTTPServerIdleTimeout string `json:"idleTimeout,omitempty" yaml:"idleTimeout,omitempty"`
+	HTTPServerIdleTimeout *metav1.Duration `json:"idleTimeout,omitempty"`
 
 	// +kubebuilder:default=4
-	CompressionLevel int `json:"compressionLevel,omitempty" yaml:"compressionLevel,omitempty"`
+	CompressionLevel int `json:"compressionLevel,omitempty"`
 
-	BasePath string `json:"basePath,omitempty" yaml:"basePath,omitempty"`
-
-	// +kubebuilder:default=true
-	SetBasePathFromXForwardedPrefix bool `json:"setBasePathFromXForwardedPrefix,omitempty" yaml:"setBasePathFromXForwardedPrefix,omitempty"`
+	BasePath string `json:"basePath,omitempty"`
 
 	// +kubebuilder:default=true
-	StripPrefix bool `json:"stripPrefix,omitempty" yaml:"stripPrefix,omitempty"`
+	SetBasePathFromXForwardedPrefix bool `json:"setBasePathFromXForwardedPrefix,omitempty"`
+
+	// +kubebuilder:default=true
+	StripPrefix bool `json:"stripPrefix,omitempty"`
 }
 
 // Schema defines configurable fields for Schema Registry
