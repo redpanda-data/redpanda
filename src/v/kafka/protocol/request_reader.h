@@ -247,4 +247,6 @@ private:
     iobuf_parser _parser;
 };
 
+ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>&);
+
 } // namespace kafka
