@@ -329,7 +329,10 @@ class FranzGoVerifiableProducer(FranzGoVerifiableService):
                     self._status = ProduceStatus(data['Sent'], data['Acked'],
                                                  data['BadOffsets'],
                                                  data['Restarts'])
-                    self.logger.info(str(self._status))
+                    progress = (data['Sent'] / float(self._msg_count))
+                    self.logger.info(
+                        f"Producer progress: {progress*100:.2f}% {self._status}"
+                    )
                 else:
                     self.logger.debug(line)
 

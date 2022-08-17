@@ -755,7 +755,7 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
       clusterlog.info,
       "Leadership transfer of group {} failed with error: {}",
       transfer.group,
-      raft::make_error_code(res.value().result));
+      raft::make_error_code(res.value().result).message());
 
     co_return false;
 }
