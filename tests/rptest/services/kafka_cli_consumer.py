@@ -73,10 +73,6 @@ class KafkaCliConsumer(BackgroundThreadService):
                 line.strip()
                 self.logger.debug(f"consumed: '{line}'")
                 self._messages.append(line)
-
-                if self._stopping.is_set():
-                    break
-
         except:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown

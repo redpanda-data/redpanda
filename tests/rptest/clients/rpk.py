@@ -656,7 +656,7 @@ class RpkTool:
         Run `rpk cluster maintenance status` and return the parsed results.
         """
         def parse(line):
-            if line.startswith("Request error"):
+            if line.startswith("Request error") or not line.strip():
                 # RPK may print messages about request errors, which it internally
                 # retries.  Drop these lines.
                 return None

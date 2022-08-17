@@ -577,6 +577,10 @@ class RedpandaService(Service):
 
         self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
+        # Each time we start a node and write out its node_config (redpanda.yaml),
+        # stash a copy here so that we can quickly look up e.g. addresses later.
+        self._node_configs = {}
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -1499,6 +1503,8 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.NODE_CONFIG_FILE, conf)
 
+        self._node_configs[node] = yaml.full_load(conf)
+
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
         if self._extra_rp_conf:
@@ -1736,7 +1742,7 @@ class RedpandaService(Service):
 
     def broker_address(self, node):
         assert node in self._started
-        cfg = self.read_configuration(node)
+        cfg = self._node_configs[node]
         return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def admin_endpoint(self, node):
@@ -1825,12 +1831,6 @@ class RedpandaService(Service):
         if not sample_values:
             return None
         return MetricSamples(sample_values)
-
-    def read_configuration(self, node):
-        assert node in self._started
-        with self.config_file_lock:
-            with node.account.open(RedpandaService.NODE_CONFIG_FILE) as f:
-                return yaml.full_load(f.read())
 
     def shards(self):
         """
