@@ -15,7 +15,7 @@ on:
 jobs:
   helm-release:
     runs-on: ubuntu-20.04
-    container: quay.io/helmpack/chart-releaser:v1.2.0
+    container: quay.io/helmpack/chart-releaser:v1.4.0
     steps:
 
     - name: Install Git
@@ -50,4 +50,4 @@ jobs:
     - name: Update index
       if: contains(github.event.release.tag_name, '-beta') == false
       run: |
-        cr index -o vectorizedio -r redpanda -c https://charts.vectorized.io/ -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
+        cr index -o vectorizedio -r redpanda -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
