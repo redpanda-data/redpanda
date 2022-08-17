@@ -25,6 +25,7 @@ v_cc_library(
   NAME kafka_protocol
   SRCS
     errors.cc
+    logger.cc
     ${message_srcs}
   COPTS
     "-Wno-unused-lambda-capture"

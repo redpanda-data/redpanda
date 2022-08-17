@@ -56,7 +56,6 @@ v_cc_library(
     server/protocol.cc
     server/protocol_utils.cc
     server/flex_versions.cc
-    server/logger.cc
     server/quota_manager.cc
     server/fetch_session_cache.cc
     server/replicated_partition.cc
