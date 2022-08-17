@@ -26,6 +26,7 @@ v_cc_library(
   SRCS
     errors.cc
     logger.cc
+    flex_versions.cc
     ${message_srcs}
   COPTS
     "-Wno-unused-lambda-capture"
@@ -33,6 +34,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
+    v::s3 # a header mess and needs some boost flags
     absl::flat_hash_map
     absl::flat_hash_set
 )

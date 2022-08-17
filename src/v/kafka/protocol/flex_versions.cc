@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/server/flex_versions.h"
+#include "kafka/protocol/flex_versions.h"
 
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/handlers.h"
@@ -47,6 +47,44 @@ bool flex_versions::is_api_in_schema(api_key key) noexcept {
     }
     const api_version first_flex_version = g_flex_mapping[key()];
     return first_flex_version != invalid_api;
+}
+
+ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+parse_tags(ss::input_stream<char>& src) {
+    size_t total_bytes_read = 0;
+    auto read_unsigned_vint =
+      [](size_t& total_bytes_read, ss::input_stream<char>& src) {
+          return unsigned_vint::stream_deserialize(src).then(
+            [&total_bytes_read](std::pair<uint32_t, size_t> pair) {
+                auto& [n, bytes_read] = pair;
+                total_bytes_read += bytes_read;
+                return n;
+            });
+      };
+
+    auto num_tags = co_await read_unsigned_vint(total_bytes_read, src);
+    if (num_tags == 0) {
+        /// In the likely event that no tags are parsed as headers, return
+        /// nullopt instead of an empty vector to reduce the memory overhead
+        /// (that will never be used) per request
+        co_return std::make_pair(std::nullopt, total_bytes_read);
+    }
+
+    tagged_fields::type tags;
+    while (num_tags-- > 0) {
+        auto id = co_await read_unsigned_vint(total_bytes_read, src);
+        auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
+        auto buf = co_await src.read_exactly(next_len);
+        auto data = ss::uninitialized_string<bytes>(buf.size());
+        std::copy_n(buf.begin(), buf.size(), data.begin());
+        total_bytes_read += next_len;
+        auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
+        if (!succeded) {
+            throw std::logic_error(
+              fmt::format("Protocol error, duplicate tag id detected, {}", id));
+        }
+    }
+    co_return std::make_pair(std::move(tags), total_bytes_read);
 }
 
 } // namespace kafka

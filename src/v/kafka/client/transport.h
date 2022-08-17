@@ -12,8 +12,8 @@
 #pragma once
 
 #include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
-#include "kafka/server/flex_versions.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
 #include "net/transport.h"
