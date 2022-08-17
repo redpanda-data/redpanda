@@ -45,8 +45,12 @@ class TestReadReplicaService(EndToEndTest):
         cloud_storage_readreplica_manifest_sync_timeout_ms=500,
         cloud_storage_segment_max_upload_interval_sec=5)
 
-    # Read reaplica should have a different bucket
+    # Read reaplica shouldn't have it's own bucket.
+    # We're adding 'none' as a bucket name without creating
+    # an actual bucket with such name.
     rr_settings = SISettings(
+        cloud_storage_bucket='none',
+        bypass_bucket_creation=True,
         cloud_storage_reconciliation_interval_ms=500,
         cloud_storage_max_connections=5,
         log_segment_size=log_segment_size,
