@@ -1396,10 +1396,16 @@ void disk_log_impl::wrote_stm_bytes(size_t byte_size) {
 storage_resources& disk_log_impl::resources() { return _manager.resources(); }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{offsets:" << offsets()
-             << ", max_collectible_offset: " << _max_collectible_offset
-             << ", closed:" << _closed << ", config:" << config()
-             << ", logs:" << _segs << "}";
+    fmt::print(
+      o,
+      "{{offsets: {}, max_collectible_offset: {}, is_closed: {}, segments: "
+      "[{}], config: {}}}",
+      offsets(),
+      _max_collectible_offset,
+      _closed,
+      _segs,
+      config());
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
