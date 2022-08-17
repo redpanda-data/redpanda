@@ -44,6 +44,7 @@
 
 #include <fmt/format.h>
 
+#include <exception>
 #include <iterator>
 #include <optional>
 #include <sstream>
@@ -1117,91 +1118,79 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 
 ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     auto stats = offsets();
-    if (cfg.base_offset > stats.dirty_offset) {
-        return ss::make_ready_future<>();
+
+    if (cfg.base_offset > stats.dirty_offset || _segs.empty()) {
+        co_return;
     }
-    if (_segs.empty()) {
-        return ss::make_ready_future<>();
-    }
+
     cfg.base_offset = std::max(cfg.base_offset, _start_offset);
     // Note different from the stats variable above because
     // we want to delete even empty segments.
     if (
       cfg.base_offset
       < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
-        return remove_full_segments(cfg.base_offset).then([this, cfg] {
-            // recurse
-            return do_truncate(cfg);
-        });
+        co_await remove_full_segments(cfg.base_offset);
+        // recurse
+        co_return co_await do_truncate(cfg);
     }
-    auto& last = *_segs.back();
-    if (cfg.base_offset > last.offsets().dirty_offset) {
-        return ss::make_ready_future<>();
+    auto last = _segs.back();
+    if (cfg.base_offset > last->offsets().dirty_offset) {
+        co_return;
     }
-    auto pidx = last.index().find_nearest(cfg.base_offset);
-    model::offset start = last.index().base_offset();
+
+    co_await last->flush();
+
+    auto pidx = last->index().find_nearest(cfg.base_offset);
+    model::offset start = last->index().base_offset();
     size_t initial_size = 0;
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
-    return last.flush()
-      .then([this, cfg, start, initial_size] {
-          // an unchecked reader is created which does not enforce the logical
-          // starting offset. this is needed because we really do want to read
-          // all the data in the segment to find the correct physical offset.
-          return make_unchecked_reader(
-                   log_reader_config(start, cfg.base_offset, cfg.prio))
-            .then([cfg, initial_size](model::record_batch_reader reader) {
-                return std::move(reader).consume(
-                  internal::offset_to_filepos_consumer(
-                    cfg.base_offset, initial_size),
-                  model::no_timeout);
-            });
-      })
-      .then(
-        [this, cfg, pidx](std::optional<std::pair<model::offset, size_t>> phs) {
-            if (!phs) {
-                return ss::make_exception_future<>(
-                  std::runtime_error(fmt_with_ctx(
-                    fmt::format,
-                    "User asked to truncate at:{}, with initial physical "
-                    "position of:{}, but internal::offset_to_filepos_consumer "
-                    "could not translate physical offsets. Log state: {}",
-                    cfg,
-                    pidx,
-                    *this)));
-            }
-            auto [prev_last_offset, file_position] = phs.value();
-            auto last = _segs.back();
-            if (file_position == 0) {
-                _segs.pop_back();
-                return remove_segment_permanently(
-                  last, "truncate[post-translation]");
-            }
-            _probe.remove_partition_bytes(last->size_bytes() - file_position);
-            return _readers_cache->evict_truncate(cfg.base_offset)
-              .then([this,
-                     prev_last_offset = prev_last_offset,
-                     file_position = file_position,
-                     last,
-                     phs](readers_cache::range_lock_holder cache_lock) {
-                  return last->truncate(prev_last_offset, file_position)
-                    .handle_exception([last, phs, this](std::exception_ptr e) {
-                        vassert(
-                          false,
-                          "Could not truncate:{} logical max:{}, physical "
-                          "offset:{} on "
-                          "segment:{} - log:{}",
-                          e,
-                          phs->first,
-                          phs->second,
-                          last,
-                          *this);
-                    })
-                    .finally([cache_lock = std::move(cache_lock)] {});
-              });
-        });
+
+    // an unchecked reader is created which does not enforce the logical
+    // starting offset. this is needed because we really do want to read
+    // all the data in the segment to find the correct physical offset.
+    auto reader = co_await make_unchecked_reader(
+      log_reader_config(start, cfg.base_offset, cfg.prio));
+    auto phs = co_await std::move(reader).consume(
+      internal::offset_to_filepos_consumer(cfg.base_offset, initial_size),
+      model::no_timeout);
+
+    if (!phs) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "User asked to truncate at:{}, with initial physical "
+          "position of:{}, but internal::offset_to_filepos_consumer "
+          "could not translate physical offsets. Log state: {}",
+          cfg,
+          pidx,
+          *this));
+    }
+    auto [prev_last_offset, file_position] = phs.value();
+    auto last_ptr = _segs.back();
+
+    if (file_position == 0) {
+        _segs.pop_back();
+        co_return co_await remove_segment_permanently(
+          last_ptr, "truncate[post-translation]");
+    }
+    _probe.remove_partition_bytes(last_ptr->size_bytes() - file_position);
+    auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
+
+    try {
+        co_return co_await last_ptr->truncate(prev_last_offset, file_position);
+    } catch (...) {
+        vassert(
+          false,
+          "Could not truncate:{} logical max:{}, physical "
+          "offset:{} on segment:{} - log:{}",
+          std::current_exception(),
+          phs->first,
+          phs->second,
+          last,
+          *this);
+    }
 }
 
 model::offset disk_log_impl::read_start_offset() const {
