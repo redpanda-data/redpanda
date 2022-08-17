@@ -1139,23 +1139,36 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     }
 
     co_await last->flush();
+    /**
+     * We look for the offset preceding the the requested truncation offset.
+     *
+     * This guarantee that the offset to file position translating consumer will
+     * see at least one batch that precedes the truncation point. This will
+     * allow establishing correct dirty offset after truncation.
+     */
 
-    auto pidx = last->index().find_nearest(cfg.base_offset);
-    model::offset start = last->index().base_offset();
+    // if no offset is found in an index we will start from the segment base
+    // offset
+    model::offset start = last->offsets().base_offset;
+
+    auto pidx = last->index().find_nearest(
+      std::max(start, model::prev_offset(cfg.base_offset)));
     size_t initial_size = 0;
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
+
     auto initial_generation_id = last->get_generation_id();
 
     // an unchecked reader is created which does not enforce the logical
     // starting offset. this is needed because we really do want to read
     // all the data in the segment to find the correct physical offset.
     auto reader = co_await make_unchecked_reader(
-      log_reader_config(start, cfg.base_offset, cfg.prio));
+      log_reader_config(start, model::offset::max(), cfg.prio));
     auto phs = co_await std::move(reader).consume(
-      internal::offset_to_filepos_consumer(cfg.base_offset, initial_size),
+      internal::offset_to_filepos_consumer(
+        start, cfg.base_offset, initial_size),
       model::no_timeout);
     auto last_ptr = _segs.back();
 
@@ -1175,10 +1188,12 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "User asked to truncate at:{}, with initial physical "
-          "position of:{}, but internal::offset_to_filepos_consumer "
+          "position of: {{offset: {}, pos: {}}}, but "
+          "internal::offset_to_filepos_consumer "
           "could not translate physical offsets. Log state: {}",
           cfg,
-          pidx,
+          start,
+          initial_size,
           *this));
     }
     auto [prev_last_offset, file_position] = phs.value();
