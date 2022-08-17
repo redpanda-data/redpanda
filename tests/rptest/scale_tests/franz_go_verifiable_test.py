@@ -85,9 +85,7 @@ class KgoVerifierTest(KgoVerifierBase):
 
         # Don't start consumers until the producer has written out its first
         # checkpoint with valid ranges.
-        wait_until(lambda: self._producer.produce_status.acked > 0,
-                   timeout_sec=30,
-                   backoff_sec=0.1)
+        self._producer.wait_for_offset_map()
         wrote_at_least = self._producer.produce_status.acked
 
         for consumer in self._consumers:
@@ -100,7 +98,7 @@ class KgoVerifierTest(KgoVerifierBase):
             consumer.wait()
 
         assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.validator.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
 
@@ -158,22 +156,17 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
         self._producer.start(clean=False)
 
-        # Don't start consumers until the producer has written out its first
-        # checkpoint with valid ranges.
-        wait_until(lambda: self._producer.produce_status.acked > 0,
-                   timeout_sec=30,
-                   backoff_sec=5.0)
+        # Once we've written a lot of data, check that some of it showed up in S3
+        self._producer.wait_for_acks(10000, timeout_sec=300, backoff_sec=5)
 
-        # nce we've written a lot of data, check that some of it showed up in S3
-        wait_until(lambda: self._producer.produce_status.acked > 10000,
-                   timeout_sec=300,
-                   backoff_sec=5)
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
         wrote_at_least = self._producer.produce_status.acked
+
+        self._producer.wait_for_offset_map()
         for consumer in self._consumers:
             consumer.start(clean=False)
 
@@ -187,7 +180,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
             consumer.wait()
 
         assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.validator.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
     @skip_debug_mode
