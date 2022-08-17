@@ -315,16 +315,4 @@ std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
     return os << "unknown type";
 }
 
-std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
-    switch (s) {
-    case describe_configs_source::topic:
-        return os << "{topic}";
-    case describe_configs_source::static_broker_config:
-        return os << "{static_broker_config}";
-    case describe_configs_source::default_config:
-        return os << "{default_config}";
-    }
-    return os << "{unknown type}";
-}
-
 } // namespace kafka
