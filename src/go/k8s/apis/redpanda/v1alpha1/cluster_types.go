@@ -802,6 +802,8 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 // SchemaRegistryAPIURL returns a SchemaRegistry URL string.
 // It returns internal URL unless externally available with TLS.
 func (r *Cluster) SchemaRegistryAPIURL() string {
+	// Prefer to use internal URL
+	// But if it is externally available with TLS, we cannot call internal URL without TLS and the TLS certs are signed for external URL
 	host := r.Status.Nodes.SchemaRegistry.Internal
 	if r.IsSchemaRegistryExternallyAvailable() && r.IsSchemaRegistryTLSEnabled() {
 		host = r.Status.Nodes.SchemaRegistry.External
