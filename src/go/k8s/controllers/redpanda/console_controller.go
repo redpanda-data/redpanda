@@ -197,6 +197,8 @@ func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cl
 // handleSpecChange is a hook to call before Reconciling
 func (r *ConsoleReconciler) handleSpecChange(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) error {
 	if console.Status.ConfigMapRef != nil {
+		// We are creating new ConfigMap for every spec change so Deployment can detect changes and redeploy Pods
+		// Unset Status.ConfigMapRef so we can delete the previous unused ConfigMap
 		console.Status.ConfigMapRef = nil
 		if err := r.Status().Update(ctx, console); err != nil {
 			return err
