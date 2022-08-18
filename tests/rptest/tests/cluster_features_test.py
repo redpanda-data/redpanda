@@ -34,9 +34,9 @@ class FeaturesTestBase(RedpandaTest):
     Test cases defined in this parent class are executed as part
     of subclasses that define node count below.
     """
-    def _get_features_map(self, feature_response=None):
+    def _get_features_map(self, feature_response=None, node=None):
         if feature_response is None:
-            feature_response = self.admin.get_features()
+            feature_response = self.admin.get_features(node=node)
         return dict((f['name'], f) for f in feature_response['features'])
 
     def _assert_default_features(self):
@@ -74,6 +74,40 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
     def test_get_features(self):
         self._assert_default_features()
 
+    def _wait_for_feature_everywhere(self, fn):
+        """
+        Apply a GET check to all nodes, for writes that are expected to
+        propagate via controller log
+        """
+        def check():
+            for node in self.redpanda.nodes:
+                feature_map = self._get_features_map(node=node)
+                if not fn(feature_map):
+                    return False
+
+            return True
+
+        # Controller writes usually propagate in milliseconds, so this is not
+        # a particularly long timeout: it's here for when tests run very slow.
+        wait_until(check, timeout_sec=10, backoff_sec=0.5)
+
+    def _wait_for_version_everywhere(self, version):
+        """
+        Apply a GET check to all nodes, for writes that are expected to
+        propagate via controller log
+        """
+        def check():
+            for node in self.redpanda.nodes:
+                version = self.admin.get_features(node=node)['cluster_version']
+                if version != version:
+                    return False
+
+            return True
+
+        # Version propagation is a little slower than feature write propagation, because
+        # it relies on periodic health messages
+        wait_until(check, timeout_sec=20, backoff_sec=1)
+
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_explicit_activation(self):
         """
@@ -109,22 +143,18 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Wait for version to increment: this is a little slow because we wait
         # for health monitor structures to time out in order to propagate the
         # updated version
-        wait_until(lambda: feature_alpha_version == self.admin.get_features()[
-            'cluster_version'],
-                   timeout_sec=15,
-                   backoff_sec=1)
+        self._wait_for_version_everywhere(feature_alpha_version)
 
         # Feature should become available now that version increased.  It should NOT
         # become active, because it has an explicit_only policy for activation.
-        assert self._get_features_map(
-        )[feature_alpha_name]['state'] == 'available'
+        self._wait_for_feature_everywhere(
+            lambda fm: fm[feature_alpha_name]['state'] == 'available')
 
         # Disable the feature, see that it enters the expected state
         self.admin.put_feature(feature_alpha_name, {"state": "disabled"})
-        wait_until(lambda: self._get_features_map()[feature_alpha_name][
-            'state'] == 'disabled',
-                   timeout_sec=5,
-                   backoff_sec=1)
+        self._wait_for_feature_everywhere(
+            lambda fm: fm[feature_alpha_name]['state'] == 'disabled')
+
         state = self._get_features_map()[feature_alpha_name]
         assert state['state'] == 'disabled'
         assert state['was_active'] == False
@@ -133,17 +163,14 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         self.admin.put_feature(feature_alpha_name, {"state": "active"})
 
         # This is an async check because propagation of feature_table is async
-        wait_until(lambda: self._get_features_map()[feature_alpha_name][
-            'state'] == 'active',
-                   timeout_sec=5,
-                   backoff_sec=1)
+        self._wait_for_feature_everywhere(
+            lambda fm: fm[feature_alpha_name]['state'] == 'active')
 
         # Disable the feature, see that it enters the expected state
         self.admin.put_feature(feature_alpha_name, {"state": "disabled"})
-        wait_until(lambda: self._get_features_map()[feature_alpha_name][
-            'state'] == 'disabled',
-                   timeout_sec=5,
-                   backoff_sec=1)
+        self._wait_for_feature_everywhere(
+            lambda fm: fm[feature_alpha_name]['state'] == 'disabled')
+
         state = self._get_features_map()[feature_alpha_name]
         assert state['state'] == 'disabled'
         assert state['was_active'] == True
