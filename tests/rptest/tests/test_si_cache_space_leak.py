@@ -108,11 +108,6 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         self._consumer.start(clean=False)
 
         self._producer.wait()
-        self._consumer.shutdown()
-        self._consumer.wait()
-
-        assert self._producer.produce_status.acked >= num_messages
-        assert self._consumer.consumer_status.total_reads == num_read * concurrency
 
         # Verify that all files in cache are being closed
         def cache_files_closed():
@@ -132,6 +127,18 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                 files = self.redpanda.lsof_node(node)
                 files_count += sum(1 for f in files if is_cache_file(f))
             return files_count == 0
+
+        # Reader should eventually trigger some SI cache reads when
+        # retention settings evict segment from local disk.
+        wait_until(lambda: not cache_files_closed(),
+                   timeout_sec=30,
+                   backoff_sec=5)
+
+        self._consumer.shutdown()
+        self._consumer.wait()
+
+        assert self._producer.produce_status.acked >= num_messages
+        assert self._consumer.consumer_status.total_reads == num_read * concurrency
 
         assert cache_files_closed() == False
         # Wait until all files are closed. The SI evicts all unused segments
