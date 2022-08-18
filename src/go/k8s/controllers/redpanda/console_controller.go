@@ -69,6 +69,13 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, err
 	}
+	// Checks if Console is valid to be created in specified namespace
+	// TODO: This should be in validating webhook once finalized if syncing Secret must be done
+	if !console.IsAnyNamespace() {
+		err := fmt.Errorf("invalid Console namespace")
+		log.Error(err, "Console must be created in Redpanda namespace. Set --allow-console-any-ns=true to enable")
+		return ctrl.Result{}, err
+	}
 
 	cluster := &redpandav1alpha1.Cluster{}
 	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {

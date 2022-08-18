@@ -184,6 +184,16 @@ func (c *Console) GenerationMatchesObserved() bool {
 	return c.GetGeneration() == c.Status.ObservedGeneration
 }
 
+// AllowConsoleAnyNamespace operator flag to control creating Console in any namespace aside from Redpanda namespace
+// Console needs SchemaRegistry TLS certs Secret, if enabled this flag copies Secrets from Redpanda namespace to Console local namespace
+// Secret syncing across namespaces might not be ideal especially for multi-tenant K8s clusters
+var AllowConsoleAnyNamespace bool
+
+// IsAnyNamespace returns true if Console is valid to be created in current namespace
+func (c *Console) IsAnyNamespace() bool {
+	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterKeyRef.Namespace
+}
+
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
