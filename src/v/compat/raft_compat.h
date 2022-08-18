@@ -447,9 +447,9 @@ struct compat_check<raft::heartbeat_request> {
     }
 
     static raft::heartbeat_request from_json(json::Value& rd) {
-        raft::heartbeat_request obj;
-        json_read(heartbeats);
-        return obj;
+        std::vector<raft::heartbeat_metadata> hb;
+        json::read_value(rd, hb);
+        return raft::heartbeat_request{std::move(hb)};
     }
 
     static std::vector<compat_binary> to_binary(raft::heartbeat_request obj) {

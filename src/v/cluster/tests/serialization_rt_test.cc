@@ -1989,7 +1989,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        raft::heartbeat_request data;
+        std::vector<raft::heartbeat_metadata> heartbeats;
 
         // heartbeat request uses the first node/target_node for all of the
         // heartbeat meatdata entries. so here we arrange for that to be true in
@@ -2013,8 +2013,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .target_node_id = raft::
                 vnode{target_node_id, tests::random_named_int<model::revision_id>()},
             };
-            data.heartbeats.push_back(hm);
+            heartbeats.push_back(hm);
         }
+
+        raft::heartbeat_request data(std::move(heartbeats));
 
         // encoder will sort automatically. so for equality to work as expected
         // we use the same sorting for the input as the expected output.

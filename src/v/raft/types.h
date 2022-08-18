@@ -354,7 +354,6 @@ struct heartbeat_request
   : serde::envelope<heartbeat_request, serde::version<0>> {
     std::vector<heartbeat_metadata> heartbeats;
 
-    heartbeat_request() noexcept = default;
     explicit heartbeat_request(std::vector<heartbeat_metadata> heartbeats)
       : heartbeats(std::move(heartbeats)) {}
 
@@ -365,7 +364,8 @@ struct heartbeat_request
       = default;
 
     ss::future<> serde_async_write(iobuf& out);
-    void serde_read(iobuf_parser&, const serde::header&);
+    static heartbeat_request
+    serde_direct_read(iobuf_parser& in, size_t bytes_left_limit);
 };
 
 struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {

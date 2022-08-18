@@ -325,19 +325,18 @@ ss::future<> heartbeat_request::serde_async_write(iobuf& dst) {
     write(dst, std::move(out));
 }
 
-void heartbeat_request::serde_read(
-  iobuf_parser& src, const serde::header& hdr) {
+heartbeat_request heartbeat_request::serde_direct_read(
+  iobuf_parser& src, size_t bytes_left_limit) {
     using serde::read_nested;
-    auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
+    auto tmp = read_nested<iobuf>(src, bytes_left_limit);
     iobuf_parser in(std::move(tmp));
 
-    auto& req = *this;
     auto node_id = read_nested<model::node_id>(in, 0U);
     auto target_node = read_nested<model::node_id>(in, 0U);
-    req.heartbeats = std::vector<raft::heartbeat_metadata>(
-      read_nested<uint32_t>(in, 0U));
+    heartbeat_request req{
+      std::vector<raft::heartbeat_metadata>(read_nested<uint32_t>(in, 0U))};
     if (req.heartbeats.empty()) {
-        return;
+        return req;
     }
     const size_t max = req.heartbeats.size();
     req.heartbeats[0].meta.group = varlong_reader<raft::group_id>(in);
@@ -406,6 +405,7 @@ void heartbeat_request::serde_read(
         hb.target_node_id = raft::vnode(
           hb.target_node_id.id(), decode_signed(hb.target_node_id.revision()));
     }
+    return req;
 }
 
 void heartbeat_reply::serde_write(iobuf& dst) {
@@ -746,11 +746,10 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
 
 ss::future<raft::heartbeat_request>
 async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
-    raft::heartbeat_request req;
     auto node_id = adl<model::node_id>{}.from(in);
     auto target_node = adl<model::node_id>{}.from(in);
-    req.heartbeats = std::vector<raft::heartbeat_metadata>(
-      adl<uint32_t>{}.from(in));
+    raft::heartbeat_request req(
+      std::vector<raft::heartbeat_metadata>(adl<uint32_t>{}.from(in)));
     if (req.heartbeats.empty()) {
         return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
     }

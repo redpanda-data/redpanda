@@ -120,8 +120,7 @@ model::broker create_test_broker() {
 
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
     static constexpr int64_t one_k = 1'000;
-    raft::heartbeat_request req;
-    req.heartbeats = std::vector<raft::heartbeat_metadata>(one_k);
+    raft::heartbeat_request req{std::vector<raft::heartbeat_metadata>(one_k)};
     for (int64_t i = 0; i < one_k; ++i) {
         req.heartbeats[i].node_id = raft::vnode(
           model::node_id(one_k), model::revision_id(i));
@@ -166,9 +165,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
 }
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
     static constexpr int64_t one_k = 10;
-    raft::heartbeat_request req;
-
-    req.heartbeats = std::vector<raft::heartbeat_metadata>(one_k);
+    raft::heartbeat_request req{std::vector<raft::heartbeat_metadata>(one_k)};
     for (int64_t i = 0; i < one_k; ++i) {
         req.heartbeats[i].target_node_id = raft::vnode(
           model::node_id(0), model::revision_id(-i - 100));
