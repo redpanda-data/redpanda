@@ -1,16 +1,17 @@
 import collections
+import json
+import pprint
+import random
 import struct
 from collections import defaultdict, namedtuple
 from typing import Sequence
 
+import confluent_kafka
 import xxhash
 
-from rptest.archival.s3_client import S3ObjectMetadata
+from rptest.archival.s3_client import S3ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-
-import confluent_kafka
-import random
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -317,3 +318,64 @@ class Producer:
         else:
             self.producer.commit_transaction()
             self.keys.extend(keys)
+
+
+class S3View:
+    def __init__(self, expected_topics: Sequence[TopicSpec], client: S3Client,
+                 bucket: str, logger):
+        self.logger = logger
+        self.bucket = bucket
+        self.client = client
+        self.expected_topics = expected_topics
+        self.path_matcher = PathMatcher(self.expected_topics)
+        self.objects = self.client.list_objects(self.bucket)
+        self.partition_manifests = {}
+        for o in self.objects:
+            if self.path_matcher.is_partition_manifest(o):
+                manifest_path = parse_s3_manifest_path(o.Key)
+                data = self.client.get_object_data(self.bucket, o.Key)
+                self.partition_manifests[manifest_path.ntp] = json.loads(data)
+                self.logger.debug(
+                    f'registered partition manifest for {manifest_path.ntp}: '
+                    f'{pprint.pformat(self.partition_manifests[manifest_path.ntp], indent=2)}'
+                )
+
+    def is_segment_part_of_a_manifest(self, o: S3ObjectMetadata) -> bool:
+        """
+        Queries that given object is a segment, and is a part of one of the test partition manifests
+        with a matching archiver term
+        """
+        try:
+            if not self.path_matcher.is_segment(o):
+                return False
+
+            segment_path = parse_s3_segment_path(o.Key)
+            partition_manifest = self.partition_manifests.get(segment_path.ntp)
+            if not partition_manifest:
+                self.logger.warn(f'no manifest found for {segment_path.ntp}')
+                return False
+            segments_in_manifest = partition_manifest['segments']
+
+            # Filename for segment contains the archiver term, eg:
+            # 4886-1-v1.log.2 -> 4886-1-v1.log and 2
+            base_name, archiver_term = segment_path.name.rsplit('.', 1)
+            segment_entry = segments_in_manifest.get(base_name)
+            if not segment_entry:
+                self.logger.warn(
+                    f'no entry found for segment path {base_name} '
+                    f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
+                )
+                return False
+
+            # Archiver term should match the value in partition manifest
+            manifest_archiver_term = str(segment_entry['archiver_term'])
+            if archiver_term == manifest_archiver_term:
+                return True
+
+            self.logger.warn(
+                f'{segment_path} has archiver term {archiver_term} '
+                f'which does not match manifest term {manifest_archiver_term}')
+            return False
+        except Exception as e:
+            self.logger.info(f'error {e} while checking if {o} is a segment')
+            return False
