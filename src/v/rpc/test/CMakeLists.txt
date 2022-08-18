@@ -13,6 +13,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
 
+rpcgen(
+  TARGET echo_v2_gen
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/echo_v2_service.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/echo_v2_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+  )
+
 v_cc_library(
   NAME
     rpc_testing
@@ -20,6 +27,7 @@ v_cc_library(
     "test/rpc_integration_fixture.h"
   DEPS
     echo_gen
+    echo_v2_gen
     cycling_gen
   )
 
