@@ -74,12 +74,6 @@ topic_properties::get_ntp_cfg_overrides() const {
     return ret;
 }
 
-topic_configuration::topic_configuration(
-  model::ns n, model::topic t, int32_t count, int16_t rf)
-  : tp_ns(std::move(n), std::move(t))
-  , partition_count(count)
-  , replication_factor(rf) {}
-
 storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir,
   model::partition_id p_id,

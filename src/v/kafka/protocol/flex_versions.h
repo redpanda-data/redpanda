@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #pragma once
+#include "kafka/protocol/types.h"
 #include "kafka/types.h"
 
 namespace kafka {
@@ -35,4 +36,8 @@ public:
      */
     static bool is_api_in_schema(api_key key) noexcept;
 };
+
+ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+parse_tags(ss::input_stream<char>&);
+
 } // namespace kafka

@@ -53,6 +53,7 @@
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster.json.h"
+#include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/debug.json.h"
 #include "redpanda/admin/api-doc/features.json.h"

@@ -156,7 +156,17 @@ enum class config_resource_type : int8_t {
     broker_logger = 8,
 };
 
-std::ostream& operator<<(std::ostream& os, config_resource_type);
+inline std::ostream& operator<<(std::ostream& os, config_resource_type t) {
+    switch (t) {
+    case config_resource_type::topic:
+        return os << "{topic}";
+    case config_resource_type::broker:
+        [[fallthrough]];
+    case config_resource_type::broker_logger:
+        break;
+    }
+    return os << "{unknown type}";
+}
 
 enum class config_resource_operation : int8_t {
     set = 0,
@@ -183,7 +193,17 @@ enum class describe_configs_source : int8_t {
     // DYNAMIC_BROKER_LOGGER_CONFIG((byte) 6);
 };
 
-std::ostream& operator<<(std::ostream& os, describe_configs_source);
+inline std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
+    switch (s) {
+    case describe_configs_source::topic:
+        return os << "{topic}";
+    case describe_configs_source::static_broker_config:
+        return os << "{static_broker_config}";
+    case describe_configs_source::default_config:
+        return os << "{default_config}";
+    }
+    return os << "{unknown type}";
+}
 
 /// \brief A protocol configuration supported by a group member.
 ///

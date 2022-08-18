@@ -1256,7 +1256,10 @@ struct topic_configuration
       model::ns ns,
       model::topic topic,
       int32_t partition_count,
-      int16_t replication_factor);
+      int16_t replication_factor)
+      : tp_ns(std::move(ns), std::move(topic))
+      , partition_count(partition_count)
+      , replication_factor(replication_factor) {}
 
     topic_configuration() = default;
 
