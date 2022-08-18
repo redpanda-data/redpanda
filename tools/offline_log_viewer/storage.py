@@ -219,6 +219,9 @@ class Batch:
             return Batch(index, header, data)
         assert len(data) == 0
 
+    def __len__(self):
+        return self.header.record_count
+
     def __iter__(self):
         return RecordIter(self.header.record_count, self.records)
 

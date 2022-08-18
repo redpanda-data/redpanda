@@ -5,6 +5,7 @@ from os.path import join
 
 from controller import ControllerLog
 from consumer_groups import GroupsLog
+from tx_coordinator import TxLog
 
 from storage import Store
 from kvstore import KvStore
@@ -54,6 +55,15 @@ def print_groups(store):
     logger.info("")
 
 
+def print_tx_coordinator(store):
+    for ntp in store.ntps:
+        if ntp.nspace == "kafka_internal" and ntp.topic == "tx":
+            l = TxLog(ntp)
+            for result in l.decode():
+                logger.info(json.dumps(result, indent=2))
+    logger.info("")
+
+
 def validate_path(path):
     if not os.path.exists(path):
         logger.error(f"Path doesn't exist {path}")
@@ -74,6 +84,13 @@ def validate_topic(path, topic):
             sys.exit(1)
 
 
+def validate_tx_coordinator(path):
+    tx = join(path, "kafka_internal", "tx")
+    if not os.path.exists(tx):
+        logger.error(f"tx coordinator dir {tx} doesn't exist")
+        sys.exit(1)
+
+
 def main():
     import argparse
 
@@ -87,7 +104,7 @@ def main():
                             type=str,
                             choices=[
                                 'controller', 'kvstore', 'kafka', 'group',
-                                'kafka_records'
+                                'kafka_records', 'tx_coordinator'
                             ],
                             required=True,
                             help='operation to execute')
@@ -122,6 +139,9 @@ def main():
         print_kafka(store, options.topic, headers_only=False)
     elif options.type == "group":
         print_groups(store)
+    elif options.type == "tx_coordinator":
+        validate_tx_coordinator(options.path)
+        print_tx_coordinator(store)
     else:
         logger.error(f"Unknown type: {options.type}")
         sys.exit(1)
