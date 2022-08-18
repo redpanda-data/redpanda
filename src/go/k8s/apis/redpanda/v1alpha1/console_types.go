@@ -16,60 +16,78 @@ import (
 )
 
 // ConsoleSpec defines the desired state of Console
+// Most of the fields here are copied from Console config
+// REF https://github.com/redpanda-data/console/blob/master/backend/pkg/api/config.go
 type ConsoleSpec struct {
 	// +optional
 	// +kubebuilder:default=console
+	// Prefix for all exported prometheus metrics
 	MetricsNamespace string `json:"metricsNamespace"`
 
 	// +optional
 	// +kubebuilder:default=true
+	// Only relevant for developers, who might want to run the frontend separately
 	ServeFrontend bool `json:"serveFrontend"`
 
 	// +optional
 	Server Server `json:"server"`
 
-	Schema        Schema                 `json:"schema"`
+	Schema Schema `json:"schema"`
+
+	// The referenced Redpanda Cluster
 	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
-	Deployment    Deployment             `json:"deployment"`
-	Connect       Connect                `json:"connect"`
+
+	Deployment Deployment `json:"deployment"`
+	Connect    Connect    `json:"connect"`
 }
 
 // Server is the Console app HTTP server config
+// REF https://github.com/cloudhut/common/blob/b601d681e8599cee4255899def813142c0218e8b/rest/config.go
 type Server struct {
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
+	// Timeout for graceful shutdowns
 	ServerGracefulShutdownTimeout *metav1.Duration `json:"gracefulShutdownTimeout,omitempty"`
 
+	// HTTP server listen address
 	HTTPListenAddress string `json:"listenAddress,omitempty"`
 
 	// +kubebuilder:default=8080
+	// HTTP server listen port
 	HTTPListenPort int `json:"listenPort,omitempty"`
 
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
+	// Read timeout for HTTP server
 	HTTPServerReadTimeout *metav1.Duration `json:"readTimeout,omitempty"`
 
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
+	// Write timeout for HTTP server
 	HTTPServerWriteTimeout *metav1.Duration `json:"writeTimeout,omitempty"`
 
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Format=duration
 	// +kubebuilder:default="30s"
+	// Idle timeout for HTTP server
 	HTTPServerIdleTimeout *metav1.Duration `json:"idleTimeout,omitempty"`
 
 	// +kubebuilder:default=4
+	// Compression level applied to all http responses. Valid values are: 0-9 (0=completely disable compression middleware, 1=weakest compression, 9=best compression)
 	CompressionLevel int `json:"compressionLevel,omitempty"`
 
+	// Sets the subpath (root prefix) under which Kowl is reachable. If you want to host Kowl under 'your.domain.com/kowl/' you'd set the base path to 'kowl/'. The default is an empty string which makes Kowl reachable under just 'domain.com/'. When using this setting (or letting the 'X-Forwarded-Prefix' header set it for you) remember to either leave 'strip-prefix' enabled, or use a proxy that can strip the base-path/prefix before it reaches Kowl.
 	BasePath string `json:"basePath,omitempty"`
 
 	// +kubebuilder:default=true
+	// server.set-base-path-from-x-forwarded-prefix", true, "When set to true, Kowl will use the 'X-Forwarded-Prefix' header as the base path. (When enabled the 'base-path' setting won't be used)
 	SetBasePathFromXForwardedPrefix bool `json:"setBasePathFromXForwardedPrefix,omitempty"`
 
 	// +kubebuilder:default=true
+	// If a base-path is set (either by the 'base-path' setting, or by the 'X-Forwarded-Prefix' header), they will be removed from the request url. You probably want to leave this enabled, unless you are using a proxy that can remove the prefix automatically (like Traefik's 'StripPrefix' option)
 	StripPrefix bool `json:"stripPrefix,omitempty"`
 }
 

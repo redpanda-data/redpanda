@@ -34,33 +34,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: ConsoleSpec defines the desired state of Console
+            description: ConsoleSpec defines the desired state of Console Most of
+              the fields here are copied from Console config REF https://github.com/redpanda-data/console/blob/master/backend/pkg/api/config.go
             properties:
               clusterKeyRef:
-                description: 'ObjectReference contains enough information to let you
-                  inspect or modify the referred object. --- New uses of this type
-                  are discouraged because of difficulty describing its usage when
-                  embedded in APIs.  1. Ignored fields.  It includes many fields which
-                  are not generally honored.  For instance, ResourceVersion and FieldPath
-                  are both very rarely valid in actual usage.  2. Invalid usage help.  It
-                  is impossible to add specific help for individual usage.  In most
-                  embedded usages, there are particular     restrictions like, "must
-                  refer only to types A and B" or "UID not honored" or "name must
-                  be restricted".     Those cannot be well described when embedded.  3.
-                  Inconsistent validation.  Because the usages are different, the
-                  validation rules are different by usage, which makes it hard for
-                  users to predict what will happen.  4. The fields are both imprecise
-                  and overly precise.  Kind is not a precise mapping to a URL. This
-                  can produce ambiguity     during interpretation and require a REST
-                  mapping.  In most cases, the dependency is on the group,resource
-                  tuple     and the version of the actual struct is irrelevant.  5.
-                  We cannot easily change it.  Because this type is embedded in many
-                  locations, updates to this type     will affect numerous schemas.  Don''t
-                  make new APIs embed an underspecified API type they do not control.
-                  Instead of using this type, create a locally provided and used type
-                  that is well-focused on your reference. For example, ServiceReferences
-                  for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533
-                  .'
+                description: The referenced Redpanda Cluster
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -279,6 +257,7 @@ spec:
                 type: object
               metricsNamespace:
                 default: console
+                description: Prefix for all exported prometheus metrics
                 type: string
               schema:
                 description: Schema defines configurable fields for Schema Registry
@@ -290,40 +269,68 @@ spec:
                 type: object
               serveFrontend:
                 default: true
+                description: Only relevant for developers, who might want to run the
+                  frontend separately
                 type: boolean
               server:
-                description: Server is the Console app HTTP server config
+                description: Server is the Console app HTTP server config REF https://github.com/cloudhut/common/blob/b601d681e8599cee4255899def813142c0218e8b/rest/config.go
                 properties:
                   basePath:
+                    description: Sets the subpath (root prefix) under which Kowl is
+                      reachable. If you want to host Kowl under 'your.domain.com/kowl/'
+                      you'd set the base path to 'kowl/'. The default is an empty
+                      string which makes Kowl reachable under just 'domain.com/'.
+                      When using this setting (or letting the 'X-Forwarded-Prefix'
+                      header set it for you) remember to either leave 'strip-prefix'
+                      enabled, or use a proxy that can strip the base-path/prefix
+                      before it reaches Kowl.
                     type: string
                   compressionLevel:
                     default: 4
+                    description: 'Compression level applied to all http responses.
+                      Valid values are: 0-9 (0=completely disable compression middleware,
+                      1=weakest compression, 9=best compression)'
                     type: integer
                   gracefulShutdownTimeout:
                     default: 30s
+                    description: Timeout for graceful shutdowns
                     format: duration
                     type: string
                   idleTimeout:
                     default: 30s
+                    description: Idle timeout for HTTP server
                     format: duration
                     type: string
                   listenAddress:
+                    description: HTTP server listen address
                     type: string
                   listenPort:
                     default: 8080
+                    description: HTTP server listen port
                     type: integer
                   readTimeout:
                     default: 30s
+                    description: Read timeout for HTTP server
                     format: duration
                     type: string
                   setBasePathFromXForwardedPrefix:
                     default: true
+                    description: server.set-base-path-from-x-forwarded-prefix", true,
+                      "When set to true, Kowl will use the 'X-Forwarded-Prefix' header
+                      as the base path. (When enabled the 'base-path' setting won't
+                      be used)
                     type: boolean
                   stripPrefix:
                     default: true
+                    description: If a base-path is set (either by the 'base-path'
+                      setting, or by the 'X-Forwarded-Prefix' header), they will be
+                      removed from the request url. You probably want to leave this
+                      enabled, unless you are using a proxy that can remove the prefix
+                      automatically (like Traefik's 'StripPrefix' option)
                     type: boolean
                   writeTimeout:
                     default: 30s
+                    description: Write timeout for HTTP server
                     format: duration
                     type: string
                 type: object
