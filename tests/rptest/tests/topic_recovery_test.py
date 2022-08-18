@@ -40,6 +40,7 @@ from rptest.utils.si_utils import (
     TRANSIENT_ERRORS,
     PathMatcher,
     BLOCK_SIZE,
+    S3View,
 )
 
 
@@ -645,35 +646,35 @@ class FastCheck(BaseCase):
         for differences caused because configuration batches are not written to restored data.
         """
         non_data_batches_per_ntp = defaultdict(lambda: 0)
+        s3_view = S3View(expected_topics, self._s3, self._bucket, self.logger)
         segments = [
             item for item in self._s3.list_objects(self._bucket)
-            if not item.Key.endswith('manifest.json')
+            if s3_view.is_segment_part_of_a_manifest(item)
         ]
         for seg in segments:
             components = parse_s3_segment_path(seg.Key)
             ntp = components.ntp
-            if ntp.topic not in expected_topics:
-                continue
             segment_data = self._s3.get_object_data(self._bucket, seg.Key)
             segment_size = len(segment_data)
             segment = SegmentReader(io.BytesIO(segment_data))
-            for batch in segment:
-                # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
-                # since the size of these segments is not accounted for in the final comparison
-                # when verifying file layout. If we accumulate size of config batch from these
-                # "skipped" segments, we will mistakenly adjust the size of the baseline NTP to
-                # be smaller than it should be, in the final tally.
+            # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
+            # since the size of these segments is not accounted for in the final comparison
+            # when verifying file layout. If we accumulate size of config batch from these
+            # "skipped" segments, we will mistakenly adjust the size of the baseline NTP to
+            # be smaller than it should be, in the final tally.
 
-                # e.g. for segment A of size 455 bytes (config batch + archival stm batch),
-                # since it is smaller than EMPTY_SEGMENT_SIZE, it will not be used in the final
-                # total for baseline calculation. But if we still add the 455 bytes here into
-                # non_data_batches_per_ntp, baseline will be reduced by 455 bytes, causing an assertion
-                # error that baseline is smaller than restored by 455 bytes.
-                if batch.type != 1 and segment_size >= EMPTY_SEGMENT_SIZE:
-                    non_data_batches_per_ntp[ntp] += batch.batch_size
-                    self.logger.debug(
-                        f'non data batch {batch.type} of size {batch.batch_size} is found for {ntp}, '
-                        f'record count is {batch.record_count}')
+            # e.g. for segment A of size 455 bytes (config batch + archival stm batch),
+            # since it is smaller than EMPTY_SEGMENT_SIZE, it will not be used in the final
+            # total for baseline calculation. But if we still add the 455 bytes here into
+            # non_data_batches_per_ntp, baseline will be reduced by 455 bytes, causing an assertion
+            # error that baseline is smaller than restored by 455 bytes.
+            if segment_size >= EMPTY_SEGMENT_SIZE:
+                for batch in segment:
+                    if batch.type != 1:
+                        non_data_batches_per_ntp[ntp] += batch.batch_size
+                        self.logger.debug(
+                            f'non data batch {batch.type} of size {batch.batch_size} is found for {ntp}, '
+                            f'record count is {batch.record_count}')
         self.logger.info(
             f'non data batch sizes per ntp: '
             f'{pprint.pformat(dict(non_data_batches_per_ntp), indent=2)}')
@@ -688,7 +689,7 @@ class FastCheck(BaseCase):
             topic.name for topic in self.expected_recovered_topics
         ]
         config_batch_sizes = self._collect_non_data_batch_sizes(
-            expected_topics)
+            self.expected_recovered_topics)
         verify_file_layout(baseline,
                            restored,
                            expected_topics,
