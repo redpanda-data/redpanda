@@ -1,5 +1,3 @@
-find_package(CppKafka CONFIG REQUIRED)
-
 set(KAFKA_REQUEST_GENERATOR "${CMAKE_BINARY_DIR}/src/go/kreq-gen/kafka-request-generator")
 
 rp_test(

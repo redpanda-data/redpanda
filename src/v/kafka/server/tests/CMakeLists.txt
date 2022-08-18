@@ -1,5 +1,3 @@
-find_package(CppKafka CONFIG REQUIRED)
-
 rp_test(
   UNIT_TEST
   BINARY_NAME test_kafka_server
@@ -20,7 +18,6 @@ set(srcs
   member_test.cc
   group_test.cc
   read_write_roundtrip_test.cc
-  metadata_test.cc
   fetch_test.cc
   delete_topics_test.cc
   offset_fetch_test.cc
