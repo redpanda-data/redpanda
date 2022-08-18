@@ -22,7 +22,7 @@ type ConsoleSpec struct {
 	// +optional
 	// +kubebuilder:default=console
 	// Prefix for all exported prometheus metrics
-	MetricsNamespace string `json:"metricsNamespace"`
+	MetricsPrefix string `json:"metricsNamespace"`
 
 	// +optional
 	// +kubebuilder:default=true
