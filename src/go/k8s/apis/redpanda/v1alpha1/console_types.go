@@ -32,7 +32,7 @@ type ConsoleSpec struct {
 	// +optional
 	Server Server `json:"server"`
 
-	Schema Schema `json:"schema"`
+	SchemaRegistry Schema `json:"schema"`
 
 	// The referenced Redpanda Cluster
 	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`

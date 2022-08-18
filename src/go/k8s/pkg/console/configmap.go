@@ -201,7 +201,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	}
 
 	schemaRegistry := schema.Config{Enabled: false}
-	if yes := cm.consoleobj.Spec.Schema.Enabled; yes {
+	if yes := cm.consoleobj.Spec.SchemaRegistry.Enabled; yes {
 		tls := schema.TLSConfig{Enabled: false}
 		if yes := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yes {
 			ca := &SchemaRegistryTLSCa{

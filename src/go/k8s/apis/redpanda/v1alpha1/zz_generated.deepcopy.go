@@ -411,7 +411,7 @@ func (in *ConsoleList) DeepCopyObject() runtime.Object {
 func (in *ConsoleSpec) DeepCopyInto(out *ConsoleSpec) {
 	*out = *in
 	in.Server.DeepCopyInto(&out.Server)
-	out.Schema = in.Schema
+	out.SchemaRegistry = in.SchemaRegistry
 	out.ClusterKeyRef = in.ClusterKeyRef
 	out.Deployment = in.Deployment
 	in.Connect.DeepCopyInto(&out.Connect)
