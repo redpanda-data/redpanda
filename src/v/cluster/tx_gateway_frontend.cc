@@ -929,8 +929,8 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         response.results.push_back(res_topic);
     }
 
-    return when_all_succeed(bfs.begin(), bfs.end())
-      .then([response, tx, stm](std::vector<begin_tx_reply> brs) mutable {
+    auto brs = co_await when_all_succeed(bfs.begin(), bfs.end());
+
           std::vector<tm_transaction::tx_partition> partitions;
           for (auto& br : brs) {
               auto topic_it = std::find_if(
@@ -984,8 +984,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               }
               topic_it->results.push_back(res_partition);
           }
-          return response;
-      });
+          co_return response;
 }
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
