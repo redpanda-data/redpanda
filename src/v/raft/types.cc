@@ -577,10 +577,11 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
     write(dst, std::move(out));
 }
 
-ss::future<> append_entries_request::serde_async_read(
-  iobuf_parser& src, const serde::header& hdr) {
+ss::future<append_entries_request>
+append_entries_request::serde_async_direct_read(
+  iobuf_parser& src, size_t bytes_left_limit) {
     using serde::read_nested;
-    auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
+    auto tmp = read_nested<iobuf>(src, bytes_left_limit);
     iobuf_parser in(std::move(tmp));
 
     auto batch_count = read_nested<uint32_t>(in, 0U);
@@ -591,12 +592,15 @@ ss::future<> append_entries_request::serde_async_read(
         co_await ss::coroutine::maybe_yield();
     }
 
-    _batches = model::make_memory_record_batch_reader(std::move(batches));
-    node_id = read_nested<raft::vnode>(in, 0U);
-    target_node_id = read_nested<raft::vnode>(in, 0U);
-    meta = read_nested<raft::protocol_metadata>(in, 0U);
-    flush = read_nested<raft::append_entries_request::flush_after_append>(
+    auto batch_reader = model::make_memory_record_batch_reader(
+      std::move(batches));
+    auto node_id = read_nested<raft::vnode>(in, 0U);
+    auto target_node_id = read_nested<raft::vnode>(in, 0U);
+    auto meta = read_nested<raft::protocol_metadata>(in, 0U);
+    auto flush = read_nested<raft::append_entries_request::flush_after_append>(
       in, 0U);
+    co_return append_entries_request(
+      node_id, target_node_id, meta, std::move(batch_reader), flush);
 }
 
 } // namespace raft
