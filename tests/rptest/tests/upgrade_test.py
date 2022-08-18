@@ -11,10 +11,19 @@ import re
 from packaging.version import Version
 
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierConsumerGroupConsumer,
+)
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller, wait_for_num_versions
 
@@ -93,6 +102,145 @@ class UpgradeFromPriorFeatureVersionTest(RedpandaTest):
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert head_version_str in unique_versions, unique_versions
+
+
+PREV_VERSION_LOG_ALLOW_LIST = [
+    # e.g. cluster - controller_backend.cc:400 - Error while reconciling topics - seastar::abort_requested_exception (abort requested)
+    "cluster - .*Error while reconciling topic.*",
+    # Typo fixed in recent versions.
+    # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
+    "raft - .*raft group does not exists on target broker",
+    # e.g. rpc - Service handler thrown an exception - seastar::gate_closed_exception (gate closed)
+    "rpc - .*gate_closed_exception.*",
+    # Tests on mixed versions will start out with an unclean restart before
+    # starting a workload.
+    "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)",
+]
+
+
+class UpgradeBackToBackTest(PreallocNodesTest):
+    """
+    Test that runs through two rolling upgrades while running through workloads.
+    """
+    MSG_SIZE = 100
+    PRODUCE_COUNT = 100000
+    RANDOM_READ_COUNT = 100
+    RANDOM_READ_PARALLEL = 4
+    CONSUMER_GROUP_READERS = 4
+    topics = (TopicSpec(partition_count=3, replication_factor=3), )
+
+    def __init__(self, test_context):
+        super(UpgradeBackToBackTest, self).__init__(test_context,
+                                                    num_brokers=3,
+                                                    node_prealloc_count=1)
+        self.installer = self.redpanda._installer
+        self.intermediate_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+        self.initial_version = self.installer.highest_from_prior_feature_version(
+            self.intermediate_version)
+
+        self._producer = KgoVerifierProducer(test_context, self.redpanda,
+                                             self.topic, self.MSG_SIZE,
+                                             self.PRODUCE_COUNT,
+                                             self.preallocated_nodes)
+        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
+                                                    self.redpanda, self.topic,
+                                                    self.MSG_SIZE,
+                                                    self.preallocated_nodes)
+        self._rand_consumer = KgoVerifierRandomConsumer(
+            test_context, self.redpanda, self.topic, self.MSG_SIZE,
+            self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
+            self.preallocated_nodes)
+        self._cg_consumer = KgoVerifierConsumerGroupConsumer(
+            test_context, self.redpanda, self.topic, self.MSG_SIZE,
+            self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
+
+        self._consumers = [
+            self._seq_consumer, self._rand_consumer, self._cg_consumer
+        ]
+
+    def setUp(self):
+        self.installer.install(self.redpanda.nodes, self.initial_version)
+        super(UpgradeBackToBackTest, self).setUp()
+
+    @cluster(num_nodes=4, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
+    @parametrize(single_upgrade=True)
+    @parametrize(single_upgrade=False)
+    def test_upgrade_with_all_workloads(self, single_upgrade):
+        if single_upgrade:
+            # If the test should exercise workloads with just a single upgrade,
+            # start at the intermediate version -- this test will just test a
+            # rolling restart followed by a rolling upgrade.
+            self.initial_version = self.intermediate_version
+            self.installer.install(self.redpanda.nodes, self.initial_version)
+            self.redpanda.restart_nodes(self.redpanda.nodes,
+                                        start_timeout=90,
+                                        stop_timeout=90)
+        self._producer.start(clean=False)
+        self._producer.wait_for_offset_map()
+        wrote_at_least = self._producer.produce_status.acked
+        for consumer in self._consumers:
+            consumer.start(clean=False)
+
+        def stop_producer():
+            self._producer.wait()
+            assert self._producer.produce_status.acked == self.PRODUCE_COUNT
+
+        def has_maintenance_supprt():
+            features_resp = self.redpanda._admin.get_features()
+            features_dict = dict(
+                (f["name"], f) for f in features_resp["features"])
+            return features_dict["maintenance_mode"]["state"] == "active"
+
+        produce_during_upgrade = self.initial_version >= (22, 1, 0)
+        if produce_during_upgrade:
+            # Give ample time to restart, given the running workload.
+            wait_until(has_maintenance_supprt, 30, 1)
+            self.installer.install(self.redpanda.nodes,
+                                   self.intermediate_version)
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                start_timeout=90,
+                                                stop_timeout=90)
+        else:
+            # If there's no maintenance mode, write workloads during the
+            # restart may be affected, so stop our writes up front.
+            stop_producer()
+            self.installer.install(self.redpanda.nodes,
+                                   self.intermediate_version)
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                start_timeout=90,
+                                                stop_timeout=90,
+                                                use_maintenance_mode=False)
+
+            # When upgrading from versions that don't support maintenance mode
+            # (v21.11 and below), there is a migration of the consumer offsets
+            # topic to be mindful of.
+            rpk = RpkTool(self.redpanda)
+
+            def _consumer_offsets_present():
+                try:
+                    rpk.describe_topic("__consumer_offsets")
+                except Exception as e:
+                    if "Topic not found" in str(e):
+                        return False
+                return True
+
+            wait_until(_consumer_offsets_present,
+                       timeout_sec=90,
+                       backoff_sec=3)
+
+        wait_until(has_maintenance_supprt, 30, 1)
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        for consumer in self._consumers:
+            consumer.wait()
+
+        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
 
 class UpgradeWithWorkloadTest(EndToEndTest):
