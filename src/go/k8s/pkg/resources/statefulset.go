@@ -74,6 +74,10 @@ var (
 
 	// terminationGracePeriodSeconds should account for additional delay introduced by hooks
 	terminationGracePeriodSeconds int64 = 120
+
+	// SkipClusterSeedInitAnnotationKey is used to tell the configurator to avoid clearing
+	// the seeds server list because the cluster was already initialized.
+	SkipClusterSeedInitAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/skip-cluster-seed-init"
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -515,6 +519,13 @@ func (r *StatefulSetResource) obj(
 				},
 			},
 		},
+	}
+
+	if skipInit, ok := r.pandaCluster.Annotations[SkipClusterSeedInitAnnotationKey]; ok {
+		ss.Spec.Template.Spec.InitContainers[0].Env = append(ss.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
+			Name:  "SKIP_CLUSTER_SEED_INIT",
+			Value: skipInit,
+		})
 	}
 
 	// Only multi-replica clusters should use maintenance mode. See: https://github.com/redpanda-data/redpanda/issues/4338
