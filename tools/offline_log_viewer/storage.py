@@ -1,6 +1,8 @@
 import collections
 from enum import Enum
 import os
+import re
+from os.path import join
 
 import struct
 import crc32c
@@ -273,6 +275,10 @@ class Ntp:
         return "{0.nspace}/{0.topic}/{0.partition}_{0.ntp_id}".format(self)
 
 
+def listdirs(path):
+    return [x for x in os.listdir(path) if os.path.isdir(join(path, x))]
+
+
 class Store:
     def __init__(self, base_dir):
         self.base_dir = os.path.abspath(base_dir)
@@ -280,18 +286,14 @@ class Store:
         self.__search()
 
     def __search(self):
-        dirs = os.walk(self.base_dir)
-        for ntpd in (p[0] for p in dirs if not p[1]):
-            if 'cloud_storage_cache' in ntpd:
+        for nspace in listdirs(self.base_dir):
+            if nspace == "cloud_storage_cache":
                 continue
-            head, part_ntp_id = os.path.split(ntpd)
-            [part, ntp_id] = part_ntp_id.split("_")
-            head, topic = os.path.split(head)
-            head, nspace = os.path.split(head)
-            if head != self.base_dir:
-                logger.warn(
-                    "Unexpected directory layout (should be <namespace>/<topic>/<partition>, and use top of tree as your --path"
-                )
-            assert head == self.base_dir
-            ntp = Ntp(self.base_dir, nspace, topic, int(part), int(ntp_id))
-            self.ntps.append(ntp)
+            for topic in listdirs(join(self.base_dir, nspace)):
+                for part_ntp_id in listdirs(join(self.base_dir, nspace,
+                                                 topic)):
+                    assert re.match("^\\d+_\\d+$", part_ntp_id)
+                    [part, ntp_id] = part_ntp_id.split("_")
+                    ntp = Ntp(self.base_dir, nspace, topic, int(part),
+                              int(ntp_id))
+                    self.ntps.append(ntp)
