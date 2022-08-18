@@ -931,60 +931,54 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
     auto brs = co_await when_all_succeed(bfs.begin(), bfs.end());
 
-          std::vector<tm_transaction::tx_partition> partitions;
-          for (auto& br : brs) {
-              auto topic_it = std::find_if(
-                response.results.begin(),
-                response.results.end(),
-                [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
-              vassert(
-                topic_it != response.results.end(),
-                "can't find expected topic {}",
-                br.ntp.tp.topic());
-              vassert(
-                std::none_of(
-                  topic_it->results.begin(),
-                  topic_it->results.end(),
-                  [&br](const auto& r) {
-                      return r.partition_index == br.ntp.tp.partition();
-                  }),
-                "partition {} is already part of the response",
-                br.ntp.tp.partition());
-              if (br.ec == tx_errc::none) {
-                  partitions.push_back(tm_transaction::tx_partition{
-                    .ntp = br.ntp, .etag = br.etag});
-              }
-          }
-          auto has_added = stm->add_partitions(tx.id, partitions);
-          if (!has_added) {
-              vlog(
-                txlog.warn,
-                "can't add partitions: tx.id={} doesn't exist",
-                tx.id);
-          }
-          for (auto& br : brs) {
-              auto topic_it = std::find_if(
-                response.results.begin(),
-                response.results.end(),
-                [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
+    std::vector<tm_transaction::tx_partition> partitions;
+    for (auto& br : brs) {
+        auto topic_it = std::find_if(
+          response.results.begin(),
+          response.results.end(),
+          [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
+        vassert(
+          topic_it != response.results.end(),
+          "can't find expected topic {}",
+          br.ntp.tp.topic());
+        vassert(
+          std::none_of(
+            topic_it->results.begin(),
+            topic_it->results.end(),
+            [&br](const auto& r) {
+                return r.partition_index == br.ntp.tp.partition();
+            }),
+          "partition {} is already part of the response",
+          br.ntp.tp.partition());
+        if (br.ec == tx_errc::none) {
+            partitions.push_back(
+              tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+        }
+    }
+    auto has_added = stm->add_partitions(tx.id, partitions);
+    if (!has_added) {
+        vlog(txlog.warn, "can't add partitions: tx.id={} doesn't exist", tx.id);
+    }
+    for (auto& br : brs) {
+        auto topic_it = std::find_if(
+          response.results.begin(),
+          response.results.end(),
+          [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
 
-              add_paritions_tx_reply::partition_result res_partition;
-              res_partition.partition_index = br.ntp.tp.partition;
-              if (has_added && br.ec == tx_errc::none) {
-                  res_partition.error_code = tx_errc::none;
-              } else {
-                  if (br.ec != tx_errc::none) {
-                      vlog(
-                        txlog.warn,
-                        "begin_tx({},...) failed with {}",
-                        br.ntp,
-                        br.ec);
-                  }
-                  res_partition.error_code = tx_errc::invalid_txn_state;
-              }
-              topic_it->results.push_back(res_partition);
-          }
-          co_return response;
+        add_paritions_tx_reply::partition_result res_partition;
+        res_partition.partition_index = br.ntp.tp.partition;
+        if (has_added && br.ec == tx_errc::none) {
+            res_partition.error_code = tx_errc::none;
+        } else {
+            if (br.ec != tx_errc::none) {
+                vlog(
+                  txlog.warn, "begin_tx({},...) failed with {}", br.ntp, br.ec);
+            }
+            res_partition.error_code = tx_errc::invalid_txn_state;
+        }
+        topic_it->results.push_back(res_partition);
+    }
+    co_return response;
 }
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
