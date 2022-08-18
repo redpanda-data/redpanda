@@ -118,8 +118,18 @@ void consumer::start() {
                 *me,
                 e.error);
           })
+          .handle_exception_type([me](const broker_error& e) {
+              vlog(
+                kclog.debug,
+                "Consumer: {} heartbeat failed, broker_error: {}",
+                *me,
+                e.error);
+          })
           .handle_exception_type([me](const ss::gate_closed_exception& e) {
               vlog(kclog.trace, "Consumer: {}: heartbeat failed: {}", *me, e);
+          })
+          .handle_exception([me](std::exception_ptr ex) {
+              vlog(kclog.warn, "Generic exception caught: {}", ex);
           });
     });
     _heartbeat_timer.rearm_periodic(_config.consumer_heartbeat_interval());
