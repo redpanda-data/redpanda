@@ -395,9 +395,10 @@ make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
     } catch (const avro::Exception& e) {
         ex = e;
     }
-    co_return ss::coroutine::make_exception(as_exception(error_info{
-      error_code::schema_invalid,
-      fmt::format("Invalid schema {}", ex->what())}));
+    co_return ss::coroutine::exception(
+      std::make_exception_ptr(as_exception(error_info{
+        error_code::schema_invalid,
+        fmt::format("Invalid schema {}", ex->what())})));
 }
 
 result<canonical_schema_definition>

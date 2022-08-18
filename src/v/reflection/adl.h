@@ -101,7 +101,11 @@ struct adl {
             using e_type = std::underlying_type_t<type>;
             return static_cast<type>(adl<e_type>{}.from(in));
         } else if constexpr (std::is_integral_v<type>) {
-            return ss::le_to_cpu(in.template consume_type<type>());
+            if constexpr (std::is_same_v<type, bool>) {
+                return type(adl<int8_t>{}.from(in));
+            } else {
+                return ss::le_to_cpu(in.template consume_type<type>());
+            }
         } else if constexpr (is_ss_bool) {
             return type(adl<int8_t>{}.from(in));
         } else if constexpr (is_chrono_milliseconds) {
@@ -164,8 +168,12 @@ struct adl {
             using e_type = std::underlying_type_t<type>;
             adl<e_type>{}.to(out, static_cast<e_type>(t));
         } else if constexpr (std::is_integral_v<type>) {
-            auto le_t = ss::cpu_to_le(t);
-            out.append(reinterpret_cast<const char*>(&le_t), sizeof(type));
+            if constexpr (std::is_same_v<type, bool>) {
+                adl<int8_t>{}.to(out, static_cast<int8_t>(bool(t)));
+            } else {
+                auto le_t = ss::cpu_to_le(t);
+                out.append(reinterpret_cast<const char*>(&le_t), sizeof(type));
+            }
             return;
         } else if constexpr (is_ss_bool) {
             adl<int8_t>{}.to(out, static_cast<int8_t>(bool(t)));
