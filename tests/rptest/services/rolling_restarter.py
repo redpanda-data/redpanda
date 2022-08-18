@@ -23,7 +23,8 @@ class RollingRestarter:
                       nodes,
                       override_cfg_params=None,
                       start_timeout=None,
-                      stop_timeout=None):
+                      stop_timeout=None,
+                      use_maintenance_mode=True):
         """
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
@@ -47,11 +48,13 @@ class RollingRestarter:
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
 
-            admin.maintenance_start(node)
-
-            wait_until(lambda: has_drained_leaders(node),
-                       timeout_sec=stop_timeout,
-                       backoff_sec=1)
+            if use_maintenance_mode:
+                # NOTE: callers may not want to use maintenance mode if the
+                # cluster is on a version that does not support it.
+                admin.maintenance_start(node)
+                wait_until(lambda: has_drained_leaders(node),
+                           timeout_sec=stop_timeout,
+                           backoff_sec=1)
 
             wait_until(lambda: self.redpanda.healthy(),
                        timeout_sec=stop_timeout,
@@ -67,4 +70,5 @@ class RollingRestarter:
                        timeout_sec=start_timeout,
                        backoff_sec=1)
 
-            admin.maintenance_stop(node)
+            if use_maintenance_mode:
+                admin.maintenance_stop(node)
