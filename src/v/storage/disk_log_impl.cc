@@ -1170,6 +1170,12 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
       internal::offset_to_filepos_consumer(
         start, cfg.base_offset, initial_size),
       model::no_timeout);
+
+    // all segments were deleted, return
+    if (_segs.empty()) {
+        co_return;
+    }
+
     auto last_ptr = _segs.back();
 
     if (initial_generation_id != last_ptr->get_generation_id()) {
