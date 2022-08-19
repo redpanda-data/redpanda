@@ -234,8 +234,17 @@ class EndToEndTest(Test):
                                 consumer_timeout_sec=30,
                                 enable_idempotence=False) -> None:
         try:
-            self.await_consumed_offsets(self.producer.last_acked_offsets,
+            # Take copy of this dict in case a rogue VerifiableProducer
+            # thread modifies it.
+            # Related: https://github.com/redpanda-data/redpanda/issues/3450
+            last_acked_offsets = self.producer.last_acked_offsets.copy()
+
+            self.logger.info("Producer's offsets after stopping: %s" %\
+                         str(last_acked_offsets))
+
+            self.await_consumed_offsets(last_acked_offsets,
                                         consumer_timeout_sec)
+
             self.consumer.stop()
 
             self.validate(enable_idempotence)
