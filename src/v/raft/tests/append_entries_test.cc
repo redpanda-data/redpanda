@@ -50,7 +50,7 @@ FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "State is consistent after replication");
 };
 
@@ -70,7 +70,7 @@ FIXTURE_TEST(
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "State is consistent after replication");
     auto& n = gr.get_member(model::node_id(0));
     auto last_visible = n.consensus->last_visible_index();
@@ -91,7 +91,7 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
     validate_logs_replication(gr);
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "State is consistent");
     validate_offset_translation(gr);
 };
@@ -189,7 +189,7 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
@@ -223,7 +223,7 @@ FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
     validate_offset_translation(gr);
 };
@@ -256,7 +256,7 @@ FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
     validate_offset_translation(gr);
 };
@@ -296,7 +296,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "State is conistent after recovery");
     validate_offset_translation(gr);
 };
@@ -355,7 +355,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state should be consistent");
     validate_offset_translation(gr);
 };
@@ -373,7 +373,7 @@ FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
 
     validate_offset_translation(gr);
@@ -391,12 +391,12 @@ FIXTURE_TEST(
 
     wait_for(
       1s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
 
     wait_for(
       1s,
-      [this, &gr] {
+      [&gr] {
           auto& node = gr.get_members().begin()->second;
           auto lstats = node.log->offsets();
           return node.consensus->last_visible_index() == lstats.dirty_offset;
@@ -484,7 +484,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
 
     wait_for(
       3s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
@@ -560,7 +560,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
@@ -607,7 +607,7 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
@@ -658,7 +658,7 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [&gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
@@ -702,7 +702,7 @@ FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
     auto updated_last_visible = leader_raft->last_visible_index();
     BOOST_REQUIRE_GT(updated_last_visible, last_visible);
@@ -724,7 +724,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      [&gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
     validate_offset_translation(gr);
 };

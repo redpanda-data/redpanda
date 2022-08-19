@@ -115,7 +115,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     wait_for_partition_leadership(manifest_ntp);
     auto part = app.partition_manager.local().get(manifest_ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
 
@@ -323,7 +323,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     init_storage_api_local(segments);
     wait_for_partition_leadership(manifest_ntp);
     auto part = app.partition_manager.local().get(manifest_ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
 

@@ -259,7 +259,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_GET_streaming_roundtrip) {
       std::move(header),
       std::nullopt,
       skip_bytes,
-      [skip_bytes](http::client::response_header const& header, iobuf&& body) {
+      [](http::client::response_header const& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
           iobuf_parser parser(std::move(body));

@@ -33,7 +33,7 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
     std::vector<model::node_id> leaders;
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
-      [&cache, &leaders, id] {
+      [&cache, &leaders] {
           leaders.clear();
           const model::topic_namespace tn(
             model::ns("default"), model::topic("test_1"));

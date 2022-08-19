@@ -41,7 +41,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     app.partition_manager
       .invoke_on(
         *shard,
-        [ntp, this](cluster::partition_manager& mgr) {
+        [ntp](cluster::partition_manager& mgr) {
             info("Manager:{} - log:{}", mgr, *mgr.get(ntp));
         })
       .get();

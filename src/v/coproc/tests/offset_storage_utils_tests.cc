@@ -112,7 +112,7 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
       .get();
 
     /// Wait until at-least one attempt to write offsets to disk was made
-    tests::cooperative_spin_wait_with_timeout(5s, [this]() {
+    tests::cooperative_spin_wait_with_timeout(5s, []() {
         return ss::file_exists(coproc::offsets_snapshot_path().string());
     }).get();
 

@@ -373,8 +373,7 @@ public:
           replicas,
           [this, ntp, &reference_batches, max_offset](model::broker_shard bs) {
               return read_replica_batches(bs, ntp, max_offset)
-                .then([this, ntp, &reference_batches, bs](
-                        foreign_batches_t batches) {
+                .then([ntp, &reference_batches, bs](foreign_batches_t batches) {
                     vlog(
                       logger.info,
                       "Comparing {} {} batches {} {}",

@@ -1040,8 +1040,8 @@ if ({{ cond }}) {
 {%- else %}
 {{ writer }}.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
-    (void)version;
 {%- endif %}
+    (void)version;
 {%- if field.type().value_type().is_struct %}
 {{- struct_serde(field.type().value_type(), methods, "v") | indent }}
 {%- else %}
@@ -1075,8 +1075,8 @@ if ({{ cond }}) {
 {%- else %}
 {{ fname }} = reader.read_array([version](request_reader& reader) {
 {%- endif %}
-    (void)version;
 {%- endif %}
+    (void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
 {{- struct_serde(field.type().value_type(), methods, "v") | indent }}

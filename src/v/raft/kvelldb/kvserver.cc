@@ -177,7 +177,7 @@ private:
             seastar::default_priority_class()),
           std::chrono::seconds(1),
           _consensus_client_protocol,
-          [this](raft::leadership_status st) {
+          [](raft::leadership_status st) {
               if (!st.current_leader) {
                   vlog(kvelldblog.info, "No leader in group {}", st.group);
                   return;
@@ -222,7 +222,7 @@ static void initialize_connection_cache_in_thread(
         auto [node, cfg] = extract_peer(i);
         for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
             auto shard = rpc::connection_cache::shard_for(self, i, node);
-            ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
+            ss::smp::submit_to(shard, [&cache, n = node, config = cfg] {
                 return cache.local().emplace(
                   n,
                   config,

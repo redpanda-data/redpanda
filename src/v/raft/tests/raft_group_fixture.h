@@ -321,7 +321,7 @@ struct raft_node {
             cache
               .invoke_on(
                 sh,
-                [&broker, this](rpc::connection_cache& c) {
+                [&broker](rpc::connection_cache& c) {
                     if (c.contains(broker.id())) {
                         return seastar::make_ready_future<>();
                     }
