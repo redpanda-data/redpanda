@@ -24,7 +24,6 @@ using namespace std::chrono_literals; // NOLINT
 FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
     auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
     model::ntp test_ntp(test_ns, model::topic("tp"), model::partition_id(0));
     wait_for_all_members(3s).get();
 
