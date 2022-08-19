@@ -10,6 +10,7 @@
 #include "rpc/transport.h"
 
 #include "likely.h"
+#include "net/connection.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
@@ -101,7 +102,19 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
                 try {
                     f.get();
                 } catch (...) {
-                    _probe.read_dispatch_error(std::current_exception());
+                    auto e = std::current_exception();
+                    if (net::is_disconnect_exception(e)) {
+                        rpc::rpclog.info(
+                          "Disconnected from server {}: {}",
+                          server_address(),
+                          e);
+                    } else {
+                        rpc::rpclog.error(
+                          "Error dispatching client reads to {}: {}",
+                          server_address(),
+                          e);
+                    }
+                    _probe.read_dispatch_error();
                 }
             });
         });
