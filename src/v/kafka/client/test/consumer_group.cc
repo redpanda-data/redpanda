@@ -151,7 +151,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     kafka::describe_groups_response desc_res{};
     tests::cooperative_spin_wait_with_timeout(
       10s,
-      [this, &group_id, &client, &desc_res] {
+      [&client, &desc_res] {
           return client.dispatch(describe_group_request_builder())
             .then([&desc_res](kafka::describe_groups_response res) {
                 desc_res = std::move(res);
