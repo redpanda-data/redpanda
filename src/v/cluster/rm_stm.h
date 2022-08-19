@@ -256,10 +256,15 @@ public:
 
     ss::future<std::error_code> mark_expired(model::producer_identity pid);
 
+    ss::future<> remove_persistent_state() override;
+
 protected:
     ss::future<> handle_eviction() override;
 
 private:
+    ss::future<> do_remove_persistent_state();
+    ss::future<std::vector<rm_stm::tx_range>>
+      do_aborted_transactions(model::offset, model::offset);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
     ss::future<tx_errc> do_prepare_tx(
@@ -336,6 +341,9 @@ private:
     ss::future<>
       apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
+
+    ss::future<> reduce_aborted_list();
+    ss::future<> offload_aborted_txns();
 
     // The state of this state machine maybe change via two paths
     //
@@ -505,6 +513,7 @@ private:
     void fill_snapshot_wo_seqs(T&);
 
     ss::basic_rwlock<> _state_lock;
+    bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     absl::flat_hash_map<
       model::producer_identity,
