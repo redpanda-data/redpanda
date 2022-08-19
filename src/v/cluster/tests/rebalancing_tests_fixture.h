@@ -49,7 +49,7 @@ public:
         // wait for cluster to be stable
         tests::cooperative_spin_wait_with_timeout(60s, [this, node_count] {
             return std::all_of(
-              apps.cbegin(), apps.cend(), [this, node_count](auto c) {
+              apps.cbegin(), apps.cend(), [node_count](auto c) {
                   return c.second->controller->get_members_table()
                            .local()
                            .all_broker_ids()
