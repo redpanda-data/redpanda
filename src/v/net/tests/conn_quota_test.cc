@@ -104,13 +104,13 @@ struct conn_quota_fixture {
     }
 
     void drop_on_shard(
-      ss::shard_id shard, ss::net::inet_address addr, uint32_t take_units) {
+      ss::shard_id shard, uint32_t take_units) {
         assert(shard_units[shard].size() >= take_units);
 
         scq
           .invoke_on(
             shard,
-            [shard, this, take_units, addr](conn_quota& cq) {
+            [shard, this, take_units](conn_quota& cq) {
                 for (size_t i = 0; i < take_units; ++i) {
                     shard_units[shard].pop_back();
                 }
@@ -574,7 +574,7 @@ FIXTURE_TEST(test_overlaps, conn_quota_fixture) {
     // First take all the tokens on shard 1 and drop them
     // again, this puts all the borrowed tokens here
     take_on_shard(1, addr1, 10);
-    drop_on_shard(1, addr1, 10);
+    drop_on_shard(1, 10);
 
     // Now take tokens from each shard
     for (int i = 0; i < 5; ++i) {
