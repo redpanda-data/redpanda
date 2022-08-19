@@ -103,8 +103,7 @@ struct conn_quota_fixture {
           .get();
     }
 
-    void drop_on_shard(
-      ss::shard_id shard, uint32_t take_units) {
+    void drop_on_shard(ss::shard_id shard, uint32_t take_units) {
         assert(shard_units[shard].size() >= take_units);
 
         scq

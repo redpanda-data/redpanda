@@ -86,8 +86,7 @@ struct mux_state_machine_fixture {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
                         .create_group(group, {self_broker()}, log)
-                        .then([log](
-                                ss::lw_shared_ptr<raft::consensus> c) {
+                        .then([log](ss::lw_shared_ptr<raft::consensus> c) {
                             return c->start().then([c] { return c; });
                         });
                   })
