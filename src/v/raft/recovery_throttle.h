@@ -9,9 +9,11 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "config/configuration.h"
 #include "config/property.h"
 #include "raft/logger.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/smp.hh>
@@ -44,6 +46,7 @@ public:
       , _last_refresh(clock_type::now())
       , _refresh_timer([this] { handle_refresh(); }) {
         _rate_binding.watch([this]() { update_rate(); });
+        setup_metrics();
     }
 
     ss::future<> throttle(size_t size, ss::abort_source& as) {
@@ -135,11 +138,51 @@ private:
         _rate = per_core_rate;
     }
 
+    void setup_metrics() {
+        setup_internal_metrics();
+        setup_public_metrics();
+    }
+
+    void setup_internal_metrics() {
+        if (config::shard_local_cfg().disable_metrics()) {
+            return;
+        }
+
+        // TODO: Delete this metric after public is supported in scraping
+        // configurations
+        namespace sm = ss::metrics;
+        _internal_metrics.add_group(
+          "raft:recovery",
+          {sm::make_gauge(
+            "partition_movement_available_bandwidth",
+            [this] { return _sem.current(); },
+            sm::description(
+              "Bandwidth available for partition movement. bytes/sec"))});
+    }
+
+    void setup_public_metrics() {
+        if (config::shard_local_cfg().disable_public_metrics()) {
+            return;
+        }
+
+        namespace sm = ss::metrics;
+        _public_metrics.add_group(
+          "raft:recovery",
+          {sm::make_gauge(
+            "partition_movement_available_bandwidth",
+            [this] { return _sem.current(); },
+            sm::description(
+              "Bandwidth available for partition movement. bytes/sec"))});
+    }
+
     config::binding<size_t> _rate_binding;
     size_t _rate;
     ssx::semaphore _sem;
     clock_type::time_point _last_refresh;
     ss::timer<> _refresh_timer;
+    ss::metrics::metric_groups _internal_metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 } // namespace raft
