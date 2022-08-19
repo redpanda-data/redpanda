@@ -892,6 +892,9 @@ struct raft_test_fixture {
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
             config::shard_local_cfg()
+              .get("disable_public_metrics")
+              .set_value(true);
+            config::shard_local_cfg()
               .get("raft_heartbeat_disconnect_failures")
               .set_value((size_t)0);
         }).get();
