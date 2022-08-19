@@ -199,6 +199,7 @@ public:
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
+      model::producer_identity,
       model::producer_identity);
     ss::future<tm_stm::op_status> register_new_producer(
       model::term_id,

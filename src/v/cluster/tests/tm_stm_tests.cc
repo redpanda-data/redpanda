@@ -192,10 +192,12 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{1, 1};
-    op_code = stm
-                .re_register_producer(
-                  c->term(), tx_id, std::chrono::milliseconds(0), pid2)
-                .get0();
+    auto expected_pid = model::producer_identity(3, 5);
+    op_code
+      = stm
+          .re_register_producer(
+            c->term(), tx_id, std::chrono::milliseconds(0), pid2, expected_pid)
+          .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx7 = expect_tx(stm.get_tx(tx_id));
     BOOST_REQUIRE_EQUAL(tx7.id, tx_id);

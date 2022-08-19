@@ -24,6 +24,7 @@
 #include "cluster/tx_helpers.h"
 #include "config/configuration.h"
 #include "errc.h"
+#include "model/record.h"
 #include "rpc/connection_cache.h"
 #include "types.h"
 
@@ -808,7 +809,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
 
     auto op_status = co_await stm->re_register_producer(
-      term, tx.id, transaction_timeout_ms, reply.pid);
+      term, tx.id, transaction_timeout_ms, reply.pid, model::unknown_pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
