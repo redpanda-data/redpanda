@@ -80,7 +80,7 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_simple) {
     simple_sharded_store store;
 
     auto schema1 = pps::canonical_schema{pps::subject{"simple"}, simple};
-    auto sch1 = store.insert(schema1, pps::schema_version{1});
+    store.insert(schema1, pps::schema_version{1});
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
 }
@@ -90,7 +90,7 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
 
     // imported depends on simple, which han't been inserted
     auto schema1 = pps::canonical_schema{pps::subject{"imported"}, imported};
-    auto sch1 = store.insert(schema1, pps::schema_version{1});
+    store.insert(schema1, pps::schema_version{1});
     BOOST_REQUIRE_EXCEPTION(
       pps::make_protobuf_schema_definition(store.store, schema1).get(),
       pps::exception,
@@ -105,7 +105,7 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
     auto schema1 = pps::canonical_schema{pps::subject{"simple"}, simple};
     auto schema2 = pps::canonical_schema{pps::subject{"imported"}, imported};
 
-    auto sch1 = store.insert(schema1, pps::schema_version{1});
+    store.insert(schema1, pps::schema_version{1});
 
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
@@ -130,9 +130,9 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
       imported_again,
       {{"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
 
-    auto sch1 = store.insert(schema1, pps::schema_version{1});
-    auto sch2 = store.insert(schema2, pps::schema_version{1});
-    auto sch3 = store.insert(schema3, pps::schema_version{1});
+    store.insert(schema1, pps::schema_version{1});
+    store.insert(schema2, pps::schema_version{1});
+    store.insert(schema3, pps::schema_version{1});
 
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
@@ -154,8 +154,8 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
       pps::canonical_schema_definition{
         R"(syntax =  "proto3"; package google.protobuf; message Timestamp { int64 seconds = 1;  int32 nanos = 2; })",
         pps::schema_type::protobuf}};
-    auto sch1 = store.insert(schema1, pps::schema_version{1});
-    auto sch2 = store.insert(schema2, pps::schema_version{1});
+    store.insert(schema1, pps::schema_version{1});
+    store.insert(schema2, pps::schema_version{1});
 
     auto valid_empty
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
