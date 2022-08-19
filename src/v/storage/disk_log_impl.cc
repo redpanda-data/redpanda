@@ -44,6 +44,7 @@
 
 #include <fmt/format.h>
 
+#include <exception>
 #include <iterator>
 #include <optional>
 #include <sstream>
@@ -334,31 +335,32 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
       config().ntp(),
       cfg);
     // find first not compacted segment
-    auto segit = std::find_if(
-      _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
-          return !s->has_appender() && s->is_compacted_segment()
-                 && !s->finished_self_compaction();
-      });
+
     // loop until we compact segment or reached end of segments set
-    for (; segit != _segs.end(); ++segit) {
-        auto seg = *segit;
-        if (
-          seg->has_appender() || seg->finished_self_compaction()
-          || !seg->is_compacted_segment()) {
-            continue;
+    while (!_segs.empty()) {
+        const auto end_it = std::prev(_segs.end());
+        auto seg_it = std::find_if(
+          _segs.begin(), end_it, [](ss::lw_shared_ptr<segment>& s) {
+              return !s->has_appender() && s->is_compacted_segment()
+                     && !s->finished_self_compaction();
+          });
+        // nothing to compact
+        if (seg_it == end_it) {
+            break;
         }
 
+        auto segment = *seg_it;
         auto result = co_await storage::internal::self_compact_segment(
-          seg, cfg, _probe, *_readers_cache, _manager.resources());
+          segment, cfg, _probe, *_readers_cache, _manager.resources());
+
         vlog(
           gclog.debug,
           "[{}] segment {} compaction result: {}",
           config().ntp(),
-          seg->reader().filename(),
+          segment->reader().filename(),
           result);
-        _compaction_ratio.update(result.compaction_ratio());
-        // if we compacted segment return, otherwise loop
         if (result.did_compact()) {
+            _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
     }
@@ -474,8 +476,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // log operations are later identified before committing changes.
     auto staging_path = std::filesystem::path(
       fmt::format("{}.compaction.staging", target->reader().filename()));
-    auto replacement = co_await storage::internal::make_concatenated_segment(
-      staging_path, segments, cfg, _manager.resources());
+    auto [replacement, generations]
+      = co_await storage::internal::make_concatenated_segment(
+        staging_path, segments, cfg, _manager.resources());
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -510,11 +513,28 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     // fast check if we should abandon all the expensive i/o work if we happened
     // to be racing with an operation like truncation or shutdown.
+    vassert(
+      generations.size() == segments.size(),
+      "Each segment must have corresponding generation");
+    auto gen_it = generations.begin();
     for (const auto& segment : segments) {
+        // check generation id under write lock
+        if (unlikely(segment->get_generation_id() != *gen_it)) {
+            vlog(
+              gclog.info,
+              "Aborting compaction of a segment: {}. Generation id mismatch, "
+              "previous generation: {}",
+              *segment,
+              *gen_it);
+            ret.executed_compaction = false;
+            ret.size_after = ret.size_before;
+            co_return ret;
+        }
         if (unlikely(segment->is_closed())) {
             throw std::runtime_error(fmt::format(
               "Aborting compaction of closed segment: {}", *segment));
         }
+        ++gen_it;
     }
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
@@ -1098,91 +1118,113 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 
 ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     auto stats = offsets();
-    if (cfg.base_offset > stats.dirty_offset) {
-        return ss::make_ready_future<>();
+
+    if (cfg.base_offset > stats.dirty_offset || _segs.empty()) {
+        co_return;
     }
-    if (_segs.empty()) {
-        return ss::make_ready_future<>();
-    }
+
     cfg.base_offset = std::max(cfg.base_offset, _start_offset);
     // Note different from the stats variable above because
     // we want to delete even empty segments.
     if (
       cfg.base_offset
       < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
-        return remove_full_segments(cfg.base_offset).then([this, cfg] {
-            // recurse
-            return do_truncate(cfg);
-        });
+        co_await remove_full_segments(cfg.base_offset);
+        // recurse
+        co_return co_await do_truncate(cfg);
     }
-    auto& last = *_segs.back();
-    if (cfg.base_offset > last.offsets().dirty_offset) {
-        return ss::make_ready_future<>();
+    auto last = _segs.back();
+    if (cfg.base_offset > last->offsets().dirty_offset) {
+        co_return;
     }
-    auto pidx = last.index().find_nearest(cfg.base_offset);
-    model::offset start = last.index().base_offset();
+
+    co_await last->flush();
+    /**
+     * We look for the offset preceding the the requested truncation offset.
+     *
+     * This guarantee that the offset to file position translating consumer will
+     * see at least one batch that precedes the truncation point. This will
+     * allow establishing correct dirty offset after truncation.
+     */
+
+    // if no offset is found in an index we will start from the segment base
+    // offset
+    model::offset start = last->offsets().base_offset;
+
+    auto pidx = last->index().find_nearest(
+      std::max(start, model::prev_offset(cfg.base_offset)));
     size_t initial_size = 0;
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
     }
-    return last.flush()
-      .then([this, cfg, start, initial_size] {
-          // an unchecked reader is created which does not enforce the logical
-          // starting offset. this is needed because we really do want to read
-          // all the data in the segment to find the correct physical offset.
-          return make_unchecked_reader(
-                   log_reader_config(start, cfg.base_offset, cfg.prio))
-            .then([cfg, initial_size](model::record_batch_reader reader) {
-                return std::move(reader).consume(
-                  internal::offset_to_filepos_consumer(
-                    cfg.base_offset, initial_size),
-                  model::no_timeout);
-            });
-      })
-      .then(
-        [this, cfg, pidx](std::optional<std::pair<model::offset, size_t>> phs) {
-            if (!phs) {
-                return ss::make_exception_future<>(
-                  std::runtime_error(fmt_with_ctx(
-                    fmt::format,
-                    "User asked to truncate at:{}, with initial physical "
-                    "position of:{}, but internal::offset_to_filepos_consumer "
-                    "could not translate physical offsets. Log state: {}",
-                    cfg,
-                    pidx,
-                    *this)));
-            }
-            auto [prev_last_offset, file_position] = phs.value();
-            auto last = _segs.back();
-            if (file_position == 0) {
-                _segs.pop_back();
-                return remove_segment_permanently(
-                  last, "truncate[post-translation]");
-            }
-            _probe.remove_partition_bytes(last->size_bytes() - file_position);
-            return _readers_cache->evict_truncate(cfg.base_offset)
-              .then([this,
-                     prev_last_offset = prev_last_offset,
-                     file_position = file_position,
-                     last,
-                     phs](readers_cache::range_lock_holder cache_lock) {
-                  return last->truncate(prev_last_offset, file_position)
-                    .handle_exception([last, phs, this](std::exception_ptr e) {
-                        vassert(
-                          false,
-                          "Could not truncate:{} logical max:{}, physical "
-                          "offset:{} on "
-                          "segment:{} - log:{}",
-                          e,
-                          phs->first,
-                          phs->second,
-                          last,
-                          *this);
-                    })
-                    .finally([cache_lock = std::move(cache_lock)] {});
-              });
-        });
+
+    auto initial_generation_id = last->get_generation_id();
+
+    // an unchecked reader is created which does not enforce the logical
+    // starting offset. this is needed because we really do want to read
+    // all the data in the segment to find the correct physical offset.
+    auto reader = co_await make_unchecked_reader(
+      log_reader_config(start, model::offset::max(), cfg.prio));
+    auto phs = co_await std::move(reader).consume(
+      internal::offset_to_filepos_consumer(
+        start, cfg.base_offset, initial_size),
+      model::no_timeout);
+
+    // all segments were deleted, return
+    if (_segs.empty()) {
+        co_return;
+    }
+
+    auto last_ptr = _segs.back();
+
+    if (initial_generation_id != last_ptr->get_generation_id()) {
+        vlog(
+          stlog.debug,
+          "segment generation changed during truncation, retrying with "
+          "configuration: {}, initial generation: {}, current "
+          "generation: {}",
+          cfg,
+          initial_generation_id,
+          last_ptr->get_generation_id());
+        co_return co_await do_truncate(cfg);
+    }
+
+    if (!phs) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "User asked to truncate at:{}, with initial physical "
+          "position of: {{offset: {}, pos: {}}}, but "
+          "internal::offset_to_filepos_consumer "
+          "could not translate physical offsets. Log state: {}",
+          cfg,
+          start,
+          initial_size,
+          *this));
+    }
+    auto [prev_last_offset, file_position] = phs.value();
+
+    if (file_position == 0) {
+        _segs.pop_back();
+        co_return co_await remove_segment_permanently(
+          last_ptr, "truncate[post-translation]");
+    }
+    _probe.remove_partition_bytes(last_ptr->size_bytes() - file_position);
+    auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
+
+    try {
+        co_return co_await last_ptr->truncate(prev_last_offset, file_position);
+    } catch (...) {
+        vassert(
+          false,
+          "Could not truncate:{} logical max:{}, physical "
+          "offset:{} on segment:{} - log:{}",
+          std::current_exception(),
+          phs->first,
+          phs->second,
+          last,
+          *this);
+    }
 }
 
 model::offset disk_log_impl::read_start_offset() const {
@@ -1377,10 +1419,16 @@ void disk_log_impl::wrote_stm_bytes(size_t byte_size) {
 storage_resources& disk_log_impl::resources() { return _manager.resources(); }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{offsets:" << offsets()
-             << ", max_collectible_offset: " << _max_collectible_offset
-             << ", closed:" << _closed << ", config:" << config()
-             << ", logs:" << _segs << "}";
+    fmt::print(
+      o,
+      "{{offsets: {}, max_collectible_offset: {}, is_closed: {}, segments: "
+      "[{}], config: {}}}",
+      offsets(),
+      _max_collectible_offset,
+      _closed,
+      _segs,
+      config());
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {

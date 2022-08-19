@@ -55,7 +55,9 @@ ss::future<compaction_result> self_compact_segment(
  * segment, and upper range offsets (e.g. stable_offset) taken from the last
  * segment in the input range.
  */
-ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+ss::future<
+  std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
+make_concatenated_segment(
   std::filesystem::path,
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config,

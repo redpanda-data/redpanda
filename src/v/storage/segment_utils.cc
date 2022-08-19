@@ -53,6 +53,8 @@
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
 
+#include <optional>
+
 namespace storage::internal {
 using namespace storage; // NOLINT
 
@@ -437,64 +439,57 @@ ss::future<> do_swap_data_file_handles(
 }
 
 /**
- * Executes segment compaction, returns size of compacted segment
+ * Executes segment compaction, returns size of compacted segment or an empty
+ * optional if segment wasn't compacted
  */
-ss::future<size_t> do_self_compact_segment(
+ss::future<std::optional<size_t>> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
   storage_resources& resources) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().filename());
-    return s->read_lock()
-      .then([cfg, s, &pb, &resources](ss::rwlock::holder h) {
-          if (s->is_closed()) {
-              return ss::make_exception_future<index_state>(
-                segment_closed_exception());
-          }
+    auto read_holder = co_await s->read_lock();
+    auto segment_generation = s->get_generation_id();
 
-          return do_compact_segment_index(s, cfg, resources)
-            // copy the bytes after segment is good - note that we
-            // need to do it with the READ-lock, not the write lock
-            .then([cfg, s, h = std::move(h), &pb, &resources]() mutable {
-                return do_copy_segment_data(
-                  s, cfg, pb, std::move(h), resources);
-            });
-      })
-      .then([s, &readers_cache](storage::index_state idx) {
-          return readers_cache.evict_segment_readers(s).then(
-            [s,
-             idx = std::move(idx)](readers_cache::range_lock_holder) mutable {
-                return s->write_lock().then(
-                  [s, idx = std::move(idx)](ss::rwlock::holder h) mutable {
-                      using type = std::tuple<index_state, ss::rwlock::holder>;
-                      if (s->is_closed()) {
-                          return ss::make_exception_future<type>(
-                            segment_closed_exception());
-                      }
-                      return ss::make_ready_future<type>(
-                        std::make_tuple(std::move(idx), std::move(h)));
-                  });
-            });
-      })
-      .then([cfg, s, &pb](std::tuple<index_state, ss::rwlock::holder> h) {
-          return s->index()
-            .drop_all_data()
-            .then([s, cfg, &pb] {
-                auto compacted_file = data_segment_staging_name(s);
-                return do_swap_data_file_handles(compacted_file, s, cfg, pb);
-            })
-            .then([h = std::move(h), s]() mutable {
-                auto& [idx, lock] = h;
-                s->index().swap_index_state(std::move(idx));
-                s->force_set_commit_offset_from_index();
-                s->release_batch_cache_index();
-                return s->index()
-                  .flush()
-                  .then([s] { return s->size_bytes(); })
-                  .finally([l = std::move(lock)] {});
-            });
-      });
+    if (s->is_closed()) {
+        throw segment_closed_exception();
+    }
+
+    co_await do_compact_segment_index(s, cfg, resources);
+    // copy the bytes after segment is good - note that we
+    // need to do it with the READ-lock, not the write lock
+    auto idx = co_await do_copy_segment_data(
+      s, cfg, pb, std::move(read_holder), resources);
+
+    auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
+
+    auto write_lock_holder = co_await s->write_lock();
+    if (segment_generation != s->get_generation_id()) {
+        vlog(
+          stlog.debug,
+          "segment generation mismatch current generation: {}, previous "
+          "generation: {}, skipping compaction",
+          s->get_generation_id(),
+          segment_generation);
+        co_return std::nullopt;
+    }
+
+    if (s->is_closed()) {
+        throw segment_closed_exception();
+    }
+
+    co_await s->index().drop_all_data();
+
+    auto compacted_file = data_segment_staging_name(s);
+    co_await do_swap_data_file_handles(compacted_file, s, cfg, pb);
+
+    s->index().swap_index_state(std::move(idx));
+    s->force_set_commit_offset_from_index();
+    s->release_batch_cache_index();
+    co_await s->index().flush();
+    s->advance_generation();
+    co_return s->size_bytes();
 }
 
 ss::future<> rebuild_compaction_index(
@@ -527,64 +522,66 @@ ss::future<compaction_result> self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources) {
     if (s->has_appender()) {
-        return ss::make_exception_future<compaction_result>(
-          std::runtime_error(fmt::format(
-            "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+        throw std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
     }
+
     if (s->finished_self_compaction()) {
-        return ss::make_ready_future<compaction_result>(s->size_bytes());
+        co_return compaction_result{s->size_bytes()};
     }
+
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
-    return detect_compaction_index_state(idx_path, cfg)
-      .then([idx_path, s, cfg, &pb, &readers_cache, &resources](
-              compacted_index::recovery_state state) mutable {
-          vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
-          switch (state) {
-          case compacted_index::recovery_state::already_compacted: {
-              vlog(gclog.debug, "detected {} is already compacted", idx_path);
-              return ss::make_ready_future<compaction_result>(s->size_bytes());
-          }
-          case compacted_index::recovery_state::index_recovered:
-              return do_self_compact_segment(
-                       s, cfg, pb, readers_cache, resources)
-                .then([before = s->size_bytes(), &pb](size_t sz_after) {
-                    pb.segment_compacted();
-                    return compaction_result(before, sz_after);
-                });
-          case compacted_index::recovery_state::index_missing:
-              [[fallthrough]];
-          case compacted_index::recovery_state::index_needs_rebuild: {
-              vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
-              pb.corrupted_compaction_index();
-              return s->read_lock()
-                .then(
-                  [s, cfg, &pb, idx_path, &resources](ss::rwlock::holder h) {
-                      return rebuild_compaction_index(
-                        create_segment_full_reader(s, cfg, pb, std::move(h)),
-                        idx_path,
-                        cfg,
-                        resources);
-                  })
-                .then([s, cfg, &pb, idx_path, &readers_cache, &resources] {
-                    vlog(
-                      gclog.info,
-                      "rebuilt index: {}, attempting compaction again",
-                      idx_path);
-                    return self_compact_segment(
-                      s, cfg, pb, readers_cache, resources);
-                });
-          }
-          }
-          __builtin_unreachable();
-      })
-      .then([s](compaction_result r) {
-          s->mark_as_finished_self_compaction();
-          return r;
-      });
+
+    auto state = co_await detect_compaction_index_state(idx_path, cfg);
+
+    vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
+
+    switch (state) {
+    case compacted_index::recovery_state::already_compacted: {
+        vlog(gclog.debug, "detected {} is already compacted", idx_path);
+        s->mark_as_finished_self_compaction();
+        co_return compaction_result{s->size_bytes()};
+    }
+    case compacted_index::recovery_state::index_recovered: {
+        auto sz_before = s->size_bytes();
+        auto sz_after = co_await do_self_compact_segment(
+          s, cfg, pb, readers_cache, resources);
+        // compaction wasn't executed, return
+        if (!sz_after) {
+            co_return compaction_result(sz_before);
+        }
+        pb.segment_compacted();
+        s->mark_as_finished_self_compaction();
+        co_return compaction_result(sz_before, *sz_after);
+    }
+    case compacted_index::recovery_state::index_missing:
+        [[fallthrough]];
+    case compacted_index::recovery_state::index_needs_rebuild: {
+        vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
+        pb.corrupted_compaction_index();
+        auto h = co_await s->read_lock();
+
+        co_await rebuild_compaction_index(
+          create_segment_full_reader(s, cfg, pb, std::move(h)),
+          idx_path,
+          cfg,
+          resources);
+
+        vlog(
+          gclog.info,
+          "rebuilt index: {}, attempting compaction again",
+          idx_path);
+        co_return co_await self_compact_segment(
+          s, cfg, pb, readers_cache, resources);
+    }
+    }
+    __builtin_unreachable();
 }
 
-ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+ss::future<
+  std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
+make_concatenated_segment(
   std::filesystem::path path,
   std::vector<ss::lw_shared_ptr<segment>> segments,
   compaction_config cfg,
@@ -592,8 +589,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     // read locks on source segments
     std::vector<ss::rwlock::holder> locks;
     locks.reserve(segments.size());
+    std::vector<segment::generation_id> generations;
+    generations.reserve(segments.size());
     for (auto& segment : segments) {
         locks.push_back(co_await segment->read_lock());
+        generations.push_back(segment->get_generation_id());
     }
 
     // fast check if we should abandon all the expensive i/o work if we happened
@@ -654,14 +654,16 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       segment_index::default_data_buffer_step,
       cfg.sanitize);
 
-    co_return ss::make_lw_shared<segment>(
-      offsets,
-      std::move(reader),
-      std::move(index),
-      nullptr,
-      std::nullopt,
-      std::nullopt,
-      resources);
+    co_return std::make_tuple(
+      ss::make_lw_shared<segment>(
+        offsets,
+        std::move(reader),
+        std::move(index),
+        nullptr,
+        std::nullopt,
+        std::nullopt,
+        resources),
+      std::move(generations));
 }
 
 ss::future<std::vector<compacted_index_reader>> make_indices_readers(

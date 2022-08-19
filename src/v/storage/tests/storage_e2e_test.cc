@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <iterator>
 #include <numeric>
+#include <optional>
 
 storage::disk_log_impl* get_disk_log(storage::log log) {
     return dynamic_cast<storage::disk_log_impl*>(log.get_impl());
@@ -2303,4 +2304,256 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
     produce.get();
     read.get();
     truncate.get();
+}
+
+FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
+    /**
+     * Test validating concurrent reads, writes and truncations
+     */
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_segment_size = config::mock_binding<size_t>(1_MiB);
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    int cnt = 0;
+    int max = 500;
+    bool done = false;
+    mutex log_mutex;
+    auto produce
+      = ss::do_until(
+          [&] { return cnt > max || done; },
+          [&log, &cnt, &log_mutex] {
+              ss::circular_buffer<model::record_batch> batches;
+              for (int i = 0; i < 20; ++i) {
+                  storage::record_batch_builder builder(
+                    model::record_batch_type::raft_data, model::offset(0));
+
+                  builder.add_raw_kv(
+                    reflection::to_iobuf(
+                      ssx::sformat("key-{}", random_generators::get_int(100))),
+                    reflection::to_iobuf("value"));
+                  batches.push_back(std::move(builder).build());
+              }
+              auto reader = model::make_memory_record_batch_reader(
+                std::move(batches));
+
+              storage::log_append_config cfg{
+                .should_fsync = storage::log_append_config::fsync::no,
+                .io_priority = ss::default_priority_class(),
+                .timeout = model::no_timeout,
+              };
+              return log_mutex
+                .with([reader = std::move(reader), cfg, &log]() mutable {
+                    return std::move(reader).for_each_ref(
+                      log.make_appender(cfg), cfg.timeout);
+                })
+                .then([](storage::append_result res) {
+                    info("append_result: {}", res.last_offset);
+                })
+                .then([&log] { return log.flush(); })
+                .finally([&cnt] { cnt++; });
+          })
+          .finally([&] { done = true; });
+
+    auto truncate
+      = ss::do_until(
+          [&] { return done; },
+          [&log, &log_mutex] {
+              auto offset = log.offsets();
+              if (offset.dirty_offset <= model::offset(0)) {
+                  return ss::now();
+              }
+              return log_mutex.with([&log] {
+                  auto offset = log.offsets();
+                  auto truncate_at = model::offset{
+                    random_generators::get_int<int64_t>(
+                      offset.dirty_offset() / 2, offset.dirty_offset)};
+                  info(
+                    "truncate offsets: {}, truncate at: {}",
+                    offset,
+                    truncate_at);
+
+                  return log
+                    .truncate(storage::truncate_config(
+                      truncate_at, ss::default_priority_class()))
+                    .then_wrapped([log, o = truncate_at](ss::future<> f) {
+                        vassert(
+                          !f.failed(),
+                          "truncation failed with {}",
+                          f.get_exception());
+                        BOOST_REQUIRE_LE(
+                          log.offsets().dirty_offset, model::prev_offset(o));
+                    });
+              });
+          })
+          .finally([&] { done = true; });
+
+    auto compact = ss::do_until(
+                     [&] { return done; },
+                     [&log, &as] {
+                         return log
+                           .compact(storage::compaction_config(
+                             model::timestamp::min(),
+                             std::nullopt,
+                             ss::default_priority_class(),
+                             as))
+                           .handle_exception_type(
+                             [](const storage::segment_closed_exception&) {
+
+                             })
+                           .handle_exception([](std::exception_ptr e) {
+                               info("compaction exception - {}", e);
+                           });
+                     })
+                     .finally([&] { done = true; });
+
+    compact.get();
+    info("compact_done");
+    produce.get();
+    info("produce_done");
+    truncate.get();
+    info("truncate_done");
+};
+
+FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_compacted_segment_size = config::mock_binding<size_t>(100_MiB);
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    auto ntp = model::ntp("default", "test", 0);
+
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto large_batch = [](int key) {
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        builder.add_raw_kv(
+          reflection::to_iobuf(ssx::sformat("key-{}", key)),
+          bytes_to_iobuf(random_generators::get_bytes(33_KiB)));
+        return std::move(builder).build();
+    };
+
+    auto write_and_compact =
+      [&](ss::circular_buffer<model::record_batch> batches) {
+          auto reader = model::make_memory_record_batch_reader(
+            std::move(batches));
+
+          storage::log_append_config appender_cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout,
+          };
+
+          std::move(reader)
+            .for_each_ref(log.make_appender(appender_cfg), model::no_timeout)
+            .discard_result()
+            .then([&log] { return log.flush(); })
+            .get();
+
+          log
+            .compact(storage::compaction_config(
+              model::timestamp::min(),
+              std::nullopt,
+              ss::default_priority_class(),
+              as))
+            .get();
+      };
+    {
+        /**
+         * Truncate with dirty offset being preceeded by a gap
+         *
+         * segment: [[batch (base_offset: 0)][gap][batch (base_offset: 10)]]
+         *
+         */
+        ss::circular_buffer<model::record_batch> batches;
+
+        // first batch
+        batches.push_back(large_batch(1));
+        // 10 batches with the same key
+        for (int i = 0; i < 10; ++i) {
+            batches.push_back(large_batch(2));
+        }
+        // roll segment with new term append
+        auto b = large_batch(1);
+        b.set_term(model::term_id(10));
+        batches.push_back(std::move(b));
+
+        write_and_compact(std::move(batches));
+
+        model::offset truncate_offset(10);
+
+        log
+          .truncate(storage::truncate_config(
+            truncate_offset, ss::default_priority_class()))
+          .get();
+        info("truncated at: {}, offsets: {}", truncate_offset, log.offsets());
+        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(0));
+    }
+
+    {
+        /**
+         * Truncate with the first offset available in the log
+         * segment: [batch: (base_offset: 11)]
+         *
+         */
+        ss::circular_buffer<model::record_batch> batches;
+
+        // first batch
+        batches.push_back(large_batch(1));
+        // 10 batches with the same key
+        for (int i = 0; i < 10; ++i) {
+            batches.push_back(large_batch(2));
+        }
+        // roll segment with new term append
+        for (auto i = 1; i < 10; ++i) {
+            auto b = large_batch(i + 20);
+            b.set_term(model::term_id(10));
+            batches.push_back(std::move(b));
+        }
+
+        write_and_compact(std::move(batches));
+
+        model::offset truncate_offset(11);
+        log
+          .truncate_prefix(storage::truncate_prefix_config(
+            truncate_offset, ss::default_priority_class()))
+          .get();
+
+        log
+          .truncate(storage::truncate_config(
+            truncate_offset, ss::default_priority_class()))
+          .get();
+        info("truncated at: {}, offsets: {}", truncate_offset, log.offsets());
+        // empty log have a dirty offset equal to (start_offset - 1)
+        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(10));
+    }
 }
