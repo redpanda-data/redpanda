@@ -58,9 +58,9 @@ do_verify_partition(storage::log log, model::ntp ntp, std::size_t n) {
 }
 
 ss::future<> fiber_mock_fixture::verify_results(expected_t expected) {
-    return _state.invoke_on_all([this, expected](state& s) mutable {
+    return _state.invoke_on_all([this, expected](state&) mutable {
         return ss::do_with(
-          std::move(expected), [this, &s](expected_t& expected) {
+          std::move(expected), [this](expected_t& expected) {
               return ss::parallel_for_each(
                 expected, [this](expected_t::value_type& p) {
                     auto log = app.storage.local().log_mgr().get(p.first);
