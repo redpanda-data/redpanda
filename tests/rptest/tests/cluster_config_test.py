@@ -112,11 +112,13 @@ class ClusterConfigTest(RedpandaTest):
         # Some arbitrary property to check syntax of result
         assert 'kafka_api' in node_config
 
-        # Status reconcilation is async, wait for all nodes to have reported in.
-        wait_until(lambda: len(admin.get_cluster_config_status()) == len(
-            self.redpanda.nodes),
-                   timeout_sec=20,
-                   backoff_sec=1)
+        # Read authoritative version from controller
+        initial_version = max(n['config_version']
+                              for n in admin.get_cluster_config_status(
+                                  node=self.redpanda.controller()))
+
+        # Wait for all nodes to report all other nodes status' up to date
+        self._wait_for_version_status_sync(initial_version)
 
         # Validate expected status for a cluster that we have made no changes to
         # since first start
@@ -180,6 +182,13 @@ class ClusterConfigTest(RedpandaTest):
             assert config[k] == v
 
     def _wait_for_version_sync(self, version):
+        """
+        Waits for the controller to see up to date status at `version` from
+        all nodes.  Does _not_ guarantee that this status result has also
+        propagated to all other node: use _wait_for_version_status_sync
+        if you need to query status from an arbitrary node and get consistent
+        result.
+        """
         wait_until(
             lambda: set([
                 n['config_version'] for n in self.admin.
@@ -195,10 +204,10 @@ class ClusterConfigTest(RedpandaTest):
         the config version has propagated to all nodes, but also that the
         consequent config status (of all the peers) has propagated to all nodes.
         """
-        for n in self.redpanda.nodes:
+        for node in self.redpanda.nodes:
             wait_until(lambda: set([
                 n['config_version']
-                for n in self.admin.get_cluster_config_status(node=n)
+                for n in self.admin.get_cluster_config_status(node=node)
             ]) == {version},
                        timeout_sec=10,
                        backoff_sec=0.5,
@@ -242,7 +251,7 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             new_setting[0]] == new_setting[1]
@@ -253,7 +262,7 @@ class ClusterConfigTest(RedpandaTest):
         # an upsert does
         patch_result = self.admin.patch_cluster_config(remove=[new_setting[0]])
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
         assert self.admin.get_cluster_config()[
             new_setting[0]] != new_setting[1]
         self._check_restart_clears()
@@ -320,12 +329,13 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_status_sync(new_version)
+        self._wait_for_version_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             norestart_new_setting[0]] == norestart_new_setting[1]
 
         # Status should not indicate restart needed
+        self._wait_for_version_status_sync(new_version)
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
@@ -433,14 +443,11 @@ class ClusterConfigTest(RedpandaTest):
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
 
+        self._wait_for_version_status_sync(patch_result['config_version'])
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
             assert n['invalid'] == []
-
-        # TODO as well as specific invalid examples, do a pass across the whole
-        # schema to check that
-        pass
 
     @cluster(num_nodes=3)
     def test_bad_requests(self):
@@ -594,7 +601,7 @@ class ClusterConfigTest(RedpandaTest):
         # status is the same as the one already reported.
         time.sleep(10)
 
-        # Check after restart that confuration persisted and status shows valid
+        # Check after restart that configuration persisted and status shows valid
         check_status(False)
         check_values()
 
