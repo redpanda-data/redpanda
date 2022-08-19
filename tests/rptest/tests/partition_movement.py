@@ -95,11 +95,16 @@ class PartitionMovementMixin():
         admin = Admin(self.redpanda)
 
         def status_done():
-            info = admin.get_partitions(topic, partition)
-            self.logger.info(
-                f"current assignments for {topic}-{partition}: {info}")
-            converged = self._equal_assignments(info["replicas"], assignments)
-            return converged and info["status"] == "done"
+            results = []
+            for n in self.redpanda._started:
+                info = admin.get_partitions(topic, partition, node=n)
+                self.logger.info(
+                    f"current assignments for {topic}-{partition}: {info}")
+                converged = self._equal_assignments(info["replicas"],
+                                                    assignments)
+                results.append(converged and info["status"] == "done")
+
+            return all(results)
 
         # wait until redpanda reports complete
         wait_until(status_done, timeout_sec=timeout_sec, backoff_sec=2)
@@ -200,8 +205,11 @@ class PartitionMovementMixin():
         admin = Admin(self.redpanda)
 
         def move_in_progress():
-            p = admin.get_partitions(topic, partition)
-            return p['status'] == 'in_progress'
+            return [
+                admin.get_partitions(topic, partition,
+                                     node=n)['status'] == 'in_progress'
+                for n in self.redpanda._started
+            ]
 
         wait_until(move_in_progress, timeout_sec=timeout)
 
