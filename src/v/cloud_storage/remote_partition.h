@@ -244,6 +244,7 @@ private:
         /// In either case return a reader.
         std::unique_ptr<remote_segment_batch_reader> borrow_reader(
           const storage::log_reader_config& cfg,
+          ssx::semaphore&,
           retry_chain_logger& ctxlog,
           partition_probe& probe);
 
@@ -331,6 +332,12 @@ private:
       materialized_segment_state,
       &materialized_segment_state::_hook>
       _materialized;
+
+    // Limit the number of readers of materialized segments that may exist.
+    // This also implicitly limits the number of materialized segments that may
+    // exist, since each materialized segment should have at least one reader.
+    ssx::semaphore _readers_limit;
+
     ss::condition_variable _cvar;
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;

@@ -208,6 +208,7 @@ public:
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,
+      ssx::semaphore_units,
       partition_probe& probe) noexcept;
 
     remote_segment_batch_reader(
@@ -261,6 +262,9 @@ private:
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};
+
+    // Units frorm the partition's readers_limit semaphore
+    ssx::semaphore_units _units;
 };
 
 } // namespace cloud_storage

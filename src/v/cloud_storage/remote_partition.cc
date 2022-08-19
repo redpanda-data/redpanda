@@ -14,6 +14,7 @@
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
+#include "config/configuration.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
 #include "utils/gate_guard.h"
@@ -367,6 +368,9 @@ remote_partition::remote_partition(
   , _cache(c)
   , _manifest(m)
   , _bucket(std::move(bucket))
+  , _readers_limit(
+      config::shard_local_cfg().cloud_storage_readers_per_partition(),
+      "readers_limit")
   , _stm_jitter(stm_jitter_duration)
   , _probe(m.get_ntp()) {}
 
@@ -642,18 +646,25 @@ std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
   storage::log_reader_config config, model::offset key, segment_state& st) {
     if (std::holds_alternative<offloaded_segment_state>(st)) {
         gc_stale_materialized_segments(true);
+    } else if (_readers_limit.current() <= 0) {
+        vlog(_ctxlog.trace, "Reader limit pressure: force-GCing all segments");
+        gc_stale_materialized_segments(true);
     }
+
     return ss::visit(
       st,
       [this, &config, offset_key = key, &st](
         offloaded_segment_state& off_state) {
           auto tmp = off_state->materialize(*this, offset_key);
-          auto res = tmp->borrow_reader(config, this->_ctxlog, _probe);
+          auto res = tmp->borrow_reader(
+            config, _readers_limit, this->_ctxlog, _probe);
           st = std::move(tmp);
           return res;
       },
       [this, &config](materialized_segment_ptr& m_state) {
-          return m_state->borrow_reader(config, _ctxlog, _probe);
+          auto reader = m_state->borrow_reader(
+            config, _readers_limit, _ctxlog, _probe);
+          return reader;
       });
 }
 
@@ -665,8 +676,17 @@ void remote_partition::return_reader(
       [this, &reader](offloaded_segment_state&) {
           evict_reader(std::move(reader));
       },
-      [&reader](materialized_segment_ptr& m_state) {
-          m_state->return_reader(std::move(reader));
+      [this, &reader](materialized_segment_ptr& m_state) {
+          if (_readers_limit.current() <= 0) {
+              // Reader concurrency limit is under pressure: take this
+              // opportunity to drop a reader.
+              vlog(
+                _ctxlog.trace,
+                "Reader limit pressure: dropping reader on return");
+              evict_reader(std::move(reader));
+          } else {
+              m_state->return_reader(std::move(reader));
+          }
       });
 }
 
@@ -733,6 +753,7 @@ void remote_partition::materialized_segment_state::return_reader(
 std::unique_ptr<remote_segment_batch_reader>
 remote_partition::materialized_segment_state::borrow_reader(
   const storage::log_reader_config& cfg,
+  ssx::semaphore& readers_limit,
   retry_chain_logger& ctxlog,
   partition_probe& probe) {
     atime = ss::lowres_clock::now();
@@ -750,7 +771,9 @@ remote_partition::materialized_segment_state::borrow_reader(
         }
     }
     vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
-    return std::make_unique<remote_segment_batch_reader>(segment, cfg, probe);
+    auto units = ss::consume_units(readers_limit, 1);
+    return std::make_unique<remote_segment_batch_reader>(
+      segment, cfg, std::move(units), probe);
 }
 
 ss::future<> remote_partition::materialized_segment_state::stop() {
