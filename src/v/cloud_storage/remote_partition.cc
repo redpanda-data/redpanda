@@ -372,7 +372,7 @@ remote_partition::remote_partition(
 
 ss::future<> remote_partition::start() {
     update_segments_incrementally();
-    (void)run_eviction_loop();
+    ssx::spawn_with_gate(_gate, [this] { return run_eviction_loop(); });
 
     _stm_timer.set_callback([this] {
         gc_stale_materialized_segments(false);
@@ -383,17 +383,12 @@ ss::future<> remote_partition::start() {
 }
 
 ss::future<> remote_partition::run_eviction_loop() {
-    // Evict readers asynchronously
-    gate_guard g(_gate);
-    try {
-        while (true) {
-            co_await _cvar.wait([this] { return !_eviction_list.empty(); });
-            auto tmp_list = std::exchange(_eviction_list, {});
-            for (auto& rs : tmp_list) {
-                co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
-            }
+    while (true) {
+        co_await _cvar.wait([this] { return !_eviction_list.empty(); });
+        auto tmp_list = std::exchange(_eviction_list, {});
+        for (auto& rs : tmp_list) {
+            co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
         }
-    } catch (const ss::broken_condition_variable&) {
     }
     vlog(_ctxlog.debug, "remote partition eviction loop stopped");
 }
