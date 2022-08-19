@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
@@ -24,13 +25,13 @@ class OffsetForLeaderEpochTest(RedpandaTest):
     Check offset for leader epoch handling
     """
     def _all_have_leaders(self, topic):
-        rpk = RpkTool(self.redpanda)
-        partitions = rpk.describe_topic(topic)
+        admin = Admin(self.redpanda)
 
-        for p in partitions:
-            self.logger.debug(f"rpk partition: {p}")
-            if p.leader is None or p.leader == -1:
+        for n in self.redpanda.nodes:
+            partitions = admin.get_partitions(node=n)
+            if not all([p['leader'] != -1 for p in partitions]):
                 return False
+
         return True
 
     def _produce(self, topic, msg_cnt):
@@ -79,6 +80,8 @@ class OffsetForLeaderEpochTest(RedpandaTest):
 
         def list_offsets_map():
             offsets_map = {}
+            offsets = []
+
             offsets = kcl.list_offsets(topic_names)
             self.logger.info(f"offsets_list: {offsets}")
             for p in offsets:
