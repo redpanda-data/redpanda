@@ -251,8 +251,7 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
 
-    iobuf downloaded;
-    auto try_consume = [&downloaded](uint64_t, ss::input_stream<char>) {
+    auto try_consume = [](uint64_t, ss::input_stream<char>) {
         return ss::make_ready_future<uint64_t>(0);
     };
 
