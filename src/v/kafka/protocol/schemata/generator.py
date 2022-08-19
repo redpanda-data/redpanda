@@ -666,6 +666,11 @@ class ArrayType(FieldType):
     def value_type(self):
         return self._value_type
 
+    @property
+    def potentially_flexible_type(self):
+        assert isinstance(self._value_type, ScalarType)
+        return self._value_type.potentially_flexible_type
+
 
 class Field:
     def __init__(self, field, field_type, path):
@@ -801,6 +806,9 @@ class Field:
         if self.is_array:
             # array fields never contain nullable types. so if this is an array
             # field then choose the non-nullable decoder for its element type.
+            if self.potentially_flexible_type and flex:
+                assert plain_decoder[3]
+                return plain_decoder[3], named_type
             assert plain_decoder[1]
             return plain_decoder[1], named_type
         if self.potentially_flexible_type:
@@ -844,8 +852,7 @@ class Field:
 
     @property
     def potentially_flexible_type(self):
-        return isinstance(self._type,
-                          ScalarType) and self._type.potentially_flexible_type
+        return self._type.potentially_flexible_type
 
     @property
     def type_name(self):
@@ -1044,6 +1051,8 @@ if ({{ cond }}) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
 {{- struct_serde(field.type().value_type(), methods, "v") | indent }}
+{%- elif flex and field.type().value_type().potentially_flexible_type %}
+    {{ writer }}.write_flex(v);
 {%- else %}
     {{ writer }}.write(v);
 {%- endif %}
