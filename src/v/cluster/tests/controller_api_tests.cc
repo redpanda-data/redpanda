@@ -57,7 +57,7 @@ FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
       .get();
 
     // wait for reconciliation to be finished
-    tests::cooperative_spin_wait_with_timeout(2s, [this, &n2, &test_ntp] {
+    tests::cooperative_spin_wait_with_timeout(2s, [&n2, &test_ntp] {
         return n2->controller->get_api()
           .local()
           .get_reconciliation_state(test_ntp)
