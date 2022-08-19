@@ -691,7 +691,7 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     };
 
     auto append =
-      [log, &_sem, &as, batches_per_append, &last_append_offset]() mutable {
+      [log, &_sem, batches_per_append, &last_append_offset]() mutable {
           return ss::with_semaphore(
             _sem, 1, [log, batches_per_append, &last_append_offset]() mutable {
                 return ss::sleep(10ms).then(
@@ -2292,7 +2292,7 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
               return log
                 .truncate(storage::truncate_config(
                   offset.dirty_offset, ss::default_priority_class()))
-                .finally([start, o = offset.dirty_offset] {
+                .finally([start] {
                     // assert that truncation took less than 5 seconds
                     BOOST_REQUIRE_LT(
                       (ss::steady_clock_type::now() - start) / 1ms, 5000);
