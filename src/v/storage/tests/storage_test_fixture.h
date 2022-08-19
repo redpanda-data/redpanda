@@ -158,7 +158,7 @@ public:
 
         // do multiple append calls
 
-        for (auto append : boost::irange(0, appends)) {
+        for ([[maybe_unused]] auto append : boost::irange(0, appends)) {
             auto batches = batch_generator();
             // Collect batches offsets
             for (auto& b : batches) {
