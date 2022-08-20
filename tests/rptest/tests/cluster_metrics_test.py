@@ -140,6 +140,7 @@ class ClusterMetricsTest(RedpandaTest):
         level metrics at any given time.
         """
         # Assert metrics are reported once in a fresh, three node cluster
+        self._wait_until_controller_leader_is_stable()
         self._assert_reported_by_controller()
 
         # Restart the controller node and assert.
@@ -158,6 +159,7 @@ class ClusterMetricsTest(RedpandaTest):
         # This time the metrics should not be reported as a controller
         # couldn't be elected due to lack of quorum.
         self._stop_controller_node()
+        self._wait_until_controller_leader_is_stable()
         self._assert_reported_by_controller()
 
     @cluster(num_nodes=3)
@@ -166,6 +168,7 @@ class ClusterMetricsTest(RedpandaTest):
         Test that the cluster level metrics move in the expected way
         after creating a topic.
         """
+        self._wait_until_controller_leader_is_stable()
         self._assert_reported_by_controller()
 
         controller_node = self.redpanda.controller()
@@ -196,6 +199,7 @@ class ClusterMetricsTest(RedpandaTest):
         """
         # 'disable_public_metrics' defaults to false so cluster metrics
         # are expected
+        self._wait_until_controller_leader_is_stable()
         self._assert_reported_by_controller()
 
         self.redpanda.set_cluster_config({"disable_public_metrics": "true"},
@@ -204,5 +208,6 @@ class ClusterMetricsTest(RedpandaTest):
         # The 'public_metrics' endpoint that serves cluster level
         # metrics should not return anything when
         # 'disable_public_metrics' == true
+        self._wait_until_controller_leader_is_stable()
         cluster_metrics = self._get_cluster_metrics(self.redpanda.controller())
         assert cluster_metrics is None

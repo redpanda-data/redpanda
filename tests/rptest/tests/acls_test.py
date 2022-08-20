@@ -72,7 +72,8 @@ class AccessControlListTest(RedpandaTest):
                         enable_authz: Optional[bool] = None,
                         authn_method: Optional[str] = None,
                         principal_mapping_rules: Optional[str] = None,
-                        client_auth: bool = True):
+                        client_auth: bool = True,
+                        expect_fail: bool = False):
         self.security = SecurityConfig()
         self.security.enable_sasl = use_sasl
         self.security.kafka_enable_authorization = enable_authz
@@ -110,22 +111,13 @@ class AccessControlListTest(RedpandaTest):
             })
 
         self.redpanda.set_security_settings(self.security)
-        self.redpanda.start()
+        self.redpanda.start(expect_fail=expect_fail)
+        if expect_fail:
+            # If we got this far without exception, RedpandaService.start
+            # has successfully confirmed that redpanda failed to start.
+            return
 
         admin = Admin(self.redpanda)
-
-        if self.security.mtls_identity_enabled():
-            feature_name = "mtls_authentication"
-            admin.put_feature(feature_name, {"state": "active"})
-
-            # wait for feature to be active so that tests don't have to retry
-            def check_feature_active():
-                for f in admin.get_features()["features"]:
-                    if f["name"] == feature_name and f["state"] == "active":
-                        return True
-                return False
-
-            wait_until(check_feature_active, timeout_sec=10, backoff_sec=1)
 
         # base case user is not a superuser and has no configured ACLs
         if self.security.sasl_enabled() or enable_authz:
@@ -138,23 +130,24 @@ class AccessControlListTest(RedpandaTest):
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
-        # there is not a convenient interface for waiting for acls to propogate
-        # to all nodes so when we are using mtls only for identity we inject a
-        # sleep here to try to avoid any acl propogation races.
-        if self.security.mtls_identity_enabled():
-            time.sleep(5)
-            return
+        # Hack: create a user, so that we can watch for this user in order to
+        # confirm that all preceding controller log writes landed: this is
+        # an indirect way to check that ACLs (and users) have propagated
+        # to all nodes before we proceed.
+        checkpoint_user = "_test_checkpoint"
+        admin.create_user(checkpoint_user, "_password", self.algorithm)
 
         # wait for users to propagate to nodes
-        def users_propogated():
+        def auth_metadata_propagated():
             for node in self.redpanda.nodes:
                 users = admin.list_users(node=node)
-                if "base" not in users or "cluster_describe" not in users:
+                if checkpoint_user not in users:
                     return False
+                elif self.security.sasl_enabled() or enable_authz:
+                    assert "base" in users and "cluster_describe" in users
             return True
 
-        if self.security.sasl_enabled() or enable_authz:
-            wait_until(users_propogated, timeout_sec=10, backoff_sec=1)
+        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
 
     def get_client(self, username):
         if self.security.mtls_identity_enabled(
@@ -225,15 +218,16 @@ class AccessControlListTest(RedpandaTest):
         startup_should_fail = expect_startup_failure(use_tls, authn_method,
                                                      client_auth)
 
-        try:
-            self.prepare_cluster(use_tls,
-                                 use_sasl,
-                                 enable_authz,
-                                 authn_method,
-                                 client_auth=client_auth)
-            assert not startup_should_fail
-        except TimeoutError:
-            assert startup_should_fail
+        self.logger.info(f"startup_should_fail={startup_should_fail}")
+
+        self.prepare_cluster(use_tls,
+                             use_sasl,
+                             enable_authz,
+                             authn_method,
+                             client_auth=client_auth,
+                             expect_fail=startup_should_fail)
+
+        if startup_should_fail:
             return
 
         def should_pass_w_base_user(use_sasl: bool,
