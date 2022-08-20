@@ -176,8 +176,8 @@ model::ntp ntp(model::ns ns, ss::sstring tp, int pid) {
 
 FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
 
     wait_for_all_members(3s).get();
     // wait for disk space report to be present
@@ -304,8 +304,8 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
 
     wait_for_all_members(3s).get();
     // wait for disk space report to be present
