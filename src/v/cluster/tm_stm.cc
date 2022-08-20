@@ -337,38 +337,74 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
     co_return tm_stm::op_status::success;
 }
 
-bool tm_stm::add_partitions(
+ss::future<tm_stm::op_status> tm_stm::add_partitions(
   kafka::transactional_id tx_id,
   std::vector<tm_transaction::tx_partition> partitions) {
     auto ptx = _mem_txes.find(tx_id);
     if (ptx == _mem_txes.end()) {
-        return false;
+        co_return tm_stm::op_status::unknown;
     }
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
-        return false;
+        co_return tm_stm::op_status::unknown;
     }
+    bool just_started = ptx->second.partitions.size() == 0
+                        && ptx->second.groups.size() == 0;
+
+    if (just_started) {
+        tm_transaction tx = ptx->second;
+        for (auto& partition : partitions) {
+            tx.partitions.push_back(partition);
+        }
+        tx.last_update_ts = clock_type::now();
+        auto r = co_await update_tx(tx, tx.etag);
+
+        if (!r.has_value()) {
+            co_return tm_stm::op_status::unknown;
+        }
+        _mem_txes[tx_id] = tx;
+        co_return tm_stm::op_status::success;
+    }
+
     for (auto& partition : partitions) {
         ptx->second.partitions.push_back(partition);
     }
     ptx->second.last_update_ts = clock_type::now();
-    return true;
+
+    co_return tm_stm::op_status::success;
 }
 
-bool tm_stm::add_group(
+ss::future<tm_stm::op_status> tm_stm::add_group(
   kafka::transactional_id tx_id,
   kafka::group_id group_id,
   model::term_id term) {
     auto ptx = _mem_txes.find(tx_id);
     if (ptx == _mem_txes.end()) {
-        return false;
+        co_return tm_stm::op_status::unknown;
     }
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
-        return false;
+        co_return tm_stm::op_status::unknown;
     }
+    bool just_started = ptx->second.partitions.size() == 0
+                        && ptx->second.groups.size() == 0;
+
+    if (just_started) {
+        tm_transaction tx = ptx->second;
+        tx.groups.push_back(
+          tm_transaction::tx_group{.group_id = group_id, .etag = term});
+        tx.last_update_ts = clock_type::now();
+        auto r = co_await update_tx(tx, tx.etag);
+
+        if (!r.has_value()) {
+            co_return tm_stm::op_status::unknown;
+        }
+        _mem_txes[tx_id] = tx;
+        co_return tm_stm::op_status::success;
+    }
+
     ptx->second.groups.push_back(
       tm_transaction::tx_group{.group_id = group_id, .etag = term});
     ptx->second.last_update_ts = clock_type::now();
-    return true;
+    co_return tm_stm::op_status::success;
 }
 
 ss::future<>
