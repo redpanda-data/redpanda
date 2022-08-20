@@ -154,7 +154,6 @@ SEASTAR_THREAD_TEST_CASE(check_abort_requested_fail) {
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_1) {
     retry_chain_node n1;
     retry_chain_node n2(1000ms, 100ms, &n1);
-    auto now = ss::lowres_clock::now();
     BOOST_REQUIRE(n1.get_timeout() == 0ms);
     BOOST_REQUIRE(n2.get_timeout() == 1000ms);
 }
@@ -162,7 +161,6 @@ SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_1) {
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_2) {
     retry_chain_node n1(1000ms, 100ms);
     retry_chain_node n2(500ms, 100ms, &n1);
-    auto now = ss::lowres_clock::now();
     BOOST_REQUIRE(n1.get_timeout() == 1000ms);
     BOOST_REQUIRE(n2.get_timeout() == 500ms);
 }
@@ -170,7 +168,6 @@ SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_2) {
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_3) {
     retry_chain_node n1(500ms, 100ms);
     retry_chain_node n2(1000ms, 100ms, &n1);
-    auto now = ss::lowres_clock::now();
     BOOST_REQUIRE(n1.get_timeout() == 500ms);
     BOOST_REQUIRE(n2.get_timeout() == 500ms);
 }
