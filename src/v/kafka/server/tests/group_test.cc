@@ -31,7 +31,7 @@ static auto split_member_id(const ss::sstring& m) {
 static bool is_uuid(const ss::sstring& uuid) {
     try {
         boost::uuids::string_generator g;
-        auto _ = g(uuid.c_str());
+        g(uuid.c_str());
         return true;
     } catch (...) {
         return false;
