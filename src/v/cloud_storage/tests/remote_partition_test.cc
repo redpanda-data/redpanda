@@ -467,7 +467,6 @@ FIXTURE_TEST(test_remote_partition_scan_full, cloud_storage_fixture) {
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_full_truncated_segments, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
 
     auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
@@ -582,9 +581,6 @@ FIXTURE_TEST(test_remote_partition_scan_middle, cloud_storage_fixture) {
 
 /// This test scans batches in the middle
 FIXTURE_TEST(test_remote_partition_scan_off, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 3;
-
     auto segments = setup_s3_imposter(*this, 3, 10);
     auto base = segments[2].max_offset + model::offset(10);
     auto max = base + model::offset(10);
