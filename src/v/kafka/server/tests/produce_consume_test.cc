@@ -108,7 +108,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
               }
               auto& part = *resp.data.topics.begin();
 
-              for (auto& r : part.partitions) {
+              for ([[maybe_unused]] auto& r : part.partitions) {
                   const auto& data = part.partitions.begin()->records;
                   if (data && !data->empty()) {
                       // update next fetch offset the same way as Kafka clients
