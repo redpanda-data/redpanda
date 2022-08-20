@@ -305,7 +305,6 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     auto first_leader_id = wait_for_group_leader(gr);
-    model::node_id disabled_id;
     std::vector<model::node_id> disabled_nodes{};
     for (auto& [id, _] : gr.get_members()) {
         // disable all nodes except the leader
@@ -323,11 +322,12 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
       random_batches_reader(2), default_replicate_opts);
     leader_raft.release();
     // since replicate doesn't accept timeout client have to deal with it.
-    auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
+    ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
                .handle_exception_type([](const ss::timed_out_error&) {
                    return result<raft::replicate_result>(
                      rpc::errc::client_request_timeout);
                })
+               .discard_result()
                .get0();
 
     // shut down the leader
