@@ -124,7 +124,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
 
     // first controller
     auto app_0 = create_node_application(n_1);
-    auto app_1 = create_node_application(n_2);
+    create_node_application(n_2);
 
     wait_for_controller_leadership(n_1).get();
 
