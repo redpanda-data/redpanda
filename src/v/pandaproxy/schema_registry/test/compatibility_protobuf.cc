@@ -60,7 +60,7 @@ bool check_compatible(
   std::string_view writer) {
     simple_sharded_store store;
     store.store.set_compatibility(lvl).get();
-    auto sch1 = store.insert(
+    store.insert(
       pandaproxy::schema_registry::canonical_schema{
         pps::subject{"sub"},
         pps::canonical_schema_definition{writer, pps::schema_type::protobuf},
