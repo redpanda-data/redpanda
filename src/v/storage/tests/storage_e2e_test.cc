@@ -284,7 +284,6 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     std::vector<model::record_batch_header> headers;
-    model::offset current_offset = model::offset{0};
     ss::circular_buffer<model::record_batch> batches;
     std::vector<size_t> term_batches_counts;
     for (auto i = 0; i < 5; i++) {
@@ -304,7 +303,7 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
       ss::default_priority_class(),
       model::no_timeout};
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
-    auto res = std::move(reader)
+    std::move(reader)
                  .for_each_ref(
                    log.make_appender(append_cfg), append_cfg.timeout)
                  .get0();
@@ -675,7 +674,7 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
       ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
 
-    auto result = append_exactly(log, 10, 100).get0();
+    append_exactly(log, 10, 100).get0();
     BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(9));
 
     std::vector<ss::future<>> futures;
@@ -812,7 +811,7 @@ FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
       model::test::make_random_batch(model::offset(0), 1, false));
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    auto ret = rdr.for_each_ref(std::move(appender), model::no_timeout).get0();
+    rdr.for_each_ref(std::move(appender), model::no_timeout).get0();
 
     // we truncate at {6} so we expect dirty offset equal {5}
     BOOST_REQUIRE_EQUAL(offsets_after_recovery.dirty_offset, model::offset(5));
@@ -887,7 +886,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
       model::test::make_random_batch(model::offset(0), 1, false));
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    auto ret = std::move(rdr)
+    std::move(rdr)
                  .for_each_ref(std::move(appender), model::no_timeout)
                  .get0();
 
@@ -1191,7 +1190,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     static constexpr size_t batch_size_ondisk = 1033; // Size internally
     static constexpr size_t input_batch_count = 100;
 
-    auto result = append_exactly(log, input_batch_count, batch_size, "key")
+    append_exactly(log, input_batch_count, batch_size, "key")
                     .get0(); // 100*1_KiB
 
     // Test becomes non-deterministic if we allow flush in background: flush
@@ -1219,7 +1218,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     for (int i = 0; i < 10; ++i) {
         log.compact(ccfg).get0();
     }
-    auto sz_after = get_disk_log(log)->get_probe().partition_size();
+    get_disk_log(log)->get_probe().partition_size();
 
     as.request_abort();
     auto lstats_after = log.offsets();
@@ -1265,7 +1264,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
         auto ntp = model::ntp("default", ssx::sformat("test-{}", i), 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         auto log = mgr.manage(std::move(ntp_cfg)).get0();
-        auto result = append_exactly(log, 1000, 100).get0();
+        append_exactly(log, 1000, 100).get0();
         logs.push_back(log);
     }
     std::vector<size_t> sizes;
@@ -1776,7 +1775,6 @@ FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
       std::nullopt,
       std::nullopt);
 
-    model::offset next_to_read;
     auto truncate_f = ss::now();
     {
         auto reader = log.make_reader(reader_cfg).get();
