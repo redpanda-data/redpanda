@@ -43,7 +43,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
 
     /// Serialize the random tags into an iobuf
     kafka::response_writer writer(buf);
-    writer.write_tags(std::move(copy_tags(tags)));
+    writer.write_tags(copy_tags(tags));
 
     /// Copy the result to use for a later comparison
     iobuf copy = buf.copy();
@@ -155,7 +155,7 @@ T serde_flex(T& type) {
 SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
     auto gen_random_string = []() {
         const auto str_len = random_generators::get_int(0, 20);
-        return random_generators::gen_alphanum_string(15);
+        return random_generators::gen_alphanum_string(str_len);
     };
     {
         /// uuid
