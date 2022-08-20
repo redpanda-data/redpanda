@@ -202,8 +202,6 @@ bool test_version_upgrade(
 
 void fuzz_serde(uint8_t const* data, size_t size) {
     constexpr auto const gen1 = std::make_index_sequence<1>();
-    constexpr auto const gen12 = std::make_index_sequence<2>();
-    constexpr auto const gen123 = std::make_index_sequence<3>();
 
     try {
         test_success(types_21{}, {data, size}, gen1);
