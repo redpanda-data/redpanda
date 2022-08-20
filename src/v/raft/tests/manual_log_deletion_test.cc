@@ -38,7 +38,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
     }
 
     void prepare_raft_group() {
-        auto leader_id = wait_for_group_leader(gr);
+        wait_for_group_leader(gr);
         ss::abort_source as;
 
         auto first_ts = model::timestamp::now();
