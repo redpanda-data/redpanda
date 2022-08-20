@@ -121,6 +121,20 @@ jobs:
     outputs:
       upload_url: ${{ needs.create-release.outputs.upload_url }}
 
+  notify-sign-failure:
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    needs: [sign-darwin]
+    steps:
+      - name: Notify sign failed
+        id: notify_sign_failure
+        uses: slackapi/slack-github-action@v1.21.0
+        with:
+          channel-id: ${{ secrets.INTERNAL_RELEASES_SLACK_CHANNEL }}
+          slack-message: "ERROR: signing darwin binaries for `${{ github.ref_name }}` failed in ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
+
   create-release:
     name: Create release
     needs: [build]
