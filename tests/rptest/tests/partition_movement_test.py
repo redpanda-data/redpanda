@@ -586,6 +586,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         rpk.delete_topic(name)
         assert name not in rpk.list_topics()
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6132
     @cluster(num_nodes=4, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
     def test_deletion_stops_move(self, num_to_upgrade):
