@@ -115,13 +115,13 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_dispatching_happy_path_delete, topic_table_updates_dispatcher_fixture) {
     create_topics();
-    auto res_1 = dispatcher
+    dispatcher
                    .apply_update(serialize_cmd(cluster::delete_topic_cmd(
                                                  make_tp_ns("test_tp_2"),
                                                  make_tp_ns("test_tp_2")))
                                    .get0())
                    .get0();
-    auto res_2 = dispatcher
+    dispatcher
                    .apply_update(serialize_cmd(cluster::delete_topic_cmd(
                                                  make_tp_ns("test_tp_3"),
                                                  make_tp_ns("test_tp_3")))
