@@ -665,7 +665,6 @@ inline bool are_logs_equivalent(
 }
 
 inline bool assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
-    auto it = logs.begin();
     auto& reference = logs.begin()->second;
 
     return std::all_of(
