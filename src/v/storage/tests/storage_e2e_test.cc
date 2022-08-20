@@ -304,9 +304,8 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
       model::no_timeout};
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     std::move(reader)
-                 .for_each_ref(
-                   log.make_appender(append_cfg), append_cfg.timeout)
-                 .get0();
+      .for_each_ref(log.make_appender(append_cfg), append_cfg.timeout)
+      .get0();
     log.flush().get();
 
     auto read_batches = read_and_validate_all_batches(log);
@@ -886,9 +885,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
       model::test::make_random_batch(model::offset(0), 1, false));
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    std::move(rdr)
-                 .for_each_ref(std::move(appender), model::no_timeout)
-                 .get0();
+    std::move(rdr).for_each_ref(std::move(appender), model::no_timeout).get0();
 
     // before append offsets should be equal to {1}, as we stopped there
     BOOST_REQUIRE_EQUAL(offsets_after_recovery.dirty_offset, model::offset(1));
@@ -1191,7 +1188,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     static constexpr size_t input_batch_count = 100;
 
     append_exactly(log, input_batch_count, batch_size, "key")
-                    .get0(); // 100*1_KiB
+      .get0(); // 100*1_KiB
 
     // Test becomes non-deterministic if we allow flush in background: flush
     // explicitly instead.

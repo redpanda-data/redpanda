@@ -408,21 +408,20 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
         auto ntp = make_default_ntp(topic, partition_id);
         auto shard = app.shard_table.local().shard_for(ntp);
         app.partition_manager
-                   .invoke_on(
-                     *shard,
-                     [ntp](cluster::partition_manager& mgr) {
-                         auto partition = mgr.get(ntp);
-                         auto batches = model::test::make_random_batches(
-                           model::offset(0), 5);
-                         auto rdr = model::make_memory_record_batch_reader(
-                           std::move(batches));
-                         return partition->raft()->replicate(
-                           std::move(rdr),
-                           raft::replicate_options(
-                             raft::consistency_level::quorum_ack));
-                     })
-                   .discard_result()
-                   .get0();
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                auto batches = model::test::make_random_batches(
+                  model::offset(0), 5);
+                auto rdr = model::make_memory_record_batch_reader(
+                  std::move(batches));
+                return partition->raft()->replicate(
+                  std::move(rdr),
+                  raft::replicate_options(raft::consistency_level::quorum_ack));
+            })
+          .discard_result()
+          .get0();
     }
     auto resp = fresp.get0();
     client.stop().then([&client] { client.shutdown(); }).get();
@@ -474,21 +473,20 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     auto fresp = client.dispatch(req, kafka::api_version(4));
     auto shard = app.shard_table.local().shard_for(ntp);
     app.partition_manager
-               .invoke_on(
-                 *shard,
-                 [ntp](cluster::partition_manager& mgr) {
-                     auto partition = mgr.get(ntp);
-                     auto batches = model::test::make_random_batches(
-                       model::offset(0), 5);
-                     auto rdr = model::make_memory_record_batch_reader(
-                       std::move(batches));
-                     return partition->raft()->replicate(
-                       std::move(rdr),
-                       raft::replicate_options(
-                         raft::consistency_level::quorum_ack));
-                 })
-               .discard_result()
-               .get0();
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            auto batches = model::test::make_random_batches(
+              model::offset(0), 5);
+            auto rdr = model::make_memory_record_batch_reader(
+              std::move(batches));
+            return partition->raft()->replicate(
+              std::move(rdr),
+              raft::replicate_options(raft::consistency_level::quorum_ack));
+        })
+      .discard_result()
+      .get0();
 
     auto resp = fresp.get0();
     client.stop().then([&client] { client.shutdown(); }).get();
@@ -555,21 +553,20 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
     for (auto& ntp : ntps) {
         auto shard = app.shard_table.local().shard_for(ntp);
         app.partition_manager
-                   .invoke_on(
-                     *shard,
-                     [ntp](cluster::partition_manager& mgr) {
-                         auto partition = mgr.get(ntp);
-                         auto batches = model::test::make_random_batches(
-                           model::offset(0), 5);
-                         auto rdr = model::make_memory_record_batch_reader(
-                           std::move(batches));
-                         return partition->raft()->replicate(
-                           std::move(rdr),
-                           raft::replicate_options(
-                             raft::consistency_level::quorum_ack));
-                     })
-                   .discard_result()
-                   .get0();
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                auto batches = model::test::make_random_batches(
+                  model::offset(0), 5);
+                auto rdr = model::make_memory_record_batch_reader(
+                  std::move(batches));
+                return partition->raft()->replicate(
+                  std::move(rdr),
+                  raft::replicate_options(raft::consistency_level::quorum_ack));
+            })
+          .discard_result()
+          .get0();
     }
 
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();

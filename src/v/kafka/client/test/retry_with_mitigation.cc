@@ -82,9 +82,9 @@ SEASTAR_THREAD_TEST_CASE(test_retry_fail_all) {
     context ctx = {true, true, true};
     size_t errors{};
     kc::retry_with_mitigation(ctx.retries(), 0ms, std::ref(ctx), ctx)
-                 .handle_exception_type(
-                   [&errors](const counted_error& ex) { errors = ex.count; })
-                 .get();
+      .handle_exception_type(
+        [&errors](const counted_error& ex) { errors = ex.count; })
+      .get();
     BOOST_REQUIRE_EQUAL(ctx.calls(), 3);
     BOOST_REQUIRE_EQUAL(errors, 3);
 }

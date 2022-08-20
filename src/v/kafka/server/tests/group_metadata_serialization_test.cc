@@ -99,7 +99,8 @@ FIXTURE_TEST(metadata_rt_test, fixture) {
     group_md.protocol = random_optional<kafka::protocol_name>();
     group_md.leader = random_optional<kafka::member_id>();
     group_md.state_timestamp = model::timestamp::now();
-    for ([[maybe_unused]] auto i : boost::irange(0, random_generators::get_int(0, 10))) {
+    for ([[maybe_unused]] auto i :
+         boost::irange(0, random_generators::get_int(0, 10))) {
         group_md.members.push_back(random_member_state());
     }
 
@@ -312,8 +313,7 @@ FIXTURE_TEST(test_backward_compatible_serializer_metadata_type, fixture) {
         };
         auto batch = to_record_batch(std::move(key), std::optional<iobuf>());
         // old -> new type
-        serializer.get_metadata_type(
-          batch.copy_records().back().share_key());
+        serializer.get_metadata_type(batch.copy_records().back().share_key());
     }
 }
 
@@ -340,7 +340,8 @@ FIXTURE_TEST(test_consumer_offsets_serializer, fixture) {
     group_md.protocol = random_optional<kafka::protocol_name>();
     group_md.leader = random_optional<kafka::member_id>();
     group_md.state_timestamp = model::timestamp::now();
-    for ([[maybe_unused]] auto i : boost::irange(0, random_generators::get_int(0, 10))) {
+    for ([[maybe_unused]] auto i :
+         boost::irange(0, random_generators::get_int(0, 10))) {
         group_md.members.push_back(random_member_state());
     }
     auto group_kv = serializer.to_kv(kafka::group_metadata_kv{
