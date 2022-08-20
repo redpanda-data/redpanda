@@ -32,7 +32,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     // Insert simple
     auto referenced_schema = pps::canonical_schema{
       pps::subject{"simple.proto"}, simple};
-    auto sch1 = store
+    store
                   .upsert(
                     pps::seq_marker{
                       std::nullopt,
@@ -51,7 +51,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       imported,
       {{"simple", pps::subject{"simple.proto"}, ver1}}};
 
-    auto sch2 = store
+    store
                   .upsert(
                     pps::seq_marker{
                       std::nullopt,
