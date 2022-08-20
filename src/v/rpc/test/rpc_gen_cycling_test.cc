@@ -334,6 +334,7 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
                    cycling::san_francisco{66},
                    rpc::client_opts(rpc::no_timeout))
                  .get0();
+    BOOST_REQUIRE(ret.has_value());
     info("Calling echo method");
     auto echo_resp = client
                        .suffix_echo(
@@ -341,6 +342,7 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
                          rpc::client_opts(rpc::no_timeout))
                        .get0();
     client.stop().get();
+    BOOST_REQUIRE(echo_resp.has_value());
 
     BOOST_REQUIRE_EQUAL(echo_resp.value().data.str, "testing..._suffix");
 }
