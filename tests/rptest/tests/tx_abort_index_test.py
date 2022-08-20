@@ -131,6 +131,13 @@ class TxAbortSnapshotTest(RedpandaTest):
         wait_until(segments_gone, timeout_sec=60, backoff_sec=1)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        current_idx = self.find_indexes(self.topics[0].name)
-        for node in self.redpanda.nodes:
-            assert len(current_idx[node.account.hostname]) == 0
+
+        def indices_gone():
+            current_idx = self.find_indexes(self.topics[0].name)
+            for node in self.redpanda.nodes:
+                if len(current_idx[node.account.hostname]) != 0:
+                    return False
+
+            return True
+
+        wait_until(indices_gone, timeout_sec=30, backoff_sec=1)
