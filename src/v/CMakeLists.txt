@@ -1,6 +1,8 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+add_compile_options(-Wall)
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(ssx)
