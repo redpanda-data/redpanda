@@ -300,7 +300,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // made.
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
-    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
