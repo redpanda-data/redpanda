@@ -16,6 +16,7 @@ from rptest.wasm.wasm_script import WasmScript
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 
 
 class WasmFilterTest(WasmTest):
@@ -38,6 +39,7 @@ class WasmFilterTest(WasmTest):
             for j in range(amt):
                 self._rpk_tool.produce(topic, str(j), str(j), [], partition=i)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6146
     @cluster(num_nodes=3)
     def verify_filter_test(self):
         # 1. Fill source topics with test data
