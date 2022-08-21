@@ -1,3 +1,9 @@
+find_program(GO_EXECUTABLE go)
+set(CMAKE_GO_BINARY "${GO_EXECUTABLE}" CACHE PATH "path to go executable")
+if(NOT GO_EXECUTABLE)
+  message(FATAL_ERROR "Can't find go executable. Is golang installed?")
+endif()
+
 set(GOPATH ${CMAKE_CURRENT_BINARY_DIR})
 
 function(add_go_dependency NAME MAIN_SRC)
