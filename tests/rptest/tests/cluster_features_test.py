@@ -91,15 +91,16 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # a particularly long timeout: it's here for when tests run very slow.
         wait_until(check, timeout_sec=10, backoff_sec=0.5)
 
-    def _wait_for_version_everywhere(self, version):
+    def _wait_for_version_everywhere(self, target_version):
         """
         Apply a GET check to all nodes, for writes that are expected to
         propagate via controller log
         """
         def check():
             for node in self.redpanda.nodes:
-                version = self.admin.get_features(node=node)['cluster_version']
-                if version != version:
+                node_version = self.admin.get_features(
+                    node=node)['cluster_version']
+                if node_version != target_version:
                     return False
 
             return True
