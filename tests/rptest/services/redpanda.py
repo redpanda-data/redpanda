@@ -584,7 +584,7 @@ class RedpandaService(Service):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
     def set_extra_node_conf(self, node, conf):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         self._extra_node_conf[node] = conf
 
     def set_security_settings(self, settings):
@@ -1196,7 +1196,7 @@ class RedpandaService(Service):
                 "Nodes report restart required but expect_restart is False")
 
     def monitor_log(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def raise_on_crash(self):
@@ -1818,12 +1818,12 @@ class RedpandaService(Service):
         }
 
     def broker_address(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         cfg = self._node_configs[node]
         return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def admin_endpoint(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         return f"{node.account.hostname}:9644"
 
     def admin_endpoints_list(self):
@@ -1851,7 +1851,7 @@ class RedpandaService(Service):
     def metrics(self,
                 node,
                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        assert node in self._started
+        assert node in self._started, f"where node is {node.name}"
 
         metrics_endpoint = ("/metrics" if metrics_endpoint
                             == MetricsEndpoint.METRICS else "/public_metrics")
