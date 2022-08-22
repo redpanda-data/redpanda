@@ -118,6 +118,7 @@ class group final : public ss::enable_lw_shared_from_this<group> {
 public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
+    using time_point_type = clock_type::time_point;
 
     static constexpr int8_t fence_control_record_version{0};
     static constexpr int8_t prepared_tx_record_version{0};
@@ -765,6 +766,18 @@ private:
     ss::future<cluster::commit_group_tx_reply>
     do_commit(kafka::group_id group_id, model::producer_identity pid);
 
+    void start_abort_timer() {
+        _auto_abort_timer.set_callback([this] { abort_old_txes(); });
+        try_arm(clock_type::now() + _transactional_id_expiration);
+    }
+
+    void abort_old_txes();
+    ss::future<> do_abort_old_txes();
+    ss::future<> try_abort_old_tx(model::producer_identity);
+    ss::future<> do_try_abort_old_tx(model::producer_identity);
+    void try_arm(time_point_type);
+    void maybe_rearm_timer();
+
     kafka::group_id _id;
     group_state _state;
     model::timestamp _state_timestamp;
@@ -847,6 +860,10 @@ private:
 
     absl::node_hash_map<model::producer_identity, expiration_info>
       _expiration_info;
+
+    ss::gate _gate;
+    ss::timer<clock_type> _auto_abort_timer;
+    std::chrono::milliseconds _transactional_id_expiration;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

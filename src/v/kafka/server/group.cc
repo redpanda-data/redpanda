@@ -67,10 +67,14 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {
+  , _enable_group_metrics(group_metrics)
+  , _transactional_id_expiration(
+      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
+
+    start_abort_timer();
 }
 
 group::group(
@@ -91,7 +95,9 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {
+  , _enable_group_metrics(group_metrics)
+  , _transactional_id_expiration(
+      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
@@ -114,6 +120,8 @@ group::group(
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
+
+    start_abort_timer();
 }
 
 bool group::valid_previous_state(group_state s) const {
@@ -1772,7 +1780,9 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    _expiration_info.insert_or_assign(r.pid, expiration_info(r.timeout));
+    auto res = _expiration_info.insert_or_assign(
+      r.pid, expiration_info(r.timeout));
+    try_arm(res.first->second.deadline());
 
     cluster::begin_group_tx_reply reply;
     reply.etag = _term;
@@ -2832,6 +2842,87 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     _expiration_info.erase(pid);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
+}
+
+void group::abort_old_txes() {
+    ssx::spawn_with_gate(_gate, [this] {
+        return do_abort_old_txes().finally([this] {
+            try_arm(clock_type::now() + _transactional_id_expiration);
+        });
+    });
+}
+
+void group::maybe_rearm_timer() {
+    std::optional<time_point_type> earliest_deadline;
+    for (auto& [pid, expiration] : _expiration_info) {
+        auto candidate = expiration.deadline();
+        if (earliest_deadline) {
+            earliest_deadline = std::min(earliest_deadline.value(), candidate);
+        } else {
+            earliest_deadline = candidate;
+        }
+    }
+
+    if (earliest_deadline) {
+        auto deadline = std::max(
+          earliest_deadline.value(),
+          clock_type::now() + _transactional_id_expiration);
+        try_arm(deadline);
+    }
+}
+
+ss::future<> group::do_abort_old_txes() {
+    std::vector<model::producer_identity> pids;
+    for (auto& [id, _] : _prepared_txs) {
+        pids.push_back(id);
+    }
+    for (auto& [id, _] : _volatile_txs) {
+        pids.push_back(id);
+    }
+
+    absl::btree_set<model::producer_identity> expired;
+    for (auto pid : pids) {
+        auto expiration_it = _expiration_info.find(pid);
+        if (expiration_it != _expiration_info.end()) {
+            if (!expiration_it->second.is_expired()) {
+                continue;
+            }
+        }
+        expired.insert(pid);
+    }
+
+    for (auto pid : expired) {
+        co_await try_abort_old_tx(pid);
+    }
+
+    maybe_rearm_timer();
+}
+
+ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
+    return get_tx_lock(pid.get_id())->with([this, pid]() {
+        return do_try_abort_old_tx(pid);
+    });
+}
+
+ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
+    auto expiration_it = _expiration_info.find(pid);
+    if (expiration_it != _expiration_info.end()) {
+        if (!expiration_it->second.is_expired()) {
+            co_return;
+        }
+    }
+
+    // Add logic to recommit/abort txs
+}
+
+void group::try_arm(time_point_type deadline) {
+    if (
+      _auto_abort_timer.armed() && _auto_abort_timer.get_timeout() > deadline) {
+        _auto_abort_timer.cancel();
+        _auto_abort_timer.arm(deadline);
+    } else if (!_auto_abort_timer.armed()) {
+        _auto_abort_timer.arm(deadline);
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
