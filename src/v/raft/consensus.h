@@ -588,6 +588,12 @@ private:
         }
         return false;
     }
+
+    void enter_follower_recovery(
+      model::offset current_offset,
+      model::offset hwm,
+      bool already_recovering = false);
+
     // args
     vnode _self;
     raft::group_id _group;
@@ -680,6 +686,14 @@ private:
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
+
+    /**
+     * If a follower notices that it requires recovery, it starts tracking
+     * that via this object, which holds a place in the recovery_coordinator
+     * queue to regulate how many raft groups can go into recovery concurrently.
+     */
+    std::optional<follower_recovery_state> _follower_recovery_state;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
