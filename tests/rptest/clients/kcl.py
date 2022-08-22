@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from collections import namedtuple
+import json
 import re
 import subprocess
 import time
@@ -19,6 +20,13 @@ KclPartitionOffset = namedtuple(
 KclPartitionEpochEndOffset = namedtuple('KclPartitionEpochEndOffset', [
     'broker', 'topic', 'partition', 'leader_epoch', 'epoch_end_offset', 'error'
 ])
+
+KclCreateTopicsRequestTopic = namedtuple(
+    'KclCreateTopicsRequestTopic',
+    ['topic', 'num_partitions', 'replication_factor'])
+
+KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
+                                             ['topic', 'count', 'assignment'])
 
 
 class KCL:
@@ -162,3 +170,52 @@ class KCL:
         # it looks impossible to reach this case, but pyright static analyzer
         # can't see that and deduces Optional[str] as return type.
         raise RuntimeError(f"Command failed after retries: {cmd}")
+
+
+class RawKCL(KCL):
+    """
+    Extentions to KCL class intented to be used with the 'misc raw-req' API
+
+    Callers should expect raw kafka responses json encoded with franz-go key naming scheme
+    """
+    def raw_create_topics(self, version, topics):
+        assert version >= 0 and version <= 6, "version out of supported redpanda range for this API"
+        create_topics_request = {
+            'Version':
+            version,
+            'ValidateOnly':
+            False,
+            'TimeoutMillis':
+            60000,
+            'Topics': [{
+                'Topic': t.topic,
+                'NumPartitions': t.num_partitions,
+                'ReplicationFactor': t.replication_factor
+            } for t in topics]
+        }
+        return self._cmd(['misc', 'raw-req', '-k', '19'],
+                         input=json.dumps(create_topics_request))
+
+    def raw_delete_topics(self, version, topics):
+        assert version >= 0 and version <= 5, "version out of supported redpanda range for this API"
+        delete_topics_request = {
+            'Version': version,
+            'TimeoutMillis': 15000,
+            'TopicNames': topics
+        }
+        return self._cmd(['misc', 'raw-req', '-k', '20'],
+                         input=json.dumps(delete_topics_request))
+
+    def raw_create_partitions(self, version, topics):
+        assert version >= 0 and version <= 3, "version out of supported redpanda range for this API"
+        create_partitions_request = {
+            'Version': version,
+            'ValidateOnly': False,
+            'TimeoutMillis': 15000,
+            'Topics': [{
+                'Topic': t.topic,
+                'Count': t.count
+            } for t in topics]
+        }
+        return self._cmd(['misc', 'raw-req', '-k', '37'],
+                         input=json.dumps(create_partitions_request))
