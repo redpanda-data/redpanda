@@ -25,6 +25,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "utils/mutex.h"
 
@@ -746,6 +747,15 @@ private:
 
         return false;
     }
+
+    void update_store_offset_builder(
+      cluster::simple_batch_builder& builder,
+      const model::topic& name,
+      model::partition_id partition,
+      model::offset commited_offset,
+      leader_epoch commited_leader_epoch,
+      const ss::sstring& metadata,
+      model::timestamp commited_timestemp);
 
     kafka::group_id _id;
     group_state _state;
