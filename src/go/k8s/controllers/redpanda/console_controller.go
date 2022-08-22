@@ -91,7 +91,7 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, err
 	}
-	if cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType).Status != corev1.ConditionTrue {
+	if cc := cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
 		log.Info("Cluster not yet configured, requeueing", "redpandacluster", client.ObjectKeyFromObject(cluster).String())
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -132,8 +132,8 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 
 	// NewIngress will not create Ingress if subdomain is empty
 	subdomain := ""
-	if s := cluster.ExternalListener().GetExternal().Subdomain; s != "" {
-		subdomain = fmt.Sprintf("console.%s", s)
+	if ex := cluster.ExternalListener(); ex != nil && ex.GetExternal().Subdomain != "" {
+		subdomain = fmt.Sprintf("console.%s", ex.GetExternal().Subdomain)
 	} else {
 		r.EventRecorder.Event(
 			console,
