@@ -561,10 +561,11 @@ private:
             vlog(
               _ctxlog.warn,
               "received {} request addressed to different node: {}, current "
-              "node: {}",
+              "node: {}, source: {}",
               request_name,
               target,
-              _self);
+              _self,
+              request.source_node());
             return true;
         }
         return false;
