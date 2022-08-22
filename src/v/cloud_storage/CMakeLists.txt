@@ -18,6 +18,7 @@ v_cc_library(
     remote_partition.cc
     remote_segment_index.cc
     tx_range_manifest.cc
+    prefetch_tracker.cc
   DEPS
     Seastar::seastar
     v::bytes
