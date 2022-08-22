@@ -497,7 +497,29 @@ struct compat_check<raft::heartbeat_reply> {
     }
 
     static void check(raft::heartbeat_reply expected, compat_binary test) {
-        verify_adl_or_serde(std::move(expected), std::move(test));
+        if (test.name == "serde") {
+            // Full verification with serde
+            verify_serde_only(expected, std::move(test));
+        } else {
+            // Partial verification with ADL: may_recover field is not
+            // transmitted
+            iobuf_parser in(std::move(test.data));
+            auto decoded
+              = reflection::async_adl<raft::heartbeat_reply>{}.from(in).get0();
+
+            assert(decoded.meta.size() == expected.meta.size());
+            for (size_t i = 0; i < decoded.meta.size(); ++i) {
+                decoded.meta[i].may_recover = expected.meta[i].may_recover;
+            }
+            if (expected != decoded) {
+                throw compat_error(fmt::format(
+                  "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: "
+                  "{}",
+                  test.name,
+                  expected,
+                  decoded));
+            }
+        }
     }
 };
 
@@ -551,6 +573,7 @@ struct compat_check<raft::append_entries_request> {
         json_write(target_node_id);
         json_write(meta);
         json_write(flush);
+        json_write(is_recovery);
         auto batches = model::consume_reader_to_memory(
                          std::move(obj.batches()), model::no_timeout)
                          .get0();
@@ -563,19 +586,22 @@ struct compat_check<raft::append_entries_request> {
         raft::protocol_metadata meta;
         raft::append_entries_request::flush_after_append flush;
         model::record_batch_reader::data_t batches;
+        bool is_recovery;
 
         json::read_member(rd, "node_id", node);
         json::read_member(rd, "target_node_id", target);
         json::read_member(rd, "meta", meta);
         json::read_member(rd, "flush", flush);
         json::read_member(rd, "batches", batches);
+        json::read_member(rd, "is_recovery", is_recovery);
 
         return {
           node,
           target,
           meta,
           model::make_memory_record_batch_reader(std::move(batches)),
-          flush};
+          flush,
+          is_recovery};
     }
 
     static std::vector<compat_binary>
@@ -608,6 +634,14 @@ struct compat_check<raft::append_entries_request> {
         if (decoded.flush != expected.flush) {
             throw compat_error(fmt::format(
               "Expected flush {} got {}", expected.flush, decoded.flush));
+        }
+
+        if (
+          test.name == "serde" && decoded.is_recovery != expected.is_recovery) {
+            throw compat_error(fmt::format(
+              "Expected is_recovery {} got {}",
+              expected.is_recovery,
+              decoded.is_recovery));
         }
 
         auto decoded_batches = model::consume_reader_to_memory(
@@ -670,8 +704,30 @@ struct compat_check<raft::append_entries_reply> {
         return compat_binary::serde_and_adl(obj);
     }
 
-    static void check(raft::append_entries_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+    static void check(raft::append_entries_reply expected, compat_binary test) {
+        if (test.name == "serde") {
+            // Full verification with serde
+            verify_serde_only(expected, std::move(test));
+        } else {
+            // Partial verification with ADL: may_recover field is not
+            // transmitted
+            iobuf_parser in(std::move(test.data));
+            auto decoded = reflection::async_adl<raft::append_entries_reply>{}
+                             .from(in)
+                             .get0();
+
+            // Force the may_recover field to match, this is not passed through
+            // the serialization when using ADL
+            decoded.may_recover = expected.may_recover;
+            if (expected != decoded) {
+                throw compat_error(fmt::format(
+                  "Verify of {{{}}} decoding failed:\nExpected: {}\nDecoded: "
+                  "{}",
+                  test.name,
+                  expected,
+                  decoded));
+            }
+        }
     }
 };
 } // namespace compat

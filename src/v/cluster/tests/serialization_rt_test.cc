@@ -2083,7 +2083,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .last_dirty_log_index = tests::random_named_int<model::offset>(),
               .last_term_base_offset = tests::random_named_int<model::offset>(),
               .result = raft::append_entries_reply::status::group_unavailable,
-            };
+              .may_recover = bool(i % 2)};
             data.meta.push_back(reply);
         }
 
@@ -2100,6 +2100,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
 
         serde_roundtrip_test(data);
+
+        // For the adl test, we need to force may_recover to true for
+        // equality to pass: ADL decode always says may_recover=true,
+        // as it's a legacy path.
+        for (auto& m : data.meta) {
+            m.may_recover = true;
+        }
 
         // the adl test needs to force async to avoid the automatic reflection
         // version of the encoder.
@@ -2158,7 +2165,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           model::make_memory_record_batch_reader(std::move(batches_in)),
           raft::append_entries_request::flush_after_append(
             tests::random_bool()),
-        };
+          tests::random_bool()};
 
         // append_entries_request -> iobuf
         iobuf serde_out;
@@ -2173,6 +2180,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
         BOOST_REQUIRE(from_serde.meta == data.meta);
         BOOST_REQUIRE(from_serde.flush == data.flush);
+        BOOST_REQUIRE(from_serde.is_recovery == data.is_recovery);
 
         auto batches_from_serde = model::consume_reader_to_memory(
                                     std::move(from_serde.batches()),
@@ -2195,8 +2203,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_flushed_log_index = tests::random_named_int<model::offset>(),
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
-          .result = raft::append_entries_reply::status::group_unavailable,
-        };
+          .result = raft::append_entries_reply::status::group_unavailable};
         roundtrip_test(data);
     }
     {

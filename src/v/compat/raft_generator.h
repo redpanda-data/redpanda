@@ -335,7 +335,7 @@ struct instance_generator<raft::append_entries_reply> {
              raft::append_entries_reply::status::failure,
              raft::append_entries_reply::status::group_unavailable,
              raft::append_entries_reply::status::timeout}),
-        };
+          .may_recover = tests::random_bool()};
     }
 
     static std::vector<raft::append_entries_reply> limits() { return {}; }

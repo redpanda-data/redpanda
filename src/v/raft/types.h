@@ -153,7 +153,7 @@ struct follower_index_metadata {
     // sequence number of last received successfull append entries request
     follower_req_seq last_successful_received_seq{0};
     bool is_learner = true;
-    bool is_recovering = false;
+    bool is_recovering{false};
 
     /*
      * When is_recovering is true a fiber may wait for recovery to be signaled
@@ -196,7 +196,7 @@ struct follower_metrics {
 struct append_entries_request
   : serde::envelope<
       append_entries_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
@@ -223,11 +223,13 @@ struct append_entries_request
       vnode target,
       protocol_metadata m,
       model::record_batch_reader r,
-      flush_after_append f = flush_after_append::yes) noexcept
+      flush_after_append f = flush_after_append::yes,
+      bool recovery = false) noexcept
       : node_id(src)
       , target_node_id(target)
       , meta(m)
       , flush(f)
+      , is_recovery(recovery)
       , _batches(std::move(r)) {}
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
@@ -255,6 +257,11 @@ struct append_entries_request
         return _batches.value();
     }
     flush_after_append flush;
+
+    // Hint to follower that this message was generated in the recovery
+    // code path, i.e. it does not represent the tip of the log
+    bool is_recovery{false};
+
     static append_entries_request make_foreign(append_entries_request&& req) {
         return append_entries_request(
           req.node_id,
@@ -297,7 +304,7 @@ private:
 struct append_entries_reply
   : serde::envelope<
       append_entries_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     enum class status : uint8_t {
         success,
@@ -323,12 +330,21 @@ struct append_entries_reply
     /// \brief did the rpc succeed or not
     status result = status::failure;
 
+    // Hint from follower to leader, indicating they are ready for
+    // recovery traffic (false if they may not have enough resources to
+    // handle recovery).
+    // This is true by default to reflect the legacy case, where
+    // older nodes are always ready for recovery.
+    bool may_recover{true};
+
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
 
     friend bool
     operator==(const append_entries_reply&, const append_entries_reply&)
       = default;
+
+    void serde_read(iobuf_parser& src, const serde::header& hdr);
 
     auto serde_fields() {
         return std::tie(
@@ -339,7 +355,8 @@ struct append_entries_reply
           last_flushed_log_index,
           last_dirty_log_index,
           last_term_base_offset,
-          result);
+          result,
+          may_recover);
     }
 };
 
@@ -347,6 +364,7 @@ struct heartbeat_metadata {
     protocol_metadata meta;
     vnode node_id;
     vnode target_node_id;
+    bool may_recover{true};
 
     friend bool operator==(const heartbeat_metadata&, const heartbeat_metadata&)
       = default;
@@ -379,7 +397,7 @@ struct heartbeat_request
 
 struct heartbeat_reply
   : serde::
-      envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
+      envelope<heartbeat_reply, serde::version<1>, serde::compat_version<0>> {
     std::vector<append_entries_reply> meta;
 
     heartbeat_reply() noexcept = default;
@@ -1022,8 +1040,7 @@ struct adl<raft::append_entries_reply> {
           .last_flushed_log_index = last_flushed_log_index,
           .last_dirty_log_index = last_dirty_log_index,
           .last_term_base_offset = last_term_base_offset,
-          .result = result,
-        };
+          .result = result};
     }
 };
 

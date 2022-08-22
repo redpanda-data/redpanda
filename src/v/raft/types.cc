@@ -14,6 +14,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
+#include "raft/logger.h"
 #include "reflection/adl.h"
 #include "utils/to_string.h"
 #include "vassert.h"
@@ -141,7 +142,8 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
              << ", last_dirty_log_index:" << r.last_dirty_log_index
              << ", last_flushed_log_index:" << r.last_flushed_log_index
              << ", last_term_base_offset:" << r.last_term_base_offset
-             << ", result: " << r.result << "}";
+             << ", may_recover:" << r.may_recover << ", result: " << r.result
+             << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const vote_request& r) {
@@ -463,8 +465,25 @@ void heartbeat_reply::serde_write(iobuf& dst) {
       out, encodee.revisions);
     internal::encode_one_delta_array<model::revision_id>(
       out, encodee.target_revisions);
+
     for (auto& m : reply.meta) {
         write(out, m.result);
+    }
+
+    // Pack may_recover bools into bits
+    const auto packed_vector_size = (reply.meta.size() / 8)
+                                    + ((reply.meta.size() & 0x7) ? 1 : 0);
+    std::vector<uint8_t> may_recover_packed(packed_vector_size, 0);
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
+        auto bit_offset = i % 8;
+        auto byte_offset = i >> 3;
+        if (reply.meta[i].may_recover) {
+            uint8_t& b = may_recover_packed.at(byte_offset);
+            b |= (1 << bit_offset);
+        }
+    }
+    for (const auto& byte : may_recover_packed) {
+        write(out, byte);
     }
 
     write(dst, std::move(out));
@@ -543,6 +562,27 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
           in, 0U);
     }
 
+    if (hdr._version >= 1) {
+        // Unpack bit-packed bools from may_recover
+        size_t packed_byte_count = (reply.meta.size() / 8)
+                                   + ((reply.meta.size() & 0x7) ? 1 : 0);
+        size_t j = 0;
+        for (size_t i = 0; i < packed_byte_count && j < reply.meta.size();
+             ++i) {
+            auto byte = read_nested<uint8_t>(in, 0U);
+            for (uint8_t bit_offset = 0;
+                 bit_offset < 8 && j < reply.meta.size();
+                 ++bit_offset) {
+                if ((byte & (1 << (bit_offset))) != 0) {
+                    reply.meta[j].may_recover = true;
+                } else {
+                    reply.meta[j].may_recover = false;
+                }
+                j++;
+            }
+        }
+    }
+
     for (auto& m : reply.meta) {
         m.last_flushed_log_index = decode_signed(m.last_flushed_log_index);
         m.last_dirty_log_index = decode_signed(m.last_dirty_log_index);
@@ -551,6 +591,28 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
           m.node_id.id(), decode_signed(m.node_id.revision()));
         m.target_node_id = raft::vnode(
           m.target_node_id.id(), decode_signed(m.target_node_id.revision()));
+    }
+}
+
+void append_entries_reply::serde_read(
+  iobuf_parser& src, const serde::header& hdr) {
+    using serde::read_nested;
+
+    target_node_id = read_nested<vnode>(src, 0U);
+    node_id = read_nested<vnode>(src, 0U);
+    group = read_nested<group_id>(src, 0U);
+    term = read_nested<model::term_id>(src, 0U);
+    last_flushed_log_index = read_nested<model::offset>(src, 0U);
+    last_dirty_log_index = read_nested<model::offset>(src, 0U);
+    last_term_base_offset = read_nested<model::offset>(src, 0U);
+    result = read_nested<status>(src, 0U);
+
+    if (hdr._version > 0) {
+        may_recover = read_nested<bool>(src, 0U);
+    } else {
+        // Backward compat: old nodes do not selectively advertise their
+        // readiness to recover, so treat them as always ready
+        may_recover = true;
     }
 }
 
@@ -573,6 +635,7 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
     write(out, target_node_id);
     write(out, meta);
     write(out, flush);
+    write(out, is_recovery);
 
     write(dst, std::move(out));
 }
@@ -597,6 +660,9 @@ ss::future<> append_entries_request::serde_async_read(
     meta = read_nested<raft::protocol_metadata>(in, 0U);
     flush = read_nested<raft::append_entries_request::flush_after_append>(
       in, 0U);
+    if (hdr._version >= 1) {
+        is_recovery = read_nested<bool>(in, 0U);
+    }
 }
 
 } // namespace raft
@@ -958,6 +1024,11 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
           m.node_id.id(), decode_signed(m.node_id.revision()));
         m.target_node_id = raft::vnode(
           m.target_node_id.id(), decode_signed(m.target_node_id.revision()));
+
+        // ADL decode: the sender is an old node and does not have a
+        // recovery_coordinator: assume they are always ready for
+        // recovery.
+        m.may_recover = true;
     }
 
     return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));
