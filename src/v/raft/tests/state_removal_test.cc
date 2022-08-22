@@ -65,9 +65,18 @@ void stop_node(raft_node& node) {
     node.server.stop().get0();
     node._as.request_abort();
     node.raft_manager.stop().get0();
-    node.consensus = nullptr;
+
     node.hbeats->stop().get0();
     node.hbeats.reset();
+
+    // Nothing else should reference the consensus object: if it lives
+    // on past this point, it could dereference destroyed references
+    // to storage and recovery coordinator objects.
+    std::cerr << node.consensus.use_count() << std::endl;
+    assert(node.consensus.owned());
+    node.consensus = nullptr;
+
+    node.recovery_coordinator.stop().get0();
     node.cache.stop().get0();
     node.log = nullptr;
     node.storage.stop().get0();

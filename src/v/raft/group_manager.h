@@ -14,6 +14,7 @@
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
@@ -108,6 +109,7 @@ private:
     storage::api& _storage;
     coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
+    recovery_coordinator _recovery_coordinator;
     features::feature_table& _feature_table;
     bool _is_ready;
 };

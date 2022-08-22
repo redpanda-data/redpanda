@@ -30,6 +30,7 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
@@ -104,6 +105,7 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
       recovery_memory_quota&,
+      recovery_coordinator&,
       features::feature_table&,
       std::optional<voter_priority> = std::nullopt,
       keep_snapshotted_log = keep_snapshotted_log::no);
@@ -783,6 +785,7 @@ private:
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
       _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    recovery_coordinator& _recovery_coordinator;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     uint64_t _snapshot_size{0};

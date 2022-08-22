@@ -37,7 +37,13 @@ using namespace std::chrono_literals; // NOLINT
 struct mux_state_machine_fixture {
     mux_state_machine_fixture()
       : _self{0}
-      , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
+      , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg()
+              .get("raft_recovery_grace_ms")
+              .set_value(200ms);
+        }).get();
+    }
 
     void start_raft(storage::ntp_config::default_overrides overrides = {}) {
         ss::smp::invoke_on_all([]() {
