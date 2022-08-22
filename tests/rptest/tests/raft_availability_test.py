@@ -422,6 +422,18 @@ class RaftAvailabilityTest(RedpandaTest):
             self._transfer_leadership(admin, "kafka", self.topic,
                                       target_node_id)
 
+            # Wait til we can see producer progressing, to avoid a situation where
+            # we do leadership transfers so quickly that we stall the producer
+            # and time out the SSH session to it.  This is generally very
+            # quick, but can take as long as it takes a client to time out
+            # and refresh metadata.
+            output_count = producer.output_line_count
+            wait_until(
+                lambda: producer.output_line_count > output_count,
+                timeout_sec=20,
+                # Fast poll because it's local state
+                backoff_sec=0.1)
+
         self.logger.info(f"Completed {transfer_count} transfers successfully")
 
         # Explicit stop of producer so that we see any errors

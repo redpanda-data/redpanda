@@ -29,6 +29,7 @@ class RpkProducer(BackgroundThreadService):
         self._printable = printable
         self._stopping = Event()
         self._quiet = quiet
+        self._output_line_count = 0
 
         if produce_timeout is None:
             produce_timeout = 10
@@ -61,6 +62,7 @@ class RpkProducer(BackgroundThreadService):
             for line in node.account.ssh_capture(
                     cmd, timeout_sec=self._produce_timeout):
                 self.logger.debug(line.rstrip())
+                self._output_line_count += 1
         except RemoteCommandError:
             if self._stopping.is_set():
                 pass
@@ -69,6 +71,10 @@ class RpkProducer(BackgroundThreadService):
 
         self._redpanda.logger.debug(
             f"Finished sending {self._msg_count} messages")
+
+    @property
+    def output_line_count(self):
+        return self._output_line_count
 
     def stop_node(self, node):
         self._stopping.set()
