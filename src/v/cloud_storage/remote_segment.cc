@@ -948,6 +948,10 @@ remote_segment_batch_reader::read_some(
               _cur_rp_offset,
               _bytes_consumed));
         }
+        if (new_bytes_consumed.value() > _bytes_consumed) {
+            _prefetch.on_bytes_consumed(
+              new_bytes_consumed.value() - _bytes_consumed);
+        }
         _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
@@ -969,6 +973,7 @@ remote_segment_batch_reader::init_parser() {
       storage::segment_reader_handle(std::move(stream_off.stream)));
     _cur_rp_offset = stream_off.rp_offset;
     _cur_delta = stream_off.rp_offset - stream_off.kafka_offset;
+    _prefetch.set_segment_size(_seg->get_segment_size_bytes());
     co_return parser;
 }
 
