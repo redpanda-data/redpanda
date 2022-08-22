@@ -106,7 +106,7 @@ func (a *AdminAPI) PatchClusterConfig(
 	}
 
 	var result ClusterConfigWriteResult
-	err := a.sendAny(ctx, http.MethodPut, "/v1/cluster_config", body, &result)
+	err := a.sendToLeader(ctx, http.MethodPut, "/v1/cluster_config", body, &result)
 	if err != nil {
 		return result, err
 	}
