@@ -31,6 +31,8 @@ from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.archival.s3_client import S3Client
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -121,6 +123,11 @@ class EndToEndTest(Test):
             self.redpanda.restart_nodes(nodes_to_upgrade)
 
         self._client = DefaultClient(self.redpanda)
+        self._rpk_client = RpkTool(self.redpanda)
+
+    def rpk_client(self):
+        assert self._rpk_client is not None
+        return self._rpk_client
 
     def client(self):
         assert self._client is not None
