@@ -314,6 +314,8 @@ private:
     iterator end();
     iterator upper_bound(model::offset);
 
+    void bg_prefetch_segment(iterator it);
+
     using segment_map_t = absl::btree_map<model::offset, segment_state>;
 
     using evicted_resource_t = std::variant<

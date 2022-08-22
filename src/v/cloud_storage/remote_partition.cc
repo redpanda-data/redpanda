@@ -14,6 +14,7 @@
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
+#include "ssx/future-util.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
 #include "utils/gate_guard.h"
@@ -182,6 +183,10 @@ public:
                       batch.header().size_bytes);
                     _partition->_probe.add_records_read(batch.record_count());
                 }
+                if (_reader->ready_to_prefetch()) {
+                    vlog(_ctxlog.debug, "Start prefetching next segment");
+                    _partition->bg_prefetch_segment(_it);
+                }
                 co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
@@ -300,12 +305,16 @@ private:
             if (_it == _end) {
                 co_await set_end_of_stream();
             } else {
+                // reuse the prefetch-tracker if it's available
+                auto prefetch_tracker = _reader->reset(
+                  prefetch_tracker::disabled);
                 // reuse config but replace the reader
                 auto config = _reader->config();
                 _partition->evict_reader(std::move(_reader));
                 vlog(_ctxlog.debug, "initializing new segment reader");
                 _reader = _partition->borrow_reader(
                   config, _it->first, _it->second);
+                std::ignore = _reader->reset(prefetch_tracker);
             }
         }
         vlog(
@@ -362,6 +371,38 @@ ss::future<> remote_partition::start() {
     });
     _stm_timer.rearm(_stm_jitter());
     co_return;
+}
+
+void remote_partition::bg_prefetch_segment(iterator it) {
+    it++;
+    if (it == end()) {
+        return;
+    }
+    ssx::spawn_with_gate(_gate, [this, it] {
+        vlog(
+          _ctxlog.debug,
+          "Prefetching the segment with base offset {}",
+          it->first);
+        return ss::visit(
+          it->second,
+          [this, offset_key = it->first](offloaded_segment_state& off_state) {
+              vlog(
+                _ctxlog.debug,
+                "Segment prefetching requires segment materialization {}",
+                offset_key);
+              auto tmp = off_state->materialize(*this, offset_key);
+              auto res = tmp->segment->hydrate();
+              _segments.insert_or_assign(offset_key, std::move(tmp));
+              return res;
+          },
+          [this](materialized_segment_ptr& m_state) {
+              vlog(
+                _ctxlog.debug,
+                "Segment is already materialized {}",
+                m_state->offset_key);
+              return ss::now();
+          });
+    });
 }
 
 ss::future<> remote_partition::run_eviction_loop() {
