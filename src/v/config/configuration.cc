@@ -1115,6 +1115,27 @@ configuration::configuration()
       "Timeout to check if cache eviction should be triggered",
       {.visibility = visibility::tunable},
       30s)
+  , cloud_storage_prefetch_enable(
+      *this,
+      "cloud_storage_prefetch_enable",
+      "Enable prefetch in shadow indexing",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
+  , cloud_storage_prefetch_size_trigger(
+      *this,
+      "cloud_storage_prefetch_size_trigger",
+      "The prefetching of the next segment should be triggered when this "
+      "number or fewer bytes remain to be consumed by the reader from the "
+      "segment",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      32_MiB)
+  , cloud_storage_prefetch_threshold(
+      *this,
+      "cloud_storage_prefetch_threshold",
+      "Prefetch is used only for sequential readers that consumed at least "
+      "this number of bytes",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB)
   , superusers(
       *this,
       "superusers",
