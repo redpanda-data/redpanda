@@ -50,15 +50,15 @@ func NewAdminAPI(ctx context.Context, cl client.Client, scheme *runtime.Scheme, 
 func NewKafkaAdmin(ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster) (*kadm.Client, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
 	if cluster.Spec.EnableSASL {
-		// Use Pandaproxy superuser to manage Kafka
+		// Use Cluster superuser to manage Kafka
 		// Console Kafka Service Account can't add ACLs to itself
-		pandaProxySu := types.NamespacedName{
+		clusterSu := types.NamespacedName{
 			Namespace: cluster.GetNamespace(),
-			Name:      fmt.Sprintf("%s-%s", cluster.GetName(), resources.PandaProxySuffix),
+			Name:      fmt.Sprintf("%s-superuser", cluster.GetName()),
 		}
 		secret := v1.Secret{}
-		if err := cl.Get(ctx, pandaProxySu, &secret); err != nil {
-			return nil, fmt.Errorf("getting PandaProxy Secret: %w", err)
+		if err := cl.Get(ctx, clusterSu, &secret); err != nil {
+			return nil, fmt.Errorf("getting Cluster superuser Secret: %w", err)
 		}
 		mech := scram.Auth{
 			User: string(secret.Data[corev1.BasicAuthUsernameKey]),
