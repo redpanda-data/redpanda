@@ -370,6 +370,9 @@ class FeaturesNodeJoinTest(RedpandaTest):
         # Restart it with a sufficiently recent version and join should succeed
         self.installer.install([old_node], RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([old_node])
+
+        # Timeout long enough for join retries & health monitor tick (registered
+        # requires `is_alive`)
         wait_until(lambda: self.redpanda.registered(old_node),
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=1)
