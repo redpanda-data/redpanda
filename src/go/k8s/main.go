@@ -22,12 +22,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 const (
@@ -131,14 +133,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Setup webhooks
 	if webhookEnabled {
 		setupLog.Info("Setup webhook")
-
 		if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
 			os.Exit(1)
 		}
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
 	}
+
 	if err = (&redpandacontrollers.ConsoleReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
