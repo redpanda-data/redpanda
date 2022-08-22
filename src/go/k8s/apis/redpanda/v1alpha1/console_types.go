@@ -189,8 +189,8 @@ func (c *Console) GenerationMatchesObserved() bool {
 // Secret syncing across namespaces might not be ideal especially for multi-tenant K8s clusters
 var AllowConsoleAnyNamespace bool
 
-// IsAnyNamespace returns true if Console is valid to be created in current namespace
-func (c *Console) IsAnyNamespace() bool {
+// IsAllowedNamespace returns true if Console is valid to be created in current namespace
+func (c *Console) IsAllowedNamespace() bool {
 	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterKeyRef.Namespace
 }
 

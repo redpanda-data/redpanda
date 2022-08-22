@@ -29,7 +29,7 @@ func (v *ConsoleValidator) Handle(ctx context.Context, req admission.Request) ad
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	if !console.IsAnyNamespace() {
+	if !console.IsAllowedNamespace() {
 		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterKeyRef.Namespace, console.Spec.ClusterKeyRef.Name))
 	}
 
