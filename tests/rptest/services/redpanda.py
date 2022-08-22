@@ -956,6 +956,37 @@ class RedpandaService(Service):
 
         node.account.ssh(cmd)
 
+    def all_up(self):
+        def check_node(node):
+            pids = self.pids(node)
+            for p in pids:
+                if not node.account.exists(f"/proc/{p}"):
+                    self.logger.info(f"PID {p} (node {node.name}) dead")
+                    return False
+
+            # fall through
+            return True
+
+        return all(self._for_nodes(self._started, check_node, parallel=True))
+
+    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
+        """
+        Cluster-aware variant of wait_until, which will fail out
+        early if a node dies.
+
+        This is useful for long waits, which would otherwise not notice
+        a test failure until the end of the timeout, even if redpanda
+        already crashed.
+        """
+        def wrapped():
+            assert self.all_up()
+            return fn()
+
+        wait_until(wrapped,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec,
+                   err_msg=err_msg)
+
     def signal_redpanda(self, node, signal=signal.SIGKILL, idempotent=False):
         """
         :param idempotent: if true, then kill-like signals are ignored if

@@ -341,10 +341,10 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
 
         # The wait condition will also apply some changes
         # such as topic creation and deletion
-        wait_until(create_or_delete_until_producer_fin,
-                   timeout_sec=timeout,
-                   backoff_sec=0.5,
-                   err_msg='Producer did not finish')
+        self.redpanda.wait_until(create_or_delete_until_producer_fin,
+                                 timeout_sec=timeout,
+                                 backoff_sec=0.5,
+                                 err_msg='Producer did not finish')
 
         producer.wait()
         rand_consumer.wait()
