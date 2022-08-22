@@ -340,6 +340,7 @@ struct instance_generator<raft::append_entries_reply> {
              raft::reply_result::failure,
              raft::reply_result::group_unavailable,
              raft::reply_result::timeout}),
+          .may_recover = tests::random_bool(),
         };
     }
 

@@ -1956,6 +1956,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .last_dirty_log_index = tests::random_named_int<model::offset>(),
               .last_term_base_offset = tests::random_named_int<model::offset>(),
               .result = raft::reply_result::group_unavailable,
+              .may_recover = bool(i % 2),
             };
             data.meta.push_back(reply);
         }
@@ -2015,6 +2016,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           pmd,
           model::make_memory_record_batch_reader(std::move(batches_in)),
           raft::flush_after_append(tests::random_bool()),
+          tests::random_bool(),
         };
 
         // append_entries_request -> iobuf
@@ -2023,6 +2025,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         const auto target_node_id = data.target_node();
         const auto meta = data.metadata();
         const auto flush = data.is_flush_required();
+        const auto is_recovery = data.is_recovery();
         serde::write_async(serde_out, std::move(data)).get();
 
         // iobuf -> append_entries_request
@@ -2034,6 +2037,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         BOOST_REQUIRE(from_serde.target_node() == target_node_id);
         BOOST_REQUIRE(from_serde.metadata() == meta);
         BOOST_REQUIRE(from_serde.is_flush_required() == flush);
+        BOOST_REQUIRE(from_serde.is_recovery() == is_recovery);
 
         auto batches_from_serde = model::consume_reader_to_memory(
                                     std::move(from_serde).release_batches(),

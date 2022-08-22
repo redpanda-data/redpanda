@@ -558,6 +558,7 @@ struct compat_check<raft::append_entries_request> {
         json::write_member(wr, "target_node_id", obj.target_node());
         json::write_member(wr, "meta", obj.metadata());
         json::write_member(wr, "flush", obj.is_flush_required());
+        json::write_member(wr, "is_recovery", obj.is_recovery());
         auto batches = model::consume_reader_to_memory(
                          std::move(obj).release_batches(), model::no_timeout)
                          .get0();
@@ -570,19 +571,22 @@ struct compat_check<raft::append_entries_request> {
         raft::protocol_metadata meta;
         raft::flush_after_append flush;
         model::record_batch_reader::data_t batches;
+        bool is_recovery;
 
         json::read_member(rd, "node_id", node);
         json::read_member(rd, "target_node_id", target);
         json::read_member(rd, "meta", meta);
         json::read_member(rd, "flush", flush);
         json::read_member(rd, "batches", batches);
+        json::read_member(rd, "is_recovery", is_recovery);
 
         return {
           node,
           target,
           meta,
           model::make_memory_record_batch_reader(std::move(batches)),
-          flush};
+          flush,
+          is_recovery};
     }
 
     static std::vector<compat_binary>
@@ -621,6 +625,13 @@ struct compat_check<raft::append_entries_request> {
               "Expected flush {} got {}",
               expected.is_flush_required(),
               decoded.is_flush_required()));
+        }
+
+        if (decoded.is_recovery() != expected.is_recovery()) {
+            throw compat_error(fmt::format(
+              "Expected is_recovery {} got {}",
+              expected.is_recovery(),
+              decoded.is_recovery()));
         }
 
         auto decoded_batches = model::consume_reader_to_memory(

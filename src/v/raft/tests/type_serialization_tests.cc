@@ -168,6 +168,53 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
           raft::vnode(model::node_id(one_k), model::revision_id(i)));
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_serde) {
+    static constexpr int64_t one_k = 1'000;
+    raft::heartbeat_request req;
+    req.heartbeats = std::vector<raft::heartbeat_metadata>(one_k);
+    for (int64_t i = 0; i < one_k; ++i) {
+        req.heartbeats[i].node_id = raft::vnode(
+          model::node_id(one_k), model::revision_id(i));
+        req.heartbeats[i].meta.group = raft::group_id(i);
+        req.heartbeats[i].meta.commit_index = model::offset(i);
+        req.heartbeats[i].meta.term = model::term_id(i);
+        req.heartbeats[i].meta.prev_log_index = model::offset(i);
+        req.heartbeats[i].meta.prev_log_term = model::term_id(i);
+        req.heartbeats[i].meta.last_visible_index = model::offset(i);
+        req.heartbeats[i].target_node_id = raft::vnode(
+          model::node_id(0), model::revision_id(i));
+    }
+    iobuf buf;
+
+    serde::write_async(buf, std::move(req)).get();
+
+    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
+    compression::stream_zstd codec;
+    buf = codec.compress(std::move(buf));
+    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
+    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
+    auto res = serde::read_async<raft::heartbeat_request>(parser).get();
+    for (int64_t i = 0; i < one_k; ++i) {
+        BOOST_REQUIRE_EQUAL(res.heartbeats[i].meta.group, raft::group_id(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].meta.commit_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(res.heartbeats[i].meta.term, model::term_id(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].meta.prev_log_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].meta.prev_log_term, model::term_id(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].meta.last_visible_index, model::offset(i));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].target_node_id,
+          raft::vnode(model::node_id(0), model::revision_id(i)));
+        BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].node_id,
+          raft::vnode(model::node_id(one_k), model::revision_id(i)));
+    }
+}
+
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
     static constexpr int64_t one_k = 10;
     raft::heartbeat_request req;
@@ -247,6 +294,66 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           expected[gr].last_dirty_log_index,
           result.meta[i].last_dirty_log_index);
         BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
+
+        // Legacy serialization treats may_recover as always true
+        BOOST_REQUIRE_EQUAL(result.meta[i].may_recover, true);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip_serde) {
+    static constexpr int64_t group_count = 10000;
+    raft::heartbeat_reply reply;
+    reply.meta.reserve(group_count);
+
+    for (size_t i = 0; i < group_count; ++i) {
+        // Negative offsets are special, so pick range starting at 0 here
+        // (heartbeat_response_negative below covers the negative case)
+        auto commited_idx = model::offset(
+          random_generators::get_int(0, 1000000000));
+        auto dirty_idx = commited_idx
+                         + model::offset(random_generators::get_int(10000));
+
+        reply.meta.push_back(raft::append_entries_reply{
+          .target_node_id = raft::vnode(
+            model::node_id(2), model::revision_id(i)),
+          .node_id = raft::vnode(model::node_id(1), model::revision_id(i)),
+          .group = raft::group_id(i),
+          .term = model::term_id(random_generators::get_int(0, 1000)),
+          .last_flushed_log_index = commited_idx,
+          .last_dirty_log_index = dirty_idx,
+          .result = raft::reply_result::success,
+          .may_recover = bool(i % 2)});
+    }
+    absl::flat_hash_map<raft::group_id, raft::append_entries_reply> expected;
+    expected.reserve(reply.meta.size());
+    for (const auto& m : reply.meta) {
+        expected.emplace(m.group, m);
+    }
+    iobuf buf;
+    serde::write_async(buf, std::move(reply)).get0();
+    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
+    compression::stream_zstd codec;
+    buf = codec.compress(std::move(buf));
+    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
+    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
+    auto result = serde::read_async<raft::heartbeat_reply>(parser).get0();
+
+    for (size_t i = 0; i < result.meta.size(); ++i) {
+        auto gr = result.meta[i].group;
+        BOOST_REQUIRE_EQUAL(expected[gr].node_id, result.meta[i].node_id);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].target_node_id, result.meta[i].target_node_id);
+        BOOST_REQUIRE_EQUAL(expected[gr].group, result.meta[i].group);
+        BOOST_REQUIRE_EQUAL(expected[gr].term, result.meta[i].term);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].last_dirty_log_index,
+          result.meta[i].last_dirty_log_index);
+        BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].may_recover, result.meta[i].may_recover);
     }
 }
 
