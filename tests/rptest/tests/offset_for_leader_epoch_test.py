@@ -24,7 +24,7 @@ class OffsetForLeaderEpochTest(RedpandaTest):
     """
     Check offset for leader epoch handling
     """
-    def _all_have_leaders(self, topic):
+    def _all_have_leaders(self):
         admin = Admin(self.redpanda)
 
         for n in self.redpanda.nodes:
@@ -35,7 +35,7 @@ class OffsetForLeaderEpochTest(RedpandaTest):
         return True
 
     def _produce(self, topic, msg_cnt):
-        wait_until(lambda: self._all_have_leaders(topic), 20, backoff_sec=2)
+        wait_until(lambda: self._all_have_leaders(), 20, backoff_sec=2)
 
         producer = RpkProducer(self.test_context,
                                self.redpanda,
@@ -56,6 +56,25 @@ class OffsetForLeaderEpochTest(RedpandaTest):
                                  "log_compaction_interval_ms": 1000
                              })
 
+    def list_offsets(self, topics):
+        kcl = KCL(self.redpanda)
+        topic_names = [t.name for t in topics]
+        offsets_map = {}
+
+        def update_offset_map():
+            offsets = kcl.list_offsets(topic_names)
+            self.logger.info(f"offsets_list: {offsets}")
+            for p in offsets:
+                offsets_map[(p.topic, p.partition)] = int(p.end_offset)
+            self.logger.info(f"offsets_map: {offsets_map}")
+
+        def all_offsets_present():
+            update_offset_map()
+            return all([l != -1 for _, l in offsets_map.items()])
+
+        wait_until(all_offsets_present, 30, 1)
+        return offsets_map
+
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch(self):
         replication_factors = [1, 3, 5]
@@ -74,23 +93,10 @@ class OffsetForLeaderEpochTest(RedpandaTest):
         topic_names = [t.name for t in topics]
         # create test topics
         self.client().create_topic(topics)
+
+        initial_offsets = self.list_offsets(topics=topics)
+
         kcl = KCL(self.redpanda)
-        for t in topics:
-            self._produce(t.name, 20)
-
-        def list_offsets_map():
-            offsets_map = {}
-            offsets = []
-
-            offsets = kcl.list_offsets(topic_names)
-            self.logger.info(f"offsets_list: {offsets}")
-            for p in offsets:
-                offsets_map[(p.topic, p.partition)] = int(p.end_offset)
-            self.logger.info(f"offsets_map: {offsets_map}")
-            return offsets_map
-
-        initial_offsets = list_offsets_map()
-
         leader_epoch_offsets = kcl.offset_for_leader_epoch(topics=topic_names,
                                                            leader_epoch=1)
 
@@ -113,7 +119,7 @@ class OffsetForLeaderEpochTest(RedpandaTest):
             assert initial_offsets[(o.topic,
                                     o.partition)] == o.epoch_end_offset
 
-        last_offsets = list_offsets_map()
+        last_offsets = self.list_offsets(topics=topics)
         rpk = RpkTool(self.redpanda)
         for t in topics:
             tp_desc = rpk.describe_topic(t.name)
