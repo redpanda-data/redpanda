@@ -45,18 +45,18 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     create_topics();
     // discard create delta
     table.local().wait_for_changes(as).get0();
-    auto res_1 = table.local()
-                   .apply(
-                     cluster::delete_topic_cmd(
-                       make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")),
-                     model::offset(0))
-                   .get0();
-    auto res_2 = table.local()
-                   .apply(
-                     cluster::delete_topic_cmd(
-                       make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")),
-                     model::offset(0))
-                   .get0();
+    table.local()
+      .apply(
+        cluster::delete_topic_cmd(
+          make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")),
+        model::offset(0))
+      .get0();
+    table.local()
+      .apply(
+        cluster::delete_topic_cmd(
+          make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")),
+        model::offset(0))
+      .get0();
 
     auto md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);
@@ -151,12 +151,11 @@ FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
     cluster::create_partitions_configuration_assignment pca(
       std::move(cfg), std::move(p_as));
 
-    auto res_1 = table.local()
-                   .apply(
-                     cluster::create_partition_cmd(
-                       make_tp_ns("test_tp_2"), std::move(pca)),
-                     model::offset(0))
-                   .get0();
+    table.local()
+      .apply(
+        cluster::create_partition_cmd(make_tp_ns("test_tp_2"), std::move(pca)),
+        model::offset(0))
+      .get0();
 
     auto md = table.local().get_topic_metadata(make_tp_ns("test_tp_2"));
 

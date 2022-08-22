@@ -160,8 +160,6 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     std::string manifest_path = fmt::format(
       "/{:08x}/meta/{}/manifest.json", hash, manifest_ntp_path);
 
-    const char* topic_url
-      = "/00000000/meta/test-namespace/topic_3/topic_manifest.json";
     archival::segment_name seg000{"0-0-v1.log"};
     archival::segment_name seg100{"100-0-v1.log"};
     set_expectations_and_listen({});

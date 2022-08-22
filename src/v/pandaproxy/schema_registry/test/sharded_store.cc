@@ -32,18 +32,15 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     // Insert simple
     auto referenced_schema = pps::canonical_schema{
       pps::subject{"simple.proto"}, simple};
-    auto sch1 = store
-                  .upsert(
-                    pps::seq_marker{
-                      std::nullopt,
-                      std::nullopt,
-                      ver1,
-                      pps::seq_marker_key_type::schema},
-                    referenced_schema,
-                    pps::schema_id{1},
-                    ver1,
-                    pps::is_deleted::no)
-                  .get();
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
+        referenced_schema,
+        pps::schema_id{1},
+        ver1,
+        pps::is_deleted::no)
+      .get();
 
     // Insert referenced
     auto importing_schema = pps::canonical_schema{
@@ -51,18 +48,15 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       imported,
       {{"simple", pps::subject{"simple.proto"}, ver1}}};
 
-    auto sch2 = store
-                  .upsert(
-                    pps::seq_marker{
-                      std::nullopt,
-                      std::nullopt,
-                      ver1,
-                      pps::seq_marker_key_type::schema},
-                    importing_schema,
-                    pps::schema_id{2},
-                    ver1,
-                    pps::is_deleted::no)
-                  .get();
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
+        importing_schema,
+        pps::schema_id{2},
+        ver1,
+        pps::is_deleted::no)
+      .get();
 
     auto referenced_by
       = store.referenced_by(referenced_schema.sub(), ver1).get();

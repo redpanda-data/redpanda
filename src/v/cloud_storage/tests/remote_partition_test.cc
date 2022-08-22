@@ -467,9 +467,7 @@ FIXTURE_TEST(test_remote_partition_scan_full, cloud_storage_fixture) {
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_full_truncated_segments, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
 
     auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
     auto base = segments[0].base_offset;
@@ -583,10 +581,6 @@ FIXTURE_TEST(test_remote_partition_scan_middle, cloud_storage_fixture) {
 
 /// This test scans batches in the middle
 FIXTURE_TEST(test_remote_partition_scan_off, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
-
     auto segments = setup_s3_imposter(*this, 3, 10);
     auto base = segments[2].max_offset + model::offset(10);
     auto max = base + model::offset(10);
@@ -720,7 +714,6 @@ FIXTURE_TEST(
   test_remote_partition_scan_translate_full_4, cloud_storage_fixture) {
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
     batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
     batch_t conf = {
@@ -979,8 +972,6 @@ SEASTAR_THREAD_TEST_CASE(test_btree_iterator_range_scan) {
         BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
         cnt++;
     }
-
-    auto it = iter_t(map);
 }
 
 FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {

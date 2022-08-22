@@ -87,8 +87,7 @@ struct partition_balancer_planner_fixture {
           .node_availability_timeout_sec = std::chrono::minutes(1)},
         workers.table.local(),
         workers.members.local(),
-        workers.allocator.local())
-      , workers() {}
+        workers.allocator.local()) {}
 
     cluster::topic_configuration_assignment make_tp_configuration(
       const ss::sstring& topic, int partitions, int16_t replication_factor) {

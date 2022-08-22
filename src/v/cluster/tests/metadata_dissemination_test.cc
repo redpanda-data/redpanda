@@ -64,8 +64,8 @@ FIXTURE_TEST(
     model::node_id n_2(1);
     model::node_id n_3(2);
     auto cntrl_0 = create_node_application(n_1);
-    auto cntrl_1 = create_node_application(n_2);
-    auto cntrl_2 = create_node_application(n_3);
+    create_node_application(n_2);
+    create_node_application(n_3);
 
     auto& cache_0 = get_local_cache(n_1);
     auto& cache_1 = get_local_cache(n_2);
@@ -106,7 +106,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     model::node_id n_1(0);
     model::node_id n_2(1);
     auto cntrl_0 = create_node_application(n_1);
-    auto cntrl_1 = create_node_application(n_2);
+    create_node_application(n_2);
 
     auto& cache_0 = get_local_cache(n_1);
     auto& cache_1 = get_local_cache(n_2);
@@ -130,7 +130,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
       .get0();
 
     // Add new now to the cluster
-    auto cntrl_2 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{2});
     auto& cache_2 = get_local_cache(model::node_id{2});
     // Wait for node to join the cluster
     tests::cooperative_spin_wait_with_timeout(

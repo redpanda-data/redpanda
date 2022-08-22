@@ -51,21 +51,6 @@ static storage::ntp_config get_ntp_conf() {
     return storage::ntp_config(manifest_ntp, "base-dir");
 }
 
-/// Compare two json objects logically by parsing them first and then going
-/// through fields
-static bool
-compare_json_objects(const std::string_view& lhs, const std::string_view& rhs) {
-    using namespace rapidjson;
-    Document lhsd, rhsd;
-    lhsd.Parse({lhs.data(), lhs.size()});
-    rhsd.Parse({rhs.data(), rhs.size()});
-    if (lhsd != rhsd) {
-        vlog(
-          test_log.trace, "Json objects are not equal:\n{}and\n{}", lhs, rhs);
-    }
-    return lhsd == rhsd;
-}
-
 static void log_segment(const storage::segment& s) {
     vlog(
       test_log.info,
@@ -315,7 +300,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // made.
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
-    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},

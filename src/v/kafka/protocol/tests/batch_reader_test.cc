@@ -128,7 +128,6 @@ SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_magic) {
 
     auto crs = kafka::batch_reader(std::move(ctx.record_set));
 
-    model::offset last_offset{};
     auto kba = crs.consume_batch();
     BOOST_REQUIRE(!kba.v2_format);
 }
@@ -140,7 +139,6 @@ SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_crc) {
 
     auto crs = kafka::batch_reader(std::move(ctx.record_set));
 
-    model::offset last_offset{};
     auto kba = crs.consume_batch();
     BOOST_REQUIRE(!kba.valid_crc);
 }

@@ -20,7 +20,7 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
-static void validate_delta(
+inline void validate_delta(
   const std::vector<cluster::topic_table::delta>& d,
   int new_partitions,
   int removed_partitions) {

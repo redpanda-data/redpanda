@@ -241,8 +241,6 @@ void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {
     vlog(fixt_log.trace, "waiting for partition {}", ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, ntp] {
         auto& table = app.controller->get_partition_leaders().local();
-        model::node_id node(0);
-        int cnt = 0;
         auto self = app.controller->self();
         ss::lowres_clock::time_point deadline = ss::lowres_clock::now() + 100ms;
         return table.wait_for_leader(ntp, deadline, {}).get0() == self

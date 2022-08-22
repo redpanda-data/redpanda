@@ -82,7 +82,6 @@ void test_async_read(
     auto is = make_iobuf_input_stream(std::move(input));
     auto streams = input_stream_fanout<N>(std::move(is), readahead, limit);
     ss::gate g;
-    int cnt_a = 0;
     auto dispatch_bg_read = [&g, &copy](auto sa) mutable {
         auto cnt = ss::make_lw_shared<int>(0);
         (void)ss::with_gate(g, [&copy, cnt, sa = std::move(sa)]() mutable {

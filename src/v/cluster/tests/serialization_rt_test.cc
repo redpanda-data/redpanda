@@ -450,7 +450,7 @@ struct adl<partition_status_v0> {
     }
 
     partition_status_v0 from(iobuf_parser& p) {
-        auto version = adl<int8_t>{}.from(p);
+        adl<int8_t>{}.from(p); // version
         auto id = adl<model::partition_id>{}.from(p);
         auto term = adl<model::term_id>{}.from(p);
         auto leader = adl<std::optional<model::node_id>>{}.from(p);

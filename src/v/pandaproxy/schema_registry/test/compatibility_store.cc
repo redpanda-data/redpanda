@@ -31,7 +31,6 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
 
     s.set_compatibility(pps::compatibility_level::backward).get();
     auto sub = pps::subject{"sub"};
-    auto avro = pps::schema_type::avro;
     s.upsert(
        dummy_marker,
        {sub, pps::canonical_schema_definition{schema1}},

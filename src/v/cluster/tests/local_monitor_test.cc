@@ -143,8 +143,6 @@ void local_monitor_fixture::assert_space_alert(
   size_t free,
   disk_space_alert expected) {
     static const size_t block_size = 1024;
-    size_t min_percent_blocks = percent_alert_bytes / block_size;
-    size_t min_bytes_blocks = bytes_alert / block_size;
 
     unsigned percent = (percent_alert_bytes * 100) / volume;
     set_config_free_thresholds(percent, bytes_alert, min_bytes);

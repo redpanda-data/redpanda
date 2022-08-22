@@ -260,7 +260,6 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     new_members.push_back(raft::broker_revision{
       .broker = gr.get_member(model::node_id(5)).broker,
       .rev = model::revision_id(0)});
-    bool success = false;
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus
@@ -431,7 +430,6 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
     new_members.push_back(raft::broker_revision{
       .broker = gr.get_member(model::node_id(5)).broker,
       .rev = model::revision_id(0)});
-    bool success = false;
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus

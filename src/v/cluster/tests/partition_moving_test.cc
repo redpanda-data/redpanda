@@ -310,7 +310,6 @@ public:
         }).get0();
 
         auto retries = 10;
-        bool stop = false;
         foreign_batches_t ret;
         auto single_retry = [count, ntp](cluster::partition_manager& pm) {
             auto batches = model::test::make_random_batches(

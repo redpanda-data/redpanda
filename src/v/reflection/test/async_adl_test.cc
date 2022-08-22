@@ -96,7 +96,6 @@ bool ser_deser_verify(T type) {
     // Serialize
     iobuf out;
     reflection::async_adl<T>{}.to(out, type).get();
-    const auto originals_hash = std::hash<iobuf>{}(out);
 
     // Deserialize
     iobuf_parser in(std::move(out));

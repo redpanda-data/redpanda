@@ -28,8 +28,6 @@ v_cc_library(
     logger.cc
     flex_versions.cc
     ${message_srcs}
-  COPTS
-    "-Wno-unused-lambda-capture"
   DEPS
     Seastar::seastar
     v::bytes
