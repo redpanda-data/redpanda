@@ -126,6 +126,9 @@ public:
     ss::future<std::vector<cluster::rm_stm::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
+    /// Size of the segment in bytes
+    size_t get_segment_size_bytes() const;
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -181,6 +184,8 @@ private:
 
     using tx_range_vec = fragmented_vector<cluster::rm_stm::tx_range>;
     std::optional<tx_range_vec> _tx_range;
+
+    size_t _segment_size{0};
 };
 
 class remote_segment_batch_consumer;
