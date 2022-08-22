@@ -14,7 +14,7 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.util import wait_until, wait_until_result
 from rptest.clients.default import DefaultClient
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -74,6 +74,61 @@ class PartitionBalancerTest(EndToEndTest):
                     ret[r] = ret.setdefault(r, 0) + 1
 
         return ret
+
+    def get_partition_amount_on_node(self, node):
+        admin = Admin(self.redpanda)
+        return len(
+            list(
+                filter(lambda x: x["ns"] == "kafka",
+                       admin.get_partitions(node=node))))
+
+    def validate_metrics_node_down(self, disabled_node,
+                                   expected_moving_partitions_amount):
+        self.logger.debug(
+            f"Checking metrics for movement with disabled node: {self.redpanda.idx(disabled_node)}"
+        )
+        availabale_nodes = list(
+            filter(lambda x: x != disabled_node, self.redpanda.nodes))
+        metrics = self.redpanda.metrics_sample(
+            "moving_to_node",
+            availabale_nodes,
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        moving_to_sum = int(sum([metric.value for metric in metrics.samples]))
+
+        self.logger.debug(f"\
+            moving_to_sum: {moving_to_sum}, \
+            expected_moving_partitions_amount: {expected_moving_partitions_amount}"
+                          )
+
+        if moving_to_sum != expected_moving_partitions_amount:
+            return False
+
+        metrics = self.redpanda.metrics_sample(
+            "moving_from_node",
+            availabale_nodes,
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        moving_from_sum = int(sum([metric.value
+                                   for metric in metrics.samples]))
+        self.logger.debug(f"moving_from_sum: {moving_from_sum}")
+        if moving_from_sum != 0:
+            return False
+
+        metrics = self.redpanda.metrics_sample(
+            "node_cancelling_movements",
+            availabale_nodes,
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        cancelling_movements = int(
+            sum([metric.value for metric in metrics.samples]))
+        self.logger.debug(f"cancelling_movements: {cancelling_movements}")
+        if cancelling_movements != 0:
+            return False
+
+        return True
+
+    def check_metrics(self, disabled_node, expected_moving_partitions_amount):
+        return wait_until(lambda: self.validate_metrics_node_down(
+            disabled_node, expected_moving_partitions_amount),
+                          timeout_sec=10)
 
     def wait_until_status(self, predicate, timeout_sec=120):
         # We may get a 504 if we proxy a status request to a suspended node.
@@ -258,18 +313,21 @@ class PartitionBalancerTest(EndToEndTest):
 
             for n in range(3):
                 node = self.redpanda.nodes[n % 3]
+                partitions_amount_to_move = self.get_partition_amount_on_node(
+                    node)
                 ns.make_unavailable(node,
                                     failure_types=[FailureSpec.FAILURE_KILL])
 
                 # wait until movement start
                 self.wait_until_status(lambda s: s["status"] == "in_progress")
+                self.check_metrics(node, partitions_amount_to_move)
                 ns.make_available()
 
                 # stop empty node
                 ns.make_unavailable(empty_node,
                                     failure_types=[FailureSpec.FAILURE_KILL])
 
-                # wait until movements are cancelled
+                # wait until movements are cancelling
                 self.wait_until_ready(expected_unavailable_node=empty_node)
 
                 self.check_no_replicas_on_node(empty_node)
