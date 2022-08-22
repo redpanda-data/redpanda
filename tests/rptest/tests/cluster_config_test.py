@@ -197,11 +197,14 @@ class ClusterConfigTest(RedpandaTest):
         the config version has propagated to all nodes, but also that the
         consequent config status (of all the peers) has propagated to all nodes.
         """
+        def is_complete(node):
+            node_status = self.admin.get_cluster_config_status(node=node)
+            return set(n['config_version'] for n in node_status) == {
+                version
+            } and len(node_status) == len(self.redpanda.nodes)
+
         for node in self.redpanda.nodes:
-            wait_until(lambda: set([
-                n['config_version']
-                for n in self.admin.get_cluster_config_status(node=node)
-            ]) == {version},
+            wait_until(lambda: is_complete(node),
                        timeout_sec=10,
                        backoff_sec=0.5,
                        err_msg=f"Config status did not converge on {version}")
