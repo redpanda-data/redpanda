@@ -532,14 +532,14 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
   plan_data& result, const reallocation_request_state& rrs) {
     for (const auto& update : _topic_table.updates_in_progress()) {
         if (
-          update.second.state
+          update.second.get_state()
           != topic_table::in_progress_state::update_requested) {
             continue;
         }
 
         absl::flat_hash_set<model::node_id> previous_replicas_set;
         bool was_on_decommissioning_node = false;
-        for (const auto& r : update.second.previous_replicas) {
+        for (const auto& r : update.second.get_previous_replicas()) {
             previous_replicas_set.insert(r.node_id);
             if (rrs.decommissioning_nodes.contains(r.node_id)) {
                 was_on_decommissioning_node = true;

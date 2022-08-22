@@ -306,6 +306,34 @@ inline bool contains_node(
            != replicas.end();
 }
 
+// check if replica is moving from node
+inline bool moving_from_node(
+  model::node_id node,
+  const std::vector<model::broker_shard>& previous_replicas,
+  const std::vector<model::broker_shard>& result_replicas) {
+    if (!contains_node(previous_replicas, node)) {
+        return false;
+    }
+    if (!contains_node(result_replicas, node)) {
+        return true;
+    }
+    return false;
+}
+
+// check if replica is moving to node
+inline bool moving_to_node(
+  model::node_id node,
+  const std::vector<model::broker_shard>& previous_replicas,
+  const std::vector<model::broker_shard>& result_replicas) {
+    if (contains_node(previous_replicas, node)) {
+        return false;
+    }
+    if (contains_node(result_replicas, node)) {
+        return true;
+    }
+    return false;
+}
+
 cluster::errc map_update_interruption_error_code(std::error_code);
 
 } // namespace cluster

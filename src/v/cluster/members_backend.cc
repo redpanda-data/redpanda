@@ -342,10 +342,10 @@ std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
     std::vector<model::ntp> ret;
 
     for (const auto& [ntp, state] : _topics.local().in_progress_updates()) {
-        if (state.update_revision < revision) {
+        if (state.get_update_revision() < revision) {
             continue;
         }
-        if (!contains_node(state.previous_replicas, node)) {
+        if (!contains_node(state.get_previous_replicas(), node)) {
             continue;
         }
 

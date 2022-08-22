@@ -204,13 +204,14 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
 
     _updates_in_progress.emplace(
       cmd.key,
-      in_progress_update{
-        .previous_replicas = current_assignment_it->replicas,
-        .state = in_progress_state::update_requested,
-        .update_revision = model::revision_id(o),
+      in_progress_update(
+        current_assignment_it->replicas,
+        cmd.value,
+        in_progress_state::update_requested,
+        model::revision_id(o),
         // snapshot replicas revisions
-        .replicas_revisions = revisions_it->second,
-      });
+        revisions_it->second,
+        _probe));
     auto previous_assignment = *current_assignment_it;
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
@@ -239,11 +240,14 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
             /// Insert non-replicable topic into the 'updates_in_progress' set
             auto [_, success] = _updates_in_progress.emplace(
               model::ntp(cs.ns, cs.tp, current_assignment_it->id),
-              in_progress_update{
-                .previous_replicas = current_assignment_it->replicas,
-                .state = in_progress_state::update_requested,
-                .update_revision = model::revision_id(o),
-              });
+              in_progress_update(
+                current_assignment_it->replicas,
+                cmd.value,
+                in_progress_state::update_requested,
+                model::revision_id(o),
+                // empty replicas revisions
+                {},
+                _probe));
             vassert(
               success,
               "non_replicable topic {}-{} already in _updates_in_progress set",
@@ -382,7 +386,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     if (in_progress_it == _updates_in_progress.end()) {
         co_return errc::no_update_in_progress;
     }
-    switch (in_progress_it->second.state) {
+    switch (in_progress_it->second.get_state()) {
     case in_progress_state::update_requested:
         break;
     case in_progress_state::cancel_requested:
@@ -397,20 +401,21 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         co_return errc::no_update_in_progress;
     }
 
-    in_progress_it->second.state = cmd.value.force
-                                     ? in_progress_state::force_cancel_requested
-                                     : in_progress_state::cancel_requested;
+    in_progress_it->second.set_state(
+      cmd.value.force ? in_progress_state::force_cancel_requested
+                      : in_progress_state::cancel_requested);
 
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
-    current_assignment_it->replicas = in_progress_it->second.previous_replicas;
+    current_assignment_it->replicas
+      = in_progress_it->second.get_previous_replicas();
     auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
     vassert(
       revisions_it != tp->second.replica_revisions.end(),
       "partition {} replica revisions map must exists",
       cmd.key);
 
-    revisions_it->second = in_progress_it->second.replicas_revisions;
+    revisions_it->second = in_progress_it->second.get_replicas_revisions();
 
     /// Update all non_replicable topics to have the same 'in-progress' state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
@@ -441,7 +446,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
               current_assignment_it->id);
             /// The new assignments of the non_replicable topic/partition must
             /// match the source topic
-            assignment_it->replicas = in_progress_it->second.previous_replicas;
+            assignment_it->replicas
+              = in_progress_it->second.get_previous_replicas();
         }
     }
     /**
@@ -456,7 +462,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
       partition_assignment{
         current_assignment_it->group,
         current_assignment_it->id,
-        in_progress_it->second.previous_replicas},
+        in_progress_it->second.get_previous_replicas()},
       o,
       cmd.value.force ? delta::op_type::force_abort_update
                       : delta::op_type::cancel_update,
@@ -786,7 +792,7 @@ std::optional<std::vector<model::broker_shard>>
 topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     if (auto it = _updates_in_progress.find(ntp);
         it != _updates_in_progress.end()) {
-        return it->second.previous_replicas;
+        return it->second.get_previous_replicas();
     }
     return std::nullopt;
 }
@@ -800,7 +806,8 @@ topic_table::all_ntps_moving_per_node(model::node_id node) const {
         if (unlikely(!current_assignment)) {
             continue;
         }
-        const auto in_previous = contains_node(state.previous_replicas, node);
+        const auto in_previous = contains_node(
+          state.get_previous_replicas(), node);
         const auto in_current = contains_node(
           current_assignment->replicas, node);
 
@@ -818,16 +825,14 @@ topic_table::ntps_moving_to_node(model::node_id node) const {
     std::vector<model::ntp> ret;
 
     for (const auto& [ntp, state] : _updates_in_progress) {
-        if (contains_node(state.previous_replicas, node)) {
-            continue;
-        }
-
         auto current_assignment = get_partition_assignment(ntp);
         if (unlikely(!current_assignment)) {
             continue;
         }
-
-        if (contains_node(current_assignment->replicas, node)) {
+        if (moving_to_node(
+              node,
+              state.get_previous_replicas(),
+              current_assignment->replicas)) {
             ret.push_back(ntp);
         }
     }
@@ -839,16 +844,14 @@ topic_table::ntps_moving_from_node(model::node_id node) const {
     std::vector<model::ntp> ret;
 
     for (const auto& [ntp, state] : _updates_in_progress) {
-        if (!contains_node(state.previous_replicas, node)) {
-            continue;
-        }
-
         auto current_assignment = get_partition_assignment(ntp);
         if (unlikely(!current_assignment)) {
             continue;
         }
-
-        if (!contains_node(current_assignment->replicas, node)) {
+        if (moving_from_node(
+              node,
+              state.get_previous_replicas(),
+              current_assignment->replicas)) {
             ret.push_back(ntp);
         }
     }
