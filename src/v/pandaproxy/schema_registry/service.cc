@@ -158,7 +158,9 @@ ss::future<> service::create_internal_topic() {
           .assignments{},
           .configs{
             {.name{ss::sstring{kafka::topic_property_cleanup_policy}},
-             .value{"compact"}}}};
+             .value{"compact"}},
+            {.name{ss::sstring{kafka::topic_property_compression}},
+             .value{ssx::sformat("{}", model::compression::none)}}}};
     };
     auto res = co_await _client.local().create_topic(make_internal_topic());
     if (res.data.topics.size() != 1) {
