@@ -27,6 +27,7 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
@@ -97,6 +98,7 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
+      recovery_coordinator&,
       features::feature_table&,
       std::optional<voter_priority> = std::nullopt);
 
@@ -655,6 +657,7 @@ private:
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    recovery_coordinator& _recovery_coordinator;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;

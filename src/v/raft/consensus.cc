@@ -96,6 +96,7 @@ consensus::consensus(
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
+  recovery_coordinator& recovery_coordinator,
   features::feature_table& ft,
   std::optional<voter_priority> voter_priority_override)
   : _self(nid, initial_cfg.revision_id())
@@ -127,6 +128,7 @@ consensus::consensus(
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _recovery_mem_quota(recovery_mem_quota)
+  , _recovery_coordinator(recovery_coordinator)
   , _features(ft)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),

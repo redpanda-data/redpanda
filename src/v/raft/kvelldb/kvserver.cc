@@ -19,6 +19,7 @@
 #include "raft/kvelldb/kvrsm.h"
 #include "raft/kvelldb/logger.h"
 #include "raft/logger.h"
+#include "raft/recovery_coordinator.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/types.h"
@@ -123,7 +124,11 @@ public:
               std::nullopt),
             .default_read_buffer_size = config::mock_binding(512_KiB),
           };
-      }) {}
+      })
+      , _recovery_coordinator(
+          config::shard_local_cfg().raft_recovery_concurrent_per_shard.bind(),
+          config::shard_local_cfg().raft_heartbeat_interval_ms.bind(),
+          config::shard_local_cfg().raft_recovery_grace_ms.bind()) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
         return _consensus;
@@ -155,6 +160,7 @@ private:
     storage::api _storage;
     raft::heartbeat_manager _hbeats;
     raft::recovery_memory_quota _recovery_memory_quota;
+    raft::recovery_coordinator _recovery_coordinator;
     model::ntp _ntp{
       model::ns("master_control_program"),
       model::topic("kvelldblog"),
@@ -192,6 +198,7 @@ private:
           _storage,
           std::nullopt,
           _recovery_memory_quota,
+          _recovery_coordinator,
           _features);
         return _consensus->start().then(
           [this] { return _hbeats.register_group(_consensus); });
