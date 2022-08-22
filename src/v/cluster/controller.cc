@@ -129,7 +129,7 @@ ss::future<> controller::start() {
             std::ref(_as));
       })
       .then([this] {
-          return _config_manager.start(
+          return _config_manager.start_single(
             std::ref(_config_preload),
             std::ref(_config_frontend),
             std::ref(_connections),
