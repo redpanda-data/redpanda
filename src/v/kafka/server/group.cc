@@ -1856,7 +1856,6 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     }
 
     volatile_tx tx = tx_it->second;
-    _volatile_txs.erase(tx_it);
 
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish
@@ -1880,9 +1879,18 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         // doesn't block while it should. So we do step_down to give next leader
         // reply log and understand status of transaction
         co_await _partition->raft()->step_down();
+
+        _volatile_txs.erase(r.pid);
         _expiration_info.erase(r.pid);
+
         co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
+
+    // We move deletion tx from volatile after replication, because
+    // fetch_offset can see internal state when redpanda has ongoing tx, but it
+    // is not inside internal maps. So we need do moving tx between maps in
+    // atomic section
+    _volatile_txs.erase(r.pid);
 
     prepared_tx ptx;
     ptx.tx_seq = r.tx_seq;
