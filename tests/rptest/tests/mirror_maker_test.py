@@ -225,7 +225,8 @@ class TestMirrorMakerService(EndToEndTest):
 
             self.logger.info(
                 f"source {source_group}, target_group: {target_group}")
-            return target_group.partitions == source_group.partitions and target_group.name == source_group.name
+            return sorted(target_group.partitions) == sorted(source_group.partitions) and \
+                target_group.name == source_group.name
 
         # wait for consumer group sync
         timeout = 600 if self.redpanda.dedicated_nodes else 60
