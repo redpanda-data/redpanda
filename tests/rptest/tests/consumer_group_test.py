@@ -309,6 +309,7 @@ class ConsumerGroupTest(RedpandaTest):
             c.free()
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5079
+    # https://github.com/redpanda-data/redpanda/issues/6180
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
