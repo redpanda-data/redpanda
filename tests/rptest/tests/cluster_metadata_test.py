@@ -79,4 +79,4 @@ class MetadataTest(RedpandaTest):
                 returned_ids = [n.id for n in nodes]
                 return len(nodes) == 2 and node_id not in returned_ids
 
-            wait_until(contains_only_alive_nodes, 30, 1)
+            wait_until(contains_only_alive_nodes, 60)
