@@ -50,6 +50,12 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 		return nil
 	}
 
+	// If old ConfigMaps can't be deleted for any reason, it will not continue reconciliation
+	// This check is not necessary but it's an additional safeguard to make sure ConfigMaps are not more than expected
+	if err := cm.isConfigMapDeleted(ctx); err != nil {
+		return fmt.Errorf("old ConfigMaps are not deleted: %w", err)
+	}
+
 	// Create new ConfigMap
 	// If reconciliation fails, a new ConfigMap will be created again
 	// But unused ConfigMaps should be deleted at the beginning of reconciliation via DeleteUnused()
@@ -65,6 +71,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", config)
 
 	// Create new ConfigMap instead of updating existing so Deployment will trigger a reconcile
 	immutable := true
@@ -324,6 +331,21 @@ func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// isConfigMapDeleted checks if attached ConfigMap is more than expected
+// This prevents the controller to create multiple ConfigMaps until old ones are garbage collected
+func (cm *ConfigMap) isConfigMapDeleted(ctx context.Context) error {
+	cms := &corev1.ConfigMapList{}
+	if err := cm.List(ctx, cms, client.MatchingLabels(labels.ForConsole(cm.consoleobj)), client.InNamespace(cm.consoleobj.GetNamespace())); err != nil {
+		return err
+	}
+	// During reconciliation old ConfigMap might still be present so max expected is two
+	count := 2
+	if len(cms.Items) > count {
+		return fmt.Errorf("attached ConfigMaps is greater than %d", count)
 	}
 	return nil
 }

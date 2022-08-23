@@ -6,6 +6,10 @@ import (
 	"github.com/redpanda-data/console/backend/pkg/kafka"
 )
 
+const (
+	debugLogLevel = 4
+)
+
 // ConsoleConfig is the config passed to the Redpanda Console app
 type ConsoleConfig struct {
 	// Grabbed from https://github.com/redpanda-data/console/
