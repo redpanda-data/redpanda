@@ -583,12 +583,12 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
             vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
             throw std::system_error(error);
         } else {
+            result = _manifest.truncate(adjusted_start_offset);
             vlog(
               ctxlog.debug,
               "archival metadata STM update passed, re-uploading manifest");
             co_await upload_manifest();
         }
-        result = _manifest.truncate(adjusted_start_offset);
         vlog(
           ctxlog.info,
           "archival metadata cleanup completed, start offset after cleanup: {}",
