@@ -2503,7 +2503,7 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
     if (ec) {
         if (ec != errc::shutting_down) {
             vlog(
-              _ctxlog.error,
+              _ctxlog.info,
               "unable to replicate updated configuration: {}",
               ec.message());
         }
