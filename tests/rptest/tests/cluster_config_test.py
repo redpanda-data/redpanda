@@ -111,14 +111,7 @@ class ClusterConfigTest(RedpandaTest):
 
         # Some arbitrary property to check syntax of result
         assert 'kafka_api' in node_config
-
-        # Read authoritative version from controller
-        initial_version = max(n['config_version']
-                              for n in admin.get_cluster_config_status(
-                                  node=self.redpanda.controller()))
-
-        # Wait for all nodes to report all other nodes status' up to date
-        self._wait_for_version_status_sync(initial_version)
+        self._quiesce_status()
 
         # Validate expected status for a cluster that we have made no changes to
         # since first start
@@ -204,14 +197,33 @@ class ClusterConfigTest(RedpandaTest):
         the config version has propagated to all nodes, but also that the
         consequent config status (of all the peers) has propagated to all nodes.
         """
+        def is_complete(node):
+            node_status = self.admin.get_cluster_config_status(node=node)
+            return set(n['config_version'] for n in node_status) == {
+                version
+            } and len(node_status) == len(self.redpanda.nodes)
+
         for node in self.redpanda.nodes:
-            wait_until(lambda: set([
-                n['config_version']
-                for n in self.admin.get_cluster_config_status(node=node)
-            ]) == {version},
+            wait_until(lambda: is_complete(node),
                        timeout_sec=10,
                        backoff_sec=0.5,
                        err_msg=f"Config status did not converge on {version}")
+
+    def _quiesce_status(self):
+        """
+        Query the cluster version from the controller leader, then wait til all
+        nodes' report that all other nodes have seen that version (i.e. config
+        is up to date globally _and_ config status is up to date globally).
+        """
+        leader = self.redpanda.controller()
+
+        # Read authoritative version from controller
+        version = max(
+            n['config_version']
+            for n in self.admin.get_cluster_config_status(node=leader))
+
+        # Wait for all nodes to report all other nodes status' up to date
+        self._wait_for_version_status_sync(version)
 
     def _check_restart_clears(self):
         """
@@ -789,6 +801,8 @@ class ClusterConfigTest(RedpandaTest):
         case is just a superficial test that the command succeeds and
         returns info for each node.
         """
+        self._quiesce_status()
+
         status_text = self.rpk.cluster_config_status()
 
         # Split into lines, skip first one (header)
