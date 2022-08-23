@@ -192,12 +192,12 @@ static void parse_data_section(license& lc, const json::Document& doc) {
 }
 
 license make_license(const ss::sstring& raw_license) {
-    license lc;
-    auto components = parse_license(raw_license);
-    if (!crypto::verify_license(components.data, components.signature)) {
-        throw license_verifcation_exception("RSA signature invalid");
-    }
     try {
+        license lc;
+        auto components = parse_license(raw_license);
+        if (!crypto::verify_license(components.data, components.signature)) {
+            throw license_verifcation_exception("RSA signature invalid");
+        }
         auto decoded_data = base64_to_string(components.data);
         json::Document doc;
         doc.Parse(decoded_data);
