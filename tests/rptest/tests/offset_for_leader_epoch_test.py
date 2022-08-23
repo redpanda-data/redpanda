@@ -56,7 +56,7 @@ class OffsetForLeaderEpochTest(RedpandaTest):
                                  "log_compaction_interval_ms": 1000
                              })
 
-    def list_offsets(self, topics):
+    def list_offsets(self, topics, total_partitions):
         kcl = KCL(self.redpanda)
         topic_names = [t.name for t in topics]
         offsets_map = {}
@@ -70,7 +70,8 @@ class OffsetForLeaderEpochTest(RedpandaTest):
 
         def all_offsets_present():
             update_offset_map()
-            return all([l != -1 for _, l in offsets_map.items()])
+            return all([l != -1 for _, l in offsets_map.items()
+                        ]) and len(offsets_map) == total_partitions
 
         wait_until(all_offsets_present, 30, 1)
         return offsets_map
@@ -91,10 +92,12 @@ class OffsetForLeaderEpochTest(RedpandaTest):
                     cleanup_policy=random.choice(cleanup_policies)))
 
         topic_names = [t.name for t in topics]
+        total_partitions = sum([t.partition_count for t in topics])
         # create test topics
         self.client().create_topic(topics)
 
-        initial_offsets = self.list_offsets(topics=topics)
+        initial_offsets = self.list_offsets(topics=topics,
+                                            total_partitions=total_partitions)
 
         kcl = KCL(self.redpanda)
         leader_epoch_offsets = kcl.offset_for_leader_epoch(topics=topic_names,
@@ -119,7 +122,8 @@ class OffsetForLeaderEpochTest(RedpandaTest):
             assert initial_offsets[(o.topic,
                                     o.partition)] == o.epoch_end_offset
 
-        last_offsets = self.list_offsets(topics=topics)
+        last_offsets = self.list_offsets(topics=topics,
+                                         total_partitions=total_partitions)
         rpk = RpkTool(self.redpanda)
         for t in topics:
             tp_desc = rpk.describe_topic(t.name)
