@@ -22,7 +22,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 
 	cmd.AddCommand(
 		newBundleCommand(fs),
-		NewInfoCommand(fs),
+		NewInfoCommand(),
 	)
 
 	return cmd
