@@ -33,4 +33,6 @@ class OpenBenchmarkTest(RedpandaTest):
         benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
+        # docker runs have high variance in perf numbers, check only in dedicate node
+        # setup.
+        benchmark.check_succeed(validate_metrics=self.redpanda.dedicated_nodes)
