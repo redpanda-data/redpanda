@@ -11,7 +11,7 @@ import threading
 from time import sleep
 import requests
 from rptest.clients.types import TopicSpec
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -37,7 +37,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         super(PartitionMovementUpgradeTest, self).setUp()
 
     def _start_producer(self, topic_name):
-        self.producer = FranzGoVerifiableProducer(
+        self.producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -52,7 +52,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
     def _start_consumer(self, topic_name):
 
-        self.consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -67,14 +67,13 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         def finished_consuming():
             self.logger.debug(
                 f"verifying, producer acked: {self.producer.produce_status.acked}, "
-                f"consumer valid reads: {self.consumer.consumer_status.valid_reads}"
+                f"consumer valid reads: {self.consumer.consumer_status.validator.valid_reads}"
             )
-            return self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
+            return self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
 
         # wait for consumers to finish
         wait_until(finished_consuming, 90)
 
-        self.consumer.shutdown()
         self.consumer.wait()
 
     def start_moving_partitions(self, md):

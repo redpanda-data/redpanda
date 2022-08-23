@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, LoggingConfig
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
@@ -529,7 +529,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         for tn in topic_names:
             t1 = time.time()
-            producer = FranzGoVerifiableProducer(
+            producer = KgoVerifierProducer(
                 self.test_context,
                 self.redpanda,
                 tn,
@@ -551,7 +551,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             stress_data_size = 2E9
 
         stress_msg_count = int(stress_data_size / stress_msg_size)
-        fast_producer = FranzGoVerifiableProducer(
+        fast_producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             target_topic,
@@ -572,7 +572,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             rand_parallel = 10
             rand_ios = 10
 
-        rand_consumer = FranzGoVerifiableRandomConsumer(
+        rand_consumer = KgoVerifierRandomConsumer(
             self.test_context,
             self.redpanda,
             target_topic,
@@ -581,7 +581,6 @@ class ManyPartitionsTest(PreallocNodesTest):
             parallel=rand_parallel,
             nodes=[self.preallocated_nodes[1]])
         rand_consumer.start(clean=False)
-        rand_consumer.shutdown()
         rand_consumer.wait()
 
         fast_producer.stop()
@@ -589,14 +588,13 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(
             "Write+randread stress test complete, verifying sequentially")
 
-        seq_consumer = FranzGoVerifiableSeqConsumer(
-            self.test_context, self.redpanda, target_topic, 0,
-            [self.preallocated_nodes[2]])
+        seq_consumer = KgoVerifierSeqConsumer(self.test_context, self.redpanda,
+                                              target_topic, 0,
+                                              [self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
-        seq_consumer.shutdown()
         seq_consumer.wait()
-        assert seq_consumer.consumer_status.invalid_reads == 0
-        assert seq_consumer.consumer_status.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
+        assert seq_consumer.consumer_status.validator.invalid_reads == 0
+        assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
 
         self.free_preallocated_nodes()
 

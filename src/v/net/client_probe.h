@@ -56,10 +56,7 @@ public:
         ++_connection_errors;
     }
 
-    void read_dispatch_error(const std::exception_ptr& e) {
-        rpc::rpclog.error("Error dispatching client reads: {}", e);
-        ++_read_dispatch_errors;
-    }
+    void read_dispatch_error() { ++_read_dispatch_errors; }
 
     void header_corrupted() { ++_corrupted_headers; }
 

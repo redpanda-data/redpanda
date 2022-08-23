@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import ResourceSettings
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.kaf_consumer import KafConsumer
 from rptest.services.metrics_check import MetricCheck
 
@@ -45,11 +45,10 @@ class ConnectionRateLimitTest(PreallocNodesTest):
             extra_rp_conf={"kafka_connection_rate_limit": self.RATE_LIMIT},
             resource_settings=resource_setting)
 
-        self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
-                                                   self.topics[0],
-                                                   self.MSG_SIZE,
-                                                   self.PRODUCE_COUNT,
-                                                   self.preallocated_nodes)
+        self._producer = KgoVerifierProducer(test_context, self.redpanda,
+                                             self.topics[0], self.MSG_SIZE,
+                                             self.PRODUCE_COUNT,
+                                             self.preallocated_nodes)
 
     def start_consumer(self):
         return KafConsumer(self.test_context, self.redpanda, self.topics[0],

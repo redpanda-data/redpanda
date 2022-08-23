@@ -7,11 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import requests
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer, await_minimum_produced_records
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
@@ -34,7 +32,7 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         self._number_of_moves = 50
 
     def _start_producer(self, topic_name):
-        self.producer = FranzGoVerifiableProducer(
+        self.producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -49,7 +47,7 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
 
     def _start_consumer(self, topic_name):
 
-        self.consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
             topic_name,
