@@ -306,7 +306,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
  * @return pointer to the best guess at which listener on a peer should
  *         be used in kafka metadata responses.
  */
-static const model::broker_endpoint*
+static const std::optional<model::broker_endpoint>
 guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
     // Peer has no listener with name matching the name of the
     // listener serving this Kafka request.  This can happen during
@@ -322,7 +322,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
       ctx.listener());
 
     // Look up port for the listener in use for this request
-    const auto& my_listeners = config::node().advertised_kafka_api();
+    const auto my_listeners = config::node().advertised_kafka_api();
     int16_t my_port = 0;
     for (const auto& l : my_listeners) {
         if (l.name == ctx.listener()) {
@@ -334,7 +334,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
             // because a node configuration update didn't propagate
             // via raft0 yet
             if (broker->id() == config::node().node_id()) {
-                return &l;
+                return l;
             }
         }
     }
@@ -346,25 +346,25 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
           klog.error,
           "Request on listener '{}' but not found in node_config",
           ctx.listener());
-        return nullptr;
+        return std::nullopt;
     }
 
     // Fallback 1: Try to match by port
     for (const auto& listener : broker->kafka_advertised_listeners()) {
         // filter broker listeners by active connection
         if (listener.address.port() == my_port) {
-            return &listener;
+            return listener;
         }
     }
 
     // Fallback 2: no name or port match, return first listener from
     // peer.
     if (!broker->kafka_advertised_listeners().empty()) {
-        return &broker->kafka_advertised_listeners()[0];
+        return broker->kafka_advertised_listeners()[0];
     } else {
         // A broker with no kafka listeners, there is no way to
         // include it in our response
-        return nullptr;
+        return std::nullopt;
     }
 }
 
@@ -374,16 +374,16 @@ ss::future<response_ptr> metadata_handler::handle(
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
     for (const auto& broker : alive_brokers) {
-        const model::broker_endpoint* peer_listener = nullptr;
+        std::optional<model::broker_endpoint> peer_listener;
         for (const auto& listener : broker->kafka_advertised_listeners()) {
             // filter broker listeners by active connection
             if (listener.name == ctx.listener()) {
-                peer_listener = &listener;
+                peer_listener = listener;
                 break;
             }
         }
 
-        if (peer_listener == nullptr) {
+        if (!peer_listener) {
             peer_listener = guess_peer_listener(ctx, broker);
         }
 
