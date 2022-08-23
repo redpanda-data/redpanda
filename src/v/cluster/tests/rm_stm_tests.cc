@@ -464,3 +464,85 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
     feature_table.stop().get0();
 }
+
+// Graceful leadership transfer for in flight transactions..
+// Checks serialization of state, checkpointing and applying it back on the new
+// leader.
+FIXTURE_TEST(test_graceful_txns_handover, raft_test_fixture) {
+    constexpr int group_size = 3;
+    raft_group gr = raft_group(raft::group_id(0), group_size);
+    absl::flat_hash_map<model::node_id, std::unique_ptr<cluster::rm_stm>> stms;
+    gr.enable_all();
+
+    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    feature_table.start().get0();
+
+    for (auto& [node_id, node] : gr.get_members()) {
+        // Attach rm_stm to each consensus instance.
+        auto stm = std::make_unique<cluster::rm_stm>(
+          logger, node.consensus.get(), tx_gateway_frontend, feature_table);
+        stm->start().get0();
+        stms.emplace(node_id, std::move(stm));
+    }
+
+    // Stricter leader check needed for rm_stm than what raft_test_fixture
+    // provides.
+    auto get_leader = [&gr]() -> std::optional<model::node_id> {
+        for (auto& [node_id, node] : gr.get_members()) {
+            if (node.consensus->is_leader()) {
+                return {node_id};
+            }
+        }
+        return {};
+    };
+
+    auto stop = ss::defer([&stms, &feature_table] {
+        feature_table.stop().get0();
+        for (auto& [_, stm] : stms) {
+            stm->stop().get0();
+        }
+    });
+
+    wait_for(10s, get_leader, "Could not find a leader.");
+
+    auto leader_id = get_leader().value();
+    auto& stm = *stms.at(leader_id);
+
+    constexpr int64_t MAX_INFLIGHT_TRANSACTIONS = 10000;
+    constexpr auto txn_timeout = std::chrono::milliseconds(
+      std::numeric_limits<int32_t>::max());
+
+    // Populate a bunch of transactions.
+    for (size_t seq = 0; seq < MAX_INFLIGHT_TRANSACTIONS; seq++) {
+        auto tx_seq = model::tx_seq(seq);
+        auto pid = model::producer_identity(seq, 0);
+        auto term = stm.begin_tx(pid, tx_seq, txn_timeout).get0();
+        BOOST_REQUIRE((bool)term);
+        // Replicate some data to set the txn in flight.
+        auto rreader = make_rreader(pid, 0, 1, true);
+        auto offset_r = stm
+                          .replicate(
+                            rreader.id,
+                            std::move(rreader.reader),
+                            raft::replicate_options(
+                              raft::consistency_level::quorum_ack))
+                          .get0();
+        BOOST_REQUIRE((bool)offset_r);
+    }
+
+    // Trigger a leadership transfer
+    auto transfer = stm.transfer_leadership({}).get0();
+    BOOST_REQUIRE(transfer == raft::make_error_code(raft::errc::success));
+
+    wait_for(
+      10s, get_leader, "Could not find a leader after leadership transfer.");
+
+    auto new_leader_id = get_leader().value();
+    BOOST_REQUIRE_NE(leader_id, new_leader_id);
+
+    auto& stm_new = *stms.at(new_leader_id);
+    auto txns = stm_new.get_transactions().get0();
+    BOOST_REQUIRE((bool)txns);
+    BOOST_REQUIRE_EQUAL(txns.value().size(), MAX_INFLIGHT_TRANSACTIONS);
+}
