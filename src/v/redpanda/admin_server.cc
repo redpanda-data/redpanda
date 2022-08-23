@@ -349,6 +349,45 @@ void admin_server::log_request(
       req.get_url());
 }
 
+void admin_server::log_exception(
+  const ss::sstring& url,
+  const request_auth_result& auth_state,
+  std::exception_ptr eptr) const {
+    using http_status = ss::httpd::reply::status_type;
+    using http_status_ut = std::underlying_type_t<http_status>;
+    const auto log_ex = [&](
+                          std::optional<http_status_ut> status = std::nullopt) {
+        std::stringstream os;
+        const auto username
+          = (auth_state.get_username().size() > 0 ? auth_state.get_username() : "_anonymous");
+        /// Strip URL of query parameters in the case sensitive information
+        /// might have been passed
+        fmt::print(
+          os,
+          "[{}] exception intercepted - url: [{}]",
+          username,
+          url.substr(0, url.find('?')));
+        if (status) {
+            fmt::print(os, " http_return_status[{}]", *status);
+        }
+        fmt::print(os, " reason - {}", eptr);
+        return os.str();
+    };
+
+    try {
+        std::rethrow_exception(eptr);
+    } catch (ss::httpd::base_exception& ex) {
+        const auto status = static_cast<http_status_ut>(ex.status());
+        if (ex.status() == http_status::internal_server_error) {
+            vlog(logger.error, "{}", log_ex(status));
+        } else if (status >= 400) {
+            vlog(logger.warn, "{}", log_ex(status));
+        }
+    } catch (...) {
+        vlog(logger.error, "{}", log_ex());
+    }
+}
+
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 

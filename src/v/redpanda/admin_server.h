@@ -96,6 +96,20 @@ private:
         return auth_state;
     }
 
+    void log_exception(
+      const ss::sstring& url,
+      const request_auth_result& auth_state,
+      std::exception_ptr eptr) const;
+
+    template<typename R>
+    auto exception_intercepter(
+      const ss::sstring& url, const request_auth_result& auth_state) {
+        return [this, url, auth_state](std::exception_ptr eptr) mutable {
+            log_exception(url, auth_state, eptr);
+            return ss::make_exception_future<R>(eptr);
+        };
+    };
+
     /**
      * Helper for binding handlers to routes, which also adds in
      * authentication step and common request logging.  Expects
@@ -113,10 +127,20 @@ private:
               // from authenticate().
               log_request(*req, auth_state);
 
+              // Intercept exceptions
+              const auto url = req->get_url();
               if constexpr (peek_auth) {
-                  return handler(std::move(req), auth_state);
+                  return handler(std::move(req), auth_state)
+                    .handle_exception(
+                      exception_intercepter<
+                        decltype(handler(std::move(req), auth_state).get0())>(
+                        url, auth_state));
+
               } else {
-                  return handler(std::move(req));
+                  return handler(std::move(req))
+                    .handle_exception(exception_intercepter<
+                                      decltype(handler(std::move(req)).get0())>(
+                      url, auth_state));
               }
           });
     }
@@ -139,7 +163,14 @@ private:
 
               log_request(req, auth_state);
 
-              return handler(req, reply);
+              /// Intercept and log exceptions
+              try {
+                  return handler(req, reply);
+              } catch (...) {
+                  log_exception(
+                    req.get_url(), auth_state, std::current_exception());
+                  throw;
+              }
           },
           "json"};
 
