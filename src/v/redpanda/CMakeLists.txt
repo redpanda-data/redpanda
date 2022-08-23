@@ -2,6 +2,7 @@ set(swags
   config
   cluster_config
   raft
+  recovery
   security
   status
   features

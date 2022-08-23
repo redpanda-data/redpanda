@@ -87,6 +87,10 @@ public:
         _notifications.unregister_cb(id);
     }
 
+    const recovery_status& get_recovery_status() {
+        return _recovery_coordinator.get_status();
+    }
+
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
