@@ -179,13 +179,13 @@ class OMBSampleConfigurations:
     SIMPLE_WORKLOAD = {
         "name": "Simple-workload-config",
         "topics": 1,
-        "partitions_per_topic": 10,
+        "partitions_per_topic": 1,
         "subscriptions_per_topic": 1,
         "consumer_per_subscription": 1,
         "producers_per_topic": 1,
-        "producer_rate": 10000,
+        "producer_rate": 1,
         "consumer_backlog_size_GB": 0,
-        "test_duration_minutes": 3,
+        "test_duration_minutes": 1,
         "warmup_duration_minutes": 1,
     }
 

@@ -24,8 +24,7 @@ class OpenBenchmarkTest(RedpandaTest):
                                                 num_brokers=3)
 
     @cluster(num_nodes=6)
-    @matrix(driver=["SIMPLE_DRIVER", "ACK_ALL_GROUP_LINGER_1MS"],
-            workload=["SIMPLE_WORKLOAD"])
+    @matrix(driver=["SIMPLE_DRIVER"], workload=["SIMPLE_WORKLOAD"])
     def test_default_omb_configuration(self, driver, workload):
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda, driver,
                                            workload)
