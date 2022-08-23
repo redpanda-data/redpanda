@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from math import fabs
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
@@ -45,6 +46,23 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                 cloud_storage_cache_size=5 *
                 OffsetForLeaderEpochArchivalTest.segment_size))
 
+    def _alter_topic_retention_with_retry(self, topic):
+        rpk = RpkTool(self.redpanda)
+
+        def alter_and_verify():
+            try:
+                rpk.alter_topic_config(
+                    topic, TopicSpec.PROPERTY_RETENTION_BYTES,
+                    OffsetForLeaderEpochArchivalTest.segment_size)
+
+                cfgs = rpk.describe_topic_configs(topic)
+                retention = int(cfgs[TopicSpec.PROPERTY_RETENTION_BYTES][0])
+                return retention == OffsetForLeaderEpochArchivalTest.segment_size
+            except:
+                return False
+
+        wait_until(alter_and_verify, 15, 0.5)
+
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_querying_remote_partitions(self):
         topic = TopicSpec(redpanda_remote_read=True,
@@ -77,8 +95,8 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
         wait_for_topic()
 
-        rpk.alter_topic_config(topic.name, TopicSpec.PROPERTY_RETENTION_BYTES,
-                               OffsetForLeaderEpochArchivalTest.segment_size)
+        self._alter_topic_retention_with_retry(topic.name)
+
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=topic.name,
                                   partition_idx=0,
