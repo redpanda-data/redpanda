@@ -95,6 +95,14 @@ remote_probe::remote_probe(
               "bytes_received",
               [this] { return _cnt_bytes_received; },
               sm::description("Number of bytes received from cloud storage")),
+            sm::make_histogram(
+              "segment_hydration_latency",
+              sm::description("Segment hydration latency"),
+              [this] {
+                  return ssx::metrics::report_default_histogram(
+                    _segment_hydration);
+              })
+              .aggregate({sm::shard_label}),
           });
     }
 
@@ -121,6 +129,11 @@ remote_probe::remote_probe(
              {direction_label("rx")})
              .aggregate({sm::shard_label})});
     }
+}
+
+std::unique_ptr<hdr_hist::measurement>
+remote_probe::auto_hydration_measurement() {
+    return _segment_hydration.auto_measure();
 }
 
 } // namespace cloud_storage
