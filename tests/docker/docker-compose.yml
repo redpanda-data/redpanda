@@ -35,6 +35,8 @@ services:
       nofile:
         soft: 131072
         hard: 131072
+    sysctls:
+      net.ipv4.ip_local_port_range: 34000 60999
     depends_on: 
     - minio
     volumes:
