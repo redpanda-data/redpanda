@@ -270,7 +270,7 @@ class OpenMessagingBenchmark(Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
-    def check_succeed(self):
+    def check_succeed(self, validate_metrics=True):
         self.workers.check_has_errors()
         for node in self.nodes:
             # Here we check that OMB finished and put result in file
@@ -280,7 +280,8 @@ class OpenMessagingBenchmark(Service):
         # Generate charts from the result
         self.logger.info(f"Generating charts with command {self.chart_cmd}")
         metrics = json.loads(self.node.account.ssh_output(self.chart_cmd))
-        OMBSampleConfigurations.validate_metrics(metrics, self.validator)
+        if validate_metrics:
+            OMBSampleConfigurations.validate_metrics(metrics, self.validator)
 
     def wait_node(self, node, timeout_sec):
         process_pid = node.account.java_pids("benchmark")
