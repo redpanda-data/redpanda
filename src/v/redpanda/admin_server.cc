@@ -63,6 +63,7 @@
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
+#include "redpanda/admin/api-doc/recovery.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -104,6 +105,7 @@ static ss::logger logger{"admin_api_server"};
 admin_server::admin_server(
   admin_server_cfg cfg,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<raft::group_manager>& rgm,
   ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
@@ -115,6 +117,7 @@ admin_server::admin_server(
   , _server("admin")
   , _cfg(std::move(cfg))
   , _partition_manager(pm)
+  , _raft_group_manager(rgm)
   , _cp_partition_manager(cpm)
   , _controller(controller)
   , _shard_table(st)
@@ -153,6 +156,8 @@ void admin_server::configure_admin_routes() {
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "raft");
     rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "recovery");
+    rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "kafka");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "partition");
@@ -175,6 +180,7 @@ void admin_server::configure_admin_routes() {
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
+    register_recovery_routes();
     register_kafka_routes();
     register_security_routes();
     register_status_routes();
@@ -1435,6 +1441,38 @@ void admin_server::register_raft_routes() {
       ss::httpd::raft_json::raft_transfer_leadership,
       [this](std::unique_ptr<ss::httpd::request> req) {
           return raft_transfer_leadership_handler(std::move(req));
+      });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::_get_recovery_status(std::unique_ptr<ss::httpd::request>) {
+    ss::httpd::recovery_json::recovery_status result;
+
+    // Aggregate recovery status from all shards
+    auto s = co_await _raft_group_manager.map_reduce0(
+      [](auto& rgm) -> raft::recovery_status {
+          return rgm.get_recovery_status();
+      },
+      raft::recovery_status{},
+      [](raft::recovery_status acc, raft::recovery_status update) {
+          acc.merge(update);
+          return acc;
+      });
+
+    // Translate internal recovery_status struct to json-encodable
+    // swagger-defined equivalent.
+    result.partitions_active = s.partitions_active;
+    result.partitions_pending = s.partitions_pending;
+    result.offsets_pending = s.offsets_pending;
+    result.offsets_hwm = s.offsets_hwm;
+    co_return result;
+}
+
+void admin_server::register_recovery_routes() {
+    register_route<auth_level::user>(
+      ss::httpd::recovery_json::get_recovery_status,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return _get_recovery_status(std::move(req));
       });
 }
 

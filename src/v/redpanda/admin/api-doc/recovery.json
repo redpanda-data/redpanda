@@ -1,0 +1,50 @@
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/recovery",
+  "produces": [
+    "application/json"
+  ],
+  "apis": [
+    {
+      "path": "/v1/recovery",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Get this node's recovery status",
+          "type": "recovery_status",
+          "nickname": "get_recovery_status",
+          "produces": [
+            "application/json"
+          ],
+          "parameters": []
+        }
+      ]
+    }
+  ],
+  "models": {
+    "recovery_status": {
+      "id": "recovery_status",
+      "description": "Node recovery status",
+      "properties": {
+        "partitions_pending": {
+          "type": "long",
+          "description": "Partitions waiting for recovery"
+        },
+        "partitions_active": {
+          "type": "long",
+          "description": "Partitions currently in recovery"
+        },
+        "offsets_pending": {
+          "type": "long",
+          "description": "Offsets currently awaiting recovery"
+        },
+        "offsets_hwm": {
+          "type": "long",
+          "description": "High watermark of offsets_pending"
+        }
+      }
+    }
+  }
+}

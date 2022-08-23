@@ -48,6 +48,7 @@ public:
     explicit admin_server(
       admin_server_cfg,
       ss::sharded<cluster::partition_manager>&,
+      ss::sharded<raft::group_manager>&,
       ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
@@ -220,6 +221,7 @@ private:
     void register_config_routes();
     void register_cluster_config_routes();
     void register_raft_routes();
+    void register_recovery_routes();
     void register_kafka_routes();
     void register_security_routes();
     void register_status_routes();
@@ -238,6 +240,10 @@ private:
     /// Raft routes
     ss::future<ss::json::json_return_type>
       raft_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Recovery status routes
+    ss::future<ss::json::json_return_type>
+      _get_recovery_status(std::unique_ptr<ss::httpd::request>);
 
     /// Security routes
     ss::future<ss::json::json_return_type>
@@ -337,6 +343,7 @@ private:
     ss::http_server _server;
     admin_server_cfg _cfg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<raft::group_manager>& _raft_group_manager;
     ss::sharded<coproc::partition_manager>& _cp_partition_manager;
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
