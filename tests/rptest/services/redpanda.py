@@ -1038,8 +1038,8 @@ class RedpandaService(Service):
         rpk = RpkRemoteTool(self, node)
 
         def start_rp():
-            rpk.redpanda_start(additional_args, env_vars,
-                               RedpandaService.STDOUT_STDERR_CAPTURE)
+            rpk.redpanda_start(RedpandaService.STDOUT_STDERR_CAPTURE,
+                               additional_args, env_vars)
 
             wait_until(
                 lambda: self.__is_status_ready(node),

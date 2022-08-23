@@ -100,3 +100,18 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # We execute checks when starting redpanda if production mode is enabled
         assert self.redpanda.search_log("System check - PASSED")
+
+    @cluster(num_nodes=1)
+    def test_seastar_flag(self):
+        """
+        Reproduce: https://github.com/redpanda-data/redpanda/issues/4778
+        Verify that rpk doesn't transforms additional arguments. 
+        """
+        node = self.redpanda.nodes[0]
+        node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
+
+        self.redpanda.start_node_with_rpk(node, "--abort-on-seastar-bad-alloc")
+
+        # This was the original issue:
+        assert not self.redpanda.search_log(
+            f"\-\-abort-on-seastar-bad-alloc=true")
