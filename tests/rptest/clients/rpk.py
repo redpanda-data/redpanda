@@ -472,6 +472,10 @@ class RpkTool:
         cmd = ["seek", group, "--to-group", to_group]
         self._run_group(cmd)
 
+    def group_seek_to_file(self, group, file):
+        cmd = ["seek", group, "--to-file", file]
+        self._run_group(cmd)
+
     def group_delete(self, group):
         cmd = ["delete", group]
         self._run_group(cmd)
