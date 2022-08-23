@@ -20,6 +20,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SecurityConfig
+from rptest.services.admin import Admin
 
 
 def create_topic_names(count):
@@ -856,6 +857,56 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info("Remove consumer")
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
+
+    @cluster(num_nodes=3)
+    def test_moving_group_coordinator(self):
+        """
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Create 1 topic")
+        topic = self._create_topics(names=create_topic_names(1),
+                                    partitions=1,
+                                    replicas=3)[0]
+
+        self.logger.info(f"Producing to topic: {topic}")
+        produce_result_raw = self._produce_topic(
+            topic,
+            '''
+        {
+            "records": [
+                {"value": {"object":["vectorized"]}, "partition": 0},
+                {"value": {"object":["pandaproxy"]}, "partition": 0},
+                {"value": {"object":["multibroker"]}, "partition": 0}
+            ]
+        }''',
+            headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS)
+        print(produce_result_raw.content)
+        assert produce_result_raw.status_code == requests.codes.ok
+
+        self.logger.info("Create a consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json())
+
+        # Subscribe a consumer to topic
+        self.logger.info(f"Subscribe consumer to topic: {topic}")
+        sc_res = c0.subscribe([topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        # Find leader and move to next replica
+        admin = Admin(self.redpanda)
+        assert admin.transfer_leadership_to(
+            namespace="kafka", topic=topic, partition=0) is True
+
+        # Attempt to read from topic
+        self.logger.info(f"Consumer fetch")
+        cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+        self.logger.info(f"TEXT: {cf_res.text}")
+        assert cf_res.status_code == requests.codes.ok, f"Status: {cf_res.status_code}"
+        fetch_result = cf_res.json()
+        assert len(fetch_result) == 3
 
 
 class PandaProxySASLTest(RedpandaTest):
