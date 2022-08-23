@@ -183,6 +183,9 @@ public:
                       batch.header().size_bytes);
                     _partition->_probe.add_records_read(batch.record_count());
                 }
+                if (_reader_latency_measurement) {
+                    _reader_latency_measurement.reset();
+                }
                 if (_reader->ready_to_prefetch()) {
                     vlog(_ctxlog.debug, "Start prefetching next segment");
                     _partition->bg_prefetch_segment(_it);
@@ -245,6 +248,8 @@ private:
             it = std::prev(it);
         }
         auto reader = _partition->borrow_reader(config, it->first, it->second);
+        _reader_latency_measurement
+          = _partition->_probe.auto_segment_wait_measurement();
         // Here we know the exact type of the reader_state because of
         // the invariant of the borrow_reader
         const auto& segment
@@ -315,6 +320,8 @@ private:
                 _reader = _partition->borrow_reader(
                   config, _it->first, _it->second);
                 std::ignore = _reader->reset(prefetch_tracker);
+                _reader_latency_measurement
+                  = _partition->_probe.auto_segment_wait_measurement();
             }
         }
         vlog(
@@ -348,6 +355,7 @@ private:
     ss::abort_source::subscription _as_sub;
     /// Guard for the partition gate
     gate_guard _gate_guard;
+    std::unique_ptr<hdr_hist::measurement> _reader_latency_measurement;
 };
 
 remote_partition::remote_partition(

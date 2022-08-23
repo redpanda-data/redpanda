@@ -11,6 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -32,6 +33,8 @@ public:
     void segment_reader_created() { ++_cur_segment_readers; }
     void segment_reader_destroyed() { --_cur_segment_readers; }
 
+    std::unique_ptr<hdr_hist::measurement> auto_segment_wait_measurement();
+
 private:
     uint64_t _bytes_read = 0;
     uint64_t _records_read = 0;
@@ -41,6 +44,9 @@ private:
 
     int32_t _cur_readers = 0;
     int32_t _cur_segment_readers = 0;
+
+    /// Time reader spends waiting for segment download
+    hdr_hist _reader_segment_wait;
 
     ss::metrics::metric_groups _metrics;
 };
