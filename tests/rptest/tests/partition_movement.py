@@ -222,6 +222,7 @@ class PartitionMovementMixin():
         """
         Request partition movement to interrupt and validates resulting cancellation against previous assignment
         """
+        self._wait_for_move_in_progress(topic, partition)
         admin = Admin(self.redpanda)
         try:
             if unclean_abort:
