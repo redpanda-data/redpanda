@@ -73,7 +73,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				},
 				Spec: corev1.PodSpec{
 					Volumes:                       d.getVolumes(ss),
-					Containers:                    d.getContainers(),
+					Containers:                    d.getContainers(ss),
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout.Duration),
 					ServiceAccountName:            sa,
 				},
@@ -173,24 +173,22 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
 		return "", nil
 	}
 
-	clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
-	if !exists {
-		return "", fmt.Errorf("get schema registry client certificate: %s", "not found")
-	}
-	certfile := getOrEmpty("tls.crt", clientCert.Data)
-	keyfile := getOrEmpty("tls.key", clientCert.Data)
-
 	// Write the synced certs to secret
-	data := map[string][]byte{
-		"tls.crt": []byte(certfile),
-		"tls.key": []byte(keyfile),
+	data := map[string][]byte{}
+
+	if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
+		clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+		if !exists {
+			return "", fmt.Errorf("get schema registry client certificate: %s", "not found")
+		}
+		certfile := getOrEmpty("tls.crt", clientCert.Data)
+		keyfile := getOrEmpty("tls.key", clientCert.Data)
+		data["tls.crt"] = []byte(certfile)
+		data["tls.key"] = []byte(keyfile)
 	}
 
 	// Only write CA cert if not using DefaultCaFilePath
-	ca := &SchemaRegistryTLSCa{
-		// SchemaRegistryAPITLS cannot be nil
-		d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-	}
+	ca := &SchemaRegistryTLSCa{d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef}
 	if ca.useCaCert() {
 		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
 		if !exists {
@@ -198,6 +196,11 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
 		}
 		cafile := getOrEmpty("ca.crt", caCert.Data)
 		data["ca.crt"] = []byte(cafile)
+	}
+
+	// Nothing to do if synced certs is empty
+	if len(data) == 0 {
+		return "", nil
 	}
 
 	secret := &corev1.Secret{
@@ -267,7 +270,7 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		},
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
+	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsSchemaRegistryMountName,
 			VolumeSource: corev1.VolumeSource{
@@ -296,7 +299,7 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 	return volumes
 }
 
-func (d *Deployment) getContainers() []corev1.Container {
+func (d *Deployment) getContainers(ss string) []corev1.Container {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      configMountName,
@@ -305,7 +308,7 @@ func (d *Deployment) getContainers() []corev1.Container {
 		},
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() {
+	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      tlsSchemaRegistryMountName,
 			ReadOnly:  true,

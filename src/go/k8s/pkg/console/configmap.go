@@ -209,10 +209,12 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 				cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
 			}
 			tls = schema.TLSConfig{
-				Enabled:      yes,
-				CaFilepath:   ca.FilePath(),
-				CertFilepath: SchemaRegistryTLSCertFilePath,
-				KeyFilepath:  SchemaRegistryTLSKeyFilePath,
+				Enabled:    yes,
+				CaFilepath: ca.FilePath(),
+			}
+			if cm.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
+				tls.CertFilepath = SchemaRegistryTLSCertFilePath
+				tls.KeyFilepath = SchemaRegistryTLSKeyFilePath
 			}
 		}
 		schemaRegistry = schema.Config{Enabled: yes, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}

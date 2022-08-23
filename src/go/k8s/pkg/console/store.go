@@ -38,17 +38,19 @@ func NewStore(cl client.Client) *Store {
 // Sync synchronizes watched resources to the store
 func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 	if cluster.IsSchemaRegistryTLSEnabled() {
-		schemaRegistryClientCert, err := syncSchemaRegistryCert(
-			s.context,
-			s.client,
-			client.ObjectKeyFromObject(cluster),
-			fmt.Sprintf("%s-%s", cluster.GetName(), schemaRegistryClientCertSuffix),
-		)
-		if err != nil {
-			return fmt.Errorf("sync schema registry client certificate: %w", err)
+		if cluster.IsSchemaRegistryMutualTLSEnabled() {
+			schemaRegistryClientCert, err := syncSchemaRegistryCert(
+				s.context,
+				s.client,
+				client.ObjectKeyFromObject(cluster),
+				fmt.Sprintf("%s-%s", cluster.GetName(), schemaRegistryClientCertSuffix),
+			)
+			if err != nil {
+				return fmt.Errorf("sync schema registry client certificate: %w", err)
+			}
+			// same as Update()
+			s.Add(s.getSchemaRegistryClientCertKey(cluster), schemaRegistryClientCert)
 		}
-		// same as Update()
-		s.Add(s.getSchemaRegistryClientCertKey(cluster), schemaRegistryClientCert)
 
 		// Only sync CA cert if not using DefaultCaFilePath
 		ca := &SchemaRegistryTLSCa{cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef}
