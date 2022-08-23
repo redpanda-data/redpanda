@@ -157,8 +157,9 @@ def wait_for_segments_removal(redpanda, topic, partition_idx, count):
                    timeout_sec=120,
                    backoff_sec=5,
                    err_msg="Segments were not removed")
-    except:
+    except Exception as e:
         # On errors, dump listing of the storage location
+        redpanda.logger.error(f"Error waiting for segments removal: {e}")
         for node in redpanda.nodes:
             redpanda.logger.error(f"Storage listing on {node.name}:")
             for line in node.account.ssh_capture(f"find {redpanda.DATA_DIR}"):
