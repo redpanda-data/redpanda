@@ -268,7 +268,7 @@ class UpgradeWithWorkloadTest(EndToEndTest):
         self.installer = self.redpanda._installer
 
         # Start running a workload.
-        spec = TopicSpec(name="topic", partition_count=2, replication_factor=3)
+        spec = TopicSpec(partition_count=2, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
         self.start_producer(num_nodes=1, throughput=self.producer_msgs_per_sec)
@@ -345,7 +345,7 @@ class RaftRpcUpgradeTest(EndToEndTest):
                             extra_rp_conf=extra_rp_conf)
 
         # Start running a workload.
-        spec = TopicSpec(name="topic", partition_count=2, replication_factor=3)
+        spec = TopicSpec(partition_count=2, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
         self.start_producer(num_nodes=1, throughput=self.producer_msgs_per_sec)
@@ -386,10 +386,6 @@ class RaftRpcUpgradeTest(EndToEndTest):
             self.redpanda, self.initial_version, self.raft_workload)
 
 
-def rand_with_prefix(prefix):
-    return f"{prefix}-{''.join([random.choice(string.ascii_letters) for _ in range(5)])}"
-
-
 class KafkaRpcUpgradeTest(EndToEndTest):
     """
     This test uses Kafka admin operations to exercise admin RPC traffic between
@@ -420,10 +416,8 @@ class KafkaRpcUpgradeTest(EndToEndTest):
             dst_id = self.redpanda.idx(dst_node)
             # Ensure there is an active controller leader (i.e. it's finished
             # bootstrapping, etc) by creating a topic.
-            first_topic_name = rand_with_prefix("topic")
-            spec = TopicSpec(name=first_topic_name,
-                             partition_count=1,
-                             replication_factor=1)
+            spec = TopicSpec(partition_count=1, replication_factor=1)
+            first_topic_name = spec.name
             self.client().create_topic(spec)
             self.created_topics.append(first_topic_name)
             # Move controller leadership to 'dst_node'. The client will send a
@@ -440,7 +434,7 @@ class KafkaRpcUpgradeTest(EndToEndTest):
                 namespace="redpanda", topic="controller", partition=0),
                        timeout_sec=30,
                        backoff_sec=1)
-            topic_name = rand_with_prefix("topic")
+            topic_name = TopicSpec().name
             # Leave only 'src_node' in the bootstrap servers to encourage the
             # initial request to go to it.
             ac = AdminClient(
@@ -480,9 +474,7 @@ class AdminRpcUpgradeTest(EndToEndTest):
         """
         # Create new topic partitions to help ensure node decommissioning takes
         # time and we can slip in a recommission.
-        spec = TopicSpec(name=rand_with_prefix("topic"),
-                         partition_count=2,
-                         replication_factor=3)
+        spec = TopicSpec(partition_count=2, replication_factor=3)
         self.client().create_topic(spec)
 
         admin = self.redpanda._admin
@@ -497,6 +489,8 @@ class AdminRpcUpgradeTest(EndToEndTest):
                                   topic="controller",
                                   partition=0)
         # Avoid nodes of interest by operating on the back node.
+        # NOTE: the workload runner will focus on restarting the front two
+        # nodes before going through the full upgrade.
         back_node = self.redpanda.nodes[-1]
         back_id = self.redpanda.idx(back_node)
 
@@ -583,9 +577,7 @@ class AdminRpcUpgradeTest(EndToEndTest):
     @cluster(num_nodes=6,
              log_allow_list=MixedVersionWorkloadRunner.ALLOWED_LOGS)
     def test_admin_rpcs(self):
-        spec = TopicSpec(name=rand_with_prefix("topic"),
-                         partition_count=2,
-                         replication_factor=3)
+        spec = TopicSpec(partition_count=2, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
 
