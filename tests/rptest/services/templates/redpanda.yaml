@@ -9,7 +9,6 @@
 
 organization: "vectorized"
 
-{% if enable_rp %}
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
@@ -46,7 +45,6 @@ redpanda:
         address: {{nodes[1].account.hostname}}
         port: 33145
       node_id: 1
-{% endif %}
 {% endif %}
 
 {% if enable_pp %}

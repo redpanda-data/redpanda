@@ -153,7 +153,6 @@ private:
     void setup_public_metrics();
     void setup_internal_metrics();
     std::unique_ptr<ss::app_template> _app;
-    bool _redpanda_enabled{true};
     cluster::config_manager::preload_result _config_preload;
     std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;

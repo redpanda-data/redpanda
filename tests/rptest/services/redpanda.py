@@ -483,7 +483,6 @@ class RedpandaService(Service):
                  context,
                  num_brokers,
                  *,
-                 enable_rp=True,
                  extra_rp_conf=None,
                  extra_node_conf=None,
                  enable_pp=False,
@@ -499,7 +498,6 @@ class RedpandaService(Service):
                  skip_if_no_redpanda_log: bool = False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
-        self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
@@ -1509,7 +1507,6 @@ class RedpandaService(Service):
                            node_ip=node_ip,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
-                           enable_rp=self._enable_rp,
                            enable_pp=self._enable_pp,
                            enable_sr=self._enable_sr,
                            superuser=self._superuser,
