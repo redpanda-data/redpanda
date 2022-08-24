@@ -1593,13 +1593,15 @@ class RedpandaService(Service):
                               nodes,
                               override_cfg_params=None,
                               start_timeout=None,
-                              stop_timeout=None):
+                              stop_timeout=None,
+                              use_maintenance_mode=True):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         restarter = RollingRestarter(self)
         restarter.restart_nodes(nodes,
                                 override_cfg_params=override_cfg_params,
                                 start_timeout=start_timeout,
-                                stop_timeout=stop_timeout)
+                                stop_timeout=stop_timeout,
+                                use_maintenance_mode=use_maintenance_mode)
 
     def registered(self, node):
         """
@@ -1902,7 +1904,10 @@ class RedpandaService(Service):
         """
         counts = {self.idx(node): None for node in self.nodes}
         for node in self.nodes:
-            metrics = self.metrics(node)
+            try:
+                metrics = self.metrics(node)
+            except:
+                return False
             idx = self.idx(node)
             for family in metrics:
                 for sample in family.samples:
