@@ -776,3 +776,10 @@ class Admin:
             raise
         if len(r.text) > 0:
             return r.json()["cluster_uuid"]
+
+    def get_recovery_status(self, *, node: ClusterNode):
+        """
+        Node must be specified because this API reports on node-local state:
+        it would not make sense to send it to just any node.
+        """
+        return self._request("GET", "recovery", node=node).json()
