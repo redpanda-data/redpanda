@@ -123,7 +123,7 @@ class ScaleParameters:
             # bandwidth.  Divide by 2 to give comfortable room for variation.
             # This is total bandwidth from a group of producers.
             self.expect_bandwidth = (node_count / replication_factor) * (
-                self.node_cpus / 24.0) * 1E9
+                self.node_cpus / 24.0) * 1E9 * 0.5
 
             # Single-producer tests are slower, bottlenecked on the
             # client side.
