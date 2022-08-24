@@ -400,7 +400,9 @@ class Admin:
             features_resp = None
             try:
                 features_resp = self.get_features(node=node)
-            except RequestException:
+            except RequestException as e:
+                self.redpanda.logger.debug(
+                    f"Could not get features on {node.account.hostname}: {e}")
                 return False
             features_dict = dict(
                 (f["name"], f) for f in features_resp["features"])
