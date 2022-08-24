@@ -615,9 +615,7 @@ func (r *StatefulSetResource) composeCURLMaintenanceCommand(
 
 // setVolumes manipulates v1.StatefulSet object in order to add cloud storage and
 // Redpanda data volume
-func setVolumes(
-	ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster,
-) {
+func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
 	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage, ss.Labels)
 	ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcDataDir)
 	vol := corev1.Volume{
