@@ -30,9 +30,40 @@ type ConsoleConfig struct { // nolint:revive // more readable
 	Server  rest.Config    `json:"server" yaml:"server"`
 	Kafka   kafka.Config   `json:"kafka" yaml:"kafka"`
 	Connect connect.Config `json:"connect" yaml:"connect"`
+
+	License    string          `json:"license,omitempty" yaml:"license,omitempty"`
+	Enterprise Enterprise      `json:"enterprise,omitempty" yaml:"enterprise,omitempty"`
+	Login      EnterpriseLogin `json:"login,omitempty" yaml:"login,omitempty"`
 }
 
 // SetDefaults sets sane defaults
 func (cc *ConsoleConfig) SetDefaults() {
 	cc.Kafka.SetDefaults()
+}
+
+type Enterprise struct {
+	RBAC EnterpriseRBAC `json:"rbac" yaml:"rbac"`
+}
+
+type EnterpriseRBAC struct {
+	Enabled              bool   `json:"enabled" yaml:"enabled"`
+	RoleBindingsFilepath string `json:"roleBindingsFilepath" yaml:"roleBindingsFilepath"`
+}
+
+type EnterpriseLogin struct {
+	Enabled   bool                   `json:"enabled" yaml:"enabled"`
+	JWTSecret string                 `json:"jwtSecret,omitempty" yaml:"jwtSecret,omitempty"`
+	Google    *EnterpriseLoginGoogle `json:"google,omitempty" yaml:"google,omitempty"`
+}
+
+type EnterpriseLoginGoogle struct {
+	Enabled      bool                            `json:"enabled" yaml:"enabled"`
+	ClientID     string                          `json:"clientId" yaml:"clientId"`
+	ClientSecret string                          `json:"clientSecret" yaml:"clientSecret"`
+	Directory    *EnterpriseLoginGoogleDirectory `json:"directory,omitempty" yaml:"directory,omitempty"`
+}
+
+type EnterpriseLoginGoogleDirectory struct {
+	ServiceAccountFilepath string `json:"serviceAccountFilepath" yaml:"serviceAccountFilepath"`
+	TargetPrincipal        string `json:"targetPrincipal" yaml:"targetPrincipal"`
 }

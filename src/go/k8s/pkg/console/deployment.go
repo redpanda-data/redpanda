@@ -262,6 +262,11 @@ const (
 	tlsConnectMountName        = "tls-connect-%s"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
+
+	enterpriseRBACMountName     = "enterprise-rbac"
+	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
+	enterpriseGoogleSAMountName = "enterprise-google-sa"
+	enterpriseGoogleSAMountPath = "/etc/console/enterprise/google"
 )
 
 func (d *Deployment) getVolumes(ss string) []corev1.Volume {
@@ -304,6 +309,28 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		})
 	}
 
+	if enterprise := d.consoleobj.Spec.Enterprise; enterprise != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: enterpriseRBACMountName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: enterprise.RBAC.RoleBindingsRef,
+				},
+			},
+		})
+	}
+
+	if login := d.consoleobj.Spec.Login; login != nil && login.Google != nil && login.Google.Directory != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: enterpriseGoogleSAMountName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: login.Google.Directory.ServiceAccountRef,
+				},
+			},
+		})
+	}
+
 	return volumes
 }
 
@@ -317,6 +344,14 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 			ReadOnly:  true,
 			MountPath: configMountPath,
 		},
+	}
+
+	if enterprise := d.consoleobj.Spec.Enterprise; enterprise != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      enterpriseRBACMountName,
+			ReadOnly:  true,
+			MountPath: enterpriseRBACMountPath,
+		})
 	}
 
 	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {

@@ -135,11 +135,122 @@ func (cm *ConfigMap) generateConsoleConfig(
 	}
 	consoleConfig.Connect = *connectConfig
 
+	licenseConfig, err := cm.genLicense(ctx)
+	if err != nil {
+		return "", err
+	}
+	consoleConfig.License = licenseConfig
+
+	// Enterprise features
+	loginConfig, err := cm.genLogin(ctx)
+	if err != nil {
+		return "", err
+	}
+	if loginConfig != nil {
+		consoleConfig.Login = *loginConfig
+	}
+
+	enterpriseConfig, err := cm.genEnterprise()
+	if err != nil {
+		return "", err
+	}
+	if enterpriseConfig != nil {
+		consoleConfig.Enterprise = *enterpriseConfig
+	}
+
 	config, err := yaml.Marshal(consoleConfig)
 	if err != nil {
 		return "", err
 	}
 	return string(config), nil
+}
+
+func (cm *ConfigMap) genEnterprise() (*Enterprise, error) {
+	if enterprise := cm.consoleobj.Spec.Enterprise; enterprise != nil {
+		return &Enterprise{
+			RBAC: EnterpriseRBAC{
+				Enabled:              cm.consoleobj.Spec.Enterprise.RBAC.Enabled,
+				RoleBindingsFilepath: fmt.Sprintf("%s/%s", enterpriseRBACMountPath, "rbac.yaml"),
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+var (
+	defaultLicenseSecretKey = "license"
+	defaultJWTSecretKey     = "jwt"
+)
+
+func (cm *ConfigMap) genLogin(ctx context.Context) (*EnterpriseLogin, error) {
+	if provider := cm.consoleobj.Spec.Login; provider != nil {
+		enterpriseLogin := &EnterpriseLogin{
+			Enabled: provider.Enabled,
+		}
+
+		secret := &corev1.Secret{}
+		if err := cm.Get(ctx, types.NamespacedName{Namespace: provider.JWTSecret.Namespace, Name: provider.JWTSecret.Name}, secret); err != nil {
+			return nil, err
+		}
+		key := defaultJWTSecretKey
+		if k := provider.JWTSecret.Key; k != "" {
+			key = k
+		}
+		jwt, ok := secret.Data[key]
+		if !ok {
+			return nil, fmt.Errorf("key %s not found in Secret data", "jwt")
+		}
+		enterpriseLogin.JWTSecret = string(jwt)
+
+		switch {
+		case provider.Google != nil:
+			cc := provider.Google.ClientCredentials
+			secret := &corev1.Secret{}
+			if err := cm.Get(ctx, types.NamespacedName{Namespace: cc.Namespace, Name: cc.Name}, secret); err != nil {
+				return nil, err
+			}
+			clientID, ok := secret.Data["clientId"]
+			if !ok {
+				return nil, fmt.Errorf("key %s not found in Secret data", "clientId")
+			}
+			clientSecret, ok := secret.Data["clientSecret"]
+			if !ok {
+				return nil, fmt.Errorf("key %s not found in Secret data", "clientSecret")
+			}
+			enterpriseLogin.Google = &EnterpriseLoginGoogle{
+				Enabled:      provider.Google.Enabled,
+				ClientID:     string(clientID),
+				ClientSecret: string(clientSecret),
+			}
+			if dir := provider.Google.Directory; dir != nil {
+				enterpriseLogin.Google.Directory = &EnterpriseLoginGoogleDirectory{
+					ServiceAccountFilepath: fmt.Sprintf("%s/%s", enterpriseGoogleSAMountPath, "sa.json"),
+					TargetPrincipal:        provider.Google.Directory.TargetPrincipal,
+				}
+			}
+		}
+		return enterpriseLogin, nil
+	}
+	return nil, nil
+}
+
+func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
+	if ls := cm.consoleobj.Spec.License; ls != nil {
+		secret := &corev1.Secret{}
+		if err := cm.Get(ctx, types.NamespacedName{Namespace: ls.Namespace, Name: ls.Name}, secret); err != nil {
+			return "", fmt.Errorf("getting secret %s/%s: %w", ls.Namespace, ls.Name, err)
+		}
+		key := defaultLicenseSecretKey
+		if k := ls.Key; k != "" {
+			key = k
+		}
+		d, ok := secret.Data[key]
+		if !ok {
+			return "", fmt.Errorf("key %s not found in Secret data", key)
+		}
+		return string(d), nil
+	}
+	return "", nil
 }
 
 func (cm *ConfigMap) genServer() rest.Config {

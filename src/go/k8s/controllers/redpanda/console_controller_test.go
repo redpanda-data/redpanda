@@ -174,4 +174,140 @@ var _ = Describe("Console controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
+
+	Context("When updating Console with Enterprise features", func() {
+		ctx := context.Background()
+		It("Should create Enterprise fields in ConfigMap", func() {
+			var (
+				rbacName    = fmt.Sprintf("%s-rbac", ConsoleName)
+				rbacDataKey = "rbac.yaml"
+				rbacDataVal = `roleBindings:
+- roleName: admin
+  metadata:
+  subjects:
+	- kind: user
+	  provider: Google
+	  name: john.doe@example.com`
+			)
+
+			By("By creating Enterprise RBAC ConfigMap")
+			rbac := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rbacName,
+					Namespace: ConsoleNamespace,
+				},
+				Data: map[string]string{
+					rbacDataKey: rbacDataVal,
+				},
+			}
+			Expect(k8sClient.Create(ctx, rbac)).Should(Succeed())
+
+			var (
+				licenseName    = fmt.Sprintf("%s-license", ConsoleName)
+				licenseDataKey = "custom-license-secret-key"
+				licenseDataVal = "some-random-license-string"
+			)
+
+			By("By creating Enterprise License Secret")
+			license := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      licenseName,
+					Namespace: ConsoleNamespace,
+				},
+				Data: map[string][]byte{licenseDataKey: []byte(licenseDataVal)},
+			}
+			Expect(k8sClient.Create(ctx, license)).Should(Succeed())
+
+			var (
+				jwtName    = fmt.Sprintf("%s-jwt", ConsoleName)
+				jwtDataKey = "custom-jwt-secret-key"
+				jwtDataVal = "some-random-jwt-string"
+			)
+
+			By("By creating Enterprise JWT Secret")
+			jwt := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jwtName,
+					Namespace: ConsoleNamespace,
+				},
+				Data: map[string][]byte{jwtDataKey: []byte(jwtDataVal)},
+			}
+			Expect(k8sClient.Create(ctx, jwt)).Should(Succeed())
+
+			var (
+				googleName         = fmt.Sprintf("%s-google", ConsoleName)
+				googleClientId     = "123456654321-abcdefghi123456abcdefghi123456ab.apps.googleusercontent.com"
+				googleClientSecret = "some-random-client-secret"
+			)
+
+			By("By creating Enterprise Google Login Credentials Secret")
+			google := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      googleName,
+					Namespace: ConsoleNamespace,
+				},
+				Data: map[string][]byte{
+					"clientId":     []byte(googleClientId),
+					"clientSecret": []byte(googleClientSecret),
+				},
+			}
+			Expect(k8sClient.Create(ctx, google)).Should(Succeed())
+
+			By("By updating Console Enterprise fields")
+			console := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
+			console.Spec.Enterprise = &redpandav1alpha1.Enterprise{
+				RBAC: redpandav1alpha1.EnterpriseRBAC{
+					Enabled:         true,
+					RoleBindingsRef: corev1.LocalObjectReference{Name: rbacName},
+				},
+			}
+			console.Spec.License = &redpandav1alpha1.SecretRef{
+				Name:      licenseName,
+				Namespace: ConsoleNamespace,
+				Key:       licenseDataKey,
+			}
+			console.Spec.Login = &redpandav1alpha1.EnterpriseLogin{
+				Enabled: true,
+				JWTSecret: redpandav1alpha1.SecretRef{
+					Name:      jwtName,
+					Namespace: ConsoleNamespace,
+					Key:       jwtDataKey,
+				},
+				Google: &redpandav1alpha1.EnterpriseLoginGoogle{
+					Enabled: true,
+					ClientCredentials: redpandav1alpha1.SecretRef{
+						Name:      googleName,
+						Namespace: ConsoleNamespace,
+					},
+				},
+			}
+			Expect(k8sClient.Update(ctx, console)).Should(Succeed())
+
+			By("By having a valid Enterprise ConfigMap")
+			createdConfigMaps := &corev1.ConfigMapList{}
+			Eventually(func() bool {
+				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(console)), client.InNamespace(ConsoleNamespace)); err != nil {
+					return false
+				}
+				if len(createdConfigMaps.Items) != 1 {
+					return false
+				}
+				for _, cm := range createdConfigMaps.Items {
+					cc := &consolepkg.ConsoleConfig{}
+					if err := yaml.Unmarshal([]byte(cm.Data["config.yaml"]), cc); err != nil {
+						return false
+					}
+					if cc.License != licenseDataVal {
+						return false
+					}
+					isGoogleConfigInvalid := !cc.Login.Google.Enabled || cc.Login.Google.ClientID != googleClientId || cc.Login.Google.ClientSecret != googleClientSecret
+					if !cc.Login.Enabled || cc.Login.JWTSecret != jwtDataVal || isGoogleConfigInvalid {
+						return false
+					}
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
 })
