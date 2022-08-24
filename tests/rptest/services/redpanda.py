@@ -1165,7 +1165,7 @@ class RedpandaService(Service):
                 "Nodes report restart required but expect_restart is False")
 
     def monitor_log(self, node):
-        assert node in self._started
+        assert node in self.nodes
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def raise_on_crash(self):
@@ -1785,12 +1785,12 @@ class RedpandaService(Service):
         }
 
     def broker_address(self, node):
-        assert node in self._started
+        assert node in self.nodes
         cfg = self._node_configs[node]
         return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def admin_endpoint(self, node):
-        assert node in self._started
+        assert node in self.nodes
         return f"{node.account.hostname}:9644"
 
     def admin_endpoints_list(self):
