@@ -146,7 +146,7 @@ RUN go install github.com/twmb/kcl@v0.8.0 && \
 
 # Install the kgo-verifier tool
 RUN git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git && \
-    cd /opt/kgo-verifier && git reset --hard c8b057e5e1b7de73b412684edcece87dd2adec8b && \
+    cd /opt/kgo-verifier && git reset --hard 1a5caf0 && \
     go mod tidy && make
 
 # Expose port 8080 for any http examples within clients
