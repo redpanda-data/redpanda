@@ -1863,6 +1863,27 @@ class RedpandaService(Service):
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
+    def _extract_samples(self, metrics, sample_pattern: str,
+                         node: ClusterNode) -> list[MetricSamples]:
+        found_sample = None
+        sample_values = []
+
+        for family in metrics:
+            for sample in family.samples:
+                if sample_pattern not in sample.name:
+                    continue
+                if not found_sample:
+                    found_sample = (family.name, sample.name)
+                if found_sample != (family.name, sample.name):
+                    raise Exception(
+                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                    )
+                sample_values.append(
+                    MetricSample(family.name, sample.name, node, sample.value,
+                                 sample.labels))
+
+        return sample_values
+
     def metrics_sample(
         self,
         sample_pattern,
@@ -1891,26 +1912,43 @@ class RedpandaService(Service):
               sample = vectorized_cluster_partition_under_replicated_replicas
         """
         nodes = nodes or self.nodes
-        found_sample = None
         sample_values = []
         for node in nodes:
             metrics = self.metrics(node, metrics_endpoint)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample_pattern not in sample.name:
-                        continue
-                    if not found_sample:
-                        found_sample = (family.name, sample.name)
-                    if found_sample != (family.name, sample.name):
-                        raise Exception(
-                            f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                        )
-                    sample_values.append(
-                        MetricSample(family.name, sample.name, node,
-                                     sample.value, sample.labels))
+            sample_values += self._extract_samples(metrics, sample_pattern,
+                                                   node)
+
         if not sample_values:
             return None
-        return MetricSamples(sample_values)
+        else:
+            return MetricSamples(sample_values)
+
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        """
+        Query metrics for multiple sample names using fuzzy matching.
+        The same as metrics_sample, but works with multiple patterns.
+        """
+        nodes = nodes or self.nodes
+        sample_values_per_pattern = {
+            pattern: []
+            for pattern in sample_patterns
+        }
+
+        for node in nodes:
+            metrics = self.metrics(node, metrics_endpoint)
+            for pattern in sample_patterns:
+                sample_values_per_pattern[pattern] += self._extract_samples(
+                    metrics, pattern, node)
+
+        return {
+            pattern: MetricSamples(values)
+            for pattern, values in sample_values_per_pattern.items() if values
+        }
 
     def shards(self):
         """
