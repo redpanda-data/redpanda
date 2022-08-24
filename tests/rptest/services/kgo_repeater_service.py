@@ -31,11 +31,12 @@ class KgoRepeaterService(Service):
     def __init__(self,
                  context: TestContext,
                  redpanda: RedpandaService,
-                 nodes: Optional[list[ClusterNode]],
+                 *,
+                 nodes: Optional[list[ClusterNode]] = None,
                  topic: str,
                  msg_size: Optional[int],
                  workers: int,
-                 key_count: int,
+                 key_count: Optional[int] = None,
                  group_name: str = "repeat01"):
         # num_nodes=0 because we're asking it to not allocate any for us
         super().__init__(context, num_nodes=0 if nodes else 1)
@@ -211,7 +212,11 @@ class KgoRepeaterService(Service):
 
 
 @contextmanager
-def repeater_traffic(context, redpanda, *args, cleanup: Callable, **kwargs):
+def repeater_traffic(context,
+                     redpanda,
+                     *args,
+                     cleanup: Optional[Callable] = None,
+                     **kwargs):
     svc = KgoRepeaterService(context, redpanda, *args, **kwargs)
     svc.start()
     svc.prepare_and_activate()
@@ -226,4 +231,5 @@ def repeater_traffic(context, redpanda, *args, cleanup: Callable, **kwargs):
         raise
     finally:
         svc.stop()
-        cleanup()
+        if cleanup:
+            cleanup()
