@@ -627,6 +627,7 @@ private:
     storage::snapshot_manager _abort_snapshot_mgr;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<feature_table>& _feature_table;
+    raft::ctx_log _ctxlog;
 };
 
 } // namespace cluster
