@@ -104,19 +104,19 @@ class ClusterMetricsTest(RedpandaTest):
         """
         Assert that cluster metrics are reported (or not) from the specified node.
         """
-        def get_metrics_from_node_sync(pattern: str):
-            samples = self.redpanda.metrics_sample(
-                pattern, [node], MetricsEndpoint.PUBLIC_METRICS)
+        def get_metrics_from_node_sync(patterns: list[str]):
+            samples = self.redpanda.metrics_samples(
+                patterns, [node], MetricsEndpoint.PUBLIC_METRICS)
             success = samples is not None
             return success, samples
 
-        def get_metrics_from_node(pattern: str):
+        def get_metrics_from_node(patterns: list[str]):
             metrics = None
 
             try:
                 metrics = wait_until_result(
-                    lambda: get_metrics_from_node_sync(pattern),
-                    timeout_sec=1,
+                    lambda: get_metrics_from_node_sync(patterns),
+                    timeout_sec=2,
                     backoff_sec=.1)
             except TimeoutError as e:
                 if expect_metrics:
@@ -124,11 +124,8 @@ class ClusterMetricsTest(RedpandaTest):
 
             return metrics
 
-        metrics_samples = {}
-        for name in ClusterMetricsTest.cluster_level_metrics:
-            samples = get_metrics_from_node(name)
-            if samples is not None:
-                metrics_samples[name] = samples
+        metrics_samples = get_metrics_from_node(
+            ClusterMetricsTest.cluster_level_metrics)
 
         if expect_metrics:
             assert metrics_samples, f"Missing expected metrics from node {node.name}"
