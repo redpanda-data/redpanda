@@ -37,7 +37,9 @@ class KgoRepeaterService(Service):
                  msg_size: Optional[int],
                  workers: int,
                  key_count: int,
-                 group_name: str = "repeat01"):
+                 group_name: str = "repeat01",
+                 max_buffered_records: Optional[int] = None,
+                 mb_per_worker: Optional[int] = None):
         # num_nodes=0 because we're asking it to not allocate any for us
         super().__init__(context, num_nodes=0 if nodes else 1)
 
@@ -57,6 +59,12 @@ class KgoRepeaterService(Service):
         self.remote_port = 8080
 
         self.key_count = key_count
+        self.max_buffered_records = max_buffered_records
+
+        if mb_per_worker is None:
+            mb_per_worker = 4
+
+        self.mb_per_worker = mb_per_worker
 
         self._stopped = False
 
@@ -67,8 +75,7 @@ class KgoRepeaterService(Service):
             node.account.remove(self.LOG_PATH)
 
     def start_node(self, node, clean=None):
-        mb_per_worker = 1
-        initial_data_mb = mb_per_worker * self.workers
+        initial_data_mb = self.mb_per_worker * self.workers
 
         cmd = (
             "/opt/kgo-verifier/kgo-repeater "
@@ -82,6 +89,9 @@ class KgoRepeaterService(Service):
 
         if self.key_count is not None:
             cmd += f" -keys={self.key_count}"
+
+        if self.max_buffered_records is not None:
+            cmd += f" -max-buffered-records={self.max_buffered_records}"
 
         cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 &"
 
