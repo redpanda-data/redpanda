@@ -158,8 +158,13 @@ var _ = BeforeEach(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	gexec.KillAndWait(5 * time.Second)
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
+	// kube-apiserver hanging during cleanup
+	// REF https://book.kubebuilder.io/reference/envtest.html#kubernetes-120-and-121-binary-issues
+	timeout := 30 * time.Second
+	poll := 5 * time.Second
+	Eventually(func() error {
+		return testEnv.Stop()
+	}, timeout, poll).ShouldNot(HaveOccurred())
 })
 
 type mockAdminAPI struct {
