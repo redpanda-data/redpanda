@@ -326,6 +326,13 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
                    backoff_sec=1)
 
 
+OLD_NODE_JOIN_LOG_ALLOW_LIST = [
+    # We expect startup failure when an old node joins, so we allow the corresponding
+    # error message.
+    r'Failure during startup: seastar::abort_requested_exception \(abort requested\)'
+]
+
+
 class FeaturesNodeJoinTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=4, **kwargs)
@@ -337,7 +344,7 @@ class FeaturesNodeJoinTest(RedpandaTest):
         # We will start nodes by hand during test.
         pass
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
     def test_old_node_join(self):
         """
         Verify that when an old-versioned node tries to join a newer-versioned cluster,
