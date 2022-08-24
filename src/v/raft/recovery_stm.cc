@@ -436,7 +436,8 @@ ss::future<> recovery_stm::replicate(
         .prev_log_term = prev_log_term,
         .last_visible_index = last_visible_idx},
       std::move(reader),
-      flush);
+      flush,
+      true);
     auto meta = get_follower_meta();
 
     if (!meta) {
