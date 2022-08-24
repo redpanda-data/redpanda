@@ -9,6 +9,7 @@ Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
 
 <!-- Specify which branches this should be backported to, e.g.: -->
 - [ ] not a bug fix
+- [ ] issue does not exist in previous branches
 - [ ] papercut/not impactful enough to backport
 - [ ] v22.2.x
 - [ ] v22.1.x
