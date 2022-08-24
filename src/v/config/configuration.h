@@ -76,6 +76,8 @@ struct configuration final : public config_store {
     deprecated_property max_version;
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
     bounded_property<size_t> raft_recovery_default_read_size;
+    bounded_property<size_t> raft_recovery_concurrent_per_shard;
+    bounded_property<std::chrono::milliseconds> raft_recovery_grace_ms;
     // Kafka
     deprecated_property use_scheduling_groups;
     deprecated_property enable_admin_api;
