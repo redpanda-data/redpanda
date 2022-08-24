@@ -804,6 +804,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                               topic=topic_names[0],
                               msg_size=repeater_msg_size,
                               workers=workers,
+                              max_buffered_records=64,
                               cleanup=lambda: self.free_preallocated_nodes(),
                               **repeater_kwargs) as repeater:
             repeater_await_bytes = 1E9
