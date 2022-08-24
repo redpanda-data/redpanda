@@ -19,6 +19,7 @@
 #include "raft/types.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/human.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -1975,7 +1976,6 @@ void rm_stm::reconcile_mem_state() {
     if (!_parked_checkpointed_mem_state) return;
     _mem_state = std::move(_parked_checkpointed_mem_state.value());
     _parked_checkpointed_mem_state = std::nullopt;
-    auto source_term = _mem_state.term;
     _mem_state.term = _insync_term; // Reset to current in sync term.
     // Reset the tx expiration timers. This can have the side effect of txns
     // expiring later than expected.
@@ -1985,8 +1985,8 @@ void rm_stm::reconcile_mem_state() {
     }
     vlog(
       clusterlog.info,
-      "Successfully reconciled checkpointed state from term {}",
-      source_term);
+      "Successfully reconciled checkpointed state: {}",
+      _mem_state);
 }
 
 ss::future<> rm_stm::checkpoint_in_memory_state() {
@@ -2004,8 +2004,10 @@ ss::future<> rm_stm::checkpoint_in_memory_state() {
     }
     vlog(
       clusterlog.info,
-      "Replicated checkpoint state with term {}",
-      _insync_term);
+      "Replicated checkpoint state with term {}, records: {}, size: {}",
+      _insync_term,
+      batch.record_count(),
+      human::bytes(batch.size_bytes()));
     co_return;
 }
 

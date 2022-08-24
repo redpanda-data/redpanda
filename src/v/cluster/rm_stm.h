@@ -464,6 +464,22 @@ private:
               last_end_tx,
               inflight);
         }
+
+        friend std::ostream&
+        operator<<(std::ostream& os, const mem_state& mem_state) {
+            fmt::print(
+              os,
+              "{{ term: {}, estimated: {}, expected: {}, preparing: {}, "
+              "expiration: {}, last_end_tx: {}, inflight: {}  }}",
+              mem_state.term,
+              mem_state.estimated.size(),
+              mem_state.expected.size(),
+              mem_state.preparing.size(),
+              mem_state.expiration.size(),
+              mem_state.last_end_tx,
+              mem_state.inflight.size());
+            return os;
+        }
     };
 
     // When a request is retried while the first appempt is still
