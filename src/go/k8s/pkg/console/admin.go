@@ -47,7 +47,7 @@ func NewAdminAPI(ctx context.Context, cl client.Client, scheme *runtime.Scheme, 
 }
 
 // NewKafkaAdminClient create a franz-go admin client
-func NewKafkaAdmin(ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster) (*kadm.Client, error) {
+func NewKafkaAdmin(ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster) (KafkaAdminClient, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
 	if cluster.Spec.EnableSASL {
 		// Use Cluster superuser to manage Kafka

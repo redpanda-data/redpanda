@@ -32,12 +32,13 @@ import (
 // ConsoleReconciler reconciles a Console object
 type ConsoleReconciler struct {
 	client.Client
-	Scheme                *runtime.Scheme
-	Log                   logr.Logger
-	AdminAPIClientFactory adminutils.AdminAPIClientFactory
-	clusterDomain         string
-	Store                 *consolepkg.Store
-	EventRecorder         record.EventRecorder
+	Scheme                  *runtime.Scheme
+	Log                     logr.Logger
+	AdminAPIClientFactory   adminutils.AdminAPIClientFactory
+	clusterDomain           string
+	Store                   *consolepkg.Store
+	EventRecorder           record.EventRecorder
+	KafkaAdminClientFactory consolepkg.KafkaAdminClientFactory
 }
 
 const (
@@ -144,7 +145,7 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
-		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
 		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, log),
@@ -187,7 +188,7 @@ type Deleting ConsoleState
 func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
 	applyResources := []resources.ManagedResource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
-		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
 	}
 
 	for _, each := range applyResources {

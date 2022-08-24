@@ -145,12 +145,13 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ConsoleReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
-		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
-		Store:                 consolepkg.NewStore(mgr.GetClient()),
-		EventRecorder:         mgr.GetEventRecorderFor("Console"),
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
+		Store:                   consolepkg.NewStore(mgr.GetClient()),
+		EventRecorder:           mgr.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Console")
 		os.Exit(1)

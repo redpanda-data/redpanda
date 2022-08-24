@@ -52,6 +52,17 @@ var (
 	ConsoleACLFinalizer = "consoles.redpanda.vectorized.io/acl"
 )
 
+type (
+	// KafkaAdminClient
+	KafkaAdminClient interface {
+		CreateACLs(context.Context, *kadm.ACLBuilder) (kadm.CreateACLsResults, error)
+		DeleteACLs(context.Context, *kadm.ACLBuilder) (kadm.DeleteACLsResults, error)
+	}
+
+	// KafkaAdminClientFactory
+	KafkaAdminClientFactory func(context.Context, client.Client, *redpandav1alpha1.Cluster) (KafkaAdminClient, error)
+)
+
 // GenerateSASLUsername returns username used for Kafka SASL config
 func GenerateSASLUsername(console *redpandav1alpha1.Console) string {
 	return fmt.Sprintf("%s_%s", console.GetName(), resources.ScramConsoleUsername)
@@ -137,16 +148,18 @@ type KafkaACL struct {
 	scheme     *runtime.Scheme
 	consoleobj *redpandav1alpha1.Console
 	clusterobj *redpandav1alpha1.Cluster
+	kafkaAdmin KafkaAdminClientFactory
 	log        logr.Logger
 }
 
 // NewKafkaACL instantiates a new KafkaACL
-func NewKafkaACL(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, log logr.Logger) *KafkaACL {
+func NewKafkaACL(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, kafkaAdmin KafkaAdminClientFactory, log logr.Logger) *KafkaACL {
 	return &KafkaACL{
 		Client:     cl,
 		scheme:     scheme,
 		consoleobj: consoleobj,
 		clusterobj: clusterobj,
+		kafkaAdmin: kafkaAdmin,
 		log:        log,
 	}
 }
@@ -163,7 +176,7 @@ func (k *KafkaACL) Ensure(ctx context.Context) error {
 	}
 	b.PrefixUserExcept()
 
-	kadmclient, err := NewKafkaAdmin(ctx, k.Client, k.clusterobj)
+	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj)
 	if err != nil {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}
@@ -205,7 +218,7 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 	}
 	b.PrefixUserExcept()
 
-	kadmclient, err := NewKafkaAdmin(ctx, k.Client, k.clusterobj)
+	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj)
 	if err != nil {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}
