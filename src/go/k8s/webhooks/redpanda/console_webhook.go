@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 // +kubebuilder:webhook:path=/validate-redpanda-vectorized-io-v1alpha1-console,mutating=false,failurePolicy=fail,sideEffects=None,groups="redpanda.vectorized.io",resources=consoles,verbs=create;update,versions=v1alpha1,name=vconsole.kb.io,admissionReviewVersions=v1
@@ -21,7 +20,9 @@ type ConsoleValidator struct {
 }
 
 // ConsoleValidator handles admission for Console
-func (v *ConsoleValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
+func (v *ConsoleValidator) Handle(
+	ctx context.Context, req admission.Request,
+) admission.Response {
 	console := &redpandav1alpha1.Console{}
 
 	err := v.decoder.Decode(req, console)

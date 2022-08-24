@@ -10,6 +10,8 @@ import (
 	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
 	"github.com/redpanda-data/console/backend/pkg/schema"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
 // ConfigMap is a Console resource
@@ -34,7 +33,13 @@ type ConfigMap struct {
 }
 
 // NewConfigMap instantiates a new ConfigMap
-func NewConfigMap(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, log logr.Logger) *ConfigMap {
+func NewConfigMap(
+	cl client.Client,
+	scheme *runtime.Scheme,
+	consoleobj *redpandav1alpha1.Console,
+	clusterobj *redpandav1alpha1.Cluster,
+	log logr.Logger,
+) *ConfigMap {
 	return &ConfigMap{
 		Client:     cl,
 		scheme:     scheme,
@@ -109,7 +114,9 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // generateConsoleConfig returns the actual config passed to Console.
 // This should match the fields at https://github.com/redpanda-data/console/blob/master/docs/config/console.yaml
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
-func (cm *ConfigMap) generateConsoleConfig(ctx context.Context, username, password string) (string, error) {
+func (cm *ConfigMap) generateConsoleConfig(
+	ctx context.Context, username, password string,
+) (string, error) {
 	consoleConfig := &ConsoleConfig{
 		MetricsNamespace: cm.consoleobj.Spec.MetricsPrefix,
 		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
@@ -283,7 +290,9 @@ func getOrEmpty(key string, data map[string][]byte) string {
 	return ""
 }
 
-func (cm *ConfigMap) buildConfigCluster(ctx context.Context, c redpandav1alpha1.ConnectCluster) (*connect.ConfigCluster, error) {
+func (cm *ConfigMap) buildConfigCluster(
+	ctx context.Context, c redpandav1alpha1.ConnectCluster,
+) (*connect.ConfigCluster, error) {
 	cluster := &connect.ConfigCluster{Name: c.Name, URL: c.URL}
 
 	if c.BasicAuthRef != nil {

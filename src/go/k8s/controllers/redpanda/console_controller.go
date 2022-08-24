@@ -15,6 +15,10 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,11 +26,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -57,7 +56,9 @@ const (
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/finalizers,verbs=update
 
-func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ConsoleReconciler) Reconcile(
+	ctx context.Context, req ctrl.Request,
+) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandaconsole", req.NamespacedName)
 
 	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
@@ -117,7 +118,12 @@ func (r *ConsoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 type Reconciling ConsoleState
 
 // Do handles reconciliation of Console
-func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
+func (r *Reconciling) Do(
+	ctx context.Context,
+	console *redpandav1alpha1.Console,
+	cluster *redpandav1alpha1.Cluster,
+	log logr.Logger,
+) (ctrl.Result, error) {
 	// Ensure items in the store are updated
 	if err := r.Store.Sync(cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
@@ -185,7 +191,12 @@ func (r *Reconciling) Do(ctx context.Context, console *redpandav1alpha1.Console,
 type Deleting ConsoleState
 
 // Do handles deletion of Console
-func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cluster *redpandav1alpha1.Cluster, log logr.Logger) (ctrl.Result, error) {
+func (r *Deleting) Do(
+	ctx context.Context,
+	console *redpandav1alpha1.Console,
+	cluster *redpandav1alpha1.Cluster,
+	log logr.Logger,
+) (ctrl.Result, error) {
 	applyResources := []resources.ManagedResource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
@@ -201,7 +212,9 @@ func (r *Deleting) Do(ctx context.Context, console *redpandav1alpha1.Console, cl
 }
 
 // handleSpecChange is a hook to call before Reconciling
-func (r *ConsoleReconciler) handleSpecChange(ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger) error {
+func (r *ConsoleReconciler) handleSpecChange(
+	ctx context.Context, console *redpandav1alpha1.Console, log logr.Logger,
+) error {
 	if console.Status.ConfigMapRef != nil {
 		// We are creating new ConfigMap for every spec change so Deployment can detect changes and redeploy Pods
 		// Unset Status.ConfigMapRef so we can delete the previous unused ConfigMap
@@ -225,7 +238,9 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // WithClusterDomain sets the clusterDomain
-func (r *ConsoleReconciler) WithClusterDomain(clusterDomain string) *ConsoleReconciler {
+func (r *ConsoleReconciler) WithClusterDomain(
+	clusterDomain string,
+) *ConsoleReconciler {
 	r.clusterDomain = clusterDomain
 	return r
 }

@@ -30,7 +30,14 @@ type Deployment struct {
 }
 
 // NewDeployment instantiates a new Deployment
-func NewDeployment(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, store *Store, log logr.Logger) *Deployment {
+func NewDeployment(
+	cl client.Client,
+	scheme *runtime.Scheme,
+	consoleobj *redpandav1alpha1.Console,
+	clusterobj *redpandav1alpha1.Cluster,
+	store *Store,
+	log logr.Logger,
+) *Deployment {
 	return &Deployment{
 		Client:     cl,
 		scheme:     scheme,

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -15,13 +17,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 )
 
 // NewAdminAPI create an Admin API client
-func NewAdminAPI(ctx context.Context, cl client.Client, scheme *runtime.Scheme, cluster *redpandav1alpha1.Cluster, clusterDomain string, adminAPI adminutils.AdminAPIClientFactory, log logr.Logger) (adminutils.AdminAPIClient, error) {
+func NewAdminAPI(
+	ctx context.Context,
+	cl client.Client,
+	scheme *runtime.Scheme,
+	cluster *redpandav1alpha1.Cluster,
+	clusterDomain string,
+	adminAPI adminutils.AdminAPIClientFactory,
+	log logr.Logger,
+) (adminutils.AdminAPIClient, error) {
 	headlessSvc := resources.NewHeadlessService(cl, cluster, scheme, nil, log)
 	clusterSvc := resources.NewClusterService(cl, cluster, scheme, nil, log)
 	pki := certmanager.NewPki(
@@ -47,7 +54,9 @@ func NewAdminAPI(ctx context.Context, cl client.Client, scheme *runtime.Scheme, 
 }
 
 // NewKafkaAdminClient create a franz-go admin client
-func NewKafkaAdmin(ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster) (KafkaAdminClient, error) {
+func NewKafkaAdmin(
+	ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster,
+) (KafkaAdminClient, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
 	if cluster.Spec.EnableSASL {
 		// Use Cluster superuser to manage Kafka

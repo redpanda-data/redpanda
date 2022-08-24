@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 // By default, Console can only be created with the same namespace as the referenced Cluster.
@@ -72,7 +71,9 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 	return nil
 }
 
-func syncSchemaRegistryCert(ctx context.Context, cl client.Client, nsn client.ObjectKey, name string) (client.Object, error) {
+func syncSchemaRegistryCert(
+	ctx context.Context, cl client.Client, nsn client.ObjectKey, name string,
+) (client.Object, error) {
 	secret := corev1.Secret{}
 	secretNsn := types.NamespacedName{
 		Namespace: nsn.Namespace,
@@ -84,16 +85,22 @@ func syncSchemaRegistryCert(ctx context.Context, cl client.Client, nsn client.Ob
 	return &secret, nil
 }
 
-func (s *Store) getSchemaRegistryClientCertKey(cluster *redpandav1alpha1.Cluster) string {
+func (s *Store) getSchemaRegistryClientCertKey(
+	cluster *redpandav1alpha1.Cluster,
+) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), schemaRegistryClientCertSuffix)
 }
 
-func (s *Store) getSchemaRegistryNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
+func (s *Store) getSchemaRegistryNodeCertKey(
+	cluster *redpandav1alpha1.Cluster,
+) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "schema-registry-node")
 }
 
 // GetSchemaRegistryClientCert gets the Schema Registry client cert and returns Secret object
-func (s *Store) GetSchemaRegistryClientCert(cluster *redpandav1alpha1.Cluster) (*corev1.Secret, bool) {
+func (s *Store) GetSchemaRegistryClientCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
 	if secret, exists := s.Get(s.getSchemaRegistryClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -101,7 +108,9 @@ func (s *Store) GetSchemaRegistryClientCert(cluster *redpandav1alpha1.Cluster) (
 }
 
 // GetSchemaRegistryNodeCert gets the Schema Registry node cert and returns Secret object
-func (s *Store) GetSchemaRegistryNodeCert(cluster *redpandav1alpha1.Cluster) (*corev1.Secret, bool) {
+func (s *Store) GetSchemaRegistryNodeCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
 	if secret, exists := s.Get(s.getSchemaRegistryNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}

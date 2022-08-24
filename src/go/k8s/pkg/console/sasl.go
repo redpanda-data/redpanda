@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/twmb/franz-go/pkg/kadm"
 	corev1 "k8s.io/api/core/v1"
@@ -14,10 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // KafkaSA is a Console resource
@@ -32,7 +31,15 @@ type KafkaSA struct {
 }
 
 // NewKafkaSA instantiates a new KafkaSA
-func NewKafkaSA(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, clusterDomain string, adminAPI adminutils.AdminAPIClientFactory, log logr.Logger) *KafkaSA {
+func NewKafkaSA(
+	cl client.Client,
+	scheme *runtime.Scheme,
+	consoleobj *redpandav1alpha1.Console,
+	clusterobj *redpandav1alpha1.Cluster,
+	clusterDomain string,
+	adminAPI adminutils.AdminAPIClientFactory,
+	log logr.Logger,
+) *KafkaSA {
 	return &KafkaSA{
 		Client:        cl,
 		scheme:        scheme,
@@ -153,7 +160,14 @@ type KafkaACL struct {
 }
 
 // NewKafkaACL instantiates a new KafkaACL
-func NewKafkaACL(cl client.Client, scheme *runtime.Scheme, consoleobj *redpandav1alpha1.Console, clusterobj *redpandav1alpha1.Cluster, kafkaAdmin KafkaAdminClientFactory, log logr.Logger) *KafkaACL {
+func NewKafkaACL(
+	cl client.Client,
+	scheme *runtime.Scheme,
+	consoleobj *redpandav1alpha1.Console,
+	clusterobj *redpandav1alpha1.Cluster,
+	kafkaAdmin KafkaAdminClientFactory,
+	log logr.Logger,
+) *KafkaACL {
 	return &KafkaACL{
 		Client:     cl,
 		scheme:     scheme,
