@@ -39,6 +39,19 @@ type ConsoleSpec struct {
 
 	Deployment Deployment `json:"deployment"`
 	Connect    Connect    `json:"connect"`
+
+	Enterprise *Enterprise `json:"enterprise,omitempty"`
+
+	// If you don't provide an enterprise license, Console ignores configurations for enterprise features
+	// REF https://docs.redpanda.com/docs/console/reference/config/
+	// If key is not provided in the SecretRef, Secret data should have key "license"
+	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
+
+	// Login contains all configurations in order to protect Console with a login screen
+	// Configure one or more of the below identity providers in order to support SSO
+	// This feature requires an Enterprise license
+	// REF https://docs.redpanda.com/docs/console/single-sign-on/identity-providers/google/
+	Login *EnterpriseLogin `json:"login,omitempty"`
 }
 
 // Server is the Console app HTTP server config
