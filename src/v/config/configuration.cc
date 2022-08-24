@@ -242,6 +242,24 @@ configuration::configuration()
       "enables raft optimization of heartbeats",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , raft_recovery_concurrent_per_shard(
+      *this,
+      "raft_recovery_concurrent_per_shard",
+      "How many partitions may simultaneously recover data to a particular "
+      "shard.  This is limited to avoid overwhelming nodes when they come back "
+      "online after an outage.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      128,
+      {.min = 1, .max = 16384})
+  , raft_recovery_grace_ms(
+      *this,
+      "raft_recovery_grace_ms",
+      "How long to wait before starting the first recovery to a node after"
+      "it starts.  This is to accumulate enough recovering topics to make"
+      "a determination of which partitions to recovery first.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5000ms,
+      {.min = 1ms, .max = 600s})
   , enable_usage(
       *this,
       "enable_usage",
