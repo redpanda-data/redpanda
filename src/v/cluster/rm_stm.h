@@ -53,6 +53,16 @@ public:
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
 
+    // If the no. of inflight transactions exceed this limit, we skip writing
+    // the checkpoint batch on leadership transfer. This limit is per partition.
+    // Empirically we found out that staying under 10k transactions limits the
+    // checkpoint batch size to well under 1MB. Serializing very high # of
+    // transactions _may_ result in memory allocation spikes and any undesired
+    // behavior in the layers below.
+    // TODO: Implement chunking into smaller batches to avoid hitting this
+    // limit.
+    static constexpr const size_t checkpoint_txns_limit = 10000;
+
     static constexpr const int8_t abort_snapshot_version = 0;
     struct tx_range {
         model::producer_identity pid;
@@ -440,6 +450,13 @@ private:
           expiration;
         model::offset last_end_tx{-1};
         absl::flat_hash_map<model::producer_identity, int64_t> inflight;
+
+        // All transactions in various states.
+        // We use this rough estimate as a heuristic to decide whether we should
+        // checkpoint the state before transferring leadership.
+        size_t all_txns_count() {
+            return estimated.size() + expected.size() + preparing.size();
+        }
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);

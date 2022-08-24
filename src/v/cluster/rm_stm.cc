@@ -1990,6 +1990,15 @@ void rm_stm::reconcile_mem_state() {
 }
 
 ss::future<> rm_stm::checkpoint_in_memory_state() {
+    if (unlikely(_mem_state.all_txns_count() > checkpoint_txns_limit)) {
+        vlog(
+          clusterlog.warn,
+          "Skipping checkpointing of in memory state as inflight transaction "
+          "count {} exceeds limit {}.",
+          _mem_state.inflight.size(),
+          checkpoint_txns_limit);
+        co_return;
+    }
     auto batch = co_await make_checkpoint_batch();
     _mem_state = {}; // reset
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
