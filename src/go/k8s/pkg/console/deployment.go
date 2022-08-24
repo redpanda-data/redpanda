@@ -299,6 +299,8 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 	return volumes
 }
 
+var ConsoleContainerName = "console"
+
 func (d *Deployment) getContainers(ss string) []corev1.Container {
 	volumeMounts := []corev1.VolumeMount{
 		{
@@ -329,7 +331,7 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 
 	return []corev1.Container{
 		{
-			Name:  "console",
+			Name:  ConsoleContainerName,
 			Image: d.consoleobj.Spec.Deployment.Image,
 			Args:  []string{fmt.Sprintf("--config.filepath=%s/%s", configMountPath, "config.yaml")},
 			Ports: []corev1.ContainerPort{

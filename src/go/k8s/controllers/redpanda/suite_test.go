@@ -47,12 +47,14 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	k8sClient           client.Client
-	testEnv             *envtest.Environment
-	cfg                 *rest.Config
-	testAdminAPI        *mockAdminAPI
-	testAdminAPIFactory adminutils.AdminAPIClientFactory
-	testStore           *consolepkg.Store
+	k8sClient             client.Client
+	testEnv               *envtest.Environment
+	cfg                   *rest.Config
+	testAdminAPI          *mockAdminAPI
+	testAdminAPIFactory   adminutils.AdminAPIClientFactory
+	testStore             *consolepkg.Store
+	testKafkaAdmin        *mockKafkaAdmin
+	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
 )
 
 func TestAPIs(t *testing.T) {
@@ -108,6 +110,10 @@ var _ = BeforeSuite(func(done Done) {
 		return testAdminAPI, nil
 	}
 	testStore = consolepkg.NewStore(k8sManager.GetClient())
+	testKafkaAdmin = &mockKafkaAdmin{}
+	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster) (consolepkg.KafkaAdminClient, error) {
+		return testKafkaAdmin, nil
+	}
 
 	err = (&redpandacontrollers.ClusterReconciler{
 		Client:                   k8sManager.GetClient(),
@@ -133,12 +139,13 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&redpandacontrollers.ConsoleReconciler{
-		Client:                k8sManager.GetClient(),
-		Scheme:                k8sManager.GetScheme(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
-		AdminAPIClientFactory: testAdminAPIFactory,
-		Store:                 testStore,
-		EventRecorder:         k8sManager.GetEventRecorderFor("Console"),
+		Client:                  k8sManager.GetClient(),
+		Scheme:                  k8sManager.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   testAdminAPIFactory,
+		Store:                   testStore,
+		EventRecorder:           k8sManager.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: testKafkaAdminFactory,
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
