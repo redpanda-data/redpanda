@@ -837,10 +837,7 @@ void admin_server::register_cluster_config_routes() {
           auto statuses = co_await cfg.invoke_on(
             cluster::controller_stm_shard,
             [](cluster::config_manager& manager) {
-                // Intentional copy, do not want to pass reference to mutable
-                // status map back to originating core.
-                return cluster::config_manager::status_map(
-                  manager.get_status());
+                return manager.get_projected_status();
             });
 
           for (const auto& s : statuses) {
