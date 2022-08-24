@@ -41,6 +41,7 @@ services:
     depends_on: 
     - minio
     volumes:
+    - '$RP_INSTALL_DIR:$RP_ROOT'
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     - '${BUILD_ROOT}/redpanda_installs:/opt/redpanda_installs'
     networks:
