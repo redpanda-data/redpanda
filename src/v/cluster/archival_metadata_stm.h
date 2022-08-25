@@ -11,8 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/remote.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -50,9 +49,7 @@ public:
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
     /// node has lost leadership. But it will contain segments successfully
     /// added with `add_segments`.
-    const cloud_storage::partition_manifest& manifest() const {
-        return _manifest;
-    }
+    const cloud_storage::partition_manifest& manifest() const;
 
     ss::future<> stop() override;
 
@@ -103,7 +100,7 @@ private:
 
     mutex _lock;
 
-    cloud_storage::partition_manifest _manifest;
+    ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
     model::offset _start_offset;
     model::offset _last_offset;
 
