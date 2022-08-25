@@ -24,6 +24,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer
@@ -316,6 +317,9 @@ class PartitionBalancerTest(EndToEndTest):
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5154
+    # https://github.com/redpanda-data/redpanda/issues/6075
+    # https://github.com/redpanda-data/redpanda/issues/5836
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
         self.start_redpanda(num_nodes=5)
