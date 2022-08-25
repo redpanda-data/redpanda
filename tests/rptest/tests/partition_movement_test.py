@@ -708,6 +708,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             consumer_timeout_sec=45,
                             min_records=records)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6087
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_availability_when_one_node_down(self):
         """
