@@ -1242,7 +1242,7 @@ class RedpandaService(Service):
                 self.logger.info(
                     f"{RedpandaService.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
                 )
-                return
+                continue
 
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
