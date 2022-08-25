@@ -37,6 +37,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rolling_restarter import RollingRestarter
+from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -940,6 +941,28 @@ class RedpandaService(Service):
             else:
                 yield filename
 
+    def __is_status_ready(self, node):
+        """
+        Calls Admin API's v1/status/ready endpoint to verify if the node
+        is ready
+        """
+        status = None
+        try:
+            status = Admin.ready(node).get("status")
+        except requests.exceptions.ConnectionError:
+            self.logger.debug(
+                f"node {node.name} not yet accepting connections")
+            return False
+        except:
+            self.logger.exception(
+                f"error on getting status from {node.account.hostname}")
+            raise
+        if status != "ready":
+            self.logger.debug(
+                f"status of {node.account.hostname} isn't ready: {status}")
+            return False
+        return True
+
     def start_node(self,
                    node,
                    override_cfg_params=None,
@@ -976,24 +999,6 @@ class RedpandaService(Service):
                     f"Non-XFS filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
                 )
 
-        def is_status_ready():
-            status = None
-            try:
-                status = Admin.ready(node).get("status")
-            except requests.exceptions.ConnectionError:
-                self.logger.debug(
-                    f"node {node.name} not yet accepting connections")
-                return False
-            except:
-                self.logger.exception(
-                    f"error on getting status from {node.account.hostname}")
-                raise
-            if status != "ready":
-                self.logger.debug(
-                    f"status of {node.account.hostname} isn't ready: {status}")
-                return False
-            return True
-
         def start_rp():
             self.start_redpanda(node)
 
@@ -1007,7 +1012,7 @@ class RedpandaService(Service):
                 )
             else:
                 wait_until(
-                    is_status_ready,
+                    lambda: self.__is_status_ready(node),
                     timeout_sec=timeout,
                     backoff_sec=self._startup_poll_interval(first_start),
                     err_msg=
@@ -1018,6 +1023,35 @@ class RedpandaService(Service):
         self.start_service(node, start_rp)
         if not expect_fail:
             self._started.append(node)
+
+    def start_node_with_rpk(self, node, additional_args=""):
+        """
+        Start a single instance of redpanda using rpk. similar to start_node, 
+        this function will not return until redpanda appears to have started 
+        successfully.
+        """
+        node.account.mkdirs(RedpandaService.DATA_DIR)
+        node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
+
+        env_vars = " ".join(
+            [f"{k}={v}" for (k, v) in self._environment.items()])
+        rpk = RpkRemoteTool(self, node)
+
+        def start_rp():
+            rpk.redpanda_start(RedpandaService.STDOUT_STDERR_CAPTURE,
+                               additional_args, env_vars)
+
+            wait_until(
+                lambda: self.__is_status_ready(node),
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg=
+                f"Redpanda service {node.account.hostname} failed to start within 60 sec using rpk",
+                retry_on_exc=True)
+
+        self.logger.debug(f"Node status prior to redpanda startup:")
+        self.start_service(node, start_rp)
+        self._started.append(node)
 
     def _log_node_process_state(self, node):
         """
