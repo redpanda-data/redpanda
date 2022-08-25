@@ -20,9 +20,10 @@ import (
 // Service is a Console resource
 type Service struct {
 	client.Client
-	scheme     *runtime.Scheme
-	consoleobj *redpandav1alpha1.Console
-	log        logr.Logger
+	scheme        *runtime.Scheme
+	consoleobj    *redpandav1alpha1.Console
+	clusterDomain string
+	log           logr.Logger
 }
 
 // NewService instantiates a new Service
@@ -30,21 +31,20 @@ func NewService(
 	cl client.Client,
 	scheme *runtime.Scheme,
 	consoleobj *redpandav1alpha1.Console,
+	clusterDomain string,
 	log logr.Logger,
 ) *Service {
 	return &Service{
-		Client:     cl,
-		scheme:     scheme,
-		consoleobj: consoleobj,
-		log:        log,
+		Client:        cl,
+		scheme:        scheme,
+		consoleobj:    consoleobj,
+		clusterDomain: clusterDomain,
+		log:           log,
 	}
 }
 
 const (
 	ServicePortName = "http"
-
-	// Kubernetes default cluster domain
-	defaultClusterDomain = "cluster.local"
 )
 
 // Ensure implements Resource interface
@@ -99,7 +99,7 @@ func (s *Service) Ensure(ctx context.Context) error {
 		Internal: fmt.Sprintf(
 			"%s.%s.svc.%s:%d",
 			obj.GetName(), obj.GetNamespace(),
-			defaultClusterDomain,
+			s.clusterDomain,
 			s.consoleobj.Spec.Server.HTTPListenPort,
 		),
 	}

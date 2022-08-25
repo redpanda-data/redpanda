@@ -154,7 +154,7 @@ func (r *Reconciling) Do(
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
 		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
-		consolepkg.NewService(r.Client, r.Scheme, console, log),
+		consolepkg.NewService(r.Client, r.Scheme, console, r.clusterDomain, log),
 		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer),
 	}
 	for _, each := range applyResources {
