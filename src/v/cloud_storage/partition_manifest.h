@@ -10,8 +10,10 @@
 
 #pragma once
 
+#include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
 #include "json/document.h"
+#include "model/timestamp.h"
 #include "serde/serde.h"
 
 namespace cloud_storage {
