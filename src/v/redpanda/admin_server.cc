@@ -724,7 +724,12 @@ ss::future<> admin_server::throw_on_error(
               "can not update broker {} state, invalid state transition "
               "requested",
               id));
+        case cluster::errc::timeout:
+            throw ss::httpd::base_exception(
+              fmt::format("Timeout: {}", ec.message()),
+              ss::httpd::reply::status_type::gateway_timeout);
         case cluster::errc::update_in_progress:
+        case cluster::errc::leadership_changed:
         case cluster::errc::waiting_for_recovery:
         case cluster::errc::no_leader_controller:
             throw ss::httpd::base_exception(
