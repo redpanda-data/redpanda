@@ -13,6 +13,7 @@
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future-util.hh>
 
 #include <exception>
@@ -182,6 +183,10 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                     } catch (const ss::timed_out_error& e) {
                         rpclog.debug("Timing out request on timed_out_error "
                                      "(shutting down)");
+                        reply_buf.set_status(rpc::status::request_timeout);
+                    } catch (const ss::condition_variable_timed_out& e) {
+                        rpclog.debug(
+                          "Timing out request on condition_variable_timed_out");
                         reply_buf.set_status(rpc::status::request_timeout);
                     } catch (const ss::gate_closed_exception& e) {
                         // gate_closed is typical during shutdown.  Treat
