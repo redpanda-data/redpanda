@@ -68,7 +68,7 @@ class partition_record_batch_reader_impl final
 public:
     explicit partition_record_batch_reader_impl(
       const storage::log_reader_config& config,
-      ss::lw_shared_ptr<remote_partition> part,
+      ss::shared_ptr<remote_partition> part,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
@@ -328,7 +328,7 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
 
-    ss::lw_shared_ptr<remote_partition> _partition;
+    ss::shared_ptr<remote_partition> _partition;
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Currently accessed segment
     remote_partition::iterator _it;

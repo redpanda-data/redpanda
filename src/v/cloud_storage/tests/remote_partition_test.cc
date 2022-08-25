@@ -330,7 +330,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 
     auto manifest = hydrate_manifest(api, bucket);
 
-    auto partition = ss::make_lw_shared<remote_partition>(
+    auto partition = ss::make_shared<remote_partition>(
       manifest, api, fixture.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
@@ -360,7 +360,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
 
     auto manifest = hydrate_manifest(api, bucket);
 
-    auto partition = ss::make_lw_shared<remote_partition>(
+    auto partition = ss::make_shared<remote_partition>(
       manifest, api, imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
@@ -886,7 +886,7 @@ scan_remote_partition_incrementally(
       manifest_ntp, manifest_revision);
 
     auto manifest = hydrate_manifest(api, bucket);
-    auto partition = ss::make_lw_shared<remote_partition>(
+    auto partition = ss::make_shared<remote_partition>(
       manifest, api, imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
@@ -1014,7 +1014,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using first remote_partition instance.
     // After this block finishes the segment will be hydrated.
     {
-        auto partition = ss::make_lw_shared<remote_partition>(
+        auto partition = ss::make_shared<remote_partition>(
           manifest, api, cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
@@ -1035,7 +1035,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using second remote_partition instance.
     // This will trigger offset_index materialization from cache.
     {
-        auto partition = ss::make_lw_shared<remote_partition>(
+        auto partition = ss::make_shared<remote_partition>(
           manifest, api, cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });

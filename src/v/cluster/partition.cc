@@ -9,6 +9,7 @@
 
 #include "cluster/partition.h"
 
+#include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -106,7 +107,7 @@ partition::partition(
                       "configuration property cloud_storage_bucket is not set"};
                 }
                 _cloud_storage_partition
-                  = ss::make_lw_shared<cloud_storage::remote_partition>(
+                  = ss::make_shared<cloud_storage::remote_partition>(
                     _archival_meta_stm->manifest(),
                     cloud_storage_api.local(),
                     cloud_storage_cache.local(),
@@ -114,6 +115,49 @@ partition::partition(
             }
         }
     }
+}
+
+ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
+  const cloud_storage::offset_range& offsets) {
+    return _cloud_storage_partition->aborted_transactions(offsets);
+}
+
+bool partition::is_remote_fetch_enabled() const {
+    const auto& cfg = _raft->log_config();
+    return cfg.is_remote_fetch_enabled()
+           || config::shard_local_cfg()
+                .cloud_storage_enable_remote_read.value();
+}
+
+bool partition::cloud_data_available() const {
+    return static_cast<bool>(_cloud_storage_partition)
+           && _cloud_storage_partition->is_data_available();
+}
+
+model::offset partition::start_cloud_offset() const {
+    vassert(
+      cloud_data_available(),
+      "Method can only be called if cloud data is available, ntp: {}",
+      _raft->ntp());
+    return _cloud_storage_partition->first_uploaded_offset();
+}
+
+model::offset partition::last_cloud_offset() const {
+    vassert(
+      cloud_data_available(),
+      "Method can only be called if cloud data is available, ntp: {}",
+      _raft->ntp());
+    return _cloud_storage_partition->last_uploaded_offset();
+}
+
+ss::future<storage::translating_reader> partition::make_cloud_reader(
+  storage::log_reader_config config,
+  std::optional<model::timeout_clock::time_point> deadline) {
+    vassert(
+      cloud_data_available(),
+      "Method can only be called if cloud data is available, ntp: {}",
+      _raft->ntp());
+    return _cloud_storage_partition->make_reader(config, deadline);
 }
 
 ss::future<result<kafka_result>> partition::replicate(
