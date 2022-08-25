@@ -83,7 +83,7 @@ struct handler_adaptor : ss::httpd::handler_base {
       std::unique_ptr<ss::request> req,
       std::unique_ptr<ss::reply> rep) final {
         auto measure = _probe.auto_measure();
-        auto guard = gate_guard(_pending_requests);
+        auto guard = ss::gate::holder(_pending_requests);
         server::request_t rq{std::move(req), this->_ctx};
         server::reply_t rp{std::move(rep)};
         auto req_size = get_request_size(*rq.req);
