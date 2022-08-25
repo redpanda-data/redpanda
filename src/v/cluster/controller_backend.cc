@@ -513,6 +513,12 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
               *it);
             stop = true;
             continue;
+        } catch (ss::sleep_aborted const&) {
+            stop = true;
+            continue;
+        } catch (ss::abort_requested_exception const&) {
+            stop = true;
+            continue;
         } catch (...) {
             vlog(
               clusterlog.error,
