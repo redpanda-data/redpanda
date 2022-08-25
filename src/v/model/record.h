@@ -470,6 +470,17 @@ struct producer_identity
     auto serde_fields() { return std::tie(id, epoch); }
 };
 
+/// This structure is a part of rm_stm snapshot.
+/// Any change has to be reconciled with the
+/// snapshot (de)serialization logic.
+struct tx_range {
+    model::producer_identity pid;
+    model::offset first;
+    model::offset last;
+
+    auto operator<=>(const tx_range&) const = default;
+};
+
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
         if (sequence > std::numeric_limits<int32_t>::max() - increment) {
