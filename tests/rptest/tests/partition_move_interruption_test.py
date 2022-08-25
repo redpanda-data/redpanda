@@ -5,7 +5,10 @@ from numpy import partition
 
 import requests
 from rptest.services.cluster import cluster
+
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -13,7 +16,6 @@ from rptest.services.verifiable_producer import TopicPartition
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
-from ducktape.mark import matrix, parametrize
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 
 NO_RECOVERY = "no_recovery"
@@ -62,6 +64,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5887
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
@@ -106,6 +109,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                                 consumer_timeout_sec=45,
                                 min_records=self.min_records)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
+    # https://github.com/redpanda-data/redpanda/issues/6020
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],

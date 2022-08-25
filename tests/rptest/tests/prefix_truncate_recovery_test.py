@@ -7,9 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.mark import matrix
 from rptest.services.cluster import cluster
+
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -173,6 +175,7 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
                                          self.initial_version)
         super(PrefixTruncateRecoveryUpgradeTest, self).setUp()
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5589
     @cluster(num_nodes=3,
              log_allow_list=LOG_ALLOW_LIST +
              MixedVersionWorkloadRunner.ALLOWED_LOGS)

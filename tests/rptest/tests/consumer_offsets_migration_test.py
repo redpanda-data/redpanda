@@ -19,9 +19,10 @@ from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, ResourceSettings
 from rptest.clients.default import DefaultClient
-from ducktape.utils.util import wait_until
 
+from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 
 
 class ConsumerOffsetsMigrationTest(EndToEndTest):
@@ -29,6 +30,9 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
     min_inter_failure_time_sec = 30
     max_inter_failure_time_sec = 60
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5261
+    # https://github.com/redpanda-data/redpanda/issues/5324
+    # https://github.com/redpanda-data/redpanda/issues/5358
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @matrix(failures=[True, False], cpus=[1, 3])
     def test_migrating_consume_offsets(self, failures, cpus):
