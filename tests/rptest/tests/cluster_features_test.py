@@ -20,6 +20,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_v
 
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 CURRENT_LOGICAL_VERSION = 5
 
@@ -194,11 +195,12 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         }
 
         assert self.admin.put_license(license).status_code == 200
-        wait_until(lambda: self.admin.get_license()['loaded'] is True,
-                   timeout_sec=5,
-                   backoff_sec=1)
-        resp = self.admin.get_license()
-        assert resp['loaded'] is True
+
+        def obtain_license():
+            lic = self.admin.get_license()
+            return (lic is not None and lic['loaded'] is True, lic)
+
+        resp = wait_until_result(obtain_license, timeout_sec=5, backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents == resp['license'], resp['license']
 
