@@ -90,4 +90,11 @@ struct configuration {
     static ss::future<configuration> get_config();
 };
 
+struct offset_range {
+    model::offset begin;
+    model::offset end;
+    model::offset begin_rp;
+    model::offset end_rp;
+};
+
 } // namespace cloud_storage

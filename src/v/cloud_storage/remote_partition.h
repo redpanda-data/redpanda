@@ -136,13 +136,6 @@ private:
 
 } // namespace details
 
-struct offset_range {
-    model::offset begin;
-    model::offset end;
-    model::offset begin_rp;
-    model::offset end_rp;
-};
-
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
 /// maintained per segment. The idea here is that the
