@@ -115,7 +115,7 @@ class RackAwarePlacementTest(RedpandaTest):
                 'rack': rack_layout[ix],
                 # This parameter enables rack awareness
                 'enable_rack_awareness': True,
-                'segment_fallocation_step': 1024,
+                'segment_fallocation_step': 4096,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
