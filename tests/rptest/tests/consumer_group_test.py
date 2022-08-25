@@ -258,6 +258,7 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5952
     @cluster(num_nodes=6)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
