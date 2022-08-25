@@ -11,6 +11,7 @@
 
 #include "cluster/remote_topic_configuration_source.h"
 
+#include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"

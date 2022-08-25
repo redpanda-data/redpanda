@@ -11,7 +11,9 @@
 
 #pragma once
 
-#include "cloud_storage/remote.h"
+#include "cloud_storage/fwd.h"
+#include "cluster/errc.h"
+#include "cluster/types.h"
 #include "s3/client.h"
 
 #include <seastar/core/abort_source.hh>
