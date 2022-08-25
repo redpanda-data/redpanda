@@ -636,10 +636,10 @@ ss::future<> remote_segment::hydrate() {
     });
 }
 
-ss::future<std::vector<cluster::rm_stm::tx_range>>
+ss::future<std::vector<model::tx_range>>
 remote_segment::aborted_transactions(model::offset from, model::offset to) {
     co_await hydrate();
-    std::vector<cluster::rm_stm::tx_range> result;
+    std::vector<model::tx_range> result;
     if (!_tx_range) {
         // We got NoSuchKey when we tried to download the
         // tx-manifest. This means that segment doesn't have

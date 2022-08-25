@@ -17,7 +17,6 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
-#include "cluster/rm_stm.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "s3/client.h"
@@ -123,7 +122,7 @@ public:
     ///
     /// \param from start redpanda offset
     /// \param to end redpanda offset
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    ss::future<std::vector<model::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
 private:
@@ -179,7 +178,7 @@ private:
     ss::file _data_file;
     std::optional<offset_index> _index;
 
-    using tx_range_vec = fragmented_vector<cluster::rm_stm::tx_range>;
+    using tx_range_vec = fragmented_vector<model::tx_range>;
     std::optional<tx_range_vec> _tx_range;
 };
 
