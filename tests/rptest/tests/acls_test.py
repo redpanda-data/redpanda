@@ -197,7 +197,7 @@ class AccessControlListTest(RedpandaTest):
         client_auth - Controls the value of require_client_auth RP config
     '''
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=["Validation errors in node config"])
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
             enable_authz=[True, False, None],
