@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -60,13 +61,13 @@ var (
 )
 
 type (
-	// KafkaAdminClient
+	// KafkaAdminClient contains functions from kadm.Client functions used by KafkaSA
 	KafkaAdminClient interface {
 		CreateACLs(context.Context, *kadm.ACLBuilder) (kadm.CreateACLsResults, error)
 		DeleteACLs(context.Context, *kadm.ACLBuilder) (kadm.DeleteACLsResults, error)
 	}
 
-	// KafkaAdminClientFactory
+	// KafkaAdminClientFactory returns a KafkaAdminClient
 	KafkaAdminClientFactory func(context.Context, client.Client, *redpandav1alpha1.Cluster) (KafkaAdminClient, error)
 )
 
@@ -195,8 +196,19 @@ func (k *KafkaACL) Ensure(ctx context.Context) error {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}
 
-	if _, err = kadmclient.CreateACLs(ctx, b); err != nil {
+	results, err := kadmclient.CreateACLs(ctx, b)
+	if err != nil {
 		return fmt.Errorf("creating kafka ACLs: %w", err)
+	}
+	// CreateACLs returns no error, check results
+	var errList []error
+	for _, r := range results {
+		if r.Err != nil {
+			errList = append(errList, r.Err)
+		}
+	}
+	if len(errList) > 0 {
+		return fmt.Errorf("creating kafka ACLs: %w", kerrors.NewAggregate(errList))
 	}
 
 	if !controllerutil.ContainsFinalizer(k.consoleobj, ConsoleACLFinalizer) {
@@ -237,9 +249,21 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}
 
-	if _, err = kadmclient.DeleteACLs(ctx, b); err != nil {
+	results, err := kadmclient.DeleteACLs(ctx, b)
+	if err != nil {
 		return fmt.Errorf("deleting kafka ACLs: %w", err)
 	}
+	// DeleteACLs returns no error, check results
+	var errList []error
+	for _, r := range results {
+		if r.Err != nil {
+			errList = append(errList, r.Err)
+		}
+	}
+	if len(errList) > 0 {
+		return fmt.Errorf("deleting kafka ACLs: %w", kerrors.NewAggregate(errList))
+	}
+
 	controllerutil.RemoveFinalizer(k.consoleobj, ConsoleACLFinalizer)
 	return k.Update(ctx, k.consoleobj)
 }
