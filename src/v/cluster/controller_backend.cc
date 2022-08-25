@@ -380,7 +380,12 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     }
 
     auto& first_delta = bootstrap_deltas.front();
-    vlog(clusterlog.trace, "first bootstrap delta of {}: {}", ntp, first_delta);
+    vlog(
+      clusterlog.info,
+      "Bootstrapping deltas for ntp {}: first - {}, last - {}",
+      ntp,
+      first_delta,
+      bootstrap_deltas.back());
     // if first operation is a cross core update, find initial revision on
     // current node and store it in bootstrap map
     using op_t = topic_table::delta::op_type;

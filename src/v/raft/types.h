@@ -233,6 +233,7 @@ struct append_entries_request
     operator=(append_entries_request&&) noexcept = default;
 
     raft::group_id target_group() const { return meta.group; }
+    vnode source_node() const { return node_id; }
     vnode target_node() const { return target_node_id; }
     vnode node_id;
     vnode target_node_id;
@@ -398,6 +399,7 @@ struct vote_request : serde::envelope<vote_request, serde::version<0>> {
     /// \brief true if vote triggered by leadership transfer
     bool leadership_transfer;
     raft::group_id target_group() const { return group; }
+    vnode source_node() const { return node_id; }
     vnode target_node() const { return target_node_id; }
 
     friend std::ostream& operator<<(std::ostream& o, const vote_request& r);
@@ -519,6 +521,7 @@ struct install_snapshot_request
     bool done;
 
     raft::group_id target_group() const { return group; }
+    vnode source_node() const { return node_id; }
     vnode target_node() const { return target_node_id; }
     friend std::ostream&
     operator<<(std::ostream&, const install_snapshot_request&);
@@ -622,6 +625,7 @@ struct timeout_now_request
     model::term_id term;
 
     raft::group_id target_group() const { return group; }
+    vnode source_node() const { return node_id; }
     vnode target_node() const { return target_node_id; }
 
     friend bool
