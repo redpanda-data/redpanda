@@ -195,7 +195,7 @@ public:
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
 
     // Get list of aborted transactions that overlap with the offset range
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
 private:
