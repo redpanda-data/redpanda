@@ -12,6 +12,7 @@ import requests
 import json
 from typing import Optional, Callable
 from contextlib import contextmanager
+from collections import defaultdict
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -173,12 +174,7 @@ class KgoRepeaterService(Service):
                     f"group_ready: waiting for stable, current state {group.state}"
                 )
                 return False
-            elif group.members < expect_members / 2:
-                # FIXME: this should really require that all consumers are present, but
-                # in practice I see some a small minority of consumers drop out of the
-                # group sometimes when the cluster undergoes an all-node concurrent restart,
-                # and I don't want to stop the test for that.
-                # https://github.com/redpanda-data/redpanda/issues/5959
+            elif group.members < expect_members:
                 self.logger.debug(
                     f"group_ready: waiting for node count ({group.members} != {expect_members})"
                 )
@@ -188,7 +184,32 @@ class KgoRepeaterService(Service):
 
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
-        wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+        try:
+            wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+        except:
+            # On failure, inspect the group to identify which workers
+            # specifically were absent.  This information helps to
+            # go inspect the remote kgo-repeater logs to see if the
+            # client logged any errors.
+
+            rpk = RpkTool(self.redpanda)
+            group = rpk.group_describe(self.group_name, summary=False)
+
+            # Identify which of the clients is dropping some consumers
+            workers_by_host = defaultdict(set)
+            for p in group.partitions:
+                # kgo-repeater worker names are like this:
+                # {hostname}_{pid}_w_{index}, where index is a zero-based counter
+                host, pid, _, n = p.client_id.split("_")
+                workers_by_host[host].add(int(n))
+
+            for host, live_workers in workers_by_host.items():
+                expect_workers = set(range(0, self.workers))
+                missing_workers = expect_workers - live_workers
+                self.logger.error(f"  {host}: missing {missing_workers}")
+
+            raise
+
         self.logger.debug(
             f"Group {self.group_name} became ready in {time.time() - t1}s")
 
