@@ -9,6 +9,7 @@
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -75,6 +76,7 @@ class RackAwarePlacementTest(RedpandaTest):
             )
             assert len(set(racks)) == min(num_racks, num_replicas)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4885
     @cluster(num_nodes=6)
     @matrix(rack_layout_str=['ABCDEF', 'xxYYzz', 'ooooFF'],
             num_partitions=[50, 400],
