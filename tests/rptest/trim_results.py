@@ -39,7 +39,7 @@ class Trimmer:
             results_dir = os.path.join(self.result_path,
                                        r['relative_results_dir'])
 
-            if r['test_status'] == "PASS":
+            if r['test_status'] == "PASS" or r['test_status'] == "OPASS":
                 for service in r['services']:
                     service_logs = {
                         "RedpandaService": "redpanda.log",
