@@ -782,6 +782,8 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
             log_segment_size=10240,  # 10KiB
+            cloud_storage_enable_remote_read=True,
+            cloud_storage_enable_remote_write=True,
         )
         super(SIPartitionMovementTest, self).__init__(
             ctx,
