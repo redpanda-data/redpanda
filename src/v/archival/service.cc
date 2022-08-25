@@ -14,6 +14,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
 #include "cloud_roles/signature.h"
+#include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"

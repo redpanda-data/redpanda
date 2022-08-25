@@ -12,6 +12,7 @@
 #include "archival/archival_policy.h"
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/fwd.h"
