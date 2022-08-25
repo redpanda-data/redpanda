@@ -64,6 +64,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5887
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
