@@ -377,6 +377,8 @@ class PartitionBalancerTest(EndToEndTest):
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5884
+    # https://github.com/redpanda-data/redpanda/issues/5980
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_full_nodes(self):
         """
