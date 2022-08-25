@@ -14,7 +14,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
@@ -72,7 +72,9 @@ public:
     ///         if actual download happened. The 'last_offset' field will
     ///         be set to max offset of the downloaded log.
     ss::future<log_recovery_result> download_log(
-      const storage::ntp_config& ntp_cfg, cluster::remote_topic_properties rtp);
+      const storage::ntp_config& ntp_cfg,
+      model::initial_revision_id remote_revsion,
+      int32_t remote_partition_count);
 
 private:
     s3::bucket_name _bucket;
@@ -91,7 +93,8 @@ public:
     partition_downloader(
       const storage::ntp_config& ntpc,
       remote* remote,
-      cluster::remote_topic_properties rtp,
+      model::initial_revision_id remote_revision_id,
+      int32_t remote_partition_count,
       s3::bucket_name bucket,
       ss::gate& gate_root,
       retry_chain_node& parent,
@@ -193,7 +196,8 @@ private:
     const storage::ntp_config& _ntpc;
     s3::bucket_name _bucket;
     remote* _remote;
-    cluster::remote_topic_properties _rtp;
+    model::initial_revision_id _remote_revision_id;
+    int32_t _remote_partition_count;
     ss::gate& _gate;
     retry_chain_node _rtcnode;
     retry_chain_logger _ctxlog;

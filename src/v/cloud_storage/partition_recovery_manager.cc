@@ -90,7 +90,9 @@ ss::future<> partition_recovery_manager::stop() {
 }
 
 ss::future<log_recovery_result> partition_recovery_manager::download_log(
-  const storage::ntp_config& ntp_cfg, cluster::remote_topic_properties rtp) {
+  const storage::ntp_config& ntp_cfg,
+  model::initial_revision_id remote_revision,
+  int32_t remote_partition_count) {
     if (!ntp_cfg.has_overrides()) {
         vlog(
           cst_log.debug, "No overrides for {} found, skipping", ntp_cfg.ntp());
@@ -105,14 +107,22 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
         co_return log_recovery_result{};
     }
     partition_downloader downloader(
-      ntp_cfg, &_remote.local(), rtp, _bucket, _gate, _root, _as);
+      ntp_cfg,
+      &_remote.local(),
+      remote_revision,
+      remote_partition_count,
+      _bucket,
+      _gate,
+      _root,
+      _as);
     co_return co_await downloader.download_log();
 }
 
 partition_downloader::partition_downloader(
   const storage::ntp_config& ntpc,
   remote* remote,
-  cluster::remote_topic_properties rtp,
+  model::initial_revision_id remote_rev_id,
+  int32_t remote_partition_count,
   s3::bucket_name bucket,
   ss::gate& gate_root,
   retry_chain_node& parent,
@@ -120,7 +130,8 @@ partition_downloader::partition_downloader(
   : _ntpc(ntpc)
   , _bucket(std::move(bucket))
   , _remote(remote)
-  , _rtp(rtp)
+  , _remote_revision_id(remote_rev_id)
+  , _remote_partition_count(remote_partition_count)
   , _gate(gate_root)
   , _rtcnode(download_timeout, initial_backoff, &parent)
   , _ctxlog(
@@ -527,7 +538,7 @@ partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading topic manifest {}", key);
     recovery_material recovery_mat;
 
-    partition_manifest tmp(_ntpc.ntp(), _rtp.remote_revision);
+    partition_manifest tmp(_ntpc.ntp(), _remote_revision_id);
     auto res = co_await _remote->download_manifest(
       _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
     if (res != download_result::success) {
