@@ -11,11 +11,10 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
-#include "cluster/rm_stm.h"
-#include "cluster/types.h"
 #include "json/document.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 
 #include <rapidjson/document.h>
 
@@ -30,8 +29,7 @@ class tx_range_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit tx_range_manifest(
-      remote_segment_path spath,
-      const std::vector<cluster::rm_stm::tx_range>& range);
+      remote_segment_path spath, const std::vector<model::tx_range>& range);
 
     /// Create empty manifest that supposed to be updated later
     explicit tx_range_manifest(remote_segment_path spath);
@@ -62,12 +60,12 @@ public:
         return manifest_type::tx_range;
     };
 
-    fragmented_vector<cluster::rm_stm::tx_range>&& get_tx_range() && {
+    fragmented_vector<model::tx_range>&& get_tx_range() && {
         return std::move(_ranges);
     }
 
 private:
     remote_segment_path _path;
-    fragmented_vector<cluster::rm_stm::tx_range> _ranges;
+    fragmented_vector<model::tx_range> _ranges;
 };
 } // namespace cloud_storage

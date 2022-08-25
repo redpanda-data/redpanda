@@ -5,7 +5,6 @@
 #include "bytes/iobuf_ostreambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
-#include "cluster/rm_stm.h"
 #include "json/istreamwrapper.h"
 #include "model/record.h"
 #include "utils/fragmented_vector.h"
@@ -23,8 +22,7 @@ remote_manifest_path generate_remote_tx_path(const remote_segment_path& path) {
 }
 
 tx_range_manifest::tx_range_manifest(
-  remote_segment_path spath,
-  const std::vector<cluster::rm_stm::tx_range>& range)
+  remote_segment_path spath, const std::vector<model::tx_range>& range)
   : _path(std::move(spath)) {
     for (const auto& tx : range) {
         _ranges.push_back(tx);
@@ -51,7 +49,7 @@ ss::future<> tx_range_manifest::update(ss::input_stream<char> is) {
 }
 
 void tx_range_manifest::update(const rapidjson::Document& doc) {
-    _ranges = fragmented_vector<cluster::rm_stm::tx_range>();
+    _ranges = fragmented_vector<model::tx_range>();
     auto version = doc["version"].GetInt();
     auto compat_version = doc["compat_version"].GetInt();
     if (
@@ -73,7 +71,7 @@ void tx_range_manifest::update(const rapidjson::Document& doc) {
             auto first = model::offset{tx_range["first"].GetInt64()};
             auto last = model::offset{tx_range["last"].GetInt64()};
             model::producer_identity pid(id, static_cast<int16_t>(epoch));
-            _ranges.push_back(cluster::rm_stm::tx_range{pid, first, last});
+            _ranges.push_back(model::tx_range{pid, first, last});
         }
     }
     _ranges.shrink_to_fit();
