@@ -1919,8 +1919,10 @@ void admin_server::register_broker_routes() {
                                       .get_node_drain_status(
                                         id, model::time_from_now(5s));
           if (maybe_drain_status.has_error()) {
-              co_await throw_on_error(
-                *req, maybe_drain_status.error(), model::controller_ntp, id);
+              throw ss::httpd::base_exception(
+                fmt::format(
+                  "Unexpected error: {}", maybe_drain_status.error().message()),
+                ss::httpd::reply::status_type::service_unavailable);
           }
 
           ss::httpd::broker_json::broker ret;
