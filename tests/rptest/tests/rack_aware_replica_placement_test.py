@@ -150,6 +150,7 @@ class RackAwarePlacementTest(RedpandaTest):
         for topic in topics:
             self._validate_placement(topic, rack_layout, replication_factor)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6248
     @cluster(num_nodes=6)
     @matrix(rack_layout=['ABCDEF', 'xxYYzz', 'ooooFF'])
     def test_rack_awareness_after_node_operations(self, rack_layout):
