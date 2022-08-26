@@ -56,8 +56,26 @@ class KgoVerifierService(Service):
         self._remote_port = None
 
         for node in self.nodes:
-            if not hasattr(node, "kgo_verifier_next_port"):
-                node.kgo_verifier_next_port = REMOTE_PORT_BASE
+            if not hasattr(node, "kgo_verifier_ports"):
+                node.kgo_verifier_ports = {}
+
+    def __del__(self):
+        self._release_port()
+
+    def _release_port(self):
+        for node in self.nodes:
+            port_map = getattr(node, "kgo_verifier_ports", dict())
+            if self.who_am_i() in port_map:
+                del port_map[self.who_am_i()]
+
+    def _select_port(self, node):
+        ports_in_use = set(node.kgo_verifier_ports.values())
+        i = REMOTE_PORT_BASE
+        while i in ports_in_use:
+            i = i + 1
+
+        node.kgo_verifier_ports[self.who_am_i()] = i
+        return i
 
     @property
     def log_path(self):
@@ -75,14 +93,14 @@ class KgoVerifierService(Service):
     def spawn(self, cmd, node):
         assert self._pid is None
 
-        port = node.kgo_verifier_next_port
-        node.kgo_verifier_next_port += 1
-        self._remote_port = port
+        self._remote_port = self._select_port(node)
 
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {port} > {self.log_path} 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} > {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd)
-        self.logger.debug(f"spawned {self.who_am_i()} pid={pid_str}")
+        self.logger.debug(
+            f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self._remote_port}"
+        )
         pid = int(pid_str.strip())
         self._pid = pid
 
@@ -102,11 +120,19 @@ class KgoVerifierService(Service):
             if b"No such process" not in e.msg:
                 raise
 
+        self._release_port()
+
     def clean_node(self, node):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
         node.account.remove(f"/tmp/{self.__class__.__name__}*")
+
+    def _remote(self, node, action):
+        url = self._remote_url(node, action)
+        self._redpanda.logger.info(f"{self.who_am_i()} remote call: {url}")
+        r = requests.get(url)
+        r.raise_for_status()
 
     def wait_node(self, node, timeout_sec=None):
         """
@@ -128,8 +154,7 @@ class KgoVerifierService(Service):
 
         # If this is a looping worker, tell it to end after the current loop
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting last_pass")
-        r = requests.get(self._remote_url(node, "last_pass"))
-        r.raise_for_status()
+        self._remote(node, "last_pass")
 
         # Let the worker fall through to the end of its current iteration
         self.logger.debug(
@@ -147,13 +172,19 @@ class KgoVerifierService(Service):
 
         # Permit the subprocess to exit, and wait for it to do so
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
-        r = requests.get(self._remote_url(node, "shutdown"))
-        r.raise_for_status()
+        self._remote(node, "shutdown")
         self.logger.debug(
-            f"wait_node {self.who_am_i()}: waiting for process to terminate")
+            f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
+        )
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
+
+        self.logger.debug(
+            f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"
+        )
+
+        self._release_port()
 
         return True
 
@@ -238,7 +269,7 @@ class StatusThread(threading.Thread):
             progress = (worker_statuses[0]['sent'] /
                         float(self._parent._msg_count))
             self.logger.info(
-                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {self._parent._status}"
+                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {reduced}"
             )
         else:
             self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
@@ -469,7 +500,6 @@ class KgoVerifierProducer(KgoVerifierService):
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
-        self._remote_port = None
 
     @property
     def produce_status(self):

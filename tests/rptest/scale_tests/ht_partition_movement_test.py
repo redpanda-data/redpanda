@@ -25,11 +25,23 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
                          *args,
                          **kwargs)
 
-        self._partitions = 32
-        self._message_size = 1280
-        self._message_cnt = 500000
-        self._consumers = 8
-        self._number_of_moves = 50
+        if not self.redpanda.dedicated_nodes:
+            # Mini mode, for developers working on the test on their workstation.
+            # (not for use in CI)
+            self._partitions = 16
+            self._message_size = 16384
+            self._message_cnt = 64000
+            self._consumers = 1
+            self._number_of_moves = 2
+        else:
+            self._partitions = 32
+            # FIXME: this is not enough data to keep up a background load through
+            # the test.
+            # https://github.com/redpanda-data/redpanda/issues/6245
+            self._message_size = 1280
+            self._message_cnt = 500000
+            self._consumers = 8
+            self._number_of_moves = 50
 
     def _start_producer(self, topic_name):
         self.producer = KgoVerifierProducer(
@@ -46,7 +58,6 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
                    backoff_sec=1)
 
     def _start_consumer(self, topic_name):
-
         self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
@@ -56,23 +67,19 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
             nodes=self.preallocated_nodes)
         self.consumer.start(clean=False)
 
-    def verify(self):
+    def verify(self, topic_name):
         self.producer.wait()
 
-        # wait for consumers to finish
-        def finished_consuming():
-            self.logger.debug(
-                f"verifying, producer acked: {self.producer.produce_status.acked}, "
-                f"consumer valid reads: {self.consumer.consumer_status.valid_reads}"
-            )
-            return self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
-
-        # wait for consumers to finish
-        wait_until(finished_consuming, 90)
-
-        assert self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
-        self.consumer.shutdown()
         self.consumer.wait()
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
+        del self.consumer
+
+        # Create a fresh consumer to read the quiescent state from start to finish
+        self._start_consumer(topic_name)
+        self.consumer.wait()
+
+        assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)
@@ -88,11 +95,11 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         for _ in range(20):
             # choose a random topic-partition
             metadata = self.client().describe_topics()
-            topic, partition = self._random_partition(metadata)
-            self.logger.info(f"selected partition: {topic}/{partition}")
-            self._do_move_and_verify(topic, partition, 360)
+            t, partition = self._random_partition(metadata)
+            self.logger.info(f"selected partition: {t}/{partition}")
+            self._do_move_and_verify(t, partition, 360)
 
-        self.verify()
+        self.verify(topic.name)
 
     def _random_move_and_cancel(self, topic, partition):
         previous_assignment, _ = self._dispatch_random_partition_move(
@@ -118,7 +125,9 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         for _ in range(self._number_of_moves):
             # choose a random topic-partition
             metadata = self.client().describe_topics()
-            topic, partition = self._random_partition(metadata)
-            self.logger.info(f"selected partition: {topic}/{partition}")
+            t, partition = self._random_partition(metadata)
+            self.logger.info(f"selected partition: {t}/{partition}")
 
-            self._random_move_and_cancel(topic, partition)
+            self._random_move_and_cancel(t, partition)
+
+        self.verify(topic.name)

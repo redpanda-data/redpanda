@@ -123,7 +123,7 @@ class ScaleParameters:
             # bandwidth.  Divide by 2 to give comfortable room for variation.
             # This is total bandwidth from a group of producers.
             self.expect_bandwidth = (node_count / replication_factor) * (
-                self.node_cpus / 24.0) * 1E9
+                self.node_cpus / 24.0) * 1E9 * 0.5
 
             # Single-producer tests are slower, bottlenecked on the
             # client side.
@@ -804,6 +804,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                               topic=topic_names[0],
                               msg_size=repeater_msg_size,
                               workers=workers,
+                              max_buffered_records=64,
                               cleanup=lambda: self.free_preallocated_nodes(),
                               **repeater_kwargs) as repeater:
             repeater_await_bytes = 1E9

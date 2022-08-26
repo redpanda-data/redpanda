@@ -63,16 +63,21 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             nodes=self.preallocated_nodes)
         self.consumer.start(clean=False)
 
-    def verify(self):
+    def verify(self, topic_name, msg_size, consumers):
         self.producer.wait()
-        # wait for consumers to finish
-        wait_until(
-            lambda: self.consumer.consumer_status.valid_reads == self.producer.
-            produce_status.acked, 300)
-        self.consumer.shutdown()
+
+        # Await the consumer that is reading only the subset of data that
+        # was written before it started.
+        self.consumer.wait()
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
+        del self.consumer
+
+        # Start a new consumer to read all data written
+        self._start_consumer(topic_name, msg_size, consumers)
         self.consumer.wait()
 
-        assert self.consumer.consumer_status.valid_reads == self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
 
     def node_replicas(self, topics, node_id):
         topic_descriptions = self.client().describe_topics(topics)
@@ -91,13 +96,25 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
     @parametrize(type=BIG_PARTITIONS)
     def test_partition_balancer_with_many_partitions(self, type):
         replication_factor = 3
-        if type == self.MANY_PARTITIONS:
-            # in total the test produces 250GB of data
+        if not self.redpanda.dedicated_nodes:
+            # Mini mode, for developers working on the test on their workstation.
+            # (not for use in CI)
+            message_size = 16384
+            message_cnt = 64000
+            consumers = 1
+            partitions_count = 16
+        elif type == self.MANY_PARTITIONS:
+            # FIXME: this is not enough data to keep up a background load through
+            # the test.
+            # https://github.com/redpanda-data/redpanda/issues/6245
             message_size = 128 * (2 ^ 10)
             message_cnt = 2000000
             consumers = 8
             partitions_count = 18000
         else:
+            # FIXME: this is not enough data to keep up a background load through
+            # the test.
+            # https://github.com/redpanda-data/redpanda/issues/6245
             message_size = 512 * (2 ^ 10)
             message_cnt = 5000000
             consumers = 8
@@ -143,4 +160,4 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
 
         wait_until(all_reconfigurations_done, 300, 5)
 
-        self.verify()
+        self.verify(topic.name, message_size, consumers)
