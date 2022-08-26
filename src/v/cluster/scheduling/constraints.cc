@@ -199,6 +199,28 @@ soft_constraint_evaluator least_allocated() {
     return soft_constraint_evaluator(std::make_unique<impl>());
 }
 
+soft_constraint_evaluator
+least_allocated_in_domain(const partition_allocation_domain domain) {
+    struct impl : soft_constraint_evaluator::impl {
+        explicit impl(partition_allocation_domain domain_)
+          : domain(domain_) {}
+        uint64_t score(const allocation_node& node) const final {
+            return (soft_constraint_evaluator::max_score
+                    * node.domain_partition_capacity(domain))
+                   / node.max_capacity();
+        }
+        void print(std::ostream& o) const final {
+            fmt::print(o, "least allocated node in domain {}", domain);
+        }
+        partition_allocation_domain domain;
+    };
+
+    vassert(
+      domain != partition_allocation_domains::common,
+      "Least allocated constraint within common domain not supported");
+    return soft_constraint_evaluator(std::make_unique<impl>(domain));
+}
+
 soft_constraint_evaluator distinct_rack(
   const std::vector<model::broker_shard>& replicas,
   const allocation_state& state) {

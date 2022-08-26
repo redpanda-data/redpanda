@@ -14,17 +14,21 @@
 
 namespace cluster {
 
-void allocation_state::rollback(const std::vector<partition_assignment>& v) {
+void allocation_state::rollback(
+  const std::vector<partition_assignment>& v,
+  const partition_allocation_domain domain) {
     for (auto& as : v) {
-        rollback(as.replicas);
+        rollback(as.replicas, domain);
         // rollback for each assignment as the groups are distinct
         _highest_group = raft::group_id(_highest_group() - 1);
     }
 }
 
-void allocation_state::rollback(const std::vector<model::broker_shard>& v) {
+void allocation_state::rollback(
+  const std::vector<model::broker_shard>& v,
+  const partition_allocation_domain domain) {
     for (auto& bs : v) {
-        deallocate(bs);
+        deallocate(bs, domain);
     }
 }
 
@@ -47,7 +51,9 @@ bool allocation_state::validate_shard(
 raft::group_id allocation_state::next_group_id() { return ++_highest_group; }
 
 void allocation_state::apply_update(
-  std::vector<model::broker_shard> replicas, raft::group_id group_id) {
+  std::vector<model::broker_shard> replicas,
+  raft::group_id group_id,
+  const partition_allocation_domain domain) {
     if (replicas.empty()) {
         return;
     }
@@ -74,7 +80,7 @@ void allocation_state::apply_update(
             it = _nodes.find(bs.node_id);
         }
         if (it != _nodes.end()) {
-            it->second->allocate(bs.shard);
+            it->second->allocate_on(bs.shard, domain);
         }
     }
 }
@@ -149,18 +155,21 @@ bool allocation_state::is_empty(model::node_id id) const {
     return it->second->empty();
 }
 
-void allocation_state::deallocate(const model::broker_shard& replica) {
+void allocation_state::deallocate(
+  const model::broker_shard& replica,
+  const partition_allocation_domain domain) {
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->deallocate(replica.shard);
+        it->second->deallocate_on(replica.shard, domain);
     }
 }
 
-result<uint32_t> allocation_state::allocate(model::node_id id) {
+result<uint32_t> allocation_state::allocate(
+  model::node_id id, const partition_allocation_domain domain) {
     if (auto it = _nodes.find(id); it != _nodes.end()) {
         if (it->second->is_full()) {
             return errc::invalid_node_operation;
         }
-        return it->second->allocate();
+        return it->second->allocate(domain);
     }
 
     return errc::node_does_not_exists;

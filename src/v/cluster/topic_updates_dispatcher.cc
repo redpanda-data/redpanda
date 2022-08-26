@@ -51,25 +51,29 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       del_cmd.key, *topic_assignments);
                 }
                 return dispatch_updates_to_cores(del_cmd, base_offset)
-                  .then(
-                    [this,
-                     topic_assignments = std::move(topic_assignments),
-                     in_progress = std::move(in_progress)](std::error_code ec) {
-                        if (ec == errc::success) {
-                            vassert(
-                              topic_assignments.has_value(),
-                              "Topic had to exist before successful delete");
-                            deallocate_topic(*topic_assignments, in_progress);
-                        }
+                  .then([this,
+                         topic_assignments = std::move(topic_assignments),
+                         in_progress = std::move(in_progress),
+                         allocation_domain = get_allocation_domain(
+                           del_cmd.key)](std::error_code ec) {
+                      if (ec == errc::success) {
+                          vassert(
+                            topic_assignments.has_value(),
+                            "Topic had to exist before successful delete");
+                          deallocate_topic(
+                            *topic_assignments, in_progress, allocation_domain);
+                      }
 
-                        return ec;
-                    });
+                      return ec;
+                  });
             },
             [this, base_offset](create_topic_cmd create_cmd) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
                   .then([this, create_cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(create_cmd.value.assignments);
+                          update_allocations(
+                            create_cmd.value.assignments,
+                            get_allocation_domain(create_cmd.key));
                       }
                       return ec;
                   })
@@ -106,7 +110,8 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                             cmd.key);
                           auto to_add = subtract_replica_sets(
                             cmd.value, p_as->replicas);
-                          _partition_allocator.local().add_allocations(to_add);
+                          _partition_allocator.local().add_allocations(
+                            to_add, get_allocation_domain(cmd.key));
                       }
                       return ec;
                   });
@@ -137,7 +142,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       auto to_delete = subtract_replica_sets(
                         current_assignment->replicas, *new_target_replicas);
                       _partition_allocator.local().remove_allocations(
-                        to_delete);
+                        to_delete, get_allocation_domain(ntp));
                       return ec;
                   });
             },
@@ -163,7 +168,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       auto to_delete = subtract_replica_sets(
                         *previous_replicas, current_replicas);
                       _partition_allocator.local().remove_allocations(
-                        to_delete);
+                        to_delete, get_allocation_domain(ntp));
                       return ec;
                   });
             },
@@ -174,7 +179,9 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this, cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(cmd.value.assignments);
+                          update_allocations(
+                            cmd.value.assignments,
+                            get_allocation_domain(cmd.key));
                       }
                       return ec;
                   });
@@ -183,8 +190,10 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto assignments = _topic_table.local().get_topic_assignments(
                   cmd.key.source);
                 return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this, assignments = std::move(assignments)](
-                          std::error_code ec) {
+                  .then([this,
+                         assignments = std::move(assignments),
+                         allocation_domain = get_allocation_domain(
+                           cmd.key.name)](std::error_code ec) {
                       if (ec == errc::success) {
                           vassert(
                             assignments.has_value(), "null topic_metadata");
@@ -194,7 +203,8 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                             assignments->begin(),
                             assignments->end(),
                             std::back_inserter(p_as));
-                          update_allocations(std::move(p_as));
+                          update_allocations(
+                            std::move(p_as), allocation_domain);
                       }
                       return ec;
                   });
@@ -282,22 +292,24 @@ topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
 
 void topic_updates_dispatcher::deallocate_topic(
   const assignments_set& topic_assignments,
-  const in_progress_map& in_progress) {
+  const in_progress_map& in_progress,
+  const partition_allocation_domain domain) {
     for (auto& p_as : topic_assignments) {
-        _partition_allocator.local().deallocate(p_as.replicas);
+        _partition_allocator.local().deallocate(p_as.replicas, domain);
         auto it = in_progress.find(p_as.id);
 
         // we must remove the allocation that would normally
         // be removed with update_finished request
         if (it != in_progress.end()) {
             auto to_delete = subtract_replica_sets(it->second, p_as.replicas);
-            _partition_allocator.local().remove_allocations(to_delete);
+            _partition_allocator.local().remove_allocations(to_delete, domain);
         }
     }
 }
 
 void topic_updates_dispatcher::update_allocations(
-  std::vector<partition_assignment> assignments) {
+  std::vector<partition_assignment> assignments,
+  const partition_allocation_domain domain) {
     // for create topics we update allocation state
     std::vector<model::broker_shard> shards;
     raft::group_id max_group_id = raft::group_id(0);
@@ -307,7 +319,8 @@ void topic_updates_dispatcher::update_allocations(
           pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
     }
 
-    _partition_allocator.local().update_allocation_state(shards, max_group_id);
+    _partition_allocator.local().update_allocation_state(
+      shards, max_group_id, domain);
 }
 
 } // namespace cluster

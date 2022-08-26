@@ -10,6 +10,7 @@
 
 #include "cluster/partition_balancer_planner.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
@@ -253,7 +254,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
       assignments.group, assignments.id, stable_replicas);
 
     auto reallocation = _partition_allocator.reallocate_partition(
-      std::move(constraints), stable_assigments);
+      std::move(constraints), stable_assigments, get_allocation_domain(ntp));
 
     if (!reallocation) {
         vlog(

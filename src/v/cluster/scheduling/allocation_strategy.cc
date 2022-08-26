@@ -120,7 +120,8 @@ allocation_strategy simple_allocation_strategy() {
     public:
         result<model::broker_shard> allocate_replica(
           const allocation_constraints& request,
-          allocation_state& state) final {
+          allocation_state& state,
+          const partition_allocation_domain domain) final {
             const auto& nodes = state.allocation_nodes();
             /**
              * evaluate hard constraints
@@ -143,7 +144,7 @@ allocation_strategy simple_allocation_strategy() {
               it != nodes.end(),
               "allocated node with id {} have to be present",
               best_fit);
-            auto core = (it->second)->allocate();
+            auto core = (it->second)->allocate(domain);
             return model::broker_shard{
               .node_id = it->first,
               .shard = core,
