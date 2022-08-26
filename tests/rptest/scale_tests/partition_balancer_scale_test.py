@@ -67,12 +67,12 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         self.producer.wait()
         # wait for consumers to finish
         wait_until(
-            lambda: self.consumer.consumer_status.valid_reads == self.producer.
-            produce_status.acked, 300)
-        self.consumer.shutdown()
+            lambda: self.consumer.consumer_status.validator.valid_reads >= self
+            .producer.produce_status.acked, 300)
         self.consumer.wait()
 
-        assert self.consumer.consumer_status.valid_reads == self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
 
     def node_replicas(self, topics, node_id):
         topic_descriptions = self.client().describe_topics(topics)

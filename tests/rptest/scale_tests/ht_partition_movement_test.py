@@ -72,16 +72,16 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         def finished_consuming():
             self.logger.debug(
                 f"verifying, producer acked: {self.producer.produce_status.acked}, "
-                f"consumer valid reads: {self.consumer.consumer_status.valid_reads}"
+                f"consumer valid reads: {self.consumer.consumer_status.validator.valid_reads}"
             )
-            return self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
+            return self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
 
         # wait for consumers to finish
         wait_until(finished_consuming, 90)
 
-        assert self.consumer.consumer_status.valid_reads >= self.producer.produce_status.acked
-        self.consumer.shutdown()
         self.consumer.wait()
+        assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)
