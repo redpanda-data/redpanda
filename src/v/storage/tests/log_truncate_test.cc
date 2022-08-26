@@ -348,8 +348,12 @@ FIXTURE_TEST(
     // garbadge collect first append series
     ss::abort_source as;
     log
-      .compact(
-        compaction_config(ts, std::nullopt, ss::default_priority_class(), as))
+      .compact(compaction_config(
+        ts,
+        std::nullopt,
+        model::offset::max(),
+        ss::default_priority_class(),
+        as))
       .get0();
     // truncate at 0, offset earlier then the one present in log
     log
@@ -526,8 +530,12 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     ss::abort_source as;
 
     // truncate at 0, offset earlier then the one present in log
-    auto f1 = log.compact(
-      compaction_config(ts, std::nullopt, ss::default_priority_class(), as));
+    auto f1 = log.compact(compaction_config(
+      ts,
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as));
 
     auto f2 = log.truncate_prefix(storage::truncate_prefix_config(
       lstats.dirty_offset, ss::default_priority_class()));

@@ -129,6 +129,9 @@ public:
     bool has_appender() const;
     compacted_index_writer& compaction_index();
     const compacted_index_writer& compaction_index() const;
+    // We currently use `max_collectible_offset` to control both
+    // deletion/eviction, and compaction.
+    bool has_compactible_offsets(const compaction_config& cfg) const;
 
     void release_batch_cache_index() { _cache.reset(); }
     /** Cache methods */
@@ -295,6 +298,14 @@ inline size_t segment::size_bytes() const {
 inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
 }
+
+inline bool
+segment::has_compactible_offsets(const compaction_config& cfg) const {
+    // since we don't support partially-compacted segments, a segment must
+    // end before the max compactible offset to be eligible for compaction.
+    return offsets().stable_offset <= cfg.max_collectible_offset;
+}
+
 inline void segment::mark_as_compacted_segment() {
     _flags |= bitflags::is_compacted_segment;
 }

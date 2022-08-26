@@ -506,6 +506,7 @@ struct compact_op final : opfuzz::op {
         compaction_config cfg(
           model::timestamp::max(),
           std::nullopt,
+          model::offset::max(),
           ss::default_priority_class(),
           *(ctx._as),
           debug_sanitize_files::yes);

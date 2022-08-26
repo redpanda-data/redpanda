@@ -146,6 +146,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_await current_log.handle.compact(compaction_config(
           collection_threshold,
           _config.retention_bytes(),
+          current_log.handle.stm_manager()->max_collectible_offset(),
           _config.compaction_priority,
           _abort_source));
 
