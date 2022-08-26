@@ -12,6 +12,7 @@ from packaging.version import Version
 
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -163,6 +164,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         self.installer.install(self.redpanda.nodes, self.initial_version)
         super(UpgradeBackToBackTest, self).setUp()
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6249
     @cluster(num_nodes=4, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @parametrize(single_upgrade=True)
     @parametrize(single_upgrade=False)
