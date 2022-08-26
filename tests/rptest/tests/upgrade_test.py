@@ -186,16 +186,9 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             self._producer.wait()
             assert self._producer.produce_status.acked == self.PRODUCE_COUNT
 
-        def has_maintenance_supprt():
-            features_resp = self.redpanda._admin.get_features()
-            features_dict = dict(
-                (f["name"], f) for f in features_resp["features"])
-            return features_dict["maintenance_mode"]["state"] == "active"
-
         produce_during_upgrade = self.initial_version >= (22, 1, 0)
         if produce_during_upgrade:
             # Give ample time to restart, given the running workload.
-            wait_until(has_maintenance_supprt, 30, 1)
             self.installer.install(self.redpanda.nodes,
                                    self.intermediate_version)
             self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
@@ -229,7 +222,6 @@ class UpgradeBackToBackTest(PreallocNodesTest):
                        timeout_sec=90,
                        backoff_sec=3)
 
-        wait_until(has_maintenance_supprt, 30, 1)
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             start_timeout=90,

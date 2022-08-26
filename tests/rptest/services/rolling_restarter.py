@@ -48,9 +48,18 @@ class RollingRestarter:
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
 
+            # NOTE: callers may not want to use maintenance mode if the
+            # cluster is on a version that does not support it.
             if use_maintenance_mode:
-                # NOTE: callers may not want to use maintenance mode if the
-                # cluster is on a version that does not support it.
+                # In case the cluster was just upgraded, wait for all nodes to
+                # acknowledge the 'maintenance_mode' feature activation.
+                wait_until(
+                    lambda: admin.supports_feature("maintenance_mode"),
+                    timeout_sec=stop_timeout,
+                    backoff_sec=1,
+                    err_msg=
+                    "Timeout waiting for cluster to support 'maintenance_mode' feature"
+                )
                 admin.maintenance_start(node)
                 wait_until(lambda: has_drained_leaders(node),
                            timeout_sec=stop_timeout,
