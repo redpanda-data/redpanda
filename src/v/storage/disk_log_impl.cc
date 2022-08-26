@@ -334,15 +334,41 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
       "[{}] applying 'compaction' log cleanup policy with config: {}",
       config().ntp(),
       cfg);
-    // find first not compacted segment
+
+    // create a logging predicate for offsets..
+    auto offsets_compactible = [&cfg, this](segment& s) {
+        if (s.has_compactible_offsets(cfg)) {
+            vlog(
+              gclog.debug,
+              "[{}] segment {} stable offs {}, max compactible {}, compacting.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().stable_offset,
+              cfg.max_collectible_offset);
+            return true;
+        } else {
+            vlog(
+              gclog.trace,
+              "[{}] segment {} stable offs {} > max compactible offs {}, "
+              "skipping.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().stable_offset,
+              cfg.max_collectible_offset);
+            return false;
+        }
+    };
 
     // loop until we compact segment or reached end of segments set
     while (!_segs.empty()) {
         const auto end_it = std::prev(_segs.end());
         auto seg_it = std::find_if(
-          _segs.begin(), end_it, [](ss::lw_shared_ptr<segment>& s) {
+          _segs.begin(),
+          end_it,
+          [offsets_compactible](ss::lw_shared_ptr<segment>& s) {
               return !s->has_appender() && s->is_compacted_segment()
-                     && !s->finished_self_compaction();
+                     && !s->finished_self_compaction()
+                     && offsets_compactible(*s);
           });
         // nothing to compact
         if (seg_it == end_it) {
