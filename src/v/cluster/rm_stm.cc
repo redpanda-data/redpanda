@@ -251,6 +251,7 @@ rm_stm::rm_stm(
 }
 
 bool rm_stm::check_tx_permitted() {
+    // TODO support compaction
     if (_c->log_config().is_compacted()) {
         vlog(
           clusterlog.error,
