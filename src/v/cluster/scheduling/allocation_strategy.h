@@ -23,10 +23,13 @@ public:
     struct impl {
         /**
          * Allocates single replica according to set of given allocation
-         * constraints
+         * constraints in the specified domain
          */
-        virtual result<model::broker_shard>
-        allocate_replica(const allocation_constraints&, allocation_state&) = 0;
+        virtual result<model::broker_shard> allocate_replica(
+          const allocation_constraints&,
+          allocation_state&,
+          partition_allocation_domain)
+          = 0;
 
         virtual ~impl() noexcept = default;
     };
@@ -35,8 +38,10 @@ public:
       : _impl(std::move(impl)) {}
 
     result<model::broker_shard> allocate_replica(
-      const allocation_constraints& ac, allocation_state& state) {
-        return _impl->allocate_replica(ac, state);
+      const allocation_constraints& ac,
+      allocation_state& state,
+      const partition_allocation_domain domain) {
+        return _impl->allocate_replica(ac, state, domain);
     }
 
 private:

@@ -224,7 +224,10 @@ FIXTURE_TEST(recovery_test, partition_allocator_fixture) {
     };
     // 100 topics with 12 partitions each replicated on 3 nodes each
     auto replicas = create_replicas(100, 12);
-    allocator.update_allocation_state(replicas, raft::group_id(0));
+    allocator.update_allocation_state(
+      replicas,
+      raft::group_id(0),
+      cluster::partition_allocation_domains::common);
     // each node in the cluster holds one replica for each partition,
     // so it has to have topics * partitions shards allocated
     cluster::allocation_node::allocation_capacity allocated_shards{100 * 12};
@@ -294,7 +297,8 @@ FIXTURE_TEST(
 
         allocator.update_allocation_state(
           allocs.get_assignments().front().replicas,
-          allocs.get_assignments().front().group);
+          allocs.get_assignments().front().group,
+          cluster::partition_allocation_domains::common);
     }
 
     allocator.decommission_node(previous_assignment.replicas.front().node_id);
@@ -305,7 +309,7 @@ FIXTURE_TEST(
     register_node(10, 3);
     {
         auto reallocated = allocator.reassign_decommissioned_replicas(
-          previous_assignment);
+          previous_assignment, cluster::partition_allocation_domains::common);
         //  second attempt should be successfull
         BOOST_REQUIRE_EQUAL(reallocated.has_value(), true);
         BOOST_REQUIRE_EQUAL(reallocated.value().get_assignments().size(), 1);
@@ -314,10 +318,14 @@ FIXTURE_TEST(
         new_assignment = reallocated.value().get_assignments().front();
     }
     // update allocation state after units left scope
-    allocator.add_allocations(cluster::subtract_replica_sets(
-      new_assignment.replicas, previous_assignment.replicas));
-    allocator.remove_allocations(cluster::subtract_replica_sets(
-      previous_assignment.replicas, new_assignment.replicas));
+    allocator.add_allocations(
+      cluster::subtract_replica_sets(
+        new_assignment.replicas, previous_assignment.replicas),
+      cluster::partition_allocation_domains::common);
+    allocator.remove_allocations(
+      cluster::subtract_replica_sets(
+        previous_assignment.replicas, new_assignment.replicas),
+      cluster::partition_allocation_domains::common);
 
     auto total_allocated = std::accumulate(
       allocator.state().allocation_nodes().begin(),
@@ -342,7 +350,8 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
         previous_assignment = allocs.get_assignments().front();
         allocator.update_allocation_state(
           allocs.get_assignments().front().replicas,
-          allocs.get_assignments().front().group);
+          allocs.get_assignments().front().group,
+          cluster::partition_allocation_domains::common);
     }
 
     allocator.decommission_node(model::node_id(2));
@@ -352,7 +361,7 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
 
     // reallocate
     auto first_attempt = allocator.reassign_decommissioned_replicas(
-      previous_assignment);
+      previous_assignment, cluster::partition_allocation_domains::common);
     // first attempt should fail, there are not enough nodes to allocate
     // replicas (requested rf = 3, while we have 2 nodes)
     BOOST_REQUIRE_EQUAL(first_attempt.has_value(), false);
@@ -360,7 +369,7 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
     register_node(10, 3);
     {
         auto second_attempt = allocator.reassign_decommissioned_replicas(
-          previous_assignment);
+          previous_assignment, cluster::partition_allocation_domains::common);
         //  second attempt should be successfull
         BOOST_REQUIRE_EQUAL(second_attempt.has_value(), true);
         BOOST_REQUIRE_EQUAL(second_attempt.value().get_assignments().size(), 1);
@@ -388,10 +397,14 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
           cluster::allocation_node::allocation_capacity(1));
     }
     // update allocation state after units left scope
-    allocator.add_allocations(cluster::subtract_replica_sets(
-      new_assignment.replicas, previous_assignment.replicas));
-    allocator.remove_allocations(cluster::subtract_replica_sets(
-      previous_assignment.replicas, new_assignment.replicas));
+    allocator.add_allocations(
+      cluster::subtract_replica_sets(
+        new_assignment.replicas, previous_assignment.replicas),
+      cluster::partition_allocation_domains::common);
+    allocator.remove_allocations(
+      cluster::subtract_replica_sets(
+        previous_assignment.replicas, new_assignment.replicas),
+      cluster::partition_allocation_domains::common);
     BOOST_REQUIRE_EQUAL(
       allocator.state()
         .allocation_nodes()
@@ -485,7 +498,10 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
             if (res) {
                 capacity--;
                 for (auto& as : res.value().get_assignments()) {
-                    allocator.update_allocation_state(as.replicas, as.group);
+                    allocator.update_allocation_state(
+                      as.replicas,
+                      as.group,
+                      cluster::partition_allocation_domains::common);
                 }
             }
 
@@ -510,7 +526,10 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
         if (res) {
             capacity--;
             for (auto& as : res.value().get_assignments()) {
-                allocator.update_allocation_state(as.replicas, as.group);
+                allocator.update_allocation_state(
+                  as.replicas,
+                  as.group,
+                  cluster::partition_allocation_domains::common);
             }
         }
     }
@@ -542,7 +561,8 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
     // try to allocate 3 replicas no 2 nodes - should fail
     auto expected_failure = allocator.reallocate_partition(
       cluster::partition_constraints(model::partition_id(0), 3),
-      res.value().get_assignments().front());
+      res.value().get_assignments().front(),
+      cluster::partition_allocation_domains::common);
 
     BOOST_CHECK_EQUAL(expected_failure.has_error(), true);
 
@@ -551,7 +571,8 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
 
     auto expected_success = allocator.reallocate_partition(
       cluster::partition_constraints(model::partition_id(0), 3),
-      res.value().get_assignments().front());
+      res.value().get_assignments().front(),
+      cluster::partition_allocation_domains::common);
 
     BOOST_CHECK_EQUAL(expected_success.has_value(), true);
     validate_replica_set_diversity(expected_success.value().get_assignments());
