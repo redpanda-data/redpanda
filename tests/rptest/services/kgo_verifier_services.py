@@ -56,8 +56,26 @@ class KgoVerifierService(Service):
         self._remote_port = None
 
         for node in self.nodes:
-            if not hasattr(node, "kgo_verifier_next_port"):
-                node.kgo_verifier_next_port = REMOTE_PORT_BASE
+            if not hasattr(node, "kgo_verifier_ports"):
+                node.kgo_verifier_ports = {}
+
+    def __del__(self):
+        self._release_port()
+
+    def _release_port(self):
+        for node in self.nodes:
+            port_map = getattr(node, "kgo_verifier_ports", dict())
+            if self.who_am_i() in port_map:
+                del port_map[self.who_am_i()]
+
+    def _select_port(self, node):
+        ports_in_use = set(node.kgo_verifier_ports.values())
+        i = REMOTE_PORT_BASE
+        while i in ports_in_use:
+            i = i + 1
+
+        node.kgo_verifier_ports[self.who_am_i()] = i
+        return i
 
         self._status_thread = None
 
@@ -77,11 +95,9 @@ class KgoVerifierService(Service):
     def spawn(self, cmd, node):
         assert self._pid is None
 
-        port = node.kgo_verifier_next_port
-        node.kgo_verifier_next_port += 1
-        self._remote_port = port
+        self._remote_port = self._select_port(node)
 
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {port} > {self.log_path} 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} > {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd)
         self.logger.debug(f"spawned {self.who_am_i()} pid={pid_str}")
@@ -103,6 +119,8 @@ class KgoVerifierService(Service):
         except RemoteCommandError as e:
             if b"No such process" not in e.msg:
                 raise
+
+        self._release_port()
 
     def clean_node(self, node):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
@@ -156,6 +174,8 @@ class KgoVerifierService(Service):
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
+
+        self._release_port()
 
         return True
 
