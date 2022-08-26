@@ -91,7 +91,14 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
     @parametrize(type=BIG_PARTITIONS)
     def test_partition_balancer_with_many_partitions(self, type):
         replication_factor = 3
-        if type == self.MANY_PARTITIONS:
+        if not self.redpanda.dedicated_nodes:
+            # Mini mode, for developers working on the test on their workstation.
+            # (not for use in CI)
+            message_size = 16384
+            message_cnt = 64000
+            consumers = 1
+            partitions_count = 16
+        elif type == self.MANY_PARTITIONS:
             # in total the test produces 250GB of data
             message_size = 128 * (2 ^ 10)
             message_cnt = 2000000
