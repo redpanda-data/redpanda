@@ -258,7 +258,7 @@ class StatusThread(threading.Thread):
             progress = (worker_statuses[0]['sent'] /
                         float(self._parent._msg_count))
             self.logger.info(
-                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {self._parent._status}"
+                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {reduced}"
             )
         else:
             self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
