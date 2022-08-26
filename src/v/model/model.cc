@@ -21,6 +21,7 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/print.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
@@ -52,7 +53,7 @@ std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
-    fmt::print(os, "{{{}/{}/{}}}", n.ns(), n.tp.topic(), n.tp.partition());
+    fmt::print(os, model::ntp::fmt, n.ns(), n.tp.topic(), n.tp.partition());
     return os;
 }
 
@@ -166,7 +167,12 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
 }
 
 ss::sstring ntp::path() const {
-    return ssx::sformat("{}/{}/{}", ns(), tp.topic(), tp.partition());
+    return ssx::sformat(ntp::base_fmt, ns(), tp.topic(), tp.partition());
+}
+
+ss::sstring ntp::to_name(std::string_view prefix) const {
+    return ssx::sformat(
+      ntp::named_fmt, prefix, ns(), tp.topic(), tp.partition());
 }
 
 std::filesystem::path ntp::topic_path() const {

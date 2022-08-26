@@ -219,6 +219,10 @@ struct ntp {
     model::ns ns;
     topic_partition tp;
 
+    static constexpr auto base_fmt = "{}/{}/{}";
+    static constexpr auto fmt = "{{{}/{}/{}}}";
+    static constexpr auto named_fmt = "{}-{}/{}/{}";
+
     bool operator==(const ntp& other) const {
         return ns == other.ns && tp == other.tp;
     }
@@ -245,6 +249,7 @@ struct ntp {
     }
 
     ss::sstring path() const;
+    ss::sstring to_name(std::string_view prefix) const;
     std::filesystem::path topic_path() const;
 
     friend std::ostream& operator<<(std::ostream&, const ntp&);
