@@ -388,6 +388,31 @@ class Admin:
     def get_features(self, node=None):
         return self._request("GET", "features", node=node).json()
 
+    def supports_feature(self, feature_name: str, nodes=None):
+        """
+        Returns true whether all nodes in 'nodes' support the given feature. If
+        no nodes are supplied, uses all nodes in the cluster.
+        """
+        if not nodes:
+            nodes = self.redpanda.nodes
+
+        def node_supports_feature(node):
+            features_resp = None
+            try:
+                features_resp = self.get_features(node=node)
+            except RequestException as e:
+                self.redpanda.logger.debug(
+                    f"Could not get features on {node.account.hostname}: {e}")
+                return False
+            features_dict = dict(
+                (f["name"], f) for f in features_resp["features"])
+            return features_dict[feature_name]["state"] == "active"
+
+        for node in nodes:
+            if not node_supports_feature(node):
+                return False
+        return True
+
     def put_feature(self, feature_name, body):
         return self._request("PUT", f"features/{feature_name}", json=body)
 

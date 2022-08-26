@@ -92,6 +92,12 @@ class UpgradeToLicenseChecks(RedpandaTest):
             [self.redpanda.nodes[1], self.redpanda.nodes[2]])
         _ = wait_for_num_versions(self.redpanda, 1)
 
+        wait_until(
+            lambda: self.admin.supports_feature("license"),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timeout waiting for cluster to support 'license' feature")
+
         # Assert that the log was found
         wait_until(
             lambda: self.redpanda.search_log("Enterprise feature(s).*"),
