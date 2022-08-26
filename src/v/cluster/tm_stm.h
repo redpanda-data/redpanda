@@ -186,6 +186,9 @@ public:
         return _state_lock.hold_read_lock();
     }
 
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
+
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>

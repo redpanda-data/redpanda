@@ -167,6 +167,11 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         });
 }
 
+ss::future<std::error_code>
+tm_stm::transfer_leadership(std::optional<model::node_id> target) {
+    return _c->do_transfer_leadership(target);
+}
+
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::sync(model::timeout_clock::duration timeout) {
     return ss::with_gate(_gate, [this, timeout] { return do_sync(timeout); });
