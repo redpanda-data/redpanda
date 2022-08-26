@@ -186,6 +186,8 @@ public:
         return _state_lock.hold_read_lock();
     }
 
+    ss::future<> checkpoint_ongoing_txs();
+
     ss::future<std::error_code>
       transfer_leadership(std::optional<model::node_id>);
 

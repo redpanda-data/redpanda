@@ -167,9 +167,13 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         });
 }
 
+ss::future<> tm_stm::checkpoint_ongoing_txs() { return ss::now(); }
+
 ss::future<std::error_code>
 tm_stm::transfer_leadership(std::optional<model::node_id> target) {
-    return _c->do_transfer_leadership(target);
+    auto units = co_await _state_lock.hold_write_lock();
+    co_await checkpoint_ongoing_txs();
+    co_return co_await _c->do_transfer_leadership(target);
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
