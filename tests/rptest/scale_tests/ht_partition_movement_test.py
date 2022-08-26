@@ -25,11 +25,20 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
                          *args,
                          **kwargs)
 
-        self._partitions = 32
-        self._message_size = 1280
-        self._message_cnt = 500000
-        self._consumers = 8
-        self._number_of_moves = 50
+        if not self.redpanda.dedicated_nodes:
+            # Mini mode, for developers working on the test on their workstation.
+            # (not for use in CI)
+            self._partitions = 16
+            self._message_size = 16384
+            self._message_cnt = 64000
+            self._consumers = 1
+            self._number_of_moves = 2
+        else:
+            self._partitions = 32
+            self._message_size = 1280
+            self._message_cnt = 500000
+            self._consumers = 8
+            self._number_of_moves = 50
 
     def _start_producer(self, topic_name):
         self.producer = KgoVerifierProducer(
