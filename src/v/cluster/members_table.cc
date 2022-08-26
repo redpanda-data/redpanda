@@ -165,9 +165,12 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
         if (
           broker->get_maintenance_state()
           == model::maintenance_state::inactive) {
+            vlog(
+              clusterlog.trace, "node {} already not in maintenance state", id);
             return errc::success;
         }
 
+        vlog(clusterlog.info, "marking node {} not in maintenance state", id);
         broker->set_maintenance_state(model::maintenance_state::inactive);
         notify_maintenance_state_change(id, model::maintenance_state::inactive);
 
@@ -186,6 +189,7 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     }
 
     if (broker->get_maintenance_state() == model::maintenance_state::active) {
+        vlog(clusterlog.trace, "node {} already in maintenance state", id);
         return errc::success;
     }
 
