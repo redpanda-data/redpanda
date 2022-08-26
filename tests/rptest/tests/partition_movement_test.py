@@ -15,7 +15,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
