@@ -63,12 +63,17 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             nodes=self.preallocated_nodes)
         self.consumer.start(clean=False)
 
-    def verify(self):
+    def verify(self, topic_name, msg_size, consumers):
         self.producer.wait()
-        # wait for consumers to finish
-        wait_until(
-            lambda: self.consumer.consumer_status.validator.valid_reads >= self
-            .producer.produce_status.acked, 300)
+
+        # Await the consumer that is reading only the subset of data that
+        # was written before it started.
+        self.consumer.wait()
+        assert self.consumer.consumer_status.validator.invalid_reads == 0
+        del self.consumer
+
+        # Start a new consumer to read all data written
+        self._start_consumer(topic_name, msg_size, consumers)
         self.consumer.wait()
 
         assert self.consumer.consumer_status.validator.valid_reads >= self.producer.produce_status.acked
@@ -99,12 +104,17 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             consumers = 1
             partitions_count = 16
         elif type == self.MANY_PARTITIONS:
-            # in total the test produces 250GB of data
+            # FIXME: this is not enough data to keep up a background load through
+            # the test.
+            # https://github.com/redpanda-data/redpanda/issues/6245
             message_size = 128 * (2 ^ 10)
             message_cnt = 2000000
             consumers = 8
             partitions_count = 18000
         else:
+            # FIXME: this is not enough data to keep up a background load through
+            # the test.
+            # https://github.com/redpanda-data/redpanda/issues/6245
             message_size = 512 * (2 ^ 10)
             message_cnt = 5000000
             consumers = 8
@@ -150,4 +160,4 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
 
         wait_until(all_reconfigurations_done, 300, 5)
 
-        self.verify()
+        self.verify(topic.name, message_size, consumers)
