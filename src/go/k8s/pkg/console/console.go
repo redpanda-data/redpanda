@@ -13,6 +13,7 @@ const (
 // ConsoleConfig is the config passed to the Redpanda Console app
 type ConsoleConfig struct {
 	// Grabbed from https://github.com/redpanda-data/console/
+	// Copying the config types because they don't have Enterprise fields and not all fields are supported yet
 	MetricsNamespace string `json:"metricsNamespace" yaml:"metricsNamespace"`
 	ServeFrontend    bool   `json:"serveFrontend" yaml:"serveFrontend"`
 
