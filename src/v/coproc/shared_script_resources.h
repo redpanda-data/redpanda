@@ -16,7 +16,6 @@
 #include "random/simple_time_jitter.h"
 #include "rpc/reconnect_transport.h"
 #include "ssx/semaphore.h"
-#include "utils/mutex.h"
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -48,7 +47,7 @@ struct shared_script_resources {
     /// the seastar reactor
     /// NOTE: Pointer stability is explicity requested due to the way iterators
     /// to elements within the collection are used
-    absl::node_hash_map<model::ntp, mutex> log_mtx;
+    absl::node_hash_map<model::ntp, ssx::mutex> log_mtx;
 
     /// Set partitions that are in the middle of being deleted
     absl::node_hash_set<model::ntp> in_progress_deletes;

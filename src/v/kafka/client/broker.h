@@ -16,7 +16,6 @@
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -44,7 +43,7 @@ struct gated_mutex {
 
     ss::future<> close() { return _gate.close(); }
 
-    mutex _mutex;
+    ssx::mutex _mutex;
     ss::gate _gate;
 };
 

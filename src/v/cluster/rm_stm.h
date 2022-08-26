@@ -26,7 +26,6 @@
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
@@ -449,7 +448,7 @@ private:
     // and form a monotonicly increasing continuation without gaps of
     // log_state's seq_table
     struct inflight_requests {
-        mutex lock;
+        ssx::mutex lock;
         int32_t tail_seq{-1};
         model::term_id term;
         ss::circular_buffer<ss::lw_shared_ptr<inflight_request>> cache;
@@ -476,11 +475,11 @@ private:
         }
     };
 
-    ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
+    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(model::producer_id pid) {
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
             auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<mutex>());
+              pid, ss::make_lw_shared<ssx::mutex>());
             lock_it = new_it;
         }
         return lock_it->second;
@@ -512,7 +511,8 @@ private:
 
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
-    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
+    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<ssx::mutex>>
+      _tx_locks;
     absl::flat_hash_map<
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>

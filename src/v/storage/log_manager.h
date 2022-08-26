@@ -25,7 +25,6 @@
 #include "storage/version.h"
 #include "units.h"
 #include "utils/intrusive_list_helpers.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>

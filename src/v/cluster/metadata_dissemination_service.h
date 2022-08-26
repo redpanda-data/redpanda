@@ -21,7 +21,7 @@
 #include "raft/group_manager.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
-#include "utils/mutex.h"
+#include "ssx/semaphore.h"
 #include "utils/retry.h"
 
 #include <seastar/core/abort_source.hh>
@@ -153,7 +153,7 @@ private:
     std::vector<ntp_leader_revision> _requests;
     std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
-    mutex _lock;
+    ssx::mutex _lock;
     ss::timer<> _dispatch_timer;
     ss::abort_source _as;
     ss::gate _bg;

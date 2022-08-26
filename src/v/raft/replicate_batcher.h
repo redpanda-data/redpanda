@@ -16,7 +16,6 @@
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "units.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 
@@ -79,7 +78,7 @@ private:
     ssx::semaphore _max_batch_size_sem;
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
-    mutex _lock;
+    ssx::mutex _lock;
     ss::gate _bg;
 };
 

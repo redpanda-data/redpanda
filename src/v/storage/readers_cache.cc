@@ -12,9 +12,9 @@
 
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "storage/types.h"
 #include "utils/gate_guard.h"
-#include "utils/mutex.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>

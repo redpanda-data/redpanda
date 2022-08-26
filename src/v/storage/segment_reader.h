@@ -13,9 +13,9 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -148,7 +148,7 @@ private:
 
     // Protects open/close of _data_file, to avoid double-opening on
     // concurrent calls to get()
-    mutex _open_lock;
+    ssx::mutex _open_lock;
 
     // This is only initialized if _data_file_refcount is greater than zero
     ss::file _data_file;

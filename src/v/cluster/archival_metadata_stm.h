@@ -15,7 +15,7 @@
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "utils/mutex.h"
+#include "ssx/semaphore.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/util/log.hh>
@@ -98,7 +98,7 @@ private:
 private:
     prefix_logger _logger;
 
-    mutex _lock;
+    ssx::mutex _lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
     model::offset _start_offset;

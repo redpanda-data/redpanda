@@ -17,7 +17,6 @@
 #include "raft/kvelldb/errc.h"
 #include "raft/state_machine.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
 

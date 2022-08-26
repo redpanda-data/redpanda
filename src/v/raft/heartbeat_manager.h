@@ -17,7 +17,6 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_configuration.h"
 #include "raft/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
@@ -160,7 +159,7 @@ private:
 
     // private members
 
-    mutex _lock;
+    ssx::mutex _lock;
     clock_type::time_point _hbeat = clock_type::now();
     duration_type _heartbeat_interval;
     duration_type _heartbeat_timeout;

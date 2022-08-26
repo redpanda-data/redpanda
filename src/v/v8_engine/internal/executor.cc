@@ -11,7 +11,6 @@
 #include "v8_engine/internal/executor.h"
 
 #include "seastarx.h"
-#include "utils/mutex.h"
 #include "vassert.h"
 
 #include <seastar/core/alien.hh>

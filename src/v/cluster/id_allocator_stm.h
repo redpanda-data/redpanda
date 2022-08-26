@@ -18,8 +18,8 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
+#include "ssx/semaphore.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -103,7 +103,7 @@ private:
     ss::future<> handle_eviction() override;
     ss::future<bool> sync(model::timeout_clock::duration);
 
-    mutex _lock;
+    ssx::mutex _lock;
 
     // id_allocator_stm is a state machine generating unique increasing IDs.
     // When a node becomes a leader it allocates a range of IDs of size

@@ -17,7 +17,6 @@
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
-#include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/util/bool_class.hh>
@@ -140,7 +139,7 @@ private:
 
     size_t _map_version = 0;
 
-    mutex _checkpoint_lock;
+    ssx::mutex _checkpoint_lock;
 
     size_t _bytes_processed_at_checkpoint = 0;
     size_t _map_version_at_checkpoint = 0;

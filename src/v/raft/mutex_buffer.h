@@ -1,7 +1,7 @@
 #pragma once
 #include "raft/types.h"
 #include "ssx/future-util.h"
-#include "utils/mutex.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/do_with.hh>
@@ -20,7 +20,7 @@ namespace raft::details {
 template<typename Request, typename Response>
 class mutex_buffer {
 public:
-    explicit mutex_buffer(mutex& m, size_t max_buffered_elements)
+    explicit mutex_buffer(ssx::mutex& m, size_t max_buffered_elements)
       : _mutex(m)
       , _max_buffered(max_buffered_elements) {}
 
@@ -71,7 +71,7 @@ private:
     response_t _responsens;
     ss::condition_variable _enequeued;
     ss::gate _gate;
-    mutex& _mutex;
+    ssx::mutex& _mutex;
     const size_t _max_buffered;
 };
 

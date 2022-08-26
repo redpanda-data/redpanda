@@ -23,7 +23,6 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 #include "utils/moving_average.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -180,7 +179,7 @@ private:
     model::offset _start_offset;
     // Used to serialize updates to _start_offset. See the update_start_offset
     // method.
-    mutex _start_offset_lock;
+    ssx::mutex _start_offset_lock;
     lock_manager _lock_mngr;
     storage::probe _probe;
     failure_probes _failure_probes;

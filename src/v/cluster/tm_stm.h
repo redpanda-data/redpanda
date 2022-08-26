@@ -25,7 +25,6 @@
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
-#include "utils/mutex.h"
 
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
@@ -203,10 +202,10 @@ public:
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
-    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id tid) {
+    ss::lw_shared_ptr<ssx::mutex> get_tx_lock(kafka::transactional_id tid) {
         auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
         if (inserted) {
-            lock_it->second = ss::make_lw_shared<mutex>();
+            lock_it->second = ss::make_lw_shared<ssx::mutex>();
         }
         return lock_it->second;
     }
@@ -238,7 +237,7 @@ private:
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _mem_txes;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
+    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<ssx::mutex>>
       _tx_locks;
     ss::future<> apply(model::record_batch b) override;
 

@@ -14,7 +14,7 @@
 #include "seastar/core/sharded.hh"
 #include "seastar/net/inet_address.hh"
 #include "seastarx.h"
-#include "utils/mutex.h"
+#include "ssx/semaphore.h"
 #include "vassert.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -121,7 +121,7 @@ private:
         // Lock to prevent multiple fibers trying to concurrently
         // do reclaims (would happen if multiple incoming connections
         // on the same shard when available==0)
-        mutex reclaim_lock;
+        ssx::mutex reclaim_lock;
     };
 
     friend std::ostream& operator<<(std::ostream& o, const home_allowance& ha) {

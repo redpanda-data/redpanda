@@ -18,7 +18,6 @@
 #include "storage/snapshot.h"
 #include "storage/storage_resources.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

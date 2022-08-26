@@ -18,7 +18,6 @@
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "random/simple_time_jitter.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/shared_ptr.hh>

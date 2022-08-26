@@ -12,7 +12,6 @@
 
 #include "seastarx.h"
 #include "utils/gate_guard.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/alien.hh>
 #include <seastar/core/coroutine.hh>

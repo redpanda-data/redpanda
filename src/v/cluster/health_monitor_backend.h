@@ -162,7 +162,7 @@ private:
     last_reply_cache_t _last_replies;
 
     ss::gate _gate;
-    mutex _refresh_mutex;
+    ssx::mutex _refresh_mutex;
     node::local_monitor _local_monitor;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>

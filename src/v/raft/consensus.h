@@ -37,7 +37,6 @@
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -624,7 +623,7 @@ private:
 
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
-    mutex _op_lock;
+    ssx::mutex _op_lock;
     /// used for notifying when commits happened to log
     event_manager _event_manager;
     probe _probe;

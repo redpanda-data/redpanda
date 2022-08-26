@@ -18,7 +18,6 @@
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -127,7 +126,7 @@ public:
     }
 
 private:
-    mutex _mutex; // to add/remove nodes
+    ssx::mutex _mutex; // to add/remove nodes
     underlying _cache;
 };
 inline ss::shard_id connection_cache::shard_for(

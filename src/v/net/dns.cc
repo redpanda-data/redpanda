@@ -11,7 +11,7 @@
 #include "net/dns.h"
 
 #include "net/unresolved_address.h"
-#include "utils/mutex.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/net/dns.hh>
@@ -20,7 +20,7 @@ namespace net {
 
 ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
     static thread_local ss::net::dns_resolver resolver;
-    static thread_local mutex m;
+    static thread_local ssx::mutex m;
     // lock
     auto units = co_await m.get_units();
     // resolve

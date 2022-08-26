@@ -15,7 +15,6 @@
 #include "coproc/fwd.h"
 #include "coproc/script_context_router.h"
 #include "coproc/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 
@@ -34,7 +33,7 @@ struct output_write_args {
     ss::sharded<coproc::partition_manager>& pm;
     routes_t& inputs;
     absl::node_hash_set<model::ntp>& denylist;
-    absl::node_hash_map<model::ntp, mutex>& locks;
+    absl::node_hash_map<model::ntp, ssx::mutex>& locks;
 };
 
 /**
