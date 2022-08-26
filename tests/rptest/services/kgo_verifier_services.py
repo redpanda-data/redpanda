@@ -100,7 +100,9 @@ class KgoVerifierService(Service):
         wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} > {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd)
-        self.logger.debug(f"spawned {self.who_am_i()} pid={pid_str}")
+        self.logger.debug(
+            f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self._remote_port}"
+        )
         pid = int(pid_str.strip())
         self._pid = pid
 
@@ -128,6 +130,12 @@ class KgoVerifierService(Service):
         node.account.remove("valid_offsets*json", True)
         node.account.remove(f"/tmp/{self.__class__.__name__}*")
 
+    def _remote(self, node, action):
+        url = self._remote_url(node, action)
+        self._redpanda.logger.info(f"{self.who_am_i()} remote call: {url}")
+        r = requests.get(url)
+        r.raise_for_status()
+
     def wait_node(self, node, timeout_sec=None):
         """
         Wait for the remote process to gracefully finish: if it is a one-shot
@@ -148,8 +156,7 @@ class KgoVerifierService(Service):
 
         # If this is a looping worker, tell it to end after the current loop
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting last_pass")
-        r = requests.get(self._remote_url(node, "last_pass"))
-        r.raise_for_status()
+        self._remote(node, "last_pass")
 
         # Let the worker fall through to the end of its current iteration
         self.logger.debug(
@@ -167,13 +174,17 @@ class KgoVerifierService(Service):
 
         # Permit the subprocess to exit, and wait for it to do so
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
-        r = requests.get(self._remote_url(node, "shutdown"))
-        r.raise_for_status()
+        self._remote(node, "shutdown")
         self.logger.debug(
-            f"wait_node {self.who_am_i()}: waiting for process to terminate")
+            f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
+        )
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
+
+        self.logger.debug(
+            f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"
+        )
 
         self._release_port()
 
@@ -494,7 +505,6 @@ class KgoVerifierProducer(KgoVerifierService):
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
         self._fake_timestamp_ms = fake_timestamp_ms
-        self._remote_port = None
 
     @property
     def produce_status(self):
