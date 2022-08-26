@@ -33,11 +33,11 @@ using namespace cloud_storage;
 
 // update manifest, serialize, compare jsons
 
-static const cluster::topic_configuration cfg(
-  model::ns("cfg-test-namespace"),
-  model::topic("cfg-test-topic"),
-  /* partition_count = */ 32,
-  /* replication_factor = */ 3);
+static const manifest_topic_configuration cfg{
+  .tp_ns = model::topic_namespace(
+    model::ns("cfg-test-namespace"), model::topic("cfg-test-topic")),
+  .partition_count = 32,
+  .replication_factor = 3};
 
 static constexpr std::string_view min_topic_manifest_json = R"json({
     "version": 1,

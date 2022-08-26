@@ -10,7 +10,10 @@
 
 #pragma once
 
+#include "model/compression.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "s3/client.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -19,6 +22,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <chrono>
 #include <filesystem>
 
 namespace cloud_storage {
@@ -95,6 +99,23 @@ struct offset_range {
     model::offset end;
     model::offset begin_rp;
     model::offset end_rp;
+};
+
+/// Topic configuration substitute for the manifest
+struct manifest_topic_configuration {
+    model::topic_namespace tp_ns;
+    int32_t partition_count;
+    int32_t replication_factor;
+    struct topic_properties {
+        std::optional<model::compression> compression;
+        std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
+        std::optional<model::compaction_strategy> compaction_strategy;
+        std::optional<model::timestamp_type> timestamp_type;
+        std::optional<size_t> segment_size;
+        tristate<size_t> retention_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
+    };
+    topic_properties properties;
 };
 
 } // namespace cloud_storage

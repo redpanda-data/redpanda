@@ -18,6 +18,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "http/client.h"
@@ -57,6 +58,25 @@
 using namespace std::chrono_literals;
 
 namespace archival::internal {
+
+static cloud_storage::manifest_topic_configuration
+convert_topic_configuration(const cluster::topic_configuration& cfg) {
+    cloud_storage::manifest_topic_configuration result {
+        .tp_ns = cfg.tp_ns,
+        .partition_count = cfg.partition_count,
+        .replication_factor = cfg.replication_factor,
+        .properties = {
+            .compression = cfg.properties.compression,
+            .cleanup_policy_bitflags = cfg.properties.cleanup_policy_bitflags,
+            .compaction_strategy = cfg.properties.compaction_strategy,
+            .timestamp_type = cfg.properties.timestamp_type,
+            .segment_size = cfg.properties.segment_size,
+            .retention_bytes = cfg.properties.retention_bytes,
+            .retention_duration = cfg.properties.retention_duration,
+        },
+    };
+    return result;
+}
 
 static ss::sstring get_value_or_throw(
   const config::property<std::optional<ss::sstring>>& prop, const char* name) {
@@ -191,7 +211,8 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               _topic_manifest_upload_timeout, _initial_backoff, &_rtcnode);
             retry_chain_logger ctxlog(archival_log, fib);
             vlog(ctxlog.info, "Uploading topic manifest {}", topic_ns);
-            cloud_storage::topic_manifest tm(*cfg, rev);
+            cloud_storage::topic_manifest tm(
+              convert_topic_configuration(*cfg), rev);
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
             auto res = co_await _remote.local().upload_manifest(
