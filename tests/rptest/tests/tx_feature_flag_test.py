@@ -14,8 +14,11 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 
+from ducktape.mark import ok_to_fail
+
 
 class TxFeatureFlagTest(EndToEndTest):
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6193
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_disabling_transactions_after_they_being_used(self):
         '''
