@@ -22,6 +22,7 @@
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
+#include "ssx/sformat.h"
 #include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
@@ -448,7 +449,8 @@ private:
     // and form a monotonicly increasing continuation without gaps of
     // log_state's seq_table
     struct inflight_requests {
-        ssx::mutex lock;
+        // TODO per-ntp naming
+        ssx::mutex lock{"c/rm-stm-ifr"};
         int32_t tail_seq{-1};
         model::term_id term;
         ss::circular_buffer<ss::lw_shared_ptr<inflight_request>> cache;
@@ -479,7 +481,8 @@ private:
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
             auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<ssx::mutex>());
+              pid,
+              ss::make_lw_shared<ssx::mutex>(ssx::sformat("c/rm_stm-{}", pid)));
             lock_it = new_it;
         }
         return lock_it->second;

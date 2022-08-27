@@ -1886,7 +1886,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
           std::move(appender), model::no_timeout);
     };
 
-    ssx::mutex write_mutex;
+    ssx::mutex write_mutex{"test-commit-offs"};
     /**
      * Sequence of events is as follow:
      *
@@ -2259,7 +2259,7 @@ FIXTURE_TEST(read_write_truncate, storage_test_fixture) {
 
     int cnt = 0;
     int max = 500;
-    ssx::mutex log_mutex;
+    ssx::mutex log_mutex{"test-rw-trunc"};
     auto produce = ss::do_until(
       [&] { return cnt > max; },
       [&log, &cnt, &log_mutex] {
@@ -2379,7 +2379,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
     int cnt = 0;
     int max = 500;
     bool done = false;
-    ssx::mutex log_mutex;
+    ssx::mutex log_mutex{"test-write-trunc-compact"};
     auto produce
       = ss::do_until(
           [&] { return cnt > max || done; },

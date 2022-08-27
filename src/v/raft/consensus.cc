@@ -116,6 +116,7 @@ consensus::consensus(
       config::shard_local_cfg()
         .raft_max_concurrent_append_requests_per_follower())
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
+  , _op_lock("raft/consensus")
   , _event_manager(this)
   , _ctxlog(group, _log.config().ntp())
   , _replicate_append_timeout(

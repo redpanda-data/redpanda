@@ -26,7 +26,7 @@ namespace kafka::client {
 
 struct gated_mutex {
     gated_mutex()
-      : _mutex{}
+      : _mutex{"k/broker-gate"}
       , _gate{} {}
 
     template<typename Func>

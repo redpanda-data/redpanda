@@ -29,6 +29,7 @@ segment_reader::segment_reader(
   unsigned read_ahead,
   debug_sanitize_files sanitize) noexcept
   : _filename(std::move(filename))
+  , _open_lock("s/seg-reader") // TODO add NTP
   , _buffer_size(buffer_size)
   , _read_ahead(read_ahead)
   , _sanitize(sanitize) {}
@@ -50,6 +51,7 @@ segment_reader::~segment_reader() noexcept {
 
 segment_reader::segment_reader(segment_reader&& rhs) noexcept
   : _filename(std::move(rhs._filename))
+  , _open_lock("s/seg-reader") // TODO add NTP
   , _data_file(std::move(rhs._data_file))
   , _data_file_refcount(rhs._data_file_refcount)
   , _file_size(rhs._file_size)

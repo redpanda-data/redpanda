@@ -27,6 +27,7 @@ namespace cluster {
 persisted_stm::persisted_stm(
   ss::sstring snapshot_mgr_name, ss::logger& logger, raft::consensus* c)
   : raft::state_machine(c, logger, ss::default_priority_class())
+  , _op_lock(c->ntp().to_name("persist-stm"))
   , _c(c)
   , _snapshot_mgr(
       std::filesystem::path(c->log_config().work_directory()),

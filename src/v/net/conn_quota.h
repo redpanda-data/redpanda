@@ -121,7 +121,7 @@ private:
         // Lock to prevent multiple fibers trying to concurrently
         // do reclaims (would happen if multiple incoming connections
         // on the same shard when available==0)
-        ssx::mutex reclaim_lock;
+        ssx::mutex reclaim_lock{"net/conn-reclaim"};
     };
 
     friend std::ostream& operator<<(std::ostream& o, const home_allowance& ha) {

@@ -65,7 +65,8 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _self(make_self_broker(config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
-  , _rpc_tls_config(config::node().rpc_server_tls()) {
+  , _rpc_tls_config(config::node().rpc_server_tls())
+  , _lock("c/metadata-ds") {
     _dispatch_timer.set_callback([this] {
         ssx::spawn_with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });

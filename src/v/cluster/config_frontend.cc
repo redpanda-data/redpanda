@@ -28,6 +28,7 @@ config_frontend::config_frontend(
   , _leaders(leaders)
   , _features(features)
   , _as(as)
+  , _write_lock("c/config-write")
   , _self(config::node().node_id()) {}
 
 /**

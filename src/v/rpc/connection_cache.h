@@ -39,7 +39,8 @@ public:
       model::node_id node,
       ss::shard_id max_shards = ss::smp::count);
 
-    connection_cache() = default;
+    connection_cache()
+      : _mutex("rpc/conn-cache") {}
     bool contains(model::node_id n) const {
         return _cache.find(n) != _cache.end();
     }

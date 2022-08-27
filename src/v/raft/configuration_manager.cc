@@ -32,6 +32,7 @@ configuration_manager::configuration_manager(
   ctx_log& log)
   : _group(group)
   , _storage(storage)
+  , _lock("raft/config_mgr")
   , _ctxlog(log) {
     auto [it, _] = _configurations.emplace(
       model::offset{},

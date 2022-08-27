@@ -123,6 +123,7 @@ archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
+  , _lock(raft->ntp().to_name("c/archive-mstm"))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
       raft->ntp(), raft->log_config().get_initial_revision()))
   , _cloud_storage_api(remote) {}

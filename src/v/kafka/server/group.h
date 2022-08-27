@@ -28,6 +28,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -655,7 +656,9 @@ private:
         auto lock_it = _tx_locks.find(pid);
         if (lock_it == _tx_locks.end()) {
             auto [new_it, _] = _tx_locks.try_emplace(
-              pid, ss::make_lw_shared<ssx::mutex>());
+              pid,
+              ss::make_lw_shared<ssx::mutex>(
+                ssx::sformat("k/group-txn-{}", pid)));
             lock_it = new_it;
         }
         return lock_it->second;

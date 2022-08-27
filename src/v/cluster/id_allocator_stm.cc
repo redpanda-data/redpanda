@@ -39,6 +39,7 @@ id_allocator_stm::id_allocator_stm(ss::logger& logger, raft::consensus* c)
 id_allocator_stm::id_allocator_stm(
   ss::logger& logger, raft::consensus* c, config::configuration& cfg)
   : persisted_stm("id.snapshot", logger, c)
+  , _lock("c/id-alloc")
   , _batch_size(cfg.id_allocator_batch_size.value())
   , _log_capacity(cfg.id_allocator_log_capacity.value()) {}
 

@@ -192,7 +192,9 @@ static ss::future<> write_materialized_partition(
     /// coproc/shared_script_resources.h
     auto found = args.locks.find(ntp);
     if (found == args.locks.end()) {
-        found = args.locks.emplace(ntp, ssx::mutex()).first;
+        found = args.locks
+                  .emplace(ntp, ssx::mutex(ntp.to_name("coproc/script_ctx")))
+                  .first;
     }
     return found->second.with(
       [args, ntp, input, reader = std::move(reader)]() mutable {

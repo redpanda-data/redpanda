@@ -174,7 +174,8 @@ heartbeat_manager::heartbeat_manager(
   consensus_client_protocol proto,
   model::node_id self,
   duration_type heartbeat_timeout)
-  : _heartbeat_interval(interval)
+  : _lock("raft/hb-mgr")
+  , _heartbeat_interval(interval)
   , _heartbeat_timeout(heartbeat_timeout)
   , _client_protocol(std::move(proto))
   , _self(self) {

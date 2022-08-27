@@ -23,6 +23,7 @@
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
+#include "ssx/sformat.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
 
@@ -205,7 +206,8 @@ public:
     ss::lw_shared_ptr<ssx::mutex> get_tx_lock(kafka::transactional_id tid) {
         auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
         if (inserted) {
-            lock_it->second = ss::make_lw_shared<ssx::mutex>();
+            lock_it->second = ss::make_lw_shared<ssx::mutex>(
+              ssx::sformat("c/tm-stm-{}", tid));
         }
         return lock_it->second;
     }

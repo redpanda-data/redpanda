@@ -70,6 +70,7 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
+  , _refresh_mutex("c/health-refresh")
   , _local_monitor(
       std::move(storage_min_bytes_alert),
       std::move(storage_min_percent_alert),

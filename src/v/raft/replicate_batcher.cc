@@ -36,7 +36,8 @@ using namespace std::chrono_literals; // NOLINT
 replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
   , _max_batch_size_sem(cache_size, "raft/repl-batch")
-  , _max_batch_size(cache_size) {}
+  , _max_batch_size(cache_size)
+  , _lock(ptr->ntp().to_name("raft/repl_batch")) {}
 
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,

@@ -61,6 +61,7 @@ disk_log_impl::disk_log_impl(
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
+  , _start_offset_lock(config().ntp().to_name("s/start-offs"))
   , _lock_mngr(_segs)
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(

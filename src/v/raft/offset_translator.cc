@@ -32,6 +32,7 @@ offset_translator::offset_translator(
   , _state(ss::make_lw_shared<storage::offset_translator_state>(std::move(ntp)))
   , _group(group)
   , _logger(logger, ssx::sformat("ntp: {}", _state->ntp()))
+  , _checkpoint_lock(ntp.to_name("raft/offset-trans"))
   , _storage_api(storage_api) {}
 
 void offset_translator::process(const model::record_batch& batch) {

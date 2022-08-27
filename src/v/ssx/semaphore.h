@@ -12,10 +12,12 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sstring.hh>
 
+#include <string_view>
 #include <utility>
 
 namespace ssx {
@@ -59,9 +61,9 @@ public:
     using duration = typename ss::semaphore::duration;
     using time_point = typename ss::semaphore::time_point;
 
-    // TODO constructor to pass through name & change callers.
-    mutex()
-      : _sem(1, "mutex") {}
+    // All semaphores and mutexes are named to aid in debugging.
+    explicit mutex(std::string_view name)
+      : _sem(1, ssx::sformat("mtx:{}", name)) {}
 
     template<typename Func>
     auto with(Func&& func) noexcept {

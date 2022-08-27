@@ -22,7 +22,6 @@
 #include "raft/follower_stats.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
-#include "raft/mutex_buffer.h"
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"

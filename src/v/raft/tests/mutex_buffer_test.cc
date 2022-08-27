@@ -23,7 +23,7 @@ struct fixture {
           response{r.content + "-response"});
     }
 
-    ssx::mutex lock;
+    ssx::mutex lock{"mutex-buf-test"};
     raft::details::mutex_buffer<request, response> buf;
 };
 

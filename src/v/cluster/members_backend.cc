@@ -53,6 +53,7 @@ members_backend::members_backend(
   , _members_frontend(members_frontend)
   , _raft0(raft0)
   , _as(as)
+  , _lock("c/members-be")
   , _retry_timeout(config::shard_local_cfg().members_backend_retry_ms()) {
     _retry_timer.set_callback([this] { start_reconciliation_loop(); });
 }
