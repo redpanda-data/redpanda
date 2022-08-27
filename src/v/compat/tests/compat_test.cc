@@ -24,7 +24,8 @@
 
 namespace {
 // NOLINTNEXTLINE(misc-no-recursion)
-std::optional<bool> perturb(json::Value& value, std::string& path) {
+std::optional<bool>
+perturb(json::Value& value, json::Document& doc, std::string& path) {
     auto perturb_int = [&]<typename T>(T v) -> std::optional<T> {
         /*
          * some integers represent enums. in the redpanda tree when an enum is
@@ -113,7 +114,7 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
             tmp = fmt::format("{}x", orig);
         }
 
-        value.SetString(tmp.c_str(), tmp.size());
+        value.SetString(tmp.c_str(), tmp.size(), doc.GetAllocator());
         path = fmt::format("{} = {} (was: {})", path, value.GetString(), orig);
         return true;
     }
@@ -121,7 +122,7 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
         size_t i = 0;
         for (auto& e : value.GetArray()) {
             auto tmp = fmt::format("{}[{}]", path, i++);
-            if (perturb(e, tmp).value_or(false)) {
+            if (perturb(e, doc, tmp).value_or(false)) {
                 path = tmp;
                 return true;
             }
@@ -136,7 +137,7 @@ std::optional<bool> perturb(json::Value& value, std::string& path) {
         auto change_feasible = false;
         for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it) {
             auto tmp = fmt::format("{}.{}", path, it->name.GetString());
-            auto changed = perturb(it->value, tmp);
+            auto changed = perturb(it->value, doc, tmp);
             if (changed) {
                 if (changed.value()) {
                     path = tmp;
@@ -182,7 +183,7 @@ void check(std::filesystem::path fn) {
         return;
     }
     std::string perturb_path;
-    auto changed = perturb(doc["fields"], perturb_path);
+    auto changed = perturb(doc["fields"], doc, perturb_path);
     if (!changed.has_value()) {
         json::StringBuffer buf;
         json::PrettyWriter<json::StringBuffer> writer(buf);
