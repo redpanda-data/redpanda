@@ -41,12 +41,24 @@ class RollingRestarter:
             except requests.exceptions.HTTPError:
                 return False
 
-        # TODO: incorporate rack awareness into this to support updating
-        # multiple nodes at a time.
-        for node in nodes:
+        def wait_until_cluster_healthy(timeout_sec):
             wait_until(lambda: self.redpanda.healthy(),
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
+            # Wait for the cluster to agree on a controller leader.
+            return self.redpanda.get_node(
+                admin.await_stable_leader(
+                    topic="controller",
+                    partition=0,
+                    namespace="redpanda",
+                    hosts=[n.account.hostname for n in self.redpanda._started],
+                    timeout_s=timeout_sec,
+                    backoff_s=1))
+
+        # TODO: incorporate rack awareness into this to support updating
+        # multiple nodes at a time.
+        for node in nodes:
+            controller_leader = wait_until_cluster_healthy(stop_timeout)
 
             # NOTE: callers may not want to use maintenance mode if the
             # cluster is on a version that does not support it.
@@ -60,7 +72,7 @@ class RollingRestarter:
                     err_msg=
                     "Timeout waiting for cluster to support 'maintenance_mode' feature"
                 )
-                admin.maintenance_start(node)
+                admin.maintenance_start(node, dst_node=controller_leader)
                 wait_until(lambda: has_drained_leaders(node),
                            timeout_sec=stop_timeout,
                            backoff_sec=1)
@@ -75,9 +87,7 @@ class RollingRestarter:
                                      override_cfg_params,
                                      timeout=start_timeout)
 
-            wait_until(lambda: self.redpanda.healthy(),
-                       timeout_sec=start_timeout,
-                       backoff_sec=1)
+            controller_leader = wait_until_cluster_healthy(start_timeout)
 
             if use_maintenance_mode:
-                admin.maintenance_stop(node)
+                admin.maintenance_stop(node, dst_node=controller_leader)
