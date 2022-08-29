@@ -155,15 +155,20 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
 
         # parse/extract the topic configuration
         configs = None
+        replication_factor = 0
+        partitions = 0
         for part in [part.strip() for part in res.split("\t")]:
+            if part.startswith("ReplicationFactor:"):
+                replication_factor = int(part.split(":")[1].strip())
+                continue
+            if part.startswith("PartitionCount:"):
+                partitions = int(part.split(":")[1].strip())
+                continue
             if part.startswith("Configs:"):
                 configs = part[8:]
 
         def maybe_int(key, value):
-            if key in [
-                    "partition_count", "replication_factor", "retention_ms",
-                    "retention_bytes", 'segment_bytes'
-            ]:
+            if key in ["retention_ms", "retention_bytes", 'segment_bytes']:
                 value = int(value)
             return value
 
@@ -171,9 +176,15 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             return key.replace(".", "_")
 
         self._redpanda.logger.debug(f"Describe topics configs: {configs}")
-        configs = [config.split("=") for config in configs.split(",")]
+        configs = [
+            config.split("=") for config in configs.split(",")
+            if len(config) > 0
+        ]
+
         configs = {fix_key(kv[0].strip()): kv[1].strip() for kv in configs}
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
+        configs["replication_factor"] = replication_factor
+        configs["partition_count"] = partitions
         return TopicSpec(name=topic, **configs)
 
     def describe_broker_config(self):
