@@ -49,9 +49,11 @@ segment::segment(
   segment_appender_ptr a,
   std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c,
-  storage_resources& resources) noexcept
+  storage_resources& resources,
+  segment::generation_id gen) noexcept
   : _resources(resources)
   , _appender_callbacks(this)
+  , _generation_id(gen)
   , _tracker(tkr)
   , _reader(std::move(r))
   , _idx(std::move(i))

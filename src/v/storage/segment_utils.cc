@@ -662,7 +662,8 @@ make_concatenated_segment(
         nullptr,
         std::nullopt,
         std::nullopt,
-        resources),
+        resources,
+        segments.front()->get_generation_id() + segment::generation_id(1)),
       std::move(generations));
 }
 
