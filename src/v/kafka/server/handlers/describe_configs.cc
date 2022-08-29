@@ -458,22 +458,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 result.error_code = error_code::topic_authorization_failed;
                 continue;
             }
-            /**
-             * Redpanda extensions
-             */
-            add_config_if_requested(
-              resource,
-              result,
-              "partition_count",
-              topic_config->partition_count,
-              describe_configs_source::topic);
 
-            add_config_if_requested(
-              resource,
-              result,
-              "replication_factor",
-              topic_config->replication_factor,
-              describe_configs_source::topic);
             /**
              * Kafka properties
              */
