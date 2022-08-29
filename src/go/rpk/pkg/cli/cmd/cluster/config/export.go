@@ -83,7 +83,7 @@ func exportConfig(
 		if meta.Type == "array" {
 			switch x := curValue.(type) {
 			case nil:
-				fmt.Fprintf(&sb, "%s: []", name)
+				fmt.Fprintf(&sb, "%s:", name)
 			case []interface{}:
 				if len(x) > 0 {
 					fmt.Fprintf(&sb, "%s:\n", name)
