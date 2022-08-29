@@ -72,7 +72,8 @@ public:
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
       std::optional<batch_cache_index>,
-      storage_resources&) noexcept;
+      storage_resources&,
+      generation_id = generation_id{}) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -195,7 +196,7 @@ private:
      * - segment appender is flushed
      * - segment is compacted
      */
-    generation_id _generation_id{};
+    generation_id _generation_id;
 
     offset_tracker _tracker;
     segment_reader _reader;
