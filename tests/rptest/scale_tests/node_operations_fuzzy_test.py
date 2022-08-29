@@ -37,6 +37,9 @@ ALLOWED_REPLICATION = [1, 3]
 V22_1_CHAOS_ALLOW_LOGS = [
     re.compile("storage - Could not parse header"),
     re.compile("storage - Cannot continue parsing"),
+    re.compile(
+        ".*controller_backend.*exception while executing partition operation:.*"
+    )
 ]
 
 
