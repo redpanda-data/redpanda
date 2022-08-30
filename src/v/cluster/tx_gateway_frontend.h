@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
@@ -34,7 +35,8 @@ public:
       cluster::controller*,
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
-      ss::sharded<cluster::rm_partition_frontend>&);
+      ss::sharded<cluster::rm_partition_frontend>&,
+      ss::sharded<feature_table>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
     ss::future<try_abort_reply> try_abort(
@@ -50,11 +52,13 @@ public:
     ss::future<init_tm_tx_reply> init_tm_tx(
       kafka::transactional_id,
       std::chrono::milliseconds transaction_timeout_ms,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
       kafka::transactional_id,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<add_paritions_tx_reply> add_partition_to_tx(
       add_paritions_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply>
@@ -83,11 +87,16 @@ private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
+    ss::sharded<feature_table>& _feature_table;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _transactions_enabled;
+
+    bool allow_init_tm_request_with_expected_pid() {
+        return _feature_table.local().is_active(feature::transaction_ga);
+    }
 
     void start_expire_timer();
 
@@ -138,12 +147,14 @@ private:
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       kafka::transactional_id,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::producer_identity);
 
     ss::future<end_tx_reply>
       do_end_txn(end_tx_request, model::timeout_clock::duration);

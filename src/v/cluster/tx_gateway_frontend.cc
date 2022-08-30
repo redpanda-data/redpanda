@@ -98,7 +98,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   cluster::controller* controller,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   rm_group_proxy* group_proxy,
-  ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend)
+  ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
+  ss::sharded<feature_table>& feature_table)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -109,6 +110,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _id_allocator_frontend(id_allocator_frontend)
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend)
+  , _feature_table(feature_table)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
@@ -477,7 +479,14 @@ tx_gateway_frontend::do_commit_tm_tx(
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
+    if (
+      expected_pid != model::unknown_pid
+      && !allow_init_tm_request_with_expected_pid()) {
+        co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
+    }
+
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
@@ -527,7 +536,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
 
     if (leader == _self) {
         co_return co_await init_tm_tx_locally(
-          tx_id, transaction_timeout_ms, timeout);
+          tx_id, transaction_timeout_ms, timeout, expected_pid);
     }
 
     vlog(
@@ -553,7 +562,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     vlog(txlog.trace, "processing name:init_tm_tx, tx_id:{}", tx_id);
 
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
@@ -578,11 +588,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
     auto reply = co_await container().invoke_on(
       shard.value(),
       _ssg,
-      [tx_id, transaction_timeout_ms, timeout](tx_gateway_frontend& self) {
+      [tx_id, transaction_timeout_ms, timeout, expected_pid](
+        tx_gateway_frontend& self) {
           return ss::with_gate(
-            self._gate, [tx_id, transaction_timeout_ms, timeout, &self] {
+            self._gate,
+            [tx_id, transaction_timeout_ms, timeout, expected_pid, &self] {
                 return self.do_init_tm_tx(
-                  tx_id, transaction_timeout_ms, timeout);
+                  tx_id, transaction_timeout_ms, timeout, expected_pid);
             });
       });
 
@@ -627,7 +639,8 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
 ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     auto partition = _partition_manager.local().get(model::tx_manager_ntp);
     if (!partition) {
         vlog(
@@ -648,15 +661,24 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
 
     return stm->read_lock().then(
-      [this, stm, tx_id, transaction_timeout_ms, timeout](
+      [this, stm, tx_id, transaction_timeout_ms, timeout, expected_pid](
         ss::basic_rwlock<>::holder unit) {
           return with(
                    stm,
                    tx_id,
                    "init_tm_tx",
-                   [this, stm, tx_id, transaction_timeout_ms, timeout]() {
+                   [this,
+                    stm,
+                    tx_id,
+                    transaction_timeout_ms,
+                    timeout,
+                    expected_pid]() {
                        return do_init_tm_tx(
-                         stm, tx_id, transaction_timeout_ms, timeout);
+                         stm,
+                         tx_id,
+                         transaction_timeout_ms,
+                         timeout,
+                         expected_pid);
                    })
             .finally([u = std::move(unit)] {});
       });
@@ -666,7 +688,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
         if (term_opt.error() == tm_stm::op_status::not_leader) {

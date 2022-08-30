@@ -1069,7 +1069,8 @@ void application::wire_up_redpanda_services() {
       controller.get(),
       std::ref(id_allocator_frontend),
       _rm_group_proxy.get(),
-      std::ref(rm_partition_frontend))
+      std::ref(rm_partition_frontend),
+      std::ref(_feature_table))
       .get();
     /**
      * Schedule partition stop before the transaction coordinator is asked to be
