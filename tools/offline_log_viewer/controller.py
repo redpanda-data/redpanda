@@ -268,9 +268,27 @@ def decode_config(record):
     return read_raft_config(rdr)
 
 
-def decode_user_command(record):
-    rdr = Reader(BytesIO(record.value))
-    k_rdr = Reader(BytesIO(record.key))
+def decode_user_command_serde(k_rdr: Reader, rdr: Reader):
+    cmd = {'type': rdr.read_int8()}
+    cmd['str_type'] = decode_user_cmd_type(cmd['type'])
+
+    if cmd['type'] == 5 or cmd['type'] == 7:
+        cmd['user'] = k_rdr.read_string()
+        cmd['cred'] = rdr.read_envelope(
+            lambda rdr, _: {
+                # obfuscate secrets
+                'salt': obfuscate_secret(rdr.read_iobuf().hex()),
+                'server_key': obfuscate_secret(rdr.read_iobuf().hex()),
+                'stored_key': obfuscate_secret(rdr.read_iobuf().hex()),
+                'iterations': rdr.read_int32(),
+            })
+    elif cmd['type'] == 6:
+        cmd['user'] = k_rdr.read_string()
+
+    return cmd
+
+
+def decode_user_command_adl(k_rdr: Reader, rdr: Reader):
     cmd = {}
     cmd['type'] = rdr.read_int8()
     cmd['str_type'] = decode_user_cmd_type(cmd['type'])
@@ -426,7 +444,8 @@ def decode_record(batch, record, bin_dump: bool):
         ret['data'] = decode_adl_or_serde(record, decode_topic_command_adl,
                                           decode_topic_command_serde)
     if batch.type == BatchType.user_management_cmd:
-        ret['data'] = decode_user_command(record)
+        ret['data'] = decode_adl_or_serde(record, decode_user_command_adl,
+                                          decode_user_command_serde)
     if batch.type == BatchType.acl_management_cmd:
         ret['data'] = decode_acl_command(record)
     if batch.type == BatchType.cluster_config_cmd:
