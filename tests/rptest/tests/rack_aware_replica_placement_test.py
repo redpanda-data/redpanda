@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+import os
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from ducktape.mark import ok_to_fail
@@ -150,6 +151,13 @@ class RackAwarePlacementTest(RedpandaTest):
         for topic in topics:
             self._validate_placement(topic, rack_layout, replication_factor)
 
+    def _partition_count(self):
+        # use smaller number of partitions for debug builds
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            return random.randint(20, 40)
+
+        return random.randint(200, 300)
+
     @cluster(num_nodes=6)
     @matrix(rack_layout=['ABCDEF', 'xxYYzz', 'ooooFF'])
     def test_rack_awareness_after_node_operations(self, rack_layout):
@@ -168,7 +176,7 @@ class RackAwarePlacementTest(RedpandaTest):
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)
 
-        topic = TopicSpec(partition_count=random.randint(200, 300),
+        topic = TopicSpec(partition_count=self._partition_count(),
                           replication_factor=replication_factor)
         self.client().create_topic(topic)
         self._validate_placement(topic, rack_layout, replication_factor)
