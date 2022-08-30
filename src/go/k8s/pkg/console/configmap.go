@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 
@@ -57,6 +58,11 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	// If old ConfigMaps can't be deleted for any reason, it will not continue reconciliation
 	// This check is not necessary but it's an additional safeguard to make sure ConfigMaps are not more than expected
 	if err := cm.isConfigMapDeleted(ctx); err != nil {
+		if errors.Is(err, ErrMultipleConfigMap) {
+			if deleteErr := cm.delete(ctx, ""); deleteErr != nil {
+				return fmt.Errorf("cannot delete all unused ConfigMaps: %w", deleteErr)
+			}
+		}
 		return fmt.Errorf("old ConfigMaps are not deleted: %w", err)
 	}
 
@@ -331,20 +337,38 @@ func (cm *ConfigMap) buildConfigCluster(
 // DeleteUnused makes sure that old unreferenced ConfigMaps are deleted
 // ConfigMaps are recreated upon Console update, old ones should be cleaned up
 func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
+	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
+		if err := cm.delete(ctx, ref.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cm *ConfigMap) delete(ctx context.Context, skip string) error {
 	cms := &corev1.ConfigMapList{}
 	if err := cm.List(ctx, cms, client.MatchingLabels(labels.ForConsole(cm.consoleobj)), client.InNamespace(cm.consoleobj.GetNamespace())); err != nil {
 		return err
 	}
 	for _, obj := range cms.Items { // nolint:gocritic // more readable, configmap list is few
-		if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil && ref.Name != obj.GetName() {
-			obj := obj
-			if err := cm.Delete(ctx, &obj); err != nil {
-				return err
-			}
+		if skip != "" && skip == obj.GetName() {
+			continue
+		}
+		obj := obj
+		if err := cm.Delete(ctx, &obj); err != nil {
+			return err
 		}
 	}
 	return nil
 }
+
+var (
+	// During reconciliation old ConfigMap might still be present so max expected is two
+	expectedConfigMapCount = 2
+
+	// ErrMultipleConfigMap error when attached ConfigMaps is greater than expected
+	ErrMultipleConfigMap = fmt.Errorf("attached ConfigMaps is greater than %d", expectedConfigMapCount)
+)
 
 // isConfigMapDeleted checks if attached ConfigMap is more than expected
 // This prevents the controller to create multiple ConfigMaps until old ones are garbage collected
@@ -353,10 +377,8 @@ func (cm *ConfigMap) isConfigMapDeleted(ctx context.Context) error {
 	if err := cm.List(ctx, cms, client.MatchingLabels(labels.ForConsole(cm.consoleobj)), client.InNamespace(cm.consoleobj.GetNamespace())); err != nil {
 		return err
 	}
-	// During reconciliation old ConfigMap might still be present so max expected is two
-	count := 2
-	if len(cms.Items) > count {
-		return fmt.Errorf("attached ConfigMaps is greater than %d", count) // nolint:goerr113 // no need to declare new error type
+	if len(cms.Items) > expectedConfigMapCount {
+		return ErrMultipleConfigMap
 	}
 	return nil
 }
