@@ -105,9 +105,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.producer.stop()
             self.consumer.stop()
         else:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=45,
-                                min_records=self.min_records)
+            self.run_validation(
+                enable_idempotence=False,
+                consumer_timeout_sec=self.consumer_timeout_seconds,
+                min_records=self.min_records)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
     # https://github.com/redpanda-data/redpanda/issues/6020
