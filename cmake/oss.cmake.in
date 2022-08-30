@@ -353,7 +353,7 @@ ExternalProject_Add(avro
 
 ExternalProject_Add(rapidjson
   GIT_REPOSITORY https://github.com/redpanda-data/rapidjson.git
-  GIT_TAG 00dbcf2c6e03c47d6c399338b6de060c71356464
+  GIT_TAG 27c3a8dc0e2c9218fe94986d249a12b5ed838f1d
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
