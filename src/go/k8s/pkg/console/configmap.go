@@ -386,7 +386,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 }
 
 func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
-	if l := clusterobj.InternalListener(); l != nil {
+	if l := clusterobj.InternalListener(); l != nil && !clusterobj.IsKafkaMutualTLSEnabled() {
 		brokers := []string{}
 		for _, host := range clusterobj.Status.Nodes.Internal {
 			port := fmt.Sprintf("%d", l.Port)

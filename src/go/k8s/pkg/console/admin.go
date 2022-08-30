@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -73,6 +74,24 @@ func NewKafkaAdmin(
 			Pass: string(secret.Data[corev1.BasicAuthPasswordKey]),
 		}
 		opts = append(opts, kgo.SASL(mech.AsSha256Mechanism()))
+	}
+
+	if cluster.IsKafkaMutualTLSEnabled() {
+		clientCert := &corev1.Secret{}
+		if err := cl.Get(ctx, types.NamespacedName{Namespace: cluster.GetNamespace(), Name: fmt.Sprintf("%s-operator-client", cluster.GetName())}, clientCert); err != nil {
+			return nil, fmt.Errorf("getting Kafka mTLS Secret: %w", err)
+		}
+		keypair, err := tls.X509KeyPair(clientCert.Data["tls.crt"], clientCert.Data["tls.key"])
+		if err != nil {
+			return nil, fmt.Errorf("loading Kafka mTLS key pair: %w", err)
+		}
+		opts = append(
+			opts,
+			kgo.DialTLSConfig(&tls.Config{
+				Certificates: []tls.Certificate{keypair},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+			}),
+		)
 	}
 
 	kclient, err := kgo.NewClient(opts...)
