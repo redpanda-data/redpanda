@@ -96,15 +96,6 @@ set(build_env
   "LDFLAGS=${ld_flags}"
 )
 
-# Don't include -std=c++20 for v8 build
-set(cxx_flags_v8 "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@")
-set(configure_env_v8
-  ${base_env}
-  CFLAGS=${c_flags}
-  CXXFLAGS=${cxx_flags_v8}
-  LDFLAGS=${ld_flags}
-)
-
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
     set(toolset clang)
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
@@ -289,53 +280,6 @@ ExternalProject_Add(ctre
     -DCTRE_BUILD_PACKAGE=OFF
     -DCTRE_BUILD_PACKAGE_DEB=OFF
     -DCTRE_BUILD_PACKAGE_RPM=OFF
-)
-
-if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
-  set(is_clang true)
-else()
-  set(is_clang false)
-endif()
-
-if (@CMAKE_BUILD_TYPE@ MATCHES "Debug")
-  set(v8_debug true)
-else()
-  set(v8_debug false)
-endif()
-
-set(v8_flags
-  "--args=v8_monolithic=true\
-  is_debug=${v8_debug}\
-  is_clang=${is_clang}\
-  use_gold=false\
-  clang_use_chrome_plugins=false\
-  treat_warnings_as_errors=false\
-  use_custom_libcxx=false\
-  use_glib=false\
-  use_sysroot=false\
-  v8_use_external_startup_data=false\
-  is_component_build=false\
-  v8_enable_pointer_compression=false\
-  custom_toolchain=\"//build/toolchain/linux/unbundle:default\"\
-  host_toolchain=\"//build/toolchain/linux/unbundle:default\"")
-ExternalProject_Add(v8
-INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-DOWNLOAD_COMMAND
-  COMMAND @DEPOT_TOOLS_DIR@/gclient configure https://github.com/v8/v8.git
-  COMMAND @DEPOT_TOOLS_DIR@/gclient sync -r e04bb9be8542b166c4dda1a77bfb1c46552afdd8
-PATCH_COMMAND ""
-CONFIGURE_COMMAND
-  COMMAND cd <SOURCE_DIR> # Is used for run gn inside v8 dir
-  COMMAND ${CMAKE_COMMAND} -E copy @DEPOT_TOOLS_DIR@/installed-gn/gn <SOURCE_DIR>/buildtools/linux64/gn
-  COMMAND ${CMAKE_COMMAND} -E env ${configure_env_v8}
-   @DEPOT_TOOLS_DIR@/gn gen <BINARY_DIR> --root=<SOURCE_DIR> ${v8_flags}
-  COMMAND @DEPOT_TOOLS_DIR@/gn desc <BINARY_DIR> --root=<SOURCE_DIR> //:v8_monolith --tree
-BUILD_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E env ${configure_env_v8}
-   ninja -C <BINARY_DIR> v8_monolith
-INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E copy <BINARY_DIR>/obj/libv8_monolith.a <INSTALL_DIR>/lib/libv8_monolith.a
-  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include <INSTALL_DIR>/include
 )
 
 ExternalProject_Add(avro
