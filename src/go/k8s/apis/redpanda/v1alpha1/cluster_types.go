@@ -807,6 +807,15 @@ func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
 	return res
 }
 
+// KafkaListener returns a KafkaAPI listener
+// It returns internal listener if available
+func (r *Cluster) KafkaListener() *KafkaAPI {
+	if l := r.InternalListener(); l != nil {
+		return l
+	}
+	return r.ExternalListener()
+}
+
 // AdminAPIInternal returns internal admin listener
 func (r *Cluster) AdminAPIInternal() *AdminAPI {
 	for _, el := range r.Spec.Configuration.AdminAPI {
@@ -1001,6 +1010,13 @@ func (k KafkaAPI) GetTLS() *TLSConfig {
 //nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetExternal() *ExternalConnectivityConfig {
 	return &k.External
+}
+
+// IsMutualTLSEnabled returns true if API requires client aut
+//
+//nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
+func (k KafkaAPI) IsMutualTLSEnabled() bool {
+	return k.TLS.Enabled && k.TLS.RequireClientAuth
 }
 
 // Admin API

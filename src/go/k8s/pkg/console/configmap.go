@@ -331,13 +331,18 @@ var (
 
 	SchemaRegistryTLSDir          = "/redpanda/schema-registry"
 	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
-	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
-	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
+	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSCertKey)
+	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSPrivateKeyKey)
 
 	ConnectTLSDir          = "/redpanda/connect"
 	ConnectTLSCaFilePath   = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "ca.crt")
-	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.crt")
-	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.key")
+	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSCertKey)
+	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSPrivateKeyKey)
+
+	KafkaTLSDir          = "/redpanda/kafka"
+	KafkaTLSCaFilePath   = fmt.Sprintf("%s/%s", KafkaTLSDir, "ca.crt")
+	KafkaTLSCertFilePath = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSCertKey)
+	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSPrivateKeyKey)
 )
 
 // SchemaRegistryTLSCa handles mounting CA cert
@@ -401,6 +406,17 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	}
 	k.Schema = schemaRegistry
 
+	tls := kafka.TLSConfig{Enabled: false}
+	if l := cm.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
+		tls = kafka.TLSConfig{
+			Enabled:      true,
+			CaFilepath:   DefaultCaFilePath,
+			CertFilepath: KafkaTLSCertFilePath,
+			KeyFilepath:  KafkaTLSKeyFilePath,
+		}
+	}
+	k.TLS = tls
+
 	sasl := kafka.SASLConfig{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled
 	sasl.SetDefaults()
@@ -418,7 +434,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 }
 
 func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
-	if l := clusterobj.InternalListener(); l != nil {
+	if l := clusterobj.KafkaListener(); !l.External.Enabled {
 		brokers := []string{}
 		for _, host := range clusterobj.Status.Nodes.Internal {
 			port := fmt.Sprintf("%d", l.Port)

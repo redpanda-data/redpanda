@@ -260,6 +260,7 @@ const (
 
 	tlsSchemaRegistryMountName = "tls-schema-registry"
 	tlsConnectMountName        = "tls-connect-%s"
+	tlsKafkaMountName          = "tls-kafka"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 
@@ -333,6 +334,17 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		})
 	}
 
+	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsKafkaMountName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: fmt.Sprintf("%s-operator-client", d.clusterobj.GetName()),
+				},
+			},
+		})
+	}
+
 	return volumes
 }
 
@@ -380,6 +392,14 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 			Name:      enterpriseGoogleSAMountName,
 			ReadOnly:  true,
 			MountPath: enterpriseGoogleSAMountPath,
+		})
+	}
+
+	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      tlsKafkaMountName,
+			ReadOnly:  true,
+			MountPath: KafkaTLSDir,
 		})
 	}
 
