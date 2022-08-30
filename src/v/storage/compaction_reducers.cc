@@ -73,7 +73,7 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
     ++_natural_index; // MOST important
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
-Roaring compaction_key_reducer::end_of_stream() {
+roaring::Roaring compaction_key_reducer::end_of_stream() {
     // TODO: optimization - detect if the index does not need compaction
     // by linear scan of natural_index from 0-N with no gaps.
     for (auto& e : _indices) {

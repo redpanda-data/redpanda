@@ -207,7 +207,7 @@ uint64_t segment_size_from_config(const ntp_config& ntpc) {
     }
 }
 
-ss::future<Roaring>
+ss::future<roaring::Roaring>
 natural_index_of_entries_to_keep(compacted_index_reader reader) {
     reader.reset();
     return reader.consume(compaction_key_reducer(), model::no_timeout);
@@ -215,7 +215,7 @@ natural_index_of_entries_to_keep(compacted_index_reader reader) {
 
 ss::future<> copy_filtered_entries(
   compacted_index_reader reader,
-  Roaring to_copy_index,
+  roaring::Roaring to_copy_index,
   compacted_index_writer writer) {
     return ss::do_with(
       std::move(writer),
@@ -242,13 +242,15 @@ static ss::future<> do_write_clean_compacted_index(
     const auto tmpname = std::filesystem::path(
       fmt::format("{}.staging", reader.filename()));
     return natural_index_of_entries_to_keep(reader)
-      .then([reader, cfg, tmpname, &resources](Roaring bitmap) -> ss::future<> {
-          auto truncating_writer = make_file_backed_compacted_index(
-            tmpname.string(), cfg.iopc, cfg.sanitize, true, resources);
+      .then(
+        [reader, cfg, tmpname, &resources](
+          roaring::Roaring bitmap) -> ss::future<> {
+            auto truncating_writer = make_file_backed_compacted_index(
+              tmpname.string(), cfg.iopc, cfg.sanitize, true, resources);
 
-          return copy_filtered_entries(
-            reader, std::move(bitmap), std::move(truncating_writer));
-      })
+            return copy_filtered_entries(
+              reader, std::move(bitmap), std::move(truncating_writer));
+        })
       .then(
         [old_name = tmpname, new_name = reader.filename()]() -> ss::future<> {
             // from glibc: If oldname is not a directory, then any

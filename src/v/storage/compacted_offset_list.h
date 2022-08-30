@@ -23,7 +23,7 @@ namespace storage::internal {
 class compacted_offset_list {
 public:
     compacted_offset_list(
-      model::offset base_offset, Roaring offset_list) noexcept
+      model::offset base_offset, roaring::Roaring offset_list) noexcept
       : _base(base_offset)
       , _to_keep(std::move(offset_list)) {}
     compacted_offset_list(compacted_offset_list&&) noexcept = default;
@@ -38,7 +38,7 @@ public:
 
 private:
     model::offset _base;
-    Roaring _to_keep;
+    roaring::Roaring _to_keep;
 
     friend std::ostream&
     operator<<(std::ostream& o, const compacted_offset_list& l) {
