@@ -234,9 +234,9 @@ def decode_record(batch, record, bin_dump: bool):
         ret['data'] = decode_user_command(record)
     if batch.type == BatchType.acl_management_cmd:
         ret['data'] = decode_acl_command(record)
-    if header.type == BatchType.cluster_config_cmd:
+    if batch.type == BatchType.cluster_config_cmd:
         ret['data'] = decode_config_command(record)
-    if header.type == BatchType.feature_update:
+    if batch.type == BatchType.feature_update:
         ret['data'] = decode_feature_command(record)
     if batch.type == BatchType.cluster_bootstrap_cmd:
         ret['data'] = decode_cluster_bootstrap_command(record)
