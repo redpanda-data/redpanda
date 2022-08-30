@@ -366,8 +366,8 @@ ExternalProject_Add(rapidjson
 )
 
 ExternalProject_Add(protobuf
-  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-  GIT_TAG v3.18.1
+  URL https://github.com/protocolbuffers/protobuf/releases/download/v21.5/protobuf-cpp-3.21.5.tar.gz
+  URL_MD5 240e69752162da336c5d1f09c7209fdb
   INSTALL_DIR   @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
