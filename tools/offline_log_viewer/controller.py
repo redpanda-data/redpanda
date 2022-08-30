@@ -174,6 +174,19 @@ def decode_feature_command(record):
     return cmd
 
 
+def decode_adl_or_serde(record, adl_fn, serde_fn):
+    rdr = Reader(BufferedReader(BytesIO(record.value)))
+    k_rdr = Reader(BytesIO(record.key))
+    either_adl_or_serde = rdr.peek_int8()
+    assert either_adl_or_serde >= -1, "unsupported serialization format"
+    if either_adl_or_serde == -1:
+        # serde encoding flag, consume it and proceed
+        rdr.skip(1)
+        return serde_fn(k_rdr, rdr)
+    else:
+        return adl_fn(k_rdr, rdr)
+
+
 def decode_record(batch, record):
     ret = {}
     header = batch.header
