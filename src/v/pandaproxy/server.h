@@ -12,8 +12,8 @@
 #pragma once
 
 #include "config/config_store.h"
-#include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/kafka_client_cache.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>

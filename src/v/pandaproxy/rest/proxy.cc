@@ -63,10 +63,14 @@ proxy::proxy(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
   size_t max_memory,
-  ss::sharded<kafka::client::client>& client)
+  ss::sharded<kafka::client::client>& client,
+  sharded_client_cache& client_cache,
+  cluster::controller* controller)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/mem")
   , _client(client)
+  , _client_cache(client_cache)
+  , _controller(controller)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
       "pandaproxy",

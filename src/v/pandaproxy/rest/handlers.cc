@@ -36,6 +36,8 @@
 #include "pandaproxy/reply.h"
 #include "pandaproxy/rest/configuration.h"
 #include "raft/types.h"
+#include "security/credential_store.h"
+#include "security/scram_algorithm.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
@@ -68,10 +70,83 @@ ss::shard_id consumer_shard(const kafka::group_id& g_id) {
     return jump_consistent_hash(hash, ss::smp::count);
 }
 
+credential_t do_authenticate(
+  ss::httpd::request const& req, security::credential_store const& cred_store) {
+    ss::sstring auth_hdr{req.get_header("authorization")};
+
+    if (auth_hdr.substr(0, 5) == "Basic") {
+        // Minimal length: Basic, a space, 1 or more bytes
+        if (auth_hdr.size() < 7) {
+            throw ss::httpd::bad_request_exception(
+              "Malformed Authorization header");
+        }
+
+        // Use the raw string for now. Base64
+        // encoding comes after PoC.
+        ss::sstring raw_str{auth_hdr.substr(6)};
+        auto colon = raw_str.find(":");
+        if (colon == ss::sstring::npos || colon == raw_str.size() - 1) {
+            vlog(plog.info, "Client auth failure: malformed 'user:password'");
+            throw ss::httpd::bad_request_exception(
+              "Malformed Authorization header");
+        }
+
+        security::credential_user username{raw_str.substr(0, colon)};
+        ss::sstring password{raw_str.substr(colon + 1)};
+
+        const auto cred_opt = cred_store.get<security::scram_credential>(
+          username);
+        if (!cred_opt.has_value()) {
+            // User not found
+            vlog(plog.warn, "AuthN failure: user '{}' not found", username);
+            throw ss::httpd::base_exception(
+              "Unauthorized", ss::httpd::reply::status_type::unauthorized);
+        } else {
+            const auto& cred = cred_opt.value();
+            bool is_valid = (
+              security::scram_sha256::validate_password(
+                password, cred.stored_key(), cred.salt(), cred.iterations())
+              || security::scram_sha512::validate_password(
+                password, cred.stored_key(), cred.salt(), cred.iterations()));
+            if (!is_valid) {
+                // User found, password doesn't match
+                vlog(
+                  plog.warn,
+                  "AuthN failure: user '{}' wrong password",
+                  username);
+                throw ss::httpd::base_exception(
+                  "Unauthorized", ss::httpd::reply::status_type::unauthorized);
+            } else {
+                vlog(plog.debug, "AuthN user {}", username);
+                return credential_t{username(), password};
+            }
+        }
+    } else if (!auth_hdr.empty()) {
+        throw ss::httpd::bad_request_exception(
+          "Unsupported Authorization method");
+    } else {
+        // No Authorization header: user is anonymous
+        throw ss::httpd::bad_request_exception("Missing Authorization header");
+    }
+}
+
+credential_t authenticate(server::request_t& rq) {
+    cluster::controller* controller = rq.service().controller();
+    if (controller == nullptr) {
+        // We are running outside of an environment with credentials
+        return credential_t{"ANON", "ANON"};
+    }
+
+    const auto& cred_store = controller->get_credential_store().local();
+    return do_authenticate(*rq.req, cred_store);
+}
+
 } // namespace
 
 ss::future<server::reply_t>
 get_brokers(server::request_t rq, server::reply_t rp) {
+    credential_t user = authenticate(rq);
+
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
@@ -81,28 +156,31 @@ get_brokers(server::request_t rq, server::reply_t rp) {
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
-    return rq.service()
-      .client()
-      .local()
-      .dispatch(make_metadata_req)
-      .then([res_fmt, rp = std::move(rp)](
-              kafka::metadata_request::api_type::response_type res) mutable {
-          json::get_brokers_res brokers;
-          brokers.ids.reserve(res.data.brokers.size());
 
-          std::transform(
-            res.data.brokers.begin(),
-            res.data.brokers.end(),
-            std::back_inserter(brokers.ids),
-            [](const kafka::metadata_response::broker& b) {
-                return b.node_id;
-            });
+    return rq.service().client_cache().find_or_create(user).then(
+      [res_fmt, &make_metadata_req, rp = std::move(rp)](
+        kafka_client_cache::client_ptr client) mutable {
+          return client->dispatch(make_metadata_req)
+            .then(
+              [res_fmt, rp = std::move(rp)](
+                kafka::metadata_request::api_type::response_type res) mutable {
+                  json::get_brokers_res brokers;
+                  brokers.ids.reserve(res.data.brokers.size());
 
-          auto json_rslt = ppj::rjson_serialize(brokers);
-          rp.rep->write_body("json", json_rslt);
+                  std::transform(
+                    res.data.brokers.begin(),
+                    res.data.brokers.end(),
+                    std::back_inserter(brokers.ids),
+                    [](const kafka::metadata_response::broker& b) {
+                        return b.node_id;
+                    });
 
-          rp.mime_type = res_fmt;
-          return std::move(rp);
+                  auto json_rslt = ppj::rjson_serialize(brokers);
+                  rp.rep->write_body("json", json_rslt);
+
+                  rp.mime_type = res_fmt;
+                  return std::move(rp);
+              });
       });
 }
 

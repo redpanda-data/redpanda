@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
+#include "cluster/controller.h"
+#include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
@@ -31,7 +32,9 @@ public:
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
       size_t max_memory,
-      ss::sharded<kafka::client::client>& client);
+      ss::sharded<kafka::client::client>& client,
+      sharded_client_cache& client_cache,
+      cluster::controller* controller);
 
     ss::future<> start();
     ss::future<> stop();
@@ -39,11 +42,15 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
+    sharded_client_cache& client_cache() { return _client_cache; }
+    cluster::controller* controller() { return _controller; }
 
 private:
     configuration _config;
     ssx::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
+    sharded_client_cache& _client_cache;
+    cluster::controller* _controller;
     ctx_server<proxy>::context_t _ctx;
     ctx_server<proxy> _server;
 };

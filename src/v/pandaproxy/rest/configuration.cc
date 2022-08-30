@@ -54,6 +54,12 @@ configuration::configuration()
       "consumer_instance_timeout_ms",
       "How long to wait for an idle consumer before removing it",
       {},
-      std::chrono::minutes{5}) {}
+      std::chrono::minutes{5})
+  , client_cache_size(
+      *this,
+      "client_cache_size",
+      "Size of the internal kafka client cache. Default 10.",
+      {},
+      10) {}
 
 } // namespace pandaproxy::rest
