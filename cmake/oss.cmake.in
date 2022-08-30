@@ -203,8 +203,8 @@ ExternalProject_Add(seastar
   DEPENDS ${default_depends} boost cryptopp)
 
 ExternalProject_Add(HdrHistogram
-  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.2.tar.gz
-  URL_MD5 95970dea64f1a7a8d199aeb9f7c15e60
+  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.5.tar.gz
+  URL_MD5 95f35abcaf7fae46e63a4dc4b6db81fd
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
