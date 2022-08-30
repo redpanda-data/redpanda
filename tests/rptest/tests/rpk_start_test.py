@@ -37,7 +37,7 @@ class RpkRedpandaStartTest(RedpandaTest):
         self.redpanda.start_node_with_rpk(node)
 
         # By default we start with developer_mode: true.
-        assert self.redpanda.search_log(
+        assert self.redpanda.search_log_any(
             "WARNING: This is a setup for development purposes only")
 
     @cluster(num_nodes=1)
@@ -67,7 +67,7 @@ class RpkRedpandaStartTest(RedpandaTest):
                 )
             assert cli_readback == expected_cluster_properties[p]
 
-        assert self.redpanda.search_log(
+        assert self.redpanda.search_log_any(
             "WARNING: This is a setup for development purposes only")
 
     @cluster(num_nodes=1)
@@ -95,11 +95,11 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # This is production, just checking that we are not setting
         # anything that makes rpk think that is a dev environment.
-        assert not self.redpanda.search_log(
+        assert not self.redpanda.search_log_any(
             "WARNING: This is a setup for development purposes only")
 
         # We execute checks when starting redpanda if production mode is enabled
-        assert self.redpanda.search_log("System check - PASSED")
+        assert self.redpanda.search_log_any("System check - PASSED")
 
     @cluster(num_nodes=1)
     def test_seastar_flag(self):
@@ -113,5 +113,5 @@ class RpkRedpandaStartTest(RedpandaTest):
         self.redpanda.start_node_with_rpk(node, "--abort-on-seastar-bad-alloc")
 
         # This was the original issue:
-        assert not self.redpanda.search_log(
+        assert not self.redpanda.search_log_any(
             f"\-\-abort-on-seastar-bad-alloc=true")

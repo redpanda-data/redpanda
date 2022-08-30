@@ -51,6 +51,7 @@ class AccessControlListTest(RedpandaTest):
         self.base_user_cert = None
         self.cluster_describe_user_cert = None
         self.admin_user_cert = None
+        self.admin = Admin(self.redpanda)
 
     def setUp(self):
         # Skip starting redpanda, so that test can explicitly start
@@ -117,16 +118,14 @@ class AccessControlListTest(RedpandaTest):
             # has successfully confirmed that redpanda failed to start.
             return
 
-        admin = Admin(self.redpanda)
-
         # base case user is not a superuser and has no configured ACLs
         if self.security.sasl_enabled() or enable_authz:
-            admin.create_user("base", self.password, self.algorithm)
+            self.admin.create_user("base", self.password, self.algorithm)
 
         # only grant cluster describe permission to user cluster_describe
         if self.security.sasl_enabled() or enable_authz:
-            admin.create_user("cluster_describe", self.password,
-                              self.algorithm)
+            self.admin.create_user("cluster_describe", self.password,
+                                   self.algorithm)
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
@@ -135,12 +134,12 @@ class AccessControlListTest(RedpandaTest):
         # an indirect way to check that ACLs (and users) have propagated
         # to all nodes before we proceed.
         checkpoint_user = "_test_checkpoint"
-        admin.create_user(checkpoint_user, "_password", self.algorithm)
+        self.admin.create_user(checkpoint_user, "_password", self.algorithm)
 
         # wait for users to propagate to nodes
         def auth_metadata_propagated():
             for node in self.redpanda.nodes:
-                users = admin.list_users(node=node)
+                users = self.admin.list_users(node=node)
                 if checkpoint_user not in users:
                     return False
                 elif self.security.sasl_enabled() or enable_authz:
@@ -183,6 +182,68 @@ class AccessControlListTest(RedpandaTest):
                        password=password,
                        sasl_mechanism=self.algorithm,
                        tls_cert=self.base_user_cert)
+
+    def check_permissions(self,
+                          pass_w_base_user: Optional[bool] = None,
+                          pass_w_cluster_user: Optional[bool] = None,
+                          pass_w_super_user: Optional[bool] = None,
+                          timeout_sec: int = 90,
+                          err_msg: str = '',
+                          repeat_check: int = 3):
+        # Check user permissions on the cluster
+        #
+        # :param pass_w_base_user: Should perms check pass with the base user?
+        # :param pass_w_cluster_user: Should perms check pass with the user with cluster describe perms?
+        # :param pass_w_super_user: Should perms check pass with the super user?
+        # :param err_msg: error message to pass to wait until
+        # :param repeat_check: how many times to repeat perms check?
+
+        # :raise:  TimeoutError if a perms check fails. Pass otherwise
+        def check_base_user_perms():
+            self.logger.debug(
+                f'list acls with base user, expect pass: {pass_w_base_user}')
+            try:
+                self.get_client("base").acl_list()
+                return pass_w_base_user
+            except ClusterAuthorizationError:
+                return not pass_w_base_user
+
+        def check_cluster_user_perms():
+            self.logger.debug(
+                f'list acls with cluster user, expect pass: {pass_w_cluster_user}'
+            )
+            try:
+                self.get_client("cluster_describe").acl_list()
+                return pass_w_cluster_user
+            except Exception:
+                return not pass_w_cluster_user
+
+        def check_super_user_perms():
+            self.logger.debug(
+                f'list acls with super user, expect pass: {pass_w_super_user}')
+            try:
+                self.get_super_client().acl_list()
+                return pass_w_super_user
+            except Exception:
+                return not pass_w_super_user
+
+        # Run a few times for good health. The target condition
+        # should be consistent
+        for _ in range(repeat_check):
+            if pass_w_base_user != None:
+                wait_until(check_base_user_perms,
+                           timeout_sec=timeout_sec,
+                           err_msg=f'base user: {err_msg}')
+
+            if pass_w_cluster_user != None:
+                wait_until(check_cluster_user_perms,
+                           timeout_sec=timeout_sec,
+                           err_msg=f'cluster user: {err_msg}')
+
+            if pass_w_super_user != None:
+                wait_until(check_super_user_perms,
+                           timeout_sec=timeout_sec,
+                           err_msg=f'super user: {err_msg}')
 
     '''
     The old config style has use_sasl at the top level, which enables
@@ -250,25 +311,10 @@ class AccessControlListTest(RedpandaTest):
         pass_w_authn_user = should_pass_w_authn_user(use_tls, use_sasl,
                                                      enable_authz, client_auth)
 
-        # run a few times for good health
-        for _ in range(2):
-            try:
-                self.get_client("base").acl_list()
-                assert pass_w_base_user, "list acls should have failed for base user"
-            except ClusterAuthorizationError:
-                assert not pass_w_base_user
-
-            try:
-                self.get_client("cluster_describe").acl_list()
-                assert pass_w_authn_user, "list acls should have failed for cluster user"
-            except ClusterAuthorizationError:
-                assert not pass_w_authn_user
-
-            try:
-                self.get_super_client().acl_list()
-                assert pass_w_authn_user, "list acls should have failed for super user"
-            except ClusterAuthorizationError:
-                assert not pass_w_authn_user
+        self.check_permissions(pass_w_base_user=pass_w_base_user,
+                               pass_w_cluster_user=pass_w_authn_user,
+                               pass_w_super_user=pass_w_authn_user,
+                               err_msg='check_permissions failed')
 
     # Test mtls identity
     # Principals in use:
@@ -307,31 +353,96 @@ class AccessControlListTest(RedpandaTest):
                              authn_method="mtls_identity",
                              principal_mapping_rules=rules)
 
-        # run a few times for good health
-        for _ in range(5):
+        self.check_permissions(pass_w_cluster_user=not fail,
+                               err_msg='check_permissions failed')
+
+    @cluster(num_nodes=3)
+    @parametrize(authn_method='sasl')
+    @parametrize(authn_method='mtls_identity')
+    def test_security_feature_migration(self, authn_method: str):
+        self.prepare_cluster(use_tls=True, use_sasl=True)
+
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed before migration')
+
+        # Change the authn method and initiate feature migration
+        # with a rolling restart. Do not recreate tls certs.
+        self.security.endpoint_authn_method = authn_method
+        self.redpanda.set_security_settings(self.security)
+        self.logger.debug('Initiating rolling restart')
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        # Check that the authn_method was set on all brokers
+        pattern = 'Started Kafka API server.*:{' + authn_method + '}.*'
+        assert self.redpanda.search_log_all(pattern)
+
+        # Once restart is complete, check permissions should succeed when authn_method
+        # is sasl because the system will validate against SASL/SCRAM creds already stored
+        # on the brokers. However, when authn_method is mtls_identiy, check permissions
+        # should fail because no principal mapping rule is set yet.
+        if authn_method == 'sasl':
+            self.check_permissions(
+                pass_w_base_user=False,
+                pass_w_cluster_user=True,
+                pass_w_super_user=True,
+                err_msg='check_permissions failed in intermediate state')
+        elif authn_method == 'mtls_identity':
             try:
-                self.get_client("cluster_describe").acl_list()
-                assert not fail, "list acls should have failed"
-            except ClusterAuthorizationError:
-                assert fail, "list acls should have succeeded"
+                self.check_permissions(pass_w_base_user=False,
+                                       pass_w_cluster_user=True,
+                                       pass_w_super_user=True,
+                                       timeout_sec=10)
+                raise RuntimeError(
+                    'check_perms should have failed in intermediate state')
+            except TimeoutError:
+                # Expect a timeout failure which comes from
+                # wait_until. The timeout is because check_perms
+                # should fail.
+                pass
+
+        # Change cluster wide configs for kafka_enable_authorization and
+        # kafka_mtls_principal_mapping_rules via the admin api.
+        # Do not expect a restart.
+        #
+        # NOTE:
+        # - kafka_enable_authorization overrides sasl in an authorization context
+        # - authentication_method overrides sasl in an authentication context
+        new_cfg = {'kafka_enable_authorization': True}
+        if authn_method == 'mtls_identity':
+            new_cfg['kafka_mtls_principal_mapping_rules'] = [
+                'RULE:.*CN=([^,]+).*/$1/', 'DEFAULT'
+            ]
+        self.redpanda.set_cluster_config(new_cfg)
+
+        # Check that new cluster configs are set
+        cluster_cfg = self.admin.get_cluster_config()
+        assert cluster_cfg['kafka_enable_authorization'] == new_cfg[
+            'kafka_enable_authorization']
+
+        if authn_method == 'mtls_identity':
+            assert new_cfg['kafka_mtls_principal_mapping_rules'][
+                0] in cluster_cfg['kafka_mtls_principal_mapping_rules']
+            assert new_cfg['kafka_mtls_principal_mapping_rules'][
+                1] in cluster_cfg['kafka_mtls_principal_mapping_rules']
+        else:
+            assert cluster_cfg['kafka_mtls_principal_mapping_rules'] == None
+
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed after migration')
 
 
 class AccessControlListTestUpgrade(AccessControlListTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.installer = self.redpanda._installer
-
-    def check_permissions(self):
-        # run a few times for good health
-        for _ in range(5):
-            try:
-                self.get_client("base").acl_list()
-                assert False, "list acls should have failed"
-            except ClusterAuthorizationError:
-                pass
-
-            self.get_client("cluster_describe").acl_list()
-            self.get_super_client().acl_list()
 
     # Test that a cluster configured with enable_sasl can be upgraded
     # from v22.1.x, and still have sasl enabled. See PR 5292.
@@ -345,11 +456,19 @@ class AccessControlListTestUpgrade(AccessControlListTest):
                              authn_method=None,
                              principal_mapping_rules=None)
 
-        self.check_permissions()
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed before upgrade')
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.3" not in unique_versions
 
-        self.check_permissions()
+        self.check_permissions(
+            pass_w_base_user=False,
+            pass_w_cluster_user=True,
+            pass_w_super_user=True,
+            err_msg='check_permissions failed after upgrade')

@@ -2051,13 +2051,18 @@ class RedpandaService(Service):
             self._saved_executable = True
             self._context.log_collect['executable', self] = True
 
-    def search_log(self, pattern):
-        """
-        Test helper for grepping the redpanda log
+    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
+        # Test helper for grepping the redpanda log.
+        # The design follows python's built-in any() function.
+        # https://docs.python.org/3/library/functions.html#any
 
-        :return:  true if any instances of `pattern` found
-        """
-        for node in self.nodes:
+        # :param pattern: the string to search for
+        # :param nodes: a list of nodes to run grep on
+        # :return:  true if any instances of `pattern` found
+        if nodes is None:
+            nodes = self.nodes
+
+        for node in nodes:
             for line in node.account.ssh_capture(
                     f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
@@ -2068,3 +2073,28 @@ class RedpandaService(Service):
 
         # Fall through, no matches
         return False
+
+    def search_log_all(self, pattern: str, nodes: list[ClusterNode] = None):
+        # Test helper for grepping the redpanda log
+        # The design follows python's  built-in all() function.
+        # https://docs.python.org/3/library/functions.html#all
+
+        # :param pattern: the string to search for
+        # :param nodes: a list of nodes to run grep on
+        # :return:  true if `pattern` is found in all nodes
+        if nodes is None:
+            nodes = self.nodes
+
+        for node in nodes:
+            exit_status = node.account.ssh(
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE}",
+                allow_fail=True)
+
+            # Match not found
+            if exit_status != 0:
+                self.logger.debug(
+                    f"Did not find {pattern} on node {node.name}: {line}")
+                return False
+
+        # Fall through, match on all nodes
+        return True

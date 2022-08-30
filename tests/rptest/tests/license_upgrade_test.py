@@ -64,7 +64,7 @@ class UpgradeToLicenseChecks(RedpandaTest):
         assert 'v22.1.4' in unique_versions, unique_versions
 
         # These logs can't exist in v22.1.4 but double check anyway...
-        assert self.redpanda.search_log("Enterprise feature(s).*") is False
+        assert self.redpanda.search_log_any("Enterprise feature(s).*") is False
 
         # Update one node to newest version
         self.installer.install([self.redpanda.nodes[0]],
@@ -82,7 +82,7 @@ class UpgradeToLicenseChecks(RedpandaTest):
         # Ensure the log is not written, if the fiber was enabled a log should
         # appear within one interval of the license check fiber
         time.sleep(UpgradeToLicenseChecks.LICENSE_CHECK_INTERVAL_SEC * 2)
-        assert self.redpanda.search_log("Enterprise feature(s).*") is False
+        assert self.redpanda.search_log_any("Enterprise feature(s).*") is False
 
         # Install new version on all nodes
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -100,7 +100,7 @@ class UpgradeToLicenseChecks(RedpandaTest):
 
         # Assert that the log was found
         wait_until(
-            lambda: self.redpanda.search_log("Enterprise feature(s).*"),
+            lambda: self.redpanda.search_log_any("Enterprise feature(s).*"),
             timeout_sec=(UpgradeToLicenseChecks.LICENSE_CHECK_INTERVAL_SEC * 4)
             * len(self.redpanda.nodes),
             backoff_sec=1,

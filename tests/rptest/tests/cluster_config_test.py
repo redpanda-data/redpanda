@@ -65,7 +65,7 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(
             [node], override_cfg_params={'delete_retention_ms': '1234'})
         assert admin.get_cluster_config()['delete_retention_ms'] == 9876
-        assert self.redpanda.search_log(
+        assert self.redpanda.search_log_any(
             "Ignoring value for 'delete_retention_ms'")
 
 
@@ -990,11 +990,11 @@ class ClusterConfigTest(RedpandaTest):
             self._wait_for_version_sync(patch_result['config_version'])
 
             # Check value was/was not printed to log while applying
-            assert self.redpanda.search_log(value) is expect_log
+            assert self.redpanda.search_log_any(value) is expect_log
 
             # Check we do/don't print on next startup
             self.redpanda.restart_nodes(self.redpanda.nodes)
-            assert self.redpanda.search_log(value) is expect_log
+            assert self.redpanda.search_log_any(value) is expect_log
 
         # Default valued secrets are still shown.
         self._check_value_everywhere("cloud_storage_secret_key", None)
