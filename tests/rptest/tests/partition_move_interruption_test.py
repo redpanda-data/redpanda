@@ -1,4 +1,5 @@
 from copyreg import dispatch_table
+import os
 import random
 from urllib.error import HTTPError
 from numpy import partition
@@ -42,11 +43,16 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             **kwargs)
 
         self._ctx = ctx
-        self.throughput = 10000
         self.moves = 10
-        self.min_records = 100000
         self.partition_count = 20
         self.consumer_timeout_seconds = 90
+
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.throughput = 1000
+            self.min_records = 10000
+        else:
+            self.throughput = 10000
+            self.min_records = 100000
 
     def _random_move_and_cancel(self, unclean_abort):
         metadata = self.client().describe_topics()
@@ -64,7 +70,6 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5887
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
@@ -105,9 +110,10 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.producer.stop()
             self.consumer.stop()
         else:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=45,
-                                min_records=self.min_records)
+            self.run_validation(
+                enable_idempotence=False,
+                consumer_timeout_sec=self.consumer_timeout_seconds,
+                min_records=self.min_records)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
     # https://github.com/redpanda-data/redpanda/issues/6020
