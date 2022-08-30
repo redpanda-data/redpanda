@@ -86,12 +86,9 @@ CHAOS_LOG_ALLOW_LIST = [
     # e.g. cluster - controller_backend.cc:466 - exception while executing partition operation: {type: update_finished, ntp: {kafka/test-topic-1944-1639161306808363/1}, offset: 413, new_assignment: { id: 1, group_id: 65, replicas: {{node_id: 3, shard: 2}, {node_id: 4, shard: 2}, {node_id: 1, shard: 0}} }, previous_assignment: {nullopt}} - std::__1::__fs::filesystem::filesystem_error (error system:39, filesystem error: remove failed: Directory not empty [/var/lib/redpanda/data/kafka/test-topic-1944-1639161306808363])
     re.compile("cluster - .*Directory not empty"),
     re.compile("r/heartbeat - .*cannot find consensus group"),
-
-    # rpc - Service handler threw an exception: std::exception (std::exception)
-    re.compile("rpc - Service handler threw an exception: std"),
-
-    # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
-    re.compile("rpc - Service handler threw an exception: seastar")
+    re.compile(
+        "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
+    ),
 ]
 
 
