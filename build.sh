@@ -25,16 +25,16 @@ go=$(which go)
 
 # Change Debug via  -DCMAKE_BUILD_TYPE=Debug
 cmake -DCMAKE_BUILD_TYPE=Release \
-  -B$root/build \
-  -H$root \
+  -B"$root"/build \
+  -H"$root" \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
-  -DCMAKE_GO_BINARY=$(go) \
+  -DCMAKE_GO_BINARY="$go" \
   "$@"
 
-(cd $root/build && ninja)
+(cd "$root"/build && ninja)
 
 ccache -s # print the stats after the build
 
-(cd $root/build && ctest --output-on-failure -R _rpunit)
+(cd "$root"/build && ctest --output-on-failure -R _rpunit)
