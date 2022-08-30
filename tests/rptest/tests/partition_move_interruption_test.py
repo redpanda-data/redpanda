@@ -1,4 +1,5 @@
 from copyreg import dispatch_table
+import os
 import random
 from urllib.error import HTTPError
 from numpy import partition
@@ -42,11 +43,16 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             **kwargs)
 
         self._ctx = ctx
-        self.throughput = 10000
         self.moves = 10
-        self.min_records = 100000
         self.partition_count = 20
         self.consumer_timeout_seconds = 90
+
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            self.throughput = 1000
+            self.min_records = 10000
+        else:
+            self.throughput = 10000
+            self.min_records = 100000
 
     def _random_move_and_cancel(self, unclean_abort):
         metadata = self.client().describe_topics()
