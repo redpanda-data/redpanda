@@ -839,23 +839,6 @@ void application::wire_up_redpanda_services() {
         }
     });
 
-    _deferred.emplace_back([this] {
-        partition_manager
-          .invoke_on_all(&cluster::partition_manager::stop_partitions)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        // Prior to shutting down partition manager (which clears out all the
-        // raft `consensus` instances), stop processing heartbeats.  Otherwise
-        // we are receiving heartbeats that we can't match up to raft groups.
-        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        cp_partition_manager
-          .invoke_on_all(&coproc::partition_manager::stop_partitions)
-          .get();
-    });
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -1082,7 +1065,28 @@ void application::wire_up_redpanda_services() {
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend))
       .get();
-
+    /**
+     * Schedule partition stop before the transaction coordinator is asked to be
+     * stopped. This will interrupt all ongoing replication requests allowing
+     * all high level components to shutdown cleanly.
+     */
+    _deferred.emplace_back([this] {
+        partition_manager
+          .invoke_on_all(&cluster::partition_manager::stop_partitions)
+          .get();
+    });
+    _deferred.emplace_back([this] {
+        // Prior to shutting down partition manager (which clears out all the
+        // raft `consensus` instances), stop processing heartbeats.  Otherwise
+        // we are receiving heartbeats that we can't match up to raft groups.
+        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    });
+    _deferred.emplace_back([this] {
+        cp_partition_manager
+          .invoke_on_all(&coproc::partition_manager::stop_partitions)
+          .get();
+    });
     _kafka_conn_quotas
       .start([]() {
           return net::conn_quota_config{
