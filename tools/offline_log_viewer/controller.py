@@ -438,9 +438,42 @@ def read_config_kv(reader):
     return (k, v)
 
 
-def decode_config_command(record):
-    rdr = Reader(BytesIO(record.value))
-    k_rdr = Reader(BytesIO(record.key))
+def decode_config_command_serde(k_rdr: Reader, rdr: Reader):
+    cmd = {}
+    cmd['type'] = rdr.read_int8()
+    if cmd['type'] == 0:
+        cmd['type_name'] = 'config_delta'
+        cmd['version'] = k_rdr.read_int64()
+        cmd |= rdr.read_envelope(
+            lambda rdr, _: {
+                'upsert':
+                rdr.read_serde_vector(lambda rdr: rdr.read_envelope(
+                    lambda rdr, _: {
+                        'k': rdr.read_string(),
+                        'v': rdr.read_string()
+                    })),
+                'remove':
+                rdr.read_serde_vector(Reader.read_string),
+            })
+    elif cmd['type'] == 1:
+        cmd['type_name'] = 'config_status'
+        cmd['node_id'] = k_rdr.read_int32()
+        cmd |= rdr.read_envelope(
+            lambda rdr, _: {
+                'status':
+                rdr.read_envelope(
+                    lambda rdr, _: {
+                        'node': rdr.read_int32(),
+                        'version': rdr.read_int64(),
+                        'restart': rdr.read_bool(),
+                        'unknown': rdr.read_serde_vector(Reader.read_string),
+                        'invalid': rdr.read_serde_vector(Reader.read_string),
+                    }),
+            })
+    return cmd
+
+
+def decode_config_command_adl(k_rdr: Reader, rdr: Reader):
     cmd = {}
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
@@ -556,7 +589,8 @@ def decode_record(batch, record, bin_dump: bool):
         ret['data'] = decode_adl_or_serde(record, decode_acl_command_adl,
                                           decode_acl_command_serde)
     if batch.type == BatchType.cluster_config_cmd:
-        ret['data'] = decode_config_command(record)
+        ret['data'] = decode_adl_or_serde(record, decode_config_command_adl,
+                                          decode_config_command_serde)
     if batch.type == BatchType.feature_update:
         ret['data'] = decode_feature_command(record)
     if batch.type == BatchType.cluster_bootstrap_cmd:
