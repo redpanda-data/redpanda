@@ -54,6 +54,9 @@ class Reader:
     def read_uint64(self):
         return struct.unpack("<Q", self.stream.read(8))[0]
 
+    def read_serde_enum(self):
+        return self.read_int32()
+
     def read_iobuf(self):
         len = self.read_int32()
         return self.stream.read(len)
@@ -78,9 +81,22 @@ class Reader:
             ret.append(type_read(self))
         return ret
 
-    def read_envelope(self):
-        data = self.read_bytes(SERDE_ENVELOPE_SIZE)
-        return SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, data))
+    def read_envelope(self, type_read=None, max_version=0):
+        header = self.read_bytes(SERDE_ENVELOPE_SIZE)
+        envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
+        if type_read is not None:
+            if envelope.version <= max_version:
+                return {
+                    'envelope': envelope
+                } | type_read(self, envelope.version)
+            else:
+                return {
+                    'error': {
+                        'max_supported_version': max_version,
+                        'envelope': envelope
+                    }
+                }
+        return envelope
 
     def read_serde_vector(self, type_read):
         sz = self.read_uint32()
@@ -105,6 +121,10 @@ class Reader:
 
     def peek(self, length):
         return self.stream.peek(length)
+
+    def peek_int8(self):
+        # peek returns the whole memory buffer, slice is needed to conform to struct format string
+        return struct.unpack('<b', self.stream.peek(1)[:1])[0]
 
     def skip(self, length):
         self.stream.read(length)
