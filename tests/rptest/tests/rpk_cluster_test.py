@@ -250,7 +250,7 @@ class RpkClusterTest(RedpandaTest):
             return
 
         with expect_exception(RpkException,
-                              lambda e: "Internal Server Error" in str(e)):
+                              lambda e: "License is malformed" in str(e)):
             with tempfile.NamedTemporaryFile() as tf:
                 tf.write(bytes(license + 'r', 'UTF-8'))
                 tf.seek(0)
