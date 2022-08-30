@@ -35,9 +35,9 @@ class DescribeTopicsTest(RedpandaTest):
             # bulk describe
             output = client.describe_topics()
             for topic in topics:
-                if f"partition_count={topic.partition_count}" not in output:
+                if f"PartitionCount: {topic.partition_count}" not in output:
                     return False
-                if f"replication_factor={topic.replication_factor}" not in output:
+                if f"ReplicationFactor: {topic.replication_factor}" not in output:
                     return False
             # and targetted topic describe
             topics_described = [
