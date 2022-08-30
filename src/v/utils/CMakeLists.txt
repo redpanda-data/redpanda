@@ -12,7 +12,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
-    Base64::base64
+    aklomp::base64
     v::rphashing
     v::rprandom
     v::bytes)

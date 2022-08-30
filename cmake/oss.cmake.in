@@ -258,18 +258,14 @@ ExternalProject_Add(alien_thread
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
 
 ExternalProject_Add(base64_ext
-  GIT_REPOSITORY https://github.com/redpanda-data/base64
-  GIT_TAG eaebee8
+  GIT_REPOSITORY https://github.com/aklomp/base64.git
+  GIT_TAG v0.5.0
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
-    make ${build_env} lib/libbase64.o -j${build_concurrency_factor}
-  BUILD_IN_SOURCE true
-  INSTALL_COMMAND
-    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/libbase64.h <INSTALL_DIR>/include/libbase64.h
-    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/lib/libbase64.o <INSTALL_DIR>/lib/libbase64.o)
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    ${BASE64_CMAKE_ARGS})
 
 ExternalProject_Add(kafka-codegen-pex
   DOWNLOAD_COMMAND ""
