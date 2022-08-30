@@ -290,6 +290,11 @@ var (
 	ConnectTLSCaFilePath   = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "ca.crt")
 	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.crt")
 	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.key")
+
+	KafkaTLSDir          = "/redpanda/kafka"
+	KafkaTLSCaFilePath   = fmt.Sprintf("%s/%s", KafkaTLSDir, "ca.crt")
+	KafkaTLSCertFilePath = fmt.Sprintf("%s/%s", KafkaTLSDir, "tls.crt")
+	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, "tls.key")
 )
 
 // SchemaRegistryTLSCa handles mounting CA cert
@@ -352,6 +357,17 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
 	}
 	k.Schema = schemaRegistry
+
+	tls := kafka.TLSConfig{Enabled: false}
+	if yes := cm.clusterobj.IsKafkaMutualTLSEnabled(); yes {
+		tls = kafka.TLSConfig{
+			Enabled:      yes,
+			CaFilepath:   DefaultCaFilePath,
+			CertFilepath: KafkaTLSCertFilePath,
+			KeyFilepath:  KafkaTLSKeyFilePath,
+		}
+	}
+	k.TLS = tls
 
 	sasl := kafka.SASLConfig{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled

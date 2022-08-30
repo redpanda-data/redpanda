@@ -737,6 +737,16 @@ func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
 	return res
 }
 
+// IsKafkaMutualTLSEnabled returns true if Kafka is enabled with mutual TLS
+func (r *Cluster) IsKafkaMutualTLSEnabled() bool {
+	for _, el := range r.KafkaTLSListeners() {
+		if el.TLS.RequireClientAuth {
+			return true
+		}
+	}
+	return false
+}
+
 // AdminAPIInternal returns internal admin listener
 func (r *Cluster) AdminAPIInternal() *AdminAPI {
 	for _, el := range r.Spec.Configuration.AdminAPI {
