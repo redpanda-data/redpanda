@@ -8,13 +8,15 @@
 # by the Apache License, Version 2.0
 import re
 
-from typing import Optional
-from ducktape.utils.util import wait_until
+from typing import Optional, Callable
+from rptest.util import wait_until_result
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import TimeoutError
 
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import MetricSamples, MetricsEndpoint
@@ -28,6 +30,10 @@ class ClusterMetricsTest(RedpandaTest):
         "cluster_unavailable_partitions",
     ]
 
+    def __init__(self, test_context):
+        super(ClusterMetricsTest, self).__init__(test_context=test_context)
+        self.admin = Admin(self.redpanda)
+
     def _stop_controller_node(self) -> ClusterNode:
         """
         Stop the current controller node
@@ -37,49 +43,52 @@ class ClusterMetricsTest(RedpandaTest):
 
         return prev
 
-    def _wait_until_controller_leader_is_stable(self):
+    def _wait_until_controller_leader_is_stable(
+            self,
+            hosts: Optional[list[str]] = None,
+            check: Callable[[int],
+                            bool] = lambda node_id: True) -> ClusterNode:
+        node_id = self.admin.await_stable_leader(topic="controller",
+                                                 partition=0,
+                                                 namespace="redpanda",
+                                                 timeout_s=30,
+                                                 check=check,
+                                                 hosts=hosts)
+
+        return self.redpanda.get_node(node_id)
+
+    def _restart_controller_node(self) -> ClusterNode:
         """
-        Wait for the controller leader to stabilise.
-        This helper considers the leader stable if the same node
-        is reported by two consecutive admin API queries.
-        """
-        prev = None
-
-        def controller_stable():
-            nonlocal prev
-            curr = self.redpanda.controller()
-
-            if prev != curr:
-                prev = curr
-                return False
-            else:
-                return True
-
-        wait_until(
-            controller_stable,
-            timeout_sec=10,
-            backoff_sec=2,
-            err_msg="Controller leader did not stabilise",
-        )
-
-    def _failover(self):
-        """
-        Stop current controller node and wait for failover
+        Stop and re-start the current controller node. After stopping,
+        wait for controller leadership to migrate to a new node before
+        proceeding with the re-start.
         """
         prev = self._stop_controller_node()
 
-        def new_controller_elected():
-            curr = self.redpanda.controller()
-            return curr and curr != prev
+        started_hosts = [
+            n.account.hostname for n in self.redpanda.started_nodes()
+        ]
 
-        wait_until(
-            new_controller_elected,
-            timeout_sec=20,
-            backoff_sec=1,
-            err_msg="Controller did not failover",
-        )
+        self._wait_until_controller_leader_is_stable(
+            hosts=started_hosts,
+            check=lambda node_id: node_id != self.redpanda.idx(prev))
 
-        return prev
+        self.redpanda.start_node(prev)
+        return self._wait_until_controller_leader_is_stable()
+
+    def _failover(self) -> ClusterNode:
+        """
+        Stop current controller node and wait for failover.
+        Returns the new stable controller node.
+        """
+        prev = self._stop_controller_node()
+
+        started_hosts = [
+            n.account.hostname for n in self.redpanda.started_nodes()
+        ]
+        return self._wait_until_controller_leader_is_stable(
+            hosts=started_hosts,
+            check=lambda node_id: node_id != self.redpanda.idx(prev))
 
     def _get_value_from_samples(self, samples: MetricSamples):
         """
@@ -89,49 +98,59 @@ class ClusterMetricsTest(RedpandaTest):
         assert len(samples.samples) == 1
         return samples.samples[0].value
 
-    def _get_cluster_metrics(
-            self, node: ClusterNode) -> Optional[dict[str, MetricSamples]]:
+    def _assert_cluster_metrics(
+            self, node: ClusterNode,
+            expect_metrics: bool) -> Optional[dict[str, MetricSamples]]:
         """
-        Get all the cluster level metrics exposed by a specified
-        node in the cluster.
+        Assert that cluster metrics are reported (or not) from the specified node.
         """
-        def get_metrics_from_node(pattern: str):
-            return self.redpanda.metrics_sample(pattern, [node],
-                                                MetricsEndpoint.PUBLIC_METRICS)
+        def get_metrics_from_node_sync(patterns: list[str]):
+            samples = self.redpanda.metrics_samples(
+                patterns, [node], MetricsEndpoint.PUBLIC_METRICS)
+            success = samples is not None
+            return success, samples
 
-        metrics_samples = {}
-        for name in ClusterMetricsTest.cluster_level_metrics:
-            samples = get_metrics_from_node(name)
-            if samples is not None:
-                metrics_samples[name] = samples
+        def get_metrics_from_node(patterns: list[str]):
+            metrics = None
 
-        if not metrics_samples:
-            return None
+            try:
+                metrics = wait_until_result(
+                    lambda: get_metrics_from_node_sync(patterns),
+                    timeout_sec=2,
+                    backoff_sec=.1)
+            except TimeoutError as e:
+                if expect_metrics:
+                    raise e
+
+            return metrics
+
+        metrics_samples = get_metrics_from_node(
+            ClusterMetricsTest.cluster_level_metrics)
+
+        if expect_metrics:
+            assert metrics_samples, f"Missing expected metrics from node {node.name}"
         else:
-            return metrics_samples
+            assert not metrics_samples, f"Received unexpected metrics from node {node.name}"
 
-    def _assert_reported_by_controller(self):
+    def _assert_reported_by_controller(
+            self, current_controller: Optional[ClusterNode]):
         """
         Enforce the fact that only the controller leader should
         report cluster level metrics. If there's no leader, no
         node should report these metrics.
         """
-        current_controller = self.redpanda.controller()
-        for node in self.redpanda.started_nodes():
-            metrics = self._get_cluster_metrics(node)
 
-            if current_controller is None:
-                assert (
-                    metrics is None
-                ), f"Node {node.name} reported cluster metrics, but the cluster has no leader"
-            elif current_controller == node:
-                assert (
-                    metrics is not None
-                ), f"Node {node.name} is controller leader, but did not report cluster metrics"
-            else:
-                assert (
-                    metrics is None
-                ), f"Node {node.name} is not controller leader, but it reported cluster metrics"
+        # Validate the controller metrics first.
+        if current_controller is not None:
+            self._assert_cluster_metrics(current_controller,
+                                         expect_metrics=True)
+
+        # Make sure that followers are not reporting cluster metrics.
+        for node in self.redpanda.started_nodes():
+            if node == current_controller:
+                continue
+
+            self._assert_cluster_metrics(node, expect_metrics=False)
 
     @cluster(num_nodes=3)
     def cluster_metrics_reported_only_by_leader_test(self):
@@ -140,27 +159,22 @@ class ClusterMetricsTest(RedpandaTest):
         level metrics at any given time.
         """
         # Assert metrics are reported once in a fresh, three node cluster
-        self._wait_until_controller_leader_is_stable()
-        self._assert_reported_by_controller()
+        controller = self._wait_until_controller_leader_is_stable()
+        self._assert_reported_by_controller(controller)
 
         # Restart the controller node and assert.
-        controller = self.redpanda.controller()
-        self.redpanda.restart_nodes([controller],
-                                    start_timeout=10,
-                                    stop_timeout=10)
-        self._wait_until_controller_leader_is_stable()
-        self._assert_reported_by_controller()
+        controller = self._restart_controller_node()
+        self._assert_reported_by_controller(controller)
 
         # Stop the controller node and assert.
-        self._failover()
-        self._assert_reported_by_controller()
+        controller = self._failover()
+        self._assert_reported_by_controller(controller)
 
         # Stop the controller node and assert again.
         # This time the metrics should not be reported as a controller
         # couldn't be elected due to lack of quorum.
         self._stop_controller_node()
-        self._wait_until_controller_leader_is_stable()
-        self._assert_reported_by_controller()
+        self._assert_reported_by_controller(None)
 
     @cluster(num_nodes=3)
     def cluster_metrics_correctness_test(self):
@@ -168,14 +182,13 @@ class ClusterMetricsTest(RedpandaTest):
         Test that the cluster level metrics move in the expected way
         after creating a topic.
         """
-        self._wait_until_controller_leader_is_stable()
-        self._assert_reported_by_controller()
+        controller = self._wait_until_controller_leader_is_stable()
+        self._assert_reported_by_controller(controller)
 
-        controller_node = self.redpanda.controller()
         cluster_metrics = MetricCheck(
             self.logger,
             self.redpanda,
-            controller_node,
+            controller,
             re.compile("redpanda_cluster_.*"),
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
 
@@ -199,8 +212,8 @@ class ClusterMetricsTest(RedpandaTest):
         """
         # 'disable_public_metrics' defaults to false so cluster metrics
         # are expected
-        self._wait_until_controller_leader_is_stable()
-        self._assert_reported_by_controller()
+        controller = self._wait_until_controller_leader_is_stable()
+        self._assert_reported_by_controller(controller)
 
         self.redpanda.set_cluster_config({"disable_public_metrics": "true"},
                                          expect_restart=True)
@@ -208,6 +221,5 @@ class ClusterMetricsTest(RedpandaTest):
         # The 'public_metrics' endpoint that serves cluster level
         # metrics should not return anything when
         # 'disable_public_metrics' == true
-        self._wait_until_controller_leader_is_stable()
-        cluster_metrics = self._get_cluster_metrics(self.redpanda.controller())
-        assert cluster_metrics is None
+        controller = self._wait_until_controller_leader_is_stable()
+        self._assert_cluster_metrics(controller, expect_metrics=False)

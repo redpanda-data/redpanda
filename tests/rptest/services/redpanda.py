@@ -584,7 +584,7 @@ class RedpandaService(Service):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
     def set_extra_node_conf(self, node, conf):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         self._extra_node_conf[node] = conf
 
     def set_security_settings(self, settings):
@@ -1196,7 +1196,7 @@ class RedpandaService(Service):
                 "Nodes report restart required but expect_restart is False")
 
     def monitor_log(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def raise_on_crash(self):
@@ -1818,12 +1818,12 @@ class RedpandaService(Service):
         }
 
     def broker_address(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         cfg = self._node_configs[node]
         return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def admin_endpoint(self, node):
-        assert node in self.nodes
+        assert node in self.nodes, f"where node is {node.name}"
         return f"{node.account.hostname}:9644"
 
     def admin_endpoints_list(self):
@@ -1851,7 +1851,7 @@ class RedpandaService(Service):
     def metrics(self,
                 node,
                 metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        assert node in self._started
+        assert node in self._started, f"where node is {node.name}"
 
         metrics_endpoint = ("/metrics" if metrics_endpoint
                             == MetricsEndpoint.METRICS else "/public_metrics")
@@ -1859,6 +1859,27 @@ class RedpandaService(Service):
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
+
+    def _extract_samples(self, metrics, sample_pattern: str,
+                         node: ClusterNode) -> list[MetricSamples]:
+        found_sample = None
+        sample_values = []
+
+        for family in metrics:
+            for sample in family.samples:
+                if sample_pattern not in sample.name:
+                    continue
+                if not found_sample:
+                    found_sample = (family.name, sample.name)
+                if found_sample != (family.name, sample.name):
+                    raise Exception(
+                        f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                    )
+                sample_values.append(
+                    MetricSample(family.name, sample.name, node, sample.value,
+                                 sample.labels))
+
+        return sample_values
 
     def metrics_sample(
         self,
@@ -1888,26 +1909,43 @@ class RedpandaService(Service):
               sample = vectorized_cluster_partition_under_replicated_replicas
         """
         nodes = nodes or self.nodes
-        found_sample = None
         sample_values = []
         for node in nodes:
             metrics = self.metrics(node, metrics_endpoint)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample_pattern not in sample.name:
-                        continue
-                    if not found_sample:
-                        found_sample = (family.name, sample.name)
-                    if found_sample != (family.name, sample.name):
-                        raise Exception(
-                            f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
-                        )
-                    sample_values.append(
-                        MetricSample(family.name, sample.name, node,
-                                     sample.value, sample.labels))
+            sample_values += self._extract_samples(metrics, sample_pattern,
+                                                   node)
+
         if not sample_values:
             return None
-        return MetricSamples(sample_values)
+        else:
+            return MetricSamples(sample_values)
+
+    def metrics_samples(
+        self,
+        sample_patterns: list[str],
+        nodes=None,
+        metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+    ) -> dict[str, MetricSamples]:
+        """
+        Query metrics for multiple sample names using fuzzy matching.
+        The same as metrics_sample, but works with multiple patterns.
+        """
+        nodes = nodes or self.nodes
+        sample_values_per_pattern = {
+            pattern: []
+            for pattern in sample_patterns
+        }
+
+        for node in nodes:
+            metrics = self.metrics(node, metrics_endpoint)
+            for pattern in sample_patterns:
+                sample_values_per_pattern[pattern] += self._extract_samples(
+                    metrics, pattern, node)
+
+        return {
+            pattern: MetricSamples(values)
+            for pattern, values in sample_values_per_pattern.items() if values
+        }
 
     def shards(self):
         """
