@@ -665,6 +665,18 @@ class ClusterConfigTest(RedpandaTest):
 
         return version, text
 
+    def _noop_export_import(self):
+        # Intentionally enabling --all flag to test all properties
+        text = self._export(True)
+
+        # Validate that RPK gives us valid yaml
+        _ = yaml.full_load(text)
+
+        with tempfile.NamedTemporaryFile('w') as file:
+            file.write(text)
+            file.flush()
+            return self.rpk.cluster_config_import(file.name, True)
+
     @cluster(num_nodes=3)
     def test_rpk_export_import(self):
         """
@@ -672,6 +684,9 @@ class ClusterConfigTest(RedpandaTest):
         also `edit` (which is just an export/import cycle with
         a text editor run in the middle)
         """
+        # A no-op export & import check:
+        assert "No changes were made." in self._noop_export_import()
+
         # An arbitrary tunable for checking --all
         tunable_property = 'kafka_qdc_depth_alpha'
 
