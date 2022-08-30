@@ -59,6 +59,7 @@ fedora_deps=(
   python3-virtualenv
   rapidjson-devel
   snappy-devel
+  which
   xxhash-devel
   xz
   zip
@@ -79,6 +80,7 @@ arch_deps=(
   python-virtualenv
   rapidjson
   snappy
+  which
   xxhash
   xz
   zip
