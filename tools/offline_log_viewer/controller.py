@@ -311,9 +311,115 @@ def decode_user_command_adl(k_rdr: Reader, rdr: Reader):
     return cmd
 
 
-def decode_acl_command(record):
-    rdr = Reader(BytesIO(record.value))
-    k_rdr = Reader(BytesIO(record.key))
+def read_acl_binding_serde(k_rdr: Reader):
+    return k_rdr.read_envelope(
+        lambda k_rdr, _: {
+            'pattern':
+            k_rdr.read_envelope(
+                lambda k_rdr, _: {
+                    'resource': decode_acl_resource(k_rdr.read_serde_enum()),
+                    'name': k_rdr.read_string(),
+                    'pattern': decode_acl_pattern_type(k_rdr.read_serde_enum())
+                }),
+            'entry':
+            k_rdr.read_envelope(
+                lambda k_rdr, _: {
+                    'principal':
+                    k_rdr.read_envelope(
+                        lambda k_rdr, _: {
+                            'type':
+                            decode_acl_principal_type(k_rdr.read_serde_enum()),
+                            'name':
+                            k_rdr.read_string()
+                        }),
+                    'host':
+                    k_rdr.read_envelope(
+                        lambda k_rdr, _: {
+                            'addr':
+                            k_rdr.read_optional(
+                                lambda k_rdr: {
+                                    'ipv4': k_rdr.read_bool(),
+                                    'data': k_rdr.read_iobuf().hex()
+                                })
+                        }),
+                    'operation':
+                    decode_acl_operation(k_rdr.read_serde_enum()),
+                    'permission':
+                    decode_acl_permission(k_rdr.read_serde_enum()),
+                }),
+        })
+
+
+def decode_serialized_pattern_type(v):
+    if 0 <= v <= 2:
+        return ['literal', 'prefixed', 'match'][v]
+    return 'error'
+
+
+def read_acl_binding_filter_serde(k_rdr: Reader):
+    # pattern class does not really use serde
+    return k_rdr.read_envelope(
+        lambda k_rdr, _: {
+            'pattern': {
+                'resource':
+                k_rdr.read_optional(lambda k_rdr: decode_acl_resource(
+                    k_rdr.read_serde_enum())),
+                'name':
+                k_rdr.read_envelope(Reader.read_string),
+                'pattern':
+                k_rdr.read_optional(lambda k_rdr:
+                                    decode_serialized_pattern_type(
+                                        k_rdr.read_serde_enum())),
+            },
+            'acl':
+            k_rdr.read_envelope(
+                lambda k_rdr, _: {
+                    'principal':
+                    k_rdr.read_optional(lambda k_rdr: k_rdr.read_envelope(
+                        lambda k_rdr, _: {
+                            'type':
+                            decode_acl_principal_type(k_rdr.read_serde_enum()),
+                            'name':
+                            k_rdr.read_string()
+                        })),
+                    'host':
+                    k_rdr.read_optional(lambda k_rdr: k_rdr.read_envelope(
+                        lambda k_rdr, _: {
+                            'addr':
+                            k_rdr.read_optional(
+                                lambda k_rdr: {
+                                    'ipv4': k_rdr.read_bool(),
+                                    'data': k_rdr.read_iobuf().hex()
+                                })
+                        })),
+                    'operation':
+                    k_rdr.read_optional(lambda k_rdr: decode_acl_operation(
+                        k_rdr.read_serde_enum())),
+                    'permission':
+                    k_rdr.read_optional(lambda k_rdr: decode_acl_permission(
+                        k_rdr.read_serde_enum())),
+                }),
+        })
+
+
+def decode_acl_command_serde(k_rdr: Reader, rdr: Reader):
+    cmd = {}
+    cmd['type'] = rdr.read_int8()
+    cmd['str_type'] = decode_acls_cmd_type(cmd['type'])
+    if cmd['type'] == 8:
+        cmd['acls'] = k_rdr.read_envelope(
+            lambda k_rdr, _:
+            {'bindings': k_rdr.read_serde_vector(read_acl_binding_serde)})
+    elif cmd['type'] == 9:
+        cmd |= k_rdr.read_envelope(lambda k_rdr, _: {
+            'filters':
+            k_rdr.read_serde_vector(read_acl_binding_filter_serde)
+        })
+
+    return cmd
+
+
+def decode_acl_command_adl(k_rdr: Reader, rdr: Reader):
     cmd = {}
     cmd['type'] = rdr.read_int8()
     cmd['str_type'] = decode_acls_cmd_type(cmd['type'])
@@ -447,7 +553,8 @@ def decode_record(batch, record, bin_dump: bool):
         ret['data'] = decode_adl_or_serde(record, decode_user_command_adl,
                                           decode_user_command_serde)
     if batch.type == BatchType.acl_management_cmd:
-        ret['data'] = decode_acl_command(record)
+        ret['data'] = decode_adl_or_serde(record, decode_acl_command_adl,
+                                          decode_acl_command_serde)
     if batch.type == BatchType.cluster_config_cmd:
         ret['data'] = decode_config_command(record)
     if batch.type == BatchType.feature_update:
