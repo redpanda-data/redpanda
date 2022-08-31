@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	appsv1 "k8s.io/api/apps/v1"
@@ -421,8 +423,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	}
 
 	for i := range pods {
-		prefixLen := len(pods[i].GenerateName)
-		podName := pods[i].Name[prefixLen:]
+		pod := pods[i]
 
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) ||
@@ -434,7 +435,10 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalKafkaListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			address, err := subdomainAddress(externalKafkaListener.External.EndpointTemplate, &pod, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			if err != nil {
+				return nil, err
+			}
 			result.External = append(result.External, address)
 		} else if externalKafkaListener != nil {
 			result.External = append(result.External,
@@ -445,7 +449,10 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalAdminListener != nil && len(externalAdminListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
+			address, err := subdomainAddress(externalAdminListener.External.EndpointTemplate, &pod, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
+			if err != nil {
+				return nil, err
+			}
 			result.ExternalAdmin = append(result.ExternalAdmin, address)
 		} else if externalAdminListener != nil {
 			result.ExternalAdmin = append(result.ExternalAdmin,
@@ -456,7 +463,10 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalProxyListener != nil && len(externalProxyListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalProxyListener.External.Subdomain, getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName))
+			address, err := subdomainAddress(externalProxyListener.External.EndpointTemplate, &pod, externalProxyListener.External.Subdomain, getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName))
+			if err != nil {
+				return nil, err
+			}
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy, address)
 		} else if externalProxyListener != nil {
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy,
@@ -541,12 +551,25 @@ func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {
 	return external.Subdomain == ""
 }
 
-func subdomainAddress(name, subdomain string, port int32) string {
+func subdomainAddress(
+	tmpl string, pod *corev1.Pod, subdomain string, port int32,
+) (string, error) {
+	prefixLen := len(pod.GenerateName)
+	index, err := strconv.Atoi(pod.Name[prefixLen:])
+	if err != nil {
+		return "", fmt.Errorf("could not parse node ID from pod name %s: %w", pod.Name, err)
+	}
+	data := utils.NewEndpointTemplateData(index, pod.Status.HostIP)
+	ep, err := utils.ComputeEndpoint(tmpl, data)
+	if err != nil {
+		return "", err
+	}
+
 	return fmt.Sprintf("%s.%s:%d",
-		name,
+		ep,
 		subdomain,
 		port,
-	)
+	), nil
 }
 
 func getExternalIP(node *corev1.Node) string {
