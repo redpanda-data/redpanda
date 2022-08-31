@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "config/property.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
@@ -88,7 +89,8 @@ public:
       net::server::resources&& r,
       std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
-      std::optional<security::tls::mtls_state> mtls_state) noexcept
+      std::optional<security::tls::mtls_state> mtls_state,
+      config::binding<uint32_t> max_request_size) noexcept
       : _proto(p)
       , _rs(std::move(r))
       , _sasl(std::move(sasl))
@@ -96,7 +98,8 @@ public:
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
-      , _mtls_state(std::move(mtls_state)) {}
+      , _mtls_state(std::move(mtls_state))
+      , _max_request_size(std::move(max_request_size)) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -301,6 +304,7 @@ private:
     const bool _enable_authorizer;
     ctx_log _authlog;
     std::optional<security::tls::mtls_state> _mtls_state;
+    config::binding<uint32_t> _max_request_size;
 };
 
 } // namespace kafka

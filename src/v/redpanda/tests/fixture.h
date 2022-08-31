@@ -20,6 +20,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/broker_authn_endpoint.h"
+#include "config/mock_property.h"
 #include "config/node_config.h"
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
@@ -414,7 +415,8 @@ public:
           net::server::resources(nullptr, nullptr),
           std::move(sasl),
           false,
-          std::nullopt);
+          std::nullopt,
+          config::mock_property<uint32_t>(100_MiB).bind());
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
