@@ -153,7 +153,7 @@ func main() {
 		Scheme:                  mgr.GetScheme(),
 		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
 		AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
-		Store:                   consolepkg.NewStore(mgr.GetClient()),
+		Store:                   consolepkg.NewStore(mgr.GetClient(), mgr.GetScheme()),
 		EventRecorder:           mgr.GetEventRecorderFor("Console"),
 		KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
