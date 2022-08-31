@@ -345,21 +345,22 @@ var (
 	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSPrivateKeyKey)
 )
 
-// SchemaRegistryTLSCa handles mounting CA cert
-type SchemaRegistryTLSCa struct {
-	NodeSecretRef *corev1.ObjectReference
+// SecretTLSCa handles mounting CA cert
+type SecretTLSCa struct {
+	NodeSecretRef  *corev1.ObjectReference
+	UsePublicCerts bool
 }
 
 // FilePath returns the CA filepath mount
-func (s *SchemaRegistryTLSCa) FilePath() string {
+func (s *SecretTLSCa) FilePath(defaultCaCert string) string {
 	if s.useCaCert() {
-		return SchemaRegistryTLSCaFilePath
+		return defaultCaCert
 	}
 	return DefaultCaFilePath
 }
 
 // Volume returns mount Volume definition
-func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
+func (s *SecretTLSCa) Volume(name string) *corev1.Volume {
 	if s.useCaCert() {
 		return &corev1.Volume{
 			Name: name,
@@ -375,8 +376,8 @@ func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
 }
 
 // useCaCert checks if the CA certificate referenced by NodeSecretRef should be used
-func (s *SchemaRegistryTLSCa) useCaCert() bool {
-	return !UsePublicCerts && s.NodeSecretRef != nil
+func (s *SecretTLSCa) useCaCert() bool {
+	return !s.UsePublicCerts && s.NodeSecretRef != nil
 }
 
 func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
@@ -389,13 +390,13 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	if y := cm.consoleobj.Spec.SchemaRegistry.Enabled; y {
 		tls := schema.TLSConfig{Enabled: false}
 		if yy := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yy {
-			ca := &SchemaRegistryTLSCa{
-				// SchemaRegistryAPITLS cannot be nil
-				cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+			ca := &SecretTLSCa{
+				NodeSecretRef:  cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+				UsePublicCerts: UsePublicCerts,
 			}
 			tls = schema.TLSConfig{
 				Enabled:    y,
-				CaFilepath: ca.FilePath(),
+				CaFilepath: ca.FilePath(SchemaRegistryTLSCaFilePath),
 			}
 			if cm.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
 				tls.CertFilepath = SchemaRegistryTLSCertFilePath
@@ -408,9 +409,10 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 
 	tls := kafka.TLSConfig{Enabled: false}
 	if l := cm.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
+		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
 		tls = kafka.TLSConfig{
 			Enabled:      true,
-			CaFilepath:   DefaultCaFilePath,
+			CaFilepath:   ca.FilePath(KafkaTLSCaFilePath),
 			CertFilepath: KafkaTLSCertFilePath,
 			KeyFilepath:  KafkaTLSKeyFilePath,
 		}
