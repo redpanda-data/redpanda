@@ -69,9 +69,9 @@ private:
 
     waiter_queue<model::node_id> _waiters;
 
-    notification_id_type _notification_id{0};
+    notification_id_type _maintenance_state_change_notification_id{0};
     std::vector<std::pair<notification_id_type, maintenance_state_cb_t>>
-      _notifications;
+      _maintenance_state_change_notifications;
 
     void
       notify_maintenance_state_change(model::node_id, model::maintenance_state);
