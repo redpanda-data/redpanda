@@ -1751,7 +1751,7 @@ class RedpandaService(Service):
 
             return [p[0] for p in paths if safe_isdir(p[1])]
 
-        store = NodeStorage(RedpandaService.DATA_DIR)
+        store = NodeStorage(node.name, RedpandaService.DATA_DIR)
         for ns in listdir(store.data_dir, True):
             if ns == '.coprocessor_offset_checkpoints':
                 continue

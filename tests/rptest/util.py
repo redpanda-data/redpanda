@@ -12,6 +12,8 @@ from contextlib import contextmanager
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.storage import Segment
+
 from ducktape.errors import TimeoutError
 import time
 
@@ -139,6 +141,49 @@ def produce_until_segments(redpanda, topic, partition_idx, count, acks=-1):
                timeout_sec=120,
                backoff_sec=2,
                err_msg="Segments were not created")
+
+
+def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
+                                   n: int,
+                                   original_snapshot: dict[str,
+                                                           list[Segment]]):
+    """
+    Wait until 'n' segments of a partition that are present in the
+    provided snapshot are removed by all brokers.
+
+    :param redpanda: redpanda service used by the test
+    :param topic: topic to wait on
+    :param partition_idx: index of partition to wait on
+    :param n: number of removed segments to wait for
+    :param original_snapshot: snapshot of segments to compare against
+    """
+    def segments_removed():
+        current_snapshot = redpanda.storage(all_nodes=True).segments_by_node(
+            "kafka", topic, 0)
+
+        redpanda.logger.debug(
+            f"Current segment snapshot for topic {topic}: {current_snapshot}")
+
+        # Check how many of the original segments were removed
+        # for each of the nodes in the provided snapshot.
+        for node, original_segs in original_snapshot.items():
+            assert node in current_snapshot
+            current_segs_names = [s.name for s in current_snapshot[node]]
+
+            removed_segments = 0
+            for s in original_segs:
+                if s.name not in current_segs_names:
+                    removed_segments += 1
+
+            if removed_segments < n:
+                return False
+
+        return True
+
+    wait_until(segments_removed,
+               timeout_sec=180,
+               backoff_sec=5,
+               err_msg="Segments were not removed from all nodes")
 
 
 def wait_for_segments_removal(redpanda, topic, partition_idx, count):
