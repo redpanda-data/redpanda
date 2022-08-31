@@ -55,7 +55,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	ss, err := d.ensureSyncedSecrets(ctx)
+	ss, err := d.ensureSyncedSecrets()
 	if err != nil {
 		return err
 	}
@@ -174,79 +174,58 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 
 // ensureSyncedSecrets ensures that Secrets required by Deployment are available
 // These Secrets are synced across different namespace via the Store
-func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
-	// Currently only copying Schema Registry certificates
-	// Nothing to do if TLS is disabled
-	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
-		return "", nil
+func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
+	syncedSecrets := map[string]map[string][]byte{}
+
+	if d.clusterobj.IsSchemaRegistryTLSEnabled() { //nolint:nestif // secret syncing is complex
+		data := map[string][]byte{}
+		if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
+			clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+			if !exists {
+				return nil, fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			}
+			certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+			keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+			data[corev1.TLSCertKey] = []byte(certfile)
+			data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+		}
+
+		// Only write CA cert if not using DefaultCaFilePath
+		ca := &SchemaRegistryTLSCa{d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef}
+		if ca.useCaCert() {
+			caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
+			if !exists {
+				return nil, fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			}
+			cafile := getOrEmpty("ca.crt", caCert.Data)
+			data["ca.crt"] = []byte(cafile)
+		}
+		syncedSecrets[schemaRegistrySyncedSecretKey] = data
 	}
 
-	// Write the synced certs to secret
-	data := map[string][]byte{}
-
-	if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
-		clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+		data := map[string][]byte{}
+		clientCert, exists := d.store.GetKafkaClientCert(d.clusterobj)
 		if !exists {
-			return "", fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			return nil, fmt.Errorf("get kafka client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
-		certfile := getOrEmpty("tls.crt", clientCert.Data)
-		keyfile := getOrEmpty("tls.key", clientCert.Data)
-		data["tls.crt"] = []byte(certfile)
-		data["tls.key"] = []byte(keyfile)
+		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+		data[corev1.TLSCertKey] = []byte(certfile)
+		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+		syncedSecrets[kafkaSyncedSecretKey] = data
 	}
 
-	// Only write CA cert if not using DefaultCaFilePath
-	ca := &SchemaRegistryTLSCa{d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef}
-	if ca.useCaCert() {
-		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
-		if !exists {
-			return "", fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-		}
-		cafile := getOrEmpty("ca.crt", caCert.Data)
-		data["ca.crt"] = []byte(cafile)
-	}
-
-	// Nothing to do if synced certs is empty
-	if len(data) == 0 {
-		return "", nil
-	}
-
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", d.consoleobj.GetName(), resources.SchemaRegistrySuffix),
-			Namespace: d.consoleobj.GetNamespace(),
-			Labels:    labels.ForConsole(d.consoleobj),
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		Data: data,
-	}
-
-	err := controllerutil.SetControllerReference(d.consoleobj, secret, d.scheme)
-	if err != nil {
-		return "", err
-	}
-
-	created, err := resources.CreateIfNotExists(ctx, d.Client, secret, d.log)
-	if err != nil {
-		return "", fmt.Errorf("creating Console synced secret: %w", err)
-	}
-
-	if !created {
-		var current corev1.Secret
-		err = d.Get(ctx, types.NamespacedName{Name: secret.GetName(), Namespace: secret.GetNamespace()}, &current)
+	secretNames := map[string]string{}
+	for key, ss := range syncedSecrets {
+		name, err := d.store.CreateSyncedSecret(d.consoleobj, ss, key, d.log)
 		if err != nil {
-			return "", fmt.Errorf("fetching Console synced secret: %w", err)
+			return nil, err
 		}
-		_, err = resources.Update(ctx, &current, secret, d.Client, d.log)
-		if err != nil {
-			return "", fmt.Errorf("updating Console synced secret: %w", err)
-		}
+		secretNames[key] = name
 	}
 
-	return secret.GetName(), nil
+	return secretNames, nil
 }
 
 func getGracePeriod(period time.Duration) *int64 {
@@ -263,6 +242,7 @@ const (
 	tlsKafkaMountName          = "tls-kafka"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
+	kafkaClientCertSuffix          = "operator-client"
 
 	enterpriseRBACMountName     = "enterprise-rbac"
 	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
@@ -272,7 +252,7 @@ const (
 	prometheusBasicAuthPassowrdEnvVar = "CLOUD_PROMETHEUSENDPOINT_BASICAUTH_PASSWORD"
 )
 
-func (d *Deployment) getVolumes(ss string) []corev1.Volume {
+func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: configMountName,
@@ -286,12 +266,12 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		},
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
+	if secretName, ok := ss[schemaRegistrySyncedSecretKey]; ok && d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsSchemaRegistryMountName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: ss,
+					SecretName: secretName,
 				},
 			},
 		})
@@ -334,12 +314,12 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		})
 	}
 
-	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+	if secretName, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsKafkaMountName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: fmt.Sprintf("%s-operator-client", d.clusterobj.GetName()),
+					SecretName: secretName,
 				},
 			},
 		})
@@ -351,7 +331,7 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 // ConsoleContainerName is the Console container name
 var ConsoleContainerName = "console"
 
-func (d *Deployment) getContainers(ss string) []corev1.Container {
+func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      configMountName,
@@ -368,7 +348,7 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 		})
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
+	if _, ok := ss[schemaRegistrySyncedSecretKey]; ok && d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      tlsSchemaRegistryMountName,
 			ReadOnly:  true,
@@ -395,7 +375,7 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 		})
 	}
 
-	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+	if _, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      tlsKafkaMountName,
 			ReadOnly:  true,
