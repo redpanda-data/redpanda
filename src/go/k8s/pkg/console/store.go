@@ -65,7 +65,7 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 		}
 
 		// Only sync CA cert if not using DefaultCaFilePath
-		ca := &SchemaRegistryTLSCa{cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef}
+		ca := &SecretTLSCa{cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef}
 		if ca.useCaCert() {
 			nodeSecretRef := cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef
 			schemaRegistryNodeCert, err := syncCert(
@@ -93,6 +93,22 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 		}
 		// same as Update()
 		s.Add(s.getKafkaClientCertKey(cluster), kafkaClientCert)
+
+		// Only sync CA cert if not using DefaultCaFilePath
+		ca := &SecretTLSCa{cluster.KafkaTLSListeners()[0].TLS.NodeSecretRef}
+		if ca.useCaCert() {
+			nodeSecretRef := cluster.KafkaTLSListeners()[0].TLS.NodeSecretRef
+			kafkaNodeCert, err := syncCert(
+				s.context,
+				s.client,
+				types.NamespacedName{Namespace: nodeSecretRef.Namespace, Name: nodeSecretRef.Name},
+				nodeSecretRef.Name,
+			)
+			if err != nil {
+				return fmt.Errorf("sync kafka node certificate: %w", err)
+			}
+			s.Add(s.getKafkaNodeCertKey(cluster), kafkaNodeCert)
+		}
 	}
 
 	return nil
@@ -130,6 +146,10 @@ func (s *Store) getSchemaRegistryNodeCertKey(
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "schema-registry-node")
 }
 
+func (s *Store) getKafkaNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "kafka-node")
+}
+
 // GetSchemaRegistryClientCert gets the Schema Registry client cert and returns Secret object
 func (s *Store) GetSchemaRegistryClientCert(
 	cluster *redpandav1alpha1.Cluster,
@@ -155,6 +175,16 @@ func (s *Store) GetKafkaClientCert(
 	cluster *redpandav1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
 	if secret, exists := s.Get(s.getKafkaClientCertKey(cluster)); exists {
+		return secret.(*corev1.Secret), true
+	}
+	return nil, false
+}
+
+// GetKafkaNodeCert gets the Kafka node cert and returns Secret object
+func (s *Store) GetKafkaNodeCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
+	if secret, exists := s.Get(s.getKafkaNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
 	return nil, false
