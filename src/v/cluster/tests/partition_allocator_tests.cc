@@ -641,3 +641,69 @@ FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
     BOOST_REQUIRE(racks.contains("rack-a"));
     BOOST_REQUIRE(racks.contains("rack-b"));
 }
+
+FIXTURE_TEST(even_distribution_pri_allocation, partition_allocator_fixture) {
+    // allocate some regular partitions in the cluster but leave space
+    register_node(0, 2);
+    register_node(1, 2);
+    register_node(2, 2);
+    auto req_reg = make_allocation_request(max_capacity() / 4, 3);
+    auto units_reg = allocator.allocate(std::move(req_reg)).value();
+    // add empty nodes
+    register_node(3, 2);
+    register_node(4, 2);
+
+    // do several rounds of priority allocation
+    std::list<cluster::allocation_units> units;
+    for (int i = 0; i != 21; ++i) {
+        auto req = make_allocation_request(11 + i * 3, 1);
+        // there is only one priority allocation domain yet
+        static constexpr auto prio_domain
+          = cluster::partition_allocation_domains::consumer_offsets;
+        req.domain = prio_domain;
+        units.push_back(std::move(allocator.allocate(std::move(req)).value()));
+
+        // invariant: number of partitions allocated in the priority domain
+        // across all nodes must be even, i.e. must not vary by more than one
+        // partition
+        const auto priority_part_capacity_minmax = std::minmax_element(
+          allocator.state().allocation_nodes().cbegin(),
+          allocator.state().allocation_nodes().cend(),
+          [](const auto& lhs, const auto& rhs) {
+              return lhs.second->domain_partition_capacity(prio_domain)
+                     < rhs.second->domain_partition_capacity(prio_domain);
+          });
+        BOOST_CHECK_LE(
+          priority_part_capacity_minmax.second->second
+              ->domain_partition_capacity(prio_domain)
+            - priority_part_capacity_minmax.first->second
+                ->domain_partition_capacity(prio_domain),
+          cluster::allocation_node::allocation_capacity(1));
+
+        // invariant: sum(max_capacity()-domain_partition_capacity(d)) for d in
+        // all_domains == max_capacity()-partition_capacity()
+        // as long as node is not overallocated
+        BOOST_CHECK(std::all_of(
+          allocator.state().allocation_nodes().cbegin(),
+          allocator.state().allocation_nodes().cend(),
+          [](const auto& allocation_nodes_v) {
+              const cluster::allocation_node& n = *allocation_nodes_v.second;
+              return n.domain_partition_capacity(
+                       cluster::partition_allocation_domains::consumer_offsets)
+                       + n.domain_partition_capacity(
+                         cluster::partition_allocation_domains::common)
+                       - n.max_capacity()
+                     == n.partition_capacity();
+          }));
+
+        // occassionaly deallocate prior allocations
+        if (i % 2 == 0) {
+            units.pop_front();
+            // after deallocation, partitions in the priority domain are not
+            // necessarily allocated evenly any more. However the next iteration
+            // of the test would fill the irregularities because there will be
+            // more partitions allocated (re: i*3) than what has been
+            // deallocated
+        }
+    }
+}
