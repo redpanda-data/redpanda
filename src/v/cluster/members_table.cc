@@ -96,6 +96,8 @@ void members_table::update_brokers(
             br->set_membership_state(model::membership_state::removed);
         }
     }
+
+    notify_members_updated();
 }
 std::error_code
 members_table::apply(model::offset version, decommission_node_cmd cmd) {
@@ -239,6 +241,31 @@ void members_table::notify_maintenance_state_change(
   model::node_id node_id, model::maintenance_state ms) {
     for (const auto& [id, cb] : _maintenance_state_change_notifications) {
         cb(node_id, ms);
+    }
+}
+
+notification_id_type
+members_table::register_members_updated_notification(members_updated_cb_t cb) {
+    auto id = _members_updated_notification_id++;
+    _members_updated_notifications.emplace_back(id, std::move(cb));
+
+    return id;
+}
+
+void members_table::unregister_members_updated_notification(
+  notification_id_type id) {
+    auto it = std::find_if(
+      _members_updated_notifications.begin(),
+      _members_updated_notifications.end(),
+      [id](const auto& n) { return n.first == id; });
+    if (it != _members_updated_notifications.end()) {
+        _members_updated_notifications.erase(it);
+    }
+}
+
+void members_table::notify_members_updated() {
+    for (const auto& [id, cb] : _members_updated_notifications) {
+        cb(all_broker_ids());
     }
 }
 

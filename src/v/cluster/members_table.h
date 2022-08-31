@@ -57,10 +57,18 @@ public:
     using maintenance_state_cb_t = ss::noncopyable_function<void(
       model::node_id, model::maintenance_state)>;
 
+    using members_updated_cb_t
+      = ss::noncopyable_function<void(std::vector<model::node_id>)>;
+
     notification_id_type
       register_maintenance_state_change_notification(maintenance_state_cb_t);
 
     void unregister_maintenance_state_change_notification(notification_id_type);
+
+    notification_id_type
+      register_members_updated_notification(members_updated_cb_t);
+
+    void unregister_members_updated_notification(notification_id_type);
 
 private:
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
@@ -73,7 +81,13 @@ private:
     std::vector<std::pair<notification_id_type, maintenance_state_cb_t>>
       _maintenance_state_change_notifications;
 
+    notification_id_type _members_updated_notification_id{0};
+    std::vector<std::pair<notification_id_type, members_updated_cb_t>>
+      _members_updated_notifications;
+
     void
       notify_maintenance_state_change(model::node_id, model::maintenance_state);
+
+    void notify_members_updated();
 };
 } // namespace cluster
