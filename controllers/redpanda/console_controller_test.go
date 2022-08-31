@@ -174,4 +174,36 @@ var _ = Describe("Console controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
+
+	Context("When updating Console", func() {
+		ctx := context.Background()
+		It("Should not create new ConfigMap if no change on spec", func() {
+			By("By getting Console")
+			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
+			createdConsole := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
+
+			ref := createdConsole.Status.ConfigMapRef
+			configmapNsn := fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
+
+			By("By adding label to Console")
+			createdConsole.SetLabels(map[string]string{"test.redpanda.vectorized.io/name": "updating-console"})
+			Expect(k8sClient.Update(ctx, createdConsole)).Should(Succeed())
+
+			By("By checking ConfigMapRef did not change")
+			Eventually(func() bool {
+				updatedConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
+					return false
+				}
+				labels := updatedConsole.GetLabels()
+				if newLabel, ok := labels["test.redpanda.vectorized.io/name"]; !ok || newLabel != "updating-console" {
+					return false
+				}
+				updatedRef := updatedConsole.Status.ConfigMapRef
+				updatedConfigmapNsn := fmt.Sprintf("%s/%s", updatedRef.Namespace, updatedRef.Name)
+				return updatedConfigmapNsn == configmapNsn
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
 })
