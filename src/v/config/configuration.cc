@@ -816,6 +816,12 @@ configuration::configuration()
       "Timeout for executing node management operations",
       {.visibility = visibility::tunable},
       5s)
+  , kafka_request_max_bytes(
+      *this,
+      "kafka_request_max_bytes",
+      "Maximum size of a single request processed via Kafka API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100_MiB)
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",
