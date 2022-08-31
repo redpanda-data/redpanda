@@ -191,7 +191,10 @@ func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
 		}
 
 		// Only write CA cert if not using DefaultCaFilePath
-		ca := &SchemaRegistryTLSCa{d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef}
+		ca := &SecretTLSCa{
+			NodeSecretRef:  d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+			UsePublicCerts: UsePublicCerts,
+		}
 		if ca.useCaCert() {
 			caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
 			if !exists {
@@ -203,7 +206,7 @@ func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
 		syncedSecrets[schemaRegistrySyncedSecretKey] = data
 	}
 
-	if d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+	if l := d.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
 		data := map[string][]byte{}
 		clientCert, exists := d.store.GetKafkaClientCert(d.clusterobj)
 		if !exists {
@@ -213,6 +216,17 @@ func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
 		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
 		data[corev1.TLSCertKey] = []byte(certfile)
 		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+
+		// Only write CA cert if not using DefaultCaFilePath
+		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
+		if ca.useCaCert() {
+			caCert, exists := d.store.GetKafkaNodeCert(d.clusterobj)
+			if !exists {
+				return nil, fmt.Errorf("get kafka node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			}
+			cafile := getOrEmpty("ca.crt", caCert.Data)
+			data["ca.crt"] = []byte(cafile)
+		}
 		syncedSecrets[kafkaSyncedSecretKey] = data
 	}
 
