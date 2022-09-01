@@ -56,7 +56,7 @@ bool topic_properties::has_overrides() const {
            || retention_bytes.has_value() || retention_bytes.is_disabled()
            || retention_duration.has_value() || retention_duration.is_disabled()
            || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value();
+           || read_replica.has_value() || batch_max_bytes.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -202,12 +202,11 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{{ compression: {}, cleanup_policy_bitflags: {}, "
-      "compaction_strategy: "
-      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
-      "{}, "
+      "{{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}}}",
+      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
+      "batch_max_bytes: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -219,7 +218,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.shadow_indexing,
       properties.read_replica,
       properties.read_replica_bucket,
-      properties.remote_topic_properties);
+      properties.remote_topic_properties,
+      properties.batch_max_bytes);
 
     return o;
 }
@@ -463,7 +463,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "{{incremental_topic_custom_updates: compression: {} "
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
-      "shadow_indexing: {}}}",
+      "shadow_indexing: {}, batch_max_bytes: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -471,7 +471,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.segment_size,
       i.retention_bytes,
       i.retention_duration,
-      i.shadow_indexing);
+      i.shadow_indexing,
+      i.batch_max_bytes);
     return o;
 }
 
@@ -1885,7 +1886,8 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       shadow_indexing,
       read_replica,
       read_replica_bucket,
-      remote_topic_properties};
+      remote_topic_properties,
+      std::nullopt};
 }
 
 void adl<cluster::cluster_property_kv>::to(
