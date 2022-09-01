@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: call-console
-  namespace: default
+  namespace: console
 spec:
   template:
     spec:
