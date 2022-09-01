@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/service.h"
 
+#include "cluster/controller.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
@@ -144,7 +145,7 @@ ss::future<> service::create_internal_topic() {
     // for the schema registry chooses to override it.
     int16_t replication_factor
       = _config.schema_registry_replication_factor().value_or(
-        config::shard_local_cfg().default_topic_replication());
+        _controller->internal_topic_replication());
 
     vlog(
       plog.debug,
