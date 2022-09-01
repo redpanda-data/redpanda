@@ -244,6 +244,11 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   model::shadow_indexing_mode::fetch);
                 continue;
             }
+            if (cfg.name == topic_property_max_message_bytes) {
+                parse_and_set_optional(
+                  update.properties.batch_max_bytes, cfg.value, op);
+                continue;
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),
