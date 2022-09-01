@@ -841,6 +841,13 @@ configuration::configuration()
       "Maximum size of a single request processed via Kafka API",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100_MiB)
+  , kafka_batch_max_bytes(
+      *this,
+      "kafka_batch_max_bytes",
+      "Maximum size of a batch processed by server. If batch is compressed the "
+      "limit applies to compressed batch size",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_MiB)
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",
