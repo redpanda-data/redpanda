@@ -428,6 +428,8 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::
                            is_same_v<type, model::cloud_credentials_source>) {
         return "string";
+    } else if constexpr (std::is_same_v<type, config::authentication_method>) {
+        return "authentication_method";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }

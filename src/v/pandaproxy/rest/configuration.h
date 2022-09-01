@@ -12,6 +12,7 @@
 #pragma once
 #include "config/config_store.h"
 #include "config/property.h"
+#include "config/rest_authn_endpoint.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
 
@@ -34,6 +35,7 @@ struct configuration final : public config::config_store {
     config::property<ss::sstring> api_doc_dir;
     config::property<std::chrono::milliseconds> consumer_instance_timeout;
     config::property<int32_t> client_cache_size;
+    config::property<config::authentication_method> authentication_method;
 
     configuration();
     explicit configuration(const YAML::Node& cfg);

@@ -125,7 +125,6 @@ credential_t do_authenticate(
         throw ss::httpd::bad_request_exception(
           "Unsupported Authorization method");
     } else {
-        // No Authorization header: user is anonymous
         throw ss::httpd::bad_request_exception("Missing Authorization header");
     }
 }
@@ -145,7 +144,12 @@ credential_t authenticate(server::request_t& rq) {
 
 ss::future<server::reply_t>
 get_brokers(server::request_t rq, server::reply_t rp) {
-    credential_t user = authenticate(rq);
+    credential_t user{"ANON", "ANON"};
+    if (
+      rq.service().config().authentication_method().authentication_type
+      == "http_basic") {
+        user = authenticate(rq);
+    }
 
     auto res_fmt = parse::accept_header(
       *rq.req,

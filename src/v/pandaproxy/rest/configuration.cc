@@ -60,6 +60,12 @@ configuration::configuration()
       "client_cache_size",
       "Size of the internal kafka client cache. Default 10.",
       {},
-      10) {}
+      10)
+  , authentication_method(
+      *this,
+      "authentication_method",
+      "Authentication method for REST requests. Default null.",
+      {},
+      config::authentication_method{.authentication_type{"null"}}) {}
 
 } // namespace pandaproxy::rest

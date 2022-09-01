@@ -13,6 +13,7 @@
 
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
+#include "config/rest_authn_endpoint.h"
 #include "config/seed_server.h"
 #include "config/tests/custom_aggregate.h"
 #include "config/tls_config.h"
@@ -40,6 +41,9 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const std::vector<config::seed_server>& v);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::authentication_method& v);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const custom_aggregate& v);

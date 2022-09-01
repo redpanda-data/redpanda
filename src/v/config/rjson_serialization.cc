@@ -80,6 +80,16 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const config::authentication_method& v) {
+    w.StartObject();
+
+    w.Key("authentication_type");
+    w.String(v.authentication_type.c_str());
+
+    w.EndObject();
+}
+
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const custom_aggregate& v) {
     w.StartObject();
 
