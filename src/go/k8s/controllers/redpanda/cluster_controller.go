@@ -128,7 +128,7 @@ func (r *ClusterReconciler) Reconcile(
 		subdomain,
 		clusterSvc.Key().Name,
 		resources.PandaproxyPortExternalName,
-		log)
+		log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"})
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
