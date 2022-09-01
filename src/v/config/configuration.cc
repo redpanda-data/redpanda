@@ -484,17 +484,8 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       1)
   , transaction_coordinator_replication(
-      *this,
-      "transaction_coordinator_replication",
-      "Replication factor for a transaction coordinator topic",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      1)
-  , id_allocator_replication(
-      *this,
-      "id_allocator_replication",
-      "Replication factor for an id allocator topic",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      1)
+      *this, "transaction_coordinator_replication")
+  , id_allocator_replication(*this, "id_allocator_replication")
   , transaction_coordinator_cleanup_policy(
       *this,
       "transaction_coordinator_cleanup_policy",
