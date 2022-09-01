@@ -210,7 +210,8 @@ service::service(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
   sharded_store& store,
-  ss::sharded<seq_writer>& sequencer)
+  ss::sharded<seq_writer>& sequencer,
+  std::unique_ptr<cluster::controller>& controller)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/schema-svc")
   , _client(client)
@@ -225,6 +226,7 @@ service::service(
       json::serialization_format::schema_registry_v1_json)
   , _store(store)
   , _writer(sequencer)
+  , _controller(controller)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

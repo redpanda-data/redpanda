@@ -28,12 +28,14 @@ api::api(
   ss::smp_service_group sg,
   size_t max_memory,
   kafka::client::configuration& client_cfg,
-  configuration& cfg) noexcept
+  configuration& cfg,
+  std::unique_ptr<cluster::controller>& c) noexcept
   : _node_id{node_id}
   , _sg{sg}
   , _max_memory{max_memory}
   , _client_cfg{client_cfg}
-  , _cfg{cfg} {}
+  , _cfg{cfg}
+  , _controller(c) {}
 
 api::~api() noexcept = default;
 
@@ -50,7 +52,8 @@ ss::future<> api::start() {
       _max_memory,
       std::ref(_client),
       std::ref(*_store),
-      std::ref(_sequencer));
+      std::ref(_sequencer),
+      std::ref(_controller));
 
     co_await _service.invoke_on_all(&service::start);
 }

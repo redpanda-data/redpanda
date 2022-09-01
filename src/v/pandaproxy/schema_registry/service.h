@@ -26,6 +26,10 @@
 
 #include <vector>
 
+namespace cluster {
+class controller;
+}
+
 namespace pandaproxy::schema_registry {
 
 class service {
@@ -36,7 +40,8 @@ public:
       size_t max_memory,
       ss::sharded<kafka::client::client>& client,
       sharded_store& store,
-      ss::sharded<seq_writer>& sequencer);
+      ss::sharded<seq_writer>& sequencer,
+      std::unique_ptr<cluster::controller>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -59,6 +64,7 @@ private:
     ctx_server<service> _server;
     sharded_store& _store;
     ss::sharded<seq_writer>& _writer;
+    std::unique_ptr<cluster::controller>& _controller;
 
     one_shot _ensure_started;
 };
