@@ -1768,7 +1768,7 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       model::kafka_internal_namespace,
       model::tx_manager_topic,
       1,
-      config::shard_local_cfg().transaction_coordinator_replication()};
+      _controller->internal_topic_replication()};
 
     topic.properties.segment_size
       = config::shard_local_cfg().transaction_coordinator_log_segment_size;
