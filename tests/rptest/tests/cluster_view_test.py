@@ -24,7 +24,6 @@ from rptest.tests.end_to_end import EndToEndTest
 
 
 class ClusterViewTest(EndToEndTest):
-
     @cluster(num_nodes=3)
     def test_view_changes_on_add(self):
         self.redpanda = RedpandaService(self.test_context, 3, KafkaCliTools)
