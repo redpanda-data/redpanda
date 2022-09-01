@@ -10,14 +10,13 @@
 name: Lint all codez
 on:
   push:
-    tags: 'v2**'
     branches:
-      - dev
-      - release
+      - '**'
+    tags-ignore:
+      - '**'
   pull_request:
     branches:
-      - main
-      - dev
+      - '**'
 
 jobs:
   go:
