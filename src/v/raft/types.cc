@@ -736,12 +736,14 @@ append_entries_request::make_foreign(append_entries_request&& req) {
     auto target_node = req._target_node_id;
     auto metadata = req._meta;
     auto flush = req._flush;
+    auto is_recovery = req._is_recovery;
     return {
       src_node,
       target_node,
       metadata,
       model::make_foreign_record_batch_reader(std::move(req).release_batches()),
-      flush};
+      flush,
+      is_recovery};
 }
 
 ss::future<>
