@@ -469,4 +469,23 @@ ss::future<> controller::cluster_creation_hook() {
       "creation");
 }
 
+/**
+ * Helper for subsystems that create internal topics, to discover
+ * how many replicas they should use.
+ */
+int16_t controller::internal_topic_replication() const {
+    auto replication_factor
+      = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
+    if (
+      replication_factor
+      > (int16_t)_members_table.local().all_brokers().size()) {
+        // Fall back to r=1 if we do not have sufficient nodes
+        return 1;
+    } else {
+        // Respect `internal_topic_replication_factor` if enough
+        // nodes were available.
+        return replication_factor;
+    }
+}
+
 } // namespace cluster
