@@ -1447,10 +1447,6 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
 
     if (tx.status == tm_transaction::tx_status::ongoing) {
-        if (expected_term != tx.etag) {
-            // making sure we're canceling a tx started within current term
-            co_return tx_errc::invalid_txn_state;
-        }
         auto changed_tx = co_await stm->mark_tx_aborting(expected_term, tx.id);
         if (!changed_tx.has_value()) {
             if (changed_tx.error() == tm_stm::op_status::not_leader) {

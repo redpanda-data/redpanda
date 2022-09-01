@@ -163,11 +163,11 @@ tm_stm::mark_tx_preparing(
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
   model::term_id expected_term, kafka::transactional_id tx_id) {
-    auto ptx = _mem_txes.find(tx_id);
-    if (ptx == _mem_txes.end()) {
+    auto ptx = get_tx(tx_id);
+    if (!ptx.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
-    auto tx = ptx->second;
+    auto tx = ptx.value();
     if (tx.status != tm_transaction::tx_status::ongoing) {
         co_return tm_stm::op_status::conflict;
     }
