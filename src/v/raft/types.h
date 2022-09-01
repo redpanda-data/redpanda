@@ -268,7 +268,8 @@ struct append_entries_request
           req.target_node_id,
           std::move(req.meta),
           model::make_foreign_record_batch_reader(std::move(req.batches())),
-          req.flush);
+          req.flush,
+          req.is_recovery);
     }
 
     friend std::ostream&

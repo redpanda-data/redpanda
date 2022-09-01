@@ -81,10 +81,12 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       raft::vnode(model::node_id(1), model::revision_id(10)),
       raft::vnode(model::node_id(10), model::revision_id(101)),
       meta,
-      std::move(readers.back()));
+      std::move(readers.back()),
+      raft::append_entries_request::flush_after_append::no,
+      true);
 
     readers.pop_back();
-    auto d = async_serialize_roundtrip_rpc(std::move(req)).get0();
+    auto d = async_serialize_roundtrip_rpc_serde(std::move(req)).get0();
 
     BOOST_REQUIRE_EQUAL(
       d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
@@ -95,6 +97,8 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
     BOOST_REQUIRE_EQUAL(d.meta.last_visible_index, meta.last_visible_index);
+    BOOST_REQUIRE_EQUAL(d.flush, req.flush);
+    BOOST_REQUIRE_EQUAL(d.is_recovery, req.is_recovery);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)

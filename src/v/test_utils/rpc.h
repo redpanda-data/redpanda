@@ -21,6 +21,7 @@ T serialize_roundtrip_rpc(T&& t) {
     iobuf_parser parser(std::move(io));
     return reflection::adl<T>{}.from(parser);
 }
+
 template<typename T>
 ss::future<T> async_serialize_roundtrip_rpc(T&& t) {
     auto b = std::make_unique<iobuf>();
@@ -32,5 +33,18 @@ ss::future<T> async_serialize_roundtrip_rpc(T&& t) {
           auto raw = p.get();
           return reflection::async_adl<T>{}.from(*raw).finally(
             [p = std::move(p)] {});
+      });
+}
+
+template<typename T>
+ss::future<T> async_serialize_roundtrip_rpc_serde(T&& t) {
+    auto b = std::make_unique<iobuf>();
+    auto raw = b.get();
+
+    return serde::write_async(*raw, std::move(t))
+      .then([b = std::move(b)]() mutable {
+          auto p = std::make_unique<iobuf_parser>(std::move(*b));
+          auto raw = p.get();
+          return serde::read_async<T>(*raw).finally([p = std::move(p)] {});
       });
 }
