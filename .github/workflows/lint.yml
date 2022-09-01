@@ -25,13 +25,18 @@ jobs:
     steps:
 
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: 1.17.8
-      id: go
+
+    - name: lint rpk
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.45.2
+        working-directory: src/go/rpk/
 
     - name: install gofumpt
       working-directory: src/go/rpk
@@ -43,12 +48,6 @@ jobs:
       run: |
         find . -name *.go -type f | xargs -n1 gofumpt -w -lang=1.17
         git diff --exit-code
-
-    - name: lint rpk
-      uses: golangci/golangci-lint-action@v3
-      with:
-        version: v1.45.2
-        working-directory: src/go/rpk/
 
   js:
     name: Lint js files
