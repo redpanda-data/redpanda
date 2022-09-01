@@ -22,6 +22,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
+#include <array>
+
 namespace kafka {
 
 /**
@@ -62,10 +64,7 @@ static constexpr std::string_view topic_property_data_policy_script_name
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
-static constexpr std::string_view allowlist_topic_noop_confs[23] = {
-  // Cannot be altered in handle
-  "partition_count",
-  "replication_factor",
+static constexpr std::array<std::string_view, 21> allowlist_topic_noop_confs = {
   // Invalid name from describe
   "redpanda.datapolicy",
 
