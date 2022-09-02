@@ -43,7 +43,8 @@ class ArroyoTest(PreallocNodesTest):
                 f"{env_preamble} "
                 f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
                 "-k KafkaStreamsTestCase -rf",
-                combine_stderr=True)
+                combine_stderr=True,
+                timeout_sec=120)
 
             pytest_output = list(capture)
             for log_line in pytest_output:
