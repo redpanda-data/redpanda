@@ -34,7 +34,7 @@ struct configuration final : public config::config_store {
       advertised_pandaproxy_api;
     config::property<ss::sstring> api_doc_dir;
     config::property<std::chrono::milliseconds> consumer_instance_timeout;
-    config::property<int32_t> client_cache_size;
+    config::property<size_t> client_cache_size;
     config::property<config::authentication_method> authentication_method;
 
     configuration();

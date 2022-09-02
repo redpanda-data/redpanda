@@ -161,10 +161,10 @@ get_brokers(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = false};
     };
 
-    return rq.service().client_cache().find_or_create(user).then(
+    return rq.service().client_cache().fetch_client(user).then(
       [res_fmt, &make_metadata_req, rp = std::move(rp)](
-        kafka_client_cache::client_ptr client) mutable {
-          return client->dispatch(make_metadata_req)
+        client_ptr client) mutable {
+          return client->real.dispatch(make_metadata_req)
             .then(
               [res_fmt, rp = std::move(rp)](
                 kafka::metadata_request::api_type::response_type res) mutable {
