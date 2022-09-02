@@ -156,7 +156,7 @@ func (r *Reconciling) Do(
 		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, r.clusterDomain, log),
-		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer),
+		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName())),
 	}
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil { // nolint:gocritic // more readable
