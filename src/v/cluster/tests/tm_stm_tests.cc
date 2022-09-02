@@ -83,24 +83,18 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
     BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
     BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx3 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
+    auto tx3 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx3.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx3.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
+    BOOST_REQUIRE_EQUAL(tx3.status, tx_status::prepared);
     BOOST_REQUIRE_EQUAL(tx3.tx_seq, tx2.tx_seq);
     BOOST_REQUIRE_EQUAL(tx3.partitions.size(), 2);
-    auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
+    auto tx4 = expect_tx(stm.mark_tx_ongoing(tx_id));
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
-    BOOST_REQUIRE_EQUAL(tx4.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx4.partitions.size(), 2);
-    auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id));
-    BOOST_REQUIRE_EQUAL(tx5.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx5.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx5.status, tx_status::ongoing);
-    BOOST_REQUIRE_GT(tx5.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx5.partitions.size(), 0);
+    BOOST_REQUIRE_EQUAL(tx4.status, tx_status::ongoing);
+    BOOST_REQUIRE_GT(tx4.tx_seq, tx2.tx_seq);
+    BOOST_REQUIRE_EQUAL(tx4.partitions.size(), 0);
 }
 
 FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
@@ -134,14 +128,13 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
       stm.add_partitions(tx_id, partitions).get0(),
       cluster::tm_stm::op_status::success);
     auto tx3 = expect_tx(stm.get_tx(tx_id));
-    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
-    BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx6.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx6.status, tx_status::ongoing);
-    BOOST_REQUIRE_EQUAL(tx6.partitions.size(), 0);
-    BOOST_REQUIRE_NE(tx6.tx_seq, tx1.tx_seq);
+    auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
+    auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id));
+    BOOST_REQUIRE_EQUAL(tx5.id, tx_id);
+    BOOST_REQUIRE_EQUAL(tx5.pid, pid);
+    BOOST_REQUIRE_EQUAL(tx5.status, tx_status::ongoing);
+    BOOST_REQUIRE_EQUAL(tx5.partitions.size(), 0);
+    BOOST_REQUIRE_NE(tx5.tx_seq, tx1.tx_seq);
 }
 
 FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
@@ -175,9 +168,8 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
       stm.add_partitions(tx_id, partitions).get0(),
       cluster::tm_stm::op_status::success);
     auto tx3 = expect_tx(stm.get_tx(tx_id));
-    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
+    auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
+    auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{1, 1};
     op_code = stm
@@ -185,9 +177,9 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
                   c->term(), tx_id, std::chrono::milliseconds(0), pid2)
                 .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
-    auto tx7 = expect_tx(stm.get_tx(tx_id));
-    BOOST_REQUIRE_EQUAL(tx7.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx7.pid, pid2);
-    BOOST_REQUIRE_EQUAL(tx7.status, tx_status::ready);
-    BOOST_REQUIRE_EQUAL(tx7.partitions.size(), 0);
+    auto tx6 = expect_tx(stm.get_tx(tx_id));
+    BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
+    BOOST_REQUIRE_EQUAL(tx6.pid, pid2);
+    BOOST_REQUIRE_EQUAL(tx6.status, tx_status::ready);
+    BOOST_REQUIRE_EQUAL(tx6.partitions.size(), 0);
 }
