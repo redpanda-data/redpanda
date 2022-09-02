@@ -86,7 +86,7 @@ func (r *IngressResource) WithAnnotations(
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(issuer string) *IngressResource {
+func (r *IngressResource) WithTLS(issuer, secretName string) *IngressResource {
 	if r.annotations == nil {
 		r.annotations = map[string]string{}
 	}
@@ -98,8 +98,8 @@ func (r *IngressResource) WithTLS(issuer string) *IngressResource {
 	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
 		Hosts: []string{r.host},
-		// TODO: Use Cluster cert that has wildcard SAN for the subdomain once we finalized to use Ingress, this will require to sync TLS Secret to Console namespace
-		SecretName: fmt.Sprintf("%s-tls", r.Key().Name),
+		// Use the Cluster wildcard certificate
+		SecretName: secretName,
 	})
 
 	return r
