@@ -163,14 +163,14 @@ configuration::configuration()
       *this,
       "raft_heartbeat_interval_ms",
       "Milliseconds for raft leader heartbeats",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(150),
       {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_timeout_ms(
       *this,
       "raft_heartbeat_timeout_ms",
       "raft heartbeat RPC timeout",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3s,
       {.min = std::chrono::milliseconds(1)})
   , raft_heartbeat_disconnect_failures(

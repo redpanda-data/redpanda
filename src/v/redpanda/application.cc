@@ -724,10 +724,16 @@ void application::wire_up_redpanda_services() {
     raft_group_manager
       .start(
         model::node_id(config::node().node_id()),
-        config::shard_local_cfg().raft_io_timeout_ms(),
         _scheduling_groups.raft_sg(),
-        config::shard_local_cfg().raft_heartbeat_interval_ms(),
-        config::shard_local_cfg().raft_heartbeat_timeout_ms(),
+        [] {
+            return raft::group_manager::configuration{
+              .heartbeat_interval
+              = config::shard_local_cfg().raft_heartbeat_interval_ms.bind(),
+              .heartbeat_timeout
+              = config::shard_local_cfg().raft_heartbeat_timeout_ms.bind(),
+              .raft_io_timeout_ms
+              = config::shard_local_cfg().raft_io_timeout_ms()};
+        },
         [] {
             return raft::recovery_memory_quota::configuration{
               .max_recovery_memory

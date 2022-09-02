@@ -37,12 +37,17 @@ public:
     using leader_cb_t = ss::noncopyable_function<void(
       raft::group_id, model::term_id, std::optional<model::node_id>)>;
 
+    struct configuration {
+        config::binding<std::chrono::milliseconds> heartbeat_interval;
+        config::binding<std::chrono::milliseconds> heartbeat_timeout;
+        std::chrono::milliseconds raft_io_timeout_ms;
+    };
+    using config_provider_fn = ss::noncopyable_function<configuration()>;
+
     group_manager(
       model::node_id self,
-      model::timeout_clock::duration disk_timeout,
       ss::scheduling_group raft_scheduling_group,
-      std::chrono::milliseconds heartbeat_interval,
-      std::chrono::milliseconds heartbeat_timeout,
+      config_provider_fn,
       recovery_memory_quota::config_provider_fn recovery_mem_cfg,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
@@ -91,9 +96,9 @@ private:
     void setup_metrics();
 
     model::node_id _self;
-    model::timeout_clock::duration _disk_timeout;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;
+    configuration _configuration;
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
