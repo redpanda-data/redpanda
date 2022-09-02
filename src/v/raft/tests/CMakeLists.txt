@@ -33,6 +33,7 @@ set(srcs
     mux_state_machine_test.cc
     mutex_buffer_test.cc
     state_removal_test.cc
+    recovery_coordinator_test.cc
     configuration_manager_test.cc
     coordinated_recovery_throttle_test.cc
     heartbeats_test.cc

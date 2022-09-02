@@ -33,6 +33,8 @@ public:
         _property.set_value(value);
     }
 
+    const T& operator()() { return _property(); }
+
     void update(T&& value) { _property.update_value(std::move(value)); }
 
     binding<T> bind() { return _property.bind(); }
