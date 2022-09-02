@@ -74,7 +74,10 @@ public:
       model::timestamp::type keep_alive = 30)
       : _config{cfg}
       , _cache_size{size}
-      , _keep_alive{keep_alive} {}
+      , _keep_alive{keep_alive} {
+        // Need to specify type or else bad any_cast runtime error
+        _config.sasl_mechanism.set_value(ss::sstring{"SCRAM-SHA-256"});
+    }
 
     ~kafka_client_cache() = default;
 
@@ -97,9 +100,10 @@ public:
         return it->second->second;
     }
 
-    client_ptr make_client() {
-        // TODO(@NyaliaLui): Add SASL/SCRAM creds by incorporating
-        // the user credentials
+    client_ptr make_client(credential_t user) {
+        _config.scram_username.set_value(user.first);
+        _config.scram_password.set_value(user.second);
+
         return ss::make_lw_shared<timestamped_client>(
           to_yaml(_config, config::redact_secrets::no), model::new_timestamp());
     }
