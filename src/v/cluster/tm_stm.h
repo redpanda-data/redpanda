@@ -180,8 +180,6 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_preparing(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_aborting(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_prepared(model::term_id, kafka::transactional_id);
