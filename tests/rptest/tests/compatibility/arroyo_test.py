@@ -7,9 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import subprocess
-
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -30,33 +27,30 @@ class ArroyoTest(PreallocNodesTest):
                          *args,
                          **kwargs)
 
-    def _find_failed_tests(self, pytest_output: list[str]):
-        return [line for line in pytest_output if "FAILED" in line]
-
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
         test_node = self.preallocated_nodes[0]
 
         try:
             env_preamble = f"DEFAULT_BROKERS={self.redpanda.brokers()}"
-            capture = test_node.account.ssh_capture(
-                f"{env_preamble} "
-                f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
-                "-k KafkaStreamsTestCase -rf",
-                combine_stderr=True,
-                timeout_sec=120)
 
-            pytest_output = list(capture)
-            for log_line in pytest_output:
-                self.logger.info(log_line)
+            failed = False
+            for line in test_node.account.ssh_capture(
+                    f"{env_preamble} "
+                    f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
+                    "-k KafkaStreamsTestCase -rf",
+                    combine_stderr=True,
+                    timeout_sec=120):
+                self.logger.info(line)
+                if 'FAILED' in line:
+                    failed = True
 
-            failure_reports = self._find_failed_tests(pytest_output)
-            if len(failure_reports) > 0:
-                assert False, "Arroyo test failures occured. Please check the log file"
+            if failed:
+                assert False, "Arroyo test failures occurred. Please check the log file"
         except RemoteCommandError as err:
             if err.exit_status == 2:
                 assert False, "Arroyo test suite was interrupted"
             elif err.exit_status == 3:
-                assert False, "Internal error durring execution of Arroyo test suite"
+                assert False, "Internal error during execution of Arroyo test suite"
             elif err.exit_status == 4:
                 assert False, "Pytest command line invocation error"
