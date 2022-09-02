@@ -168,6 +168,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	if webhookEnabled {
+		hookServer := mgr.GetWebhookServer()
+		if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to create ready check")
+			os.Exit(1)
+		}
+
+		if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to create health check")
+			os.Exit(1)
+		}
+	}
 	setupLog.Info("Starting manager")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

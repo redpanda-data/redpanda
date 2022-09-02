@@ -1,0 +1,10 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  # Cordon the node that is running broker 1
+  - script: kubectl cordon $(kubectl get pod -n $NAMESPACE endpoint-template-1 -o jsonpath='{.spec.nodeName}')
+  # Delete broker 1 PVC and Pod to move it to another node, changing the corresponding advertised address
+  - command: kubectl delete pvc datadir-endpoint-template-1 --wait=false
+    namespaced: true
+  - command: kubectl delete pod endpoint-template-1
+    namespaced: true
