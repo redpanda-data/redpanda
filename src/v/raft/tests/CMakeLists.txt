@@ -32,6 +32,7 @@ set(srcs
     mutex_buffer_test.cc
     manual_log_deletion_test.cc
     state_removal_test.cc
+    recovery_coordinator_test.cc
     configuration_manager_test.cc
 )
 
