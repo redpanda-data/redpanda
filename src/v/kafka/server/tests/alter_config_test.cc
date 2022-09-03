@@ -337,8 +337,6 @@ FIXTURE_TEST(
     std::vector<ss::sstring> all_properties = {
       "retention.ms",
       "retention.bytes",
-      "replication_factor",
-      "partition_count",
       "segment.bytes",
       "cleanup.policy",
       "compression.type",
@@ -373,8 +371,6 @@ FIXTURE_TEST(
     std::vector<ss::sstring> first_group_config_properties = {
       "retention.ms",
       "retention.bytes",
-      "replication_factor",
-      "partition_count",
       "segment.bytes",
       "redpanda.remote.read",
       "redpanda.remote.write"};
@@ -441,7 +437,8 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
 
     auto describe_resp = describe_configs(test_tp);
-    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+    assert_property_value(
+      test_tp, "retention.ms", fmt::format("{}", 1234ms), describe_resp);
     assert_property_value(test_tp, "cleanup.policy", "compact", describe_resp);
     assert_property_value(
       test_tp, "redpanda.remote.read", "true", describe_resp);
@@ -475,7 +472,8 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.responses[1].resource_name, topic_2);
 
     auto describe_resp_1 = describe_configs(topic_1);
-    assert_property_value(topic_1, "retention.ms", "1234", describe_resp_1);
+    assert_property_value(
+      topic_1, "retention.ms", fmt::format("{}", 1234ms), describe_resp_1);
     assert_property_value(
       topic_1, "cleanup.policy", "compact", describe_resp_1);
 
@@ -536,7 +534,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
 
     auto describe_resp = describe_configs(test_tp);
-    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+    assert_property_value(
+      test_tp, "retention.ms", fmt::format("{}", 1234ms), describe_resp);
 
     /**
      * Set custom retention.bytes, previous settings should be overriden
@@ -552,8 +551,7 @@ FIXTURE_TEST(
       test_tp,
       "retention.ms",
       fmt::format(
-        "{}",
-        config::shard_local_cfg().delete_retention_ms().value_or(-1ms).count()),
+        "{}", config::shard_local_cfg().delete_retention_ms().value_or(-1ms)),
       new_describe_resp);
     assert_property_value(
       test_tp, "retention.bytes", "4096", new_describe_resp);
@@ -581,7 +579,8 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
 
     auto describe_resp = describe_configs(test_tp);
-    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+    assert_property_value(
+      test_tp, "retention.ms", fmt::format("{}", 1234ms), describe_resp);
 
     /**
      * Set custom retention.bytes, only this property should be updated
@@ -600,7 +599,7 @@ FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
     auto new_describe_resp = describe_configs(test_tp);
     // retention.ms should stay untouched
     assert_property_value(
-      test_tp, "retention.ms", fmt::format("1234"), new_describe_resp);
+      test_tp, "retention.ms", fmt::format("{}", 1234ms), new_describe_resp);
     assert_property_value(
       test_tp, "retention.bytes", "4096", new_describe_resp);
 }
@@ -649,7 +648,8 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
 
     auto describe_resp = describe_configs(test_tp);
-    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+    assert_property_value(
+      test_tp, "retention.ms", fmt::format("{}", 1234ms), describe_resp);
 
     /**
      * Remove retention.bytes
@@ -671,8 +671,7 @@ FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
       test_tp,
       "retention.ms",
       fmt::format(
-        "{}",
-        config::shard_local_cfg().delete_retention_ms().value_or(-1ms).count()),
+        "{}", config::shard_local_cfg().delete_retention_ms().value_or(-1ms)),
       new_describe_resp);
 }
 
@@ -766,7 +765,10 @@ FIXTURE_TEST(
 
     auto alter_config_describe_resp = describe_configs(test_tp);
     assert_property_value(
-      test_tp, "retention.ms", "1234", alter_config_describe_resp);
+      test_tp,
+      "retention.ms",
+      fmt::format("{}", 1234ms),
+      alter_config_describe_resp);
 
     std::ostringstream stream2;
     stream2 << dp1;

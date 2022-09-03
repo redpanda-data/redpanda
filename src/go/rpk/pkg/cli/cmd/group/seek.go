@@ -12,6 +12,7 @@ package group
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 )
 
 func newSeekCommand(fs afero.Fs) *cobra.Command {
@@ -35,7 +37,7 @@ func newSeekCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "seek [GROUP] --to (start|end|timestamp) --to-group ... --topics ...",
-		Short: "Modify a group's current offsets.",
+		Short: "Modify a group's current offsets",
 		Long: `Modify a group's current offsets.
 
 This command allows you to modify a group's offsets. Sometimes, you may need to
@@ -220,33 +222,34 @@ func seek(
 			tps[topic] = map[int32]struct{}{} // ensure exists
 		}
 		topics := tps.Topics()
-
 		var listed kadm.ListedOffsets
-		var err error
-		switch to {
-		case "start":
-			listed, err = adm.ListStartOffsets(context.Background(), topics...)
-		case "end":
-			listed, err = adm.ListEndOffsets(context.Background(), topics...)
-		default:
-			var milli int64
-			milli, err = strconv.ParseInt(to, 10, 64)
-			out.MaybeDie(err, "unable to parse millisecond %q: %v", to, err)
-			switch len(to) {
-			case 10: // e.g. "1622505600"; sec to milli
-				milli *= 1000
-			case 13: // e.g. "1622505600000", already in milli
-			case 19: // e.g. "1622505600000000000"; nano to milli
-				milli /= 1e6
+		if len(topics) > 0 {
+			var err error
+			switch to {
+			case "start":
+				listed, err = adm.ListStartOffsets(context.Background(), topics...)
+			case "end":
+				listed, err = adm.ListEndOffsets(context.Background(), topics...)
 			default:
-				out.Die("--to timestamp %q is not a second, nor a millisecond, nor a nanosecond", to)
+				var milli int64
+				milli, err = strconv.ParseInt(to, 10, 64)
+				out.MaybeDie(err, "unable to parse millisecond %q: %v", to, err)
+				switch len(to) {
+				case 10: // e.g. "1622505600"; sec to milli
+					milli *= 1000
+				case 13: // e.g. "1622505600000", already in milli
+				case 19: // e.g. "1622505600000000000"; nano to milli
+					milli /= 1e6
+				default:
+					out.Die("--to timestamp %q is not a second, nor a millisecond, nor a nanosecond", to)
+				}
+				listed, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topics...)
 			}
-			listed, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topics...)
+			if err == nil { // ListOffsets can return ShardErrors, but we want to be entirely successful
+				err = listed.Error()
+			}
+			out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
 		}
-		if err == nil { // ListOffsets can return ShardErrors, but we want to be entirely successful
-			err = listed.Error()
-		}
-		out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
 		commitTo = listed.Offsets()
 	}
 
@@ -271,7 +274,14 @@ func seek(
 		}
 		se := seekCommitErr{c.Topic, c.Partition, -1, -1, ""}
 		if c.Err != nil {
-			se.Error = c.Err.Error()
+			// Redpanda / Kafka send UnknownMemberID when issuing OffsetCommit
+			// if the group is not empty. This error is unclear to end users, so
+			// we remap it here.
+			if errors.Is(c.Err, kerr.UnknownMemberID) {
+				se.Error = "INVALID_OPERATION: seeking a non-empty group is not allowed."
+			} else {
+				se.Error = c.Err.Error()
+			}
 		}
 		if useErr {
 			tw.PrintStructFields(se)

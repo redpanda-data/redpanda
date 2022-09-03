@@ -11,33 +11,44 @@
 
 #include "redpanda/admin_server.h"
 
+#include "archival/service.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cluster/cluster_utils.h"
+#include "cluster/config_frontend.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
 #include "cluster/feature_table.h"
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/members_frontend.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_balancer_backend.h"
+#include "cluster/partition_balancer_rpc_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
+#include "cluster_config_schema_util.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
 #include "json/document.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
+#include "json/validator.h"
 #include "json/writer.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -50,11 +61,14 @@
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
+#include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/request_auth.h"
+#include "rpc/errc.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
+#include "ssx/metrics.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -62,11 +76,14 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
+#include <seastar/http/reply.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
@@ -86,7 +103,9 @@ admin_server::admin_server(
   ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
-  ss::sharded<cluster::metadata_cache>& metadata_cache)
+  ss::sharded<cluster::metadata_cache>& metadata_cache,
+  ss::sharded<archival::scheduler_service>& archival_service,
+  ss::sharded<rpc::connection_cache>& connection_cache)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -95,8 +114,9 @@ admin_server::admin_server(
   , _controller(controller)
   , _shard_table(st)
   , _metadata_cache(metadata_cache)
-  , _auth(
-      config::shard_local_cfg().admin_api_require_auth.bind(), _controller) {}
+  , _connection_cache(connection_cache)
+  , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
+  , _archival_service(archival_service) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -159,28 +179,10 @@ void admin_server::configure_admin_routes() {
     register_transaction_routes();
     register_debug_routes();
     register_cluster_routes();
+    register_shadow_indexing_routes();
 }
 
-struct json_validator {
-    explicit json_validator(const std::string& schema_text)
-      : schema(make_schema_document(schema_text))
-      , validator(schema) {}
-
-    static json::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        json::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return json::SchemaDocument(doc);
-    }
-
-    const json::SchemaDocument schema;
-    json::SchemaValidator validator;
-};
-
-static json_validator make_set_replicas_validator() {
+static json::validator make_set_replicas_validator() {
     const std::string schema = R"(
 {
     "type": "array",
@@ -202,7 +204,7 @@ static json_validator make_set_replicas_validator() {
     }
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 /**
@@ -228,14 +230,14 @@ static json::Document parse_json_body(ss::httpd::request const& req) {
  * caller see what went wrong.
  */
 static void
-apply_validator(json_validator& validator, json::Document const& doc) {
-    validator.validator.Reset();
-    validator.validator.ResetError();
+apply_validator(json::validator& validator, json::Document const& doc) {
+    validator.schema_validator.Reset();
+    validator.schema_validator.ResetError();
 
-    if (!doc.Accept(validator.validator)) {
+    if (!doc.Accept(validator.schema_validator)) {
         json::StringBuffer val_buf;
         json::Writer<json::StringBuffer> w{val_buf};
-        validator.validator.GetError().Accept(w);
+        validator.schema_validator.GetError().Accept(w);
         auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
         throw ss::httpd::bad_request_exception(
           fmt::format("JSON request body does not conform to schema: {}", s));
@@ -259,10 +261,20 @@ get_boolean_query_param(const ss::httpd::request& req, std::string_view name) {
 }
 
 void admin_server::configure_metrics_route() {
-    ss::prometheus::config metrics_conf;
-    metrics_conf.metric_help = "redpanda metrics";
-    metrics_conf.prefix = "vectorized";
-    ss::prometheus::add_prometheus_routes(_server, metrics_conf).get();
+    ss::prometheus::add_prometheus_routes(
+      _server,
+      {.metric_help = "redpanda metrics",
+       .prefix = "vectorized",
+       .handle = ss::metrics::default_handle(),
+       .route = "/metrics"})
+      .get();
+    ss::prometheus::add_prometheus_routes(
+      _server,
+      {.metric_help = "redpanda metrics",
+       .prefix = "redpanda",
+       .handle = ssx::metrics::public_metrics_handle,
+       .route = "/public_metrics"})
+      .get();
 }
 
 ss::future<> admin_server::configure_listeners() {
@@ -335,6 +347,45 @@ void admin_server::log_request(
                                            : "_anonymous",
       req._method,
       req.get_url());
+}
+
+void admin_server::log_exception(
+  const ss::sstring& url,
+  const request_auth_result& auth_state,
+  std::exception_ptr eptr) const {
+    using http_status = ss::httpd::reply::status_type;
+    using http_status_ut = std::underlying_type_t<http_status>;
+    const auto log_ex = [&](
+                          std::optional<http_status_ut> status = std::nullopt) {
+        std::stringstream os;
+        const auto username
+          = (auth_state.get_username().size() > 0 ? auth_state.get_username() : "_anonymous");
+        /// Strip URL of query parameters in the case sensitive information
+        /// might have been passed
+        fmt::print(
+          os,
+          "[{}] exception intercepted - url: [{}]",
+          username,
+          url.substr(0, url.find('?')));
+        if (status) {
+            fmt::print(os, " http_return_status[{}]", *status);
+        }
+        fmt::print(os, " reason - {}", eptr);
+        return os.str();
+    };
+
+    try {
+        std::rethrow_exception(eptr);
+    } catch (ss::httpd::base_exception& ex) {
+        const auto status = static_cast<http_status_ut>(ex.status());
+        if (ex.status() == http_status::internal_server_error) {
+            vlog(logger.error, "{}", log_ex(status));
+        } else if (status >= 400) {
+            vlog(logger.warn, "{}", log_ex(status));
+        }
+    } catch (...) {
+        vlog(logger.error, "{}", log_ex());
+    }
 }
 
 void admin_server::rearm_log_level_timer() {
@@ -506,6 +557,143 @@ bool need_redirect_to_leader(
 
     return leader_id_opt.value() != config::node().node_id();
 }
+
+model::node_id parse_broker_id(const ss::httpd::request& req) {
+    try {
+        return model::node_id(
+          boost::lexical_cast<model::node_id::type>(req.param["id"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
+    }
+}
+
+ss::future<std::vector<ss::httpd::partition_json::partition_result>>
+map_partition_results(std::vector<cluster::move_cancellation_result> results) {
+    std::vector<ss::httpd::partition_json::partition_result> ret;
+    ret.reserve(results.size());
+
+    for (cluster::move_cancellation_result& r : results) {
+        ss::httpd::partition_json::partition_result result;
+        result.ns = std::move(r.ntp.ns)();
+        result.topic = std::move(r.ntp.tp.topic)();
+        result.partition = r.ntp.tp.partition;
+        result.result = cluster::make_error_code(r.result).message();
+        ret.push_back(std::move(result));
+        co_await ss::maybe_yield();
+    }
+    co_return ret;
+}
+
+ss::httpd::broker_json::maintenance_status fill_maintenance_status(
+  const std::optional<cluster::drain_manager::drain_status>& status) {
+    ss::httpd::broker_json::maintenance_status ret;
+    if (status) {
+        const auto& s = status.value();
+        ret.draining = true;
+        ret.finished = s.finished;
+        ret.errors = s.errors;
+        ret.partitions = s.partitions.value_or(0);
+        ret.transferring = s.transferring.value_or(0);
+        ret.eligible = s.eligible.value_or(0);
+        ret.failed = s.failed.value_or(0);
+    } else {
+        ret.draining = false;
+        // ensure that the output json has all fields
+        ret.finished = false;
+        ret.errors = false;
+        ret.partitions = 0;
+        ret.transferring = 0;
+        ret.eligible = 0;
+        ret.failed = 0;
+    }
+    return ret;
+}
+
+// Fetch brokers from the members table and enrich with
+// metadata from the health monitor.
+ss::future<std::vector<ss::httpd::broker_json::broker>>
+get_brokers(cluster::controller* const controller) {
+    cluster::node_report_filter filter;
+
+    return controller->get_health_monitor()
+      .local()
+      .get_cluster_health(
+        cluster::cluster_report_filter{
+          .node_report_filter = std::move(filter),
+        },
+        cluster::force_refresh::no,
+        model::no_timeout)
+      .then([controller](result<cluster::cluster_health_report> h_report) {
+          if (h_report.has_error()) {
+              throw ss::httpd::base_exception(
+                fmt::format(
+                  "Unable to get cluster health: {}",
+                  h_report.error().message()),
+                ss::httpd::reply::status_type::service_unavailable);
+          }
+
+          std::map<model::node_id, ss::httpd::broker_json::broker> broker_map;
+
+          // Collect broker information from the members table.
+          auto& members_table = controller->get_members_table().local();
+          for (auto& broker : members_table.all_brokers()) {
+              ss::httpd::broker_json::broker b;
+              b.node_id = broker->id();
+              b.num_cores = broker->properties().cores;
+              b.membership_status = fmt::format(
+                "{}", broker->get_membership_state());
+
+              // These fields are defaults that will be overwritten with
+              // data from the health report.
+              b.is_alive = true;
+              b.maintenance_status = fill_maintenance_status(std::nullopt);
+
+              broker_map[broker->id()] = b;
+          }
+
+          // Enrich the broker information with data from the health report.
+          for (auto& ns : h_report.value().node_states) {
+              auto it = broker_map.find(ns.id);
+              if (it == broker_map.end()) {
+                  continue;
+              }
+
+              it->second.is_alive = static_cast<bool>(ns.is_alive);
+
+              auto r_it = std::find_if(
+                h_report.value().node_reports.begin(),
+                h_report.value().node_reports.end(),
+                [id = ns.id](const cluster::node_health_report& nhr) {
+                    return nhr.id == id;
+                });
+
+              if (r_it != h_report.value().node_reports.end()) {
+                  it->second.version = r_it->local_state.redpanda_version;
+                  it->second.maintenance_status = fill_maintenance_status(
+                    r_it->drain_status);
+
+                  for (auto& ds : r_it->local_state.disks) {
+                      ss::httpd::broker_json::disk_space_info dsi;
+                      dsi.path = ds.path;
+                      dsi.free = ds.free;
+                      dsi.total = ds.total;
+                      it->second.disk_space.push(dsi);
+                  }
+              }
+          }
+
+          std::vector<ss::httpd::broker_json::broker> brokers;
+          brokers.reserve(broker_map.size());
+
+          for (auto&& broker : broker_map) {
+              brokers.push_back(std::move(broker.second));
+          }
+
+          return ss::make_ready_future<decltype(brokers)>(std::move(brokers));
+      });
+};
+
 } // namespace
 
 /**
@@ -536,7 +724,12 @@ ss::future<> admin_server::throw_on_error(
               "can not update broker {} state, invalid state transition "
               "requested",
               id));
+        case cluster::errc::timeout:
+            throw ss::httpd::base_exception(
+              fmt::format("Timeout: {}", ec.message()),
+              ss::httpd::reply::status_type::gateway_timeout);
         case cluster::errc::update_in_progress:
+        case cluster::errc::leadership_changed:
         case cluster::errc::waiting_for_recovery:
         case cluster::errc::no_leader_controller:
             throw ss::httpd::base_exception(
@@ -546,6 +739,10 @@ ss::future<> admin_server::throw_on_error(
             throw co_await redirect_to_leader(req, ntp);
         case cluster::errc::not_leader_controller:
             throw co_await redirect_to_leader(req, model::controller_ntp);
+        case cluster::errc::no_update_in_progress:
+            throw ss::httpd::bad_request_exception(
+              "can not cancel partition move operation as there is no move "
+              "in progress");
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -588,10 +785,49 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected tx_error error: {}", ec.message()));
         }
+    } else if (ec.category() == rpc::error_category()) {
+        switch (rpc::errc(ec.value())) {
+        case rpc::errc::success:
+            co_return;
+        case rpc::errc::disconnected_endpoint:
+            [[fallthrough]];
+        case rpc::errc::exponential_backoff:
+            throw ss::httpd::base_exception(
+              fmt::format("Not ready: {}", ec.message()),
+              ss::httpd::reply::status_type::service_unavailable);
+        case rpc::errc::client_request_timeout:
+            throw ss::httpd::base_exception(
+              fmt::format("Timeout: {}", ec.message()),
+              ss::httpd::reply::status_type::gateway_timeout);
+        case rpc::errc::service_error:
+        case rpc::errc::missing_node_rpc_client:
+        case rpc::errc::method_not_found:
+        case rpc::errc::version_not_supported:
+            throw ss::httpd::server_error_exception(
+              fmt::format("Unexpected error: {}", ec.message()));
+        }
     } else {
         throw ss::httpd::server_error_exception(
           fmt::format("Unexpected error: {}", ec.message()));
     }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::cancel_node_partition_moves(
+  ss::httpd::request& req, cluster::partition_move_direction direction) {
+    auto node_id = parse_broker_id(req);
+    auto res = co_await _controller->get_topics_frontend()
+                 .local()
+                 .cancel_moving_partition_replicas_node(
+                   node_id, direction, model::timeout_clock::now() + 5s);
+
+    if (res.has_error()) {
+        co_await throw_on_error(
+          req, res.error(), model::controller_ntp, node_id);
+    }
+
+    co_return ss::json::json_return_type(
+      co_await map_partition_results(std::move(res.value())));
 }
 
 bool str_to_bool(std::string_view s) {
@@ -607,7 +843,8 @@ void admin_server::register_config_routes() {
       ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer);
+          config::shard_local_cfg().to_json(
+            writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
@@ -626,7 +863,9 @@ void admin_server::register_config_routes() {
           }
 
           config::shard_local_cfg().to_json(
-            writer, [include_defaults](config::base_property& p) {
+            writer,
+            config::redact_secrets::yes,
+            [include_defaults](config::base_property& p) {
                 return include_defaults || !p.is_default();
             });
 
@@ -639,7 +878,7 @@ void admin_server::register_config_routes() {
       [](ss::const_req, ss::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
-          config::node().to_json(writer);
+          config::node().to_json(writer, config::redact_secrets::yes);
 
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
@@ -721,7 +960,7 @@ void admin_server::register_config_routes() {
       });
 }
 
-static json_validator make_cluster_config_validator() {
+static json::validator make_cluster_config_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -738,7 +977,7 @@ static json_validator make_cluster_config_validator() {
     "required": ["upsert", "remove"]
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 /**
@@ -757,7 +996,7 @@ void config_multi_property_validation(
   std::map<ss::sstring, ss::sstring>& errors) {
     absl::flat_hash_set<ss::sstring> modified_keys;
     for (const auto& i : req.upsert) {
-        modified_keys.insert(i.first);
+        modified_keys.insert(i.key);
     }
 
     if (
@@ -818,10 +1057,7 @@ void admin_server::register_cluster_config_routes() {
           auto statuses = co_await cfg.invoke_on(
             cluster::controller_stm_shard,
             [](cluster::config_manager& manager) {
-                // Intentional copy, do not want to pass reference to mutable
-                // status map back to originating core.
-                return cluster::config_manager::status_map(
-                  manager.get_status());
+                return manager.get_projected_status();
             });
 
           for (const auto& s : statuses) {
@@ -849,69 +1085,7 @@ void admin_server::register_cluster_config_routes() {
       ss::httpd::cluster_config_json::get_cluster_config_schema,
       [](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
-          using property_map = std::map<
-            ss::sstring,
-            ss::httpd::cluster_config_json::cluster_config_property_metadata>;
-
-          property_map properties;
-
-          config::shard_local_cfg().for_each(
-            [&properties](const config::base_property& p) {
-                if (p.get_visibility() == config::visibility::deprecated) {
-                    // Do not mention deprecated settings in schema: they
-                    // only exist internally to avoid making existing stored
-                    // configs invalid.
-                    return;
-                }
-
-                auto [pm_i, inserted] = properties.emplace(
-                  ss::sstring(p.name()),
-                  ss::httpd::cluster_config_json::
-                    cluster_config_property_metadata());
-                vassert(inserted, "Emplace failed, duplicate property name?");
-
-                auto& pm = pm_i->second;
-                pm.description = ss::sstring(p.desc());
-                pm.needs_restart = p.needs_restart();
-                pm.visibility = ss::sstring(
-                  config::to_string_view(p.get_visibility()));
-                pm.nullable = p.is_nullable();
-                pm.is_secret = p.is_secret();
-
-                if (p.is_array()) {
-                    pm.type = "array";
-
-                    auto items = ss::httpd::cluster_config_json::
-                      cluster_config_property_metadata_items();
-                    items.type = ss::sstring(p.type_name());
-                    pm.items = items;
-                } else {
-                    pm.type = ss::sstring(p.type_name());
-                }
-
-                auto enum_values = p.enum_values();
-                if (!enum_values.empty()) {
-                    // In swagger, this field would just be called 'enum', but
-                    // because we use C++ code generation for our structures,
-                    // we cannot use that reserved word
-                    pm.enum_values = enum_values;
-                }
-
-                const auto& example = p.example();
-                if (example.has_value()) {
-                    pm.example = ss::sstring(example.value());
-                }
-
-                const auto& units = p.units_name();
-                if (units.has_value()) {
-                    pm.units = ss::sstring(units.value());
-                }
-            });
-
-          std::map<ss::sstring, property_map> response = {
-            {ss::sstring("properties"), std::move(properties)}};
-
-          co_return ss::json::json_return_type(std::move(response));
+          co_return util::generate_json_schema(config::shard_local_cfg());
       });
 
     register_route<superuser, true>(
@@ -956,6 +1130,7 @@ void admin_server::register_cluster_config_routes() {
           // but we also do an early validation pass here to avoid writing
           // clearly wrong things into the log & give better feedback
           // to the API consumer.
+          absl::flat_hash_set<ss::sstring> upsert_no_op_names;
           if (!get_boolean_query_param(*req, "force")) {
               // A scratch copy of configuration: we must not touch
               // the real live configuration object, that will be updated
@@ -975,29 +1150,28 @@ void admin_server::register_cluster_config_routes() {
               // properties.
 
               std::map<ss::sstring, ss::sstring> errors;
-              for (const auto& i : update.upsert) {
+              for (const auto& [yaml_name, yaml_value] : update.upsert) {
                   // Decode to a YAML object because that's what the property
                   // interface expects.
                   // Don't both catching ParserException: this was encoded
                   // just a few lines above.
-                  const auto& yaml_value = i.second;
                   auto val = YAML::Load(yaml_value);
 
-                  if (!cfg.contains(i.first)) {
-                      errors[i.first] = "Unknown property";
+                  if (!cfg.contains(yaml_name)) {
+                      errors[yaml_name] = "Unknown property";
                       continue;
                   }
-                  auto& property = cfg.get(i.first);
+                  auto& property = cfg.get(yaml_name);
 
                   try {
                       auto validation_err = property.validate(val);
                       if (validation_err.has_value()) {
-                          errors[i.first]
+                          errors[yaml_name]
                             = validation_err.value().error_message();
                           vlog(
                             logger.warn,
                             "Invalid {}: '{}' ({})",
-                            i.first,
+                            yaml_name,
                             property.format_raw(yaml_value),
                             validation_err.value().error_message());
                       } else {
@@ -1005,7 +1179,10 @@ void admin_server::register_cluster_config_routes() {
                           // from it's value setter even after a non-throwing
                           // call to validate (if this happens validate() was
                           // implemented wrongly, but let's be safe)
-                          property.set_value(val);
+                          auto changed = property.set_value(val);
+                          if (!changed) {
+                              upsert_no_op_names.insert(yaml_name);
+                          }
                       }
                   } catch (YAML::BadConversion const& e) {
                       // Be helpful, and give the user an example of what
@@ -1037,21 +1214,21 @@ void admin_server::register_cluster_config_routes() {
                           }
                       }
 
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         std::current_exception());
                   } catch (...) {
                       auto message = fmt::format(
                         "{}", std::current_exception());
-                      errors[i.first] = message;
+                      errors[yaml_name] = message;
                       vlog(
                         logger.warn,
                         "Invalid {}: '{}' ({})",
-                        i.first,
+                        yaml_name,
                         property.format_raw(yaml_value),
                         message);
                   }
@@ -1097,6 +1274,24 @@ void admin_server::register_cluster_config_routes() {
               // A dry run doesn't really need a result, but it's simpler for
               // the API definition if we return the same structure as a
               // normal write.
+              ss::httpd::cluster_config_json::cluster_config_write_result
+                result;
+              result.config_version = current_version;
+              co_return ss::json::json_return_type(std::move(result));
+          }
+
+          if (
+            update.upsert.size() == upsert_no_op_names.size()
+            && update.remove.empty()) {
+              vlog(
+                logger.trace,
+                "patch_cluster_config: ignoring request, {} upserts resulted "
+                "in no-ops",
+                update.upsert.size());
+              auto current_version
+                = co_await _controller->get_config_manager().invoke_on(
+                  cluster::config_manager::shard,
+                  [](cluster::config_manager& cm) { return cm.get_version(); });
               ss::httpd::cluster_config_json::cluster_config_write_result
                 result;
               result.config_version = current_version;
@@ -1176,12 +1371,12 @@ void admin_server::register_raft_routes() {
             shard,
             [group_id, target, this, req = std::move(req)](
               cluster::partition_manager& pm) mutable {
-                auto consensus = pm.consensus_for(group_id);
-                if (!consensus) {
+                auto partition = pm.partition_for(group_id);
+                if (!partition) {
                     throw ss::httpd::not_found_exception();
                 }
-                const auto ntp = consensus->ntp();
-                return consensus->do_transfer_leadership(target).then(
+                const auto ntp = partition->ntp();
+                return partition->transfer_leadership(target).then(
                   [this, req = std::move(req), ntp](std::error_code err)
                     -> ss::future<ss::json::json_return_type> {
                       co_await throw_on_error(*req, err, ntp);
@@ -1429,7 +1624,7 @@ void admin_server::register_status_routes() {
       });
 }
 
-static json_validator make_feature_put_validator() {
+static json::validator make_feature_put_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -1443,7 +1638,7 @@ static json_validator make_feature_put_validator() {
     "required": ["state"]
 }
 )";
-    return json_validator(schema);
+    return json::validator(schema);
 }
 
 void admin_server::register_features_routes() {
@@ -1555,109 +1750,86 @@ void admin_server::register_features_routes() {
               co_return ss::json::json_void();
           }
       });
-}
 
-model::node_id parse_broker_id(const ss::httpd::request& req) {
-    try {
-        return model::node_id(
-          boost::lexical_cast<model::node_id::type>(req.param["id"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
-    }
-}
+    register_route<user>(
+      ss::httpd::features_json::get_license,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::license)) {
+              throw ss::httpd::bad_request_exception(
+                "Feature manager reports the cluster is not fully upgraded to "
+                "accept license get requests");
+          }
+          ss::httpd::features_json::license_response res;
+          res.loaded = false;
+          const auto& ft = _controller->get_feature_table().local();
+          const auto& license = ft.get_license();
+          if (license) {
+              res.loaded = true;
+              ss::httpd::features_json::license_contents lc;
+              lc.format_version = license->format_version;
+              lc.org = license->organization;
+              lc.type = security::license_type_to_string(license->type);
+              lc.expires = license->expiry.count();
+              res.license = lc;
+          }
+          co_return std::move(res);
+      });
 
-static ss::httpd::broker_json::maintenance_status fill_maintenance_status(
-  const std::optional<cluster::drain_manager::drain_status>& status) {
-    ss::httpd::broker_json::maintenance_status ret;
-    if (status) {
-        const auto& s = status.value();
-        ret.draining = true;
-        ret.finished = s.finished;
-        ret.errors = s.errors;
-        ret.partitions = s.partitions.value_or(0);
-        ret.transferring = s.transferring.value_or(0);
-        ret.eligible = s.eligible.value_or(0);
-        ret.failed = s.failed.value_or(0);
-    } else {
-        ret.draining = false;
-        // ensure that the output json has all fields
-        ret.finished = false;
-        ret.errors = false;
-        ret.partitions = 0;
-        ret.transferring = 0;
-        ret.eligible = 0;
-        ret.failed = 0;
-    }
-    return ret;
+    register_route<superuser>(
+      ss::httpd::features_json::put_license,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto& raw_license = req->content;
+          if (raw_license.empty()) {
+              throw ss::httpd::bad_request_exception(
+                "Missing redpanda license from request body");
+          }
+          if (!_controller->get_feature_table().local().is_active(
+                cluster::feature::license)) {
+              throw ss::httpd::bad_request_exception(
+                "Feature manager reports the cluster is not fully upgraded to "
+                "accept license put requests");
+          }
+
+          try {
+              boost::trim_if(raw_license, boost::is_any_of(" \n"));
+              auto license = security::make_license(raw_license);
+              if (license.is_expired()) {
+                  throw ss::httpd::bad_request_exception(
+                    fmt::format("License is expired: {}", license));
+              }
+              auto& fm = _controller->get_feature_manager();
+              auto err = co_await fm.invoke_on(
+                cluster::feature_manager::backend_shard,
+                [license = std::move(license)](
+                  cluster::feature_manager& fm) mutable {
+                    return fm.update_license(std::move(license));
+                });
+              co_await throw_on_error(*req, err, model::controller_ntp);
+          } catch (const security::license_malformed_exception& ex) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("License is malformed: {}", ex.what()));
+          } catch (const security::license_invalid_exception& ex) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("License is invalid: {}", ex.what()));
+          }
+          co_return ss::json::json_void();
+      });
 }
 
 void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_cluster_view,
       [this](std::unique_ptr<ss::httpd::request>) {
-          cluster::node_report_filter filter;
-
-          return _controller->get_health_monitor()
-            .local()
-            .get_cluster_health(
-              cluster::cluster_report_filter{
-                .node_report_filter = std::move(filter),
-              },
-              cluster::force_refresh::no,
-              model::no_timeout)
-            .then([this](result<cluster::cluster_health_report> h_report) {
-                if (h_report.has_error()) {
-                    throw ss::httpd::base_exception(
-                      fmt::format(
-                        "Unable to get cluster health: {}",
-                        h_report.error().message()),
-                      ss::httpd::reply::status_type::service_unavailable);
-                }
-
-                std::map<model::node_id, ss::httpd::broker_json::broker> result;
-
+          return get_brokers(_controller)
+            .then([this](std::vector<ss::httpd::broker_json::broker> brokers) {
                 auto& members_table = _controller->get_members_table().local();
-                for (auto& broker : members_table.all_brokers()) {
-                    ss::httpd::broker_json::broker b;
-                    b.node_id = broker->id();
-                    b.num_cores = broker->properties().cores;
-                    b.membership_status = fmt::format(
-                      "{}", broker->get_membership_state());
-                    b.is_alive = true;
-                    result[broker->id()] = b;
-                }
-
-                for (auto& ns : h_report.value().node_states) {
-                    auto it = result.find(ns.id);
-                    if (it == result.end()) {
-                        continue;
-                    }
-                    it->second.is_alive = (bool)ns.is_alive;
-
-                    auto r_it = std::find_if(
-                      h_report.value().node_reports.begin(),
-                      h_report.value().node_reports.end(),
-                      [id = ns.id](const cluster::node_health_report& nhr) {
-                          return nhr.id == id;
-                      });
-                    if (r_it != h_report.value().node_reports.end()) {
-                        it->second.version = r_it->local_state.redpanda_version;
-                        for (auto& ds : r_it->local_state.disks) {
-                            ss::httpd::broker_json::disk_space_info dsi;
-                            dsi.path = ds.path;
-                            dsi.free = ds.free;
-                            dsi.total = ds.total;
-                            it->second.disk_space.push(dsi);
-                        }
-                    }
-                }
 
                 ss::httpd::broker_json::cluster_view ret;
                 ret.version = members_table.version();
-                for (auto& [_, b] : result) {
-                    ret.brokers.push(b);
-                }
+                ret.brokers = std::move(brokers);
 
                 return ss::make_ready_future<ss::json::json_return_type>(
                   std::move(ret));
@@ -1667,67 +1839,10 @@ void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_brokers,
       [this](std::unique_ptr<ss::httpd::request>) {
-          cluster::node_report_filter filter;
-
-          return _controller->get_health_monitor()
-            .local()
-            .get_cluster_health(
-              cluster::cluster_report_filter{
-                .node_report_filter = std::move(filter),
-              },
-              cluster::force_refresh::no,
-              model::no_timeout)
-            .then([this](result<cluster::cluster_health_report> h_report) {
-                if (h_report.has_error()) {
-                    throw ss::httpd::base_exception(
-                      fmt::format(
-                        "Unable to get cluster health: {}",
-                        h_report.error().message()),
-                      ss::httpd::reply::status_type::service_unavailable);
-                }
-
-                std::vector<ss::httpd::broker_json::broker> res;
-
-                for (auto& ns : h_report.value().node_states) {
-                    auto broker = _metadata_cache.local().get_broker(ns.id);
-                    if (!broker) {
-                        continue;
-                    }
-                    auto& b = res.emplace_back();
-                    b.node_id = ns.id;
-                    b.num_cores = (*broker)->properties().cores;
-                    b.membership_status = fmt::format(
-                      "{}", ns.membership_state);
-                    b.is_alive = (bool)ns.is_alive;
-
-                    // ensure maintenance status is filled in even if it isn't
-                    // found in the report below. if it is found then this
-                    // filler/default value will be replaced.
-                    b.maintenance_status = fill_maintenance_status(
-                      std::nullopt);
-
-                    auto r_it = std::find_if(
-                      h_report.value().node_reports.begin(),
-                      h_report.value().node_reports.end(),
-                      [id = ns.id](const cluster::node_health_report& nhr) {
-                          return nhr.id == id;
-                      });
-                    if (r_it != h_report.value().node_reports.end()) {
-                        b.version = r_it->local_state.redpanda_version;
-                        for (auto& ds : r_it->local_state.disks) {
-                            ss::httpd::broker_json::disk_space_info dsi;
-                            dsi.path = ds.path;
-                            dsi.free = ds.free;
-                            dsi.total = ds.total;
-                            b.disk_space.push(dsi);
-                        }
-                        b.maintenance_status = fill_maintenance_status(
-                          r_it->drain_status);
-                    }
-                }
-
+          return get_brokers(_controller)
+            .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
                 return ss::make_ready_future<ss::json::json_return_type>(
-                  std::move(res));
+                  std::move(brokers));
             });
       });
 
@@ -1879,6 +1994,12 @@ void admin_server::register_broker_routes() {
               }
           }
           co_return res;
+      });
+    register_route<superuser>(
+      ss::httpd::broker_json::cancel_partition_moves,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return cancel_node_partition_moves(
+            *req, cluster::partition_move_direction::all);
       });
 }
 
@@ -2108,13 +2229,19 @@ void admin_server::register_partition_routes() {
                     // long transaction do not do progress is useless for
                     // expired tx.
                     new_tx.staleness_ms = staleness.has_value()
-                                            ? staleness.value().count()
+                                            ? std::chrono::duration_cast<
+                                                std::chrono::milliseconds>(
+                                                staleness.value())
+                                                .count()
                                             : -1;
                     auto timeout = tx_info.get_timeout();
                     // -1 is returned for expired transaction, because
                     // timeout is useless for expired tx.
                     new_tx.timeout_ms = timeout.has_value()
-                                          ? timeout.value().count()
+                                          ? std::chrono::duration_cast<
+                                              std::chrono::milliseconds>(
+                                              timeout.value())
+                                              .count()
                                           : -1;
 
                     if (tx_info.is_expired()) {
@@ -2201,9 +2328,60 @@ void admin_server::register_partition_routes() {
                 co_return ss::json::json_return_type(ss::json::json_void());
             });
       });
+    register_route<superuser>(
+      ss::httpd::partition_json::cancel_partition_reconfiguration,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const auto ntp = parse_ntp_from_request(req->param);
 
+          if (ntp == model::controller_ntp) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Can't cancel controller reconfiguration"));
+          }
+          vlog(
+            logger.debug,
+            "Requesting cancelling of {} partition reconfiguration",
+            ntp);
+
+          auto err
+            = co_await _controller->get_topics_frontend()
+                .local()
+                .cancel_moving_partition_replicas(
+                  ntp,
+                  model::timeout_clock::now()
+                    + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_void();
+      });
+    register_route<superuser>(
+      ss::httpd::partition_json::unclean_abort_partition_reconfiguration,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const auto ntp = parse_ntp_from_request(req->param);
+
+          if (ntp == model::controller_ntp) {
+              throw ss::httpd::bad_request_exception(
+                "Can't unclean abort controller reconfiguration");
+          }
+          vlog(
+            logger.warn,
+            "Requesting unclean abort of {} partition reconfiguration",
+            ntp);
+
+          auto err
+            = co_await _controller->get_topics_frontend()
+                .local()
+                .abort_moving_partition_replicas(
+                  ntp,
+                  model::timeout_clock::now()
+                    + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_void();
+      });
     // make sure to call reset() before each use
-    static thread_local json_validator set_replicas_validator(
+    static thread_local json::validator set_replicas_validator(
       make_set_replicas_validator());
 
     register_route<superuser>(
@@ -2324,6 +2502,34 @@ void admin_server::register_partition_routes() {
 
           co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_void();
+      });
+
+    register_route<user>(
+      ss::httpd::partition_json::get_partition_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          using reconfiguration = ss::httpd::partition_json::reconfiguration;
+          std::vector<reconfiguration> ret;
+          auto in_progress
+            = _controller->get_topics_state().local().updates_in_progress();
+
+          ret.reserve(in_progress.size());
+          for (auto& [ntp, status] : in_progress) {
+              reconfiguration r;
+              r.ns = ntp.ns;
+              r.topic = ntp.tp.topic;
+              r.partition = ntp.tp.partition;
+              r.status = fmt::format("{}", status.state);
+
+              for (auto& bs : status.previous_replicas) {
+                  ss::httpd::partition_json::assignment replica;
+                  replica.node_id = bs.node_id;
+                  replica.core = bs.shard;
+                  r.previous_replicas.push(replica);
+              }
+              ret.push_back(std::move(r));
+          }
+          co_return ret;
       });
 }
 
@@ -2651,5 +2857,172 @@ void admin_server::register_cluster_routes() {
           }
 
           co_return ss::json::json_return_type(ret);
+      });
+
+    register_route<publik>(
+      ss::httpd::cluster_json::get_partition_balancer_status,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.debug, "Requested partition balancer status");
+
+          using result_t = std::variant<
+            cluster::partition_balancer_overview_reply,
+            model::node_id,
+            cluster::errc>;
+
+          result_t result
+            = co_await _controller->get_partition_balancer().invoke_on(
+              cluster::partition_balancer_backend::shard,
+              [](cluster::partition_balancer_backend& backend) {
+                  if (backend.is_leader()) {
+                      return result_t(backend.overview());
+                  } else {
+                      auto leader_id = backend.leader_id();
+                      if (leader_id) {
+                          return result_t(leader_id.value());
+                      } else {
+                          return result_t(cluster::errc::no_leader_controller);
+                      }
+                  }
+              });
+
+          cluster::partition_balancer_overview_reply overview;
+          if (std::holds_alternative<
+                cluster::partition_balancer_overview_reply>(result)) {
+              overview = std::move(
+                std::get<cluster::partition_balancer_overview_reply>(result));
+          } else if (std::holds_alternative<model::node_id>(result)) {
+              auto node_id = std::get<model::node_id>(result);
+              vlog(
+                logger.debug,
+                "proxying the partition_balancer_overview call to node {}",
+                node_id);
+              auto rpc_result
+                = co_await _connection_cache.local()
+                    .with_node_client<
+                      cluster::partition_balancer_rpc_client_protocol>(
+                      _controller->self(),
+                      ss::this_shard_id(),
+                      node_id,
+                      5s,
+                      [](cluster::partition_balancer_rpc_client_protocol cp) {
+                          return cp.overview(
+                            cluster::partition_balancer_overview_request{},
+                            rpc::client_opts(5s));
+                      });
+
+              if (rpc_result.has_error()) {
+                  co_await throw_on_error(
+                    *req, rpc_result.error(), model::controller_ntp);
+              }
+
+              overview = std::move(rpc_result.value().data);
+          } else {
+              co_await throw_on_error(
+                *req, std::get<cluster::errc>(result), model::controller_ntp);
+          }
+
+          ss::httpd::cluster_json::partition_balancer_status ret;
+
+          if (overview.error == cluster::errc::feature_disabled) {
+              ret.status = "off";
+              co_return ss::json::json_return_type(ret);
+          } else if (overview.error != cluster::errc::success) {
+              co_await throw_on_error(
+                *req, overview.error, model::controller_ntp);
+          }
+
+          ret.status = fmt::format("{}", overview.status);
+
+          if (overview.last_tick_time != model::timestamp::missing()) {
+              ret.seconds_since_last_tick = (model::timestamp::now().value()
+                                             - overview.last_tick_time.value())
+                                            / 1000;
+          }
+
+          if (overview.violations) {
+              ss::httpd::cluster_json::partition_balancer_violations
+                ret_violations;
+              for (const auto& n : overview.violations->unavailable_nodes) {
+                  ret_violations.unavailable_nodes.push(n.id);
+              }
+              for (const auto& n : overview.violations->full_nodes) {
+                  ret_violations.over_disk_limit_nodes.push(n.id);
+              }
+              ret.violations = ret_violations;
+          }
+
+          ret.current_reassignments_count = _controller->get_topics_state()
+                                              .local()
+                                              .updates_in_progress()
+                                              .size();
+
+          co_return ss::json::json_return_type(ret);
+      });
+
+    register_route<superuser>(
+      ss::httpd::cluster_json::cancel_all_partitions_reconfigurations,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(
+            logger.info,
+            "Requested cancellation of all ongoing partition movements");
+
+          auto res = co_await _controller->get_topics_frontend()
+                       .local()
+                       .cancel_moving_all_partition_replicas(
+                         model::timeout_clock::now() + 5s);
+          if (res.has_error()) {
+              co_await throw_on_error(*req, res.error(), model::controller_ntp);
+          }
+
+          co_return ss::json::json_return_type(
+            co_await map_partition_results(std::move(res.value())));
+      });
+}
+
+void admin_server::register_shadow_indexing_routes() {
+    struct manifest_reducer {
+        ss::future<>
+        operator()(std::optional<cloud_storage::partition_manifest>&& value) {
+            _manifest = std::move(value);
+            return ss::make_ready_future<>();
+        }
+        std::optional<cloud_storage::partition_manifest> get() && {
+            return std::move(_manifest);
+        }
+        std::optional<cloud_storage::partition_manifest> _manifest;
+    };
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::sync_local_state,
+      [this](std::unique_ptr<ss::httpd::request> request)
+        -> ss::future<ss::json::json_return_type> {
+          vlog(logger.info, "Requested bucket syncup");
+          auto topic = model::topic(request->param["topic"]);
+          auto partition = model::partition_id(
+            boost::lexical_cast<int32_t>(request->param["partition"]));
+          auto ntp = model::ntp(model::kafka_namespace, topic, partition);
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
+              vlog(logger.info, "Need to redirect bucket syncup request");
+              co_await redirect_to_leader(*request, ntp);
+          } else {
+              auto result = co_await _archival_service.map_reduce(
+                manifest_reducer(),
+                [ntp](archival::scheduler_service& service) {
+                    return service.maybe_truncate_manifest(ntp);
+                });
+              vlog(logger.info, "Requested bucket syncup completed");
+              if (result) {
+                  std::stringstream sts;
+                  result->serialize(sts);
+                  vlog(
+                    logger.info,
+                    "Requested bucket syncup result {}",
+                    sts.str());
+              } else {
+                  vlog(logger.info, "Requested bucket syncup result empty");
+              }
+          }
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }

@@ -15,12 +15,12 @@
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
+#include "storage/types.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
@@ -89,7 +89,7 @@ public:
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
-    ss::future<> remove_persistent_state();
+    virtual ss::future<> remove_persistent_state();
 
     ss::future<> make_snapshot();
     /*

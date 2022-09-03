@@ -9,9 +9,46 @@
 
 #include "net/connection.h"
 
-#include "rpc/logger.h"
+#include "rpc/service.h"
 
 namespace net {
+
+/**
+ * If the exception is a "boring" disconnection case, then populate this with
+ * the reason.
+ *
+ * This avoids logging overly alarmist "error" messages for exceptions that
+ * are typical in the case of a client or node simply stopping.
+ */
+std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
+    try {
+        rethrow_exception(e);
+    } catch (std::system_error& e) {
+        if (
+          e.code() == std::errc::broken_pipe
+          || e.code() == std::errc::connection_reset
+          || e.code() == std::errc::connection_aborted) {
+            return e.code().message();
+        }
+    } catch (const net::batched_output_stream_closed& e) {
+        return "stream closed";
+    } catch (const std::out_of_range&) {
+        // Happens on unclean client disconnect, when io_iterator_consumer
+        // gets fewer bytes than it wanted
+        return "short read";
+    } catch (const rpc::rpc_internal_body_parsing_exception&) {
+        // Happens on unclean client disconnect, typically wrapping
+        // an out_of_range
+        return "parse error";
+    } catch (...) {
+        // Global catch-all prevents stranded/non-handled exceptional futures.
+        // In all other non-explicity handled cases, the exception will not be
+        // related to disconnect issues, therefore fallthrough to return nullopt
+        // is acceptable.
+    }
+
+    return std::nullopt;
+}
 
 connection::connection(
   boost::intrusive::list<connection>& hook,
@@ -19,15 +56,22 @@ connection::connection(
   ss::connected_socket f,
   ss::socket_address a,
   server_probe& p,
-  std::optional<security::tls::principal_mapper> tls_pm)
+  std::optional<size_t> in_max_buffer_size)
   : addr(a)
   , _hook(hook)
   , _name(std::move(name))
   , _fd(std::move(f))
   , _in(_fd.input())
   , _out(_fd.output())
-  , _probe(p)
-  , _tls_pm(std::move(tls_pm)) {
+  , _probe(p) {
+    if (in_max_buffer_size.has_value()) {
+        auto in_config = ss::connected_socket_input_stream_config{};
+        in_config.max_buffer_size = in_max_buffer_size.value();
+        _in = _fd.input(std::move(in_config));
+    } else {
+        _in = _fd.input();
+    }
+
     _hook.push_back(*this);
     _probe.connection_established();
 }

@@ -406,6 +406,13 @@ ss::future<> group_manager::recover_partition(
               "Recovering {} - {}",
               group_id,
               group_stm.get_metadata());
+            for (const auto& member : group_stm.get_metadata().members) {
+                vlog(
+                  klog.debug,
+                  "Recovering group {} member {}",
+                  group_id,
+                  member);
+            }
             if (!group) {
                 group = ss::make_lw_shared<kafka::group>(
                   group_id,

@@ -60,11 +60,6 @@ void rjson_serialize_impl(
         w.Key("truststore_file");
         w.String((*(v.get_truststore_file())).c_str());
     }
-
-    if (v.get_principal_mapping_rules()) {
-        w.Key("principal_mapping_rules");
-        w.String(*v.get_principal_mapping_rules());
-    }
 }
 
 void rjson_serialize(
@@ -146,6 +141,18 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const model::violation_recovery_policy& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::cloud_credentials_source& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::partition_autobalancing_mode& v) {
     stringize(w, v);
 }
 

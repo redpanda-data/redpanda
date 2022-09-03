@@ -124,7 +124,7 @@ public:
     void restart() {
         shutdown();
         app_signal = std::make_unique<::stop_signal>();
-        ss::smp::invoke_on_all([this] {
+        ss::smp::invoke_on_all([] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
         }).get0();
@@ -249,7 +249,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
         return app.partition_manager.invoke_on(
           *shard_id, [ntp](cluster::partition_manager& pm) {
               if (pm.get(ntp)) {
-                  return pm.get(ntp)->is_leader();
+                  return pm.get(ntp)->is_elected_leader();
               }
               return false;
           });
@@ -266,7 +266,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
                 auto p = pm.get(ntp);
-                return p
+                return p->raft()
                   ->replicate(
                     std::move(rdr),
                     raft::replicate_options(

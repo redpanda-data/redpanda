@@ -10,6 +10,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,7 +46,7 @@ func TestAdminAPI(t *testing.T) {
 			name:     "delete user in 1 node cluster",
 			nNodes:   1,
 			leaderID: 0,
-			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser("Milo") },
+			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser(context.Background(), "Milo") },
 			leader:   []string{"/v1/security/users/Milo"},
 			none:     []string{"/v1/partitions/redpanda/controller/0", "/v1/node_config"},
 		},
@@ -53,7 +54,7 @@ func TestAdminAPI(t *testing.T) {
 			name:     "delete user in 3 node cluster",
 			nNodes:   3,
 			leaderID: 1,
-			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser("Lola") },
+			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser(context.Background(), "Lola") },
 			all:      []string{"/v1/node_config"},
 			any:      []string{"/v1/partitions/redpanda/controller/0"},
 			leader:   []string{"/v1/security/users/Lola"},
@@ -62,10 +63,12 @@ func TestAdminAPI(t *testing.T) {
 			name:     "create user in 3 node cluster",
 			nNodes:   3,
 			leaderID: 1,
-			action:   func(t *testing.T, a *AdminAPI) error { return a.CreateUser("Joss", "momorocks", ScramSha256) },
-			all:      []string{"/v1/node_config"},
-			any:      []string{"/v1/partitions/redpanda/controller/0"},
-			leader:   []string{"/v1/security/users"},
+			action: func(t *testing.T, a *AdminAPI) error {
+				return a.CreateUser(context.Background(), "Joss", "momorocks", ScramSha256)
+			},
+			all:    []string{"/v1/node_config"},
+			any:    []string{"/v1/partitions/redpanda/controller/0"},
+			leader: []string{"/v1/security/users"},
 		},
 		{
 			name:     "list users in 3 node cluster",
@@ -78,7 +81,7 @@ func TestAdminAPI(t *testing.T) {
 				},
 			},
 			action: func(t *testing.T, a *AdminAPI) error {
-				users, err := a.ListUsers()
+				users, err := a.ListUsers(context.Background())
 				require.NoError(t, err)
 				require.Len(t, users, 4)
 				return nil

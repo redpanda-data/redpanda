@@ -199,7 +199,7 @@ static ss::future<> write_materialized_partition(
           model::topic_namespace source(input->ntp().ns, input->ntp().tp.topic);
           model::topic_namespace new_materialized(ntp.ns, ntp.tp.topic);
           return maybe_make_materialized_log(
-                   source, new_materialized, input->is_leader(), args)
+                   source, new_materialized, input->is_elected_leader(), args)
             .then([args, ntp] { return get_partition(args.pm.local(), ntp); })
             .then([ntp, reader = std::move(reader)](
                     ss::lw_shared_ptr<partition> p) mutable {

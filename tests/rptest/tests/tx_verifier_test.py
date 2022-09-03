@@ -36,7 +36,7 @@ class TxVerifierTest(RedpandaTest):
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,
-            "enable_auto_rebalance_on_node_add": False
+            "partition_autobalancing_mode": "off",
         }
 
         super(TxVerifierTest, self).__init__(test_context=test_context,

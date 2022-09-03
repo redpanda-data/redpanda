@@ -22,16 +22,6 @@
 
 namespace kafka {
 
-struct delete_acls_response;
-
-class delete_acls_api final {
-public:
-    using response_type = delete_acls_response;
-
-    static constexpr const char* name = "delete_acls";
-    static constexpr api_key key = api_key(31);
-};
-
 struct delete_acls_request final {
     using api_type = delete_acls_api;
 

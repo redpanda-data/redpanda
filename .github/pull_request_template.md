@@ -5,6 +5,22 @@ Describe in plain language the motivation (bug, feature, etc.) behind the change
 <!-- Use the GitHub keyword `Fixes` to link to bug(s) this PR will fix. -->
 Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
 
+## Backport Required
+
+<!-- Specify which branches this should be backported to, e.g.: -->
+- [ ] not a bug fix
+- [ ] issue does not exist in previous branches
+- [ ] papercut/not impactful enough to backport
+- [ ] v22.2.x
+- [ ] v22.1.x
+- [ ] v21.11.x
+
+## UX changes
+
+Describe in plain language how this PR affects an end-user. What topic flags, configuration flags, command line flags, deprecation policies etc are added/changed.
+
+<!-- don't ship user breaking changes. Ping PMs for help with user visible changes  -->
+
 ## Release notes
 <!--
 

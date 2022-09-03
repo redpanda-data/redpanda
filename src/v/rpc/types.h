@@ -17,12 +17,12 @@
 #include "net/unresolved_address.h"
 #include "outcome.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scheduling.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>
@@ -35,6 +35,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -72,14 +73,27 @@ enum class status : uint32_t {
 };
 
 enum class transport_version : uint8_t {
+    /*
+     * the first version used by rpc simple protocol. at this version level
+     * clients and servers (1) assume adl encoding, (2) ignore the version when
+     * handling a request, and (3) always respond with version 0.
+     */
     v0 = 0,
-    max_supported = v0,
+
+    /*
+     * starting with version v1 clients and servers no longer ignore the
+     * version. v1 indicates adl encoding and v2 indicates serde encoding.
+     */
+    v1 = 1,
+    v2 = 2,
+
+    max_supported = v2,
 
     /*
      * unsupported is a convenience name used in tests to construct a message
      * with an unsupported version. the bits should not be considered reserved.
      */
-    unsupported = max_supported + 1,
+    unsupported = std::numeric_limits<uint8_t>::max()
 };
 
 /// \brief core struct for communications. sent with _each_ payload
@@ -120,7 +134,7 @@ uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
     using resource_units_t
-      = ss::foreign_ptr<ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>>;
+      = ss::foreign_ptr<ss::lw_shared_ptr<std::vector<ssx::semaphore_units>>>;
     client_opts(
       clock_type::time_point client_send_timeout,
       compression_type ct,
@@ -166,7 +180,7 @@ public:
     streaming_context& operator=(const streaming_context&) = delete;
 
     virtual ~streaming_context() noexcept = default;
-    virtual ss::future<ss::semaphore_units<>> reserve_memory(size_t) = 0;
+    virtual ss::future<ssx::semaphore_units> reserve_memory(size_t) = 0;
     virtual const header& get_header() const = 0;
     /// \brief because we parse the input as a _stream_ we need to signal
     /// to the dispatching thread that it can resume parsing for a new RPC
@@ -178,13 +192,13 @@ public:
     /// until destruction of object without doing a .finally() and moving things
     /// around
     ss::future<> permanent_memory_reservation(size_t n) {
-        return reserve_memory(n).then([this](ss::semaphore_units<> units) {
+        return reserve_memory(n).then([this](ssx::semaphore_units units) {
             _reservations.push_back(std::move(units));
         });
     }
 
 private:
-    std::vector<ss::semaphore_units<>> _reservations;
+    std::vector<ssx::semaphore_units> _reservations;
 };
 
 class netbuf {

@@ -15,6 +15,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
@@ -139,7 +140,7 @@ service::create_non_replicable_topics(
                    std::move(r.topics), model::time_from_now(r.timeout));
              })
       .then([](std::vector<topic_result> res) {
-          return create_non_replicable_topics_reply{std::move(res)};
+          return create_non_replicable_topics_reply{.results = std::move(res)};
       });
 }
 
@@ -197,10 +198,16 @@ service::do_finish_partition_update(finish_partition_update_request&& req) {
         req.new_replica_set,
         config::shard_local_cfg().replicate_append_timeout_ms()
           + model::timeout_clock::now());
+    finish_partition_update_reply reply{.result = errc::success};
+    if (ec) {
+        if (ec.category() == cluster::error_category()) {
+            reply.result = errc(ec.value());
+        } else {
+            reply.result = errc::not_leader;
+        }
+    }
 
-    errc e = ec ? errc::not_leader : errc::success;
-
-    co_return finish_partition_update_reply{.result = e};
+    co_return reply;
 }
 
 ss::future<update_topic_properties_reply> service::update_topic_properties(
@@ -357,12 +364,25 @@ service::hello(hello_request&& req, rpc::streaming_context&) {
 
 ss::future<config_status_reply>
 service::config_status(config_status_request&& req, rpc::streaming_context&) {
-    if (!_config_manager.local().needs_update(req.status)) {
+    // Move to stack to avoid referring to reference argument after a
+    // scheduling point
+    auto status = std::move(req.status);
+
+    // Peer should not be sending us status messages unless their status
+    // differs from the content of the controller log, but they might
+    // be out of date and send us multiple messages: avoid writing to
+    // our controller log by pre-checking if their request is actually a
+    // change.
+    auto needs_update = co_await _config_manager.invoke_on(
+      config_manager::shard,
+      [status](config_manager& mgr) { return mgr.needs_update(status); });
+    if (!needs_update) {
+        vlog(clusterlog.debug, "Ignoring status update {}, is a no-op", status);
         co_return config_status_reply{.error = errc::success};
     }
 
     auto ec = co_await _config_frontend.local().set_status(
-      req.status,
+      status,
       config::shard_local_cfg().replicate_append_timeout_ms()
         + model::timeout_clock::now());
 
@@ -450,6 +470,14 @@ void clear_partition_revisions(node_health_report& report) {
         }
     }
 }
+
+void clear_partition_sizes(node_health_report& report) {
+    for (auto& t : report.topics) {
+        for (auto& p : t.partitions) {
+            p.size_bytes = partition_status::invalid_size_bytes;
+        }
+    }
+}
 } // namespace
 
 ss::future<get_node_health_reply>
@@ -461,9 +489,15 @@ service::do_collect_node_health_report(get_node_health_request req) {
           .error = map_health_monitor_error_code(res.error())};
     }
     auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old redpanda nodes
-    if (req.decoded_version == 0) {
+    // clear all revision ids to prevent sending them to old versioned redpanda
+    // nodes
+    if (req.decoded_version > get_node_health_request::revision_id_version) {
         clear_partition_revisions(report);
+    }
+    // clear all partition sizes to prevent sending them to old versioned
+    // redpanda nodes
+    if (req.decoded_version > get_node_health_request::size_bytes_version) {
+        clear_partition_sizes(report);
     }
     co_return get_node_health_reply{
       .error = errc::success,
@@ -483,10 +517,19 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
           .error = map_health_monitor_error_code(res.error())};
     }
     auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old redpanda nodes
-    if (req.decoded_version == 0) {
+    // clear all revision ids to prevent sending them to old versioned redpanda
+    // nodes
+    if (req.decoded_version > get_cluster_health_request::revision_id_version) {
         for (auto& r : report.node_reports) {
             clear_partition_revisions(r);
+        }
+    }
+
+    // clear all partition sizes to prevent sending them to old versioned
+    // redpanda nodes
+    if (req.decoded_version > get_cluster_health_request::size_bytes_version) {
+        for (auto& r : report.node_reports) {
+            clear_partition_sizes(r);
         }
     }
     co_return get_cluster_health_reply{
@@ -518,6 +561,55 @@ ss::future<feature_barrier_response> service::feature_barrier(
 
     co_return feature_barrier_response{
       .entered = result.entered, .complete = result.complete};
+}
+
+ss::future<cancel_partition_movements_reply>
+service::cancel_all_partition_movements(
+  cancel_all_partition_movements_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_cancel_all_partition_movements(req);
+    });
+}
+ss::future<cancel_partition_movements_reply>
+service::cancel_node_partition_movements(
+  cancel_node_partition_movements_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_cancel_node_partition_movements(req);
+    });
+}
+
+ss::future<cancel_partition_movements_reply>
+service::do_cancel_all_partition_movements(
+  cancel_all_partition_movements_request req) {
+    auto ret
+      = co_await _topics_frontend.local().cancel_moving_all_partition_replicas(
+        default_move_interruption_timeout + model::timeout_clock::now());
+
+    if (ret.has_error()) {
+        co_return cancel_partition_movements_reply{
+          .general_error = map_update_interruption_error_code(ret.error())};
+    }
+    co_return cancel_partition_movements_reply{
+      .general_error = errc::success,
+      .partition_results = std::move(ret.value())};
+}
+
+ss::future<cancel_partition_movements_reply>
+service::do_cancel_node_partition_movements(
+  cancel_node_partition_movements_request req) {
+    auto ret
+      = co_await _topics_frontend.local().cancel_moving_partition_replicas_node(
+        req.node_id,
+        req.direction,
+        default_move_interruption_timeout + model::timeout_clock::now());
+
+    if (ret.has_error()) {
+        co_return cancel_partition_movements_reply{
+          .general_error = map_update_interruption_error_code(ret.error())};
+    }
+    co_return cancel_partition_movements_reply{
+      .general_error = errc::success,
+      .partition_results = std::move(ret.value())};
 }
 
 } // namespace cluster

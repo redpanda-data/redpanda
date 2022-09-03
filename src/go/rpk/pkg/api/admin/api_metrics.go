@@ -9,10 +9,13 @@
 
 package admin
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
-func (a *AdminAPI) PrometheusMetrics() ([]byte, error) {
+func (a *AdminAPI) PrometheusMetrics(ctx context.Context) ([]byte, error) {
 	var res []byte
-	err := a.sendOne(http.MethodGet, "/metrics", nil, &res, false)
+	err := a.sendOne(ctx, http.MethodGet, "/metrics", nil, &res, false)
 	return res, err
 }

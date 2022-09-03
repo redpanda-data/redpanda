@@ -54,16 +54,16 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
         return model::record_batch_reader(std::move(reader));
     }
     // check if requested reader belongs to one of the locked range
-    auto lock_it = std::find_if(
-      _locked_offset_ranges.begin(),
-      _locked_offset_ranges.end(),
-      [&reader](const offset_range& range) {
-          return reader->lease_range_base_offset() > range.second
-                 || reader->lease_range_end_offset() < range.first;
-      });
-
     // range locked, do not insert into the cache
-    if (lock_it != _locked_offset_ranges.end()) {
+    if (intersects_with_locked_range(
+          reader->lease_range_base_offset(),
+          reader->lease_range_end_offset())) {
+        vlog(
+          stlog.trace,
+          "{} - range is locked, not adding reader with lease [{},{}]",
+          _ntp,
+          reader->lease_range_base_offset(),
+          reader->lease_range_end_offset());
         return model::record_batch_reader(std::move(reader));
     }
 
@@ -78,6 +78,19 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
     _in_use.push_back(*ptr);
     _probe.reader_added();
     return ptr->make_cached_reader(this);
+}
+
+bool readers_cache::intersects_with_locked_range(
+  model::offset reader_base_offset, model::offset reader_end_offset) const {
+    auto lock_it = std::find_if(
+      _locked_offset_ranges.begin(),
+      _locked_offset_ranges.end(),
+      [reader_base_offset, reader_end_offset](const offset_range& range) {
+          return reader_base_offset <= range.second
+                 && reader_end_offset >= range.first;
+      });
+
+    return lock_it != _locked_offset_ranges.end();
 }
 
 std::optional<model::record_batch_reader>
@@ -158,6 +171,12 @@ ss::future<> readers_cache::stop() {
     _readers.clear_and_dispose([](entry* e) {
         delete e; // NOLINT
     });
+    /**
+     * Stop and clear metrics as well or risk a double registrion on partition
+     * movements. For details see
+     * https://github.com/redpanda-data/redpanda/issues/5938
+     */
+    _probe.clear();
 }
 
 ss::future<readers_cache::range_lock_holder>

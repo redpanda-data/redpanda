@@ -22,13 +22,13 @@ import (
 	"github.com/twmb/types"
 )
 
-func NewListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs) *cobra.Command {
 	var a acls
 	var printAllFilters bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
-		Short:   "List ACLs.",
+		Short:   "List ACLs",
 		Long: `List ACLs.
 
 See the 'rpk acl' help text for a full write up on ACLs. List flags work in a
@@ -64,7 +64,7 @@ resource names:
 		},
 	}
 	a.addListFlags(cmd)
-	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "print the filters that were requested (failed filters are always printed)")
+	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }
 
@@ -79,19 +79,19 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().MarkDeprecated("principal", "use --{allow,deny}-{host,principal}")
 	cmd.Flags().MarkDeprecated("host", "use --{allow,deny}-{host,principal}")
 
-	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to match ACLs for (repeatable)")
-	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to match ACLs for (repeatable)")
-	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to match ACLs to the cluster")
-	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to match ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to match ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to match ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to match ACLs to the cluster")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to match ACLs for (repeatable)")
 
-	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "pattern to use when matching resource names (any, match, literal, or prefixed)")
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "Pattern to use when matching resource names (any, match, literal, or prefixed)")
 
-	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to match (repeatable)")
 
-	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "allowed principal ACLs to match (repeatable)")
-	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "allowed host ACLs to match (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "denied principal ACLs to match (repeatable)")
-	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "denied host ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Allowed principal ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "Allowed host ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "Denied principal ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "Denied host ACLs to match (repeatable)")
 }
 
 func describeReqResp(

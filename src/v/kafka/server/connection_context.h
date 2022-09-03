@@ -11,16 +11,18 @@
 #pragma once
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
+#include "kafka/types.h"
 #include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
+#include "security/mtls.h"
 #include "security/sasl_authentication.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -28,6 +30,12 @@
 #include <memory>
 
 namespace kafka {
+
+class kafka_api_version_not_supported_exception : public std::runtime_error {
+public:
+    explicit kafka_api_version_not_supported_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
 
 /*
  * authz failures should be quiet or logged at a reduced severity level.
@@ -37,15 +45,50 @@ using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
 struct request_header;
 class request_context;
 
+// used to track number of pending requests
+class request_tracker {
+public:
+    explicit request_tracker(net::server_probe& probe) noexcept
+      : _probe(probe) {
+        _probe.request_received();
+    }
+    request_tracker(const request_tracker&) = delete;
+    request_tracker(request_tracker&&) = delete;
+    request_tracker& operator=(const request_tracker&) = delete;
+    request_tracker& operator=(request_tracker&&) = delete;
+
+    ~request_tracker() noexcept { _probe.request_completed(); }
+
+private:
+    net::server_probe& _probe;
+};
+
+// Used to hold resources associated with a given request until
+// the response has been send, as well as to track some statistics
+// about the request.
+//
+// The resources in particular should be not be destroyed until
+// the request is complete (e.g., all the information written to
+// the socket so that no userspace buffers remain).
+struct session_resources {
+    using pointer = ss::lw_shared_ptr<session_resources>;
+
+    ss::lowres_clock::duration backpressure_delay;
+    ssx::semaphore_units memlocks;
+    ssx::semaphore_units queue_units;
+    std::unique_ptr<hdr_hist::measurement> method_latency;
+    std::unique_ptr<request_tracker> tracker;
+};
+
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
 public:
     connection_context(
       protocol& p,
       net::server::resources&& r,
-      security::sasl_server sasl,
+      std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
-      bool use_mtls) noexcept
+      std::optional<security::tls::mtls_state> mtls_state) noexcept
       : _proto(p)
       , _rs(std::move(r))
       , _sasl(std::move(sasl))
@@ -53,7 +96,7 @@ public:
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
-      , _use_mtls(use_mtls) {}
+      , _mtls_state(std::move(mtls_state)) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -63,25 +106,25 @@ public:
 
     protocol& server() { return _proto; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
-    security::sasl_server& sasl() { return _sasl; }
+    std::optional<security::sasl_server>& sasl() { return _sasl; }
 
     template<typename T>
     bool authorized(
       security::acl_operation operation, const T& name, authz_quiet quiet) {
-        // mtls configured?
-        if (_use_mtls) {
-            if (_mtls_principal.has_value()) {
-                return authorized_user(
-                  _mtls_principal.value(), operation, name, quiet);
-            }
-            return false;
-        }
-        // sasl configured?
+        // authorization disabled?
         if (!_enable_authorizer) {
             return true;
         }
-        auto user = sasl().principal();
-        return authorized_user(std::move(user), operation, name, quiet);
+
+        auto get_principal = [this]() {
+            if (_mtls_state) {
+                return _mtls_state->principal();
+            } else if (_sasl) {
+                return _sasl->principal();
+            }
+            return ss::sstring{}; // anonymous user
+        };
+        return authorized_user(get_principal(), operation, name, quiet);
     }
 
     template<typename T>
@@ -97,26 +140,46 @@ public:
           name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {
-            if (quiet) {
-                vlog(
-                  _authlog.debug,
-                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                  "resource: {}",
-                  _proto.name(),
-                  security::sasl_state_to_str(_sasl.state()),
-                  operation,
-                  principal,
-                  name);
+            if (_sasl) {
+                if (quiet) {
+                    vlog(
+                      _authlog.debug,
+                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                      "resource: {}",
+                      _proto.name(),
+                      security::sasl_state_to_str(_sasl->state()),
+                      operation,
+                      principal,
+                      name);
+                } else {
+                    vlog(
+                      _authlog.info,
+                      "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                      "resource: {}",
+                      _proto.name(),
+                      security::sasl_state_to_str(_sasl->state()),
+                      operation,
+                      principal,
+                      name);
+                }
             } else {
-                vlog(
-                  _authlog.info,
-                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
-                  "resource: {}",
-                  _proto.name(),
-                  security::sasl_state_to_str(_sasl.state()),
-                  operation,
-                  principal,
-                  name);
+                if (quiet) {
+                    vlog(
+                      _authlog.debug,
+                      "proto: {}, acl op: {}, principal: {}, resource: {}",
+                      _proto.name(),
+                      operation,
+                      principal,
+                      name);
+                } else {
+                    vlog(
+                      _authlog.info,
+                      "proto: {}, acl op: {}, principal: {}, resource: {}",
+                      _proto.name(),
+                      operation,
+                      principal,
+                      name);
+                }
             }
         }
 
@@ -131,49 +194,52 @@ public:
     }
 
 private:
-    // used to track number of pending requests
-    class request_tracker {
-    public:
-        explicit request_tracker(net::server_probe& probe) noexcept
-          : _probe(probe) {
-            _probe.request_received();
-        }
-        request_tracker(const request_tracker&) = delete;
-        request_tracker(request_tracker&&) = delete;
-        request_tracker& operator=(const request_tracker&) = delete;
-        request_tracker& operator=(request_tracker&&) = delete;
+    // Reserve units from memory from the memory semaphore in proportion
+    // to the number of bytes the request procesisng is expected to
+    // take.
+    ss::future<ssx::semaphore_units>
+    reserve_request_units(api_key key, size_t size);
 
-        ~request_tracker() noexcept { _probe.request_completed(); }
-
-    private:
-        net::server_probe& _probe;
-    };
-    // used to pass around some internal state
-    struct session_resources {
-        ss::lowres_clock::duration backpressure_delay;
-        ss::semaphore_units<> memlocks;
-        ss::semaphore_units<> queue_units;
-        std::unique_ptr<hdr_hist::measurement> method_latency;
-        std::unique_ptr<request_tracker> tracker;
-    };
-
-    /// called by throttle_request
-    ss::future<ss::semaphore_units<>> reserve_request_units(size_t size);
-
-    /// apply correct backpressure sequence
+    // Apply backpressure sequence, where the request processing may be
+    // delayed for various reasons, including throttling but also because
+    // too few server resources are available to accomodate the request
+    // currently.
+    // When the returned future resolves, the throttling period is over and
+    // the associated resouces have been obtained and are tracked by the
+    // contained session_resources object.
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
-    ss::future<> handle_mtls_auth();
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> process_next_response();
+
+    /**
+     * Process zero or more ready responses in request order.
+     *
+     * The future<> returned by this method resolves when all ready *and*
+     * in-order responses have been processed, which is not the same as all
+     * ready responses. In particular, responses which are ready may not be
+     * processed if there are earlier (lower sequence number) responses
+     * which are not yet ready: they will be processed by a future
+     * invocation.
+     *
+     * @return ss::future<> a future which as described above.
+     */
+    ss::future<> maybe_process_responses();
     ss::future<> do_process(request_context);
 
     ss::future<> handle_auth_v0(size_t);
 
 private:
+    /**
+     * Bundles together a response and its associated resources.
+     */
+    struct response_and_resources {
+        response_ptr response;
+        session_resources::pointer resources;
+    };
+
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
-    using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
+    using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
 
     class ctx_log {
     public:
@@ -230,12 +296,11 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
-    security::sasl_server _sasl;
+    std::optional<security::sasl_server> _sasl;
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
     ctx_log _authlog;
-    bool _use_mtls{false};
-    std::optional<ss::sstring> _mtls_principal;
+    std::optional<security::tls::mtls_state> _mtls_state;
 };
 
 } // namespace kafka

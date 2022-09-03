@@ -149,9 +149,10 @@ public:
     // reset_xxx: updates a transaction and an etag
     checked<tm_transaction, tm_stm::op_status>
       reset_tx_ongoing(kafka::transactional_id, model::term_id);
-    bool add_partitions(
+    ss::future<tm_stm::op_status> add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
-    bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
+    ss::future<tm_stm::op_status>
+      add_group(kafka::transactional_id, kafka::group_id, model::term_id);
     bool is_actual_term(model::term_id term) { return _insync_term == term; }
     std::optional<kafka::transactional_id>
     get_id_by_pid(model::producer_identity pid) {

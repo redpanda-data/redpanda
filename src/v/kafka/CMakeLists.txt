@@ -34,6 +34,7 @@ set(handlers_srcs
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
   server/handlers/offset_for_leader_epoch.cc
+  server/handlers/handler_interface.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )
@@ -54,8 +55,6 @@ v_cc_library(
     server/connection_context.cc
     server/protocol.cc
     server/protocol_utils.cc
-    server/flex_versions.cc
-    server/logger.cc
     server/quota_manager.cc
     server/fetch_session_cache.cc
     server/replicated_partition.cc
@@ -67,6 +66,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
+    v::coproc
     v::cluster
     v::kafka_protocol
     v::security

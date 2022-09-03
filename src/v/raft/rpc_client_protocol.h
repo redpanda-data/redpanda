@@ -16,7 +16,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
-#include "rpc/connection_cache.h"
+#include "rpc/fwd.h"
 #include "rpc/transport.h"
 
 #include <system_error>

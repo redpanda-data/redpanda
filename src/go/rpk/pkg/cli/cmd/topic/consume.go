@@ -57,7 +57,7 @@ type consumer struct {
 	cl *kgo.Client
 }
 
-func NewConsumeCommand(fs afero.Fs) *cobra.Command {
+func newConsumeCommand(fs afero.Fs) *cobra.Command {
 	var (
 		c      consumer
 		offset string
@@ -66,7 +66,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "consume TOPICS...",
-		Short: "Consume records from topics.",
+		Short: "Consume records from topics",
 		Long:  helpConsume,
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
@@ -126,7 +126,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().Int32SliceVarP(&c.partitions, "partitions", "p", nil, "Comma delimited list of specific partitions to consume")
 	cmd.Flags().BoolVarP(&c.regex, "regex", "r", false, "Parse topics as regex; consume any topic that matches any expression")
 
-	cmd.Flags().StringVarP(&c.group, "group", "g", "", "group to use for consuming (incompatible with -p)")
+	cmd.Flags().StringVarP(&c.group, "group", "g", "", "Group to use for consuming (incompatible with -p)")
 	cmd.Flags().StringVarP(&c.balancer, "balancer", "b", "cooperative-sticky", "Group balancer to use if group consuming (range, roundrobin, sticky, cooperative-sticky)")
 
 	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum amount of bytes per fetch request per broker")
@@ -140,7 +140,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 	// Deprecated.
 	cmd.Flags().BoolVar(new(bool), "commit", false, "")
-	cmd.Flags().MarkDeprecated("commit", "group consuming always commits")
+	cmd.Flags().MarkDeprecated("commit", "Group consuming always commits")
 
 	return cmd
 }

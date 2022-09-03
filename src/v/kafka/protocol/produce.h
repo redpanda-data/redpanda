@@ -23,21 +23,10 @@
 
 namespace kafka {
 
-struct produce_response;
-
 /**
  * Support starts at version 3 because this is the first version that supports
  * version 2 of the kafka message format.
  */
-class produce_api final {
-public:
-    using response_type = produce_response;
-
-    static constexpr const char* name = "produce";
-    static constexpr api_key key = api_key(0);
-};
-
-struct produce_response;
 
 struct produce_request final {
     using api_type = produce_api;
@@ -76,6 +65,7 @@ struct produce_request final {
      * Build a generic error response for a given request.
      */
     produce_response make_error_response(error_code error) const;
+    produce_response make_full_disk_response() const;
 
     /// True if the request contains a batch with a transactional id.
     bool has_transactional = false;

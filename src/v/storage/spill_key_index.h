@@ -14,9 +14,13 @@
 #include "hashing/crc32c.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
+#include "model/record_batch_types.h"
+#include "ssx/semaphore.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
+#include "storage/storage_resources.h"
+#include "storage/types.h"
 #include "utils/vint.h"
 
 #include <seastar/core/file.hh>
@@ -36,16 +40,24 @@ public:
     static constexpr size_t max_key_size = compacted_index::max_entry_size
                                            - (2 * vint::max_length);
     using underlying_t = absl::node_hash_map<
-      bytes,
+      compaction_key,
       value_type,
       bytes_hasher<uint64_t, xxhash_64>,
       bytes_type_eq>;
 
     spill_key_index(
       ss::sstring filename,
-      ss::file index_file,
       ss::io_priority_class,
-      size_t max_memory);
+      bool truncate,
+      storage::debug_sanitize_files debug,
+      storage_resources&);
+
+    spill_key_index(
+      ss::sstring name,
+      ss::file dummy_file,
+      size_t max_mem,
+      storage_resources&);
+
     spill_key_index(const spill_key_index&) = delete;
     spill_key_index& operator=(const spill_key_index&) = delete;
     spill_key_index(spill_key_index&&) noexcept = default;
@@ -54,9 +66,13 @@ public:
 
     // public
 
-    ss::future<> index(const iobuf& key, model::offset, int32_t) final;
-    ss::future<> index(bytes_view, model::offset, int32_t) final;
-    ss::future<> index(bytes&&, model::offset, int32_t) final;
+    ss::future<> maybe_open();
+    ss::future<> open();
+    ss::future<> index(
+      model::record_batch_type, const iobuf& key, model::offset, int32_t) final;
+    ss::future<> index(const compaction_key& b, model::offset, int32_t) final;
+    ss::future<>
+    index(model::record_batch_type, bytes&&, model::offset, int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> append(compacted_index::entry) final;
     ss::future<> close() final;
@@ -75,13 +91,44 @@ private:
           HashtableDebugAccess<underlying_t>;
         return debug::AllocatedByteSize(_midx);
     }
+
+    size_t entry_mem_usage(const bytes& k) const {
+        // One entry in a node hash map: key and value
+        // are allocated together, and the key is a basic_sstring with
+        // internal buffer that may be spilled if key was longer.
+        auto is_external = k.size() > bytes_inline_size;
+        return (is_external ? sizeof(k) + k.size() : sizeof(k)) + value_sz;
+    }
+
+    void release_entry_memory(const bytes& k) {
+        auto entry_memory = entry_mem_usage(k);
+        _keys_mem_usage -= entry_memory;
+
+        // Handle the case of a double-release, in case this comes up
+        // during retries/exception handling.
+        auto release_units = std::min(entry_memory, _mem_units.count());
+        _mem_units.return_units(release_units);
+    }
+
     ss::future<> drain_all_keys();
-    ss::future<> add_key(bytes b, value_type);
+    ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
-    segment_appender _appender;
+    storage::debug_sanitize_files _debug;
+    storage_resources& _resources;
+    ss::io_priority_class _pc;
+    bool _truncate;
+    std::optional<segment_appender> _appender;
     underlying_t _midx;
-    size_t _max_mem;
+
+    // Max memory we'll use for _midx, although we may spill earlier
+    // if hinted to by storage_resources
+    size_t _max_mem{512_KiB};
+
+    // Units handed out by storage_resources to track our consumption
+    // of the per-shard compaction index memory allowance.
+    ssx::semaphore_units _mem_units;
+
     size_t _keys_mem_usage{0};
     compacted_index::footer _footer;
     crc::crc32c _crc;

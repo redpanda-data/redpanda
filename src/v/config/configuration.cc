@@ -9,42 +9,20 @@
 
 #include "config/configuration.h"
 
-#include "cluster/node/constants.h"
 #include "config/base_property.h"
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "security/mtls.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace config {
 using namespace std::chrono_literals;
-
-uint32_t default_raft_non_local_requests() {
-    /**
-     * raft max non local requests
-     * - up to 7000 groups per core
-     * - up to 256 concurrent append entries per group
-     * - additional requests like (vote, snapshot, timeout now)
-     *
-     * All the values have to be multiplied by core count minus one since
-     * part of the requests will be core local
-     *
-     * 7000*256 * (number of cores-1) + 10 * 7000 * (number of cores-1)
-     *         ^                                 ^
-     * append entries requests          additional requests
-     */
-    static constexpr uint32_t max_partitions_per_core = 7000;
-    static constexpr uint32_t max_append_requests_per_follower = 256;
-    static constexpr uint32_t additional_requests_per_follower = 10;
-
-    return max_partitions_per_core
-           * (max_append_requests_per_follower + additional_requests_per_follower)
-           * (ss::smp::count - 1);
-}
 
 configuration::configuration()
   : log_segment_size(
@@ -82,14 +60,14 @@ configuration::configuration()
   , rpc_server_tcp_recv_buf(
       *this,
       "rpc_server_tcp_recv_buf",
-      "TCP receive buffer size in bytes.",
+      "Internal RPC TCP receive buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
-      "TCP transmit buffer size in bytes.",
+      "Internal RPC TCP transmit buffer size in bytes.",
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
@@ -139,11 +117,38 @@ configuration::configuration()
       "topic_fds_per_partition",
       "Required file handles per partition when creating topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10,
+      5,
       {
         .min = 1,   // At least one FD per partition, required for appender.
         .max = 1000 // A system with 1M ulimit should be allowed to create at
                     // least 1000 partitions
+      })
+  , topic_partitions_per_shard(
+      *this,
+      "topic_partitions_per_shard",
+      "Maximum number of partitions which may be allocated to one shard (CPU "
+      "core)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      7000,
+      {
+        .min = 16,    // Forbid absurdly small values that would prevent most
+                      // practical workloads from running
+        .max = 131072 // An upper bound to prevent pathological values, although
+                      // systems will most likely hit issues far before reaching
+                      // this.  This property is principally intended to be
+                      // tuned downward from the default, not upward.
+      })
+  , topic_partitions_reserve_shard0(
+      *this,
+      "topic_partitions_reserve_shard0",
+      "Reserved partition slots on shard (CPU core) 0 on each node.  If this "
+      "is >= topic_partitions_per_core, no data partitions will be scheduled "
+      "on shard 0",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      2,
+      {
+        .min = 0,     // It is not mandatory to reserve any capacity
+        .max = 131072 // Same max as topic_partitions_per_shard
       })
   , admin_api_require_auth(
       *this,
@@ -235,8 +240,27 @@ configuration::configuration()
   , disable_metrics(
       *this,
       "disable_metrics",
-      "Disable registering metrics",
+      "Disable registering metrics exposed on the internal metrics endpoint "
+      "(/metrics)",
       base_property::metadata{},
+      false)
+  , disable_public_metrics(
+      *this,
+      "disable_public_metrics",
+      "Disable registering metrics exposed on the public metrics endpoint "
+      "(/public_metrics)",
+      base_property::metadata{},
+      false)
+  , aggregate_metrics(
+      *this,
+      "aggregate_metrics",
+      "Enable aggregations of metrics returned by the prometheus '/metrics' "
+      "endpoint. "
+      "Metric aggregation is performed by summing the values of samples by "
+      "labels. "
+      "Aggregations are performed where it makes sense by the shard and/or "
+      "partition labels.",
+      {.needs_restart = needs_restart::yes},
       false)
   , group_min_session_timeout_ms(
       *this,
@@ -403,6 +427,7 @@ configuration::configuration()
        .visibility = visibility::user},
       {},
       validate_connection_rate)
+
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",
@@ -451,7 +476,7 @@ configuration::configuration()
       "group_topic_partitions",
       "Number of partitions in the internal group membership topic",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1)
+      16)
   , default_topic_replication(
       *this,
       "default_topic_replications",
@@ -495,7 +520,7 @@ configuration::configuration()
       "abort_timed_out_transactions_interval_ms",
       "How often look for the inactive transactions and abort them",
       {.visibility = visibility::tunable},
-      1min)
+      10s)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",
@@ -555,7 +580,7 @@ configuration::configuration()
       *this,
       "raft_learner_recovery_rate",
       "Raft learner recovery rate limit in bytes per sec",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100_MiB)
   , raft_smp_max_non_local_requests(
       *this,
@@ -563,7 +588,7 @@ configuration::configuration()
       "Maximum number of x-core requests pending in Raft seastar::smp group. "
       "(for more details look at `seastar::smp_service_group` documentation)",
       {.visibility = visibility::tunable},
-      default_raft_non_local_requests())
+      std::nullopt)
   , raft_max_concurrent_append_requests_per_follower(
       *this,
       "raft_max_concurrent_append_requests_per_follower",
@@ -711,6 +736,36 @@ configuration::configuration()
        .visibility = visibility::tunable},
       32_MiB,
       storage::segment_appender::validate_fallocation_step)
+  , storage_target_replay_bytes(
+      *this,
+      "storage_target_replay_bytes",
+      "Target bytes to replay from disk on startup after clean shutdown: "
+      "controls frequency of snapshots and checkpoints",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648",
+       .visibility = visibility::tunable},
+      10_GiB,
+      {.min = 128_MiB, .max = 1_TiB})
+  , storage_max_concurrent_replay(
+      *this,
+      "storage_max_concurrent_replay",
+      "Maximum number of partitions' logs that will be replayed concurrently "
+      "at startup, or flushed concurrently on shutdown.",
+      {.needs_restart = needs_restart::no,
+       .example = "2048",
+       .visibility = visibility::tunable},
+      1024,
+      {.min = 128})
+  , storage_compaction_index_memory(
+      *this,
+      "storage_compaction_index_memory",
+      "Maximum number of bytes that may be used on each shard by compaction"
+      "index writers",
+      {.needs_restart = needs_restart::no,
+       .example = "1073741824",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 16_MiB, .max = 100_GiB})
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",
@@ -737,9 +792,27 @@ configuration::configuration()
   , enable_sasl(
       *this,
       "enable_sasl",
-      "Enable SASL authentication for Kafka connections.",
+      "Enable SASL authentication for Kafka connections, authorization is "
+      "required. see also `kafka_enable_authorization`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , kafka_enable_authorization(
+      *this,
+      "kafka_enable_authorization",
+      "Enable authorization for Kafka connections. Values:"
+      "- `nil`: Ignored. Authorization is enabled with `enable_sasl: true`"
+      "; `true`: authorization is required"
+      "; `false`: authorization is disabled"
+      ". See also: `enable_sasl` and `kafka_api[].authentication_method`",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , kafka_mtls_principal_mapping_rules(
+      *this,
+      "kafka_mtls_principal_mapping_rules",
+      "Principal Mapping Rules for mTLS Authentication on the Kafka API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      security::tls::validate_rules)
   , controller_backend_housekeeping_interval_ms(
       *this,
       "controller_backend_housekeeping_interval_ms",
@@ -826,6 +899,30 @@ configuration::configuration()
        .visibility = visibility::user},
       {},
       validate_connection_rate)
+  , kafka_rpc_server_tcp_recv_buf(
+      *this,
+      "kafka_rpc_server_tcp_recv_buf",
+      "Kafka server TCP receive buffer size in bytes.",
+      {.example = "65536"},
+      std::nullopt,
+      {.min = 32_KiB, .align = 4_KiB})
+  , kafka_rpc_server_tcp_send_buf(
+      *this,
+      "kafka_rpc_server_tcp_send_buf",
+      "Kafka server TCP transmit buffer size in bytes.",
+      {.example = "65536"},
+      std::nullopt,
+      {.min = 32_KiB, .align = 4_KiB})
+  , kafka_rpc_server_stream_recv_buf(
+      *this,
+      "kafka_rpc_server_stream_recv_buf",
+      "Userspace receive buffer max size in bytes",
+      {.example = "65536", .visibility = visibility::tunable},
+      std::nullopt,
+      // The minimum is set to match seastar's min_buffer_size (i.e. don't
+      // permit setting a max below the min).  The maximum is set to forbid
+      // contiguous allocations beyond that size.
+      {.min = 512, .max = 512_KiB, .align = 4_KiB})
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",
@@ -874,6 +971,18 @@ configuration::configuration()
       "Optional API endpoint",
       {.visibility = visibility::user},
       std::nullopt)
+  , cloud_storage_credentials_source(
+      *this,
+      "cloud_storage_credentials_source",
+      "The source of credentials to connect to cloud services",
+      {.needs_restart = needs_restart::yes,
+       .example = "config_file",
+       .visibility = visibility::user},
+      model::cloud_credentials_source::config_file,
+      {model::cloud_credentials_source::config_file,
+       model::cloud_credentials_source::aws_instance_metadata,
+       model::cloud_credentials_source::sts,
+       model::cloud_credentials_source::gcp_instance_metadata})
   , cloud_storage_reconciliation_ms(
       *this,
       "cloud_storage_reconciliation_interval_ms",
@@ -897,7 +1006,8 @@ configuration::configuration()
   , cloud_storage_max_connections(
       *this,
       "cloud_storage_max_connections",
-      "Max number of simultaneous uploads to S3",
+      "Max number of simultaneous connections to S3 per shard (includes "
+      "connections used for both uploads and downloads)",
       {.visibility = visibility::user},
       20)
   , cloud_storage_disable_tls(
@@ -950,6 +1060,19 @@ configuration::configuration()
       "remote storage (sec)",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_readreplica_manifest_sync_timeout_ms(
+      *this,
+      "cloud_storage_readreplica_manifest_sync_timeout_ms",
+      "Timeout to check if new data is available for partition in S3 for read "
+      "replica",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
+  , cloud_storage_metadata_sync_timeout_ms(
+      *this,
+      "cloud_storage_metadata_sync_timeout_ms",
+      "Timeout for SI metadata synchronization",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
@@ -1074,8 +1197,51 @@ configuration::configuration()
       *this,
       "enable_auto_rebalance_on_node_add",
       "Enable automatic partition rebalancing when new nodes are added",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       false)
+
+  , partition_autobalancing_mode(
+      *this,
+      "partition_autobalancing_mode",
+      "Partition autobalancing mode",
+      {.needs_restart = needs_restart::no,
+       .example = "node_add",
+       .visibility = visibility::user},
+      model::partition_autobalancing_mode::node_add,
+      {
+        model::partition_autobalancing_mode::off,
+        model::partition_autobalancing_mode::node_add,
+        model::partition_autobalancing_mode::continuous,
+      })
+  , partition_autobalancing_node_availability_timeout_sec(
+      *this,
+      "partition_autobalancing_node_availability_timeout_sec",
+      "Node unavailability timeout that triggers moving partitions from the "
+      "node",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      15min)
+  , partition_autobalancing_max_disk_usage_percent(
+      *this,
+      "partition_autobalancing_max_disk_usage_percent",
+      "Disk usage threshold that triggers moving partitions from the node",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      80,
+      {.min = 5, .max = 100})
+  , partition_autobalancing_tick_interval_ms(
+      *this,
+      "partition_autobalancing_tick_interval_ms",
+      "Partition autobalancer tick interval",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
+  , partition_autobalancing_movement_batch_size_bytes(
+      *this,
+      "partition_autobalancing_movement_batch_size_bytes",
+      "Total size of partitions that autobalancer is going to move in one "
+      "batch",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5_GiB)
+
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
@@ -1100,6 +1266,13 @@ configuration::configuration()
       "Leadership rebalancing node mute timeout",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       20s)
+  , leader_balancer_transfer_limit_per_shard(
+      *this,
+      "leader_balancer_transfer_limit_per_shard",
+      "Per shard limit for in progress leadership transfers",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      512,
+      {.min = 1, .max = 2048})
   , internal_topic_replication_factor(
       *this,
       "internal_topic_replication_factor",
@@ -1116,7 +1289,8 @@ configuration::configuration()
       *this,
       "health_monitor_tick_interval",
       "How often health monitor refresh cluster state",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::deprecated},
       10s)
   , health_monitor_max_metadata_age(
       *this,
@@ -1131,16 +1305,22 @@ configuration::configuration()
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5,
-      {.min = cluster::node::min_percent_free_threshold,
-       .max = cluster::node::max_percent_free_threshold})
+      {.min = 0, .max = 50})
   , storage_space_alert_free_threshold_bytes(
       *this,
       "storage_space_alert_free_threshold_bytes",
       "Threshold of minimim bytes free space before setting storage space "
       "alert",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1_GiB,
-      {.min = cluster::node::min_bytes_free_threshold})
+      0,
+      {.min = 0})
+  , storage_min_free_bytes(
+      *this,
+      "storage_min_free_bytes",
+      "Threshold of minimum bytes free space before rejecting producers.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5_GiB,
+      {.min = 10_MiB})
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",

@@ -14,7 +14,6 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "raft/offset_translator.h"
@@ -26,10 +25,8 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future-util.hh>
-#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
-#include <boost/algorithm/string.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
 using namespace std::chrono_literals;
@@ -54,26 +51,11 @@ static storage::ntp_config get_ntp_conf() {
     return storage::ntp_config(manifest_ntp, "base-dir");
 }
 
-/// Compare two json objects logically by parsing them first and then going
-/// through fields
-static bool
-compare_json_objects(const std::string_view& lhs, const std::string_view& rhs) {
-    using namespace rapidjson;
-    Document lhsd, rhsd;
-    lhsd.Parse({lhs.data(), lhs.size()});
-    rhsd.Parse({rhs.data(), rhs.size()});
-    if (lhsd != rhsd) {
-        vlog(
-          test_log.trace, "Json objects are not equal:\n{}and\n{}", lhs, rhs);
-    }
-    return lhsd == rhsd;
-}
-
 static void log_segment(const storage::segment& s) {
     vlog(
       test_log.info,
       "Log segment {}. Offsets: {} {}. Is compacted: {}. Is sealed: {}.",
-      s.reader().filename(),
+      s.filename(),
       s.offsets().base_offset,
       s.offsets().dirty_offset,
       s.is_compacted_segment(),
@@ -105,7 +87,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     set_expectations_and_listen({});
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
 
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
@@ -116,7 +100,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     wait_for_partition_leadership(manifest_ntp);
     auto part = app.partition_manager.local().get(manifest_ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
 
@@ -316,7 +300,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // made.
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
-    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
@@ -324,7 +307,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     init_storage_api_local(segments);
     wait_for_partition_leadership(manifest_ntp);
     auto part = app.partition_manager.local().get(manifest_ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
 
@@ -363,7 +346,10 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     set_expectations_and_listen(expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
+
     archival::ntp_archiver archiver(
       get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
@@ -474,7 +460,7 @@ calculate_segment_stats(const ss::httpd::request& req) {
     counting_batch_consumer::stream_stats stats{};
     auto consumer = std::make_unique<counting_batch_consumer>(std::ref(stats));
     storage::continuous_batch_parser parser(
-      std::move(consumer), std::move(stream));
+      std::move(consumer), storage::segment_reader_handle(std::move(stream)));
     parser.consume().get();
     parser.close().get();
     return stats;
@@ -577,7 +563,11 @@ static void test_partial_upload_impl(
     test.set_expectations_and_listen(expectations);
 
     auto [aconf, cconf] = get_configurations();
-    cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
+    cloud_storage::remote remote(
+      cconf.connection_limit,
+      cconf.client_config,
+      cconf.cloud_credentials_source);
+
     aconf.time_limit = segment_time_limit(0s);
     archival::ntp_archiver archiver(
       get_ntp_conf(), test.app.partition_manager.local(), aconf, remote, part);

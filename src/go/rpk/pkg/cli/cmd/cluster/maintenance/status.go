@@ -40,7 +40,7 @@ func addBrokerMaintenanceReport(table *out.TabWriter, b admin.Broker) {
 func newStatusCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Report maintenance status.",
+		Short: "Report maintenance status",
 		Long: `Report maintenance status.
 
 This command reports maintenance status for each node in the cluster. The output
@@ -78,7 +78,7 @@ Notes:
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			brokers, err := client.Brokers()
+			brokers, err := client.Brokers(cmd.Context())
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
 			if len(brokers) == 0 {

@@ -15,6 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -39,6 +40,12 @@ public:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
+    /// Truncate local snapshot
+    ss::future<std::error_code> truncate(
+      model::offset start_rp_offset,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
     /// node has lost leadership. But it will contain segments successfully
@@ -54,10 +61,22 @@ public:
       const cloud_storage::partition_manifest& m,
       model::offset insync_offset);
 
+    using persisted_stm::sync;
+
 private:
     ss::future<std::error_code> do_add_segments(
       const cloud_storage::partition_manifest&,
       ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>>);
+
+    ss::future<std::error_code> do_truncate(
+      model::offset,
+      ss::lowres_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>>);
+
+    ss::future<std::error_code> do_replicate_commands(
+      model::record_batch,
+      ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
     ss::future<> apply(model::record_batch batch) override;
@@ -68,13 +87,16 @@ private:
     model::offset max_collectible_offset() override;
 
     struct segment;
+    struct start_offset;
     struct add_segment_cmd;
+    struct truncate_cmd;
     struct snapshot;
 
     static std::vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
     void apply_add_segment(const segment& segment);
+    void apply_truncate(const start_offset& so);
 
 private:
     prefix_logger _logger;

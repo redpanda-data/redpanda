@@ -20,7 +20,7 @@
 #include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/types.h"
-#include "rpc/connection_cache.h"
+#include "rpc/fwd.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
 

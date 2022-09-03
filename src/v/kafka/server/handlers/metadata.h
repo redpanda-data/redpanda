@@ -14,6 +14,17 @@
 
 namespace kafka {
 
-using metadata_handler = handler<metadata_api, 0, 7>;
+/**
+ * Estimate the size of a metadata request.
+ *
+ * Metadata requests are generally very small (a request for *all* metadata
+ * about a cluster is less than 30 bytes) but the response may be very large, so
+ * the default estimator is unsuitable. See the implementation for further
+ * notes.
+ */
+memory_estimate_fn metadata_memory_estimator;
 
-}
+using metadata_handler
+  = single_stage_handler<metadata_api, 0, 7, metadata_memory_estimator>;
+
+} // namespace kafka

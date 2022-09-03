@@ -70,7 +70,11 @@ double hdr_hist::mean() const { return ::hdr_mean(_hist.get()); }
 size_t hdr_hist::memory_size() const {
     return ::hdr_get_memory_size(_hist.get());
 }
-ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
+ss::metrics::histogram hdr_hist::seastar_histogram_logform(
+  size_t num_buckets,
+  int64_t first_value,
+  double log_base,
+  int64_t scale) const {
     // logarithmic histogram configuration. this will range from 10 microseconds
     // through around 6000 seconds with 26 buckets doubling.
     //
@@ -80,15 +84,13 @@ ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
     //   double but is truncated (see the int64_t casts on log_base below which
     //   is the same as in the hdr C library). this means that if we want
     //   buckets with a log base of 1.5, the histogram becomes linear...
-    constexpr size_t num_buckets = 26;
-    constexpr int64_t first_value = 10;
-    constexpr double log_base = 2.0;
 
     ss::metrics::histogram sshist;
     sshist.buckets.resize(num_buckets);
 
     sshist.sample_count = _sample_count;
-    sshist.sample_sum = static_cast<double>(_sample_sum);
+    sshist.sample_sum = static_cast<double>(_sample_sum)
+                        / static_cast<double>(scale);
 
     // stack allocated; no cleanup needed
     struct hdr_iter iter;
@@ -102,7 +104,8 @@ ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
          bucket_idx++) {
         auto& bucket = sshist.buckets[bucket_idx];
         bucket.count = iter.cumulative_count;
-        bucket.upper_bound = iter.value_iterated_to;
+        bucket.upper_bound = static_cast<double>(iter.value_iterated_to)
+                             / static_cast<double>(scale);
     }
 
     if (bucket_idx == 0) {
@@ -123,7 +126,8 @@ ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
     for (; bucket_idx < sshist.buckets.size(); bucket_idx++) {
         auto& bucket = sshist.buckets[bucket_idx];
         bucket.count = iter.cumulative_count;
-        bucket.upper_bound = iter.value_iterated_to;
+        bucket.upper_bound = static_cast<double>(iter.value_iterated_to)
+                             / static_cast<double>(scale);
         iter.value_iterated_to *= static_cast<int64_t>(log->log_base);
     }
 

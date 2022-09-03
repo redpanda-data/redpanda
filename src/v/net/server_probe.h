@@ -52,7 +52,10 @@ public:
 
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
-    void setup_metrics(ss::metrics::metric_groups& mgs, const char* name);
+    void setup_metrics(ss::metrics::metric_groups& mgs, std::string_view proto);
+
+    void setup_public_metrics(
+      ss::metrics::metric_groups& mgs, std::string_view proto);
 
 private:
     uint64_t _requests_completed = 0;

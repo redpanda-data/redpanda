@@ -82,7 +82,195 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
     }
 }
 
+/*
+ * the transition from adl to serde encoding in rpc requires a period of time
+ * where both encodings are supported for all message types. however, we do not
+ * want to extend this requirement to brand new messages / services, nor to rpc
+ * types used in coproc which will remain in legacy adl format for now.
+ *
+ * we use the type system to enforce these rules and allow types to be opt-out
+ * on a case-by-case basis for adl (new messages) or serde (legacy like coproc).
+ *
+ * the `rpc_adl_exempt` and `rpc_serde_exempt` type trait helpers can be used to
+ * opt-out a type T from adl or serde support. a type is marked exempt by
+ * defining the type `T::rpc_(adl|serde)_exempt`.  the typedef may be defined as
+ * any type such as std::{void_t, true_type}.
+ *
+ * Example:
+ *
+ *     struct exempt_msg {
+ *         using rpc_adl_exempt = std::true_type;
+ *         ...
+ *     };
+ *
+ * then use the `is_rpc_adl_exempt` or `is_rpc_serde_exempt` concept to test.
+ */
 template<typename T>
+concept is_rpc_adl_exempt = requires {
+    typename T::rpc_adl_exempt;
+};
+
+template<typename T>
+concept is_rpc_serde_exempt = requires {
+    typename T::rpc_serde_exempt;
+};
+
+/*
+ * Encode a client request for the given transport version.
+ *
+ * Unless the message type T is explicitly exempt from adl<> support, type T
+ * must be supported by both adl<> and serde encoding frameworks. When the type
+ * is not exempt from adl<> support, serde is used when the version >= v2.
+ *
+ * It is also possible to exempt a type from serde support (i.e. adl-only). This
+ * is an interim solution that allows things like coproc and some tests to avoid
+ * having to add serde support in the short term.
+ *
+ * The returned version indicates what level of encoding is used. This is always
+ * equal to the input version, except for serde-only messags which return v2.
+ * Callers are expected to further validate the runtime implications of this.
+ */
+template<typename T>
+ss::future<transport_version>
+encode_for_version(iobuf& out, T msg, transport_version version) {
+    static_assert(!is_rpc_adl_exempt<T> || !is_rpc_serde_exempt<T>);
+
+    if constexpr (is_rpc_serde_exempt<T>) {
+        return reflection::async_adl<T>{}.to(out, std::move(msg)).then([] {
+            return transport_version::v0;
+        });
+    } else if constexpr (is_rpc_adl_exempt<T>) {
+        return ss::do_with(std::move(msg), [&out](T& msg) {
+            return serde::write_async(out, std::move(msg)).then([] {
+                return transport_version::v2;
+            });
+        });
+    } else {
+        if (version < transport_version::v2) {
+            return reflection::async_adl<T>{}
+              .to(out, std::move(msg))
+              .then([version] { return version; });
+        } else {
+            return ss::do_with(std::move(msg), [&out, version](T& msg) {
+                return serde::write_async(out, std::move(msg)).then([version] {
+                    return version;
+                });
+            });
+        }
+    }
+}
+
+/*
+ * Decode a client request at the given transport version.
+ */
+template<typename T>
+ss::future<T>
+decode_for_version(iobuf_parser& parser, transport_version version) {
+    static_assert(!is_rpc_adl_exempt<T> || !is_rpc_serde_exempt<T>);
+
+    if constexpr (is_rpc_serde_exempt<T>) {
+        if (version != transport_version::v0) {
+            return ss::make_exception_future<T>(std::runtime_error(fmt::format(
+              "Unexpected adl-only message {} at {} != v0",
+              typeid(T).name(),
+              version)));
+        }
+        return reflection::async_adl<T>{}.from(parser);
+    } else if constexpr (is_rpc_adl_exempt<T>) {
+        if (version < transport_version::v2) {
+            return ss::make_exception_future<T>(std::runtime_error(fmt::format(
+              "Unexpected serde-only message {} at {} < v2",
+              typeid(T).name(),
+              version)));
+        }
+        return serde::read_async<T>(parser);
+    } else {
+        if (version < transport_version::v2) {
+            return reflection::async_adl<T>{}.from(parser);
+        } else {
+            return serde::read_async<T>(parser);
+        }
+    }
+}
+
+/*
+ * type used to factor out version-specific functionality from request handling
+ * in services. this is used so that tests can specialize behavior.
+ *
+ * this is the default mixin that is used by the code generator.
+ */
+struct default_message_codec {
+    /*
+     * decodes a request (server) or response (client)
+     */
+    template<typename T>
+    static ss::future<T>
+    decode(iobuf_parser& parser, transport_version version) {
+        return decode_for_version<T>(parser, version);
+    }
+
+    /*
+     * Used by the server to determine which version use when sending a response
+     * back to the client. The default behavior is maintain the same version as
+     * the received request.
+     */
+    static transport_version response_version(const header& h) {
+        return h.version;
+    }
+
+    /*
+     * encodes a request (client) or response (server)
+     */
+    template<typename T>
+    static ss::future<transport_version>
+    encode(iobuf& out, T msg, transport_version version) {
+        return encode_for_version(out, std::move(msg), version);
+    }
+};
+
+/*
+ * service specialization mixin to create a v0 compliant service. a v0 service
+ * encodes and decodes using adl, ignores versions on requests, and sends
+ * replies with v0 in the header.
+ *
+ * example:
+ *   using echo_service_v0 = echo_service_base<v0_message_codec>;
+ *
+ * Note that for serde-supported messages a vassert(false) is generated. First,
+ * the v0_message_encoder is only used in tests. Second, serde usage is not
+ * possible in v0 servers, so this restriction is realistic. And from a
+ * practical standpoint this allows us to avoid bifurcation of services (or more
+ * sfinae magic) in tests so that serde-only types were never present within a
+ * service configured with a v0_message_encoder.
+ */
+struct v0_message_codec {
+    template<typename T>
+    static ss::future<T> decode(iobuf_parser& parser, transport_version) {
+        if constexpr (is_rpc_adl_exempt<T>) {
+            vassert(false, "Cannot use serde-only types in v0 server");
+        } else {
+            return reflection::async_adl<T>{}.from(parser);
+        }
+    }
+
+    static transport_version response_version(const header&) {
+        return transport_version::v0;
+    }
+
+    template<typename T>
+    static ss::future<transport_version>
+    encode(iobuf& out, T msg, transport_version) {
+        if constexpr (is_rpc_adl_exempt<T>) {
+            vassert(false, "Cannot use serde-only types in v0 server");
+        } else {
+            return reflection::async_adl<T>{}.to(out, std::move(msg)).then([] {
+                return transport_version::v0;
+            });
+        }
+    }
+};
+
+template<typename T, typename Codec>
 ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
         validate_payload_and_header(io, h);
@@ -104,8 +292,8 @@ ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
 
         auto p = std::make_unique<iobuf_parser>(std::move(io));
         auto raw = p.get();
-        return reflection::async_adl<T>{}.from(*raw).finally(
-          [p = std::move(p)] {});
+        return Codec::template decode<T>(*raw, h.version)
+          .finally([p = std::move(p)] {});
     });
 }
 

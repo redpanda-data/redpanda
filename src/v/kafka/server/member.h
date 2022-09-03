@@ -56,8 +56,12 @@ public:
           .instance_id = std::move(group_instance_id),
           .client_id = std::move(client_id),
           .client_host = std::move(client_host),
-          .rebalance_timeout = rebalance_timeout,
-          .session_timeout = session_timeout,
+          .rebalance_timeout
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+            rebalance_timeout),
+          .session_timeout
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+            session_timeout),
           .subscription = iobuf{},
           .assignment = iobuf{},
         },

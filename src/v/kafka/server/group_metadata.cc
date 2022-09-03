@@ -547,13 +547,13 @@ std::ostream& operator<<(std::ostream& o, const group_metadata_value& v) {
     fmt::print(
       o,
       "{{protocol_type: {}, generation: {}, protocol: {}, leader: {}, "
-      "state_timestamp: {}, members: {}}}",
+      "state_timestamp: {}, member count: {}}}",
       v.protocol_type,
       v.generation,
       v.protocol,
       v.leader,
       v.state_timestamp,
-      v.members);
+      v.members.size());
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const offset_metadata_key& v) {

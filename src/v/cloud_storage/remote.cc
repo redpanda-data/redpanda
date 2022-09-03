@@ -29,6 +29,7 @@
 #include <fmt/chrono.h>
 
 #include <exception>
+#include <utility>
 #include <variant>
 
 namespace cloud_storage {
@@ -142,14 +143,42 @@ static error_outcome categorize_error(
     return result;
 }
 
-remote::remote(s3_connection_limit limit, const s3::configuration& conf)
+remote::remote(
+  s3_connection_limit limit,
+  const s3::configuration& conf,
+  model::cloud_credentials_source cloud_credentials_source)
   : _pool(limit(), conf)
-  , _probe(remote_metrics_disabled(static_cast<bool>(conf.disable_metrics))) {}
+  , _probe(
+      remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)),
+      remote_metrics_disabled(static_cast<bool>(conf.disable_public_metrics)))
+  , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source} {
+    // If the credentials source is from config file, bypass the background op
+    // to refresh credentials periodically, and load pool with static
+    // credentials right now.
+    if (_auth_refresh_bg_op.is_static_config()) {
+        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+    }
+}
 
 remote::remote(ss::sharded<configuration>& conf)
-  : remote(conf.local().connection_limit, conf.local().client_config) {}
+  : remote(
+    conf.local().connection_limit,
+    conf.local().client_config,
+    conf.local().cloud_credentials_source) {}
 
-ss::future<> remote::start() { return ss::now(); }
+ss::future<> remote::start() {
+    if (!_auth_refresh_bg_op.is_static_config()) {
+        // Launch background operation to fetch credentials on
+        // auth_refresh_shard_id, and copy them to other shards. We do not wait
+        // for this operation here, the wait is done in client_pool::acquire to
+        // avoid delaying application startup.
+        _auth_refresh_bg_op.maybe_start_auth_refresh_op(
+          [this](auto credentials) {
+              return propagate_credentials(credentials);
+          });
+    }
+    return ss::now();
+}
 
 ss::future<> remote::stop() {
     _as.request_abort();
@@ -187,6 +216,9 @@ ss::future<download_result> remote::download_manifest(
             case manifest_type::topic:
                 _probe.topic_manifest_download();
                 break;
+            case manifest_type::tx_range:
+                _probe.txrange_manifest_download();
+                break;
             }
             co_return download_result::success;
         } catch (...) {
@@ -202,7 +234,8 @@ ss::future<download_result> remote::download_manifest(
               ctxlog.debug,
               "Downloading manifest from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(retry_permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                retry_permit.delay));
             _probe.manifest_download_backoff();
             co_await ss::sleep_abortable(retry_permit.delay, _as);
             retry_permit = fib.retry();
@@ -268,6 +301,9 @@ ss::future<upload_result> remote::upload_manifest(
             case manifest_type::topic:
                 _probe.topic_manifest_upload();
                 break;
+            case manifest_type::tx_range:
+                _probe.txrange_manifest_upload();
+                break;
             }
             _probe.register_upload_size(size);
             co_return upload_result::success;
@@ -285,7 +321,8 @@ ss::future<upload_result> remote::upload_manifest(
               "Uploading manifest {} to {}, {} backoff required",
               path,
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.manifest_upload_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -322,7 +359,8 @@ ss::future<upload_result> remote::upload_segment(
   const remote_segment_path& segment_path,
   uint64_t content_length,
   const reset_input_stream& reset_str,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -336,7 +374,21 @@ ss::future<upload_result> remote::upload_segment(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto [client, deleter] = co_await _pool.acquire();
-        auto stream = reset_str();
+
+        // Client acquisition can take some time. Do a check before starting
+        // the upload if we can still continue.
+        if (lazy_abort_source.abort_requested()) {
+            vlog(
+              ctxlog.warn,
+              "{}: cancelled uploading {} to {}",
+              lazy_abort_source.abort_reason(),
+              segment_path,
+              bucket);
+            _probe.failed_upload();
+            co_return upload_result::cancelled;
+        }
+
+        auto reader_handle = co_await reset_str();
         auto path = s3::object_key(segment_path());
         vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
         std::exception_ptr eptr = nullptr;
@@ -346,15 +398,21 @@ ss::future<upload_result> remote::upload_segment(
               bucket,
               path,
               content_length,
-              std::move(stream),
+              reader_handle.take_stream(),
               tags,
               fib.get_timeout());
             _probe.successful_upload();
             _probe.register_upload_size(content_length);
+            co_await reader_handle.close();
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
         }
+
+        // `put_object` closed the encapsulated input_stream, but we must
+        // call close() on the segment_reader_handle to release the FD.
+        co_await reader_handle.close();
+
         co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
@@ -366,7 +424,8 @@ ss::future<upload_result> remote::upload_segment(
               "Uploading segment {} to {}, {} backoff required",
               path,
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.upload_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -378,7 +437,9 @@ ss::future<upload_result> remote::upload_segment(
             break;
         }
     }
+
     _probe.failed_upload();
+
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -436,7 +497,8 @@ ss::future<download_result> remote::download_segment(
               ctxlog.debug,
               "Downloading segment from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             _probe.download_backoff();
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
@@ -506,7 +568,8 @@ ss::future<download_result> remote::segment_exists(
               ctxlog.debug,
               "HeadObject from {}, {} backoff required",
               bucket,
-              std::chrono::milliseconds(permit.delay));
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
@@ -535,6 +598,89 @@ ss::future<download_result> remote::segment_exists(
           path);
     }
     co_return *result;
+}
+
+ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
+
+bool lazy_abort_source::abort_requested() { return _predicate(*this); }
+void lazy_abort_source::abort_reason(ss::sstring reason) {
+    _abort_reason = std::move(reason);
+}
+
+ss::future<>
+remote::propagate_credentials(cloud_roles::credentials credentials) {
+    return container().invoke_on_all(
+      [c = std::move(credentials)](remote& svc) mutable {
+          svc._pool.load_credentials(std::move(c));
+      });
+}
+
+auth_refresh_bg_op::auth_refresh_bg_op(
+  ss::gate& gate,
+  ss::abort_source& as,
+  s3::configuration s3_conf,
+  model::cloud_credentials_source cloud_credentials_source)
+  : _gate(gate)
+  , _as(as)
+  , _s3_conf(std::move(s3_conf))
+  , _region_name{_s3_conf.region}
+  , _cloud_credentials_source(cloud_credentials_source) {}
+
+void auth_refresh_bg_op::maybe_start_auth_refresh_op(
+  cloud_roles::credentials_update_cb_t credentials_update_cb) {
+    if (ss::this_shard_id() == auth_refresh_shard_id) {
+        do_start_auth_refresh_op(std::move(credentials_update_cb));
+    }
+}
+
+void auth_refresh_bg_op::do_start_auth_refresh_op(
+  cloud_roles::credentials_update_cb_t credentials_update_cb) {
+    if (is_static_config()) {
+        // If credentials are static IE not changing, we just need to set the
+        // credential object once on all cores with static strings.
+        vlog(
+          cst_log.info,
+          "creating static credentials based on credentials source {}",
+          _cloud_credentials_source);
+
+        // Send the credentials to the client pool in a fiber
+        ssx::spawn_with_gate(
+          _gate,
+          [creds = build_static_credentials(),
+           fn = std::move(credentials_update_cb)] { return fn(creds); });
+    } else {
+        // Create an implementation of refresh_credentials based on the setting
+        // cloud_credentials_source.
+        _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
+          _cloud_credentials_source,
+          _gate,
+          _as,
+          std::move(credentials_update_cb),
+          _region_name));
+
+        vlog(
+          cst_log.info,
+          "created credentials refresh implementation based on credentials "
+          "source "
+          "{}: {}",
+          _cloud_credentials_source,
+          *_refresh_credentials);
+
+        _refresh_credentials->start();
+    }
+}
+
+bool auth_refresh_bg_op::is_static_config() const {
+    return _cloud_credentials_source
+           == model::cloud_credentials_source::config_file;
+}
+
+cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
+    return cloud_roles::aws_credentials{
+      _s3_conf.access_key.value(),
+      _s3_conf.secret_key.value(),
+      std::nullopt,
+      _region_name};
 }
 
 } // namespace cloud_storage

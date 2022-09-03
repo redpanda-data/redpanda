@@ -332,6 +332,7 @@ ss::future<std::error_code> replicate(
       [ntp = std::move(ntp),
        f_reader = std::move(f_reader)](cluster::partition_manager& pm) mutable {
           return pm.get(ntp)
+            ->raft()
             ->replicate(
               std::move(f_reader),
               raft::replicate_options(raft::consistency_level::quorum_ack))
@@ -350,7 +351,7 @@ ss::future<std::error_code> replicate(
 }
 
 bool is_source_partition_ready(const ss::lw_shared_ptr<cluster::partition>& p) {
-    if (!p->is_leader()) {
+    if (!p->is_elected_leader()) {
         vlog(mlog.info, "not yet leader for source partition: {}", p->ntp());
         return false;
     }
@@ -408,7 +409,7 @@ ss::future<> do_dispatch_ntp_migration(
         try {
             auto target_is_leader = co_await pm.invoke_on(
               *target_shard, [target_ntp](cluster::partition_manager& pm) {
-                  return pm.get(target_ntp)->is_leader();
+                  return pm.get(target_ntp)->is_elected_leader();
               });
             vlog(
               mlog.info,

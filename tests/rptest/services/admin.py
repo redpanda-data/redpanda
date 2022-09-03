@@ -14,7 +14,6 @@ from time import sleep
 from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 from requests.packages.urllib3.util.retry import Retry
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from typing import Optional, Callable, NamedTuple
 from rptest.util import wait_until_result
@@ -81,6 +80,7 @@ class Admin:
 
         retries = Retry(status=5,
                         connect=0,
+                        read=0,
                         backoff_factor=1,
                         status_forcelist=retry_codes,
                         method_whitelist=None,
@@ -174,7 +174,7 @@ class Admin:
                 self.redpanda.logger.debug(f"doesn't have leader")
                 return None
             if last_leader < 0:
-                last_leader = meta["leader_id"]
+                last_leader = int(meta["leader_id"])
                 self.redpanda.logger.debug(f"get leader:{last_leader}")
             if last_leader not in replicas:
                 self.redpanda.logger.debug(
@@ -187,21 +187,23 @@ class Admin:
                 return None
         info = PartitionDetails()
         info.status = status
-        info.leader = last_leader
+        info.leader = int(last_leader)
         info.replicas = replicas
         return info
 
     def wait_stable_configuration(
             self,
             topic,
+            *,
             partition=0,
             namespace="kafka",
             replication=None,
             timeout_s=10,
+            backoff_s=1,
             hosts: Optional[list[str]] = None) -> PartitionDetails:
         """
         Method waits for timeout_s until the configuration is stable and returns it.
-        
+
         When the timeout is exhaust it throws TimeoutException
         """
         if hosts == None:
@@ -231,7 +233,7 @@ class Admin:
         return wait_until_result(
             get_stable_configuration,
             timeout_sec=timeout_s,
-            backoff_sec=1,
+            backoff_sec=backoff_s,
             err_msg=
             f"can't fetch stable replicas for {namespace}/{topic}/{partition} within {timeout_s} sec"
         )
@@ -242,6 +244,7 @@ class Admin:
                             namespace="kafka",
                             replication=None,
                             timeout_s=10,
+                            backoff_s=1,
                             hosts: Optional[list[str]] = None,
                             check: Callable[[int],
                                             bool] = lambda node_id: True):
@@ -252,15 +255,21 @@ class Admin:
         When the timeout is exhaust it throws TimeoutException
         """
         def is_leader_stable():
-            info = self.wait_stable_configuration(topic, partition, namespace,
-                                                  replication, timeout_s,
-                                                  hosts)
-            return check(info.leader)
+            info = self.wait_stable_configuration(topic,
+                                                  partition=partition,
+                                                  namespace=namespace,
+                                                  replication=replication,
+                                                  timeout_s=timeout_s,
+                                                  hosts=hosts,
+                                                  backoff_s=backoff_s)
+            if check(info.leader):
+                return True, info.leader
+            return False
 
-        wait_until(
+        return wait_until_result(
             is_leader_stable,
             timeout_sec=timeout_s,
-            backoff_sec=1,
+            backoff_sec=backoff_s,
             err_msg=
             f"can't get stable leader of {namespace}/{topic}/{partition} within {timeout_s} sec"
         )
@@ -344,7 +353,8 @@ class Admin:
                              upsert=None,
                              remove=None,
                              force=False,
-                             dry_run=False):
+                             dry_run=False,
+                             node=None):
         if upsert is None:
             upsert = {}
         if remove is None:
@@ -366,19 +376,51 @@ class Admin:
                              json={
                                  'upsert': upsert,
                                  'remove': remove
-                             }).json()
+                             },
+                             node=node).json()
 
-    def get_cluster_config_status(self):
-        return self._request("GET", "cluster_config/status").json()
+    def get_cluster_config_status(self, node: ClusterNode = None):
+        return self._request("GET", "cluster_config/status", node=node).json()
 
     def get_node_config(self):
         return self._request("GET", "node_config").json()
 
-    def get_features(self):
-        return self._request("GET", "features").json()
+    def get_features(self, node=None):
+        return self._request("GET", "features", node=node).json()
+
+    def supports_feature(self, feature_name: str, nodes=None):
+        """
+        Returns true whether all nodes in 'nodes' support the given feature. If
+        no nodes are supplied, uses all nodes in the cluster.
+        """
+        if not nodes:
+            nodes = self.redpanda.nodes
+
+        def node_supports_feature(node):
+            features_resp = None
+            try:
+                features_resp = self.get_features(node=node)
+            except RequestException as e:
+                self.redpanda.logger.debug(
+                    f"Could not get features on {node.account.hostname}: {e}")
+                return False
+            features_dict = dict(
+                (f["name"], f) for f in features_resp["features"])
+            return features_dict[feature_name]["state"] == "active"
+
+        for node in nodes:
+            if not node_supports_feature(node):
+                return False
+        return True
 
     def put_feature(self, feature_name, body):
         return self._request("PUT", f"features/{feature_name}", json=body)
+
+    def get_license(self, node=None):
+        return self._request("GET", "features/license", node=node).json()
+
+    def put_license(self, license):
+        return self._request("PUT", "features/license", data=license)
 
     def set_log_level(self, name, level, expires=None):
         """
@@ -423,6 +465,38 @@ class Admin:
         path = f"brokers/{id}/decommission"
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request('put', path, node=node)
+
+    def recommission_broker(self, id, node=None):
+        """
+        Recommission broker i.e. abort ongoing decommissioning
+        """
+        path = f"brokers/{id}/recommission"
+        self.redpanda.logger.debug(f"recommissioning {id}")
+        return self._request('put', path, node=node)
+
+    def list_reconfigurations(self, node=None):
+        """
+        List pending reconfigurations
+        """
+        path = f"partitions/reconfigurations"
+
+        return self._request('get', path, node=node).json()
+
+    def cancel_all_reconfigurations(self, node=None):
+        """
+        Cancel all pending reconfigurations
+        """
+        path = "cluster/cancel_reconfigurations"
+
+        return self._request('post', path, node=node).json()
+
+    def cancel_all_node_reconfigurations(self, target_id, node=None):
+        """
+        Cancel all reconfigurations moving partition replicas from node
+        """
+        path = f"brokers/{target_id}/cancel_partition_moves"
+
+        return self._request('post', path, node=node).json()
 
     def get_partitions(self,
                        topic=None,
@@ -503,6 +577,24 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/replicas"
         return self._request('post', path, node=node, json=replicas)
 
+    def cancel_partition_move(self,
+                              topic,
+                              partition,
+                              namespace="kafka",
+                              node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/cancel_reconfiguration"
+        return self._request('post', path, node=node)
+
+    def force_abort_partition_move(self,
+                                   topic,
+                                   partition,
+                                   namespace="kafka",
+                                   node=None):
+
+        path = f"partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration"
+        return self._request('post', path, node=node)
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
@@ -524,6 +616,18 @@ class Admin:
 
         self._request("delete", path)
 
+    def update_user(self, username, password, algorithm):
+        self.redpanda.logger.info(
+            f"Updating user {username}:{password}:{algorithm}")
+
+        self._request("PUT",
+                      f"security/users/{username}",
+                      json=dict(
+                          username=username,
+                          password=password,
+                          algorithm=algorithm,
+                      ))
+
     def list_users(self, node=None):
         return self._request("get", "security/users", node=node).json()
 
@@ -540,18 +644,19 @@ class Admin:
 
         return partition_info['leader_id']
 
-    def transfer_leadership_to(self, *, namespace, topic, partition, target):
+    def transfer_leadership_to(self,
+                               *,
+                               namespace,
+                               topic,
+                               partition,
+                               target_id=None,
+                               leader_id=None):
         """
-        Looks up current ntp leader and transfer leadership to target node, 
+        Looks up current ntp leader and transfer leadership to target node,
         this operations is NOP when current leader is the same as target.
         If user pass None for target this function will choose next replica for new leader.
         If leadership transfer was performed this function return True
         """
-        target_id = self.redpanda.idx(target) if isinstance(
-            target, ClusterNode) else target
-
-        #  check which node is current leader
-
         def _get_details():
             p = self.get_partitions(topic=topic,
                                     partition=partition,
@@ -560,25 +665,25 @@ class Admin:
                 f"ntp {namespace}/{topic}/{partition} details: {p}")
             return p
 
-        def _has_leader():
-            return self.get_partition_leader(
-                namespace=namespace, topic=topic, partition=partition) != -1
+        #  check which node is current leader
 
-        wait_until(_has_leader,
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="Failed to establish current leader")
+        if leader_id == None:
+            leader_id = self.await_stable_leader(topic,
+                                                 partition=partition,
+                                                 namespace=namespace,
+                                                 timeout_s=30,
+                                                 backoff_s=2)
 
         details = _get_details()
 
         if target_id is not None:
-            if details['leader_id'] == target_id:
+            if leader_id == target_id:
                 return False
             path = f"raft/{details['raft_group_id']}/transfer_leadership?target={target_id}"
         else:
             path = f"raft/{details['raft_group_id']}/transfer_leadership"
 
-        leader = self.redpanda.get_node(details['leader_id'])
+        leader = self.redpanda.get_node(leader_id)
         ret = self._request('post', path=path, node=leader)
         return ret.status_code == 200
 
@@ -628,3 +733,16 @@ class Admin:
         self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
         url = "debug/partition_leaders_table"
         return self._request("get", url, node=node).json()
+
+    def si_sync_local_state(self, topic, partition, node=None):
+        """
+        Check data in the S3 bucket and fix local index if needed
+        """
+        path = f"shadow_indexing/sync_local_state/{topic}/{partition}"
+        return self._request('post', path, node=node)
+
+    def get_partition_balancer_status(self, node=None, **kwargs):
+        return self._request("GET",
+                             "cluster/partition_balancer/status",
+                             node=node,
+                             **kwargs).json()

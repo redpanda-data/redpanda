@@ -126,7 +126,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
 
     std::vector<size_t> random_ntp_removal_sequence;
     std::generate_n(
-      std::back_inserter(random_ntp_removal_sequence), ntp_count, [ntp_count] {
+      std::back_inserter(random_ntp_removal_sequence), ntp_count, [] {
           // generate *inclusive* indices
           return random_generators::get_int<size_t>(0, ntp_count - 1);
       });

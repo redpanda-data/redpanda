@@ -26,6 +26,14 @@ std::string_view to_string_view(feature f) {
         return "maintenance_mode";
     case feature::mtls_authentication:
         return "mtls_authentication";
+    case feature::rm_stm_kafka_cache:
+        return "rm_stm_kafka_cache";
+    case feature::serde_raft_0:
+        return "serde_raft_0";
+    case feature::license:
+        return "license";
+    case feature::raft_improved_configuration:
+        return "raft_improved_configuration";
     case feature::test_alpha:
         return "__test_alpha";
     }
@@ -54,7 +62,7 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{3};
+static constexpr cluster_version latest_version = cluster_version{5};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
@@ -290,6 +298,16 @@ feature_table::resolve_name(std::string_view feature_name) const {
     }
 
     return std::nullopt;
+}
+
+void feature_table::set_license(security::license license) {
+    _license = std::move(license);
+}
+
+void feature_table::revoke_license() { _license = std::nullopt; }
+
+const std::optional<security::license>& feature_table::get_license() const {
+    return _license;
 }
 
 } // namespace cluster

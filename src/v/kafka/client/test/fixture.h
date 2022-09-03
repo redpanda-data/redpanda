@@ -22,7 +22,7 @@ public:
     void restart() {
         shutdown();
         app_signal = std::make_unique<::stop_signal>();
-        ss::smp::invoke_on_all([this] {
+        ss::smp::invoke_on_all([] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
         }).get0();

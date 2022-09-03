@@ -11,15 +11,9 @@
 
 #pragma once
 
-#include "cluster/partition.h"
-#include "cluster/rm_stm.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/fetch_response.h"
-#include "kafka/server/fetch_session.h"
-#include "kafka/server/partition_proxy.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -30,15 +24,6 @@
 #include <seastar/core/future.hh>
 
 namespace kafka {
-
-struct fetch_response;
-
-struct fetch_api final {
-    using response_type = fetch_response;
-
-    static constexpr const char* name = "fetch";
-    static constexpr api_key key = api_key(1);
-};
 
 struct fetch_request final {
     using api_type = fetch_api;

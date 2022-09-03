@@ -26,7 +26,7 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "brokers",
-		Short: "View and configure Redpanda brokers through the admin listener.",
+		Short: "View and configure Redpanda brokers through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
@@ -41,7 +41,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List the brokers in your cluster.",
+		Short:   "List the brokers in your cluster",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
@@ -51,7 +51,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			bs, err := cl.Brokers()
+			bs, err := cl.Brokers(cmd.Context())
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
 			headers := []string{"Node-ID", "Num-Cores", "Membership-Status"}
@@ -82,7 +82,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 func newDecommissionBroker(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "decommission [BROKER ID]",
-		Short: "Decommission the given broker.",
+		Short: "Decommission the given broker",
 		Long: `Decommission the given broker.
 
 Decommissioning a broker removes it from the cluster.
@@ -105,7 +105,7 @@ leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = cl.DecommissionBroker(broker)
+			err = cl.DecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to decommission broker: %v", err)
 
 			fmt.Printf("Success, broker %d has been decommissioned!\n", broker)
@@ -116,7 +116,7 @@ leader handles the request.
 func newRecommissionBroker(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recommission [BROKER ID]",
-		Short: "Recommission the given broker if it is still decommissioning.",
+		Short: "Recommission the given broker if it is still decommissioning",
 		Long: `Recommission the given broker if is is still decommissioning.
 
 Recommissioning can stop an active decommission.
@@ -143,7 +143,7 @@ the cluster leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = cl.RecommissionBroker(broker)
+			err = cl.RecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to recommission broker: %v", err)
 
 			fmt.Printf("Success, broker %d has been recommissioned!\n", broker)

@@ -33,10 +33,10 @@ using namespace std::chrono_literals;
 ss::future<append_entries_request> replicate_entries_stm::share_request() {
     // one extra copy is needed for retries
     return with_semaphore(_share_sem, 1, [this] {
-        return details::foreign_share_n(std::move(_req->batches), 2)
+        return details::foreign_share_n(std::move(_req->batches()), 2)
           .then([this](std::vector<model::record_batch_reader> readers) {
               // keep a copy around until the end
-              _req->batches = std::move(readers.back());
+              _req->batches() = std::move(readers.back());
               readers.pop_back();
               return append_entries_request(
                 _req->node_id,
@@ -102,7 +102,7 @@ replicate_entries_stm::send_append_entries_request(
 
     auto f = _ptr->_fstats.get_append_entries_unit(n).then_wrapped(
       [this, req = std::move(req), opts = std::move(opts), n](
-        ss::future<ss::semaphore_units<>> f) mutable {
+        ss::future<ssx::semaphore_units> f) mutable {
           // we want to signal dispatch semaphore after calling append entries.
           // When dispatch semaphore is released the append_entries_stm releases
           // op_lock so next append entries request can be dispatched to the
@@ -188,7 +188,7 @@ replicate_entries_stm::append_to_self() {
             = _req->flush ? consistency_level::quorum_ack
                           : consistency_level::leader_ack;
           return _ptr->disk_append(
-            std::move(req.batches),
+            std::move(req.batches()),
             _req->flush ? consensus::update_last_quorum_index::yes
                         : consensus::update_last_quorum_index::no);
       })
@@ -419,7 +419,7 @@ replicate_entries_stm::replicate_entries_stm(
   : _ptr(p)
   , _req(std::make_unique<append_entries_request>(std::move(r)))
   , _followers_seq(std::move(seqs))
-  , _share_sem(1)
+  , _share_sem(1, "raft/repl-entries")
   , _ctxlog(_ptr->_ctxlog) {}
 
 replicate_entries_stm::~replicate_entries_stm() {

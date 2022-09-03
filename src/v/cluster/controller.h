@@ -11,18 +11,12 @@
 
 #pragma once
 
-#include "cluster/config_frontend.h"
-#include "cluster/config_manager.h"
+#include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
-#include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
-#include "cluster/health_manager.h"
-#include "cluster/health_monitor_frontend.h"
-#include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer.h"
-#include "cluster/topic_updates_dispatcher.h"
-#include "raft/group_manager.h"
-#include "rpc/connection_cache.h"
+#include "raft/fwd.h"
+#include "rpc/fwd.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "storage/api.h"
@@ -44,7 +38,9 @@ public:
       ss::sharded<storage::api>& storage,
       ss::sharded<storage::node_api>& storage_node,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<v8_engine::data_policy_table>&);
+      ss::sharded<v8_engine::data_policy_table>&,
+      ss::sharded<feature_table>&,
+      ss::sharded<cloud_storage::remote>&);
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
@@ -103,13 +99,17 @@ public:
 
     ss::sharded<shard_table>& get_shard_table() { return _shard_table; }
 
+    ss::sharded<partition_balancer_backend>& get_partition_balancer() {
+        return _partition_balancer;
+    }
+
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
           "Raft 0 API can only be called from shard 0");
-        return _raft0->is_leader();
+        return _raft0->is_elected_leader();
     }
 
     ss::future<> wire_up();
@@ -120,6 +120,9 @@ public:
     ss::future<> stop();
 
 private:
+    friend controller_probe;
+
+    ss::future<> cluster_creation_hook();
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core
@@ -133,7 +136,6 @@ private:
     ss::sharded<topics_frontend> _tp_frontend;       // instance per core
     ss::sharded<controller_backend> _backend;        // instance per core
     ss::sharded<controller_stm> _stm;                // single instance
-    ss::sharded<controller_service> _service;        // instance per core
     ss::sharded<controller_api> _api;                // instance per core
     ss::sharded<members_frontend> _members_frontend; // instance per core
     ss::sharded<members_backend> _members_backend;   // single instance
@@ -158,9 +160,13 @@ private:
     ss::sharded<metrics_reporter> _metrics_reporter;
     ss::sharded<feature_manager> _feature_manager; // single instance
     ss::sharded<feature_backend> _feature_backend; // instance per core
-    ss::sharded<feature_table> _feature_table;     // instance per core
+    ss::sharded<feature_table>& _feature_table;    // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
+    ss::sharded<partition_balancer_backend> _partition_balancer;
+    ss::gate _gate;
     consensus_ptr _raft0;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    controller_probe _probe;
 };
 
 } // namespace cluster

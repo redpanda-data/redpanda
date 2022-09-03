@@ -27,6 +27,8 @@ partition_leaders_table::partition_leaders_table(
   : _topic_table(topic_table) {}
 
 ss::future<> partition_leaders_table::stop() {
+    vlog(clusterlog.info, "Stopping Partition Leaders Table...");
+
     while (!_leader_promises.empty()) {
         auto it = _leader_promises.begin();
         for (auto& promise : it->second) {
@@ -168,6 +170,13 @@ void partition_leaders_table::update_partition_leader(
             promise.second->set_value(*leader_id);
         }
     }
+
+    // Ensure leadership has changed before notifying watchers
+    if (
+      !it->second.previous_leader
+      || leader_id.value() != it->second.previous_leader.value()) {
+        _watchers.notify(ntp, ntp, term, leader_id);
+    }
 }
 
 ss::future<model::node_id> partition_leaders_table::wait_for_leader(
@@ -215,6 +224,28 @@ partition_leaders_table::get_leaders() const {
         ans.push_back(std::move(info));
     }
     return ans;
+}
+
+notification_id_type
+partition_leaders_table::register_leadership_change_notification(
+  leader_change_cb_t cb) {
+    return _watchers.register_notify(std::move(cb));
+}
+
+notification_id_type
+partition_leaders_table::register_leadership_change_notification(
+  const model::ntp& ntp, leader_change_cb_t cb) {
+    return _watchers.register_notify(ntp, std::move(cb));
+}
+
+void partition_leaders_table::unregister_leadership_change_notification(
+  notification_id_type id) {
+    return _watchers.unregister_notify(id);
+}
+
+void partition_leaders_table::unregister_leadership_change_notification(
+  const model::ntp& ntp, notification_id_type id) {
+    return _watchers.unregister_notify(ntp, id);
 }
 
 } // namespace cluster

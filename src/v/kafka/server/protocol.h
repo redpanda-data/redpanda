@@ -21,6 +21,7 @@
 #include "net/server.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
+#include "security/mtls.h"
 #include "utils/ema.h"
 #include "v8_engine/data_policy_table.h"
 
@@ -118,12 +119,12 @@ public:
         }
     }
 
-    ss::future<ss::semaphore_units<>> get_request_unit() {
+    ss::future<ssx::semaphore_units> get_request_unit() {
         if (_qdc_mon) {
             return _qdc_mon->qdc.get_unit();
         }
-        return ss::make_ready_future<ss::semaphore_units<>>(
-          ss::semaphore_units<>());
+        return ss::make_ready_future<ssx::semaphore_units>(
+          ssx::semaphore_units());
     }
 
     cluster::controller_api& controller_api() {
@@ -159,6 +160,7 @@ private:
     ss::sharded<v8_engine::data_policy_table>& _data_policy_table;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
+    security::tls::principal_mapper _mtls_principal_mapper;
 
     latency_probe _probe;
 };

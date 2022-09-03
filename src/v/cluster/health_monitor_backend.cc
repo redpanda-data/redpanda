@@ -18,6 +18,8 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition_manager.h"
+#include "cluster/partition_probe.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/property.h"
@@ -26,6 +28,7 @@
 #include "raft/fwd.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
+#include "storage/types.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>
@@ -38,6 +41,8 @@
 #include <seastar/util/log.hh>
 
 #include <absl/container/node_hash_set.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <iterator>
 
@@ -50,11 +55,13 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
-  ss::sharded<storage::node_api>& storage_api,
+  ss::sharded<storage::node_api>& storage_node_api,
+  ss::sharded<storage::api>& storage_api,
   ss::sharded<drain_manager>& drain_manager,
   ss::sharded<feature_table>& feature_table,
-  config::binding<size_t> storage_min_bytes_threshold,
-  config::binding<unsigned> storage_min_percent_threshold)
+  config::binding<size_t> storage_min_bytes_alert,
+  config::binding<unsigned> storage_min_percent_alert,
+  config::binding<size_t> storage_min_bytes)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -64,11 +71,11 @@ health_monitor_backend::health_monitor_backend(
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
   , _local_monitor(
-      std::move(storage_min_bytes_threshold),
-      std::move(storage_min_percent_threshold),
+      std::move(storage_min_bytes_alert),
+      std::move(storage_min_percent_alert),
+      std::move(storage_min_bytes),
+      storage_node_api,
       storage_api) {
-    _tick_timer.set_callback([this] { tick(); });
-    _tick_timer.arm(tick_interval());
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -108,12 +115,13 @@ void health_monitor_backend::unregister_node_callback(
 }
 
 ss::future<> health_monitor_backend::stop() {
+    vlog(clusterlog.info, "Stopping Health Monitor Backend...");
     _raft_manager.local().unregister_leadership_notification(
       _leadership_notification_handle);
 
     auto f = _gate.close();
+    _refresh_mutex.broken();
     abort_current_refresh();
-    _tick_timer.cancel();
 
     if (_refresh_request) {
         _refresh_request.release();
@@ -127,7 +135,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
     std::vector<node_state> statuses;
     // refreshing node status is not expensive on leader, we can refresh it
     // every time
-    if (_raft0->is_leader()) {
+    if (_raft0->is_elected_leader()) {
         refresh_nodes_status();
     }
 
@@ -233,7 +241,7 @@ void health_monitor_backend::abortable_refresh_request::abort() {
 }
 
 health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
-  model::node_id leader_id, ss::gate::holder holder, ss::semaphore_units<> u)
+  model::node_id leader_id, ss::gate::holder holder, ssx::semaphore_units u)
   : leader_id(leader_id)
   , holder(std::move(holder))
   , units(std::move(u)) {}
@@ -267,23 +275,9 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     auto holder = _gate.hold();
     auto leader_id = _raft0->get_leader_id();
 
-    // if we are a leader, do nothing
-    if (leader_id == _raft0->self().id()) {
-        co_return errc::success;
-    }
-
     // leadership change, abort old refresh request
     if (_refresh_request && leader_id != _refresh_request->leader_id) {
         abort_current_refresh();
-    }
-
-    // no leader controller
-    if (!leader_id) {
-        vlog(
-          clusterlog.debug,
-          "unable to refresh health metadata, no leader controller");
-        // TODO: maybe we should try to ping other members in this case ?
-        co_return errc::no_leader_controller;
     }
 
     auto units = co_await _refresh_mutex.get_units();
@@ -299,10 +293,6 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::no_leader_controller;
     }
 
-    if (leader_id == _raft0->self().id()) {
-        co_return errc::success;
-    }
-
     // check under semaphore if we need to force refresh, otherwise we will just
     // skip refresh request since current state is 'fresh enough' i.e. not older
     // than max metadata age
@@ -315,13 +305,22 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::success;
     }
 
-    vlog(clusterlog.debug, "refreshing health cache, leader id: {}", leader_id);
+    vlog(
+      clusterlog.debug,
+      "refreshing health cache, leader id: {} self: {}",
+      leader_id,
+      _raft0->self().id());
 
     _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
       *leader_id, std::move(holder), std ::move(units));
 
-    co_return co_await _refresh_request->abortable_await(
-      dispatch_refresh_cluster_health_request(*leader_id));
+    // we either collect the cluster health reports while on raft0 leader or ask
+    // current leader for cluster health
+    auto f = leader_id == _raft0->self().id()
+               ? collect_cluster_health()
+               : dispatch_refresh_cluster_health_request(*leader_id);
+
+    co_return co_await _refresh_request->abortable_await(std::move(f));
 }
 
 ss::future<std::error_code>
@@ -364,14 +363,27 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     for (auto& n_status : reply.value().report->node_states) {
         _status.emplace(n_status.id, n_status);
     }
+    vlog(clusterlog.trace, "Status cache updated from the leader: {}", _status);
 
+    storage::disk_space_alert cluster_disk_health
+      = storage::disk_space_alert::ok;
     _reports.clear();
     for (auto& n_report : reply.value().report->node_reports) {
         const auto id = n_report.id;
+
+        // TODO serialize storage_space_alert, instead of recomputing here.
+        auto node_disk_health = node::local_monitor::eval_disks(
+          n_report.local_state.disks);
+        n_report.local_state.storage_space_alert = node_disk_health;
+
+        // Update cached cluster-level disk health: non-raft0-leader nodes
+        cluster_disk_health = storage::max_severity(
+          cluster_disk_health, node_disk_health);
+
         _reports.emplace(id, std::move(n_report));
     }
 
-    _last_refresh = ss::lowres_clock::now();
+    _reports_disk_health = cluster_disk_health;
     co_return make_error_code(errc::success);
 }
 
@@ -404,7 +416,7 @@ health_monitor_backend::get_cluster_health(
   model::timeout_clock::time_point deadline) {
     vlog(
       clusterlog.debug,
-      "requesing cluster state report with filter: {}, force refresh: {}",
+      "requesting cluster state report with filter: {}, force refresh: {}",
       filter,
       refresh);
     auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
@@ -413,6 +425,23 @@ health_monitor_backend::get_cluster_health(
     }
 
     co_return build_cluster_report(filter);
+}
+
+ss::future<storage::disk_space_alert>
+health_monitor_backend::get_cluster_disk_health(
+  force_refresh refresh, model::timeout_clock::time_point deadline) {
+    auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
+    if (ec) {
+        vlog(clusterlog.warn, "Failed to refresh cluster health.");
+        // No obvious choice what to return here; really, health data should be
+        // requirement for staying in the cluster quorum.
+        // We return OK in the remote possibility that health monitor is failing
+        // to update while an operator is addressing a out-of-space condition.
+        // In this case, we'd want to err on the side of allowing the cluster to
+        // operate, I guess.
+        co_return storage::disk_space_alert::ok;
+    }
+    co_return _reports_disk_health;
 }
 
 ss::future<std::error_code>
@@ -424,17 +453,25 @@ health_monitor_backend::maybe_refresh_cluster_health(
 
     // if current node is not the controller leader and we need a refresh we
     // refresh metadata cache
-    if (!_raft0->is_leader() && need_refresh) {
+    if (need_refresh) {
         try {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
             if (err) {
-                vlog(
-                  clusterlog.info,
+                // Many callers may try to do this: when the leader controller
+                // is unavailable, we want to avoid an excess of log messages.
+                static constexpr auto rate_limit = std::chrono::seconds(1);
+                thread_local static ss::logger::rate_limit rate(rate_limit);
+                clusterlog.log(
+                  ss::log_level::info,
+                  rate,
                   "error refreshing cluster health state - {}",
                   err.message());
                 co_return err;
             }
+        } catch (const ss::broken_semaphore&) {
+            // Refresh was waiting on _refresh_mutex during shutdown
+            co_return errc::shutting_down;
         } catch (const ss::timed_out_error&) {
             vlog(
               clusterlog.info,
@@ -442,37 +479,9 @@ health_monitor_backend::maybe_refresh_cluster_health(
               "previous cluster health snapshot");
             co_return errc::timeout;
         }
+        _last_refresh = ss::lowres_clock::now();
     }
     co_return errc::success;
-}
-
-cluster_health_report
-health_monitor_backend::get_current_cluster_health_snapshot(
-  const cluster_report_filter& f) {
-    return build_cluster_report(f);
-}
-
-void health_monitor_backend::tick() {
-    ssx::spawn_with_gate(_gate, [this]() -> ss::future<> {
-        co_await _local_monitor.update_state();
-        co_await tick_cluster_health();
-    });
-}
-
-ss::future<> health_monitor_backend::tick_cluster_health() {
-    if (!_raft0->is_leader()) {
-        vlog(clusterlog.trace, "skipping tick, not leader");
-        _tick_timer.arm(tick_interval());
-        co_return;
-    }
-
-    // make sure that ticks will have fixed interval
-    auto next_tick = ss::lowres_clock::now() + tick_interval();
-    co_await collect_cluster_health().finally([this, next_tick] {
-        if (!_as.local().abort_requested()) {
-            _tick_timer.arm(next_tick);
-        }
-    });
 }
 
 ss::future<result<node_health_report>>
@@ -535,6 +544,10 @@ result<node_health_report> health_monitor_backend::process_node_reply(
         return result<node_health_report>(reply.error());
     }
 
+    // TODO serialize storage_space_alert, instead of recomputing here.
+    auto& s = res.value().local_state;
+    s.storage_space_alert = node::local_monitor::eval_disks(s.disks);
+
     it->second.last_reply_timestamp = ss::lowres_clock::now();
     if (!it->second.is_alive && clusterlog.is_enabled(ss::log_level::info)) {
         vlog(
@@ -547,11 +560,11 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     return res;
 }
 
-ss::future<> health_monitor_backend::collect_cluster_health() {
+ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     /**
      * We are collecting cluster health on raft 0 leader only
      */
-    vlog(clusterlog.trace, "collecting cluster health statistics");
+    vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
     auto ids = _members.local().all_broker_ids();
     auto reports = co_await ssx::async_transform(
@@ -564,7 +577,9 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
 
     auto old_reports = std::exchange(_reports, {});
 
-    // update nodes reports
+    // update nodes reports and cache cluster-level disk health
+    storage::disk_space_alert cluster_disk_health
+      = storage::disk_space_alert::ok;
     for (auto& r : reports) {
         if (r) {
             const auto id = r.value().id;
@@ -590,10 +605,14 @@ ss::future<> health_monitor_backend::collect_cluster_health() {
             for (auto& cb : _node_callbacks) {
                 cb.second(r.value(), old_report);
             }
+            cluster_disk_health = storage::max_severity(
+              r.value().local_state.storage_space_alert, cluster_disk_health);
 
             _reports.emplace(id, std::move(r.value()));
         }
     }
+    _reports_disk_health = cluster_disk_health;
+    co_return errc::success;
 }
 
 ss::future<result<node_health_report>>
@@ -619,90 +638,100 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     co_return ret;
 }
 namespace {
+
 struct ntp_leader {
-    model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
 };
 
-partition_status to_partition_leader(const ntp_leader& ntpl) {
+struct ntp_report {
+    model::ntp ntp;
+    ntp_leader leader;
+    size_t size_bytes;
+};
+
+partition_status to_partition_status(const ntp_report& ntpr) {
     return partition_status{
-      .id = ntpl.ntp.tp.partition,
-      .term = ntpl.term,
-      .leader_id = ntpl.leader_id,
-      .revision_id = ntpl.revision_id,
+      .id = ntpr.ntp.tp.partition,
+      .term = ntpr.leader.term,
+      .leader_id = ntpr.leader.leader_id,
+      .revision_id = ntpr.leader.revision_id,
+      .size_bytes = ntpr.size_bytes,
     };
 }
 
-std::vector<ntp_leader> collect_shard_local_leaders(
+std::vector<ntp_report> collect_shard_local_reports(
   partition_manager& pm, const partitions_filter& filters) {
-    std::vector<ntp_leader> leaders;
+    std::vector<ntp_report> reports;
     // empty filter, collect all
     if (filters.namespaces.empty()) {
-        leaders.reserve(pm.partitions().size());
+        reports.reserve(pm.partitions().size());
         std::transform(
           pm.partitions().begin(),
           pm.partitions().end(),
-          std::back_inserter(leaders),
+          std::back_inserter(reports),
           [](auto& p) {
-              return ntp_leader{
+              return ntp_report{
                 .ntp = p.first,
-                .term = p.second->term(),
-                .leader_id = p.second->get_leader_id(),
-                .revision_id = p.second->get_revision_id(),
+                .leader = ntp_leader{
+                  .term = p.second->term(),
+                  .leader_id = p.second->get_leader_id(),
+                  .revision_id = p.second->get_revision_id(),
+                },
+                .size_bytes = p.second->size_bytes(),
               };
           });
     } else {
         for (const auto& [ntp, partition] : pm.partitions()) {
             if (filters.matches(ntp)) {
-                leaders.push_back(ntp_leader{
-                  .ntp = ntp,
+                reports.push_back(ntp_report{
+                .ntp = ntp,
+                .leader = ntp_leader{
                   .term = partition->term(),
                   .leader_id = partition->get_leader_id(),
                   .revision_id = partition->get_revision_id(),
+                },
+                .size_bytes = partition->size_bytes(),
                 });
             }
         }
     }
 
-    return leaders;
+    return reports;
 }
-using leaders_acc_t
+
+using reports_acc_t
   = absl::node_hash_map<model::topic_namespace, std::vector<partition_status>>;
 
-leaders_acc_t
-reduce_leaders_map(leaders_acc_t acc, std::vector<ntp_leader> current_leaders) {
-    for (auto& ntpl : current_leaders) {
+reports_acc_t
+reduce_reports_map(reports_acc_t acc, std::vector<ntp_report> current_reports) {
+    for (auto& ntpr : current_reports) {
         model::topic_namespace tp_ns(
-          std::move(ntpl.ntp.ns), std::move(ntpl.ntp.tp.topic));
+          std::move(ntpr.ntp.ns), std::move(ntpr.ntp.tp.topic));
 
-        acc[tp_ns].push_back(to_partition_leader(ntpl));
+        acc[tp_ns].push_back(to_partition_status(ntpr));
     }
     return acc;
 }
 } // namespace
 ss::future<std::vector<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
-    auto leaders_map = co_await _partition_manager.map_reduce0(
+    auto reports_map = co_await _partition_manager.map_reduce0(
       [&filters](partition_manager& pm) {
-          return collect_shard_local_leaders(pm, filters);
+          return collect_shard_local_reports(pm, filters);
       },
-      leaders_acc_t{},
-      &reduce_leaders_map);
+      reports_acc_t{},
+      &reduce_reports_map);
 
     std::vector<topic_status> topics;
-    topics.reserve(leaders_map.size());
-    for (auto& [tp_ns, partitions] : leaders_map) {
+    topics.reserve(reports_map.size());
+    for (auto& [tp_ns, partitions] : reports_map) {
         topics.push_back(
           topic_status{.tp_ns = tp_ns, .partitions = std::move(partitions)});
     }
 
     co_return topics;
-}
-
-std::chrono::milliseconds health_monitor_backend::tick_interval() {
-    return config::shard_local_cfg().health_monitor_tick_interval();
 }
 
 std::chrono::milliseconds health_monitor_backend::max_metadata_age() {

@@ -12,16 +12,20 @@
 #include "bytes/bytes.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/logger.h"
+#include "storage/segment_utils.h"
 #include "utils/vint.h"
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future-util.hh>
 
 #include <fmt/ostream.h>
+using namespace std::chrono_literals;
 
 namespace storage::internal {
 using namespace storage; // NOLINT
@@ -31,15 +35,32 @@ using namespace storage; // NOLINT
 //
 spill_key_index::spill_key_index(
   ss::sstring name,
-  ss::file index_file,
   ss::io_priority_class p,
-  size_t max_memory)
+  bool truncate,
+  storage::debug_sanitize_files debug,
+  storage_resources& resources)
   : compacted_index_writer::impl(std::move(name))
-  , _appender(
-      std::move(index_file),
-      segment_appender::options(
-        p, 1, config::shard_local_cfg().segment_fallocation_step.bind()))
-  , _max_mem(max_memory) {}
+  , _debug(debug)
+  , _resources(resources)
+  , _pc(p)
+  , _truncate(truncate) {}
+
+/**
+ * This constructor is only for unit tests, which pre-construct a ss::file
+ * rather than relying on spill_key_index to open it on-demand.
+ */
+spill_key_index::spill_key_index(
+  ss::sstring name,
+  ss::file dummy_file,
+  size_t max_mem,
+  storage_resources& resources)
+  : compacted_index_writer::impl(std::move(name))
+  , _resources(resources)
+  , _pc(ss::default_priority_class())
+  , _appender(storage::segment_appender(
+      std::move(dummy_file),
+      segment_appender::options(_pc, 1, std::nullopt, _resources)))
+  , _max_mem(max_mem) {}
 
 spill_key_index::~spill_key_index() {
     vassert(
@@ -48,8 +69,8 @@ spill_key_index::~spill_key_index() {
       _midx.size());
 }
 
-ss::future<>
-spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
+ss::future<> spill_key_index::index(
+  const compaction_key& v, model::offset base_offset, int32_t delta) {
     if (auto it = _midx.find(v); it != _midx.end()) {
         auto& pair = it->second;
         if (base_offset > pair.base_offset) {
@@ -59,20 +80,42 @@ spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
         return ss::now();
     }
     // not found
-    return add_key(bytes(v), value_type{base_offset, delta});
+    return add_key(v, value_type{base_offset, delta});
 }
 
-ss::future<> spill_key_index::add_key(bytes b, value_type v) {
+ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
     auto f = ss::now();
-    auto const key_size = b.size();
-    auto const expected_size = idx_mem_usage() + _keys_mem_usage + key_size;
+    auto const entry_size = entry_mem_usage(b);
+    auto const expected_size = idx_mem_usage() + _keys_mem_usage + entry_size;
 
-    if (expected_size >= _max_mem) {
+    auto take_result = _resources.compaction_index_take_bytes(entry_size);
+    if (_mem_units.count() == 0) {
+        _mem_units = std::move(take_result.units);
+    } else {
+        _mem_units.adopt(std::move(take_result.units));
+    }
+
+    // Don't spill unless we're at least this big.  Prevents a situation
+    // where some other index has used up the memory allowance, and we
+    // would end up spilling on every key.
+    const size_t min_index_size = std::min(32_KiB, _max_mem);
+
+    if (
+      (take_result.checkpoint_hint && expected_size > min_index_size)
+      || expected_size >= _max_mem) {
         f = ss::do_until(
-          [this, key_size] {
-              // stop condition
-              return _midx.empty()
-                     || idx_mem_usage() + _keys_mem_usage + key_size < _max_mem;
+          [this, entry_size, min_index_size] {
+              size_t total_mem = idx_mem_usage() + _keys_mem_usage + entry_size;
+
+              // Instance-local capacity check
+              bool local_ok = total_mem < _max_mem;
+
+              // Shard-wide capacity check
+              bool global_ok = _resources.compaction_index_bytes_available()
+                               || total_mem < min_index_size;
+
+              // Stop condition: none of our size thresholds must be violated
+              return _midx.empty() || (local_ok && global_ok);
           },
           [this] {
               /**
@@ -86,22 +129,30 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
                 node.key(),
                 node.mapped(),
                 [this](const bytes& k, value_type o) {
-                    _keys_mem_usage -= k.size();
+                    release_entry_memory(k);
                     return spill(compacted_index::entry_type::key, k, o);
                 });
           });
     }
 
-    return f.then([this, b = std::move(b), v]() mutable {
+    return f.then([this, entry_size, b = std::move(b), v]() mutable {
         // convert iobuf to key
-        _keys_mem_usage += b.size();
+        _keys_mem_usage += entry_size;
+
+        // No update to _mem_units here: we already took units at top
+        // of add_key before starting the write.
+
         _midx.insert({std::move(b), v});
     });
 }
 
-ss::future<>
-spill_key_index::index(bytes&& b, model::offset base_offset, int32_t delta) {
-    if (auto it = _midx.find(b); it != _midx.end()) {
+ss::future<> spill_key_index::index(
+  model::record_batch_type batch_type,
+  bytes&& b,
+  model::offset base_offset,
+  int32_t delta) {
+    auto key = prefix_with_batch_type(batch_type, b);
+    if (auto it = _midx.find(key); it != _midx.end()) {
         auto& pair = it->second;
         // must use both base+delta, since we only want to keep the latest
         // which might be inserted into the batch multiple times by client
@@ -114,11 +165,15 @@ spill_key_index::index(bytes&& b, model::offset base_offset, int32_t delta) {
         return ss::now();
     }
     // not found
-    return add_key(std::move(b), value_type{base_offset, delta});
+    return add_key(std::move(key), value_type{base_offset, delta});
 }
 ss::future<> spill_key_index::index(
-  const iobuf& key, model::offset base_offset, int32_t delta) {
+  model::record_batch_type batch_type,
+  const iobuf& key,
+  model::offset base_offset,
+  int32_t delta) {
     return index(
+      batch_type,
       iobuf_to_bytes(key), // makes a copy, but we need deterministic keys
       base_offset,
       delta);
@@ -167,8 +222,8 @@ ss::future<> spill_key_index::spill(
       "Entries cannot be bigger than uint16_t::max(): {}",
       payload);
     // Append to the file
-    return ss::do_with(
-      std::move(payload), [this](iobuf& buf) { return _appender.append(buf); });
+    co_await maybe_open();
+    co_await _appender->append(payload);
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
@@ -185,7 +240,7 @@ ss::future<> spill_key_index::drain_all_keys() {
       },
       [this] {
           auto node = _midx.extract(_midx.begin());
-          _keys_mem_usage -= node.key().size();
+          release_entry_memory(node.key());
           return ss::do_with(
             node.key(), node.mapped(), [this](const bytes& k, value_type o) {
                 return spill(compacted_index::entry_type::key, k, o);
@@ -213,24 +268,65 @@ ss::future<> spill_key_index::truncate(model::offset o) {
     });
 }
 
+ss::future<> spill_key_index::maybe_open() {
+    if (!_appender.has_value()) {
+        co_await open();
+    }
+}
+
+/**
+ * Open file and initialize _appender
+ */
+ss::future<> spill_key_index::open() {
+    auto index_file = co_await make_writer_handle(
+      std::filesystem::path(filename()), _debug, _truncate);
+
+    _appender.emplace(storage::segment_appender(
+      std::move(index_file),
+      segment_appender::options(_pc, 1, std::nullopt, _resources)));
+}
+
 ss::future<> spill_key_index::close() {
-    return drain_all_keys().then([this] {
+    // ::close includes a flush, which can fail, but we must catch the
+    // exception to avoid potentially leaving an open handle in _appender
+    std::exception_ptr ex;
+    try {
+        co_await maybe_open();
+
+        co_await drain_all_keys();
+
         vassert(
           _keys_mem_usage == 0,
           "Failed to drain all keys, {} bytes left",
           _keys_mem_usage);
+
         _footer.crc = _crc.value();
-        return ss::do_with(
-                 reflection::to_iobuf(_footer),
-                 [this](iobuf& b) {
-                     vassert(
-                       b.size_bytes() == compacted_index::footer_size,
-                       "Footer is bigger than expected: {}",
-                       b);
-                     return _appender.append(b);
-                 })
-          .then([this] { return _appender.close(); });
-    });
+        auto footer_buf = reflection::to_iobuf(_footer);
+        vassert(
+          footer_buf.size_bytes() == compacted_index::footer_size,
+          "Footer is bigger than expected: {}",
+          footer_buf);
+
+        co_await _appender->append(footer_buf);
+    } catch (...) {
+        ex = std::current_exception();
+    }
+
+    // Even if the flush failed, make sure we are closing any open file handle.
+    if (_appender.has_value()) {
+        co_await _appender->close();
+    }
+
+    if (ex) {
+        vlog(stlog.error, "error flushing index during close: {} ", ex);
+
+        // Drop any dirty state that we couldn't flush: otherwise our destructor
+        // will assert out.  This is valid because future reads of a compaction
+        // index can detect invalid content and regenerate.
+        _midx.clear();
+
+        throw ex;
+    }
 }
 
 void spill_key_index::print(std::ostream& o) const { o << *this; }
@@ -238,10 +334,9 @@ void spill_key_index::print(std::ostream& o) const { o << *this; }
 std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
     fmt::print(
       o,
-      "{{name:{}, max_mem:{}, key_mem_usage:{}, persisted_entries:{}, "
+      "{{name:{}, key_mem_usage:{}, persisted_entries:{}, "
       "in_memory_entries:{}, file_appender:{}}}",
       k.filename(),
-      k._max_mem,
       k._keys_mem_usage,
       k._footer.keys,
       k._midx.size(),
@@ -253,8 +348,12 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
 
 namespace storage {
 compacted_index_writer make_file_backed_compacted_index(
-  ss::sstring name, ss::file f, ss::io_priority_class p, size_t max_memory) {
+  ss::sstring name,
+  ss::io_priority_class p,
+  debug_sanitize_files debug,
+  bool truncate,
+  storage_resources& resources) {
     return compacted_index_writer(std::make_unique<internal::spill_key_index>(
-      std::move(name), std::move(f), p, max_memory));
+      std::move(name), p, truncate, debug, resources));
 }
 } // namespace storage

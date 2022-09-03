@@ -39,9 +39,9 @@ s3::configuration s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration conf{
       .uri = s3::access_point_uri(httpd_host_name),
-      .access_key = s3::public_key_str("acess-key"),
-      .secret_key = s3::private_key_str("secret-key"),
-      .region = s3::aws_region_name("us-east-1"),
+      .access_key = cloud_roles::public_key_str("acess-key"),
+      .secret_key = cloud_roles::private_key_str("secret-key"),
+      .region = cloud_roles::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<s3::client_probe>(

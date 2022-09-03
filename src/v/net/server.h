@@ -16,13 +16,12 @@
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
-#include "security/mtls.h"
+#include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics_registration.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/net/tls.hh>
 
@@ -43,7 +42,6 @@ struct server_endpoint {
     ss::sstring name;
     ss::socket_address addr;
     ss::shared_ptr<ss::tls::server_credentials> credentials;
-    std::optional<security::tls::principal_mapper> principal_mapper;
 
     server_endpoint(ss::sstring name, ss::socket_address addr)
       : name(std::move(name))
@@ -58,26 +56,9 @@ struct server_endpoint {
       , credentials(std::move(creds)) {}
 
     server_endpoint(
-      ss::sstring name,
-      ss::socket_address addr,
-      ss::shared_ptr<ss::tls::server_credentials> creds,
-      std::optional<security::tls::principal_mapper> principal_mapper)
-      : name(std::move(name))
-      , addr(addr)
-      , credentials(std::move(creds))
-      , principal_mapper(std::move(principal_mapper)) {}
-
-    server_endpoint(
       ss::socket_address addr,
       ss::shared_ptr<ss::tls::server_credentials> creds)
       : server_endpoint("", addr, std::move(creds)) {}
-
-    server_endpoint(
-      ss::socket_address addr,
-      ss::shared_ptr<ss::tls::server_credentials> creds,
-      security::tls::principal_mapper principal_mapper)
-      : server_endpoint(
-        "", addr, std::move(creds), std::move(principal_mapper)) {}
 
     explicit server_endpoint(ss::socket_address addr)
       : server_endpoint("", addr) {}
@@ -96,7 +77,10 @@ struct server_configuration {
     std::optional<int> listen_backlog;
     std::optional<int> tcp_recv_buf;
     std::optional<int> tcp_send_buf;
+    std::optional<size_t> stream_recv_buf;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
+    net::public_metrics_disabled disable_public_metrics
+      = net::public_metrics_disabled::no;
     ss::sstring name;
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     // we use the same default as seastar for load balancing algorithm
@@ -124,7 +108,7 @@ public:
         ss::lw_shared_ptr<net::connection> conn;
 
         server_probe& probe() { return _s->_probe; }
-        ss::semaphore& memory() { return _s->_memory; }
+        ssx::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
         ss::abort_source& abort_source() { return _s->_as; }
@@ -192,9 +176,10 @@ private:
     friend resources;
     ss::future<> accept(listener&);
     void setup_metrics();
+    void setup_public_metrics();
 
     std::unique_ptr<protocol> _proto;
-    ss::semaphore _memory;
+    ssx::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;
@@ -202,6 +187,7 @@ private:
     hdr_hist _hist;
     server_probe _probe;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     std::optional<connection_rate<>> _connection_rates;

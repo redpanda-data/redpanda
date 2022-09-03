@@ -24,7 +24,7 @@ jobs:
     name: Test and Build
     strategy:
       matrix:
-        os: [linux, darwin]
+        os: [linux, darwin, windows]
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +56,7 @@ jobs:
         GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} ./build.sh $tag ${{ github.sha }}
 
     - name: Package
+      if: ${{ matrix.os != 'windows'}}
       working-directory: src/go/rpk/
       run: |
         zip -j rpk-${{ matrix.os }}-${{ matrix.arch }}.zip ./${{ matrix.os }}-${{ matrix.arch }}/rpk
@@ -70,12 +71,12 @@ jobs:
 
   sign-darwin:
     name: Sign and notarize the darwin release_name
-    needs: build
+    needs: create-release
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         arch: [amd64, arm64]
-    runs-on: macos-10.15
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -100,7 +101,7 @@ jobs:
 
       - name: Install gon for code signing and app notarization
         run: |
-          curl -LO https://github.com/mitchellh/gon/releases/download/v0.2.3/gon_macos.zip
+          curl -LO https://github.com/mitchellh/gon/releases/download/v0.2.5/gon_macos.zip
           unzip gon_macos.zip
           rm gon_macos.zip
 
@@ -117,10 +118,26 @@ jobs:
         with:
           name: rpk-archives
           path: zip/rpk-darwin-${{ matrix.arch }}.zip
+    outputs:
+      upload_url: ${{ needs.create-release.outputs.upload_url }}
+
+  notify-sign-failure:
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    needs: [sign-darwin]
+    steps:
+      - name: Notify sign failed
+        id: notify_sign_failure
+        uses: slackapi/slack-github-action@v1.21.0
+        with:
+          channel-id: ${{ secrets.INTERNAL_RELEASES_SLACK_CHANNEL }}
+          slack-message: "ERROR: signing darwin binaries for `${{ github.ref_name }}` failed in ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
 
   create-release:
     name: Create release
-    needs: [build, sign-darwin]
+    needs: [build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -137,14 +154,13 @@ jobs:
     outputs:
       upload_url: ${{ steps.create_rpk_release.outputs.upload_url }}
 
-  publish-release-artifacts:
-    name: Publish release
-    needs: create-release
+  upload-release-artifacts-linux:
+    name: Upload linux binaries
+    needs: [create-release]
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         arch: [amd64, arm64]
-        os: [linux, darwin]
     runs-on: ubuntu-latest
     steps:
     - name: Download compressed rpk artifacts
@@ -156,6 +172,28 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: rpk-archives/rpk-${{ matrix.os }}-${{ matrix.arch }}.zip
-        asset_name: rpk-${{ matrix.os }}-${{ matrix.arch }}.zip
+        asset_path: rpk-archives/rpk-linux-${{ matrix.arch }}.zip
+        asset_name: rpk-linux-${{ matrix.arch }}.zip
+        asset_content_type: application/zip
+
+  upload-release-artifacts-darwin:
+    name: Upload darwin binaries
+    needs: [sign-darwin]
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download compressed rpk artifacts
+      uses: actions/download-artifact@v2
+
+    - name: Upload rpk artifacts to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.sign-darwin.outputs.upload_url }}
+        asset_path: rpk-archives/rpk-darwin-${{ matrix.arch }}.zip
+        asset_name: rpk-darwin-${{ matrix.arch }}.zip
         asset_content_type: application/zip

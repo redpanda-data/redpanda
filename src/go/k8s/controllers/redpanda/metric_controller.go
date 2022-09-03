@@ -94,7 +94,7 @@ func (r *ClusterMetricController) Reconcile(
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		g.Set(float64(cl.Items[i].Status.Replicas))
+		g.Set(float64(cl.Items[i].Status.ReadyReplicas))
 		curLabels[cl.Items[i].Name] = struct{}{}
 		r.currentLabels[cl.Items[i].Name] = struct{}{}
 	}

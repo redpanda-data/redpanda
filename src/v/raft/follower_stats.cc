@@ -47,7 +47,7 @@ void follower_stats::update_with_configuration(const group_configuration& cfg) {
     }
 }
 
-ss::future<ss::semaphore_units<>>
+ss::future<ssx::semaphore_units>
 follower_stats::get_append_entries_unit(vnode id) {
     if (auto it = _queues.find(id); it != _queues.end()) {
         return it->second.get_append_entries_unit();

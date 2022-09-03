@@ -39,7 +39,7 @@ class WasmRedpandaFailureRecoveryTest(WasmTest):
         self._one_traunch_observed = False
         self._num_records = num_records
 
-    def records_recieved(self, output_recieved):
+    def records_received(self, output_received):
         if self._one_traunch_observed is False:
             self.restart_redpanda(random.sample(self.redpanda.nodes, 1)[0])
             self._one_traunch_observed = True

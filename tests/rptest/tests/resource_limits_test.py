@@ -75,6 +75,7 @@ class ResourceLimitsTest(RedpandaTest):
         self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1))
 
         self.redpanda.set_extra_rp_conf({
+            'segment_fallocation_step': 16384,
             # Disable memory limit: on a test node the physical memory can easily
             # be the limiting factor
             'topic_memory_per_partition': None,
@@ -118,9 +119,9 @@ class ResourceLimitsTest(RedpandaTest):
 
         rpk = RpkTool(self.redpanda)
 
-        # Default 10 fds per partition, we set ulimit down to 1000, so 100 should be the limit
+        # Default 5 fds per partition, we set ulimit down to 1000, so 100 should be the limit
         try:
-            rpk.create_topic("toobig", partitions=110, replicas=3)
+            rpk.create_topic("toobig", partitions=220, replicas=3)
         except RpkException as e:
             assert 'INVALID_PARTITIONS' in e.msg
         else:

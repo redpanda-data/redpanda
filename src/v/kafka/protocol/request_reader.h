@@ -74,6 +74,10 @@ public:
         return {do_read_flex_string(n)};
     }
 
+    uuid read_uuid() {
+        return uuid(_parser.consume_type<uuid::underlying_t>());
+    }
+
     bytes read_bytes() { return _parser.read_bytes(read_int32()); }
 
     bytes read_flex_bytes() {
@@ -176,25 +180,35 @@ public:
 
     // Only relevent when reading flex requests
     tagged_fields read_tags() {
-        tagged_fields tags;
+        tagged_fields::type tags;
         auto num_tags = read_unsigned_varint(); // consume total num of tags
+        int64_t prev_tag_id = -1;
         while (num_tags-- > 0) {
-            auto tag_id = read_unsigned_varint(); // consume tag id
-            auto size = read_unsigned_varint();   // consume size in bytes
-            tags.emplace_back(tag_id, _parser.share(size)); // consume tag
+            auto id = read_unsigned_varint(); // consume tag id
+            if (id <= prev_tag_id) {
+                throw std::out_of_range(fmt::format(
+                  "Protocol error encountered when parsing tags, tags must be "
+                  "serialized in ascending order with no duplicates, tag: {}",
+                  id));
+            }
+            prev_tag_id = id;
+            auto size = read_unsigned_varint(); // consume size in bytes
+            tags.emplace(
+              tag_id(id), iobuf_to_bytes(_parser.share(size))); // consume tag
         }
-        return tags;
+        return tagged_fields(std::move(tags));
     }
 
-    void consume_tags() {
-        // Reads tags only with the intention of moving ahead the parser read
-        // head to the next correct index
-        auto num_tags = read_unsigned_varint(); // consume total num of tags
-        while (num_tags-- > 0) {
-            (void)read_unsigned_varint();           // consume tag id
-            auto next_len = read_unsigned_varint(); // consume size in bytes
-            _parser.skip(next_len);                 // consume tag element
+    void consume_unknown_tag(tagged_fields& fields, uint32_t id, size_t n) {
+        tagged_fields::type fs(std::move(fields));
+        auto [_, succeded] = fs.emplace(tag_id(id), _parser.read_bytes(n));
+        if (!succeded) {
+            throw std::out_of_range(fmt::format(
+              "Protocol error encountered when parsing unknown tags, duplicate "
+              "tag id detected: {}",
+              id));
         }
+        fields = tagged_fields(std::move(fs));
     }
 
 private:
@@ -232,5 +246,7 @@ private:
 
     iobuf_parser _parser;
 };
+
+ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>&);
 
 } // namespace kafka

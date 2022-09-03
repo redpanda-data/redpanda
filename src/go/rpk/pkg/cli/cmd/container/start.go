@@ -50,7 +50,7 @@ func collectFlags(args []string, flag string) []string {
 	return flags
 }
 
-func Start() *cobra.Command {
+func newStartCommand() *cobra.Command {
 	var (
 		nodes   uint
 		retries uint
@@ -58,7 +58,7 @@ func Start() *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "start",
-		Short: "Start a local container cluster.",
+		Short: "Start a local container cluster",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to the containers without the need to pass '--'

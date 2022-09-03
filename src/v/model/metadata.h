@@ -23,6 +23,7 @@
 #include <bits/stdint-intn.h>
 #include <boost/functional/hash.hpp>
 
+#include <compare>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -47,7 +48,8 @@ using initial_revision_id
 
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
-struct broker_properties {
+struct broker_properties
+  : serde::envelope<broker_properties, serde::version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
@@ -62,13 +64,22 @@ struct broker_properties {
                && mount_paths == other.mount_paths
                && etc_props == other.etc_props;
     }
+
+    auto serde_fields() {
+        return std::tie(
+          cores,
+          available_memory_gb,
+          available_disk_gb,
+          mount_paths,
+          etc_props);
+    }
 };
 
-struct broker_endpoint final {
+struct broker_endpoint final
+  : serde::envelope<broker_endpoint, serde::version<0>> {
     ss::sstring name;
     net::unresolved_address address;
 
-    // required for yaml serde
     broker_endpoint() = default;
 
     broker_endpoint(ss::sstring name, net::unresolved_address address) noexcept
@@ -80,6 +91,8 @@ struct broker_endpoint final {
 
     bool operator==(const broker_endpoint&) const = default;
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
+
+    auto serde_fields() { return std::tie(name, address); }
 };
 
 enum class violation_recovery_policy { crash = 0, best_effort };
@@ -128,8 +141,10 @@ enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
 
-class broker {
+class broker : public serde::envelope<broker, serde::version<0>> {
 public:
+    broker() noexcept = default;
+
     broker(
       node_id id,
       std::vector<broker_endpoint> kafka_advertised_listeners,
@@ -180,6 +195,11 @@ public:
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 
+    auto serde_fields() {
+        return std::tie(
+          _id, _kafka_advertised_listeners, _rpc_address, _rack, _properties);
+    }
+
 private:
     node_id _id;
     std::vector<broker_endpoint> _kafka_advertised_listeners;
@@ -203,14 +223,29 @@ struct broker_shard {
     uint32_t shard;
     friend std::ostream& operator<<(std::ostream&, const broker_shard&);
     bool operator==(const broker_shard&) const = default;
+    auto operator<=>(const model::broker_shard&) const = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const broker_shard& s) {
         return H::combine(std::move(h), s.node_id(), s.shard);
     }
+
+    friend void write(iobuf& out, broker_shard bs) {
+        using serde::write;
+        write(out, bs.node_id);
+        write(out, bs.shard);
+    }
+
+    friend void read_nested(
+      iobuf_parser& in, broker_shard& bs, std::size_t const bytes_left_limit) {
+        using serde::read_nested;
+        read_nested(in, bs.node_id, bytes_left_limit);
+        read_nested(in, bs.shard, bytes_left_limit);
+    }
 };
 
-struct partition_metadata {
+struct partition_metadata
+  : serde::envelope<partition_metadata, serde::version<0>> {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(p) {}
@@ -219,6 +254,10 @@ struct partition_metadata {
     std::optional<model::node_id> leader_node;
 
     friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
+    friend bool operator==(const partition_metadata&, const partition_metadata&)
+      = default;
+
+    auto serde_fields() { return std::tie(id, replicas, leader_node); }
 };
 
 enum class isolation_level : int8_t {
@@ -330,13 +369,18 @@ struct topic_namespace_eq {
     }
 };
 
-struct topic_metadata {
+struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
+    topic_metadata() noexcept = default;
     explicit topic_metadata(topic_namespace v) noexcept
       : tp_ns(std::move(v)) {}
     topic_namespace tp_ns;
     std::vector<partition_metadata> partitions;
 
     friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
+    friend bool operator==(const topic_metadata&, const topic_metadata&)
+      = default;
+
+    auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
 
 inline std::ostream&
@@ -346,6 +390,33 @@ operator<<(std::ostream& o, const model::violation_recovery_policy& x) {
         return o << "best_effort";
     case model::violation_recovery_policy::crash:
         return o << "crash";
+    }
+}
+
+enum class cloud_credentials_source {
+    config_file = 0,
+    aws_instance_metadata = 1,
+    sts = 2,
+    gcp_instance_metadata = 3,
+};
+
+std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs);
+
+enum class partition_autobalancing_mode {
+    off = 0,
+    node_add,
+    continuous,
+};
+
+inline std::ostream&
+operator<<(std::ostream& o, const partition_autobalancing_mode& m) {
+    switch (m) {
+    case model::partition_autobalancing_mode::off:
+        return o << "off";
+    case model::partition_autobalancing_mode::node_add:
+        return o << "node_add";
+    case model::partition_autobalancing_mode::continuous:
+        return o << "continuous";
     }
 }
 

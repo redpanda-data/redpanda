@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct add_offsets_to_txn_response;
-
-struct add_offsets_to_txn_api final {
-    using response_type = add_offsets_to_txn_response;
-
-    static constexpr const char* name = "add offsets to txn";
-    static constexpr api_key key = api_key(25);
-};
-
 struct add_offsets_to_txn_request final {
     using api_type = add_offsets_to_txn_api;
 

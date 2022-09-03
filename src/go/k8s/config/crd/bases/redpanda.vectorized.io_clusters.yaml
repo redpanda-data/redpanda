@@ -806,6 +806,16 @@ spec:
                   - type
                   type: object
                 type: array
+              currentReplicas:
+                description: CurrentReplicas is the number of Pods that the controller
+                  currently wants to run for the cluster.
+                format: int32
+                type: integer
+              decommissioningNode:
+                description: Indicates that a node is currently being decommissioned
+                  from the cluster and provides its ordinal number
+                format: int32
+                type: integer
               nodes:
                 description: Nodes of the provisioned redpanda nodes
                 properties:
@@ -908,8 +918,14 @@ spec:
                         type: string
                     type: object
                 type: object
+              readyReplicas:
+                description: ReadyReplicas is the number of Pods belonging to the
+                  cluster that have a Ready Condition.
+                format: int32
+                type: integer
               replicas:
-                description: Replicas show how many nodes are working in the cluster
+                description: Replicas show how many nodes have been created for the
+                  cluster
                 format: int32
                 type: integer
               restarting:

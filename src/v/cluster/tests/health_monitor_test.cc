@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/node/types.h"
@@ -56,6 +57,9 @@ void check_reports_the_same(
           lr.local_state.redpanda_version == rr.local_state.redpanda_version);
         BOOST_TEST_REQUIRE(lr.topics == rr.topics);
         BOOST_TEST_REQUIRE(lr.local_state.disks == rr.local_state.disks);
+        BOOST_TEST_REQUIRE(
+          lr.local_state.storage_space_alert
+          == rr.local_state.storage_space_alert);
     }
 }
 
@@ -115,7 +119,7 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
                  .get0();
-    auto r_3 = n2->controller->get_health_monitor()
+    auto r_3 = n3->controller->get_health_monitor()
                  .local()
                  .get_cluster_health(
                    get_all, cluster::force_refresh::yes, model::no_timeout)
@@ -172,8 +176,8 @@ model::ntp ntp(model::ns ns, ss::sstring tp, int pid) {
 
 FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
 
     wait_for_all_members(3s).get();
     // wait for disk space report to be present
@@ -300,8 +304,8 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
     auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
 
     wait_for_all_members(3s).get();
     // wait for disk space report to be present

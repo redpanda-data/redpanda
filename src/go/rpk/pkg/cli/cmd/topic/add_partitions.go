@@ -23,11 +23,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 )
 
-func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
+func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 	var num int
 	cmd := &cobra.Command{
 		Use:   "add-partitions [TOPICS...] --num [#]",
-		Short: "Add partitions to existing topics.",
+		Short: "Add partitions to existing topics",
 		Args:  cobra.MinimumNArgs(1),
 		Long:  `Add partitions to existing topics.`,
 		Run: func(cmd *cobra.Command, topics []string) {
@@ -62,7 +62,7 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 					if errors.Is(e, kerr.InvalidPartitions) && num > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to add %d partitions due to hardware constraints", num)
 					} else {
-						msg = err.Error()
+						msg = e.Error()
 					}
 					exit1 = true
 				}
@@ -70,6 +70,6 @@ func NewAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().IntVarP(&num, "num", "n", 0, "numer of partitions to add to each topic")
+	cmd.Flags().IntVarP(&num, "num", "n", 0, "Number of partitions to add to each topic")
 	return cmd
 }

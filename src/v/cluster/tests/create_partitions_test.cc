@@ -24,10 +24,10 @@ FIXTURE_TEST(test_creating_partitions, rebalancing_tests_fixture) {
     create_topic(create_topic_cfg("test-2", 4, 3));
 
     // topic test-1, increase partition count to 6
-    cluster::create_partititions_configuration cfg_test_1(
+    cluster::create_partitions_configuration cfg_test_1(
       make_tp_ns("test-1"), 6);
     // topic test-2, increase partition count to 9
-    cluster::create_partititions_configuration cfg_test_2(
+    cluster::create_partitions_configuration cfg_test_2(
       make_tp_ns("test-2"), 9);
 
     auto res = (*get_leader_node_application())
@@ -68,7 +68,7 @@ FIXTURE_TEST(test_error_handling, rebalancing_tests_fixture) {
     create_topic(create_topic_cfg("test-1", 3, 1));
 
     // topic test-1, try decreasing partition count
-    cluster::create_partititions_configuration cfg_test_1(
+    cluster::create_partitions_configuration cfg_test_1(
       make_tp_ns("test-1"), 2);
 
     auto res = (*get_leader_node_application())

@@ -19,13 +19,20 @@
 # - Imported annotate_missing_msgs helper from kafka test suite
 
 from collections import namedtuple
+from typing import Optional
 import os
+from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_installer import InstallOptions
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
+from rptest.archival.s3_client import S3Client
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -65,15 +72,20 @@ class EndToEndTest(Test):
 
         self.records_consumed = []
         self.last_consumed_offsets = {}
-        self.redpanda = None
+        self.redpanda: Optional[RedpandaService] = None
+        self.si_settings = si_settings
         self.topic = None
         self._client = None
 
     def start_redpanda(self,
                        num_nodes=1,
                        extra_rp_conf=None,
-                       si_settings=None):
-        self.si_settings = si_settings
+                       si_settings=None,
+                       environment=None,
+                       install_opts: Optional[InstallOptions] = None):
+        if si_settings is not None:
+            self.si_settings = si_settings
+
         if self.si_settings:
             self.si_settings.load_context(self.logger, self.test_context)
 
@@ -86,13 +98,39 @@ class EndToEndTest(Test):
         self.redpanda = RedpandaService(self.test_context,
                                         num_nodes,
                                         extra_rp_conf=self._extra_rp_conf,
-                                        extra_node_conf=self._extra_node_conf)
-        self.redpanda.start()
-        self._client = DefaultClient(self.redpanda)
+                                        extra_node_conf=self._extra_node_conf,
+                                        si_settings=self.si_settings,
+                                        environment=environment)
+        version_to_install = None
+        if install_opts:
+            if install_opts.install_previous_version:
+                version_to_install = \
+                    self.redpanda._installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+            if install_opts.version:
+                version_to_install = install_opts.version
 
-    @property
-    def s3_client(self):
-        return self.redpanda.s3_client
+        if version_to_install:
+            self.redpanda._installer.install(self.redpanda.nodes,
+                                             version_to_install)
+        self.redpanda.start()
+        if version_to_install and install_opts.num_to_upgrade > 0:
+            # Perform the upgrade rather than starting each node on the
+            # appropriate version. Redpanda may not start up if starting a new
+            # cluster with mixed-versions.
+            nodes_to_upgrade = [
+                self.redpanda.get_node(i + 1)
+                for i in range(install_opts.num_to_upgrade)
+            ]
+            self.redpanda._installer.install(nodes_to_upgrade,
+                                             RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(nodes_to_upgrade)
+
+        self._client = DefaultClient(self.redpanda)
+        self._rpk_client = RpkTool(self.redpanda)
+
+    def rpk_client(self):
+        assert self._rpk_client is not None
+        return self._rpk_client
 
     def client(self):
         assert self._client is not None
@@ -146,15 +184,32 @@ class EndToEndTest(Test):
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
                     self.logger.debug(
-                        f"waiting for partition {partition} offset {offset} to be committed, last committed offset: {last_commit}"
+                        f"waiting for partition {partition} offset {offset} "
+                        f"to be committed, last committed offset: {last_commit}, "
+                        f"last committed timestamp: {self.consumer.get_last_consumed()}, "
+                        f"last consumed timestamp: {self.consumer.get_last_consumed()}"
                     )
                     return False
             return True
 
-        wait_until(has_finished_consuming,
+        wait_until(
+            has_finished_consuming,
+            timeout_sec=timeout_sec,
+            err_msg=lambda:
+            f"Consumer failed to consume up to offsets {str(last_acked_offsets)} after waiting {timeout_sec}s, last committed offsets: {self.consumer.get_committed_offsets()}."
+        )
+
+    def await_num_produced(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.producer.num_acked > min_records,
                    timeout_sec=timeout_sec,
-                   err_msg="Consumer failed to consume up to offsets %s after waiting %ds." %\
-                   (str(last_acked_offsets), timeout_sec))
+                   err_msg="Producer failed to produce messages for %ds." %\
+                   timeout_sec)
+
+    def await_num_consumed(self, min_records, timeout_sec=30):
+        wait_until(lambda: self.consumer.total_consumed() >= min_records,
+                   timeout_sec=timeout_sec,
+                   err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
+                   (timeout_sec, min_records))
 
     def _collect_all_logs(self):
         for s in self.test_context.services:
@@ -162,10 +217,7 @@ class EndToEndTest(Test):
 
     def await_startup(self, min_records=5, timeout_sec=30):
         try:
-            wait_until(lambda: self.consumer.total_consumed() >= min_records,
-                       timeout_sec=timeout_sec,
-                       err_msg="Timed out after %ds while awaiting initial record delivery of %d records" %\
-                       (timeout_sec, min_records))
+            self.await_num_consumed(min_records, timeout_sec)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -176,17 +228,33 @@ class EndToEndTest(Test):
                        consumer_timeout_sec=30,
                        enable_idempotence=False):
         try:
-            wait_until(lambda: self.producer.num_acked > min_records,
-                       timeout_sec=producer_timeout_sec,
-                       err_msg="Producer failed to produce messages for %ds." %\
-                       producer_timeout_sec)
+            self.await_num_produced(min_records, producer_timeout_sec)
 
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                          str(self.producer.last_acked_offsets))
             self.producer.stop()
+            self.run_consumer_validation(
+                consumer_timeout_sec=consumer_timeout_sec,
+                enable_idempotence=enable_idempotence)
+        except BaseException:
+            self._collect_all_logs()
+            raise
 
-            self.await_consumed_offsets(self.producer.last_acked_offsets,
+    def run_consumer_validation(self,
+                                consumer_timeout_sec=30,
+                                enable_idempotence=False) -> None:
+        try:
+            # Take copy of this dict in case a rogue VerifiableProducer
+            # thread modifies it.
+            # Related: https://github.com/redpanda-data/redpanda/issues/3450
+            last_acked_offsets = self.producer.last_acked_offsets.copy()
+
+            self.logger.info("Producer's offsets after stopping: %s" %\
+                         str(last_acked_offsets))
+
+            self.await_consumed_offsets(last_acked_offsets,
                                         consumer_timeout_sec)
+
             self.consumer.stop()
 
             self.validate(enable_idempotence)

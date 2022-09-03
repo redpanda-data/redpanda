@@ -35,41 +35,25 @@ class RpkConfigTest(RedpandaTest):
         with tempfile.TemporaryDirectory() as d:
             node.account.copy_from(path, d)
             with open(os.path.join(d, path)) as f:
-                expected_out = '''config_file: /root/redpanda-test.yaml
-# node_uuid: (the uuid is random so we don't compare it)
+                expected_out = '''# node_uuid: (the uuid is random so we don't compare it)
 pandaproxy: {}
 redpanda:
-  admin:
-  - address: 0.0.0.0
-    port: 9644
-  data_directory: /var/lib/redpanda/data
-  developer_mode: true
-  kafka_api:
-  - address: 0.0.0.0
-    port: 9092
-  node_id: 0
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  seed_servers: []
+    data_directory: /var/lib/redpanda/data
+    node_id: 0
+    seed_servers: []
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9092
+    admin:
+        - address: 0.0.0.0
+          port: 9644
+    developer_mode: true
 rpk:
-  coredump_dir: /var/lib/redpanda/coredump
-  enable_memory_locking: false
-  enable_usage_stats: false
-  overprovisioned: false
-  tune_aio_events: false
-  tune_ballast_file: false
-  tune_clocksource: false
-  tune_coredump: false
-  tune_cpu: false
-  tune_disk_irq: false
-  tune_disk_nomerges: false
-  tune_disk_scheduler: false
-  tune_disk_write_cache: false
-  tune_fstrim: false
-  tune_network: false
-  tune_swappiness: false
-  tune_transparent_hugepages: false
+    coredump_dir: /var/lib/redpanda/coredump
+    overprovisioned: true
 schema_registry: {}
 '''
 
@@ -106,14 +90,19 @@ schema_registry: {}
 
             with open(os.path.join(d, config_file)) as f:
                 actual_config = yaml.full_load(f.read())
-                assert f"{actual_config['redpanda']['admin']['port']}" == value
+                if f"{actual_config['redpanda']['admin'][0]['port']}" != value:
+                    self.logger.error("Configs differ")
+                    self.logger.error(f"Expected: {value}")
+                    self.logger.error(
+                        f"Actual: {yaml.dump(actual_config['redpanda']['admin'][0]['port'])}"
+                    )
+                assert f"{actual_config['redpanda']['admin'][0]['port']}" == value
 
     @cluster(num_nodes=3)
     def test_config_set_yaml(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
         rpk = RpkRemoteTool(self.redpanda, node)
-        path = '/etc/redpanda/redpanda.yaml'
         key = 'redpanda.seed_servers'
         value = '''                                                      
 - node_id: 1
@@ -129,14 +118,34 @@ schema_registry: {}
     address: 192.168.10.3
     port: 33145
 '''
+
+        expected = '''                                                      
+- host:
+    address: 192.168.10.1
+    port: 33145
+- host:
+    address: 192.168.10.2
+    port: 33145
+- host:
+    address: 192.168.10.3
+    port: 33145
+'''
+
         rpk.config_set(key, value, format='yaml')
 
         with tempfile.TemporaryDirectory() as d:
             node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
 
             with open(os.path.join(d, 'redpanda.yaml')) as f:
-                expected_config = yaml.full_load(value)
+                expected_config = yaml.full_load(expected)
                 actual_config = yaml.full_load(f.read())
+                if actual_config['redpanda']['seed_servers'] != expected_config:
+                    self.logger.error("Configs differ")
+                    self.logger.error(
+                        f"Expected: {yaml.dump(expected_config)}")
+                    self.logger.error(
+                        f"Actual: {yaml.dump(actual_config['redpanda']['seed_servers'])}"
+                    )
                 assert actual_config['redpanda'][
                     'seed_servers'] == expected_config
 
@@ -152,18 +161,9 @@ schema_registry: {}
 
         expected_config = yaml.full_load('''
 coredump_dir: /var/lib/redpanda/coredump
-enable_memory_locking: false
-enable_usage_stats: false
 tune_aio_events: true
-tune_clocksource: false
-tune_coredump: false
 tune_cpu: true
 tune_disk_irq: true
-tune_disk_nomerges: false
-tune_disk_scheduler: false
-tune_fstrim: false
-tune_network: false
-tune_swappiness: false
 ''')
 
         with tempfile.TemporaryDirectory() as d:
@@ -172,6 +172,12 @@ tune_swappiness: false
             with open(os.path.join(d, 'redpanda.yaml')) as f:
                 actual_config = yaml.full_load(f.read())
 
+                if actual_config['rpk'] != expected_config:
+                    self.logger.error("Configs differ")
+                    self.logger.error(
+                        f"Expected: {yaml.dump(expected_config)}")
+                    self.logger.error(
+                        f"Actual: {yaml.dump(actual_config['rpk'])}")
                 assert actual_config['rpk'] == expected_config
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -184,3 +190,40 @@ tune_swappiness: false
             rpk.config_set(key, value)
 
             self.redpanda.restart_nodes(node)
+
+    @cluster(num_nodes=1)
+    def test_config_change_mode_prod(self):
+        """
+        Verify that after running rpk redpanda mode prod, the 
+        configuration values of the tuners change accordingly.
+        """
+        node = self.redpanda.nodes[0]
+        rpk = RpkRemoteTool(self.redpanda, node)
+        rpk.mode_set("prod")
+        expected_config = yaml.full_load('''
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    coredump_dir: /var/lib/redpanda/coredump
+    tune_ballast_file: true
+''')
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
+
+            with open(os.path.join(d, 'redpanda.yaml')) as f:
+                actual_config = yaml.full_load(f.read())
+
+                if actual_config['rpk'] != expected_config:
+                    self.logger.error("Configs differ")
+                    self.logger.error(
+                        f"Expected: {yaml.dump(expected_config)}")
+                    self.logger.error(
+                        f"Actual: {yaml.dump(actual_config['rpk'])}")
+                assert actual_config['rpk'] == expected_config
+                assert 'developer_mode' not in actual_config['redpanda']

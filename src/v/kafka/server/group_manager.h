@@ -30,6 +30,7 @@
 #include "model/namespace.h"
 #include "raft/group_manager.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -195,7 +196,7 @@ private:
 
     struct attached_partition {
         bool loading;
-        ss::semaphore sem{1};
+        ssx::semaphore sem{1, "k/group-mgr"};
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
         ss::basic_rwlock<> catchup_lock;

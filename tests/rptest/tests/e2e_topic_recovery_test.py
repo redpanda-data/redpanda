@@ -12,13 +12,22 @@ from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService, SISettings
-from rptest.util import Scale
+from rptest.util import Scale, segments_count
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableSeqConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from ducktape.utils.util import wait_until
 import time
 import json
+import re
+from itertools import zip_longest
+
+from rptest.util import segments_count
+from rptest.utils.si_utils import Producer
+
+import confluent_kafka as ck
+
+ALLOWED_ERROR_LOG_LINES = [re.compile("Can't prepare pid.* - unknown session")]
 
 
 class EndToEndTopicRecovery(RedpandaTest):
@@ -31,6 +40,13 @@ class EndToEndTopicRecovery(RedpandaTest):
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
+        extra_rp_conf = dict(
+            enable_idempotence=True,
+            enable_transactions=True,
+            enable_leader_balancer=False,
+            partition_autobalancing_mode="off",
+            group_initial_rebalance_delay=300,
+        )
         si_settings = SISettings(
             log_segment_size=1024 * 1024,
             cloud_storage_segment_max_upload_interval_sec=5,
@@ -38,7 +54,9 @@ class EndToEndTopicRecovery(RedpandaTest):
             cloud_storage_enable_remote_write=True)
         self.scale = Scale(test_context)
         self._bucket = si_settings.cloud_storage_bucket
-        super().__init__(test_context=test_context, si_settings=si_settings)
+        super().__init__(test_context=test_context,
+                         si_settings=si_settings,
+                         extra_rp_conf=extra_rp_conf)
         self._ctx = test_context
         self._producer = None
         self._consumer = None
@@ -47,15 +65,15 @@ class EndToEndTopicRecovery(RedpandaTest):
         self.logger.info(f"Verifier node name: {self._verifier_node.name}")
 
     def init_producer(self, msg_size, num_messages):
-        self._producer = FranzGoVerifiableProducer(self._ctx, self.redpanda,
-                                                   self.topic, msg_size,
-                                                   num_messages,
-                                                   [self._verifier_node])
+        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
+                                             self.topic, msg_size,
+                                             num_messages,
+                                             [self._verifier_node])
 
     def init_consumer(self, msg_size):
-        self._consumer = FranzGoVerifiableSeqConsumer(self._ctx, self.redpanda,
-                                                      self.topic, msg_size,
-                                                      [self._verifier_node])
+        self._consumer = KgoVerifierSeqConsumer(self._ctx, self.redpanda,
+                                                self.topic, msg_size,
+                                                [self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()
@@ -106,7 +124,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         rpk.describe_topic_configs(topic)
 
     @cluster(num_nodes=4)
-    @matrix(message_size=[10000],
+    @matrix(message_size=[5000],
             num_messages=[100000],
             recovery_overrides=[{}, {
                 'retention.bytes': 1024
@@ -143,7 +161,7 @@ class EndToEndTopicRecovery(RedpandaTest):
 
         time.sleep(10)
         wait_until(s3_has_all_data,
-                   timeout_sec=300,
+                   timeout_sec=600,
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
 
@@ -159,13 +177,122 @@ class EndToEndTopicRecovery(RedpandaTest):
         self.init_consumer(message_size)
         self._consumer.start(clean=False)
 
-        self._consumer.shutdown()
         self._consumer.wait()
 
         produce_acked = self._producer.produce_status.acked
-        consume_total = self._consumer.consumer_status.total_reads
-        consume_valid = self._consumer.consumer_status.valid_reads
+        consume_total = self._consumer.consumer_status.validator.total_reads
+        consume_valid = self._consumer.consumer_status.validator.valid_reads
         self.logger.info(f"Producer acked {produce_acked} messages")
         self.logger.info(f"Consumer read {consume_total} messages")
         assert produce_acked >= num_messages
         assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
+
+    @cluster(num_nodes=4, log_allow_list=ALLOWED_ERROR_LOG_LINES)
+    @matrix(recovery_overrides=[{}, {
+        'retention.bytes': 1024,
+        'redpanda.remote.write': True,
+        'redpanda.remote.read': True,
+    }])
+    def test_restore_with_aborted_tx(self, recovery_overrides):
+        """Produce data using transactions includin some percentage of aborted
+        transactions. Run recovery and make sure that record batches generated
+        by aborted transactions are not visible.
+        This should work because rm_stm will rebuild its snapshot right after
+        recovery. The SI will also supports aborted transctions via tx manifests.
+
+        The test has two variants:
+        - the partition is downloaded fully;
+        - the partition is downloaded partially and SI is used to read from the start;
+        """
+        if self.debug_mode:
+            self.logger.info(
+                "Skipping test in debug mode (requires release build)")
+            return
+
+        producer = Producer(self.redpanda.brokers(), "topic-recovery-tx-test",
+                            self.logger)
+
+        def done():
+            for _ in range(100):
+                try:
+                    producer.produce(self.topic)
+                except ck.KafkaException as err:
+                    self.logger.warn(f"producer error: {err}")
+                    time.sleep(10)
+                    producer.reconnect()
+            self.logger.info("producer iteration complete")
+            topic_partitions = segments_count(self.redpanda,
+                                              self.topic,
+                                              partition_idx=0)
+            partitions = []
+            for p in topic_partitions:
+                partitions.append(p >= 10)
+            return all(partitions)
+
+        wait_until(done,
+                   timeout_sec=120,
+                   backoff_sec=1,
+                   err_msg="producing failed")
+
+        assert producer.num_aborted > 0
+
+        # Wait until everything is uploaded
+        def s3_has_all_data():
+            objects = list(self.redpanda.get_objects_from_si())
+            for o in objects:
+                if o.Key.endswith("/manifest.json") and self.topic in o.Key:
+                    data = self.redpanda.s3_client.get_object_data(
+                        self._bucket, o.Key)
+                    manifest = json.loads(data)
+                    last_upl_offset = manifest['last_offset']
+                    self.logger.info(
+                        f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
+                    )
+                    # We have one partition so this invariant holds
+                    # it has to be changed when the number of partitions
+                    # will get larger. This will also require dfferent
+                    # S3 check.
+                    return last_upl_offset >= producer.cur_offset
+            return False
+
+        time.sleep(10)
+        wait_until(s3_has_all_data,
+                   timeout_sec=300,
+                   backoff_sec=5,
+                   err_msg=f"Not all data is uploaded to S3 bucket")
+
+        # Whipe out the state on the nodes
+        self._stop_redpanda_nodes()
+        self._wipe_data()
+        # Run recovery
+        self._start_redpanda_nodes()
+        for topic_spec in self.topics:
+            self._restore_topic(topic_spec, recovery_overrides)
+
+        # Consume and validate
+        consumer = ck.Consumer(
+            {
+                'bootstrap.servers': self.redpanda.brokers(),
+                'group.id': 'topic-recovery-tx-test',
+                'auto.offset.reset': 'earliest',
+            },
+            logger=self.logger)
+        consumer.subscribe([self.topic])
+
+        consumed = []
+        while True:
+            msgs = consumer.consume(timeout=5.0)
+            if len(msgs) == 0:
+                break
+            consumed.extend([(m.key(), m.offset()) for m in msgs])
+
+        first_mismatch = ''
+        for p_key, (c_key, c_offset) in zip_longest(producer.keys, consumed):
+            if p_key != c_key:
+                first_mismatch = f"produced: {p_key}, consumed: {c_key} (offset: {c_offset})"
+                break
+
+        assert (not first_mismatch), (
+            f"produced and consumed messages differ, "
+            f"produced length: {len(producer.keys)}, consumed length: {len(consumed)}, "
+            f"first mismatch: {first_mismatch}")

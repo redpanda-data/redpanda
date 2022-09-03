@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 #include "storage/fwd.h"
 #include "storage/logger.h"
 #include "storage/types.h"
@@ -34,9 +35,12 @@ public:
     void set_disk_metrics(
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert);
 
+    const disk_metrics& get_disk_metrics() const { return _disk; }
+
 private:
     disk_metrics _disk;
-    ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 // Per-NTP probe.

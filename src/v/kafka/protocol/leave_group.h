@@ -21,15 +21,6 @@
 
 namespace kafka {
 
-struct leave_group_response;
-
-struct leave_group_api final {
-    using response_type = leave_group_response;
-
-    static constexpr const char* name = "leave group";
-    static constexpr api_key key = api_key(13);
-};
-
 struct leave_group_request final {
     using api_type = leave_group_api;
 

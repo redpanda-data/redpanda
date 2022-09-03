@@ -9,11 +9,13 @@
 
 #include "cluster/cluster_utils.h"
 
+#include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "raft/errc.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
 #include "vlog.h"
@@ -267,6 +269,64 @@ without_custom_assignments(std::vector<topic_configuration> topics) {
           return custom_assignable_topic_configuration(std::move(cfg));
       });
     return assignable_topics;
+}
+
+cluster::errc map_update_interruption_error_code(std::error_code ec) {
+    if (ec.category() == cluster::error_category()) {
+        return cluster::errc(ec.value());
+    } else if (ec.category() == raft::error_category()) {
+        switch (raft::errc(ec.value())) {
+        case raft::errc::success:
+            return errc::success;
+        case raft::errc::not_leader:
+            return errc::not_leader_controller;
+        case raft::errc::timeout:
+            return errc::timeout;
+        case raft::errc::disconnected_endpoint:
+        case raft::errc::exponential_backoff:
+        case raft::errc::non_majority_replication:
+        case raft::errc::vote_dispatch_error:
+        case raft::errc::append_entries_dispatch_error:
+        case raft::errc::replicated_entry_truncated:
+        case raft::errc::leader_flush_failed:
+        case raft::errc::leader_append_failed:
+        case raft::errc::configuration_change_in_progress:
+        case raft::errc::node_does_not_exists:
+        case raft::errc::leadership_transfer_in_progress:
+        case raft::errc::transfer_to_current_leader:
+        case raft::errc::node_already_exists:
+        case raft::errc::invalid_configuration_update:
+        case raft::errc::not_voter:
+        case raft::errc::invalid_target_node:
+        case raft::errc::shutting_down:
+        case raft::errc::replicate_batcher_cache_error:
+        case raft::errc::group_not_exists:
+        case raft::errc::replicate_first_stage_exception:
+            return errc::replication_error;
+        }
+        __builtin_unreachable();
+    } else if (ec.category() == rpc::error_category()) {
+        switch (rpc::errc(ec.value())) {
+        case rpc::errc::success:
+            return errc::success;
+        case rpc::errc::client_request_timeout:
+            return errc::timeout;
+        case rpc::errc::disconnected_endpoint:
+        case rpc::errc::exponential_backoff:
+        case rpc::errc::missing_node_rpc_client:
+        case rpc::errc::service_error:
+        case rpc::errc::method_not_found:
+        case rpc::errc::version_not_supported:
+            return errc::replication_error;
+        }
+        __builtin_unreachable();
+    } else {
+        vlog(
+          clusterlog.warn,
+          "mapping {} error to uknown update interruption error",
+          ec.message());
+        return errc::unknown_update_interruption_error;
+    }
 }
 
 } // namespace cluster

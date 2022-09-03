@@ -21,6 +21,7 @@
 
 namespace kafka {
 
+template<>
 process_result_stages sync_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     sync_group_request request;

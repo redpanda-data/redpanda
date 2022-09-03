@@ -455,6 +455,15 @@ ss::future<> move_persistent_state(
     });
 }
 
+// Return previous offset. This is different from
+// model::prev_offset because it returns -1 for offset 0.
+// The model::offset{} is a special case since the result
+// of the decrement in this case is undefined.
+static model::offset get_prev_offset(model::offset o) {
+    vassert(o != model::offset{}, "Can't return previous offset");
+    return o - model::offset{1};
+}
+
 ss::future<> create_offset_translator_state_for_pre_existing_partition(
   storage::api& api,
   const storage::ntp_config& ntp_cfg,
@@ -463,7 +472,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
   model::offset max_rp_offset) {
     // Prepare offset_translator state in kvstore
     storage::offset_translator_state ot_state(
-      ntp_cfg.ntp(), model::prev_offset(min_rp_offset), 0);
+      ntp_cfg.ntp(), get_prev_offset(min_rp_offset), 0);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_offsetmap_key(group),
@@ -471,7 +480,7 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_highest_known_offset_key(group),
-      reflection::to_iobuf(model::prev_offset(max_rp_offset)));
+      reflection::to_iobuf(get_prev_offset(max_rp_offset)));
 }
 
 ss::future<> create_raft_state_for_pre_existing_partition(
@@ -494,7 +503,7 @@ ss::future<> create_raft_state_for_pre_existing_partition(
     raft::group_configuration group_config(
       initial_nodes, ntp_cfg.get_revision());
     raft::snapshot_metadata meta = {
-      .last_included_index = prev_offset(min_rp_offset),
+      .last_included_index = get_prev_offset(min_rp_offset),
       .last_included_term = last_included_term,
       .version = raft::snapshot_metadata::current_version,
       .latest_configuration = std::move(group_config),

@@ -58,16 +58,15 @@ do_verify_partition(storage::log log, model::ntp ntp, std::size_t n) {
 }
 
 ss::future<> fiber_mock_fixture::verify_results(expected_t expected) {
-    return _state.invoke_on_all([this, expected](state& s) mutable {
-        return ss::do_with(
-          std::move(expected), [this, &s](expected_t& expected) {
-              return ss::parallel_for_each(
-                expected, [this](expected_t::value_type& p) {
-                    auto log = app.storage.local().log_mgr().get(p.first);
-                    return log ? do_verify_partition(*log, p.first, p.second)
-                               : ss::now();
-                });
-          });
+    return _state.invoke_on_all([this, expected](state&) mutable {
+        return ss::do_with(std::move(expected), [this](expected_t& expected) {
+            return ss::parallel_for_each(
+              expected, [this](expected_t::value_type& p) {
+                  auto log = app.storage.local().log_mgr().get(p.first);
+                  return log ? do_verify_partition(*log, p.first, p.second)
+                             : ss::now();
+              });
+        });
     });
 }
 
@@ -177,8 +176,8 @@ ss::future<ss::lw_shared_ptr<coproc::source>> fiber_mock_fixture::make_source(
     vassert(partition, "Input must not be nullptr");
     auto batch = make_random_batch(params.records_per_input);
     co_await tests::cooperative_spin_wait_with_timeout(
-      2s, [partition]() { return partition->is_leader(); });
-    auto r = co_await partition->replicate(
+      2s, [partition]() { return partition->is_elected_leader(); });
+    auto r = co_await partition->raft()->replicate(
       std::move(batch),
       raft::replicate_options(raft::consistency_level::leader_ack));
     vassert(!r.has_error(), "Write error: {}", r.error());

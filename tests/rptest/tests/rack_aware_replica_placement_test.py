@@ -7,9 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import random
+import os
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 from rptest.clients.types import TopicSpec
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
+
+from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from collections import defaultdict
@@ -52,7 +59,11 @@ class RackAwarePlacementTest(RedpandaTest):
             f"Not all partitions are created in time, expected {topic.partition_count} partitions, found {self._get_partition_count(topic.name)}"
         )
 
-    def _validate_placement(self, topic, rack_layout, num_replicas):
+    def _validate_placement(self,
+                            topic,
+                            rack_layout,
+                            num_replicas,
+                            ids_mapping={}):
         """Validate the replica placement. The method uses provided
         rack layout and number of replicas for the partitions. 
         The validation is done by examining existing replica placemnt
@@ -65,7 +76,9 @@ class RackAwarePlacementTest(RedpandaTest):
         replicas = defaultdict(list)
         for part in m.partitions:
             for broker in part.replicas:
-                rack = rack_layout[broker - 1]  # broker ids are 1-based
+                # broker ids are 1-based
+                id = ids_mapping[broker] if broker in ids_mapping else broker
+                rack = rack_layout[id - 1]
                 replicas[part.id].append(rack)
 
         for part_id, racks in replicas.items():
@@ -75,6 +88,7 @@ class RackAwarePlacementTest(RedpandaTest):
             )
             assert len(set(racks)) == min(num_racks, num_replicas)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4885
     @cluster(num_nodes=6)
     @matrix(rack_layout_str=['ABCDEF', 'xxYYzz', 'ooooFF'],
             num_partitions=[50, 400],
@@ -113,7 +127,7 @@ class RackAwarePlacementTest(RedpandaTest):
                 'rack': rack_layout[ix],
                 # This parameter enables rack awareness
                 'enable_rack_awareness': True,
-                'segment_fallocation_step': 1024,
+                'segment_fallocation_step': 4096,
             }
             self.redpanda.set_extra_node_conf(node, extra_node_conf)
 
@@ -136,3 +150,115 @@ class RackAwarePlacementTest(RedpandaTest):
 
         for topic in topics:
             self._validate_placement(topic, rack_layout, replication_factor)
+
+    def _partition_count(self):
+        # use smaller number of partitions for debug builds
+        if os.environ.get('BUILD_TYPE', None) == 'debug':
+            return random.randint(20, 40)
+
+        return random.randint(200, 300)
+
+    @cluster(num_nodes=6)
+    @matrix(rack_layout=['ABCDEF', 'xxYYzz', 'ooooFF'])
+    def test_rack_awareness_after_node_operations(self, rack_layout):
+        replication_factor = 3
+
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.set_extra_node_conf(
+                node,
+                {
+                    "rack": rack_layout[ix],
+                    'enable_rack_awareness': True,
+                    # make fallocation step small to spare the disk space
+                    'segment_fallocation_step': 4096,
+                })
+
+        self.redpanda.start()
+        self._client = DefaultClient(self.redpanda)
+
+        topic = TopicSpec(partition_count=self._partition_count(),
+                          replication_factor=replication_factor)
+        self.client().create_topic(topic)
+        self._validate_placement(topic, rack_layout, replication_factor)
+
+        # decommission one of the nodes
+        admin = Admin(self.redpanda)
+
+        brokers = admin.get_brokers()
+        to_decommission = random.choice(brokers)['node_id']
+
+        admin.decommission_broker(to_decommission)
+
+        def node_is_removed():
+            for n in self.redpanda.nodes:
+                if self.redpanda.idx(n) == to_decommission:
+                    continue
+                brokers = admin.get_brokers(node=n)
+                for b in brokers:
+                    if b['node_id'] == to_decommission:
+                        return False
+            return True
+
+        # wait until node is removed and validate rack placement
+        wait_until(node_is_removed, 90, 2)
+
+        self._validate_placement(topic, rack_layout, replication_factor)
+
+        # stop the node and add it back with different id
+        to_stop = self.redpanda.get_node(to_decommission)
+        self.redpanda.stop_node(to_stop)
+        self.redpanda.clean_node(node=to_stop, preserve_logs=True)
+
+        new_node_id = 123
+
+        def seed_servers_for(idx):
+            seeds = map(
+                lambda n: {
+                    "address": n.account.hostname,
+                    "port": 33145
+                }, self.redpanda.nodes)
+
+            return list(
+                filter(
+                    lambda n: n['address'] != self.redpanda.get_node(idx).
+                    account.hostname, seeds))
+
+        # add a node back with different id but the same rack
+        # change the seed server list to prevent node from forming new cluster
+        self.redpanda.start_node(
+            to_stop,
+            override_cfg_params={
+                "node_id": new_node_id,
+                "seed_servers": seed_servers_for(to_decommission),
+                "rack": rack_layout[to_decommission - 1],
+                'enable_rack_awareness': True,
+                # make fallocation step small to spare the disk space
+                'segment_fallocation_step': 4096,
+            })
+
+        rpk = RpkTool(self.redpanda)
+
+        def new_node_has_partitions():
+            for p in rpk.describe_topic(topic.name):
+                for r in p.replicas:
+                    if r == 123:
+                        return True
+
+            return False
+
+        wait_until(new_node_has_partitions, 90, 2)
+
+        def no_partitions_moving():
+            for n in self.redpanda.nodes:
+                r = admin.list_reconfigurations(node=n)
+                if len(r) > 0:
+                    return False
+
+            return True
+
+        wait_until(no_partitions_moving, 90, 1)
+
+        self._validate_placement(topic,
+                                 rack_layout,
+                                 replication_factor,
+                                 ids_mapping={new_node_id: to_decommission})

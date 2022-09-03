@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timestamp.h"
+#include "storage/types.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
@@ -154,6 +155,11 @@ std::vector<model::node_id> metadata_cache::all_broker_ids() const {
     return _members_table.local().all_broker_ids();
 }
 
+bool metadata_cache::should_reject_writes() const {
+    return _health_monitor.local().get_cluster_disk_health()
+           == storage::disk_space_alert::degraded;
+}
+
 bool metadata_cache::contains(
   model::topic_namespace_view tp, const model::partition_id pid) const {
     return _topics_state.local().contains(tp, pid);
@@ -248,4 +254,20 @@ metadata_cache::get_default_shadow_indexing_mode() const {
     }
     return m;
 }
+
+topic_properties metadata_cache::get_default_properties() const {
+    topic_properties tp;
+    tp.compression = {get_default_compression()};
+    tp.cleanup_policy_bitflags = {get_default_cleanup_policy_bitflags()};
+    tp.compaction_strategy = {get_default_compaction_strategy()};
+    tp.timestamp_type = {get_default_timestamp_type()};
+    tp.segment_size = {get_default_segment_size()};
+    tp.retention_bytes = tristate<size_t>({get_default_retention_bytes()});
+    tp.retention_duration = tristate<std::chrono::milliseconds>(
+      {get_default_retention_duration()});
+    tp.recovery = {false};
+    tp.shadow_indexing = {get_default_shadow_indexing_mode()};
+    return tp;
+}
+
 } // namespace cluster

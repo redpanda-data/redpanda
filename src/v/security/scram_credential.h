@@ -11,12 +11,14 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "reflection/adl.h"
+#include "serde/envelope.h"
 
 #include <iosfwd>
 
 namespace security {
 
-class scram_credential {
+class scram_credential
+  : public serde::envelope<scram_credential, serde::version<0>> {
 public:
     scram_credential() noexcept = default;
 
@@ -33,6 +35,10 @@ public:
     int iterations() const { return _iterations; }
 
     bool operator==(const scram_credential&) const = default;
+
+    auto serde_fields() {
+        return std::tie(_salt, _server_key, _stored_key, _iterations);
+    }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const scram_credential&);

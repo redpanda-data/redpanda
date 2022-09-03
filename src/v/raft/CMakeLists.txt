@@ -41,7 +41,6 @@ v_cc_library(
     v::model
   )
 add_subdirectory(tests)
-add_subdirectory(tron)
 add_subdirectory(kvelldb)
 
 set_source_files_properties(

@@ -11,6 +11,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -293,9 +294,15 @@ type ClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Replicas show how many nodes are working in the cluster
+	// Replicas show how many nodes have been created for the cluster
 	// +optional
 	Replicas int32 `json:"replicas"`
+	// ReadyReplicas is the number of Pods belonging to the cluster that have a Ready Condition.
+	// +optional
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+	// CurrentReplicas is the number of Pods that the controller currently wants to run for the cluster.
+	// +optional
+	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
 	// Nodes of the provisioned redpanda nodes
 	// +optional
 	Nodes NodesList `json:"nodes,omitempty"`
@@ -306,6 +313,9 @@ type ClusterStatus struct {
 	// Indicates that a cluster is restarting due to an upgrade or a different reason
 	// +optional
 	Restarting bool `json:"restarting"`
+	// Indicates that a node is currently being decommissioned from the cluster and provides its ordinal number
+	// +optional
+	DecommissioningNode *int32 `json:"decommissioningNode,omitempty"`
 	// Current version of the cluster.
 	// +optional
 	Version string `json:"version"`
@@ -789,6 +799,22 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 	return nil
 }
 
+// SchemaRegistryAPIURL returns a SchemaRegistry URL string.
+// It returns internal URL unless externally available with TLS.
+func (r *Cluster) SchemaRegistryAPIURL() string {
+	// Prefer to use internal URL
+	// But if it is externally available with TLS, we cannot call internal URL without TLS and the TLS certs are signed for external URL
+	host := r.Status.Nodes.SchemaRegistry.Internal
+	if r.IsSchemaRegistryExternallyAvailable() && r.IsSchemaRegistryTLSEnabled() {
+		host = r.Status.Nodes.SchemaRegistry.External
+	}
+	if sr := r.Spec.Configuration.SchemaRegistry; sr != nil {
+		u := url.URL{Scheme: sr.GetHTTPScheme(), Host: host}
+		return u.String()
+	}
+	return ""
+}
+
 // SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) SchemaRegistryAPITLS() *SchemaRegistryAPI {
@@ -845,6 +871,30 @@ func (s *ClusterStatus) SetRestarting(restarting bool) {
 	s.Restarting = restarting
 	// keep deprecated upgrading field as some external tools may still rely on it
 	s.DeprecatedUpgrading = restarting
+}
+
+// GetCurrentReplicas returns the current number of replicas that the controller wants to run.
+// It returns 1 when not initialized (as fresh clusters start from 1 replica)
+func (r *Cluster) GetCurrentReplicas() int32 {
+	if r.Status.CurrentReplicas <= 0 {
+		// Not initialized, let's give the computed value
+		return r.ComputeInitialCurrentReplicasField()
+	}
+	return r.Status.CurrentReplicas
+}
+
+// ComputeInitialCurrentReplicasField calculates the initial value for status.currentReplicas.
+//
+// It needs to consider the following cases:
+// - Fresh cluster: we start from 1 replicas, then upscale if needed (initialization to bypass https://github.com/redpanda-data/redpanda/issues/333)
+// - Existing clusters: we keep spec.replicas as starting point
+func (r *Cluster) ComputeInitialCurrentReplicasField() int32 {
+	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 {
+		// A cluster seems to be already running, we start from the existing amount of replicas
+		return *r.Spec.Replicas
+	}
+	// Clusters start from a single replica, then upscale
+	return 1
 }
 
 // TLSConfig is a generic TLS configuration
@@ -907,6 +957,15 @@ func (a AdminAPI) GetExternal() *ExternalConnectivityConfig {
 // GetPort returns API port
 func (s SchemaRegistryAPI) GetPort() int {
 	return s.Port
+}
+
+// GetHTTPScheme returns API HTTP scheme
+func (s SchemaRegistryAPI) GetHTTPScheme() string {
+	scheme := "http"
+	if s.TLS != nil && s.TLS.Enabled {
+		scheme = "https"
+	}
+	return scheme
 }
 
 // GetTLS returns API TLSConfig

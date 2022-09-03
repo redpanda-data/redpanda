@@ -13,15 +13,20 @@
 #include "random/generators.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "tristate.h"
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/sstring.hh>
+#include <seastar/net/inet_address.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
 #include <limits>
+#include <optional>
+#include <ratio>
 
 struct custom_read_write {
     friend inline void read_nested(
@@ -86,10 +91,10 @@ struct test_msg1_new_manual {
 };
 
 struct not_an_envelope {};
-static_assert(!serde::is_envelope_v<not_an_envelope>);
-static_assert(serde::is_envelope_v<test_msg1>);
-static_assert(serde::inherits_from_envelope_v<test_msg1_new>);
-static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
+static_assert(!serde::is_envelope<not_an_envelope>);
+static_assert(serde::is_envelope<test_msg1>);
+static_assert(serde::inherits_from_envelope<test_msg1_new>);
+static_assert(!serde::inherits_from_envelope<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
 
@@ -230,7 +235,7 @@ struct complex_msg : serde::envelope<complex_msg, serde::version<3>> {
     int32_t _x;
 };
 
-static_assert(serde::is_envelope_v<complex_msg>);
+static_assert(serde::is_envelope<complex_msg>);
 
 SEASTAR_THREAD_TEST_CASE(complex_msg_test) {
     auto b = iobuf();
@@ -382,7 +387,7 @@ struct test_snapshot_header
     int32_t metadata_size;
 };
 
-static_assert(serde::is_envelope_v<test_snapshot_header>);
+static_assert(serde::is_envelope<test_snapshot_header>);
 static_assert(serde::has_serde_async_read<test_snapshot_header>);
 static_assert(serde::has_serde_async_write<test_snapshot_header>);
 
@@ -718,4 +723,187 @@ SEASTAR_THREAD_TEST_CASE(serde_bytes_test) {
 
     auto result = serde::from_iobuf<bytes>(std::move(b));
     BOOST_CHECK_EQUAL(bt, result);
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_tristate_test) {
+    tristate<ss::sstring> disabled{};
+    tristate<ss::sstring> empty(std::nullopt);
+    tristate<ss::sstring> set("test-tristate-value");
+
+    iobuf disabled_buf = serde::to_iobuf(disabled);
+    iobuf empty_buf = serde::to_iobuf(empty);
+    iobuf set_buf = serde::to_iobuf(set);
+
+    BOOST_CHECK_EQUAL(
+      disabled,
+      serde::from_iobuf<tristate<ss::sstring>>(std::move(disabled_buf)));
+    BOOST_CHECK_EQUAL(
+      empty, serde::from_iobuf<tristate<ss::sstring>>(std::move(empty_buf)));
+    BOOST_CHECK_EQUAL(
+      set, serde::from_iobuf<tristate<ss::sstring>>(std::move(set_buf)));
+}
+
+SEASTAR_THREAD_TEST_CASE(seastar_inet_address_test) {
+    ss::net::inet_address ipv4("192.168.1.0");
+    ss::net::inet_address ipv6("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+    iobuf ipv4_buf = serde::to_iobuf(ipv4);
+    iobuf ipv6_buf = serde::to_iobuf(ipv6);
+    BOOST_CHECK_EQUAL(
+      ipv4, serde::from_iobuf<ss::net::inet_address>(std::move(ipv4_buf)));
+    BOOST_CHECK_EQUAL(
+      ipv6, serde::from_iobuf<ss::net::inet_address>(std::move(ipv6_buf)));
+}
+
+template<template<class...> class T>
+void map_test() {
+    T<ss::sstring, int32_t> a = {
+      {"asdf", 33},
+      {"fooo", 44},
+    };
+
+    T<int32_t, int32_t> b = {
+      {123, 32},
+      {456, 66},
+      {959, 11},
+    };
+
+    iobuf a_buf = serde::to_iobuf(a);
+    iobuf b_buf = serde::to_iobuf(b);
+
+    auto a_from = serde::from_iobuf<T<ss::sstring, int32_t>>(std::move(a_buf));
+
+    auto b_from = serde::from_iobuf<T<int32_t, int32_t>>(std::move(b_buf));
+
+    BOOST_REQUIRE(a == a_from);
+    BOOST_REQUIRE(b == b_from);
+}
+
+template<template<class...> class T>
+void set_test() {
+    T<ss::sstring> a = {
+      "asdf",
+      "fooo",
+    };
+
+    T<int32_t> b = {
+      123,
+      456,
+      959,
+    };
+
+    iobuf a_buf = serde::to_iobuf(a);
+    iobuf b_buf = serde::to_iobuf(b);
+
+    auto a_from = serde::from_iobuf<T<ss::sstring>>(std::move(a_buf));
+
+    auto b_from = serde::from_iobuf<T<int32_t>>(std::move(b_buf));
+
+    BOOST_REQUIRE(a == a_from);
+    BOOST_REQUIRE(b == b_from);
+}
+
+SEASTAR_THREAD_TEST_CASE(std_unordered_map) { map_test<std::unordered_map>(); }
+
+SEASTAR_THREAD_TEST_CASE(absl_node_hash_map) {
+    map_test<absl::node_hash_map>();
+}
+
+SEASTAR_THREAD_TEST_CASE(absl_flat_hash_map) {
+    map_test<absl::flat_hash_map>();
+}
+
+SEASTAR_THREAD_TEST_CASE(absl_node_hash_set) {
+    set_test<absl::node_hash_set>();
+}
+
+SEASTAR_THREAD_TEST_CASE(absl_btree_set) { set_test<absl::btree_set>(); }
+
+struct foo_bar {};
+
+SEASTAR_THREAD_TEST_CASE(type_str) {
+    BOOST_CHECK_EQUAL(serde::type_str<int>(), "int");
+    BOOST_CHECK_EQUAL(serde::type_str<void>(), "void");
+    // the type part of a parameter in __PRETTY_FUNCTION__ may vary when it
+    // comes to a specialization of a template in standard library, but
+    // std::basic_string<char> should always have "string" in its name
+    BOOST_CHECK_NE(
+      serde::type_str<std::string>().find("string"), std::string_view::npos);
+    BOOST_CHECK_EQUAL(serde::type_str<foo_bar>(), "foo_bar");
+}
+// Utility to serialize and deserialize back an input.
+template<class T>
+T serde_input(T input) {
+    return serde::from_iobuf<T>(serde::to_iobuf(std::move(input)));
+}
+
+SEASTAR_THREAD_TEST_CASE(duration_type_test) {
+    using namespace std::chrono;
+    constexpr hours h(1);
+    constexpr milliseconds ms{3};
+    constexpr milliseconds ms_neg{-1};
+    constexpr duration<int, std::kilo> ks(3);
+    constexpr duration<int16_t> int16t_d(10);
+    constexpr duration<int16_t> int32t_d(10);
+    constexpr duration<int64_t, std::pico> int64t_pico(100000);
+    constexpr auto max_ns = nanoseconds::max();
+    constexpr auto min_ns = nanoseconds::min();
+
+    BOOST_REQUIRE(h == serde_input(h));
+    BOOST_REQUIRE(ms == serde_input(ms));
+    BOOST_REQUIRE(ms_neg == serde_input(ms_neg));
+    BOOST_REQUIRE(ks == serde_input(ks));
+    BOOST_REQUIRE(max_ns == serde_input(max_ns));
+    BOOST_REQUIRE(int16t_d == serde_input(int16t_d));
+    BOOST_REQUIRE(int32t_d == serde_input(int16t_d));
+    BOOST_REQUIRE(int64t_pico == serde_input(int64t_pico));
+    // Overflows, clamped to ns:max().
+    constexpr auto max_ms = milliseconds::max();
+    constexpr auto max_ns_in_ms = std::chrono::duration_cast<milliseconds>(
+      max_ns);
+    constexpr auto max_hrs = hours::max();
+    constexpr auto max_ns_in_hrs = std::chrono::duration_cast<hours>(max_ns);
+    BOOST_REQUIRE(max_ns_in_ms == serde_input(max_ms));
+    BOOST_REQUIRE(max_ns_in_hrs == serde_input(max_hrs));
+    // Underflows, clamped to ns::min()
+    constexpr auto min_ms = milliseconds::min();
+    constexpr auto min_ns_in_ms = std::chrono::duration_cast<milliseconds>(
+      min_ns);
+    BOOST_REQUIRE(min_ns_in_ms == serde_input(min_ms));
+
+    constexpr auto min_hrs = hours::min();
+    constexpr auto min_ns_in_hrs = std::chrono::duration_cast<hours>(min_ns);
+    BOOST_REQUIRE(min_ns_in_hrs == serde_input(min_hrs));
+}
+
+struct no_default_ctor
+  : public serde::
+      envelope<no_default_ctor, serde::version<0>, serde::compat_version<0>> {
+    no_default_ctor() = delete;
+
+    no_default_ctor(int x)
+      : x(x) {}
+
+    auto serde_fields() { return std::tie(x); }
+
+    static no_default_ctor
+    serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+        using serde::read_nested;
+        int x;
+        read_nested(in, x, bytes_left_limit);
+        return no_default_ctor(x);
+    }
+
+    int x;
+};
+
+static_assert(serde::has_serde_direct_read<no_default_ctor>);
+
+SEASTAR_THREAD_TEST_CASE(no_default_ctor_test) {
+    BOOST_CHECK_EQUAL(serde_input(no_default_ctor(37)).x, 37);
+}
+
+SEASTAR_THREAD_TEST_CASE(no_default_ctor_vector_test) {
+    BOOST_CHECK_EQUAL(
+      serde_input(std::vector<no_default_ctor>({no_default_ctor(37)})).at(0).x,
+      37);
 }

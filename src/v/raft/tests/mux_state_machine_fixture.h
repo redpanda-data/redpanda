@@ -53,7 +53,10 @@ struct mux_state_machine_fixture {
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();
-        _recovery_throttle.start(100_MiB).get();
+        _recovery_throttle
+          .start(
+            ss::sharded_parameter([] { return config::mock_binding(100_MiB); }))
+          .get();
 
         _group_mgr
           .start(
@@ -83,8 +86,7 @@ struct mux_state_machine_fixture {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
                         .create_group(group, {self_broker()}, log)
-                        .then([this, log, group](
-                                ss::lw_shared_ptr<raft::consensus> c) {
+                        .then([log](ss::lw_shared_ptr<raft::consensus> c) {
                             return c->start().then([c] { return c; });
                         });
                   })
@@ -96,6 +98,7 @@ struct mux_state_machine_fixture {
         if (_started) {
             _recovery_throttle.stop().get();
             _group_mgr.stop().get0();
+            _raft.release();
             _connections.stop().get0();
             _storage.stop().get0();
         }
@@ -120,7 +123,14 @@ struct mux_state_machine_fixture {
           model::broker_properties{});
     }
 
-    void wait_for_leader() {
+    void wait_for_becoming_leader() {
+        using namespace std::chrono_literals;
+        tests::cooperative_spin_wait_with_timeout(10s, [this] {
+            return _raft->is_elected_leader();
+        }).get0();
+    }
+
+    void wait_for_confirmed_leader() {
         using namespace std::chrono_literals;
         tests::cooperative_spin_wait_with_timeout(10s, [this] {
             return _raft->is_leader();

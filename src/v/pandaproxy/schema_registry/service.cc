@@ -21,6 +21,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
@@ -62,6 +63,9 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::put_config_subject,
       wrap(gate, es, put_config_subject)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::get_mode, wrap(gate, es, get_mode)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_schemas_types,
@@ -155,7 +159,9 @@ ss::future<> service::create_internal_topic() {
           .assignments{},
           .configs{
             {.name{ss::sstring{kafka::topic_property_cleanup_policy}},
-             .value{"compact"}}}};
+             .value{"compact"}},
+            {.name{ss::sstring{kafka::topic_property_compression}},
+             .value{ssx::sformat("{}", model::compression::none)}}}};
     };
     auto res = co_await _client.local().create_topic(make_internal_topic());
     if (res.data.topics.size() != 1) {
@@ -187,18 +193,7 @@ ss::future<> service::fetch_internal_topic() {
 
     auto offset_res = co_await _client.local().list_offsets(
       model::schema_registry_internal_tp);
-    const auto& topics = offset_res.data.topics;
-    if (topics.size() != 1 || topics.front().partitions.size() != 1) {
-        auto ec = kafka::error_code::unknown_topic_or_partition;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-    const auto& partition = topics.front().partitions.front();
-    if (partition.error_code != kafka::error_code::none) {
-        auto ec = partition.error_code;
-        throw kafka::exception(ec, make_error_code(ec).message());
-    }
-
-    auto max_offset = partition.offset;
+    auto max_offset = offset_res.data.topics[0].partitions[0].offset;
     vlog(plog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
     co_await kafka::client::make_client_fetch_batch_reader(
@@ -217,15 +212,17 @@ service::service(
   sharded_store& store,
   ss::sharded<seq_writer>& sequencer)
   : _config(config)
-  , _mem_sem(max_memory)
+  , _mem_sem(max_memory, "pproxy/schema-svc")
   , _client(client)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
-      "schema_registry",
+      "schema_registry", // server_name
+      "schema_registry", // public_metric_group_name
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
       "/schema_registry_definitions",
-      _ctx)
+      _ctx,
+      json::serialization_format::schema_registry_v1_json)
   , _store(store)
   , _writer(sequencer)
   , _ensure_started{[this]() { return do_start(); }} {}
@@ -236,8 +233,7 @@ ss::future<> service::start() {
     return _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
-      not_advertised,
-      json::serialization_format::schema_registry_v1_json);
+      not_advertised);
 }
 
 ss::future<> service::stop() {

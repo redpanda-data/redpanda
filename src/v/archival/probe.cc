@@ -10,6 +10,7 @@
 
 #include "archival/probe.h"
 
+#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -32,6 +33,9 @@ ntp_level_probe::ntp_level_probe(
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("ntp_archiver"),
@@ -40,22 +44,26 @@ ntp_level_probe::ntp_level_probe(
           "uploaded",
           [this] { return _uploaded; },
           sm::description("Uploaded offsets"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_total_bytes(
           "uploaded_bytes",
           [this] { return _uploaded_bytes; },
           sm::description("Total number of uploaded bytes"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "missing",
           [this] { return _missing; },
           sm::description("Missing offsets due to gaps"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "pending",
           [this] { return _pending; },
           sm::description("Pending offsets"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 

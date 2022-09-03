@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDeployCommand(fs afero.Fs) *cobra.Command {
+func newDeployCommand(fs afero.Fs) *cobra.Command {
 	var (
 		description string
 		name        string
@@ -19,7 +19,7 @@ func NewDeployCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "deploy [PATH]",
-		Short: "Deploy inline WASM function.",
+		Short: "Deploy inline WASM function",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
@@ -49,9 +49,9 @@ func NewDeployCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&description, "description", "", "optional description about what the wasm function does")
+	cmd.Flags().StringVar(&description, "description", "", "Optional description about what the wasm function does")
 	cmd.Flags().StringVar(&coprocType, "type", "async", "WASM engine type (async, data-policy)")
-	cmd.Flags().StringVar(&name, "name", "", "unique deploy identifier attached to the instance of this script")
+	cmd.Flags().StringVar(&name, "name", "", "Unique deploy identifier attached to the instance of this script")
 	cmd.MarkFlagRequired("name")
 	return cmd
 }

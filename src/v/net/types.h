@@ -16,6 +16,8 @@
 namespace net {
 
 using metrics_disabled = seastar::bool_class<struct metrics_disabled_tag>;
+using public_metrics_disabled
+  = seastar::bool_class<struct public_metrics_disabled_tag>;
 using clock_type = seastar::lowres_clock;
 
 } // namespace net

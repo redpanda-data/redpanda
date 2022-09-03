@@ -9,6 +9,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "seastarx.h"
 #include "test_utils/tmp_dir.h"
@@ -50,7 +51,8 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
     auto file2 = ss::open_file_dma(file_path2.native(), flags).get();
     file2.close().get();
 
-    auto result = _walker.walk(target_dir.native()).get();
+    access_time_tracker tracker;
+    auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 2);
@@ -87,7 +89,8 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
     file3.close().get();
     ss::sleep(ss::lowres_clock::duration(1s)).get();
 
-    auto result = _walker.walk(target_dir.native()).get();
+    access_time_tracker tracker;
+    auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 3);
@@ -106,7 +109,8 @@ SEASTAR_THREAD_TEST_CASE(no_files) {
     ss::recursive_touch_directory(dir1.native()).get();
     ss::recursive_touch_directory(dir2.native()).get();
 
-    auto result = _walker.walk(target_dir.native()).get();
+    access_time_tracker tracker;
+    auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 0);
@@ -117,7 +121,8 @@ SEASTAR_THREAD_TEST_CASE(empty_dir) {
     cloud_storage::recursive_directory_walker _walker;
     const std::filesystem::path target_dir = tmpdir.get_path();
 
-    auto result = _walker.walk(target_dir.native()).get();
+    access_time_tracker tracker;
+    auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 0);
     BOOST_REQUIRE_EQUAL(result.second.size(), 0);
@@ -160,7 +165,8 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     write_to_file(file2, 8);
     write_to_file(file3, 342);
 
-    auto result = _walker.walk(target_dir.native()).get();
+    access_time_tracker tracker;
+    auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.first, 3412 + 8 + 342);
     BOOST_REQUIRE_EQUAL(result.second.size(), 3);

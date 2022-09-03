@@ -161,7 +161,7 @@ ss::future<> drain_manager::do_drain() {
         std::vector<ss::lw_shared_ptr<cluster::partition>> eligible;
         eligible.reserve(_partition_manager.local().partitions().size());
         for (const auto& p : _partition_manager.local().partitions()) {
-            if (!p.second->is_leader() || !p.second->has_followers()) {
+            if (!p.second->is_elected_leader() || !p.second->has_followers()) {
                 continue;
             }
             eligible.push_back(p.second);

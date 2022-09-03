@@ -17,13 +17,12 @@ import (
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "debug",
-		Short: "Debug the local Redpanda process.",
+		Short: "Debug the local Redpanda process",
 	}
 
 	cmd.AddCommand(
 		newBundleCommand(fs),
-		NewInfoCommand(fs),
-		newLogdirsCommand(fs),
+		NewInfoCommand(),
 	)
 
 	return cmd

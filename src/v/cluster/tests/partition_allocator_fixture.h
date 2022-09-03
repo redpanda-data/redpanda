@@ -22,18 +22,22 @@
 #include "units.h"
 
 struct partition_allocator_fixture {
+    static constexpr uint32_t partitions_per_shard = 7000;
+    static constexpr uint32_t partitions_reserve_shard0 = 2;
+
     partition_allocator_fixture()
       : allocator(
         std::ref(members),
         config::mock_binding<std::optional<size_t>>(std::nullopt),
         config::mock_binding<std::optional<int32_t>>(std::nullopt),
-        config::mock_binding<size_t>(32_MiB),
+        config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+        config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
         config::mock_binding<bool>(true)) {
         members.start().get0();
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg()
-              .get("enable_auto_rebalance_on_node_add")
-              .set_value(true);
+              .get("partition_autobalancing_mode")
+              .set_value(model::partition_autobalancing_mode::node_add);
         }).get0();
     }
 
@@ -44,7 +48,9 @@ struct partition_allocator_fixture {
           model::node_id(id),
           core_count,
           absl::node_hash_map<ss::sstring, ss::sstring>{},
-          std::nullopt));
+          std::nullopt,
+          config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
     }
 
     void register_node(int id, int core_count, model::rack_id rack) {
@@ -52,7 +58,9 @@ struct partition_allocator_fixture {
           model::node_id(id),
           core_count,
           absl::node_hash_map<ss::sstring, ss::sstring>{},
-          std::move(rack)));
+          std::move(rack),
+          config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
     }
 
     void saturate_all_machines() {

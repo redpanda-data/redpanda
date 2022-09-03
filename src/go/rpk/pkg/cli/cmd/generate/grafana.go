@@ -14,7 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -61,11 +61,11 @@ func newRowSet() *RowSet {
 	}
 }
 
-func NewGrafanaDashboardCmd() *cobra.Command {
+func newGrafanaDashboardCmd() *cobra.Command {
 	var metricsEndpoint string
 	command := &cobra.Command{
 		Use:   "grafana-dashboard",
-		Short: "Generate a Grafana dashboard for redpanda metrics.",
+		Short: "Generate a Grafana dashboard for redpanda metrics",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			if !(strings.HasPrefix(metricsEndpoint, "http://") ||
 				strings.HasPrefix(metricsEndpoint, "https://")) {
@@ -436,7 +436,7 @@ func fetchMetrics(
 			res.StatusCode,
 		)
 	}
-	bs, err := ioutil.ReadAll(res.Body)
+	bs, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}

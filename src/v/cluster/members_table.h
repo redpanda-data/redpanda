@@ -29,6 +29,8 @@ public:
 
     std::vector<broker_ptr> all_brokers() const;
 
+    size_t all_brokers_count() const;
+
     std::vector<model::node_id> all_broker_ids() const;
 
     /// Returns single broker if exists in cache
@@ -54,11 +56,26 @@ public:
         }
     }
 
+    using maintenance_state_cb_t = ss::noncopyable_function<void(
+      model::node_id, model::maintenance_state)>;
+
+    notification_id_type
+      register_maintenance_state_change_notification(maintenance_state_cb_t);
+
+    void unregister_maintenance_state_change_notification(notification_id_type);
+
 private:
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
     broker_cache_t _brokers;
     model::revision_id _version;
 
     waiter_queue<model::node_id> _waiters;
+
+    notification_id_type _notification_id{0};
+    std::vector<std::pair<notification_id_type, maintenance_state_cb_t>>
+      _notifications;
+
+    void
+      notify_maintenance_state_change(model::node_id, model::maintenance_state);
 };
 } // namespace cluster

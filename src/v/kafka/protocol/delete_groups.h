@@ -16,15 +16,6 @@
 
 namespace kafka {
 
-struct delete_groups_response;
-
-struct delete_groups_api final {
-    using response_type = delete_groups_response;
-
-    static constexpr const char* name = "delete groups";
-    static constexpr api_key key = api_key(42);
-};
-
 struct delete_groups_request final {
     using api_type = delete_groups_api;
 

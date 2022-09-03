@@ -7,12 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build !windows
+
 package tuners
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -69,8 +73,14 @@ func NewConfigChecker(conf *config.Config) Checker {
 		Fatal,
 		true,
 		func() (interface{}, error) {
-			ok, _ := config.Check(conf)
-			return ok, nil
+			ok, errs := conf.Check()
+			var err error
+			if len(errs) > 0 {
+				s := multierror.ListFormatFunc(errs)
+				err = fmt.Errorf("config file checker error: %v", s)
+			}
+
+			return ok, err
 		})
 }
 

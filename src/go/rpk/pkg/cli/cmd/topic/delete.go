@@ -19,11 +19,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs) *cobra.Command {
 	var re bool
 	cmd := &cobra.Command{
 		Use:   "delete [TOPICS...]",
-		Short: "Delete topics.",
+		Short: "Delete topics",
 		Long: `Delete topics.
 
 This command deletes all requested topics, printing the success or fail status
@@ -75,6 +75,6 @@ For example,
 			}
 		},
 	}
-	cmd.Flags().BoolVarP(&re, "regex", "r", false, "parse topics as regex; delete any topic that matches any input topic expression")
+	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; delete any topic that matches any input topic expression")
 	return cmd
 }

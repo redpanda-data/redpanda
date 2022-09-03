@@ -23,16 +23,6 @@
 
 namespace kafka {
 
-struct alter_configs_response;
-
-class alter_configs_api final {
-public:
-    using response_type = alter_configs_response;
-
-    static constexpr const char* name = "alter_configs";
-    static constexpr api_key key = api_key(33);
-};
-
 struct alter_configs_request final {
     using api_type = alter_configs_api;
 

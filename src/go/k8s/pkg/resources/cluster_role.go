@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -53,7 +54,19 @@ func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
 	if r.pandaCluster.ExternalListener() == nil {
 		return nil
 	}
-	_, err := CreateIfNotExists(ctx, r, r.obj(), r.logger)
+
+	obj := r.obj()
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil || created {
+		return err
+	}
+	var cr v1.ClusterRole
+	err = r.Get(ctx, r.Key(), &cr)
+	if err != nil {
+		return fmt.Errorf("error while fetching ClusterRole resource: %w", err)
+	}
+
+	_, err = Update(ctx, &cr, obj, r.Client, r.logger)
 	return err
 }
 

@@ -36,8 +36,9 @@ public:
     }
 
 private:
-    static constexpr auto accepted_commands
-      = make_commands_list<feature_update_cmd>();
+    static constexpr auto accepted_commands = make_commands_list<
+      feature_update_cmd,
+      feature_update_license_update_cmd>();
 
     ss::sharded<feature_table>& _feature_table;
 };

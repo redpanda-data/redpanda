@@ -174,7 +174,7 @@ get_offsets_for_leader_epochs(
 
 template<>
 ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
-  request_context ctx, ss::smp_service_group ssg) {
+  request_context ctx, ss::smp_service_group) {
     offset_for_leader_epoch_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.trace, "Handling request {}", request);

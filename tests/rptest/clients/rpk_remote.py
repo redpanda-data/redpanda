@@ -47,6 +47,19 @@ class RpkRemoteTool:
     def cluster_config_lint(self):
         return self._execute([self._rpk_binary(), 'cluster', 'config', 'lint'])
 
+    def tune(self, tuner):
+        return self._execute([self._rpk_binary(), 'redpanda', 'tune', tuner])
+
+    def mode_set(self, mode):
+        return self._execute([self._rpk_binary(), 'redpanda', 'mode', mode])
+
+    def redpanda_start(self, log_file, additional_args="", env_vars=""):
+        return self._execute([
+            env_vars,
+            self._rpk_binary(), "redpanda", "start", "-v", additional_args,
+            ">>", log_file, "2>&1", "&"
+        ])
+
     def _run_config(self, cmd, path=None, timeout=30):
         cmd = [self._rpk_binary(), 'redpanda', 'config'] + cmd
 

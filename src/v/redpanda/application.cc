@@ -18,8 +18,11 @@
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/node/local_monitor.h"
+#include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
@@ -69,6 +72,7 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/json/json_elements.hh>
@@ -158,8 +162,54 @@ static void log_system_resources(
     }
 }
 
+namespace {
+
+static constexpr std::string_view community_msg = R"banner(
+
+Welcome to the Redpanda community!
+
+Documentation: https://docs.redpanda.com - Product documentation site
+GitHub Discussion: https://github.com/redpanda-data/redpanda/discussions - Longer, more involved discussions
+GitHub Issues: https://github.com/redpanda-data/redpanda/issues - Report and track issues with the codebase
+Support: https://support.redpanda.com - Contact the support team privately
+Product Feedback: https://redpanda.com/feedback - Let us know how we can improve your experience
+Slack: https://redpanda.com/slack - Chat about all things Redpanda. Join the conversation!
+Twitter: https://twitter.com/redpandadata - All the latest Redpanda news!
+
+)banner";
+
+} // anonymous namespace
+
 int application::run(int ac, char** av) {
-    init_env();
+    std::setvbuf(stdout, nullptr, _IOLBF, 1024);
+    ss::app_template app(setup_app_config());
+    app.add_options()("version", po::bool_switch(), "print version and exit");
+    app.add_options()(
+      "redpanda-cfg",
+      po::value<std::string>(),
+      ".yaml file config for redpanda");
+
+    // Validate command line args using options registered by the app and
+    // seastar. Keep the resulting variables in a temporary map so they don't
+    // live for the lifetime of the application.
+    {
+        po::variables_map vm;
+        if (!cli_parser{
+              ac,
+              av,
+              cli_parser::app_opts{app.get_options_description()},
+              cli_parser::ss_opts{app.get_conf_file_options_description()},
+              _log}
+               .validate_into(vm)) {
+            return 1;
+        }
+        if (vm["version"].as<bool>()) {
+            std::cout << redpanda_version() << std::endl;
+            return 0;
+        }
+    }
+    // use endl for explicit flushing
+    std::cout << community_msg << std::endl;
     vlog(_log.info, "Redpanda {}", redpanda_version());
     struct ::utsname buf;
     ::uname(&buf);
@@ -169,27 +219,13 @@ int application::run(int ac, char** av) {
       buf.release,
       buf.nodename,
       buf.machine);
-    ss::app_template app(setup_app_config());
-    app.add_options()(
-      "redpanda-cfg",
-      po::value<std::string>(),
-      ".yaml file config for redpanda");
-
-    // Validate command line args using options registered by the app and
-    // seastar
-    if (!cli_parser{
-          ac,
-          av,
-          cli_parser::app_opts{app.get_options_description()},
-          cli_parser::ss_opts{app.get_conf_file_options_description()},
-          _log}
-           .validate()) {
-        return 1;
-    }
 
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
+        // NOTE: we validate required args here instead of above because run()
+        // catches some Seastar-specific args like --help that may result in
+        // valid omissions of required args.
         validate_arguments(cfg);
         return ss::async([this, &cfg] {
             try {
@@ -200,6 +236,7 @@ int application::run(int ac, char** av) {
                     while (!deferred.empty()) {
                         deferred.pop_back();
                     }
+                    vlog(_log.info, "Shutdown complete.");
                 });
                 // must initialize configuration before services
                 hydrate_config(cfg);
@@ -213,7 +250,7 @@ int application::run(int ac, char** av) {
                 vlog(_log.info, "Stopping...");
             } catch (...) {
                 vlog(
-                  _log.info,
+                  _log.error,
                   "Failure during startup: {}",
                   std::current_exception());
                 return 1;
@@ -243,8 +280,9 @@ void application::initialize(
     }
     smp_groups::config smp_groups_cfg{
       .raft_group_max_non_local_requests
-      = config::shard_local_cfg().raft_smp_max_non_local_requests(),
-    };
+      = config::shard_local_cfg().raft_smp_max_non_local_requests().value_or(
+        smp_groups::default_raft_non_local_requests(
+          config::shard_local_cfg().topic_partitions_per_shard()))};
 
     smp_service_groups.create_groups(smp_groups_cfg).get();
     _deferred.emplace_back(
@@ -256,8 +294,11 @@ void application::initialize(
     }
 
     _scheduling_groups.create_groups().get();
-    _deferred.emplace_back(
-      [this] { _scheduling_groups.destroy_groups().get(); });
+    _scheduling_groups_probe.wire_up(_scheduling_groups);
+    _deferred.emplace_back([this] {
+        _scheduling_groups_probe.clear();
+        _scheduling_groups.destroy_groups().get();
+    });
 
     if (proxy_cfg) {
         _proxy_config.emplace(*proxy_cfg);
@@ -276,11 +317,68 @@ void application::initialize(
 }
 
 void application::setup_metrics() {
-    if (config::shard_local_cfg().disable_metrics()) {
+    setup_internal_metrics();
+    setup_public_metrics();
+}
+
+void application::setup_public_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
         return;
     }
 
+    seastar::metrics::replicate_metric_families(
+      seastar::metrics::default_handle(),
+      {{"io_queue_total_read_ops", ssx::metrics::public_metrics_handle},
+       {"io_queue_total_write_ops", ssx::metrics::public_metrics_handle},
+       {"memory_allocated_memory", ssx::metrics::public_metrics_handle},
+       {"memory_free_memory", ssx::metrics::public_metrics_handle}})
+      .get();
+
+    _public_metrics.start().get();
+
+    _public_metrics
+      .invoke_on(
+        ss::this_shard_id(),
+        [](auto& public_metrics) {
+            public_metrics.groups.add_group(
+              "application",
+              {sm::make_gauge(
+                 "uptime_seconds_total",
+                 [] {
+                     return std::chrono::duration<double>(ss::engine().uptime())
+                       .count();
+                 },
+                 sm::description("Redpanda uptime in seconds"))
+                 .aggregate({sm::shard_label})});
+        })
+      .get();
+
+    _public_metrics
+      .invoke_on_all([](auto& public_metrics) {
+          public_metrics.groups.add_group(
+            "cpu",
+            {sm::make_gauge(
+              "busy_seconds_total",
+              [] {
+                  return std::chrono::duration<double>(
+                           ss::engine().total_busy_time())
+                    .count();
+              },
+              sm::description("Total CPU busy time in seconds"))});
+      })
+      .get();
+
+    _deferred.emplace_back([this] { _public_metrics.stop().get(); });
+}
+
+void application::setup_internal_metrics() {
     namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
 
     // build info
     auto version_label = sm::label("version");
@@ -316,8 +414,6 @@ void application::validate_arguments(const po::variables_map& cfg) {
     }
 }
 
-void application::init_env() { std::setvbuf(stdout, nullptr, _IOLBF, 1024); }
-
 ss::app_template::config application::setup_app_config() {
     ss::app_template::config app_cfg;
     app_cfg.name = "Redpanda";
@@ -342,36 +438,34 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
     };
 
-    _redpanda_enabled = config["redpanda"].IsDefined();
-    if (_redpanda_enabled) {
-        ss::smp::invoke_on_all([&config, cfg_path] {
-            config::node().load(cfg_path, config);
-        }).get0();
+    ss::smp::invoke_on_all([&config, cfg_path] {
+        config::node().load(cfg_path, config);
+    }).get0();
 
-        auto node_config_errors = config::node().load(config);
-        for (const auto& i : node_config_errors) {
-            vlog(
-              _log.warn,
-              "Node property '{}' validation error: {}",
-              i.first,
-              i.second);
-        }
-        if (node_config_errors.size() > 0) {
-            throw std::invalid_argument("Validation errors in node config");
-        }
-
-        // This includes loading from local bootstrap file or legacy
-        // config file on first-start or upgrade cases.
-        _config_preload = cluster::config_manager::preload(config).get0();
-
-        vlog(_log.info, "Cluster configuration properties:");
-        vlog(_log.info, "(use `rpk cluster config edit` to change)");
-        config_printer("redpanda", config::shard_local_cfg());
-
-        vlog(_log.info, "Node configuration properties:");
-        vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
-        config_printer("redpanda", config::node());
+    auto node_config_errors = config::node().load(config);
+    for (const auto& i : node_config_errors) {
+        vlog(
+          _log.warn,
+          "Node property '{}' validation error: {}",
+          i.first,
+          i.second);
     }
+    if (node_config_errors.size() > 0) {
+        throw std::invalid_argument("Validation errors in node config");
+    }
+
+    // This includes loading from local bootstrap file or legacy
+    // config file on first-start or upgrade cases.
+    _config_preload = cluster::config_manager::preload(config).get0();
+
+    vlog(_log.info, "Cluster configuration properties:");
+    vlog(_log.info, "(use `rpk cluster config edit` to change)");
+    config_printer("redpanda", config::shard_local_cfg());
+
+    vlog(_log.info, "Node configuration properties:");
+    vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
+    config_printer("redpanda", config::node());
+
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
         if (config["pandaproxy_client"]) {
@@ -403,11 +497,9 @@ void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::node().developer_mode());
-    if (_redpanda_enabled) {
-        storage::directories::initialize(
-          config::node().data_directory().as_sstring())
-          .get();
-    }
+    storage::directories::initialize(
+      config::node().data_directory().as_sstring())
+      .get();
 }
 
 static admin_server_cfg
@@ -432,7 +524,9 @@ void application::configure_admin_server() {
       std::ref(cp_partition_manager),
       controller.get(),
       std::ref(shard_table),
-      std::ref(metadata_cache))
+      std::ref(metadata_cache),
+      std::ref(archival_scheduler),
+      std::ref(_connection_cache))
       .get();
 }
 
@@ -561,14 +655,15 @@ make_upload_controller_config(ss::scheduling_group sg) {
 
 // add additional services in here
 void application::wire_up_services() {
-    if (_redpanda_enabled) {
-        wire_up_redpanda_services();
-    }
+    wire_up_redpanda_services();
     if (_proxy_config) {
-        construct_service(_proxy_client, to_yaml(*_proxy_client_config)).get();
+        construct_service(
+          _proxy_client,
+          to_yaml(*_proxy_client_config, config::redact_secrets::no))
+          .get();
         construct_service(
           _proxy,
-          to_yaml(*_proxy_config),
+          to_yaml(*_proxy_config, config::redact_secrets::no),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
@@ -616,8 +711,9 @@ void application::wire_up_redpanda_services() {
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();
     recovery_throttle
-      .start(
-        config::shard_local_cfg().raft_learner_recovery_rate() / ss::smp::count)
+      .start(ss::sharded_parameter([] {
+          return config::shard_local_cfg().raft_learner_recovery_rate.bind();
+      }))
       .get();
 
     syschecks::systemd_message("Intializing raft group manager").get();
@@ -664,7 +760,7 @@ void application::wire_up_redpanda_services() {
           })
           .get();
         construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
-
+        cloud_storage_api.invoke_on_all(&cloud_storage::remote::start).get();
         construct_service(
           partition_recovery_manager,
           cloud_configs.local().bucket_name,
@@ -674,6 +770,9 @@ void application::wire_up_redpanda_services() {
         cloud_configs.stop().get();
     }
 
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(_feature_table).get();
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -682,7 +781,8 @@ void application::wire_up_redpanda_services() {
       std::ref(tx_gateway_frontend),
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
-      std::ref(shadow_index_cache))
+      std::ref(shadow_index_cache),
+      std::ref(_feature_table))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -703,7 +803,9 @@ void application::wire_up_redpanda_services() {
       storage,
       storage_node,
       std::ref(raft_group_manager),
-      data_policies);
+      data_policies,
+      std::ref(_feature_table),
+      std::ref(cloud_storage_api));
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();
@@ -737,23 +839,6 @@ void application::wire_up_redpanda_services() {
         }
     });
 
-    _deferred.emplace_back([this] {
-        partition_manager
-          .invoke_on_all(&cluster::partition_manager::stop_partitions)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        // Prior to shutting down partition manager (which clears out all the
-        // raft `consensus` instances), stop processing heartbeats.  Otherwise
-        // we are receiving heartbeats that we can't match up to raft groups.
-        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        cp_partition_manager
-          .invoke_on_all(&coproc::partition_manager::stop_partitions)
-          .get();
-    });
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -778,11 +863,7 @@ void application::wire_up_redpanda_services() {
         }
         auto cache_size
           = config::shard_local_cfg().cloud_storage_cache_size.value();
-        auto cache_interval = config::shard_local_cfg()
-                                .cloud_storage_cache_check_interval_ms.value();
-        construct_service(
-          shadow_index_cache, cache_dir, cache_size, cache_interval)
-          .get();
+        construct_service(shadow_index_cache, cache_dir, cache_size).get();
 
         shadow_index_cache
           .invoke_on_all(
@@ -816,6 +897,7 @@ void application::wire_up_redpanda_services() {
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
     }
+
     // group membership
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
@@ -887,6 +969,8 @@ void application::wire_up_redpanda_services() {
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+              c.disable_public_metrics = net::public_metrics_disabled(
+                config::shard_local_cfg().disable_public_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
               c.tcp_recv_buf
@@ -981,7 +1065,28 @@ void application::wire_up_redpanda_services() {
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend))
       .get();
-
+    /**
+     * Schedule partition stop before the transaction coordinator is asked to be
+     * stopped. This will interrupt all ongoing replication requests allowing
+     * all high level components to shutdown cleanly.
+     */
+    _deferred.emplace_back([this] {
+        partition_manager
+          .invoke_on_all(&cluster::partition_manager::stop_partitions)
+          .get();
+    });
+    _deferred.emplace_back([this] {
+        // Prior to shutting down partition manager (which clears out all the
+        // raft `consensus` instances), stop processing heartbeats.  Otherwise
+        // we are receiving heartbeats that we can't match up to raft groups.
+        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    });
+    _deferred.emplace_back([this] {
+        cp_partition_manager
+          .invoke_on_all(&coproc::partition_manager::stop_partitions)
+          .get();
+    });
     _kafka_conn_quotas
       .start([]() {
           return net::conn_quota_config{
@@ -1005,14 +1110,30 @@ void application::wire_up_redpanda_services() {
                 = memory_groups::kafka_total_memory();
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
-              c.tcp_recv_buf
-                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
-              c.tcp_send_buf
-                = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              if (config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf()) {
+                  c.tcp_recv_buf
+                    = config::shard_local_cfg().kafka_rpc_server_tcp_recv_buf;
+              } else {
+                  // Backward compat: prior to Redpanda 22.2, rpc_server_*
+                  // settings applied to both Kafka and Internal RPC listeners.
+                  c.tcp_recv_buf
+                    = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              };
+              if (config::shard_local_cfg().kafka_rpc_server_tcp_send_buf()) {
+                  c.tcp_send_buf
+                    = config::shard_local_cfg().kafka_rpc_server_tcp_send_buf;
+              } else {
+                  // Backward compat: prior to Redpanda 22.2, rpc_server_*
+                  // settings applied to both Kafka and Internal RPC listeners.
+                  c.tcp_send_buf
+                    = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              }
+
+              c.stream_recv_buf
+                = config::shard_local_cfg().kafka_rpc_server_stream_recv_buf;
               auto& tls_config = config::node().kafka_api_tls.value();
               for (const auto& ep : config::node().kafka_api()) {
                   ss::shared_ptr<ss::tls::server_credentials> credentails;
-                  std::optional<security::tls::principal_mapper> tls_pm;
                   // find credentials for this endpoint
                   auto it = find_if(
                     tls_config.begin(),
@@ -1041,24 +1162,16 @@ void application::wire_up_redpanda_services() {
                                   })
                                 .get0()
                             : nullptr;
-
-                      auto tls_pm_rules
-                        = it->config.get_principal_mapping_rules();
-                      if (tls_pm_rules) {
-                          tls_pm = security::tls::principal_mapper(
-                            tls_pm_rules);
-                      }
                   }
 
                   c.addrs.emplace_back(
-                    ep.name,
-                    net::resolve_dns(ep.address).get0(),
-                    credentails,
-                    std::move(tls_pm));
+                    ep.name, net::resolve_dns(ep.address).get0(), credentails);
               }
 
               c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+              c.disable_public_metrics = net::public_metrics_disabled(
+                config::shard_local_cfg().disable_public_metrics());
 
               net::config_connection_rate_bindings bindings{
                 .config_general_rate
@@ -1110,9 +1223,7 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 }
 
 void application::start(::stop_signal& app_signal) {
-    if (_redpanda_enabled) {
-        start_redpanda(app_signal);
-    }
+    start_redpanda(app_signal);
 
     if (_proxy_config) {
         _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
@@ -1130,9 +1241,7 @@ void application::start(::stop_signal& app_signal) {
           _schema_reg_config->schema_registry_api());
     }
 
-    if (_redpanda_enabled) {
-        start_kafka(app_signal);
-    }
+    start_kafka(app_signal);
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
@@ -1142,8 +1251,38 @@ void application::start(::stop_signal& app_signal) {
 
 void application::start_redpanda(::stop_signal& app_signal) {
     syschecks::systemd_message("Staring storage services").get();
+
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
+
+    // Early initialization of disk stats, so that logic for e.g. picking
+    // falloc sizes works without having to wait for a local_monitor tick.
+    auto tmp_lm = cluster::node::local_monitor(
+      config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
+      config::shard_local_cfg()
+        .storage_space_alert_free_threshold_percent.bind(),
+      config::shard_local_cfg().storage_min_free_bytes.bind(),
+      storage_node,
+      storage);
+    tmp_lm.update_state().get();
+
+    auto disk_stats
+      = storage_node
+          .invoke_on(
+            ss::shard_id{0},
+            [](const storage::node_api& na) -> storage::disk_metrics {
+                return na.get_disk_metrics();
+            })
+          .get();
+
+    storage
+      .invoke_on_all([disk_stats](storage::api& sa) -> ss::future<> {
+          sa.resources().update_allowance(
+            disk_stats.total_bytes, disk_stats.free_bytes);
+          return ss::now();
+      })
+      .get();
+
     storage.invoke_on_all(&storage::api::start).get();
 
     syschecks::systemd_message("Starting the partition manager").get();
@@ -1227,9 +1366,16 @@ void application::start_redpanda(::stop_signal& app_signal) {
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_partition_leaders()));
+
+          proto->register_service<cluster::partition_balancer_rpc_handler>(
+            _scheduling_groups.cluster_sg(),
+            smp_service_groups.cluster_smp_sg(),
+            std::ref(controller->get_partition_balancer()));
+
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
           }
+
           s.set_protocol(std::move(proto));
       })
       .get();

@@ -7,9 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/configuration.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -19,79 +21,114 @@
 
 namespace net {
 void server_probe::setup_metrics(
-  ss::metrics::metric_groups& mgs, const char* proto) {
+  ss::metrics::metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
     mgs.add_group(
-      prometheus_sanitize::metrics_name(proto),
+      prometheus_sanitize::metrics_name(ss::sstring{proto}),
       {
         sm::make_gauge(
           "active_connections",
           [this] { return _connections; },
           sm::description(
-            ssx::sformat("{}: Currently active connections", proto))),
-        sm::make_derive(
+            ssx::sformat("{}: Currently active connections", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "connects",
           [this] { return _connects; },
           sm::description(
-            ssx::sformat("{}: Number of accepted connections", proto))),
-        sm::make_derive(
+            ssx::sformat("{}: Number of accepted connections", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "connection_close_errors",
           [this] { return _connection_close_error; },
           sm::description(ssx::sformat(
-            "{}: Number of errors when shutting down the connection", proto))),
-        sm::make_derive(
+            "{}: Number of errors when shutting down the connection", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "connections_rejected",
           [this] { return _connections_rejected; },
           sm::description(ssx::sformat(
             "{}: Number of connections rejected for hitting connection limits",
-            proto))),
-        sm::make_derive(
+            proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description(
-            ssx::sformat("{}: Number of successful requests", proto))),
+            ssx::sformat("{}: Number of successful requests", proto)))
+          .aggregate(aggregate_labels),
         sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
           sm::description(ssx::sformat(
             "{}: Number of bytes received from the clients in valid requests",
-            proto))),
+            proto)))
+          .aggregate(aggregate_labels),
         sm::make_total_bytes(
           "sent_bytes",
           [this] { return _out_bytes; },
           sm::description(
-            ssx::sformat("{}: Number of bytes sent to clients", proto))),
-        sm::make_derive(
+            ssx::sformat("{}: Number of bytes sent to clients", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "method_not_found_errors",
           [this] { return _method_not_found_errors; },
           sm::description(ssx::sformat(
-            "{}: Number of requests with not available RPC method", proto))),
-        sm::make_derive(
+            "{}: Number of requests with not available RPC method", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "corrupted_headers",
           [this] { return _corrupted_headers; },
           sm::description(ssx::sformat(
-            "{}: Number of requests with corrupted headers", proto))),
-        sm::make_derive(
+            "{}: Number of requests with corrupted headers", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "service_errors",
           [this] { return _service_errors; },
-          sm::description(ssx::sformat("{}: Number of service errors", proto))),
-        sm::make_derive(
+          sm::description(ssx::sformat("{}: Number of service errors", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
           sm::description(ssx::sformat(
-            "{}: Number of requests blocked in memory backpressure", proto))),
+            "{}: Number of requests blocked in memory backpressure", proto)))
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
           sm::description(ssx::sformat(
-            "{}: Number of requests being processed by server", proto))),
-        sm::make_derive(
+            "{}: Number of requests being processed by server", proto)))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
           "connections_wait_rate",
           [this] { return _connections_wait_rate; },
           sm::description(ssx::sformat(
-            "{}: Number of connections are blocked by connection rate",
-            proto))),
+            "{}: Number of connections are blocked by connection rate", proto)))
+          .aggregate(aggregate_labels),
       });
+}
+
+void server_probe::setup_public_metrics(
+  ss::metrics::metric_groups& mgs, std::string_view proto) {
+    namespace sm = ss::metrics;
+
+    if (proto.ends_with("_rpc")) {
+        proto.remove_suffix(4);
+    }
+
+    auto server_label = ssx::metrics::make_namespaced_label("server");
+
+    mgs.add_group(
+      "rpc",
+      {sm::make_counter(
+         "request_errors_total",
+         [this] { return _service_errors; },
+         sm::description("Number of rpc errors"),
+         {server_label(proto)})
+         .aggregate({sm::shard_label})});
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {
@@ -127,12 +164,12 @@ void client_probe::setup_metrics(
           [this] { return _connections; },
           sm::description("Currently active connections"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "connects",
           [this] { return _connects; },
           sm::description("Connection attempts"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "requests",
           [this] { return _requests; },
           sm::description("Number of requests"),
@@ -142,12 +179,12 @@ void client_probe::setup_metrics(
           [this] { return _requests_pending; },
           sm::description("Number of requests pending"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "request_errors",
           [this] { return _request_errors; },
           sm::description("Number or requests errors"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "request_timeouts",
           [this] { return _request_timeouts; },
           sm::description("Number or requests timeouts"),
@@ -162,32 +199,32 @@ void client_probe::setup_metrics(
           [this] { return _in_bytes; },
           sm::description("Total number of bytes received"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "connection_errors",
           [this] { return _connection_errors; },
           sm::description("Number of connection errors"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "read_dispatch_errors",
           [this] { return _read_dispatch_errors; },
           sm::description("Number of errors while dispatching responses"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "corrupted_headers",
           [this] { return _corrupted_headers; },
           sm::description("Number of responses with corrupted headers"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "server_correlation_errors",
           [this] { return _server_correlation_errors; },
           sm::description("Number of responses with wrong correlation id"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "client_correlation_errors",
           [this] { return _client_correlation_errors; },
           sm::description("Number of errors in client correlation id"),
           labels),
-        sm::make_derive(
+        sm::make_counter(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
           sm::description("Number of requests that are blocked because"

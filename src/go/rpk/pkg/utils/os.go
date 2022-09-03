@@ -11,7 +11,7 @@ package utils
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -40,7 +40,7 @@ func IsAWSi3MetalInstance() bool {
 		return false
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	instanceType := string(body)
 	if err != nil {
 		log.Debug("Can not read AWS meta-data API response body")

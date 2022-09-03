@@ -19,15 +19,28 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <fmt/ostream.h>
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace cluster {
+
+kafka_stages::kafka_stages(
+  ss::future<> enq, ss::future<result<kafka_result>> offset_future)
+  : request_enqueued(std::move(enq))
+  , replicate_finished(std::move(offset_future)) {}
+
+kafka_stages::kafka_stages(raft::errc ec)
+  : request_enqueued(ss::now())
+  , replicate_finished(
+      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))){};
 
 bool topic_properties::is_compacted() const {
     if (!cleanup_policy_bitflags) {
@@ -42,7 +55,8 @@ bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
            || retention_bytes.has_value() || retention_bytes.is_disabled()
            || retention_duration.has_value() || retention_duration.is_disabled()
-           || recovery.has_value() || shadow_indexing.has_value();
+           || recovery.has_value() || shadow_indexing.has_value()
+           || read_replica.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -56,14 +70,9 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.shadow_indexing_mode = shadow_indexing
                                  ? *shadow_indexing
                                  : model::shadow_indexing_mode::disabled;
+    ret.read_replica = read_replica;
     return ret;
 }
-
-topic_configuration::topic_configuration(
-  model::ns n, model::topic t, int32_t count, int16_t rf)
-  : tp_ns(std::move(n), std::move(t))
-  , partition_count(count)
-  , replication_factor(rf) {}
 
 storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir,
@@ -88,7 +97,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
               properties.recovery ? *properties.recovery : false),
             .shadow_indexing_mode = properties.shadow_indexing
                                       ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled});
+                                      : model::shadow_indexing_mode::disabled,
+            .read_replica = properties.read_replica});
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -117,12 +127,14 @@ topic_table_delta::topic_table_delta(
   cluster::partition_assignment new_assignment,
   model::offset o,
   op_type tp,
-  std::optional<partition_assignment> previous)
+  std::optional<std::vector<model::broker_shard>> previous,
+  std::optional<revision_map_t> replica_revisions)
   : ntp(std::move(ntp))
   , new_assignment(std::move(new_assignment))
   , offset(o)
   , type(tp)
-  , previous_assignment(std::move(previous)) {}
+  , previous_replica_set(std::move(previous))
+  , replica_revisions(std::move(replica_revisions)) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
@@ -146,10 +158,32 @@ ntp_reconciliation_state::ntp_reconciliation_state(
   : ntp_reconciliation_state(
     std::move(ntp), {}, reconciliation_status::error, ec) {}
 
-create_partititions_configuration::create_partititions_configuration(
+create_partitions_configuration::create_partitions_configuration(
   model::topic_namespace tp_ns, int32_t cnt)
   : tp_ns(std::move(tp_ns))
   , new_total_partition_count(cnt) {}
+
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_request& r) {
+    fmt::print(o, "{{updates: {}}}", r.updates);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_topic_properties_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
+    fmt::print(
+      o,
+      "tp_ns: {} properties: {} custom_properties: {}",
+      tpu.tp_ns,
+      tpu.properties,
+      tpu.custom_properties);
+    return o;
+}
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
@@ -172,7 +206,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "compaction_strategy: "
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
       "{}, "
-      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
+      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -181,13 +216,28 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.segment_size,
       properties.timestamp_type,
       properties.recovery,
-      properties.shadow_indexing);
+      properties.shadow_indexing,
+      properties.read_replica,
+      properties.read_replica_bucket,
+      properties.remote_topic_properties);
 
     return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_result& r) {
     fmt::print(o, "topic: {}, result: {}", r.tp_ns, r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_request& r) {
+    fmt::print(o, "{{ntp: {}, new_replica_set: {}}}", r.ntp, r.new_replica_set);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const finish_partition_update_reply& r) {
+    fmt::print(o, "{{result: {}}}", r.result);
     return o;
 }
 
@@ -228,6 +278,10 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "add_non_replicable_addition";
     case topic_table_delta::op_type::del_non_replicable:
         return o << "del_non_replicable_deletion";
+    case topic_table_delta::op_type::cancel_update:
+        return o << "cancel_update";
+    case topic_table_delta::op_type::force_abort_update:
+        return o << "force_abort_update";
     }
     __builtin_unreachable();
 }
@@ -236,12 +290,12 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
       o,
       "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
-      "previous_assignment: {}}}",
+      "previous_replica_set: {}}}",
       d.type,
       d.ntp,
       d.offset,
       d.new_assignment,
-      d.previous_assignment);
+      d.previous_replica_set);
 
     return o;
 }
@@ -253,6 +307,70 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
       op.p_as,
       op.source_shard,
       op.type);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
+    fmt::print(o, "{{ ntp: {}, pid: {}, tx_seq: {} }}", r.ntp, r.pid, r.tx_seq);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r) {
+    fmt::print(o, "{{ ntp: {}, etag: {}, ec: {} }}", r.ntp, r.etag, r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ ntp: {}, etag: {}, tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
+      r.ntp,
+      r.etag,
+      r.tm,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r) {
+    fmt::print(o, "{{ ec: {} }}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const init_tm_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ tx_id: {}, transaction_timeout_ms: {}, timeout: {} }}",
+      r.tx_id,
+      r.transaction_timeout_ms,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r) {
+    fmt::print(o, "{{ pid: {}, ec: {} }}", r.pid, r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const try_abort_request& r) {
+    fmt::print(
+      o,
+      "{{ tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
+      r.tm,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const try_abort_reply& r) {
+    fmt::print(
+      o,
+      "{{ commited: {}, aborted: {}, ec: {} }}",
+      bool(r.commited),
+      bool(r.aborted),
+      r.ec);
     return o;
 }
 
@@ -285,6 +403,87 @@ bool config_status::operator==(const config_status& rhs) const {
              rhs.node, rhs.version, rhs.restart, rhs.unknown, rhs.invalid);
 }
 
+std::ostream& operator<<(std::ostream& o, const cluster_property_kv& kv) {
+    fmt::print(
+      o, "{{cluster_property_kv: key {}, value: {})}}", kv.key, kv.value);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_update_request& crq) {
+    fmt::print(
+      o,
+      "{{config_update_request: upsert {}, remove: {})}}",
+      crq.upsert,
+      crq.remove);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_update_reply& crr) {
+    fmt::print(
+      o,
+      "{{config_update_reply: error {}, latest_version: {})}}",
+      crr.error,
+      crr.latest_version);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const hello_request& h) {
+    fmt::print(
+      o, "{{hello_request: peer {}, start_time: {})}}", h.peer, h.start_time);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const hello_reply& h) {
+    fmt::print(o, "{{hello_reply: error {}}}", h.error);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const create_topics_request& r) {
+    fmt::print(
+      o,
+      "{{create_topics_request: topics: {} timeout: {}}}",
+      r.topics,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const create_topics_reply& r) {
+    fmt::print(
+      o,
+      "{{create_topics_reply: results: {} metadata: {} configs: {}}}",
+      r.results,
+      r.metadata,
+      r.configs);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: compression: {} "
+      "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
+      "segment_size: {} retention_bytes: {} retention_duration: {} "
+      "shadow_indexing: {}}}",
+      i.compression,
+      i.cleanup_policy_bitflags,
+      i.compaction_strategy,
+      i.timestamp_type,
+      i.segment_size,
+      i.retention_bytes,
+      i.retention_duration,
+      i.shadow_indexing);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
+    fmt::print(
+      o,
+      "{{incremental_topic_custom_updates: data_policy: {}}}",
+      i.data_policy);
+    return o;
+}
+
 namespace {
 cluster::assignments_set to_assignments_map(
   std::vector<cluster::partition_assignment> assignment_vector) {
@@ -297,21 +496,26 @@ cluster::assignments_set to_assignments_map(
 } // namespace
 
 topic_metadata::topic_metadata(
-  topic_configuration_assignment c, model::revision_id rid) noexcept
+  topic_configuration_assignment c,
+  model::revision_id rid,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
   : _configuration(std::move(c.cfg))
   , _assignments(to_assignments_map(std::move(c.assignments)))
   , _source_topic(std::nullopt)
-  , _revision(rid) {}
+  , _revision(rid)
+  , _remote_revision(remote_revision_id) {}
 
 topic_metadata::topic_metadata(
   topic_configuration cfg,
   assignments_set assignments,
   model::revision_id rid,
-  model::topic st) noexcept
+  model::topic st,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
   : _configuration(std::move(cfg))
   , _assignments(std::move(assignments))
   , _source_topic(st)
-  , _revision(rid) {}
+  , _revision(rid)
+  , _remote_revision(remote_revision_id) {}
 
 bool topic_metadata::is_topic_replicable() const {
     return _source_topic.has_value() == false;
@@ -321,6 +525,13 @@ model::revision_id topic_metadata::get_revision() const {
     vassert(
       is_topic_replicable(), "Query for revision_id on a non-replicable topic");
     return _revision;
+}
+
+std::optional<model::initial_revision_id>
+topic_metadata::get_remote_revision() const {
+    vassert(
+      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
+    return _remote_revision;
 }
 
 const model::topic& topic_metadata::get_source_topic() const {
@@ -374,7 +585,7 @@ operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
+operator<<(std::ostream& o, const create_partitions_configuration& cfg) {
     fmt::print(
       o,
       "{{topic: {}, new total partition count: {}, custom assignments: {}}}",
@@ -385,7 +596,7 @@ operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
 }
 
 std::ostream& operator<<(
-  std::ostream& o, const create_partititions_configuration_assignment& cpca) {
+  std::ostream& o, const create_partitions_configuration_assignment& cpca) {
     fmt::print(
       o, "{{configuration: {}, assignments: {}}}", cpca.cfg, cpca.assignments);
     return o;
@@ -412,6 +623,39 @@ std::ostream& operator<<(std::ostream& o, const leader_term& lt) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const partition_move_direction& s) {
+    switch (s) {
+    case partition_move_direction::to_node:
+        return o << "to_node";
+    case partition_move_direction::from_node:
+        return o << "from_node";
+    case partition_move_direction::all:
+        return o << "all";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const move_cancellation_result& r) {
+    fmt::print(o, "{{ntp: {}, result: {}}}", r.ntp, r.result);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_node_partition_movements_request& r) {
+    fmt::print(o, "{{node_id: {}, direction: {}}}", r.node_id, r.direction);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
+    fmt::print(
+      o,
+      "{{general_error: {}, partition_results: {}}}",
+      r.general_error,
+      r.partition_results);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     std::string_view action_name;
     switch (fua.action) {
@@ -430,10 +674,183 @@ std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const feature_action_request& far) {
+    fmt::print(o, "{{feature_update_action: {}}}", far.action);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_action_response& far) {
+    fmt::print(o, "{{error: {}}}", far.error);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_barrier_request& fbr) {
+    fmt::print(
+      o, "{{tag: {} peer: {} entered: {}}}", fbr.tag, fbr.peer, fbr.entered);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
+    fmt::print(o, "{{entered: {} complete: {}}}", fbr.entered, fbr.complete);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
+    fmt::print(o, "{{topics: {} timeout: {}}}", r.topics, r.timeout);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
+    fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
+std::ostream& operator<<(
+  std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
+    fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_status_request& r) {
+    fmt::print(o, "{{status: {}}}", r.status);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_status_reply& r) {
+    fmt::print(o, "{{error: {}}}", r.error);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const commit_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const begin_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} group_id {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.group_id,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const begin_group_tx_reply& r) {
+    fmt::print(o, "{{etag {} ec {}}}", r.etag, r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} group_id {} etag {} pid {} tx_seq {} timeout {}}}",
+      r.ntp,
+      r.group_id,
+      r.etag,
+      r.pid,
+      r.tx_seq,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const prepare_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const commit_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.group_id,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const commit_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_group_tx_request& r) {
+    fmt::print(
+      o,
+      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.group_id,
+      r.timeout);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_request& cr) {
+    fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const configuration_update_reply& cr) {
+    fmt::print(o, "{{success: {}}}", cr.success);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
+    fmt::print(
+      o,
+      "{{remote_revision: {} remote_partition_count: {}}}",
+      rtps.remote_revision,
+      rtps.remote_partition_count);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
 
+// note: adl serialization doesn't support read replica fields since serde
+// should be used for new versions.
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
     int32_t version = -1;
@@ -454,6 +871,8 @@ void adl<cluster::topic_configuration>::to(
       t.properties.shadow_indexing);
 }
 
+// note: adl deserialization doesn't support read replica fields since serde
+// should be used for new versions.
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     // NOTE: The first field of the topic_configuration is a
@@ -549,6 +968,17 @@ adl<cluster::configuration_update_request>::from(iobuf_parser& in) {
     return cluster::configuration_update_request(broker, target_id);
 }
 
+void adl<cluster::configuration_update_reply>::to(
+  iobuf& out, cluster::configuration_update_reply&& r) {
+    serialize(out, r.success);
+}
+
+cluster::configuration_update_reply
+adl<cluster::configuration_update_reply>::from(iobuf_parser& in) {
+    auto success = adl<bool>().from(in);
+    return cluster::configuration_update_reply(success);
+}
+
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
     reflection::serialize(out, std::move(t.tp_ns), t.ec);
 }
@@ -575,7 +1005,8 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     using underlying_t = std::vector<cluster::topic_configuration>;
     auto configs = adl<underlying_t>().from(in);
     auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_topics_request{std::move(configs), timeout};
+    return cluster::create_topics_request{
+      .topics = std::move(configs), .timeout = timeout};
 }
 
 void adl<cluster::create_non_replicable_topics_request>::to(
@@ -598,7 +1029,7 @@ adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
     auto topics = adl<std::vector<cluster::non_replicable_topic>>().from(in);
     auto timeout = adl<model::timeout_clock::duration>().from(in);
     return cluster::create_non_replicable_topics_request{
-      std::move(topics), timeout};
+      .topics = std::move(topics), .timeout = timeout};
 }
 
 void adl<cluster::create_non_replicable_topics_reply>::to(
@@ -639,22 +1070,6 @@ adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
     auto cfg = adl<std::vector<cluster::topic_configuration>>().from(in);
     return cluster::create_topics_reply{
       std::move(results), std::move(md), std::move(cfg)};
-}
-
-void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {
-    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
-    // because rep has type of long long
-    // adl<rep>{}.to(out, dur.count());
-    adl<uint64_t>{}.to(out, std::chrono::milliseconds(dur).count());
-}
-
-model::timeout_clock::duration
-adl<model::timeout_clock::duration>::from(iobuf_parser& in) {
-    // This is a clang bug that cause ss::cpu_to_le to become ambiguous
-    // because rep has type of long long
-    // auto rp = adl<rep>{}.from(in);
-    auto rp = adl<uint64_t>{}.from(in);
-    return duration(rp);
 }
 
 void adl<cluster::topic_configuration_assignment>::to(
@@ -1013,38 +1428,38 @@ adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
       std::move(ntp), std::move(ops), status, error);
 }
 
-void adl<cluster::create_partititions_configuration>::to(
-  iobuf& out, cluster::create_partititions_configuration&& pc) {
+void adl<cluster::create_partitions_configuration>::to(
+  iobuf& out, cluster::create_partitions_configuration&& pc) {
     return serialize(
       out, pc.tp_ns, pc.new_total_partition_count, pc.custom_assignments);
 }
 
-cluster::create_partititions_configuration
-adl<cluster::create_partititions_configuration>::from(iobuf_parser& in) {
+cluster::create_partitions_configuration
+adl<cluster::create_partitions_configuration>::from(iobuf_parser& in) {
     auto tp_ns = adl<model::topic_namespace>{}.from(in);
     auto partition_count = adl<int32_t>{}.from(in);
     auto custom_assignment = adl<std::vector<
-      cluster::create_partititions_configuration::custom_assignment>>{}
+      cluster::create_partitions_configuration::custom_assignment>>{}
                                .from(in);
 
-    cluster::create_partititions_configuration ret(
+    cluster::create_partitions_configuration ret(
       std::move(tp_ns), partition_count);
     ret.custom_assignments = std::move(custom_assignment);
     return ret;
 }
 
-void adl<cluster::create_partititions_configuration_assignment>::to(
-  iobuf& out, cluster::create_partititions_configuration_assignment&& ca) {
+void adl<cluster::create_partitions_configuration_assignment>::to(
+  iobuf& out, cluster::create_partitions_configuration_assignment&& ca) {
     return serialize(out, std::move(ca.cfg), std::move(ca.assignments));
 }
 
-cluster::create_partititions_configuration_assignment
-adl<cluster::create_partititions_configuration_assignment>::from(
+cluster::create_partitions_configuration_assignment
+adl<cluster::create_partitions_configuration_assignment>::from(
   iobuf_parser& in) {
-    auto cfg = adl<cluster::create_partititions_configuration>{}.from(in);
+    auto cfg = adl<cluster::create_partitions_configuration>{}.from(in);
     auto p_as = adl<std::vector<cluster::partition_assignment>>{}.from(in);
 
-    return cluster::create_partititions_configuration_assignment(
+    return cluster::create_partitions_configuration_assignment(
       std::move(cfg), std::move(p_as));
 };
 
@@ -1201,8 +1616,7 @@ adl<cluster::cluster_config_delta_cmd_data>::from(iobuf_parser& in) {
       "Unexpected version: {} (expected {})",
       version,
       cluster::cluster_config_delta_cmd_data::current_version);
-    auto upsert = adl<std::vector<std::pair<ss::sstring, ss::sstring>>>().from(
-      in);
+    auto upsert = adl<std::vector<cluster::cluster_property_kv>>().from(in);
     auto remove = adl<std::vector<ss::sstring>>().from(in);
 
     return cluster::cluster_config_delta_cmd_data{
@@ -1287,6 +1701,22 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     return {.logical_version = logical_version, .actions = std::move(actions)};
 }
 
+void adl<cluster::feature_update_license_update_cmd_data>::to(
+  iobuf&, cluster::feature_update_license_update_cmd_data&&) {
+    vassert(
+      false,
+      "cluster::feature_update_license_update_cmd_data should always use "
+      "serde, never adl");
+}
+
+cluster::feature_update_license_update_cmd_data
+adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser&) {
+    vassert(
+      false,
+      "cluster::feature_update_license_update_cmd_data should always use "
+      "serde, never adl");
+}
+
 void adl<cluster::feature_barrier_request>::to(
   iobuf& out, cluster::feature_barrier_request&& r) {
     reflection::serialize(out, r.current_version, r.tag, r.peer, r.entered);
@@ -1367,6 +1797,109 @@ adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
     auto error = adl<cluster::errc>{}.from(parser);
 
     return cluster::set_maintenance_mode_reply{.error = error};
+}
+
+void adl<cluster::partition_assignment>::to(
+  iobuf& out, cluster::partition_assignment&& p_as) {
+    reflection::serialize(out, p_as.group, p_as.id, std::move(p_as.replicas));
+}
+
+cluster::partition_assignment
+adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
+    auto group = reflection::adl<raft::group_id>{}.from(parser);
+    auto id = reflection::adl<model::partition_id>{}.from(parser);
+    auto replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
+      parser);
+
+    return {group, id, std::move(replicas)};
+}
+
+void adl<cluster::remote_topic_properties>::to(
+  iobuf& out, cluster::remote_topic_properties&& p) {
+    reflection::serialize(out, p.remote_revision, p.remote_partition_count);
+}
+
+cluster::remote_topic_properties
+adl<cluster::remote_topic_properties>::from(iobuf_parser& parser) {
+    auto remote_revision = reflection::adl<model::initial_revision_id>{}.from(
+      parser);
+    auto remote_partition_count = reflection::adl<int32_t>{}.from(parser);
+
+    return {remote_revision, remote_partition_count};
+}
+
+void adl<cluster::topic_properties>::to(
+  iobuf& out, cluster::topic_properties&& p) {
+    reflection::serialize(
+      out,
+      p.compression,
+      p.cleanup_policy_bitflags,
+      p.compaction_strategy,
+      p.timestamp_type,
+      p.segment_size,
+      p.retention_bytes,
+      p.retention_duration,
+      p.recovery,
+      p.shadow_indexing,
+      p.read_replica,
+      p.read_replica_bucket,
+      p.remote_topic_properties);
+}
+
+cluster::topic_properties
+adl<cluster::topic_properties>::from(iobuf_parser& parser) {
+    auto compression
+      = reflection::adl<std::optional<model::compression>>{}.from(parser);
+    auto cleanup_policy_bitflags
+      = reflection::adl<std::optional<model::cleanup_policy_bitflags>>{}.from(
+        parser);
+    auto compaction_strategy
+      = reflection::adl<std::optional<model::compaction_strategy>>{}.from(
+        parser);
+    auto timestamp_type
+      = reflection::adl<std::optional<model::timestamp_type>>{}.from(parser);
+    auto segment_size = reflection::adl<std::optional<size_t>>{}.from(parser);
+    auto retention_bytes = reflection::adl<tristate<size_t>>{}.from(parser);
+    auto retention_duration
+      = reflection::adl<tristate<std::chrono::milliseconds>>{}.from(parser);
+    auto recovery = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto shadow_indexing
+      = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
+        parser);
+    auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
+    auto read_replica_bucket
+      = reflection::adl<std::optional<ss::sstring>>{}.from(parser);
+    auto remote_topic_properties
+      = reflection::adl<std::optional<cluster::remote_topic_properties>>{}.from(
+        parser);
+
+    return {
+      compression,
+      cleanup_policy_bitflags,
+      compaction_strategy,
+      timestamp_type,
+      segment_size,
+      retention_bytes,
+      retention_duration,
+      recovery,
+      shadow_indexing,
+      read_replica,
+      read_replica_bucket,
+      remote_topic_properties};
+}
+
+void adl<cluster::cluster_property_kv>::to(
+  iobuf& out, cluster::cluster_property_kv&& kv) {
+    reflection::serialize(out, std::move(kv.key), std::move(kv.value));
+}
+
+cluster::cluster_property_kv
+adl<cluster::cluster_property_kv>::from(iobuf_parser& p) {
+    cluster::cluster_property_kv kv;
+
+    kv.key = adl<ss::sstring>{}.from(p);
+    kv.value = adl<ss::sstring>{}.from(p);
+    return kv;
 }
 
 } // namespace reflection

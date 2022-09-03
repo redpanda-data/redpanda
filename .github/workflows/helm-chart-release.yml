@@ -15,39 +15,41 @@ on:
 jobs:
   helm-release:
     runs-on: ubuntu-20.04
-    container: quay.io/helmpack/chart-releaser:v1.2.0
     steps:
-
-    - name: Install Git
-      run: apk update && apk upgrade && apk add --no-cache git
-
-    - uses: actions/checkout@v2
+    - name: Checkout
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
 
-    - name: Configure Git
+    - name: Configure git
       run: |
         git config user.name "$GITHUB_ACTOR"
         git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-    - name: Set up Helm
-      uses: azure/setup-helm@v1
-      with:
-        version: v3.4.1
-
     - name: Package helm chart
       working-directory: src/go/k8s/helm-chart/charts
-      run: helm package -u --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }} redpanda-operator
+      run: |
+        helm package redpanda-operator \
+          --dependency-update \
+          --version ${{ github.event.release.tag_name }} \
+          --app-version ${{ github.event.release.tag_name }}
 
     - name: Upload helm package to release
-      uses: svenstaro/upload-release-action@2.2.1
+      uses: svenstaro/upload-release-action@2.3.0
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: src/go/k8s/helm-chart/charts/redpanda-operator-${{ github.event.release.tag_name }}.tgz
         asset_name: redpanda-operator-${{ github.event.release.tag_name }}.tgz
-        tag: ${{ github.event.release.tag_name }}
 
-    - name: Update index
-      if: contains(github.event.release.tag_name, '-beta') == false
-      run: |
-        cr index -o vectorizedio -r redpanda -c https://charts.vectorized.io/ -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
+    - name: Update helm chart repo index
+      if: contains(github.event.release.tag_name, '-') == false
+      uses: docker://quay.io/helmpack/chart-releaser:v1.4.0
+      env:
+        CR_OWNER: ${{ github.repository_owner }}
+        CR_GIT_REPO: redpanda
+        CR_INDEX_PATH: index.yaml
+        CR_PACKAGE_PATH: src/go/k8s/helm-chart/charts
+        CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CR_PUSH: 1
+        CR_RELEASE_NAME_TEMPLATE: "{{ .Version }}"
+      with:
+        args: index

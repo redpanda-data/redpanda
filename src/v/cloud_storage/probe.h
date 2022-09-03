@@ -23,7 +23,9 @@ namespace cloud_storage {
 /// Cloud storage endpoint level probe
 class remote_probe {
 public:
-    explicit remote_probe(remote_metrics_disabled disabled);
+    explicit remote_probe(
+      remote_metrics_disabled disabled,
+      remote_metrics_disabled public_disabled);
 
     /// Register topic manifest upload
     void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }
@@ -55,6 +57,22 @@ public:
     /// Get manifest download
     uint64_t get_partition_manifest_downloads() const {
         return _cnt_partition_manifest_downloads;
+    }
+
+    /// Register manifest (re)upload
+    void txrange_manifest_upload() { _cnt_tx_manifest_uploads++; }
+
+    /// Get manifest (re)upload
+    uint64_t get_txrange_manifest_uploads() const {
+        return _cnt_tx_manifest_uploads;
+    }
+
+    /// Register manifest download
+    void txrange_manifest_download() { _cnt_tx_manifest_downloads++; }
+
+    /// Get manifest download
+    uint64_t get_txrange_manifest_downloads() const {
+        return _cnt_tx_manifest_downloads;
     }
 
     /// Register backof invocation during manifest upload
@@ -164,8 +182,13 @@ private:
     uint64_t _cnt_bytes_sent{0};
     /// Number of bytes being successfully received from S3
     uint64_t _cnt_bytes_received{0};
+    /// Number of tx-range manifest uploads
+    uint64_t _cnt_tx_manifest_uploads{0};
+    /// Number of tx-range manifest downloads
+    uint64_t _cnt_tx_manifest_downloads{0};
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

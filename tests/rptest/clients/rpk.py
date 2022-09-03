@@ -13,6 +13,7 @@ import typing
 import time
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
+from rptest.util import wait_until_result
 from rptest.services import tls
 
 DEFAULT_TIMEOUT = 30
@@ -120,17 +121,32 @@ class RpkTool:
         self._tls_cert = tls_cert
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
-        cmd = ["create", topic]
-        cmd += ["--partitions", str(partitions)]
-        if replicas is not None:
-            cmd += ["--replicas", str(replicas)]
-        if config is not None:
-            cfg = [f"{k}:{v}" for k, v in config.items()]
-            for it in cfg:
-                cmd += ["--topic-config", it]
-        output = self._run_topic(cmd)
-        self._check_stdout_success(output)
-        return output
+        def create_topic():
+            try:
+                cmd = ["create", topic]
+                cmd += ["--partitions", str(partitions)]
+                if replicas is not None:
+                    cmd += ["--replicas", str(replicas)]
+                if config is not None:
+                    cfg = [f"{k}:{v}" for k, v in config.items()]
+                    for it in cfg:
+                        cmd += ["--topic-config", it]
+                output = self._run_topic(cmd)
+                self._check_stdout_success(output)
+                return (True, output)
+            except RpkException as e:
+                if "Kafka replied that the controller broker is -1" in str(e):
+                    return False
+                raise e
+
+        wait_until_result(create_topic,
+                          10,
+                          0.1,
+                          err_msg="Can't create a topic within 10s")
+
+    def add_partitions(self, topic, partitions):
+        cmd = ["add-partitions", topic, "-n", str(partitions)]
+        return self._run_topic(cmd)
 
     def _check_stdout_success(self, output):
         """
@@ -222,26 +238,54 @@ class RpkTool:
         assert m, f"Reported offset not found in: {out}"
         return int(m.group(1))
 
-    def describe_topic(self, topic):
+    def describe_topic(self, topic: str, tolerant: bool = False):
+        """
+        By default this will omit any partitions which do not have full
+        metadata in the response: this means that if we are unlucky and a
+        partition returns NOT_LEADER due to a leadership transfer while
+        we query offsets, it will be missing.  To be more forgiving, pass
+        tolerant=true
+
+        :param topic: topic name
+        :param tolerant: if true, RpkPartition results may be included with some
+                         fields set to None, as long as the leader field is present.
+        :return:
+        """
         cmd = ['describe', topic, '-p']
         output = self._run_topic(cmd)
         if "not found" in output:
             raise Exception(f"Topic not found: {topic}")
-        lines = output.splitlines()
+        lines = output.splitlines()[1:]
 
         def partition_line(line):
             m = re.match(
                 r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<hw>\d+) *",
                 line)
-            if m == None:
+            if m is None and tolerant:
+                m = re.match(r" *(?P<id>\d+) +(?P<leader>\d+) .*", line)
+                if m is None:
+                    self._redpanda.logger.info(f"No match on '{line}'")
+                    return None
+
+                return RpkPartition(id=int(m.group('id')),
+                                    leader=int(m.group('leader')),
+                                    leader_epoch=None,
+                                    replicas=None,
+                                    hw=None,
+                                    start_offset=None)
+
+            elif m is None:
                 return None
-            replicas = list(map(lambda r: int(r), m.group('replicas').split()))
-            return RpkPartition(id=int(m.group('id')),
-                                leader=int(m.group('leader')),
-                                leader_epoch=int(m.group('epoch')),
-                                replicas=replicas,
-                                hw=int(m.group('hw')),
-                                start_offset=int(m.group("logstart")))
+            elif m:
+                replicas = list(
+                    map(lambda r: int(r),
+                        m.group('replicas').split()))
+                return RpkPartition(id=int(m.group('id')),
+                                    leader=int(m.group('leader')),
+                                    leader_epoch=int(m.group('epoch')),
+                                    replicas=replicas,
+                                    hw=int(m.group('hw')),
+                                    start_offset=int(m.group("logstart")))
 
         return filter(None, map(partition_line, lines))
 
@@ -282,7 +326,9 @@ class RpkTool:
                 group=None,
                 regex=False,
                 offset=None,
-                fetch_max_bytes=None):
+                partition=None,
+                fetch_max_bytes=None,
+                quiet=False):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -294,13 +340,18 @@ class RpkTool:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
         if offset is not None:
             cmd += ["-o", f"{n}"]
+        if partition is not None:
+            cmd += ["-p", f"{partition}"]
+        if quiet:
+            cmd += ["-f", "_\\n"]
+
         return self._run_topic(cmd)
 
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
         self._run_group(cmd)
 
-    def group_describe(self, group):
+    def group_describe(self, group, summary=False):
         def parse_field(field_name, string):
             pattern = re.compile(f" *{field_name} +(?P<value>.+)")
             m = pattern.match(string)
@@ -315,6 +366,23 @@ class RpkTool:
         partition_pattern_dynamic_member = re.compile(
             "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
         )
+
+        def check_lines(lines):
+            for line in lines:
+                # UNKNOWN_TOPIC_OR_PARTITION: This server doesn't contain this partition or topic.
+                # We should wait until server will get information about it.
+                if line.find('UNKNOWN_TOPIC_OR_PARTITION') != -1:
+                    return False
+
+                # Leadership movements are underway
+                if 'NOT_LEADER_FOR_PARTITION' in line:
+                    return False
+
+                # Cluster not ready yet
+                if 'unknown broker' in line:
+                    return False
+
+            return True
 
         def parse_partition(string):
 
@@ -348,9 +416,31 @@ class RpkTool:
                                      host=m['host'])
 
         def try_describe_group(group):
-            cmd = ["describe", group]
-            out = self._run_group(cmd)
+            if summary:
+                cmd = ["describe", "-s", group]
+            else:
+                cmd = ["describe", group]
+
+            try:
+                out = self._run_group(cmd)
+            except RpkException as e:
+                if "COORDINATOR_NOT_AVAILABLE" in e.msg:
+                    # Transient, return None to retry
+                    return None
+                elif "NOT_COORDINATOR" in e.msg:
+                    # Transient, retry
+                    return None
+                elif "Kafka replied that group" in e.msg:
+                    # Transient, return None to retry
+                    # e.g. Kafka replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    return None
+                else:
+                    raise
+
             lines = out.splitlines()
+
+            if not check_lines(lines):
+                return None
 
             group_name = parse_field("GROUP", lines[0])
             coordinator = parse_field("COORDINATOR", lines[1])
@@ -394,9 +484,19 @@ class RpkTool:
         cmd = ["seek", group, "--to-group", to_group]
         self._run_group(cmd)
 
+    def group_seek_to_file(self, group, file):
+        cmd = ["seek", group, "--to-file", file]
+        self._run_group(cmd)
+
     def group_delete(self, group):
         cmd = ["delete", group]
         self._run_group(cmd)
+
+    def group_list(self):
+        cmd = ['list']
+        out = self._run_group(cmd)
+
+        return [l.split()[1] for l in out.splitlines()[1:]]
 
     def wasm_deploy(self, script, name, description):
         cmd = [
@@ -506,7 +606,7 @@ class RpkTool:
         ]
         return self._execute(cmd).strip()
 
-    def cluster_config_set(self, key, value):
+    def cluster_config_set(self, key: str, value):
         cmd = [
             self._rpk_binary(), "--api-urls",
             self._admin_host(), "cluster", "config", "set", key, value
@@ -530,7 +630,7 @@ class RpkTool:
             p.kill()
             raise RpkException(f"command {' '.join(cmd)} timed out")
 
-        self._redpanda.logger.debug(output)
+        self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
             self._redpanda.logger.error(error)
@@ -541,7 +641,12 @@ class RpkTool:
         return output
 
     def _rpk_binary(self):
-        return self._redpanda.find_binary("rpk")
+        # NOTE: since this runs on separate nodes from the service, the binary
+        # path used by each node may differ from that returned by
+        # redpanda.find_binary(), e.g. if using a RedpandaInstaller.
+        rp_install_path_root = self._redpanda._context.globals.get(
+            "rp_install_path_root", None)
+        return f"{rp_install_path_root}/bin/rpk"
 
     def cluster_maintenance_enable(self, node, wait=False):
         node_id = self._redpanda.idx(node) if isinstance(node,
@@ -570,7 +675,7 @@ class RpkTool:
         Run `rpk cluster maintenance status` and return the parsed results.
         """
         def parse(line):
-            if line.startswith("Request error"):
+            if line.startswith("Request error") or not line.strip():
                 # RPK may print messages about request errors, which it internally
                 # retries.  Drop these lines.
                 return None
@@ -697,3 +802,26 @@ class RpkTool:
             return None
         else:
             return lines[2]
+
+    def license_set(self, path, license=""):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "license", "set"
+        ]
+
+        if license:
+            cmd += [license]
+        if path:
+            cmd += ["--path", path]
+
+        return self._execute(cmd)
+
+    def license_info(self):
+
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "license", "info", "--format",
+            "json"
+        ]
+
+        return self._execute(cmd)

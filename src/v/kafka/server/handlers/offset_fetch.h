@@ -17,6 +17,6 @@ namespace kafka {
 // in version 0 kafka stores offsets in zookeeper. if we ever need to
 // support version 0 then we need to do some code review to see if this has
 // any implications on semantics.
-using offset_fetch_handler = handler<offset_fetch_api, 1, 4>;
+using offset_fetch_handler = single_stage_handler<offset_fetch_api, 1, 7>;
 
 } // namespace kafka

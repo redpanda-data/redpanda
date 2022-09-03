@@ -9,9 +9,13 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "config/configuration.h"
+#include "config/property.h"
+#include "raft/logger.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
+#include "ssx/semaphore.h"
 
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/util/later.hh>
@@ -35,13 +39,17 @@ class recovery_throttle {
     static constexpr std::chrono::milliseconds refresh_interval{50};
 
 public:
-    explicit recovery_throttle(size_t rate)
-      : _rate(rate)
-      , _sem{_rate}
+    explicit recovery_throttle(config::binding<size_t> rate_binding)
+      : _rate_binding(std::move(rate_binding))
+      , _rate(get_per_core_rate())
+      , _sem{get_per_core_rate(), "raft/recovery-rate"}
       , _last_refresh(clock_type::now())
-      , _refresh_timer([this] { handle_refresh(); }) {}
+      , _refresh_timer([this] { handle_refresh(); }) {
+        _rate_binding.watch([this]() { update_rate(); });
+        setup_metrics();
+    }
 
-    ss::future<> throttle(size_t size) {
+    ss::future<> throttle(size_t size, ss::abort_source& as) {
         _refresh_timer.cancel();
         refresh();
 
@@ -60,7 +68,7 @@ public:
             _refresh_timer.arm(refresh_interval - elapsed);
         }
 
-        return _sem.wait(size);
+        return _sem.wait(as, size);
     }
 
     void shutdown() {
@@ -100,17 +108,81 @@ private:
         refresh();
         /*
          * if a waiter exists continue refreshing since it is not guaranteed
-         * that throttle will be invoked (e.g. excactly one recovering group).
+         * that throttle will be invoked (e.g. exactly one recovering group).
          */
         if (_sem.waiters()) {
             _refresh_timer.arm(refresh_interval);
         }
     }
 
+    size_t get_per_core_rate() { return _rate_binding() / ss::smp::count; }
+
+    void update_rate() {
+        auto const per_core_rate = get_per_core_rate();
+
+        if (_rate == per_core_rate) {
+            return;
+        }
+
+        vlog(
+          raftlog.info,
+          "Updating recovery throttle with new rate of {}, old rate: {}",
+          per_core_rate,
+          _rate);
+
+        if (_rate > per_core_rate) {
+            _sem.consume(_rate - per_core_rate);
+        } else {
+            _sem.signal(per_core_rate - _rate);
+        }
+        _rate = per_core_rate;
+    }
+
+    void setup_metrics() {
+        setup_internal_metrics();
+        setup_public_metrics();
+    }
+
+    void setup_internal_metrics() {
+        if (config::shard_local_cfg().disable_metrics()) {
+            return;
+        }
+
+        // TODO: Delete this metric after public is supported in scraping
+        // configurations
+        namespace sm = ss::metrics;
+        _internal_metrics.add_group(
+          "raft:recovery",
+          {sm::make_gauge(
+            "partition_movement_available_bandwidth",
+            [this] { return _sem.current(); },
+            sm::description(
+              "Bandwidth available for partition movement. bytes/sec"))});
+    }
+
+    void setup_public_metrics() {
+        if (config::shard_local_cfg().disable_public_metrics()) {
+            return;
+        }
+
+        namespace sm = ss::metrics;
+        _public_metrics.add_group(
+          "raft:recovery",
+          {sm::make_gauge(
+            "partition_movement_available_bandwidth",
+            [this] { return _sem.current(); },
+            sm::description(
+              "Bandwidth available for partition movement. bytes/sec"))});
+    }
+
+    config::binding<size_t> _rate_binding;
     size_t _rate;
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     clock_type::time_point _last_refresh;
     ss::timer<> _refresh_timer;
+    ss::metrics::metric_groups _internal_metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 } // namespace raft

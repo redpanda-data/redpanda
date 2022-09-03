@@ -10,6 +10,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -30,37 +31,49 @@ type MaintenanceStatus struct {
 	Failed       int  `json:"failed"`
 }
 
+// MembershipStatus enumerates possible membership states for brokers.
+type MembershipStatus string
+
+const (
+	// MembershipStatusActive indicates an active broker.
+	MembershipStatusActive MembershipStatus = "active"
+	// MembershipStatusDraining indicates that the broker is being drained, e.g. for decommission.
+	MembershipStatusDraining MembershipStatus = "draining"
+)
+
 // Broker is the information returned from the Redpanda admin broker endpoints.
 type Broker struct {
 	NodeID           int                `json:"node_id"`
 	NumCores         int                `json:"num_cores"`
-	MembershipStatus string             `json:"membership_status"`
+	MembershipStatus MembershipStatus   `json:"membership_status"`
 	IsAlive          *bool              `json:"is_alive"`
 	Version          string             `json:"version"`
 	Maintenance      *MaintenanceStatus `json:"maintenance_status"`
 }
 
 // Brokers queries one of the client's hosts and returns the list of brokers.
-func (a *AdminAPI) Brokers() ([]Broker, error) {
+func (a *AdminAPI) Brokers(ctx context.Context) ([]Broker, error) {
 	var bs []Broker
 	defer func() {
 		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
 	}()
-	return bs, a.sendAny(http.MethodGet, brokersEndpoint, nil, &bs)
+	return bs, a.sendAny(ctx, http.MethodGet, brokersEndpoint, nil, &bs)
 }
 
 // Broker queries one of the client's hosts and returns broker information.
-func (a *AdminAPI) Broker(node int) (Broker, error) {
+func (a *AdminAPI) Broker(ctx context.Context, node int) (Broker, error) {
 	var b Broker
 	err := a.sendAny(
+		ctx,
 		http.MethodGet,
 		fmt.Sprintf(brokerEndpoint, node), nil, &b)
 	return b, err
 }
 
 // DecommissionBroker issues a decommission request for the given broker.
-func (a *AdminAPI) DecommissionBroker(node int) error {
+func (a *AdminAPI) DecommissionBroker(ctx context.Context, node int) error {
 	return a.sendToLeader(
+		ctx,
 		http.MethodPut,
 		fmt.Sprintf("%s/%d/decommission", brokersEndpoint, node),
 		nil,
@@ -69,8 +82,9 @@ func (a *AdminAPI) DecommissionBroker(node int) error {
 }
 
 // RecommissionBroker issues a recommission request for the given broker.
-func (a *AdminAPI) RecommissionBroker(node int) error {
+func (a *AdminAPI) RecommissionBroker(ctx context.Context, node int) error {
 	return a.sendToLeader(
+		ctx,
 		http.MethodPut,
 		fmt.Sprintf("%s/%d/recommission", brokersEndpoint, node),
 		nil,
@@ -79,8 +93,9 @@ func (a *AdminAPI) RecommissionBroker(node int) error {
 }
 
 // EnableMaintenanceMode enables maintenance mode for a node.
-func (a *AdminAPI) EnableMaintenanceMode(nodeID int) error {
+func (a *AdminAPI) EnableMaintenanceMode(ctx context.Context, nodeID int) error {
 	return a.sendAny(
+		ctx,
 		http.MethodPut,
 		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
 		nil,
@@ -89,11 +104,17 @@ func (a *AdminAPI) EnableMaintenanceMode(nodeID int) error {
 }
 
 // DisableMaintenanceMode disables maintenance mode for a node.
-func (a *AdminAPI) DisableMaintenanceMode(nodeID int) error {
+func (a *AdminAPI) DisableMaintenanceMode(ctx context.Context, nodeID int) error {
 	return a.sendAny(
+		ctx,
 		http.MethodDelete,
 		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
 		nil,
 		nil,
 	)
+}
+
+func (a *AdminAPI) CancelNodePartitionsMovement(ctx context.Context, node int) ([]PartitionsMovementResult, error) {
+	var response []PartitionsMovementResult
+	return response, a.sendAny(ctx, http.MethodPost, fmt.Sprintf("%s/%d/cancel_partition_moves", brokersEndpoint, node), nil, &response)
 }

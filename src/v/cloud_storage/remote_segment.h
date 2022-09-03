@@ -17,10 +17,12 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
+#include "cluster/rm_stm.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/parser.h"
+#include "storage/segment_reader.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
@@ -97,7 +99,7 @@ public:
 
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
-    ss::future<ss::input_stream<char>>
+    ss::future<storage::segment_reader_handle>
     data_stream(size_t pos, ss::io_priority_class);
 
     struct input_stream_with_offsets {
@@ -117,6 +119,13 @@ public:
 
     bool download_in_progress() const noexcept { return !_wait_list.empty(); }
 
+    /// Return aborted transactions metadata associated with the segment
+    ///
+    /// \param from start redpanda offset
+    /// \param to end redpanda offset
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions(model::offset from, model::offset to);
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -132,7 +141,15 @@ private:
 
     /// Actually hydrate the segment. The method downloads the segment file
     /// to the cache dir and updates the segment index.
-    ss::future<> do_hydrate();
+    ss::future<> do_hydrate_segment();
+    /// Hydrate tx manifest. Method downloads the manifest file to the cache
+    /// dir.
+    ss::future<> do_hydrate_txrange();
+    /// Materilize segment. Segment has to be hydrated beforehand. The
+    /// 'materialization' process opens file handle and creates
+    /// compressed segment index in memory.
+    ss::future<bool> do_materialize_segment();
+    ss::future<bool> do_materialize_txrange();
 
     /// Load segment index from file (if available)
     ss::future<> maybe_materialize_index();
@@ -161,6 +178,9 @@ private:
 
     ss::file _data_file;
     std::optional<offset_index> _index;
+
+    using tx_range_vec = fragmented_vector<cluster::rm_stm::tx_range>;
+    std::optional<tx_range_vec> _tx_range;
 };
 
 class remote_segment_batch_consumer;

@@ -42,5 +42,6 @@ services:
     - minio
     volumes:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
+    - '${BUILD_ROOT}/redpanda_installs:/opt/redpanda_installs'
     networks:
     - redpanda-test

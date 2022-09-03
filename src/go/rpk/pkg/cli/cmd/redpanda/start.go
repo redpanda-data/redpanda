@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -45,45 +43,46 @@ type prestartConfig struct {
 }
 
 type seastarFlags struct {
-	memory           string
-	lockMemory       bool
-	reserveMemory    string
-	hugepages        string
-	cpuSet           string
-	ioPropertiesFile string
-	ioProperties     string
-	smp              int
-	threadAffinity   bool
-	numIoQueues      int
-	maxIoRequests    int
-	mbind            bool
-	overprovisioned  bool
+	memory            string
+	lockMemory        bool
+	reserveMemory     string
+	hugepages         string
+	cpuSet            string
+	ioPropertiesFile  string
+	ioProperties      string
+	smp               int
+	threadAffinity    bool
+	numIoQueues       int
+	maxIoRequests     int
+	mbind             bool
+	overprovisioned   bool
+	unsafeBypassFsync bool
 }
 
 const (
-	configFlag           = "config"
-	memoryFlag           = "memory"
-	lockMemoryFlag       = "lock-memory"
-	reserveMemoryFlag    = "reserve-memory"
-	hugepagesFlag        = "hugepages"
-	cpuSetFlag           = "cpuset"
-	ioPropertiesFileFlag = "io-properties-file"
-	ioPropertiesFlag     = "io-properties"
-	wellKnownIOFlag      = "well-known-io"
-	smpFlag              = "smp"
-	threadAffinityFlag   = "thread-affinity"
-	numIoQueuesFlag      = "num-io-queues"
-	maxIoRequestsFlag    = "max-io-requests"
-	mbindFlag            = "mbind"
-	overprovisionedFlag  = "overprovisioned"
-	nodeIDFlag           = "node-id"
-	setConfigFlag        = "set"
+	configFlag            = "config"
+	memoryFlag            = "memory"
+	lockMemoryFlag        = "lock-memory"
+	reserveMemoryFlag     = "reserve-memory"
+	hugepagesFlag         = "hugepages"
+	cpuSetFlag            = "cpuset"
+	ioPropertiesFileFlag  = "io-properties-file"
+	ioPropertiesFlag      = "io-properties"
+	wellKnownIOFlag       = "well-known-io"
+	smpFlag               = "smp"
+	threadAffinityFlag    = "thread-affinity"
+	numIoQueuesFlag       = "num-io-queues"
+	maxIoRequestsFlag     = "max-io-requests"
+	mbindFlag             = "mbind"
+	overprovisionedFlag   = "overprovisioned"
+	unsafeBypassFsyncFlag = "unsafe-bypass-fsync"
+	nodeIDFlag            = "node-id"
+	setConfigFlag         = "set"
+	modeFlag              = "mode"
+	checkFlag             = "check"
 )
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
-	if flags.Changed(configFlag) {
-		conf.ConfigFile, _ = flags.GetString(configFlag)
-	}
 	if flags.Changed(lockMemoryFlag) {
 		conf.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
 	}
@@ -113,9 +112,7 @@ func parseConfigKvs(args []string) ([]string, []string) {
 	return kvs, args
 }
 
-func NewStartCommand(
-	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
-) *cobra.Command {
+func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
 		configFile      string
@@ -131,39 +128,62 @@ func NewStartCommand(
 		installDirFlag  string
 		timeout         time.Duration
 		wellKnownIo     string
+		mode            string
 	)
 	sFlags := seastarFlags{}
 
 	command := &cobra.Command{
 		Use:   "start",
-		Short: "Start redpanda.",
+		Short: "Start redpanda",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to redpanda/seastar without the need to pass '--'
 			// (POSIX standard)
 			UnknownFlags: true,
 		},
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			// --set flags have to be parsed by hand because pflag (the
 			// underlying flag-parsing lib used by cobra) uses a CSV parser
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
-			conf, err := mgr.FindOrGenerate(configFile)
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
 			if err != nil {
-				return err
+				return fmt.Errorf("unable to load config file: %s", err)
+			}
+			// We set fields in the raw file without writing rpk specific env
+			// or flag overrides. This command itself has all redpanda specific
+			// flags installed, and handles redpanda specific env vars itself.
+			// The magic `--set` flag is what modifies any redpanda.yaml fields.
+			// Thus, we can ignore any env / flags that would come from rpk
+			// configuration itself.
+			cfg = cfg.FileOrDefaults()
+			if cfg.Redpanda.DeveloperMode && len(mode) == 0 {
+				mode = "dev-container"
+			}
+			switch mode {
+			case "dev-container":
+				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in this mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
+				setContainerModeFlags(cmd)
+				setContainerModeCfgFields(cfg)
+			case "help":
+				fmt.Println(helpMode)
+				return nil
+			case "":
+				// do nothing.
+			default:
+				return fmt.Errorf("unrecognized mode %q; use --mode help for more info", mode)
 			}
 
 			if len(configKvs) > 0 {
-				conf, err = setConfig(mgr, configKvs)
-				if err != nil {
+				if err = setConfig(cfg, configKvs); err != nil {
 					return err
 				}
 			}
 
-			updateConfigWithFlags(conf, ccmd.Flags())
+			updateConfigWithFlags(cfg, cmd.Flags())
 
-			env := api.EnvironmentPayload{}
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
 				// env var.
@@ -177,11 +197,10 @@ func NewStartCommand(
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(seedServers) != 0 {
-				conf.Redpanda.SeedServers = seedServers
+				cfg.Redpanda.SeedServers = seedServers
 			}
 
 			kafkaAddr = stringSliceOr(
@@ -191,16 +210,15 @@ func NewStartCommand(
 					",",
 				),
 			)
-			kafkaAPI, err := parseNamedAddresses(
+			kafkaAPI, err := parseNamedAuthNAddresses(
 				kafkaAddr,
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(kafkaAPI) > 0 {
-				conf.Redpanda.KafkaAPI = kafkaAPI
+				cfg.Redpanda.KafkaAPI = kafkaAPI
 			}
 
 			proxyAddr = stringSliceOr(
@@ -215,14 +233,13 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(proxyAPI) > 0 {
-				if conf.Pandaproxy == nil {
-					conf.Pandaproxy = config.Default().Pandaproxy
+				if cfg.Pandaproxy == nil {
+					cfg.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.PandaproxyAPI = proxyAPI
+				cfg.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
 
 			schemaRegAddr = stringSliceOr(
@@ -237,14 +254,13 @@ func NewStartCommand(
 				config.DefaultSchemaRegPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(schemaRegAPI) > 0 {
-				if conf.SchemaRegistry == nil {
-					conf.SchemaRegistry = config.Default().SchemaRegistry
+				if cfg.SchemaRegistry == nil {
+					cfg.SchemaRegistry = config.Default().SchemaRegistry
 				}
-				conf.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
+				cfg.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
 
 			rpcAddr = stringOr(
@@ -256,11 +272,10 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if rpcServer != nil {
-				conf.Redpanda.RPCServer = *rpcServer
+				cfg.Redpanda.RPCServer = *rpcServer
 			}
 
 			advertisedKafka = stringSliceOr(
@@ -275,11 +290,11 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
-			if advKafkaAPI != nil {
-				conf.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
+
+			if len(advKafkaAPI) > 0 {
+				cfg.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
 			}
 
 			advertisedProxy = stringSliceOr(
@@ -294,14 +309,13 @@ func NewStartCommand(
 				config.DefaultProxyPort,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advProxyAPI != nil {
-				if conf.Pandaproxy == nil {
-					conf.Pandaproxy = config.Default().Pandaproxy
+				if cfg.Pandaproxy == nil {
+					cfg.Pandaproxy = config.Default().Pandaproxy
 				}
-				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
+				cfg.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
 
 			advertisedRPC = stringOr(
@@ -313,53 +327,43 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advRPCApi != nil {
-				conf.Redpanda.AdvertisedRPCAPI = advRPCApi
+				cfg.Redpanda.AdvertisedRPCAPI = advRPCApi
 			}
-			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
+			installDirectory, err := getOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
-				conf,
+				cfg,
 				filteredArgs,
 				sFlags,
-				ccmd.Flags(),
+				cmd.Flags(),
 				!prestartCfg.checkEnabled,
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
-				return err
-			}
-			checkPayloads, tunerPayloads, err := prestart(
-				fs,
-				rpArgs,
-				conf,
-				prestartCfg,
-				timeout,
-			)
-			env.Checks = checkPayloads
-			env.Tuners = tunerPayloads
-			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			err = mgr.Write(conf)
+			if cfg.Redpanda.Directory == "" {
+				cfg.Redpanda.Directory = config.Default().Redpanda.Directory
+			}
+
+			err = prestart(fs, rpArgs, cfg, prestartCfg, timeout)
 			if err != nil {
-				sendEnv(fs, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			sendEnv(fs, env, conf, !prestartCfg.checkEnabled, nil)
+			err = cfg.Write(fs)
+			if err != nil {
+				return err
+			}
 			rpArgs.ExtraArgs = args
-			log.Info(common.FeedbackMsg)
-			log.Info("Starting redpanda...")
+			fmt.Println(common.FeedbackMsg)
+			fmt.Println("Starting redpanda...")
 			return launcher.Start(installDirectory, rpArgs)
 		},
 	}
@@ -440,7 +444,7 @@ func NewStartCommand(
 		"Directory where redpanda has been installed")
 	command.Flags().BoolVar(&prestartCfg.tuneEnabled, "tune", false,
 		"When present will enable tuning before starting redpanda")
-	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
+	command.Flags().BoolVar(&prestartCfg.checkEnabled, checkFlag, true,
 		"When set to false will disable system checking before starting redpanda")
 	command.Flags().IntVar(&sFlags.smp, smpFlag, 0, "Restrict redpanda to"+
 		" the given number of CPUs. This option does not mandate a"+
@@ -466,13 +470,21 @@ func NewStartCommand(
 		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
-	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
+	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "Enable mbind")
 	command.Flags().BoolVar(
 		&sFlags.overprovisioned,
 		overprovisionedFlag,
 		false,
 		"Enable overprovisioning",
 	)
+	command.Flags().BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
+	command.Flags().StringVar(
+		&mode,
+		modeFlag,
+		"",
+		"Mode sets well-known configuration properties for development or test environments; use --mode help for more info",
+	)
+
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -490,19 +502,20 @@ func NewStartCommand(
 
 func flagsMap(sFlags seastarFlags) map[string]interface{} {
 	return map[string]interface{}{
-		memoryFlag:           sFlags.memory,
-		lockMemoryFlag:       sFlags.lockMemory,
-		reserveMemoryFlag:    sFlags.reserveMemory,
-		ioPropertiesFileFlag: sFlags.ioPropertiesFile,
-		ioPropertiesFlag:     sFlags.ioProperties,
-		cpuSetFlag:           sFlags.cpuSet,
-		smpFlag:              sFlags.smp,
-		hugepagesFlag:        sFlags.hugepages,
-		threadAffinityFlag:   sFlags.threadAffinity,
-		numIoQueuesFlag:      sFlags.numIoQueues,
-		maxIoRequestsFlag:    sFlags.maxIoRequests,
-		mbindFlag:            sFlags.mbind,
-		overprovisionedFlag:  sFlags.overprovisioned,
+		memoryFlag:            sFlags.memory,
+		lockMemoryFlag:        sFlags.lockMemory,
+		reserveMemoryFlag:     sFlags.reserveMemory,
+		ioPropertiesFileFlag:  sFlags.ioPropertiesFile,
+		ioPropertiesFlag:      sFlags.ioProperties,
+		cpuSetFlag:            sFlags.cpuSet,
+		smpFlag:               sFlags.smp,
+		hugepagesFlag:         sFlags.hugepages,
+		threadAffinityFlag:    sFlags.threadAffinity,
+		numIoQueuesFlag:       sFlags.numIoQueues,
+		maxIoRequestsFlag:     sFlags.maxIoRequests,
+		mbindFlag:             sFlags.mbind,
+		overprovisionedFlag:   sFlags.overprovisioned,
+		unsafeBypassFsyncFlag: sFlags.unsafeBypassFsync,
 	}
 }
 
@@ -512,26 +525,23 @@ func prestart(
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
-) ([]api.CheckPayload, []api.TunerPayload, error) {
-	var err error
-	checkPayloads := []api.CheckPayload{}
-	tunerPayloads := []api.TunerPayload{}
+) error {
 	if prestartCfg.checkEnabled {
-		checkPayloads, err = check(fs, conf, timeout, checkFailedActions(args))
+		err := check(fs, conf, timeout, checkFailedActions(args))
 		if err != nil {
-			return checkPayloads, tunerPayloads, err
+			return err
 		}
-		log.Info("System check - PASSED")
+		fmt.Println("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
 		cpuset := fmt.Sprint(args.SeastarFlags[cpuSetFlag])
-		tunerPayloads, err = tuneAll(fs, cpuset, conf, timeout)
+		err := tuneAll(fs, cpuset, conf, timeout)
 		if err != nil {
-			return checkPayloads, tunerPayloads, err
+			return err
 		}
-		log.Info("System tune - PASSED")
+		fmt.Println("System tune - PASSED")
 	}
-	return checkPayloads, tunerPayloads, nil
+	return nil
 }
 
 func buildRedpandaFlags(
@@ -556,7 +566,7 @@ func buildRedpandaFlags(
 		// If --io-properties-file and --io-properties weren't set, try
 		// finding an IO props file in the default location.
 		sFlags.ioPropertiesFile = rp.GetIOConfigPath(
-			filepath.Dir(conf.ConfigFile),
+			filepath.Dir(conf.FileLocation()),
 		)
 		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
 			sFlags.ioPropertiesFile = ""
@@ -596,14 +606,14 @@ func buildRedpandaFlags(
 					" remove it and pass '--%s' directly"+
 					" to `rpk start`.",
 				n,
-				conf.ConfigFile,
+				conf.FileLocation(),
 				n,
 			)
 		}
 		finalFlags[n] = fmt.Sprint(v)
 	}
 	return &rp.RedpandaArgs{
-		ConfigFilePath: conf.ConfigFile,
+		ConfigFilePath: conf.FileLocation(),
 		SeastarFlags:   finalFlags,
 	}, nil
 }
@@ -640,21 +650,21 @@ func mergeFlags(
 	return current
 }
 
-func setConfig(mgr config.Manager, configKvs []string) (*config.Config, error) {
+func setConfig(cfg *config.Config, configKvs []string) error {
 	for _, rawKv := range configKvs {
 		parts := strings.SplitN(rawKv, "=", 2)
 		if len(parts) < 2 {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"key-value pair '%s' is not formatted as expected (k=v)",
 				rawKv,
 			)
 		}
-		err := mgr.Set(parts[0], parts[1], "")
+		err := cfg.Set(parts[0], parts[1], "")
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return mgr.Get()
+	return nil
 }
 
 func resolveWellKnownIo(
@@ -700,60 +710,50 @@ func resolveWellKnownIo(
 
 func tuneAll(
 	fs afero.Fs, cpuSet string, conf *config.Config, timeout time.Duration,
-) ([]api.TunerPayload, error) {
+) error {
 	params := &factory.TunerParams{}
 	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
 		if err != nil {
-			return []api.TunerPayload{}, err
+			return err
 		}
 		params.CPUMask = cpuMask
 	} else {
 		cpuMask, err := hwloc.TranslateToHwLocCPUSet(cpuSet)
 		if err != nil {
-			return []api.TunerPayload{}, err
+			return err
 		}
 		params.CPUMask = cpuMask
 	}
 
 	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
 	if err != nil {
-		return []api.TunerPayload{}, err
+		return err
 	}
 
 	availableTuners := factory.AvailableTuners()
-	tunerPayloads := make([]api.TunerPayload, len(availableTuners))
 
 	for _, tunerName := range availableTuners {
 		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
-		payload := api.TunerPayload{
-			Name:      tunerName,
-			Enabled:   enabled,
-			Supported: supported,
-		}
 		if !enabled {
-			log.Infof("Skipping disabled tuner %s", tunerName)
-			tunerPayloads = append(tunerPayloads, payload)
+			fmt.Printf("Skipping disabled tuner %s\n", tunerName)
 			continue
 		}
 		if !supported {
 			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
-			tunerPayloads = append(tunerPayloads, payload)
 			continue
 		}
 		log.Debugf("Tuner parameters %+v", params)
 		result := tuner.Tune()
 		if result.IsFailed() {
-			payload.ErrorMsg = result.Error().Error()
-			tunerPayloads = append(tunerPayloads, payload)
-			return tunerPayloads, result.Error()
+			return result.Error()
 		}
 	}
-	return tunerPayloads, nil
+	return nil
 }
 
 type checkFailedAction func(*tuners.CheckResult)
@@ -774,22 +774,12 @@ func check(
 	conf *config.Config,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
-) ([]api.CheckPayload, error) {
-	payloads := make([]api.CheckPayload, 0)
+) error {
 	results, err := tuners.Check(fs, conf, timeout)
 	if err != nil {
-		return payloads, err
+		return err
 	}
 	for _, result := range results {
-		payload := api.CheckPayload{
-			Name:     result.Desc,
-			Current:  result.Current,
-			Required: result.Required,
-		}
-		if result.Err != nil {
-			payload.ErrorMsg = result.Err.Error()
-		}
-		payloads = append(payloads, payload)
 		if !result.IsOk {
 			if action, exists := checkFailedActions[result.CheckerID]; exists {
 				action(&result)
@@ -797,12 +787,12 @@ func check(
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				result.Desc, result.Required, result.Current)
 			if result.Severity == tuners.Fatal {
-				return payloads, fmt.Errorf(msg)
+				return fmt.Errorf(msg)
 			}
-			log.Warn(msg)
+			fmt.Println(msg)
 		}
 	}
-	return payloads, nil
+	return nil
 }
 
 func parseFlags(flags []string) map[string]string {
@@ -832,7 +822,7 @@ func parseFlags(flags []string) map[string]string {
 
 		if i == len(flags)-1 {
 			// We've reached the last element, so it's a single flag
-			parsed[trimmed] = "true"
+			parsed[trimmed] = ""
 			continue
 		}
 
@@ -841,7 +831,7 @@ func parseFlags(flags []string) map[string]string {
 		// boolean flag
 		next := flags[i+1]
 		if strings.HasPrefix(next, "-") {
-			parsed[trimmed] = "true"
+			parsed[trimmed] = ""
 			continue
 		}
 
@@ -928,14 +918,57 @@ func parseNamedAddress(
 	}, nil
 }
 
-func sendEnv(fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, skipChecks bool, err error) {
-	if err != nil {
-		env.ErrorMsg = err.Error()
+func parseNamedAuthNAddresses(
+	addrs []string, defaultPort int,
+) ([]config.NamedAuthNSocketAddress, error) {
+	as := make([]config.NamedAuthNSocketAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		a, err := parseNamedAuthNAddress(addr, defaultPort)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			as = append(as, *a)
+		}
 	}
-	err = api.SendEnvironment(fs, env, *conf, skipChecks)
-	if err != nil {
-		log.Debugf("couldn't send environment data: %v", err)
+	return as, nil
+}
+
+func parseNamedAuthNAddress(
+	addrAuthn string, defaultPort int,
+) (*config.NamedAuthNSocketAddress, error) {
+	if addrAuthn == "" {
+		return nil, nil
 	}
+	addr, authn, err := splitAddressAuthN(addrAuthn)
+	if err != nil {
+		return nil, err
+	}
+	scheme, hostport, err := net.ParseHostMaybeScheme(addr)
+	if err != nil {
+		return nil, err
+	}
+	host, port := net.SplitHostPortDefault(hostport, defaultPort)
+
+	return &config.NamedAuthNSocketAddress{
+		Address: host,
+		Port:    port,
+		Name:    scheme,
+		AuthN:   authn,
+	}, nil
+}
+
+func splitAddressAuthN(str string) (addr string, authn *string, err error) {
+	bits := strings.Split(str, "|")
+	if len(bits) > 2 {
+		err = fmt.Errorf(`invalid format for listener, at most one "|" can be present: %q`, str)
+		return
+	}
+	addr = bits[0]
+	if len(bits) == 2 {
+		authn = &bits[1]
+	}
+	return
 }
 
 func stringOr(a, b string) string {
@@ -979,3 +1012,63 @@ func mergeMaps(a, b map[string]string) map[string]string {
 	}
 	return a
 }
+
+// setContainerModeFlags sets flags bundled into --mode dev-container flag.
+func setContainerModeFlags(cmd *cobra.Command) {
+	devMap := map[string]string{
+		overprovisionedFlag:   "true",
+		reserveMemoryFlag:     "0M",
+		checkFlag:             "false",
+		unsafeBypassFsyncFlag: "true",
+	}
+	// We don't override the values set during command execution, e.g:
+	//   rpk redpanda start --mode dev-container --smp 2
+	// will apply all dev flags, but smp will be 2.
+	for k, v := range devMap {
+		if !cmd.Flags().Changed(k) {
+			cmd.Flags().Set(k, v)
+		}
+	}
+}
+
+func setContainerModeCfgFields(cfg *config.Config) {
+	cfg.Redpanda.DeveloperMode = true
+
+	// cluster properties:
+	if cfg.Redpanda.Other == nil {
+		cfg.Redpanda.Other = make(map[string]interface{})
+	}
+	cfg.Redpanda.Other["auto_create_topics_enabled"] = true
+	cfg.Redpanda.Other["group_topic_partitions"] = 3
+	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
+	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
+}
+
+func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
+	if installDir != "" {
+		return installDir, nil
+	}
+	foundConfig, err := rp.FindInstallDir(fs)
+	if err != nil {
+		return "", fmt.Errorf("unable to find redpanda installation. Please provide the install directory with flag --install-dir")
+	}
+	return foundConfig, nil
+}
+
+const helpMode = `Mode uses well-known configuration properties for development or tests 
+environments:
+
+--mode dev-container
+    Bundled flags:
+        * --overprovisioned
+        * --reserve-memory 0M
+        * --check=false
+        * --unsafe-bypass-fsync
+    Bundled cluster properties:
+        * auto_create_topics_enabled: true
+        * group_topic_partitions: 3
+        * storage_min_free_bytes: 10485760 (10MiB)
+        * topic_partitions_per_shard: 1000
+
+After redpanda starts you can modify the cluster properties using:
+    rpk config set <key> <value>`

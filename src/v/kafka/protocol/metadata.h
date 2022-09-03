@@ -22,15 +22,6 @@
 
 namespace kafka {
 
-struct metadata_response;
-
-struct metadata_api final {
-    using response_type = metadata_response;
-
-    static constexpr const char* name = "metadata";
-    static constexpr api_key key = api_key(3);
-};
-
 struct metadata_request {
     using api_type = metadata_api;
 

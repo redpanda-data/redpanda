@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:impish-20211102
+FROM ubuntu:jammy-20220531
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
@@ -29,8 +29,9 @@ RUN apt update && \
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
 # many maven dependency downloads without any parallelism.  To avoid re-running it
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
-RUN git -C /opt clone --branch ducktape2 https://github.com/redpanda-data/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
+RUN git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git && \
+    cd /opt/kafka-streams-examples && git reset --hard da50fa2723840f6388f99a1dae8d58104fd7650d && \
+    mvn -DskipTests=true clean package
 
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
@@ -72,11 +73,10 @@ RUN apt update && \
     echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
     echo 'root hard nofile 65535' >> /etc/security/limits.conf
 
-# install go
-RUN mkdir -p /usr/local/go/ && \
-    bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
-    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.17.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
-ENV PATH="${PATH}:/usr/local/go/bin"
+
+# Install the OMB tool
+RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
+    cd /opt/openmessaging-benchmark && git reset --hard 43b737c357cde3b418a6aee4c95107d6ef28b8a2 && mvn package
 
 # install kafka binary dependencies, librdkafka dev, kcat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
@@ -94,8 +94,6 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make install && \
     cd /opt/librdkafka/tests && \
     make build -j$(nproc) && \
-    go get github.com/birdayz/kaf/cmd/kaf && \
-    mv /root/go/bin/kaf /usr/local/bin/ && \
     mkdir /tmp/kcat && \
     curl -SL "https://github.com/edenhill/kcat/archive/1.7.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kcat && \
     cd /tmp/kcat && \
@@ -103,6 +101,29 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make -j$(nproc) && \
     make install && \
     ldconfig
+
+# install go
+RUN mkdir -p /usr/local/go/ && \
+    bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
+    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.17.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
+ENV PATH="${PATH}:/usr/local/go/bin"
+
+# Install `kaf`
+RUN go get github.com/birdayz/kaf/cmd/kaf && \
+    mv /root/go/bin/kaf /usr/local/bin/
+
+ENV PATH="${PATH}:/usr/local/go/bin"
+# Compile and install rust-based workload generator.
+# Install & remove compiler in the same step, to avoid bulking
+# out the resulting container image.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    export PATH="/root/.cargo/bin:${PATH}" && \
+    git clone https://github.com/redpanda-data/client-swarm.git && \
+    cd client-swarm && \
+    git reset --hard 28790f8 && \
+    cargo build --release && \
+    cp target/release/client-swarm /usr/local/bin && \
+    cd .. && rm -rf client-swarm && rm -rf /root/.cargo
 
 # Install golang dependencies for kafka clients such as sarama
 RUN git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git && \
@@ -125,8 +146,8 @@ RUN go install github.com/twmb/kcl@v0.8.0 && \
 
 # Install the kgo-verifier tool
 RUN git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git && \
-    cd /opt/kgo-verifier && git reset --hard dd7dce41012af14e62c1db23a0aa88ec6f39a5f1 && \
-    go mod tidy && go build
+    cd /opt/kgo-verifier && git reset --hard d68b2cd && \
+    go mod tidy && make
 
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
@@ -141,27 +162,17 @@ COPY --chown=0:0 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
-# Install the OMB tool
-RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
-    cd /opt/openmessaging-benchmark && git reset --hard cde313756faa1ebd0114a35d6fc3b09198559738 && mvn package
-
-# Compile and install rust-based workload generator.
-# Install & remove compiler in the same step, to avoid bulking
-# out the resulting container image.
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    export PATH="/root/.cargo/bin:${PATH}" && \
-    git clone https://github.com/redpanda-data/client-swarm.git && \
-    cd client-swarm && \
-    git reset --hard 28790f8 && \
-    cargo build --release && \
-    cp target/release/client-swarm /usr/local/bin && \
-    cd .. && rm -rf client-swarm && rm -rf /root/.cargo
-
 # Seastar addrress to line utility
 RUN apt update && \
     apt install -y \
       file && \
     rm -rf /var/lib/apt/lists/*
+
+# Clone and install the arroyo client library in order to run its test suite.
+RUN mkdir /root/external_test_suites && \
+    git -C /root/external_test_suites clone -b 1.0.0 --depth=1 https://github.com/getsentry/arroyo.git && \
+    cd /root/external_test_suites/arroyo && \
+    python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
 
 RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \

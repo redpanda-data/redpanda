@@ -32,7 +32,7 @@ namespace ppj = pandaproxy::json;
 
 template<typename T>
 T parse_param(std::string_view type, std::string_view key, ss::sstring value) {
-    if (!reflection::is_std_optional_v<T> && value.empty()) {
+    if (!reflection::is_std_optional<T> && value.empty()) {
         throw error(
           error_code::empty_param,
           fmt::format("Missing mandatory {} '{}'", type, key));

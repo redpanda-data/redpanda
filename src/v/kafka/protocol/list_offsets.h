@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/list_offset_request.h"
 #include "kafka/protocol/schemata/list_offset_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -25,16 +24,6 @@
 #include <absl/container/btree_set.h>
 
 namespace kafka {
-
-struct list_offsets_response;
-
-class list_offsets_api final {
-public:
-    using response_type = list_offsets_response;
-
-    static constexpr const char* name = "list_offsets";
-    static constexpr api_key key = api_key(2);
-};
 
 struct list_offsets_request final {
     using api_type = list_offsets_api;

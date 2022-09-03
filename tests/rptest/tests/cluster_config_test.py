@@ -7,8 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import namedtuple
 import time
+from typing import Any, NamedTuple
 import requests
 import json
 import re
@@ -30,24 +30,7 @@ BOOTSTRAP_CONFIG = {
     'enable_idempotence': True,
 }
 
-
-def search_log(redpanda, pattern):
-    """
-    Test helper for grepping the redpanda log
-
-    :return:  true if any instances of `pattern` found
-    """
-    for node in redpanda.nodes:
-        for line in node.account.ssh_capture(
-                f"grep \"{pattern}\" {redpanda.STDOUT_STDERR_CAPTURE} || true"
-        ):
-            # We got a match
-            redpanda.logger.debug(
-                f"Found {pattern} on node {node.name}: {line}")
-            return True
-
-    # Fall through, no matches
-    return False
+SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
 
 
 class ClusterConfigUpgradeTest(RedpandaTest):
@@ -82,8 +65,8 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(
             [node], override_cfg_params={'delete_retention_ms': '1234'})
         assert admin.get_cluster_config()['delete_retention_ms'] == 9876
-        assert search_log(self.redpanda,
-                          "Ignoring value for 'delete_retention_ms'")
+        assert self.redpanda.search_log_any(
+            "Ignoring value for 'delete_retention_ms'")
 
 
 class ClusterConfigTest(RedpandaTest):
@@ -93,22 +76,17 @@ class ClusterConfigTest(RedpandaTest):
         # Force verbose logging for the secret redaction test
         kwargs['log_level'] = 'trace'
 
+        # An explicit cluster_id prevents metrics_report from auto-setting
+        # it, and thereby prevents it doing a background write of a new
+        # config version that would disrupt our tests.
+        rp_conf['cluster_id'] = "placeholder"
+
         super(ClusterConfigTest, self).__init__(*args,
                                                 extra_rp_conf=rp_conf,
                                                 **kwargs)
 
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
-
-    def setUp(self):
-        super().setUp()
-
-        # wait for the two config versions:
-        # 1. The initial bootstrap where we "import" any cluster properties
-        #    that were in bootstrap.yaml
-        # 2. The metrics reporter's first tick, where it initializes
-        #    the cluster_id property.
-        self._wait_for_version_sync(2)
 
     @cluster(num_nodes=3)
     @parametrize(legacy=False)
@@ -133,6 +111,16 @@ class ClusterConfigTest(RedpandaTest):
 
         # Some arbitrary property to check syntax of result
         assert 'kafka_api' in node_config
+        self._quiesce_status()
+
+        # Validate expected status for a cluster that we have made no changes to
+        # since first start
+        status = admin.get_cluster_config_status()
+        for s in status:
+            assert s['restart'] is False
+            assert not s['invalid']
+            assert not s['unknown']
+        assert len(set([s['config_version'] for s in status])) == 1
 
     @cluster(num_nodes=1)
     def test_get_config_nodefaults(self):
@@ -187,14 +175,55 @@ class ClusterConfigTest(RedpandaTest):
             assert config[k] == v
 
     def _wait_for_version_sync(self, version):
+        """
+        Waits for the controller to see up to date status at `version` from
+        all nodes.  Does _not_ guarantee that this status result has also
+        propagated to all other node: use _wait_for_version_status_sync
+        if you need to query status from an arbitrary node and get consistent
+        result.
+        """
         wait_until(
             lambda: set([
-                n['config_version']
-                for n in self.admin.get_cluster_config_status()
+                n['config_version'] for n in self.admin.
+                get_cluster_config_status(node=self.redpanda.controller())
             ]) == {version},
             timeout_sec=10,
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {version}")
+
+    def _wait_for_version_status_sync(self, version):
+        """
+        Stricter than _wait_for_version_sync: this requires not only that
+        the config version has propagated to all nodes, but also that the
+        consequent config status (of all the peers) has propagated to all nodes.
+        """
+        def is_complete(node):
+            node_status = self.admin.get_cluster_config_status(node=node)
+            return set(n['config_version'] for n in node_status) == {
+                version
+            } and len(node_status) == len(self.redpanda.nodes)
+
+        for node in self.redpanda.nodes:
+            wait_until(lambda: is_complete(node),
+                       timeout_sec=10,
+                       backoff_sec=0.5,
+                       err_msg=f"Config status did not converge on {version}")
+
+    def _quiesce_status(self):
+        """
+        Query the cluster version from the controller leader, then wait til all
+        nodes' report that all other nodes have seen that version (i.e. config
+        is up to date globally _and_ config status is up to date globally).
+        """
+        leader = self.redpanda.controller()
+
+        # Read authoritative version from controller
+        version = max(
+            n['config_version']
+            for n in self.admin.get_cluster_config_status(node=leader))
+
+        # Wait for all nodes to report all other nodes status' up to date
+        self._wait_for_version_status_sync(version)
 
     def _check_restart_clears(self):
         """
@@ -234,7 +263,7 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             new_setting[0]] == new_setting[1]
@@ -245,7 +274,7 @@ class ClusterConfigTest(RedpandaTest):
         # an upsert does
         patch_result = self.admin.patch_cluster_config(remove=[new_setting[0]])
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
         assert self.admin.get_cluster_config()[
             new_setting[0]] != new_setting[1]
         self._check_restart_clears()
@@ -265,25 +294,25 @@ class ClusterConfigTest(RedpandaTest):
             })
         self._wait_for_version_sync(patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Check initially set values survive a restart
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere("cloud_storage_access_key", "user")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Set just one of the values
         patch_result = self.admin.patch_cluster_config(
             upsert={"cloud_storage_access_key": "user2"})
         self._wait_for_version_sync(patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user2")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # Check that the recently set value persists, AND the originally
         # set value of another property is not corrupted.
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere("cloud_storage_access_key", "user2")
-        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
     def _check_value_everywhere(self, key, expect_value):
         for node in self.redpanda.nodes:
@@ -318,6 +347,7 @@ class ClusterConfigTest(RedpandaTest):
             norestart_new_setting[0]] == norestart_new_setting[1]
 
         # Status should not indicate restart needed
+        self._wait_for_version_status_sync(new_version)
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
@@ -394,7 +424,7 @@ class ClusterConfigTest(RedpandaTest):
             [invalid_setting]),
                                                        force=True)
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        self._wait_for_version_status_sync(new_version)
 
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
@@ -425,14 +455,11 @@ class ClusterConfigTest(RedpandaTest):
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
 
+        self._wait_for_version_status_sync(patch_result['config_version'])
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
             assert n['invalid'] == []
-
-        # TODO as well as specific invalid examples, do a pass across the whole
-        # schema to check that
-        pass
 
     @cluster(num_nodes=3)
     def test_bad_requests(self):
@@ -482,7 +509,10 @@ class ClusterConfigTest(RedpandaTest):
 
         # Don't change these settings, they prevent the test from subsequently
         # using the cluster
-        exclude_settings = {'enable_sasl'}
+        exclude_settings = {
+            'enable_sasl', 'kafka_enable_authorization',
+            'kafka_mtls_principal_mapping_rules'
+        }
 
         # Don't enable coproc: it generates log errors if its companion service isn't running
         exclude_settings.add('enable_coproc')
@@ -538,7 +568,7 @@ class ClusterConfigTest(RedpandaTest):
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
                                                        remove=[])
-        self._wait_for_version_sync(patch_result['config_version'])
+        self._wait_for_version_status_sync(patch_result['config_version'])
 
         def check_status(expect_restart):
             # Use one node's status, they should be symmetric
@@ -556,6 +586,12 @@ class ClusterConfigTest(RedpandaTest):
                 # String-ized comparison, because the example values are strings,
                 # whereas by the time we read them back they're properly typed.
                 actual = read_back.get(k, None)
+                if k in SECRET_CONFIG_NAMES:
+                    # Expect a redacted value for secrets. Redpanda redacts the
+                    # values and we have no way of cross checking the actual
+                    # values match.
+                    expect = "[secret]"
+
                 if isinstance(actual, bool):
                     # Lowercase because yaml and python capitalize bools differently.
                     actual = str(actual).lower()
@@ -566,7 +602,7 @@ class ClusterConfigTest(RedpandaTest):
                         f"Config set failed ({k}) {actual}!={expect}")
                     mismatch.append((k, actual, expect))
 
-            assert len(mismatch) == 0
+            assert len(mismatch) == 0, mismatch
 
         check_status(properties_require_restart)
         check_values()
@@ -577,7 +613,7 @@ class ClusterConfigTest(RedpandaTest):
         # status is the same as the one already reported.
         time.sleep(10)
 
-        # Check after restart that confuration persisted and status shows valid
+        # Check after restart that configuration persisted and status shows valid
         check_status(False)
         check_values()
 
@@ -629,6 +665,18 @@ class ClusterConfigTest(RedpandaTest):
 
         return version, text
 
+    def _noop_export_import(self):
+        # Intentionally enabling --all flag to test all properties
+        text = self._export(True)
+
+        # Validate that RPK gives us valid yaml
+        _ = yaml.full_load(text)
+
+        with tempfile.NamedTemporaryFile('w') as file:
+            file.write(text)
+            file.flush()
+            return self.rpk.cluster_config_import(file.name, True)
+
     @cluster(num_nodes=3)
     def test_rpk_export_import(self):
         """
@@ -636,6 +684,9 @@ class ClusterConfigTest(RedpandaTest):
         also `edit` (which is just an export/import cycle with
         a text editor run in the middle)
         """
+        # A no-op export & import check:
+        assert "No changes were made." in self._noop_export_import()
+
         # An arbitrary tunable for checking --all
         tunable_property = 'kafka_qdc_depth_alpha'
 
@@ -689,6 +740,34 @@ class ClusterConfigTest(RedpandaTest):
         noop_version = self._import(text, allow_noop=True, all=True)
         assert noop_version is None
 
+        # Now try setting a secret.
+        text = text.replace("cloud_storage_secret_key:",
+                            "cloud_storage_secret_key: different_secret")
+        version_e = self._import(text, all)
+        assert version_e is not None
+        assert version_e > version_d
+
+        # Because rpk doesn't know the contents of the secrets, it can't
+        # determine whether a secret is new. The request should be de-duped on
+        # the server side, and the same config version should be returned.
+        version_f = self._import(text, all)
+        assert version_f is not None
+        assert version_f == version_e
+
+        # Attempting to change the secret to the redacted version, on the other
+        # hand, results in no version change, to prevent against accidentally
+        # setting the secret to the redacted string.
+        text = text.replace("cloud_storage_secret_key: different_secret",
+                            "cloud_storage_secret_key: [secret]")
+        noop_version = self._import(text, allow_noop=True, all=True)
+        assert noop_version is None
+
+        # Removing a secret should succeed with a new version.
+        text = text.replace("cloud_storage_secret_key: [secret]", "")
+        version_g = self._import(text, all)
+        assert version_g is not None
+        assert version_g > version_f
+
     @cluster(num_nodes=3)
     def test_rpk_import_validation(self):
         """
@@ -699,7 +778,7 @@ class ClusterConfigTest(RedpandaTest):
         try:
             _, out = self._export_import_modify(
                 [("kafka_qdc_enable: false", "kafka_qdc_enable: rhubarb"),
-                 ("topic_fds_per_partition: 10",
+                 ("topic_fds_per_partition: 5",
                   "topic_fds_per_partition: 9999"),
                  ("default_num_windows: 10", "default_num_windows: 32768")],
                 all=True)
@@ -737,6 +816,8 @@ class ClusterConfigTest(RedpandaTest):
         case is just a superficial test that the command succeeds and
         returns info for each node.
         """
+        self._quiesce_status()
+
         status_text = self.rpk.cluster_config_status()
 
         # Split into lines, skip first one (header)
@@ -825,16 +906,19 @@ class ClusterConfigTest(RedpandaTest):
         """
         Test RPK's getter+setter helpers
         """
-
-        Example = namedtuple('Example', ['key', 'strval', 'yamlval'])
+        class Example(NamedTuple):
+            key: str
+            strval: str
+            yamlval: Any
 
         valid_examples = [
             Example("kafka_qdc_enable", "true", True),
             Example("append_chunk_size", "32768", 32768),
-            Example("superusers", "['bob','alice']", ["bob", "alice"])
+            Example("superusers", "['bob','alice']", ["bob", "alice"]),
+            Example("storage_min_free_bytes", "1234567890", 1234567890)
         ]
 
-        def yamlize(input):
+        def yamlize(input) -> str:
             """Create a YAML representation that matches
             what yaml-cpp produces: PyYAML includes trailing
             ellipsis lines that must be removed."""
@@ -853,6 +937,11 @@ class ClusterConfigTest(RedpandaTest):
             cli_readback = self.rpk.cluster_config_get(e.key)
 
             expect_cli_readback = yamlize(e.yamlval)
+
+            # Hack around scientific notation for large int values.
+            # This may be an RPK bug?
+            if cli_readback.find("e+") != -1:
+                cli_readback = str(int(float(cli_readback)))
 
             self.logger.info(
                 f"CLI readback '{cli_readback}' expect '{expect_cli_readback}'"
@@ -901,15 +990,21 @@ class ClusterConfigTest(RedpandaTest):
             self._wait_for_version_sync(patch_result['config_version'])
 
             # Check value was/was not printed to log while applying
-            assert search_log(self.redpanda, value) is expect_log
+            assert self.redpanda.search_log_any(value) is expect_log
 
             # Check we do/don't print on next startup
             self.redpanda.restart_nodes(self.redpanda.nodes)
-            assert search_log(self.redpanda, value) is expect_log
+            assert self.redpanda.search_log_any(value) is expect_log
+
+        # Default valued secrets are still shown.
+        self._check_value_everywhere("cloud_storage_secret_key", None)
 
         secret_key = "cloud_storage_secret_key"
         secret_value = "ThePandaFliesTonight"
         set_and_search(secret_key, secret_value, False)
+
+        # Once set, we shouldn't be able to access the secret values.
+        self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
         # To avoid false negatives in the test of a secret, go through the same procedure
         # but on a non-secret property, thereby validating that our log scanning procedure
@@ -1040,6 +1135,52 @@ class ClusterConfigTest(RedpandaTest):
         for key in forbidden_to_clear:
             self.admin.patch_cluster_config(upsert={}, remove=[key])
 
+    @cluster(num_nodes=3)
+    def test_status_read_after_write_consistency(self):
+        """
+        In general, status is updated asynchronously, and API clients
+        may send a PUT to any node, and poll any node to see asynchronous
+        updates to status.
+
+        However, there is a special path for API clients that would like to
+        get something a bit stricter: if they send a PUT to the controller
+        leader and then read the status back from the leader, they will
+        always see the status for this node updated with the new version
+        in a subsequent GET cluster_config/status to the same node.
+
+        Clearly doing fast reads isn't a guarantee of strict consistency
+        rules, but it will detect violations on realistic timescales.  This
+        test did fail in practice before the change to have /status return
+        projected values.
+        """
+
+        admin = Admin(self.redpanda)
+
+        # Don't want controller leadership changing while we run
+        r = admin.patch_cluster_config(
+            upsert={'enable_leader_balancer': False})
+        config_version = r['config_version']
+        self._wait_for_version_sync(config_version)
+
+        controller_node = self.redpanda.controller()
+        for i in range(0, 50):
+            # Some config update, different each iteration
+            r = admin.patch_cluster_config(
+                upsert={'kafka_connections_max': 1000 + i},
+                node=controller_node)
+            new_config_version = r['config_version']
+            assert new_config_version != config_version
+            config_version = new_config_version
+
+            # Immediately read back status from controller, it should reflect new version
+            status = self.admin.get_cluster_config_status(node=controller_node)
+            local_status = next(
+                s for s in status
+                if s['node_id'] == self.redpanda.idx(controller_node))
+            assert local_status['config_version'] == config_version
+
+
+class ClusterConfigClusterIdTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_cluster_id(self):
         """

@@ -3,18 +3,21 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from time import sleep
 from functools import wraps
-from collections import namedtuple
 import time
 import datetime
-from typing import Union
+from typing import Iterator, NamedTuple, Union
 
 
 class SlowDown(Exception):
     pass
 
 
-S3ObjectMetadata = namedtuple('S3ObjectMetadata',
-                              ['Bucket', 'Key', 'ETag', 'ContentLength'])
+class S3ObjectMetadata(NamedTuple):
+    # TODO change to snake_case
+    Bucket: str
+    Key: str
+    ETag: str
+    ContentLength: int
 
 
 def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
@@ -286,7 +289,7 @@ class S3Client:
             else:
                 raise
 
-    def list_objects(self, bucket):
+    def list_objects(self, bucket) -> Iterator[S3ObjectMetadata]:
         token = None
         truncated = True
         while truncated:

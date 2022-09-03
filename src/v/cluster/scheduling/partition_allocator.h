@@ -28,7 +28,8 @@ public:
       ss::sharded<members_table>&,
       config::binding<std::optional<size_t>>,
       config::binding<std::optional<int32_t>>,
-      config::binding<size_t>,
+      config::binding<uint32_t>,
+      config::binding<uint32_t>,
       config::binding<bool>);
 
     void register_node(allocation_state::node_ptr n) {
@@ -66,11 +67,8 @@ public:
     void update_allocation_state(
       const std::vector<model::broker_shard>&, raft::group_id);
 
-    /// updates the state of allocation, it is used during recovery and
-    /// when processing raft0 committed notifications
-    void update_allocation_state(
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
+    void add_allocations(const std::vector<model::broker_shard>&);
+    void remove_allocations(const std::vector<model::broker_shard>&);
 
     allocation_state& state() { return *_state; }
 
@@ -83,6 +81,11 @@ private:
             _partial.reserve(res);
         }
         void push_back(T t) { _partial.push_back(std::move(t)); }
+
+        template<typename... Args>
+        void emplace_back(Args&&... args) {
+            _partial.emplace_back(std::forward<Args>(args)...);
+        }
 
         const std::vector<T>& get() const { return _partial; }
         std::vector<T> finish() && { return std::exchange(_partial, {}); }
@@ -105,8 +108,9 @@ private:
     std::error_code
     check_cluster_limits(allocation_request const& request) const;
 
-    result<std::vector<model::broker_shard>>
-      allocate_partition(partition_constraints);
+    result<std::vector<model::broker_shard>> allocate_partition(
+      partition_constraints,
+      const std::vector<model::broker_shard>& not_changed_replicas = {});
 
     result<std::vector<model::broker_shard>> do_reallocate_partition(
       partition_constraints, const std::vector<model::broker_shard>&);
@@ -117,7 +121,8 @@ private:
 
     config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;
-    config::binding<size_t> _fallocation_step;
+    config::binding<uint32_t> _partitions_per_shard;
+    config::binding<uint32_t> _partitions_reserve_shard0;
     config::binding<bool> _enable_rack_awareness;
 };
 } // namespace cluster

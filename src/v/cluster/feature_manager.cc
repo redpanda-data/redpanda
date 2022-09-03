@@ -13,9 +13,12 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
+#include "config/configuration.h"
 #include "feature_table.h"
+#include "model/timeout_clock.h"
 #include "raft/group_manager.h"
 
 namespace cluster {
@@ -143,14 +146,67 @@ ss::future<> feature_manager::start() {
         vlog(clusterlog.warn, "Exception from updater: {}", e);
     });
 
+    // Detach fiber for alerts of possible license violations or notifications
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+        return ss::do_until(
+          [this] { return _as.local().abort_requested(); },
+          [this] { return maybe_log_license_check_info(); });
+    });
+
     co_return;
 }
 ss::future<> feature_manager::stop() {
+    vlog(clusterlog.info, "Stopping Feature Manager...");
     _group_manager.local().unregister_leadership_notification(
       _leader_notify_handle);
     _hm_backend.local().unregister_node_callback(_health_notify_handle);
     _update_wait.broken();
     co_await _gate.close();
+}
+
+ss::future<> feature_manager::maybe_log_license_check_info() {
+    auto license_check_retry = std::chrono::seconds(60 * 5);
+    auto interval_override = std::getenv(
+      "__REDPANDA_LICENSE_CHECK_INTERVAL_SEC");
+    if (interval_override != nullptr) {
+        try {
+            license_check_retry = std::min(
+              std::chrono::seconds{license_check_retry},
+              std::chrono::seconds{std::stoi(interval_override)});
+            vlog(
+              clusterlog.info,
+              "Overriding default license log annoy interval to: {}s",
+              license_check_retry.count());
+        } catch (...) {
+            vlog(
+              clusterlog.error,
+              "Invalid license check interval override '{}'",
+              interval_override);
+        }
+    }
+    if (_feature_table.local().is_active(feature::license)) {
+        const auto& cfg = config::shard_local_cfg();
+        if (
+          cfg.cloud_storage_enabled
+          || cfg.partition_autobalancing_mode
+               == model::partition_autobalancing_mode::continuous) {
+            const auto& license = _feature_table.local().get_license();
+            if (!license || license->is_expired()) {
+                vlog(
+                  clusterlog.warn,
+                  "Looks like you’ve enabled a Redpanda Enterprise feature(s) "
+                  "without a valid license. Please enter an active Redpanda "
+                  "license key (e.g. rpk cluster license set <key>). If you "
+                  "don’t have one, please request a new/trial license at "
+                  "https://redpanda.com/license-request");
+            }
+        }
+    }
+    try {
+        co_await ss::sleep_abortable(license_check_retry, _as.local());
+    } catch (ss::sleep_aborted) {
+        // Shutting down - next iteration will drop out
+    }
 }
 
 ss::future<> feature_manager::maybe_update_active_version() {
@@ -177,11 +233,11 @@ ss::future<> feature_manager::maybe_update_active_version() {
             // Sleep until we have some updates to process
             co_await _update_wait.wait([this]() { return !_updates.empty(); });
         }
-    } catch (ss::condition_variable_timed_out) {
+    } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
-    } catch (ss::broken_condition_variable) {
+    } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted) {
+    } catch (ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }
@@ -210,12 +266,16 @@ void feature_manager::update_node_version(
 ss::future<> feature_manager::do_maybe_update_active_version() {
     vassert(ss::this_shard_id() == backend_shard, "Wrong shard!");
 
+    // Consume any accumulated updates.  Important to do this even if
+    // not leader, so that we drain it and allow maybe_update_active_version
+    // to sleep on _update_wait.
+    auto updates = std::exchange(_updates, {});
+
     if (!_am_controller_leader) {
         co_return;
     }
 
-    // Consume _updates into _node_versions
-    auto updates = std::exchange(_updates, {});
+    // Apply updates into _node_versions
     for (const auto& i : updates) {
         auto& [node, v] = i;
         vlog(clusterlog.debug, "Processing update node={} version={}", node, v);
@@ -247,7 +307,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // This call in principle can be a network fetch, but in practice
     // we're only doing it immediately after cluster health has just
     // been updated, so do not expect it to go remote.
-    auto node_status_v = co_await _hm_frontend.local().get_nodes_status({});
+    auto node_status_v = co_await _hm_frontend.local().get_nodes_status(
+      model::timeout_clock::now() + 5s);
     if (node_status_v.has_error()) {
         // Raise exception to trigger backoff+retry
         throw std::runtime_error(fmt::format(
@@ -345,7 +406,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     );
 
     auto timeout = model::timeout_clock::now() + status_retry;
-    auto err = co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
     if (err == errc::not_leader) {
         // Harmless, we lost leadership so the new controller
         // leader is responsible for picking up where we left off.
@@ -357,6 +419,24 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     }
 
     vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
+}
+
+ss::future<std::error_code>
+feature_manager::update_license(security::license&& license) {
+    const auto timeout = model::timeout_clock::now() + 5s;
+
+    auto cmd = cluster::feature_update_license_update_cmd(
+      cluster::feature_update_license_update_cmd_data{
+        .redpanda_license = license},
+      0 // unused
+    );
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
+    if (err) {
+        co_return err;
+    }
+    vlog(clusterlog.info, "Loaded new license into cluster: {}", license);
+    co_return make_error_code(errc::success);
 }
 
 ss::future<std::error_code>
@@ -421,7 +501,8 @@ feature_manager::write_action(cluster::feature_update_action action) {
           std::move(data),
           0 // unused
         );
-        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+        return replicate_and_wait(
+          _stm, _feature_table, _as, std::move(cmd), timeout);
     }
 }
 

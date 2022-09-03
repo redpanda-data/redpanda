@@ -22,6 +22,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/backtrace.hh>
+#include <seastar/util/later.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -550,7 +551,8 @@ ss::future<> opfuzz::execute() {
               boost::counting_iterator<size_t>(0),
               boost::counting_iterator<size_t>(2),
               [compact](size_t) {
-                  return compact().then([] { return ss::later(); });
+                  return compact().then(
+                    [] { return ss::check_for_io_immediately(); });
               });
             ops.push_back(std::move(f));
         }

@@ -303,14 +303,13 @@ public:
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
                     *shard, [ntp](cluster::partition_manager& pm) {
-                        return pm.get(ntp)->is_leader();
+                        return pm.get(ntp)->is_elected_leader();
                     });
               })
               .handle_exception([](std::exception_ptr) { return false; });
         }).get0();
 
         auto retries = 10;
-        bool stop = false;
         foreign_batches_t ret;
         auto single_retry = [count, ntp](cluster::partition_manager& pm) {
             auto batches = model::test::make_random_batches(
@@ -318,7 +317,7 @@ public:
             auto rdr = model::make_memory_record_batch_reader(
               std::move(batches));
             // replicate
-            auto f = pm.get(ntp)->replicate(
+            auto f = pm.get(ntp)->raft()->replicate(
               std::move(rdr),
               raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -373,8 +372,7 @@ public:
           replicas,
           [this, ntp, &reference_batches, max_offset](model::broker_shard bs) {
               return read_replica_batches(bs, ntp, max_offset)
-                .then([this, ntp, &reference_batches, bs](
-                        foreign_batches_t batches) {
+                .then([ntp, &reference_batches, bs](foreign_batches_t batches) {
                     vlog(
                       logger.info,
                       "Comparing {} {} batches {} {}",

@@ -7,21 +7,16 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from math import floor
 from time import time
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
-
-
-def all_greater_than_zero(l1: list[float]):
-    return all([x > 0 for x in l1])
+from rptest.utils.node_metrics import NodeMetrics
 
 
 def assert_lists_equal(l1: list[float], l2: list[float]):
@@ -36,20 +31,7 @@ class NodeMetricsTest(RedpandaTest):
 
     def __init__(self, test_ctx):
         super().__init__(test_context=test_ctx)
-
-    def _get_metrics_vals(self, name_substr: str) -> list[float]:
-        family = self.redpanda.metrics_sample(name_substr)
-        assert family
-        return list(map(lambda s: floor(s.value), family.samples))
-
-    def _node_disk_total_bytes(self) -> list[float]:
-        return self._get_metrics_vals("storage_disk_total_bytes")
-
-    def _node_disk_free_bytes(self) -> list[float]:
-        return self._get_metrics_vals("storage_disk_free_bytes")
-
-    def _node_disk_space_alert(self) -> list[float]:
-        return self._get_metrics_vals("storage_disk_free_space_alert")
+        self.node_metrics = NodeMetrics(self.redpanda)
 
     def _count_greater(self, l1: list[float], l2: list[float]) -> int:
         """ return number of elements in l1 that were *strictly greater* than their
@@ -76,31 +58,27 @@ class NodeMetricsTest(RedpandaTest):
         ktools = KafkaCliTools(self.redpanda)
         ktools.produce(self.topic, num_records, record_size, acks=-1)
 
-        new_free = self._node_disk_free_bytes()
+        new_free = self.node_metrics.disk_free_bytes()
         return self._count_greater(orig_free, new_free) > 0
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4318
     @cluster(num_nodes=3)
     def test_node_storage_metrics(self):
 
         # disk metrics are updated via health monitor's periodic tick().
         t0 = time()
-        wait_until(
-            lambda: all_greater_than_zero(self._node_disk_total_bytes()),
-            timeout_sec=15,
-            err_msg="Disk metrics not populated before timeout.")
+        self.node_metrics.wait_until_ready()
         t1 = time()
 
         # check that metrics exist and remember the values
-        orig_total = self._node_disk_total_bytes()
-        orig_free = self._node_disk_free_bytes()
+        orig_total = self.node_metrics.disk_total_bytes()
+        orig_free = self.node_metrics.disk_free_bytes()
 
         self.redpanda.logger.debug(
             f'orig total {orig_total}, orig free {orig_free}')
 
         # for alert field, just confirm it exists and in valid range. Actual
         # logic is covered by local_monitor_test.cc
-        alerts = self._node_disk_space_alert()
+        alerts = self.node_metrics.disk_space_alert()
         assert len(alerts) == 3  # for each node
         assert all([x >= 0 for x in alerts])
 
@@ -124,7 +102,7 @@ class NodeMetricsTest(RedpandaTest):
         t2 = time()
 
         # Assert total space has not changed
-        new_total = self._node_disk_total_bytes()
+        new_total = self.node_metrics.disk_total_bytes()
         assert_lists_equal(orig_total, new_total)
         self.redpanda.logger.info(
             f"Elapsed: {t1-t0} sec to first metrics, {t2-t1} to consume space metric"

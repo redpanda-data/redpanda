@@ -30,7 +30,6 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_with_fragmented_buffer) {
         src.oi.append(ss::temporary_buffer<char>(55));
         reflection::serialize(b, std::move(src));
     }
-    const size_t src_size = b.size_bytes();
     auto expected = reflection::adl<complex_custom>{}.from(std::move(b));
     BOOST_REQUIRE_EQUAL(55, expected.oi.size_bytes());
 }

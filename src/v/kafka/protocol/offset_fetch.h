@@ -23,16 +23,6 @@
 
 namespace kafka {
 
-struct offset_fetch_response;
-
-class offset_fetch_api final {
-public:
-    using response_type = offset_fetch_response;
-
-    static constexpr const char* name = "offset fetch";
-    static constexpr api_key key = api_key(9);
-};
-
 struct offset_fetch_request final {
     using api_type = offset_fetch_api;
 
@@ -49,7 +39,10 @@ struct offset_fetch_request final {
         data.decode(reader, version);
     }
 
-    friend std::ostream& operator<<(std::ostream&, const offset_fetch_request&);
+    friend std::ostream&
+    operator<<(std::ostream& os, const offset_fetch_request& r) {
+        return os << r.data;
+    }
 };
 
 struct offset_fetch_response final {
@@ -97,7 +90,9 @@ struct offset_fetch_response final {
     }
 
     friend std::ostream&
-    operator<<(std::ostream&, const offset_fetch_response&);
+    operator<<(std::ostream& os, const offset_fetch_response& r) {
+        return os << r.data;
+    }
 };
 
 } // namespace kafka

@@ -149,9 +149,13 @@ BOOST_AUTO_TEST_CASE(serde_deprecated_crc) {
 
     BOOST_REQUIRE_EXCEPTION(
       serde::from_iobuf<storage::index_state>(bad_buf.copy()),
-      serde::serde_exception,
-      [](const serde::serde_exception& e) {
-          return std::string_view(e.what()).find("Invalid checksum for index")
-                 != std::string_view::npos;
+      std::exception,
+      [](const std::exception& e) {
+          auto msg = std::string_view(e.what());
+          auto is_crc = msg.find("Invalid checksum for index")
+                        != std::string_view::npos;
+          auto is_out_of_bounds = msg.find("Invalid consume_to")
+                                  != std::string_view::npos;
+          return is_crc || is_out_of_bounds;
       });
 }

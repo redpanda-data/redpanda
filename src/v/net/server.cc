@@ -16,6 +16,8 @@
 #include "rpc/service.h"
 #include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
+#include "ssx/semaphore.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -31,7 +33,8 @@ namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core) {}
+  , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
+  , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}
@@ -43,6 +46,11 @@ void server::start() {
     if (!cfg.disable_metrics) {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
+    }
+
+    if (!cfg.disable_public_metrics) {
+        setup_public_metrics();
+        _probe.setup_public_metrics(_public_metrics, cfg.name.c_str());
     }
 
     if (cfg.connection_rate_bindings) {
@@ -79,9 +87,7 @@ void server::start() {
                 ss = ss::engine().listen(endpoint.addr, lo);
             } else {
                 ss = ss::tls::listen(
-                  endpoint.credentials,
-                  ss::engine().listen(endpoint.addr, lo),
-                  endpoint.principal_mapper.has_value());
+                  endpoint.credentials, ss::engine().listen(endpoint.addr, lo));
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(
@@ -108,27 +114,10 @@ static inline void print_exceptional_future(
         return;
     }
 
-    bool is_error = true;
-    std::exception_ptr ex;
-    try {
-        std::rethrow_exception(f.get_exception());
-    } catch (const std::out_of_range&) {
-        // Happens on unclean client disconnect, when io_iterator_consumer
-        // gets fewer bytes than it wanted
-        ex = std::current_exception();
-        is_error = false;
-    } catch (const rpc::rpc_internal_body_parsing_exception&) {
-        // Happens on unclean client disconnect, typically wrapping
-        // an out_of_range
-        ex = std::current_exception();
-        is_error = false;
-    } catch (...) {
-        // An unexpected exception: this could be anything, including
-        // a bug: report as an error.
-        ex = std::current_exception();
-        is_error = true;
-    }
-    if (is_error) {
+    auto ex = f.get_exception();
+    auto disconnected = is_disconnect_exception(ex);
+
+    if (!disconnected) {
         vlog(
           rpc::rpclog.error,
           "{} - Error[{}] remote address: {} - {}",
@@ -138,12 +127,12 @@ static inline void print_exceptional_future(
           ex);
     } else {
         vlog(
-          rpc::rpclog.warn,
-          "{} - Exception[{}] remote address: {} - {}",
+          rpc::rpclog.info,
+          "{} - Disconnected {} ({}, {})",
           proto->name(),
-          ctx,
           address,
-          ex);
+          ctx,
+          disconnected.value());
     }
 }
 
@@ -227,22 +216,13 @@ ss::future<> server::accept(listener& s) {
                   }
               }
 
-              std::optional<security::tls::principal_mapper> tls_pm;
-              auto se_it = std::find_if(
-                cfg.addrs.begin(), cfg.addrs.end(), [&name](const auto& a) {
-                    return a.name == name;
-                });
-              if (se_it != cfg.addrs.end()) {
-                  tls_pm = se_it->principal_mapper;
-              }
-
               auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
                 name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe,
-                tls_pm);
+                cfg.stream_recv_buf);
               vlog(
                 rpc::rpclog.trace,
                 "{} - Incoming connection from {} on \"{}\"",
@@ -334,6 +314,30 @@ void server::setup_metrics() {
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
          sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
+}
+
+void server::setup_public_metrics() {
+    namespace sm = ss::metrics;
+    if (!_proto) {
+        return;
+    }
+
+    std::string_view server_name(cfg.name);
+
+    if (server_name.ends_with("_rpc")) {
+        server_name.remove_suffix(4);
+    }
+
+    auto server_label = ssx::metrics::make_namespaced_label("server");
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("rpc:request"),
+      {sm::make_histogram(
+         "latency_seconds",
+         sm::description("RPC latency"),
+         {server_label(server_name)},
+         [this] { return ssx::metrics::report_default_histogram(_hist); })
+         .aggregate({sm::shard_label})});
 }
 
 std::ostream& operator<<(std::ostream& o, const server_configuration& c) {

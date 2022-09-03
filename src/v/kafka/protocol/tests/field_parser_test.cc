@@ -9,9 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/types.h"
+#include "kafka/types.h"
 #include "random/generators.h"
 
 #include <seastar/core/thread.hh>
@@ -20,21 +22,19 @@
 #include <boost/iterator/counting_iterator.hpp>
 
 kafka::tagged_fields make_random_tags(size_t n) {
-    kafka::tagged_fields tags;
+    kafka::tagged_fields::type tags;
     for (uint32_t i = 0; i < n; ++i) {
-        tags.emplace_back(n, bytes_to_iobuf(random_generators::get_bytes()));
+        tags.emplace(n, random_generators::get_bytes());
     }
-    return tags;
+    return kafka::tagged_fields(std::move(tags));
 }
 
 kafka::tagged_fields copy_tags(const kafka::tagged_fields& otags) {
-    kafka::tagged_fields tags;
-    std::transform(
-      otags.begin(), otags.end(), std::back_inserter(tags), [](auto& t) {
-          auto& [tag_id, tag] = t;
-          return std::make_tuple(tag_id, tag.copy());
-      });
-    return tags;
+    kafka::tagged_fields::type tags;
+    for (const auto& [tag_id, tag] : otags()) {
+        tags.emplace(tag_id, tag);
+    }
+    return kafka::tagged_fields(std::move(tags));
 }
 
 SEASTAR_THREAD_TEST_CASE(serde_tags) {
@@ -43,7 +43,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
 
     /// Serialize the random tags into an iobuf
     kafka::response_writer writer(buf);
-    writer.write_tags(std::move(copy_tags(tags)));
+    writer.write_tags(copy_tags(tags));
 
     /// Copy the result to use for a later comparison
     iobuf copy = buf.copy();
@@ -94,7 +94,7 @@ void write_flex(T& type, iobuf& buf) {
           type, [](test_struct& ts, kafka::response_writer& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
-              writer.write_tags();
+              writer.write_tags(kafka::tagged_fields{});
           });
     } else if constexpr (std::is_same_v<
                            T,
@@ -103,8 +103,10 @@ void write_flex(T& type, iobuf& buf) {
           type, [](test_struct& ts, kafka::response_writer& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
-              writer.write_tags();
+              writer.write_tags(kafka::tagged_fields{});
           });
+    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+        writer.write(type);
     } else {
         writer.write_flex(type);
     }
@@ -115,6 +117,8 @@ T read_flex(iobuf buf) {
     kafka::request_reader reader(std::move(buf));
     if constexpr (std::is_same_v<T, ss::sstring>) {
         return reader.read_flex_string();
+    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+        return reader.read_uuid();
     } else if constexpr (std::is_same_v<T, std::optional<ss::sstring>>) {
         return reader.read_nullable_flex_string();
     } else if constexpr (std::is_same_v<T, bytes>) {
@@ -124,7 +128,7 @@ T read_flex(iobuf buf) {
             test_struct v;
             v.field_a = reader.read_flex_string();
             v.field_b = reader.read_int32();
-            reader.consume_tags();
+            (void)reader.read_tags();
             return v;
         });
     } else if constexpr (std::is_same_v<
@@ -135,7 +139,7 @@ T read_flex(iobuf buf) {
               test_struct v;
               v.field_a = reader.read_flex_string();
               v.field_b = reader.read_int32();
-              reader.consume_tags();
+              (void)reader.read_tags();
               return v;
           });
     }
@@ -151,8 +155,17 @@ T serde_flex(T& type) {
 SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
     auto gen_random_string = []() {
         const auto str_len = random_generators::get_int(0, 20);
-        return random_generators::gen_alphanum_string(15);
+        return random_generators::gen_alphanum_string(str_len);
     };
+    {
+        /// uuid
+        auto bytes = random_generators::get_bytes(16);
+        auto encoded = bytes_to_base64(bytes);
+        auto uuid = kafka::uuid::from_string(encoded);
+        auto rt = serde_flex(uuid);
+        BOOST_CHECK_EQUAL(uuid.view(), rt.view());
+        BOOST_CHECK_EQUAL(encoded, rt.to_string());
+    }
     {
         /// flex strings
         auto str = gen_random_string();

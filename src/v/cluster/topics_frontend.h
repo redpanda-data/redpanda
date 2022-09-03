@@ -11,12 +11,15 @@
 
 #pragma once
 
+#include "cloud_storage/remote.h"
 #include "cluster/controller_stm.h"
 #include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -41,7 +44,9 @@ public:
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<data_policy_frontend>&,
-      ss::sharded<ss::abort_source>&);
+      ss::sharded<ss::abort_source>&,
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<feature_table>&);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -56,18 +61,39 @@ public:
     ss::future<std::error_code> move_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
-      model::timeout_clock::time_point);
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
 
     ss::future<std::error_code> finish_moving_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
 
+    /**
+     * Cancelling partition replicas move will use graceful path i.e. will never
+     * allow data loss but it may require to be able to contact majority nodes
+     * in the target(new) quorum.
+     */
+    ss::future<std::error_code> cancel_moving_partition_replicas(
+      model::ntp,
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
+
+    /**
+     * Aborting partition replicas move is an operation that allow force reset
+     * of Raft group configuration to previous state. In some cases it may lead
+     * to data loss but it does not require target(new) quorum to be available.
+     */
+    ss::future<std::error_code> abort_moving_partition_replicas(
+      model::ntp,
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
+
     ss::future<std::vector<topic_result>> update_topic_properties(
       std::vector<topic_properties_update>, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_partitions(
-      std::vector<create_partititions_configuration>,
+      std::vector<create_partitions_configuration>,
       model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_non_replicable_topics(
@@ -81,6 +107,15 @@ public:
 
     void disable_partition_movement() { _partition_movement_disabled = true; }
     void enable_partition_movement() { _partition_movement_disabled = false; }
+
+    ss::future<result<std::vector<move_cancellation_result>>>
+      cancel_moving_partition_replicas_node(
+        model::node_id,
+        partition_move_direction,
+        model::timeout_clock::time_point);
+
+    ss::future<result<std::vector<move_cancellation_result>>>
+      cancel_moving_all_partition_replicas(model::timeout_clock::time_point);
 
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
@@ -123,7 +158,11 @@ private:
     validate_topic_configuration(const custom_assignable_topic_configuration&);
 
     ss::future<topic_result> do_create_partition(
-      create_partititions_configuration, model::timeout_clock::time_point);
+      create_partitions_configuration, model::timeout_clock::time_point);
+
+    ss::future<std::vector<move_cancellation_result>>
+      do_cancel_moving_partition_replicas(
+        std::vector<model::ntp>, model::timeout_clock::time_point);
 
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
@@ -133,6 +172,8 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<feature_table>& _features;
     bool _partition_movement_disabled = false;
 };
 

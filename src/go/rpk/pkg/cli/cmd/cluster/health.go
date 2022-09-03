@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
+func newHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		watch bool
 		exit  bool
@@ -35,7 +35,7 @@ func NewHealthOverviewCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "health",
-		Short: "Queries cluster for health overview.",
+		Short: "Queries cluster for health overview",
 		Long: `Queries health overview.
 
 Health overview is created based on the health reports collected periodically
@@ -57,7 +57,7 @@ following conditions are met:
 
 			var lastOverview admin.ClusterHealthOverview
 			for {
-				ret, err := cl.GetHealthOverview()
+				ret, err := cl.GetHealthOverview(cmd.Context())
 				out.MaybeDie(err, "unable to request cluster health: %v", err)
 				if !reflect.DeepEqual(ret, lastOverview) {
 					printHealthOverview(&ret)
@@ -84,8 +84,8 @@ following conditions are met:
 		&adminCAFile,
 	)
 
-	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "blocks and writes out all cluster health changes")
-	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "when used with watch, exits after cluster is back in healthy state")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Blocks and writes out all cluster health changes")
+	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "When used with watch, exits after cluster is back in healthy state")
 	return cmd
 }
 
@@ -93,8 +93,9 @@ func printHealthOverview(hov *admin.ClusterHealthOverview) {
 	out.Section("CLUSTER HEALTH OVERVIEW")
 	overviewFormat := `Healthy:               %v
 Controller ID:         %v
+All nodes:             %v
 Nodes down:            %v
 Leaderless partitions: %v
 `
-	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.NodesDown, hov.LeaderlessPartitions)
+	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions)
 }

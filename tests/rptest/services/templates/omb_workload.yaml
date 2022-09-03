@@ -1,9 +1,14 @@
-name: Ducktape workload
+name: {{name}}
 
 topics: {{topics}}
 partitionsPerTopic: {{partitions_per_topic}}
+{% if message_size is defined %}
+messageSize: {{message_size}}
+payloadFile: {{payload_file}}
+{% else %}
 messageSize: 1024
 payloadFile: "payload/payload-1Kb.data"
+{% endif %}
 subscriptionsPerTopic: {{subscriptions_per_topic}}
 producersPerTopic: {{producers_per_topic}}
 consumerPerSubscription: {{consumer_per_subscription}}

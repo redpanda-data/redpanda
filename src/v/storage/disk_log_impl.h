@@ -44,10 +44,10 @@ public:
      * in a segment exists. by placing a hard limit on segment size we can avoid
      * those overflows because a segment with more than 4-billion records would
      * be larger than 4gb even when the records are empty. other practical but
-     * not fundmental limits exist for large segment sizes like our current
+     * not fundamental limits exist for large segment sizes like our current
      * in-memory representation of indices.
      *
-     * the hard limit here is a slight mischaracterization. we apply this hard
+     * the hard limit here is a slight mis-characterization. we apply this hard
      * limit to the user requested size. max segment size fuzzing is still
      * applied.
      */
@@ -60,7 +60,7 @@ public:
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;
 
-    ss::future<> close() final;
+    ss::future<std::optional<ss::sstring>> close() final;
     ss::future<> remove() final;
     ss::future<> flush() final;
     ss::future<> truncate(truncate_config) final;
@@ -157,12 +157,21 @@ private:
 
     compaction_config apply_overrides(compaction_config) const;
 
+    storage_resources& resources();
+
+    void wrote_stm_bytes(size_t);
+
 private:
     size_t max_segment_size() const;
+    // Computes the segment size based on the latest max_segment_size
+    // configuration. This takes into consideration any segment size
+    // overrides since the last time it was called.
+    size_t compute_max_segment_size();
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
+    float _segment_size_jitter;
     bool _closed{false};
     ss::gate _compaction_gate;
     log_manager& _manager;
@@ -181,6 +190,9 @@ private:
     std::unique_ptr<readers_cache> _readers_cache;
     // average ratio of segment sizes after segment size before compaction
     moving_average<double, 5> _compaction_ratio{1.0};
+
+    // Bytes written since last time we requested stm snapshot
+    ssx::semaphore_units _stm_dirty_bytes_units;
 };
 
 } // namespace storage

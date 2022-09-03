@@ -58,6 +58,8 @@ struct configuration final : public config_store {
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
     bounded_property<std::optional<int32_t>> topic_fds_per_partition;
+    bounded_property<uint32_t> topic_partitions_per_shard;
+    bounded_property<uint32_t> topic_partitions_reserve_shard0;
 
     // Admin API
     property<bool> admin_api_require_auth;
@@ -80,6 +82,8 @@ struct configuration final : public config_store {
     bounded_property<uint32_t> target_quota_byte_rate;
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
+    property<bool> disable_public_metrics;
+    property<bool> aggregate_metrics;
     property<std::chrono::milliseconds> group_min_session_timeout_ms;
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
@@ -135,7 +139,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
     property<size_t> raft_learner_recovery_rate;
-    property<uint32_t> raft_smp_max_non_local_requests;
+    property<std::optional<uint32_t>> raft_smp_max_non_local_requests;
     property<uint32_t> raft_max_concurrent_append_requests_per_follower;
 
     property<size_t> reclaim_min_size;
@@ -161,10 +165,16 @@ struct configuration final : public config_store {
     property<size_t> storage_read_buffer_size;
     property<int16_t> storage_read_readahead_count;
     property<size_t> segment_fallocation_step;
+    bounded_property<uint64_t> storage_target_replay_bytes;
+    bounded_property<uint64_t> storage_max_concurrent_replay;
+    bounded_property<uint64_t> storage_compaction_index_memory;
     property<size_t> max_compacted_log_segment_size;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
+    property<std::optional<bool>> kafka_enable_authorization;
+    property<std::optional<std::vector<ss::sstring>>>
+      kafka_mtls_principal_mapping_rules;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
@@ -180,6 +190,9 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>> kafka_connections_max;
     property<std::optional<uint32_t>> kafka_connections_max_per_ip;
     property<std::vector<ss::sstring>> kafka_connections_max_overrides;
+    bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
+    bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
+    bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
@@ -190,6 +203,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_region;
     property<std::optional<ss::sstring>> cloud_storage_bucket;
     property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
+    enum_property<model::cloud_credentials_source>
+      cloud_storage_credentials_source;
     property<std::chrono::milliseconds> cloud_storage_reconciliation_ms;
     property<std::chrono::milliseconds>
       cloud_storage_upload_loop_initial_backoff_ms;
@@ -207,6 +222,9 @@ struct configuration final : public config_store {
       cloud_storage_max_connection_idle_time_ms;
     property<std::optional<std::chrono::seconds>>
       cloud_storage_segment_max_upload_interval_sec;
+    property<std::chrono::milliseconds>
+      cloud_storage_readreplica_manifest_sync_timeout_ms;
+    property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
 
     // Archival upload controller
     property<std::chrono::milliseconds>
@@ -239,10 +257,20 @@ struct configuration final : public config_store {
     one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
     property<bool> enable_auto_rebalance_on_node_add;
 
+    enum_property<model::partition_autobalancing_mode>
+      partition_autobalancing_mode;
+    property<std::chrono::seconds>
+      partition_autobalancing_node_availability_timeout_sec;
+    bounded_property<unsigned> partition_autobalancing_max_disk_usage_percent;
+    property<std::chrono::milliseconds>
+      partition_autobalancing_tick_interval_ms;
+    property<size_t> partition_autobalancing_movement_batch_size_bytes;
+
     property<bool> enable_leader_balancer;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
+    bounded_property<size_t> leader_balancer_transfer_limit_per_shard;
     property<int> internal_topic_replication_factor;
     property<std::chrono::milliseconds> health_manager_tick_interval;
 
@@ -251,6 +279,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> health_monitor_max_metadata_age;
     bounded_property<unsigned> storage_space_alert_free_threshold_percent;
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
+    bounded_property<size_t> storage_min_free_bytes;
     // metrics reporter
     property<bool> enable_metrics_reporter;
     property<std::chrono::milliseconds> metrics_reporter_tick_interval;

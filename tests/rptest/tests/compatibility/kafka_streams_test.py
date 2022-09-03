@@ -248,6 +248,51 @@ class KafkaStreamsPageView(RedpandaTest):
                    backoff_sec=1)
 
 
+class KafkaStreamsWikipedia(RedpandaTest):
+    """
+    Test KafkaStreams Wikipedia example which computes, for every minute the
+    number of new user feeds from the Wikipedia feed irc stream.
+    """
+    topics = (
+        TopicSpec(name="WikipediaFeed"),
+        TopicSpec(name="WikipediaStats"),
+    )
+
+    def __init__(self, test_context):
+        super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
+                                                    enable_pp=True,
+                                                    enable_sr=True)
+
+        self._timeout = 300
+
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/2889
+    @cluster(num_nodes=5)
+    def test_kafka_streams_wikipedia(self):
+        example_jar = KafkaStreamExamples.KafkaStreamsWikipedia(
+            self.redpanda, is_driver=False)
+        example = ExampleRunner(self.test_context,
+                                example_jar,
+                                timeout_sec=self._timeout)
+
+        driver_jar = KafkaStreamExamples.KafkaStreamsWikipedia(self.redpanda,
+                                                               is_driver=True)
+        driver = ExampleRunner(self.test_context,
+                               driver_jar,
+                               timeout_sec=self._timeout)
+
+        # Start the example
+        example.start()
+        wait_until(example.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
+
+        # Start the driver
+        driver.start()
+        wait_until(driver.condition_met,
+                   timeout_sec=self._timeout,
+                   backoff_sec=1)
+
+
 class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
     """
     Test KafkaStreams SumLambda example that sums odd numbers

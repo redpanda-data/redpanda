@@ -19,6 +19,22 @@ from rptest.util import (produce_until_segments, wait_for_segments_removal,
                          segments_count)
 
 
+def bytes_for_segments(want_segments, segment_size):
+    """
+    Work out what to set retention.bytes to in order to retain
+    just this number of segments (assuming all segments are written
+    to their size limit).
+    """
+
+    # When predicting segment sizes, we must account for segment_size_jitter
+    # which adjusts segment sizes up or down by 5%.  We must handle the case
+    # where segments are the smallest they can be.
+    # (see `jitter_segment_size` in segment_utils.cc)
+    segment_size_jitter_factor = 0.95
+
+    return int((want_segments * segment_size) * segment_size_jitter_factor)
+
+
 class RetentionPolicyTest(RedpandaTest):
     topics = (TopicSpec(partition_count=1,
                         replication_factor=3,
@@ -94,7 +110,8 @@ class RetentionPolicyTest(RedpandaTest):
         # change retention bytes to preserve 15 segments
         self.client().alter_topic_configs(
             self.topic, {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 15 * segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                bytes_for_segments(15, segment_size)
             })
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.topic,
@@ -104,7 +121,8 @@ class RetentionPolicyTest(RedpandaTest):
         # change retention bytes again to preserve 10 segments
         self.client().alter_topic_configs(
             self.topic, {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 10 * segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                bytes_for_segments(10, segment_size),
             })
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.topic,
@@ -114,7 +132,8 @@ class RetentionPolicyTest(RedpandaTest):
         # change retention bytes again to preserve 5 segments
         self.client().alter_topic_configs(
             self.topic, {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 4 * segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                bytes_for_segments(4, segment_size),
             })
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.topic,
@@ -148,7 +167,8 @@ class RetentionPolicyTest(RedpandaTest):
         # change retention bytes to preserve 15 segments
         self.client().alter_topic_configs(
             self.topic, {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 2 * segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                bytes_for_segments(2, segment_size),
             })
 
         def validate_time_query_until_deleted():

@@ -35,7 +35,7 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
 /**
  * A snapshot of node-local state: i.e. things that don't depend on consensus.
  */
-struct local_state {
+struct local_state : serde::envelope<local_state, serde::version<0>> {
     application_version redpanda_version;
     cluster_version logical_version{invalid_version};
     std::chrono::milliseconds uptime;
@@ -44,7 +44,17 @@ struct local_state {
 
     storage::disk_space_alert storage_space_alert;
 
+    auto serde_fields() {
+        return std::tie(
+          redpanda_version,
+          logical_version,
+          uptime,
+          disks,
+          storage_space_alert);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const local_state&);
+    friend bool operator==(const local_state&, const local_state&) = default;
 };
 
 } // namespace cluster::node

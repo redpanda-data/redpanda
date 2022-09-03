@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/health_monitor_types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -118,6 +117,8 @@ public:
     /// broker can change
     std::optional<broker_ptr> get_broker(model::node_id) const;
 
+    bool should_reject_writes() const;
+
     bool contains(model::topic_namespace_view, model::partition_id) const;
     bool contains(model::topic_namespace_view) const;
 
@@ -165,6 +166,7 @@ public:
     std::optional<std::chrono::milliseconds>
     get_default_retention_duration() const;
     model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
+    topic_properties get_default_properties() const;
 
 private:
     ss::sharded<topic_table>& _topics_state;

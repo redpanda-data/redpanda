@@ -26,6 +26,8 @@
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 
+#include <unordered_set>
+
 namespace pandaproxy::schema_registry {
 
 namespace pb = google::protobuf;
@@ -309,6 +311,9 @@ struct compatibility_checker {
 
     bool check_compatible(
       const pb::Descriptor* reader, const pb::Descriptor* writer) {
+        if (!_seen_descriptors.insert(reader).second) {
+            return true;
+        }
         for (int i = 0; i < writer->field_count(); ++i) {
             if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
                 continue;
@@ -364,6 +369,7 @@ struct compatibility_checker {
 
     const protobuf_schema_definition::impl& _reader;
     const protobuf_schema_definition::impl& _writer;
+    std::unordered_set<const pb::Descriptor*> _seen_descriptors;
 };
 
 } // namespace

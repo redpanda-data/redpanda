@@ -9,12 +9,16 @@
 
 import os
 import re
+import datetime
+import tempfile
 import zipfile
 import json
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.util import expect_exception, get_cluster_license
 from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
@@ -184,3 +188,71 @@ class RpkClusterTest(RedpandaTest):
             pass
         else:
             assert False, f"Unexpected success: '{r}'"
+
+    @cluster(num_nodes=3)
+    def test_upload_and_query_cluster_license_rpk(self):
+        """
+        Test uploading and retrieval of license via rpk
+        using --path option
+        """
+        license = get_cluster_license()
+        if license is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+
+        with tempfile.NamedTemporaryFile() as tf:
+            tf.write(bytes(license, 'UTF-8'))
+            tf.seek(0)
+            output = self._rpk.license_set(tf.name)
+            assert "Successfully uploaded license" in output
+
+        def obtain_license():
+            lic = self._rpk.license_info()
+            return (lic != "{}", lic)
+
+        rp_license = wait_until_result(
+            obtain_license,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg="unable to retrieve license information")
+
+        expected_license = {
+            'Expires': "Jul 11 2122",
+            'Organization': 'redpanda-testing',
+            'Type': 'enterprise'
+        }
+        result = json.loads(rp_license)
+        assert expected_license == result, result
+
+    @cluster(num_nodes=3)
+    def test_upload_cluster_license_rpk(self):
+        """
+        Test uploading of license via rpk
+        using inline license option
+        """
+        license = get_cluster_license()
+        if license is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+
+        output = self._rpk.license_set("", license)
+        assert "Successfully uploaded license" in output
+
+    @cluster(num_nodes=3)
+    def test_upload_cluster_license_error(self):
+        license = get_cluster_license()
+        if license is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+
+        with expect_exception(RpkException,
+                              lambda e: "License is malformed" in str(e)):
+            with tempfile.NamedTemporaryFile() as tf:
+                tf.write(bytes(license + 'r', 'UTF-8'))
+                tf.seek(0)
+
+                self._rpk.license_set(tf.name)

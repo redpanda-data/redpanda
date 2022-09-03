@@ -21,6 +21,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/logger.h"
+#include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -60,12 +61,17 @@ group::group(
   , _new_member_added(false)
   , _conf(conf)
   , _partition(std::move(partition))
+  , _probe(_members, _static_members, _offsets)
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {}
+  , _enable_group_metrics(group_metrics) {
+    if (_enable_group_metrics) {
+        _probe.setup_public_metrics(_id);
+    }
+}
 
 group::group(
   kafka::group_id id,
@@ -79,6 +85,7 @@ group::group(
   , _new_member_added(false)
   , _conf(conf)
   , _partition(std::move(partition))
+  , _probe(_members, _static_members, _offsets)
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
@@ -102,6 +109,10 @@ group::group(
           }});
         vlog(_ctxlog.trace, "Initializing group with member {}", member);
         add_member_no_join(member);
+    }
+
+    if (_enable_group_metrics) {
+        _probe.setup_public_metrics(_id);
     }
 }
 
@@ -623,6 +634,9 @@ group::join_group_stages group::update_static_member_and_rebalance(
                         new_member_id,
                         std::move(md));
                       try_finish_joining_member(member, std::move(reply));
+                  })
+                  .finally([group = shared_from_this()] {
+                      // keep the group alive while the background task runs
                   });
             return join_group_stages(std::move(f));
         } else {
@@ -927,9 +941,11 @@ void group::try_prepare_rebalance() {
     if (_initial_join_in_progress) {
         // debounce joins to an empty group. for a bounded delay, we'll avoid
         // competing the join phase as long as new members are arriving.
-        auto rebalance = rebalance_timeout();
+        auto rebalance = std::chrono::duration_cast<std::chrono::milliseconds>(
+          rebalance_timeout());
         auto initial = _conf.group_initial_rebalance_delay();
-        auto remaining = std::max(rebalance - initial, duration_type(0));
+        auto remaining = std::max(
+          rebalance - initial, std::chrono::milliseconds(0));
 
         _join_timer.cancel();
         _join_timer.set_callback(
@@ -939,7 +955,7 @@ void group::try_prepare_rebalance() {
                   auto prev_delay = delay;
                   delay = std::min(initial, remaining);
                   remaining = std::max(
-                    remaining - prev_delay, duration_type(0));
+                    remaining - prev_delay, std::chrono::milliseconds(0));
                   vlog(
                     _ctxlog.trace,
                     "Scheduling debounce join timer for {} ms remaining {} ms",
@@ -1061,7 +1077,8 @@ void group::complete_join() {
             ssx::background
               = store_group(checkpoint(assignments_type{}))
                   .then(
-                    []([[maybe_unused]] result<raft::replicate_result> r) {});
+                    []([[maybe_unused]] result<raft::replicate_result> r) {})
+                  .finally([this_group = shared_from_this()] {});
         } else {
             std::for_each(
               std::cbegin(_members),
@@ -1659,6 +1676,35 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     // we commit only if a provided tx_seq matches prepared tx_seq
 
+    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
+    // Problem is group_*_tx contains only producer_id in key, so compaction
+    // save only last records for this events. We need only save in logs
+    // consumed offset after commit_txs. For this we can write store_offset
+    // event together with group_commit_tx.
+    //
+    // Problem: this 2 events contains different record batch type. So we can
+    // not put it in one batch and write on disk atomically. But it is not a
+    // problem, because client got ok for commit_request (see
+    // tx_gateway_frontend). So redpanda will eventually finish commit and
+    // complete write for both this events.
+    model::record_batch_reader::data_t batches;
+    batches.reserve(2);
+
+    cluster::simple_batch_builder store_offset_builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+        update_store_offset_builder(
+          store_offset_builder,
+          tp.topic,
+          tp.partition,
+          metadata.offset,
+          metadata.committed_leader_epoch,
+          metadata.metadata,
+          model::timestamp{-1});
+    }
+
+    batches.push_back(std::move(store_offset_builder).build());
+
     group_log_commit_tx commit_tx;
     commit_tx.group_id = r.group_id;
     // TODO: https://app.clubhouse.io/vectorized/story/2200
@@ -1670,9 +1716,11 @@ group::commit_tx(cluster::commit_group_tx_request r) {
       r.pid,
       std::move(commit_tx));
 
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    batches.push_back(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
+
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1755,7 +1803,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
           r.pid,
           std::move(fence));
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto e = co_await _partition->replicate(
+        auto e = co_await _partition->raft()->replicate(
           _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1870,7 +1918,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
       std::move(tx_entry));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1966,7 +2014,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
       std::move(tx));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto e = co_await _partition->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1987,8 +2035,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::unknown_server_error);
     }
 
-    model::producer_identity pid{
-      .id = r.data.producer_id, .epoch = r.data.producer_epoch};
+    model::producer_identity pid{r.data.producer_id, r.data.producer_epoch};
 
     auto tx_it = _volatile_txs.find(pid);
 
@@ -2046,6 +2093,29 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
     return error_code::unknown_server_error;
 }
 
+void group::update_store_offset_builder(
+  cluster::simple_batch_builder& builder,
+  const model::topic& name,
+  model::partition_id partition,
+  model::offset committed_offset,
+  leader_epoch committed_leader_epoch,
+  const ss::sstring& metadata,
+  model::timestamp commit_timestamp) {
+    offset_metadata_key key{
+      .group_id = _id, .topic = name, .partition = partition};
+
+    offset_metadata_value value{
+      .offset = committed_offset,
+      .leader_epoch = committed_leader_epoch,
+      .metadata = metadata,
+      .commit_timestamp = commit_timestamp,
+    };
+
+    auto kv = _md_serializer.to_kv(
+      offset_metadata_kv{.key = std::move(key), .value = std::move(value)});
+    builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
+}
+
 group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
@@ -2055,19 +2125,14 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
-            offset_metadata_key key{
-              .group_id = _id, .topic = t.name, .partition = p.partition_index};
-
-            offset_metadata_value value{
-              .offset = p.committed_offset,
-              .leader_epoch = p.committed_leader_epoch,
-              .metadata = p.committed_metadata.value_or(""),
-              .commit_timestamp = model::timestamp(p.commit_timestamp),
-            };
-
-            auto kv = _md_serializer.to_kv(offset_metadata_kv{
-              .key = std::move(key), .value = std::move(value)});
-            builder.add_raw_kv(std::move(kv.key), std::move(kv.value));
+            update_store_offset_builder(
+              builder,
+              t.name,
+              p.partition_index,
+              p.committed_offset,
+              p.committed_leader_epoch,
+              p.committed_metadata.value_or(""),
+              model::timestamp(p.commit_timestamp));
 
             model::topic_partition tp(t.name, p.partition_index);
             offset_metadata md{
@@ -2087,7 +2152,8 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    auto replicate_stages = _partition->replicate_in_stages(
+    auto replicate_stages = _partition->raft()->replicate_in_stages(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -2144,6 +2210,31 @@ group::handle_commit_tx(cluster::commit_group_tx_request r) {
     }
 }
 
+error_code
+group::validate_expected_group(const txn_offset_commit_request& r) const {
+    if (r.data.group_instance_id.has_value()) {
+        auto static_member_it = _static_members.find(
+          r.data.group_instance_id.value());
+        if (
+          static_member_it != _static_members.end()
+          && static_member_it->second != r.data.member_id) {
+            return error_code::fenced_instance_id;
+        }
+    }
+
+    if (
+      r.data.member_id != unknown_member_id
+      && !_members.contains(r.data.member_id)) {
+        return error_code::unknown_member_id;
+    }
+
+    if (r.data.generation_id >= 0 && r.data.generation_id != _generation) {
+        return error_code::illegal_generation;
+    }
+
+    return error_code::none;
+}
+
 ss::future<txn_offset_commit_response>
 group::handle_txn_offset_commit(txn_offset_commit_request r) {
     if (in_state(group_state::dead)) {
@@ -2152,6 +2243,11 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
+        auto check_res = validate_expected_group(r);
+        if (check_res != error_code::none) {
+            co_return txn_offset_commit_response(r, check_res);
+        }
+
         auto id = model::producer_id(r.data.producer_id());
         co_return co_await with_pid_lock(
           id, [this, r = std::move(r)]() mutable {
@@ -2301,14 +2397,22 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
               .partition_index = e.first.partition,
-              .committed_offset = e.second->metadata.offset,
-              .committed_leader_epoch
-              = e.second->metadata.committed_leader_epoch,
-              .metadata = e.second->metadata.metadata,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
               .error_code = error_code::none,
             };
+
+            if (r.data.require_stable && has_pending_transaction(e.first)) {
+                p.error_code = error_code::unstable_offset_commit;
+            } else {
+                p.committed_offset = e.second->metadata.offset;
+                p.committed_leader_epoch
+                  = e.second->metadata.committed_leader_epoch;
+                p.metadata = e.second->metadata.metadata;
+            }
             tmp[e.first.topic].push_back(std::move(p));
         }
+
         for (auto& e : tmp) {
             resp.data.topics.push_back(
               {.name = e.first, .partitions = std::move(e.second)});
@@ -2323,24 +2427,26 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         t.name = topic.name;
         for (auto id : topic.partition_indexes) {
             model::topic_partition tp(topic.name, id);
-            auto res = offset(tp);
-            if (res) {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = res->offset,
-                  .metadata = res->metadata,
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+
+            offset_fetch_response_partition p = {
+              .partition_index = id,
+              .committed_offset = model::offset(-1),
+              .metadata = "",
+              .error_code = error_code::none,
+            };
+
+            if (r.data.require_stable && has_pending_transaction(tp)) {
+                p.error_code = error_code::unstable_offset_commit;
             } else {
-                offset_fetch_response_partition p = {
-                  .partition_index = id,
-                  .committed_offset = model::offset(-1),
-                  .metadata = "",
-                  .error_code = error_code::none,
-                };
-                t.partitions.push_back(std::move(p));
+                auto res = offset(tp);
+                if (res) {
+                    p.partition_index = id;
+                    p.committed_offset = res->offset;
+                    p.metadata = res->metadata;
+                    p.error_code = error_code::none;
+                }
             }
+            t.partitions.push_back(std::move(p));
         }
         resp.data.topics.push_back(std::move(t));
     }
@@ -2436,7 +2542,8 @@ ss::future<error_code> group::remove() {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     try {
-        auto result = co_await _partition->replicate(
+        auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2516,7 +2623,8 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     try {
-        auto result = co_await _partition->replicate(
+        auto result = co_await _partition->raft()->replicate(
+          _term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (result) {
@@ -2543,7 +2651,8 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 
 ss::future<result<raft::replicate_result>>
 group::store_group(model::record_batch batch) {
-    return _partition->replicate(
+    return _partition->raft()->replicate(
+      _term,
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 }

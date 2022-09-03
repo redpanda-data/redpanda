@@ -14,6 +14,7 @@ public:
     void reader_evicted() { _readers_evicted++; }
     void cache_hit() { _cache_hits++; }
     void cache_miss() { _cache_misses++; }
+    void clear() { _metrics.clear(); }
 
     void setup_metrics(const model::ntp& ntp);
 

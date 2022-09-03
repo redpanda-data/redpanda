@@ -58,6 +58,9 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static constexpr model::cloud_credentials_source config_file{
+  model::cloud_credentials_source::config_file};
+
 static std::unique_ptr<storage::continuous_batch_parser>
 make_recording_batch_parser(
   iobuf buf,
@@ -68,7 +71,7 @@ make_recording_batch_parser(
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<recording_batch_consumer>(
         headers, records, file_offsets),
-      std::move(stream));
+      storage::segment_reader_handle(std::move(stream)));
     return parser;
 }
 
@@ -107,6 +110,7 @@ static in_memory_segment make_segment(model::offset base, int num_batches) {
     s.records = std::move(rec);
     s.file_offsets = std::move(off);
     s.sname = segment_name(fmt::format("{}-1-v1.log", s.base_offset()));
+    p1->close().get();
     return s;
 }
 
@@ -130,6 +134,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
     auto p1 = make_recording_batch_parser(
       iobuf_deep_copy(segment_bytes), hdr, rec, off);
     p1->consume().get();
+    p1->close().get();
     in_memory_segment s;
     s.bytes = linearize_iobuf(std::move(segment_bytes));
     s.base_offset = hdr.front().base_offset;
@@ -316,7 +321,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   cloud_storage_fixture& fixture, model::offset target) {
     auto conf = fixture.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -326,7 +331,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto manifest = hydrate_manifest(api, bucket);
 
     auto partition = ss::make_lw_shared<remote_partition>(
-      manifest, api, *fixture.cache, bucket);
+      manifest, api, fixture.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
@@ -346,7 +351,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
   cloud_storage_fixture& imposter, model::offset base, model::offset max) {
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -356,7 +361,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto manifest = hydrate_manifest(api, bucket);
 
     auto partition = ss::make_lw_shared<remote_partition>(
-      manifest, api, *imposter.cache, bucket);
+      manifest, api, imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -462,9 +467,7 @@ FIXTURE_TEST(test_remote_partition_scan_full, cloud_storage_fixture) {
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_full_truncated_segments, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
 
     auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
     auto base = segments[0].base_offset;
@@ -578,10 +581,6 @@ FIXTURE_TEST(test_remote_partition_scan_middle, cloud_storage_fixture) {
 
 /// This test scans batches in the middle
 FIXTURE_TEST(test_remote_partition_scan_off, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
-
     auto segments = setup_s3_imposter(*this, 3, 10);
     auto base = segments[2].max_offset + model::offset(10);
     auto max = base + model::offset(10);
@@ -715,7 +714,6 @@ FIXTURE_TEST(
   test_remote_partition_scan_translate_full_4, cloud_storage_fixture) {
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
-    constexpr int total_batches = batches_per_segment * num_segments;
     batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
     batch_t conf = {
@@ -882,14 +880,14 @@ scan_remote_partition_incrementally(
   cloud_storage_fixture& imposter, model::offset base, model::offset max) {
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
     auto manifest = hydrate_manifest(api, bucket);
     auto partition = ss::make_lw_shared<remote_partition>(
-      manifest, api, *imposter.cache, bucket);
+      manifest, api, imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -974,8 +972,6 @@ SEASTAR_THREAD_TEST_CASE(test_btree_iterator_range_scan) {
         BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
         cnt++;
     }
-
-    auto it = iter_t(map);
 }
 
 FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
@@ -1005,7 +1001,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
 
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf);
+    remote api(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -1019,7 +1015,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // After this block finishes the segment will be hydrated.
     {
         auto partition = ss::make_lw_shared<remote_partition>(
-          manifest, api, *cache, bucket);
+          manifest, api, cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1040,7 +1036,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // This will trigger offset_index materialization from cache.
     {
         auto partition = ss::make_lw_shared<remote_partition>(
-          manifest, api, *cache, bucket);
+          manifest, api, cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();

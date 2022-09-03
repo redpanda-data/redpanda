@@ -14,11 +14,6 @@
 
 namespace kafka {
 
-struct produce_handler {
-    using api = produce_api;
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(7);
-    static process_result_stages handle(request_context, ss::smp_service_group);
-};
+using produce_handler = two_phase_handler<produce_api, 0, 7>;
 
 } // namespace kafka

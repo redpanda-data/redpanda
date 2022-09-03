@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -110,6 +111,22 @@ public:
 
     leaders_info_t get_leaders() const;
 
+    using leader_change_cb_t = ss::noncopyable_function<void(
+      model::ntp, model::term_id, std::optional<model::node_id>)>;
+
+    // Register a callback for all leadership changes
+    notification_id_type
+      register_leadership_change_notification(leader_change_cb_t);
+
+    // Register a callback for a change in leadership for a specific ntp.
+    notification_id_type register_leadership_change_notification(
+      const model::ntp&, leader_change_cb_t);
+
+    void unregister_leadership_change_notification(notification_id_type);
+
+    void unregister_leadership_change_notification(
+      const model::ntp&, notification_id_type);
+
 private:
     // optimized to reduce number of ntp copies
     struct leader_key {
@@ -203,6 +220,8 @@ private:
     promises_t _leader_promises;
 
     ss::sharded<topic_table>& _topic_table;
+
+    ntp_callbacks<leader_change_cb_t> _watchers;
 };
 
 } // namespace cluster

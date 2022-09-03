@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cluster/rm_stm.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
@@ -16,7 +17,7 @@
 
 namespace kafka {
 
-using fetch_handler = handler<fetch_api, 4, 11>;
+using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
 
 /*
  * Fetch operation context

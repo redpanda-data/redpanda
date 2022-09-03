@@ -19,8 +19,7 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "seastarx.h"
-
-#include <seastar/core/semaphore.hh>
+#include "ssx/semaphore.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -71,7 +70,7 @@ make_schema_definition(std::string_view sv) {
 /// Successive calls to operator()() will restart the process.
 class one_shot {
     enum class state { empty, started, available };
-    using futurator = ss::futurize<ss::semaphore_units<>>;
+    using futurator = ss::futurize<ssx::semaphore_units>;
 
 public:
     explicit one_shot(ss::noncopyable_function<ss::future<>()> func)
@@ -87,7 +86,7 @@ public:
                   units.release();
                   auto ex = f.get_exception();
                   _started_sem.broken(ex);
-                  _started_sem = ss::semaphore{0};
+                  _started_sem = {0, "pproxy/oneshot"};
                   return futurator::make_exception_future(ex);
               }
 
@@ -98,7 +97,7 @@ public:
 
 private:
     ss::noncopyable_function<ss::future<>()> _func;
-    ss::semaphore _started_sem{0};
+    ssx::semaphore _started_sem{0, "pproxy/oneshot"};
 };
 
 } // namespace pandaproxy::schema_registry

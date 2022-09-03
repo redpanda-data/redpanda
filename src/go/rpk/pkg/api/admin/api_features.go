@@ -9,7 +9,10 @@
 
 package admin
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // FeatureState enumerates the possible states of a feature.
 type FeatureState string
@@ -35,12 +38,34 @@ type FeaturesResponse struct {
 	Features       []Feature `json:"features"`
 }
 
+type License struct {
+	Loaded     bool              `json:"loaded"`
+	Properties LicenseProperties `json:"license"`
+}
+
+type LicenseProperties struct {
+	Version      int    `json:"format_version"`
+	Organization string `json:"org"`
+	Type         string `json:"type"`
+	Expires      int64  `json:"expires"`
+}
+
 // GetFeatures returns information about the available features.
-func (a *AdminAPI) GetFeatures() (FeaturesResponse, error) {
+func (a *AdminAPI) GetFeatures(ctx context.Context) (FeaturesResponse, error) {
 	var features FeaturesResponse
 	return features, a.sendAny(
+		ctx,
 		http.MethodGet,
 		"/v1/features",
 		nil,
 		&features)
+}
+
+func (a *AdminAPI) GetLicenseInfo(ctx context.Context) (License, error) {
+	var license License
+	return license, a.sendAny(ctx, http.MethodGet, "/v1/features/license", nil, &license)
+}
+
+func (a *AdminAPI) SetLicense(ctx context.Context, license interface{}) error {
+	return a.sendToLeader(ctx, http.MethodPut, "/v1/features/license", license, nil)
 }

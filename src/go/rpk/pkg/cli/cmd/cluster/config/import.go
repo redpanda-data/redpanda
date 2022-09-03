@@ -10,6 +10,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ func (fe *formattedError) Error() string {
 }
 
 func importConfig(
+	ctx context.Context,
 	client *admin.AdminAPI,
 	filename string,
 	oldConfig admin.Config,
@@ -103,8 +105,15 @@ func importConfig(
 		}
 
 		if haveOldVal {
-			// If value changed, add it to list of updates
-			// DeepEqual because values can be slices
+			// Since the admin endpoint will redact secret fields, ignore any
+			// such sentinel strings we've been given, to avoid accidentally
+			// setting configs to this value.
+			// TODO: why doesn't this work with DeepEqual?
+			if fmt.Sprintf("%v", oldVal) == "[secret]" && fmt.Sprintf("%v", v) == "[secret]" {
+				continue
+			}
+			// If value changed, add it to list of updates.
+			// DeepEqual because values can be slices.
 			if !reflect.DeepEqual(oldVal, v) {
 				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldVal), fmt.Sprintf("%v", v)})
 				upsert[k] = v
@@ -152,7 +161,7 @@ func importConfig(
 	fmt.Printf("\n")
 
 	// PUT to admin API
-	result, err := client.PatchClusterConfig(upsert, remove)
+	result, err := client.PatchClusterConfig(ctx, upsert, remove)
 	if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 		// Special case 400 (validation) errors with friendly output
 		// about which configuration properties were invalid.
@@ -207,7 +216,7 @@ func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Import cluster configuration from a file.",
+		Short: "Import cluster configuration from a file",
 		Long: `Import cluster configuration from a file.
 
 Import configuration from a YAML file, usually generated with
@@ -224,15 +233,15 @@ from the YAML file, it is reset to its default value.  `,
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config()
+			currentConfig, err := client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to query config values: %v", err)
 
 			// Read back template & parse
-			err = importConfig(client, filename, currentConfig, schema, *all)
+			err = importConfig(cmd.Context(), client, filename, currentConfig, schema, *all)
 			if fe := (*formattedError)(nil); errors.As(err, &fe) {
 				fmt.Fprint(os.Stderr, err)
 				out.Die("No changes were made")

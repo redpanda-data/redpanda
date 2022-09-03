@@ -50,11 +50,11 @@ public:
     using type = std::decay_t<T>;
     using result_type = result<type>;
 
-    static constexpr bool is_optional = reflection::is_std_optional_v<type>;
-    static constexpr bool is_named_type = reflection::is_named_type_v<type>;
+    static constexpr bool is_optional = reflection::is_std_optional<type>;
+    static constexpr bool is_named_type = reflection::is_rp_named_type<type>;
     static constexpr bool is_duration = detail::is_duration_v<type>;
     static constexpr bool is_arithmetic = std::is_arithmetic_v<type>;
-    static constexpr bool is_ss_bool = reflection::is_ss_bool_v<type>;
+    static constexpr bool is_ss_bool = reflection::is_ss_bool_class<type>;
     static constexpr bool is_constructible_from_string_view
       = std::is_constructible_v<type, std::string_view>;
     static constexpr bool is_constructible_from_sstring

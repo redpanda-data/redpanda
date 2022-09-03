@@ -417,6 +417,110 @@ func TestNamedSocketAddressArray(t *testing.T) {
 	}
 }
 
+func TestNamedAuthNSocketAddressArray(t *testing.T) {
+	authNMtlsIdentity := "mtls_identity"
+	authNSasl := "sasl"
+	authNNOne := "none"
+	for _, test := range []struct {
+		name   string
+		data   string
+		exp    []NamedAuthNSocketAddress
+		expErr bool
+	}{
+		{
+			name: "single namedAuthNSocketAddress",
+			data: "test_api:\n  address: 0.0.0.0\n  port: 80\n  name: socket\n  authentication_method: mtls_identity\n",
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNMtlsIdentity,
+				},
+			},
+		},
+		{
+			name: "list of 1 namedSocketAddress",
+			data: "test_api:\n  - name: socket\n    address: 0.0.0.0\n    port: 80\n    authentication_method: sasl\n",
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNSasl,
+				},
+			},
+		},
+		{
+			name: "list of namedSocketAddress",
+			data: `test_api:
+  - name: socket
+    address: 0.0.0.0
+    port: 80
+    authentication_method: mtls_identity
+  - name: socket2
+    address: 0.0.0.1
+    port: 81
+    authentication_method: sasl
+  - name: socket3
+    address: 0.0.0.2
+    port: 81
+    authentication_method: none
+  - name: socket4
+    address: 0.0.0.3
+    port: 81`,
+			exp: []NamedAuthNSocketAddress{
+				{
+					Name:    "socket",
+					Address: "0.0.0.0",
+					Port:    80,
+					AuthN:   &authNMtlsIdentity,
+				},
+				{
+					Name:    "socket2",
+					Address: "0.0.0.1",
+					Port:    81,
+					AuthN:   &authNSasl,
+				},
+				{
+					Name:    "socket3",
+					Address: "0.0.0.2",
+					Port:    81,
+					AuthN:   &authNNOne,
+				},
+				{
+					Name:    "socket4",
+					Address: "0.0.0.3",
+					Port:    81,
+				},
+			},
+		},
+		{
+			name:   "unsupported types",
+			data:   "test_api:\n  address: [0.0.0.0]\n  port: 80\n  name: socket\n",
+			expErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var ts struct {
+				Sockets namedAuthNSocketAddresses `yaml:"test_api"`
+			}
+			err := yaml.Unmarshal([]byte(test.data), &ts)
+
+			gotErr := err != nil
+			if gotErr != test.expErr {
+				t.Errorf("input %q: got err? %v, exp err? %v; error: %v",
+					test.data, gotErr, test.expErr, err)
+				return
+			}
+			if test.expErr {
+				return
+			}
+			require.Equal(t, namedAuthNSocketAddresses(test.exp), ts.Sockets)
+		})
+	}
+}
+
 func TestServerTLSArray(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -545,7 +649,7 @@ func TestSeedServers(t *testing.T) {
     port: 80
 `,
 			exp: []SeedServer{
-				{Host: SocketAddress{"0.0.0.1", 80}},
+				{SocketAddress{"0.0.0.1", 80}},
 			},
 		},
 		{
@@ -559,8 +663,8 @@ func TestSeedServers(t *testing.T) {
       port: 90
 `,
 			exp: []SeedServer{
-				{Host: SocketAddress{"0.0.0.1", 80}},
-				{Host: SocketAddress{"0.0.0.2", 90}},
+				{SocketAddress{"0.0.0.1", 80}},
+				{SocketAddress{"0.0.0.2", 90}},
 			},
 		},
 		{
@@ -593,6 +697,142 @@ func TestSeedServers(t *testing.T) {
 	}
 }
 
+func TestSeedServer(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		data   string
+		exp    SeedServer
+		expErr bool
+	}{
+		{
+			name: "with node_id",
+			data: `test_server:
+  node_id: 1
+  host:
+    address: 192.168.10.1
+    port: 33145
+`,
+			exp: SeedServer{
+				SocketAddress{"192.168.10.1", 33145},
+			},
+		},
+		{
+			name: "with host",
+			data: `test_server:
+    host:
+        address: "0.0.0.1"
+        port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"0.0.0.1", 80},
+			},
+		},
+		{
+			name: "address and port",
+			data: `test_server:
+    address: "1.0.0.1"
+    port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"1.0.0.1", 80},
+			},
+		},
+		{
+			name: "equal host and address & port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 80
+  address: "0.0.0.1"
+  port: 80
+`,
+			exp: SeedServer{
+				SocketAddress{"0.0.0.1", 80},
+			},
+		},
+		{
+			name: "host.address and port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "address and host.port",
+			data: `test_server:
+  host:
+    port: 80
+  address: "0.0.0.1"
+`,
+			expErr: true,
+		},
+		{
+			name: "address different from host.address",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 80
+  address: "0.2.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "port different from host.port",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+    port: 82
+  address: "0.0.0.1"
+  port: 80
+`,
+			expErr: true,
+		},
+		{
+			name: "equal host.address and address",
+			data: `test_server:
+  host:
+    address: "0.0.0.1"
+  address: "0.0.0.1"
+`,
+			exp: SeedServer{
+				SocketAddress{Address: "0.0.0.1"},
+			},
+		},
+		{
+			name: "equal host.port and port",
+			data: `test_server:
+  host:
+    port: 82
+  port: 82
+`,
+			exp: SeedServer{
+				SocketAddress{Port: 82},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var ts struct {
+				Ss SeedServer `yaml:"test_server"`
+			}
+			err := yaml.Unmarshal([]byte(test.data), &ts)
+
+			gotErr := err != nil
+			if gotErr != test.expErr {
+				t.Errorf("input %q: got err? %v, exp err? %v; error: %v",
+					test.data, gotErr, test.expErr, err)
+				return
+			}
+			if test.expErr {
+				return
+			}
+			require.Equal(t, test.exp, ts.Ss)
+		})
+	}
+}
+
 func TestConfig_UnmarshalYAML(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -602,8 +842,7 @@ func TestConfig_UnmarshalYAML(t *testing.T) {
 	}{
 		{
 			name: "Config file with normal types",
-			data: `config_file: "/etc/redpanda/redpanda.yaml"
-organization: "my_organization"
+			data: `organization: "my_organization"
 cluster_id: "cluster_id"
 node_uuid: "node_uuid"
 redpanda:
@@ -647,10 +886,11 @@ redpanda:
     name: external
     port: 9093
   seed_servers:
-  - host:
-      address: 192.168.0.1
-      port: 33145
+  - address: 192.168.0.1
+    port: 33145
   rack: "rack-id"
+  aggregate_metrics: true
+  disable_public_metrics: true
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -728,7 +968,6 @@ rpk:
   tune_clocksource: true
 `,
 			exp: &Config{
-				ConfigFile:   "/etc/redpanda/redpanda.yaml",
 				Organization: "my_organization",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "node_uuid",
@@ -748,9 +987,9 @@ rpk:
 						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
 					},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
-					KafkaAPI: []NamedSocketAddress{
-						{"0.0.0.0", 9092, "internal"},
-						{"0.0.0.0", 9093, "external"},
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 9092, "internal", nil},
+						{"0.0.0.0", 9093, "external", nil},
 					},
 					KafkaAPITLS: []ServerTLS{
 						{Name: "external", KeyFile: "certs/tls-key.pem"},
@@ -761,8 +1000,10 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
 					},
+					AggregateMetrics:     true,
+					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
@@ -831,8 +1072,7 @@ rpk:
 		},
 		{
 			name: "Config file with weak types",
-			data: `config_file: 123123
-organization: true
+			data: `organization: true
 cluster_id: "cluster_id"
 node_uuid: 124.42
 redpanda:
@@ -876,10 +1116,18 @@ redpanda:
     name: external
     port: 9093
   seed_servers:
+  - host:
+      address: 192.168.0.1
+      port: 33145
+  - node_id: "0"
     host:
       address: 192.168.0.1
       port: 33145
+  - address: 192.168.0.1
+    port: 33145
   rack: "rack-id"
+  aggregate_metrics: "true"
+  disable_public_metrics: "true"
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -956,7 +1204,6 @@ rpk:
   tune_clocksource: 1
 `,
 			exp: &Config{
-				ConfigFile:   "123123",
 				Organization: "1",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "124.42",
@@ -976,9 +1223,9 @@ rpk:
 						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
 					},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
-					KafkaAPI: []NamedSocketAddress{
-						{"0.0.0.0", 9092, "internal"},
-						{"0.0.0.0", 9093, "external"},
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 9092, "internal", nil},
+						{"0.0.0.0", 9093, "external", nil},
 					},
 					KafkaAPITLS: []ServerTLS{
 						{Name: "external", KeyFile: "certs/tls-key.pem"},
@@ -989,8 +1236,12 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
+						{SocketAddress{"192.168.0.1", 33145}},
 					},
+					AggregateMetrics:     true,
+					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},

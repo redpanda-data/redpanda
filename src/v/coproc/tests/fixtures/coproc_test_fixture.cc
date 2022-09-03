@@ -42,7 +42,8 @@ std::unique_ptr<kafka::client::client> make_client() {
     cfg.retries.set_value(size_t(5));
     cfg.retry_base_backoff.set_value(10ms);
     cfg.produce_batch_delay.set_value(0ms);
-    return std::make_unique<kafka::client::client>(to_yaml(cfg));
+    return std::make_unique<kafka::client::client>(
+      to_yaml(cfg, config::redact_secrets::no));
 }
 
 } // namespace

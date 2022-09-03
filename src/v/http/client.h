@@ -27,7 +27,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -259,3 +258,20 @@ inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     return client->send(std::move(scattered));
 }
 } // namespace http
+
+template<>
+struct fmt::formatter<http::client::request_header> {
+    constexpr auto parse(fmt::format_parse_context& ctx)
+      -> decltype(ctx.begin()) {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(const http::client::request_header& h, FormatContext& ctx)
+      -> decltype(ctx.out()) {
+        auto redacted = http::redacted_header(h);
+        std::stringstream s;
+        s << redacted;
+        return fmt::format_to(ctx.out(), "{}", s.str());
+    }
+};

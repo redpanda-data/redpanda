@@ -12,6 +12,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/randoms.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
@@ -29,6 +30,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -97,7 +99,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
                             .get0();
-    d.batches
+    d.batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
       .get0();
 }
@@ -297,16 +299,17 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_negatives) {
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
-    auto n1 = tests::random_broker(0, 100);
-    auto n2 = tests::random_broker(0, 100);
-    auto n3 = tests::random_broker(0, 100);
+    auto n1 = model::random_broker(0, 100);
+    auto n2 = model::random_broker(0, 100);
+    auto n3 = model::random_broker(0, 100);
     std::vector<model::broker> nodes{n1, n2, n3};
     raft::group_nodes current{
       .voters
       = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
       .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
 
-    raft::group_configuration cfg(nodes, current, model::revision_id(0));
+    raft::group_configuration cfg(
+      nodes, current, model::revision_id(0), std::nullopt);
 
     auto ct = ss::lowres_clock::now();
     raft::offset_translator_delta delta{
@@ -322,22 +325,25 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
 
     BOOST_REQUIRE_EQUAL(d.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
-    BOOST_REQUIRE(d.cluster_time == ct);
+    BOOST_REQUIRE(
+      std::chrono::time_point_cast<std::chrono::milliseconds>(d.cluster_time)
+      == std::chrono::time_point_cast<std::chrono::milliseconds>(ct));
     BOOST_REQUIRE_EQUAL(d.latest_configuration, cfg);
     BOOST_REQUIRE_EQUAL(d.log_start_delta, delta);
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
-    auto n1 = tests::random_broker(0, 100);
-    auto n2 = tests::random_broker(0, 100);
-    auto n3 = tests::random_broker(0, 100);
+    auto n1 = model::random_broker(0, 100);
+    auto n2 = model::random_broker(0, 100);
+    auto n3 = model::random_broker(0, 100);
     std::vector<model::broker> nodes{n1, n2, n3};
     raft::group_nodes current{
       .voters
       = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
       .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
 
-    raft::group_configuration cfg(nodes, current, model::revision_id(0));
+    raft::group_configuration cfg(
+      nodes, current, model::revision_id(0), std::nullopt);
     auto c = cfg;
     auto ct = ss::lowres_clock::now();
     // serialize using old format (no version included)
@@ -347,7 +353,8 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
       model::offset(123),
       model::term_id(32),
       std::move(cfg),
-      ct.time_since_epoch());
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        ct.time_since_epoch()));
 
     iobuf_parser parser(std::move(serialize_buf));
 
@@ -357,7 +364,10 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
 
     BOOST_REQUIRE_EQUAL(metadata.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(metadata.last_included_term, model::term_id(32));
-    BOOST_REQUIRE(metadata.cluster_time == ct);
+    BOOST_REQUIRE(
+      std::chrono::time_point_cast<std::chrono::milliseconds>(
+        metadata.cluster_time)
+      == std::chrono::time_point_cast<std::chrono::milliseconds>(ct));
     BOOST_REQUIRE_EQUAL(metadata.latest_configuration, c);
     BOOST_REQUIRE_EQUAL(
       metadata.log_start_delta, raft::offset_translator_delta{});

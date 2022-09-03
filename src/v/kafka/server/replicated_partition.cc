@@ -10,16 +10,19 @@
  */
 #include "kafka/server/replicated_partition.h"
 
+#include "cluster/errc.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/types.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 
 #include <optional>
 
@@ -36,6 +39,15 @@ replicated_partition::replicated_partition(
 ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {
+    if (
+      _partition->is_read_replica_mode_enabled()
+      && _partition->cloud_data_available()) {
+        // No need to translate the offsets in this case since all fetch
+        // requests in read replica are served via remote_partition which
+        // does its own translation.
+        co_return co_await _partition->make_cloud_reader(cfg);
+    }
+
     auto local_kafka_start_offset = _translator->from_log_offset(
       _partition->start_offset());
     if (
@@ -104,12 +116,9 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
 }
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>
-replicated_partition::aborted_transactions(
-  model::offset base,
-  model::offset last,
+replicated_partition::aborted_transactions_local(
+  cloud_storage::offset_range offsets,
   ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
-    vassert(ot_state, "ntp {}: offset translator state must be present", ntp());
-
     // Note: here we expect that local _partition contains aborted transaction
     // ids for both local and remote offset ranges. This is true as long as
     // rm_stm state has not been reset (for example when there is a partition
@@ -117,14 +126,13 @@ replicated_partition::aborted_transactions(
     // eviction point). See
     // https://github.com/redpanda-data/redpanda/issues/3001
 
-    auto base_rp = ot_state->to_log_offset(base);
-    auto last_rp = ot_state->to_log_offset(last);
-    auto source = co_await _partition->aborted_transactions(base_rp, last_rp);
+    auto source = co_await _partition->aborted_transactions(
+      offsets.begin_rp, offsets.end_rp);
 
     // We trim beginning of aborted ranges to `trim_at` because we don't have
     // offset translation info for earlier offsets.
     model::offset trim_at;
-    if (base_rp >= _partition->start_offset()) {
+    if (offsets.begin_rp >= _partition->start_offset()) {
         // Local fetch. Trim to start of the log - it is safe because clients
         // can't read earlier offsets.
         trim_at = _partition->start_offset();
@@ -133,7 +141,7 @@ replicated_partition::aborted_transactions(
         // incorrect because clients can still see earlier offsets but will work
         // if they won't use aborted ranges from this request to filter batches
         // belonging to earlier offsets.
-        trim_at = base_rp;
+        trim_at = offsets.begin_rp;
     }
 
     std::vector<cluster::rm_stm::tx_range> target;
@@ -146,6 +154,85 @@ replicated_partition::aborted_transactions(
     }
 
     co_return target;
+}
+
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+replicated_partition::aborted_transactions_remote(
+  cloud_storage::offset_range offsets,
+  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+    auto source = co_await _partition->aborted_transactions_cloud(offsets);
+    std::vector<cluster::rm_stm::tx_range> target;
+    target.reserve(source.size());
+    for (const auto& range : source) {
+        target.push_back(cluster::rm_stm::tx_range{
+          .pid = range.pid,
+          .first = ot_state->from_log_offset(
+            std::max(offsets.begin_rp, range.first)),
+          .last = ot_state->from_log_offset(range.last)});
+    }
+    co_return target;
+}
+
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+replicated_partition::aborted_transactions(
+  model::offset base,
+  model::offset last,
+  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+    // We can extract information about aborted transactions from local raft log
+    // or from the S3 bucket. The decision is made using the following logic:
+    // - if the record batches were produced by shadow indexing (downloaded from
+    // S3)
+    //   then we should use the same source for transactions metadata. It's
+    //   guaranteed that in this case we will find the corresponding manifest
+    //   (it's downloaded alongside the segment to SI cache). This also means
+    //   that we will have the manifests hydrated on disk (since we just
+    //   downloaded corresponding segments from S3 to produce batches).
+    // - if the source of data is local raft log then we should use abroted
+    // transactions
+    //   snapshot.
+    //
+    // Sometimes the snapshot will have data for the offset range even if the
+    // source is S3 bucket. In this case we won't be using this data because
+    // it's not guaranteed that it has the data for the entire offset range and
+    // we won't be able to tell the difference by looking at the results (for
+    // instance, the offset range is 0-100, but the snapshot has data starting
+    // from offset 50, it will return data for range 50-100 and we won't be able
+    // to tell if it didn't have data for 0-50 or there wasn't any transactions
+    // in that range).
+    vassert(ot_state, "ntp {}: offset translator state must be present", ntp());
+    auto base_rp = ot_state->to_log_offset(base);
+    auto last_rp = ot_state->to_log_offset(last);
+    cloud_storage::offset_range offsets = {
+      .begin = base,
+      .end = last,
+      .begin_rp = base_rp,
+      .end_rp = last_rp,
+    };
+    if (_partition->is_read_replica_mode_enabled()) {
+        // Always use SI for read replicas
+        co_return co_await aborted_transactions_remote(offsets, ot_state);
+    }
+    if (
+      _partition->cloud_data_available()
+      && offsets.begin_rp < _partition->start_offset()) {
+        // The fetch request was satisfied using shadow indexing.
+        auto tx_remote = co_await aborted_transactions_remote(
+          offsets, ot_state);
+        if (!tx_remote.empty()) {
+            // NOTE: we don't have a way to upload tx-manifests to the cloud
+            // for segments which was uploaded by old redpanda version because
+            // we can't guarantee that the local snapshot still has the data.
+            // This means that 'aborted_transaction_remote' might return empty
+            // result in case if the segment was uploaded by previous version of
+            // redpanda. In this case we will try to fetch the aborted
+            // transactions metadata from local snapshot. This approach provide
+            // the same guarantees that we have in v22.1 for data produced by
+            // v22.1 and earlier. But for new data we will guarantee that the
+            // metadata is always available in S3.
+            co_return tx_remote;
+        }
+    }
+    co_return co_await aborted_transactions_local(offsets, ot_state);
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -163,11 +250,11 @@ ss::future<result<model::offset>> replicated_partition::replicate(
   model::record_batch_reader rdr, raft::replicate_options opts) {
     using ret_t = result<model::offset>;
     return _partition->replicate(std::move(rdr), opts)
-      .then([this](result<raft::replicate_result> r) {
+      .then([](result<cluster::kafka_result> r) {
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(_translator->from_log_offset(r.value().last_offset));
+          return ret_t(model::offset(r.value().last_offset()));
       });
 }
 
@@ -177,15 +264,18 @@ raft::replicate_stages replicated_partition::replicate(
   raft::replicate_options opts) {
     using ret_t = result<raft::replicate_result>;
     auto res = _partition->replicate_in_stages(batch_id, std::move(rdr), opts);
-    res.replicate_finished = res.replicate_finished.then(
-      [this](result<raft::replicate_result> r) {
+
+    raft::replicate_stages out(raft::errc::success);
+    out.request_enqueued = std::move(res.request_enqueued);
+    out.replicate_finished = res.replicate_finished.then(
+      [](result<cluster::kafka_result> r) {
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(raft::replicate_result{
-            _translator->from_log_offset(r.value().last_offset)});
+          return ret_t(
+            raft::replicate_result{model::offset(r.value().last_offset())});
       });
-    return res;
+    return out;
 }
 
 std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
@@ -209,7 +299,7 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     return std::nullopt;
 }
 
-ss::future<bool> replicated_partition::is_fetch_offset_valid(
+ss::future<error_code> replicated_partition::validate_fetch_offset(
   model::offset fetch_offset, model::timeout_clock::time_point deadline) {
     /**
      * Make sure that we will update high watermark offset if it isn't yet
@@ -234,6 +324,18 @@ ss::future<bool> replicated_partition::is_fetch_offset_valid(
         // retry linearizable barrier to make sure node is still a leader
         auto ec = co_await linearizable_barrier();
         if (ec) {
+            /**
+             * when partition is shutting down we may not be able to correctly
+             * validate consumer requested offset. Return
+             * not_leader_for_partition error to force client to retry instead
+             * of out of range error that is forcing consumers to reset their
+             * offset.
+             */
+            if (
+              ec == raft::errc::shutting_down
+              || ec == cluster::errc::shutting_down) {
+                co_return error_code::not_leader_for_partition;
+            }
             vlog(
               klog.warn,
               "error updating partition high watermark with linearizable "
@@ -249,8 +351,9 @@ ss::future<bool> replicated_partition::is_fetch_offset_valid(
           _partition->high_watermark());
     }
 
-    co_return fetch_offset >= start_offset()
-      && fetch_offset <= high_watermark();
+    co_return fetch_offset >= start_offset() && fetch_offset <= high_watermark()
+      ? error_code::none
+      : error_code::offset_out_of_range;
 }
 
 } // namespace kafka

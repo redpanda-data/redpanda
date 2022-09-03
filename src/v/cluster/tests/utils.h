@@ -18,14 +18,15 @@
 
 static const model::ns test_ns = model::ns("test-namespace");
 
-static cluster::partition_assignment create_test_assignment(
+inline cluster::partition_assignment create_test_assignment(
   const ss::sstring& topic,
   int partition_id,
   std::vector<std::pair<uint32_t, uint32_t>> shards_assignment,
   int group_id) {
-    cluster::partition_assignment p_as{
-      .group = raft::group_id(group_id),
-      .id = model::partition_id(partition_id)};
+    cluster::partition_assignment p_as;
+    p_as.group = raft::group_id(group_id);
+    p_as.id = model::partition_id(partition_id);
+
     std::transform(
       shards_assignment.begin(),
       shards_assignment.end(),
@@ -43,7 +44,7 @@ using batches_t = ss::circular_buffer<model::record_batch>;
 using batches_ptr_t = ss::lw_shared_ptr<batches_t>;
 using foreign_batches_t = ss::foreign_ptr<batches_ptr_t>;
 
-static void wait_for_metadata(
+inline void wait_for_metadata(
   cluster::topic_table& topic_table,
   const std::vector<cluster::topic_result>& results,
   std::chrono::milliseconds tout = std::chrono::seconds(5)) {

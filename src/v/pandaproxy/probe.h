@@ -15,17 +15,64 @@
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/http/reply.hh>
 
 namespace pandaproxy {
 
+/// If the request is good, measure latency, otherwise record the error.
+class http_status_metric {
+public:
+    class measurement {
+    public:
+        measurement(
+          http_status_metric* p, std::unique_ptr<hdr_hist::measurement> m)
+          : _p(p)
+          , _m(std::move(m)) {}
+
+        void set_status(ss::httpd::reply::status_type s) {
+            using status_type = ss::httpd::reply::status_type;
+            if (s < status_type{300}) {
+                return;
+            }
+            if (s < status_type{400}) {
+                ++_p->_3xx_count;
+            } else if (s < status_type{500}) {
+                ++_p->_4xx_count;
+            } else {
+                ++_p->_5xx_count;
+            }
+            _m->set_trace(false);
+        }
+
+    private:
+        http_status_metric* _p;
+        std::unique_ptr<hdr_hist::measurement> _m;
+    };
+    hdr_hist& hist() { return _hist; }
+    auto auto_measure() { return measurement{this, _hist.auto_measure()}; }
+
+    hdr_hist _hist;
+    int64_t _5xx_count{0};
+    int64_t _4xx_count{0};
+    int64_t _3xx_count{0};
+};
+
 class probe {
 public:
-    probe(ss::httpd::path_description& path_desc);
-    hdr_hist& hist() { return _request_hist; }
+    probe(
+      ss::httpd::path_description& path_desc, const ss::sstring& group_name);
+    auto auto_measure() { return _request_metrics.auto_measure(); }
 
 private:
-    hdr_hist _request_hist;
+    void setup_metrics();
+    void setup_public_metrics();
+
+private:
+    http_status_metric _request_metrics;
+    const ss::httpd::path_description& _path;
+    const ss::sstring& _group_name;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 } // namespace pandaproxy

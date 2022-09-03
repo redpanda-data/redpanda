@@ -19,12 +19,6 @@
 
 namespace kafka {
 
-class offset_for_leader_epoch_api final {
-public:
-    static constexpr const char* name = "offset_for_leader_epoch";
-    static constexpr api_key key = api_key(23);
-};
-
 struct offset_for_leader_epoch_request final {
     using api_type = offset_for_leader_epoch_api;
 

@@ -22,7 +22,7 @@ stream_deserialize(ss::input_stream<char>& s) {
     detail::var_decoder decoder(limit);
     while (!s.eof()) {
         auto buf = co_await s.read_exactly(1);
-        if (buf.empty() || decoder.accept(static_cast<uint8_t>(buf[0]))) {
+        if (buf.empty() || decoder.accept(buf[0])) {
             break;
         }
     }

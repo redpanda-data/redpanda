@@ -33,7 +33,7 @@ coproc_cluster_fixture::enable_coprocessors(std::vector<deploy> copros) {
     co_await ss::parallel_for_each(
       node_ids, [this, ids](const model::node_id& node_id) {
           application* app = get_node_application(node_id);
-          return ss::parallel_for_each(ids, [this, app](coproc::script_id id) {
+          return ss::parallel_for_each(ids, [app](coproc::script_id id) {
               return coproc::wasm::wait_for_copro(
                 app->coprocessing->get_pacemaker(), id);
           });

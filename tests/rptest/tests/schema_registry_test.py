@@ -173,6 +173,9 @@ class SchemaRegistryTest(RedpandaTest):
                              headers=headers,
                              data=data)
 
+    def _get_mode(self, headers=HTTP_GET_HEADERS):
+        return self._request("GET", "mode", headers=headers)
+
     def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
         return self._request("GET", f"schemas/types", headers=headers)
 
@@ -623,6 +626,15 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
 
     @cluster(num_nodes=3)
+    def test_mode(self):
+        """
+        Smoketest get_mode endpoint
+        """
+        self.logger.debug("Get initial global mode")
+        result_raw = self._get_mode()
+        assert result_raw.json()["mode"] == "READWRITE"
+
+    @cluster(num_nodes=3)
     def test_post_compatibility_subject_version(self):
         """
         Verify compatibility
@@ -1024,6 +1036,15 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.text.strip() == simple_proto_def.strip()
+
+        result_raw = self._request("GET",
+                                   f"schemas/ids/1",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["schemaType"] == "PROTOBUF"
+        assert result["schema"].strip() == simple_proto_def.strip()
 
         result_raw = self._get_subjects_subject_versions_version_referenced_by(
             "simple", 1)

@@ -10,17 +10,18 @@
  */
 #pragma once
 #include "cluster/fwd.h"
-#include "cluster/shard_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
-#include "rpc/connection_cache.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
+
+#include <absl/container/node_hash_map.h>
 
 #include <system_error>
 
@@ -45,6 +46,8 @@ public:
       get_reconciliation_state(std::vector<model::ntp>);
 
     ss::future<ntp_reconciliation_state> get_reconciliation_state(model::ntp);
+
+    ss::future<result<bool>> all_reconciliations_done(std::vector<model::ntp>);
 
     /**
      * API to access both remote and local state

@@ -11,7 +11,6 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"strconv"
@@ -84,7 +83,7 @@ func exportConfig(
 		if meta.Type == "array" {
 			switch x := curValue.(type) {
 			case nil:
-				fmt.Fprintf(&sb, "%s: []", name)
+				fmt.Fprintf(&sb, "%s:", name)
 			case []interface{}:
 				if len(x) > 0 {
 					fmt.Fprintf(&sb, "%s:\n", name)
@@ -135,7 +134,7 @@ func newExportCommand(fs afero.Fs, all *bool) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export cluster configuration.",
+		Short: "Export cluster configuration",
 		Long: `Export cluster configuration.
 
 Writes out a YAML representation of the cluster configuration to a file,
@@ -154,23 +153,24 @@ to include all properties including these low level tunables.
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
 			var currentConfig admin.Config
-			currentConfig, err = client.Config()
+			currentConfig, err = client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to query current config: %v", err)
 
 			// Generate a yaml template for editing
 			var file *os.File
 			if filename == "" {
-				file, err = ioutil.TempFile("/tmp", "config_*.yaml")
+				file, err = os.CreateTemp("/tmp", "config_*.yaml")
+				filename = "/tmp/config_*.yaml"
 			} else {
 				file, err = os.Create(filename)
 			}
 
-			out.MaybeDie(err, "unable to create file %q: %v", file.Name(), err)
+			out.MaybeDie(err, "unable to create file %q: %v", filename, err)
 			err = exportConfig(file, schema, currentConfig, *all)
 			out.MaybeDie(err, "failed to write out config %q: %v", file.Name(), err)
 			err = file.Close()

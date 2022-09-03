@@ -43,7 +43,7 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::time_point deadline,
   ss::lowres_clock::duration backoff)
   : _id(fiber_count++) // generate new head id
-  , _backoff{backoff}
+  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
   , _parent() {
     vassert(
@@ -67,7 +67,7 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::time_point deadline,
   ss::lowres_clock::duration backoff)
   : _id(fiber_count++) // generate new head id
-  , _backoff{backoff}
+  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
   , _parent(&as) {
     vassert(
@@ -95,7 +95,7 @@ retry_chain_node::retry_chain_node(retry_chain_node* parent)
 retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration backoff, retry_chain_node* parent)
   : _id(parent->add_child())
-  , _backoff{backoff}
+  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{parent->_deadline}
   , _parent{parent} {
     vassert(
@@ -112,7 +112,7 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration backoff,
   retry_chain_node* parent)
   : _id(parent->add_child())
-  , _backoff{backoff}
+  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
   , _parent{parent} {
     vassert(
@@ -258,7 +258,10 @@ void retry_chain_node::format(
         }
         // [fiber42~0~4|2|100ms]
         fmt::format_to(
-          bii, "|{}|{}", _retry, std::chrono::milliseconds(time_budget));
+          bii,
+          "|{}|{}",
+          _retry,
+          std::chrono::duration_cast<std::chrono::milliseconds>(time_budget));
     }
 }
 

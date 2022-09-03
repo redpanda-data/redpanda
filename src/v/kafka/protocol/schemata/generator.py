@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+#
 # Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
@@ -33,7 +35,6 @@
 #   make it easier to audit where sensitive information is used.
 import io
 import json
-import functools
 import pathlib
 import re
 import sys
@@ -96,6 +97,8 @@ path_type_map = {
         }
     },
     "TxnOffsetCommitRequestData": {
+        "MemberId": ("kafka::member_id", "string"),
+        "GroupInstanceId": ("kafka::group_instance_id", "string"),
         "Topics": {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
@@ -157,6 +160,14 @@ path_type_map = {
             "Assignments": {
                 "PartitionIndex": ("model::partition_id", "int32"),
             },
+        },
+    },
+    "CreateTopicsResponseData": {
+        "Topics": {
+            "Configs": {
+                "ConfigSource": ("kafka::describe_configs_source", "int8"),
+            },
+            "TopicConfigErrorCode": ("kafka::error_code", "int16"),
         },
     },
     "FindCoordinatorRequestData": {
@@ -284,6 +295,7 @@ entity_type_map = dict(
     groupId=("kafka::group_id", "string"),
     transactionalId=("kafka::transactional_id", "string"),
     topicName=("model::topic", "string"),
+    uuid=("kafka::uuid", "uuid"),
     brokerId=("model::node_id", "int32"),
     producerId=("kafka::producer_id", "int64"),
 )
@@ -306,6 +318,7 @@ basic_type_map = dict(
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
+    uuid=("uuid", "read_uuid()"),
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()", None,
            "read_fragmented_nullable_flex_bytes()"),
     fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()",
@@ -435,6 +448,18 @@ STRUCT_TYPES = [
     "FinalizedFeatureKey",
 ]
 
+# a list of struct types which are ineligible to have default-generated
+# `operator==()`, because one or more of its member variables are not
+# comparable
+WITHOUT_DEFAULT_EQUALITY_OPERATOR = {
+    'kafka::batch_reader', 'kafka::produce_request_record_data'
+}
+
+# The following is a list of tag types which contain fields where their
+# respective types are not prefixed with []. The generator special cases these
+# as ArrayTypes
+TAGGED_WITH_FIELDS = []
+
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
 
@@ -556,6 +581,9 @@ class FieldType:
         if type_name in SCALAR_TYPES:
             t = ScalarType(type_name)
         else:
+            # Its possible for tagged types to contain fields where the type is not
+            # prefixed with [], these types are listed in the TAGGED_WITH_FIELDS map
+            is_array = is_array or (type_name in TAGGED_WITH_FIELDS)
             assert is_array
             path = path + (field["name"], )
             type_name = apply_struct_renames(path, type_name)
@@ -614,7 +642,8 @@ class StructType(FieldType):
         Return all struct types reachable from this struct.
         """
         res = []
-        for field in self.fields:
+        all_fields = self.fields + self.tags
+        for field in all_fields:
             t = field.type()
             if isinstance(t, ArrayType):
                 t = t.value_type()  # unwrap value type
@@ -622,6 +651,10 @@ class StructType(FieldType):
                 res += t.structs()
                 res.append(t)
         return res
+
+    @property
+    def is_default_comparable(self):
+        return all(field.is_default_comparable for field in self.fields)
 
 
 class ArrayType(FieldType):
@@ -647,6 +680,9 @@ class Field:
         if self._default_value == "null":
             self._default_value = ""
         self._tag = self._field.get("tag", None)
+        self._tagged_versions = self._field.get("taggedVersions", None)
+        if self._tagged_versions is not None:
+            self._tagged_versions = VersionRange(self._tagged_versions)
         assert len(self._path)
 
     @staticmethod
@@ -657,11 +693,17 @@ class Field:
     def type(self):
         return self._type
 
+    def tag(self):
+        return self._tag
+
     def nullable(self):
         return self._nullable_versions is not None
 
     def versions(self):
         return self._versions
+
+    def tagged_versions(self):
+        return self._tagged_versions
 
     def default_value(self):
         return self._default_value
@@ -825,10 +867,16 @@ class Field:
     def name(self):
         return snake_case(self._field["name"])
 
+    @property
+    def is_default_comparable(self):
+        type_name, _ = self._redpanda_type()
+        return type_name not in WITHOUT_DEFAULT_EQUALITY_OPERATOR
+
 
 HEADER_TEMPLATE = """
 #pragma once
 #include "kafka/types.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "kafka/protocol/batch_reader.h"
@@ -854,11 +902,28 @@ struct {{ struct.name }} {
     {{ info[0] }} {{ field.name }}{ {{- field.default_value() -}} };
     {%- endif %}
 {%- endfor %}
-{%- if struct.context_field %}
 
+{%- if struct.tags|length > 0 %}
+
+    // Tagged fields
+{%- for tag in struct.tags %}
+    {%- set info = tag.type_name %}
+    {%- if info[1] != None %}
+    {{ info[0] }} {{ tag.name }}{{'{'}}{{info[1]}}{{'}'}};
+    {%- else %}
+    {{ info[0] }} {{ tag.name }}{ {{- tag.default_value() -}} };
+    {%- endif %}
+{%- endfor %}
+{%- endif %}
+    tagged_fields unknown_tags;
+
+{%- if struct.context_field %}
     // extra context not part of kafka protocol.
     // added by redpanda. see generator.py:make_context_field.
     {{ struct.context_field[0] }} {{ struct.context_field[1] -}};
+{%- endif %}
+{%- if struct.is_default_comparable %}
+    friend bool operator==(const {{ struct.name }}&, const {{ struct.name }}&) = default;
 {%- endif %}
 {% endmacro %}
 
@@ -898,6 +963,20 @@ private:
 {%- endif %}
 };
 
+{%- if op_type == "request" %}
+
+struct {{ request_name }}_request;
+struct {{ request_name }}_response;
+
+struct {{ request_name }}_api final {
+    using request_type = {{ request_name }}_request;
+    using response_type = {{ request_name }}_response;
+
+    static constexpr const char* name = "{{ request_name }}";
+    static constexpr api_key key = api_key({{ api_key }});
+    static constexpr api_version min_flexible = {% if first_flex == -1 %}never_flexible{% else %}api_version({{ first_flex }}){% endif %};
+};
+{%- endif %}
 }
 """
 
@@ -927,7 +1006,22 @@ if ({{ cond }}) {
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_encoder(field, obj, flex) %}
+{% macro tag_version_guard(tag) %}
+{%- set guard_enum = tag.versions().guard_enum %}
+{%- set e, cond = tag.tagged_versions()._guard() %}
+{%- if e == guard_enum.GUARD %}
+if ({{ cond }}) {
+{{- caller() | indent }}
+}
+{%- elif e == guard_enum.NO_GUARD %}
+{{- caller() }}
+{%- else %}
+{{ fail("Unexpected condition reached NO_SOURCE, in tag_version_guard()") }}
+{%- endif %}
+{% endmacro %}
+
+{% macro field_encoder(field, methods, obj, writer = "writer") %}
+{%- set flex = methods|length > 1 %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -936,32 +1030,33 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- if field.nullable() %}
 {%- if flex %}
-writer.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- else %}
-writer.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- endif %}
 {%- else %}
 {%- if flex %}
-writer.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
 {%- else %}
-writer.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{{ writer }}.write_array({{ fname }}, [version]({{ field.value_type }}& v, response_writer& writer) {
+{%- endif %}
 {%- endif %}
     (void)version;
-{%- endif %}
 {%- if field.type().value_type().is_struct %}
-{{- struct_serde(field.type().value_type(), field_encoder, flex, "v") | indent }}
+{{- struct_serde(field.type().value_type(), methods, "v") | indent }}
 {%- else %}
-    writer.write(v);
+    {{ writer }}.write(v);
 {%- endif %}
 });
 {%- elif flex and field.type().potentially_flexible_type %}
-writer.write_flex({{ fname }});
+{{ writer }}.write_flex({{ fname }});
 {%- else %}
-writer.write({{ fname }});
+{{ writer }}.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro field_decoder(field, obj, flex) %}
+{% macro field_decoder(field, methods, obj) %}
+{%- set flex = methods|length > 1 %}
 {%- if obj %}
 {%- set fname = obj + "." + field.name %}
 {%- else %}
@@ -980,11 +1075,11 @@ writer.write({{ fname }});
 {%- else %}
 {{ fname }} = reader.read_array([version](request_reader& reader) {
 {%- endif %}
-    (void)version;
 {%- endif %}
+    (void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
-{{- struct_serde(field.type().value_type(), field_decoder, flex, "v") | indent }}
+{{- struct_serde(field.type().value_type(), methods, "v") | indent }}
     return v;
 {%- else %}
 {%- set decoder, named_type = field.decoder(flex) %}
@@ -1024,18 +1119,118 @@ writer.write({{ fname }});
 {%- endif %}
 {%- endmacro %}
 
-{% macro struct_serde(struct, field_serde, flex, obj = "") %}
+{% macro tag_decoder_impl(tag_definitions, obj = "") %}
+/// Tags decoding section
+auto num_tags = reader.read_unsigned_varint();
+while(num_tags-- > 0) {
+    auto tag = reader.read_unsigned_varint();
+    auto sz = reader.read_unsigned_varint(); // size
+    switch(tag){
+{%- for tdef in tag_definitions %}
+    case {{ tdef.tag() }}:
+{{- field_decoder(tdef, (field_decoder, tag_decoder), obj) | indent | indent }}
+        break;
+{%- endfor %}
+    default:
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+        reader.consume_unknown_tag({{ tf }}, tag, sz);
+    }
+}
+{%- endmacro %}
+
+{% macro tag_decoder(tag_definitions, obj = "") %}
+{%- if tag_definitions|length == 0 %}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+{{ tf }} = reader.read_tags();
+{%- else %}
+{
+{{- tag_decoder_impl(tag_definitions, obj) | indent }}
+}
+{%- endif %}
+{%- endmacro %}
+
+{% macro conditional_tag_encode(tdef, vec) %}
+{%- if tdef.nullable() %}
+if ({{ tdef.name }}) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- elif tdef.is_array %}
+if (!{{ tdef.name }}.empty()) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- elif tdef.default_value() != "" %}
+if ({{ tdef.name }} != {{ tdef.default_value() }}) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
+{%- else %}
+{{ vec }}.push_back({{ tdef.tag() }});
+{%- endif %}
+{%- endmacro %}
+
+{% macro tag_encoder_impl(tag_definitions, obj = "") %}
+/// Tags encoding section
+std::vector<uint32_t> to_encode;
+{%- for tdef in tag_definitions -%}
+{%- call tag_version_guard(tdef) %}
+{{- conditional_tag_encode(tdef, "to_encode") }}
+{%- endcall %}
+{%- endfor %}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+tagged_fields::type tags_to_encode{std::move({{ tf }})};
+for(uint32_t tag : to_encode) {
+    iobuf b;
+    response_writer rw(b);
+    switch(tag){
+{%- for tdef in tag_definitions %}
+    case {{ tdef.tag() }}:
+{{- field_encoder(tdef, (field_encoder, tag_encoder), obj, "rw") | indent | indent }}
+        break;
+{%- endfor %}
+    default:
+        __builtin_unreachable();
+    }
+    tags_to_encode.emplace(tag_id(tag), iobuf_to_bytes(b));
+}
+writer.write_tags(tagged_fields(std::move(tags_to_encode)));
+{%- endmacro %}
+
+{% macro tag_encoder(tag_definitions, obj = "") %}
+{%- if tag_definitions|length == 0 %}
+{%- set tf = "unknown_tags" %}
+{%- if obj != "" %}
+{%- set tf = obj + '.unknown_tags' %}
+{%- endif %}
+writer.write_tags(std::move({{ tf }}));
+{%- else %}
+{
+{{- tag_encoder_impl(tag_definitions, obj) | indent }}
+}
+{%- endif %}
+{%- endmacro %}
+
+{% set encoder = (field_encoder,) %}
+{% set decoder = (field_decoder,) %}
+{% set flex_encoder = (field_encoder, tag_encoder) %}
+{% set flex_decoder = (field_decoder, tag_decoder) %}
+
+{% macro struct_serde(struct, serde_methods, obj = "") %}
+{%- set flex = serde_methods|length > 1 %}
 {%- for field in struct.fields %}
 {%- call version_guard(field, flex) %}
-{{- field_serde(field, obj, flex) }}
+{{- serde_methods[0](field, serde_methods, obj) }}
 {%- endcall %}
 {%- endfor %}
 {%- if flex %}
-{%- if field_serde.name == "field_decoder" %}
-reader.consume_tags();
-{%- elif field_serde.name == "field_encoder" %}
-writer.write_tags();
-{%- endif %}
+{{- serde_methods[1](struct.tags, obj) }}
 {%- endif %}
 {%- endmacro %}
 
@@ -1052,20 +1247,20 @@ void {{ struct.name }}::encode(response_writer& writer, api_version version) {
 }
 
 void {{ struct.name }}::encode_flex(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, True) | indent }}
+{{- struct_serde(struct, flex_encoder) | indent }}
 }
 
 void {{ struct.name }}::encode_standard([[maybe_unused]] response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, False) | indent }}
+{{- struct_serde(struct, encoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, False) | indent }}
+{{- struct_serde(struct, encoder) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_encoder, True) | indent }}
+{{- struct_serde(struct, flex_encoder) | indent }}
 }
 {%- endif %}
 
@@ -1080,19 +1275,19 @@ void {{ struct.name }}::decode(request_reader& reader, api_version version) {
     }
 }
 void {{ struct.name }}::decode_flex(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 
 void {{ struct.name }}::decode_standard([[maybe_unused]] request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {% else %}
 void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 {%- endif %}
 {%- else %}
@@ -1108,25 +1303,25 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 void {{ struct.name }}::decode_flex(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 void {{ struct.name }}::decode_standard(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, False) | indent }}
+{{- struct_serde(struct, decoder) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
-{{- struct_serde(struct, field_decoder, True) | indent }}
+{{- struct_serde(struct, flex_decoder) | indent }}
 }
 {%- endif %}
 
@@ -1177,7 +1372,7 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
 ALLOWED_TYPES = \
     ALLOWED_SCALAR_TYPES + \
-    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES]
+    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES] + TAGGED_WITH_FIELDS
 
 # yapf: disable
 SCHEMA = {
@@ -1318,11 +1513,10 @@ def parse_flexible_versions(flex_version):
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 3
-    outdir = pathlib.Path(sys.argv[1])
-    schema_path = pathlib.Path(sys.argv[2])
-    src = (outdir / schema_path.name).with_suffix(".cc")
-    hdr = (outdir / schema_path.name).with_suffix(".h")
+    assert len(sys.argv) == 4
+    schema_path = pathlib.Path(sys.argv[1])
+    hdr = pathlib.Path(sys.argv[2])
+    src = pathlib.Path(sys.argv[3])
 
     # remove comments from the json file. comments are a non-standard json
     # extension that is not supported by the python json parser.
@@ -1346,6 +1540,18 @@ if __name__ == "__main__":
     # request or response
     op_type = msg["type"]
 
+    # request id
+    api_key = msg["apiKey"]
+
+    def parse_name(name):
+        name = name.removesuffix("Request")
+        name = name.removesuffix("Response")
+        name = snake_case(name)
+        # Special case to sidestep an otherwise large rename in the source
+        return "list_offsets" if name == "list_offset" else name
+
+    request_name = parse_name(msg["name"])
+
     # either 'none' or 'VersionRange'
     first_flex = parse_flexible_versions(msg["flexibleVersions"])
 
@@ -1359,6 +1565,8 @@ if __name__ == "__main__":
                 render_struct_comment=render_struct_comment,
                 op_type=op_type,
                 fail=fail,
+                api_key=api_key,
+                request_name=request_name,
                 first_flex=first_flex))
 
     with open(src, 'w') as f:

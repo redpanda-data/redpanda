@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "raft/types.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
@@ -128,6 +129,15 @@ private:
     model::offset _highest_known_offset;
 
     size_t _bytes_processed = 0;
+
+    // Units issued by the storage resource manager to track how many bytes
+    // of data is currently pending checkpoint.
+    ssx::semaphore_units _bytes_processed_units;
+
+    // If true, the storage resource manager has asked us to checkpoint at the
+    // next opportunity.
+    bool _checkpoint_hint{false};
+
     size_t _map_version = 0;
 
     mutex _checkpoint_lock;

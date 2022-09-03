@@ -27,9 +27,6 @@
 
 namespace pps = pandaproxy::schema_registry;
 
-constexpr std::string_view sv_string_def0{R"({"type":"string"})"};
-constexpr std::string_view sv_int_def0{R"({"type": "int"})"};
-
 inline model::record_batch make_record_batch(
   std::string_view key, std::string_view val, model::offset base_offset) {
     storage::record_batch_builder rb{
@@ -68,7 +65,10 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     // (which itself is only instantiated to receive consume_to_store's
     //  offset updates), is just needed for constructor;
     ss::sharded<kafka::client::client> dummy_kafka_client;
-    dummy_kafka_client.start(to_yaml(kafka::client::configuration{})).get();
+    dummy_kafka_client
+      .start(
+        to_yaml(kafka::client::configuration{}, config::redact_secrets::no))
+      .get();
     auto stop_kafka_client = ss::defer(
       [&dummy_kafka_client]() { dummy_kafka_client.stop().get(); });
 
@@ -83,9 +83,6 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     auto stop_seq = ss::defer([&seq]() { seq.stop().get(); });
 
     auto c = pps::consume_to_store(s, seq.local());
-
-    auto sequence = model::offset{0};
-    const auto node_id = model::node_id{123};
 
     model::offset base_offset{0};
     BOOST_REQUIRE_NO_THROW(

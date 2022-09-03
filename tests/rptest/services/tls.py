@@ -137,7 +137,6 @@ class TLSCertManager:
                     common_name: typing.Optional[str] = None,
                     name: typing.Optional[str] = None):
         name = name or host
-        assert name not in self.certs, f"cert '{name}' already exists"
 
         cfg = self._with_dir(f"{name}.conf")
         key = self._with_dir(f"{name}.key")

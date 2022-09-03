@@ -16,13 +16,13 @@
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -99,7 +99,7 @@ public:
         /* your sub-system here */
     };
 
-    explicit kvstore(kvstore_config kv_conf);
+    explicit kvstore(kvstore_config kv_conf, storage_resources&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -115,6 +115,7 @@ public:
 
 private:
     kvstore_config _conf;
+    storage_resources& _resources;
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;
@@ -142,7 +143,7 @@ private:
      */
     std::vector<op> _ops;
     ss::timer<> _timer;
-    ss::semaphore _sem{0};
+    ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     model::offset _next_offset;
     absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;

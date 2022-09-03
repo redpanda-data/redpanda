@@ -19,6 +19,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/broker_authn_endpoint.h"
 #include "config/node_config.h"
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
@@ -170,6 +171,7 @@ public:
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
             config.get("disable_metrics").set_value(true);
+            config.get("disable_public_metrics").set_value(true);
 
             auto& node_config = config::node();
             node_config.get("admin").set_value(
@@ -182,9 +184,10 @@ public:
             node_config.get("rpc_server")
               .set_value(net::unresolved_address("127.0.0.1", rpc_port));
             node_config.get("kafka_api")
-              .set_value(
-                std::vector<model::broker_endpoint>{model::broker_endpoint(
-                  net::unresolved_address("127.0.0.1", kafka_port))});
+              .set_value(std::vector<config::broker_authn_endpoint>{
+                config::broker_authn_endpoint{
+                  .address = net::unresolved_address(
+                    "127.0.0.1", kafka_port)}});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
             node_config.get("coproc_supervisor_server")
@@ -198,7 +201,7 @@ public:
         cfg.get("pandaproxy_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
             net::unresolved_address("127.0.0.1", proxy_port))});
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     YAML::Node proxy_client_config(
@@ -208,7 +211,7 @@ public:
           config::node().kafka_api()[0].address.host(), kafka_api_port};
         cfg.brokers.set_value(
           std::vector<net::unresolved_address>({kafka_api}));
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
@@ -218,7 +221,7 @@ public:
             net::unresolved_address("127.0.0.1", listen_port))});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
-        return to_yaml(cfg);
+        return to_yaml(cfg, config::redact_secrets::no);
     }
 
     ss::future<> wait_for_controller_leadership() {
@@ -411,7 +414,7 @@ public:
           net::server::resources(nullptr, nullptr),
           std::move(sasl),
           false,
-          false);
+          std::nullopt);
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(

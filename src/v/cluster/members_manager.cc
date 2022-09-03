@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
@@ -225,12 +226,15 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id](std::error_code error) {
+            .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().decommission_node(id);
                     f = _update_queue.push_eventually(node_update{
-                      .id = id, .type = node_update_type::decommissioned});
+                      .id = id,
+                      .type = node_update_type::decommissioned,
+                      .offset = update_offset,
+                    });
                 }
                 return f.then([error] { return error; });
             });
@@ -238,23 +242,27 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id](std::error_code error) {
+            .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().recommission_node(id);
                     f = _update_queue.push_eventually(node_update{
-                      .id = id, .type = node_update_type::recommissioned});
+                      .id = id,
+                      .type = node_update_type::recommissioned,
+                      .offset = update_offset});
                 }
                 return f.then([error] { return error; });
             });
       },
-      [this](finish_reallocations_cmd cmd) mutable {
+      [this, update_offset](finish_reallocations_cmd cmd) mutable {
           // we do not have to dispatch this command to members table since this
           // command is only used by a backend to signal successfully finished
           // node reallocations
           return _update_queue
             .push_eventually(node_update{
-              .id = cmd.key, .type = node_update_type::reallocation_finished})
+              .id = cmd.key,
+              .type = node_update_type::reallocation_finished,
+              .offset = update_offset})
             .then([] { return make_error_code(errc::success); });
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
@@ -409,7 +417,9 @@ void members_manager::join_raft0() {
                          }
 
                          return wait_for_next_join_retry(
-                                  _join_retry_jitter.next_duration(),
+                                  std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(
+                                    _join_retry_jitter.next_duration()),
                                   _as.local())
                            .then([] { return ss::stop_iteration::no; });
                      });
@@ -500,7 +510,7 @@ members_manager::handle_join_request(join_node_request const req) {
       req.logical_version);
 
     // curent node is a leader
-    if (_raft0->is_leader()) {
+    if (_raft0->is_elected_leader()) {
         // if configuration contains the broker already just update its config
         // with data from join request
 
@@ -519,8 +529,7 @@ members_manager::handle_join_request(join_node_request const req) {
                   if (r) {
                       auto success = r.value().success;
                       return ret_t(join_node_reply{
-                        .success = success,
-                        .id = success ? node_id : model::node_id{-1}});
+                        success, success ? node_id : model::node_id{-1}});
                   }
                   return ret_t(r.error());
               });
@@ -533,7 +542,7 @@ members_manager::handle_join_request(join_node_request const req) {
               "node",
               req.node.id(),
               req.node.rpc_address());
-            co_return ret_t(join_node_reply{.success = false});
+            co_return ret_t(join_node_reply{false, model::node_id(-1)});
         }
         if (req.node.id() != _self.id()) {
             co_await update_broker_client(
@@ -714,26 +723,39 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     }
 }
 
-bool is_result_configuration_valid(
+/**
+ * @brief Check that the configuration is valid, if not return a string with the
+ * error cause.
+ *
+ * @param current_brokers current broker vector
+ * @param to_update broker being added
+ * @return std::optional<ss::sstring> - present if there is an error, nullopt
+ * otherwise
+ */
+std::optional<ss::sstring> check_result_configuration(
   const std::vector<broker_ptr>& current_brokers,
   const model::broker& to_update) {
-    /**
-     * validate if any two of the brokers would listen on the same addresses
-     * after applying configuration update
-     */
     for (auto& current : current_brokers) {
         if (current->id() == to_update.id()) {
             /**
              * do no allow to decrease node core count
              */
             if (current->properties().cores > to_update.properties().cores) {
-                return false;
+                return "core count must not decrease on any broker";
             }
             continue;
         }
-        // error, nodes would point to the same addresses
+
+        /**
+         * validate if any two of the brokers would listen on the same addresses
+         * after applying configuration update
+         */
         if (current->rpc_address() == to_update.rpc_address()) {
-            return false;
+            // error, nodes would listen on the same rpc addresses
+            return fmt::format(
+              "duplicate rpc endpoint {} with existing node {}",
+              to_update.rpc_address(),
+              current->id());
         }
         for (auto& current_ep : current->kafka_advertised_listeners()) {
             auto any_is_the_same = std::any_of(
@@ -744,11 +766,16 @@ bool is_result_configuration_valid(
               });
             // error, kafka endpoint would point to the same addresses
             if (any_is_the_same) {
-                return false;
+                return fmt::format(
+                  "duplicate kafka advertised endpoint {} with existing node "
+                  "{}",
+                  current_ep,
+                  current->id());
+                ;
             }
         }
     }
-    return true;
+    return {};
 }
 
 ss::future<result<configuration_update_reply>>
@@ -767,11 +794,12 @@ members_manager::handle_configuration_update_request(
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
     auto all_brokers = _members_table.local().all_brokers();
-    if (!is_result_configuration_valid(all_brokers, req.node)) {
+    if (auto err = check_result_configuration(all_brokers, req.node); err) {
         vlog(
           clusterlog.warn,
-          "Rejecting invalid configuration update: {}, current brokers list: "
-          "{}",
+          "Rejecting invalid configuration update. Reason: {}, new broker: {}, "
+          "current brokers list: {}",
+          err.value(),
           req.node,
           all_brokers);
         return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
@@ -903,9 +931,9 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
 
           vlog(
             clusterlog.info,
-            "Hello response from {} failed: {}",
+            "Node {} did not respond to Hello message ({})",
             broker_id,
-            r.error());
+            r.error().message());
       });
 }
 

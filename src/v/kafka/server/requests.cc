@@ -7,8 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/server/handlers/handlers.h"
-#include "kafka/server/handlers/produce.h"
+#include "kafka/protocol/schemata/api_versions_request.h"
+#include "kafka/protocol/schemata/fetch_request.h"
+#include "kafka/protocol/schemata/produce_request.h"
+#include "kafka/server/connection_context.h"
+#include "kafka/server/handlers/api_versions.h"
+#include "kafka/server/handlers/handler_interface.h"
+#include "kafka/server/handlers/sasl_authenticate.h"
+#include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "utils/to_string.h"
@@ -25,68 +31,11 @@ namespace kafka {
 // clang-format off
 template<typename Request>
 requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
-  // clang-format on
-  struct process_dispatch {
+struct process_dispatch { // clang-format on
     static process_result_stages
     process(request_context&& ctx, ss::smp_service_group g) {
-        if (
-          ctx.header().version < Request::min_supported
-          || ctx.header().version > Request::max_supported) {
-            throw std::runtime_error(fmt::format(
-              "Unsupported version {} for {} API",
-              ctx.header().version,
-              Request::api::name));
-        }
         return process_result_stages::single_stage(
           Request::handle(std::move(ctx), g));
-    }
-};
-
-/**
- * Dispatch API versions request without version checks.
- *
- * The version bounds checks are not applied to this request because the client
- * does not yet know what versions this server supports. The api versions
- * request is used by a client to query this information.
- */
-template<>
-struct process_dispatch<api_versions_handler> {
-    static process_result_stages
-    process(request_context&& ctx, ss::smp_service_group g) {
-        return process_result_stages::single_stage(
-          api_versions_handler::handle(std::move(ctx), g));
-    }
-};
-/**
- * Requests processed in two stages
- */
-template<>
-struct process_dispatch<produce_handler> {
-    static process_result_stages
-    process(request_context&& ctx, ss::smp_service_group g) {
-        return produce_handler::handle(std::move(ctx), g);
-    }
-};
-
-template<>
-struct process_dispatch<offset_commit_handler> {
-    static process_result_stages
-    process(request_context&& ctx, ss::smp_service_group g) {
-        return offset_commit_handler::handle(std::move(ctx), g);
-    }
-};
-template<>
-struct process_dispatch<join_group_handler> {
-    static process_result_stages
-    process(request_context&& ctx, ss::smp_service_group g) {
-        return join_group_handler::handle(std::move(ctx), g);
-    }
-};
-template<>
-struct process_dispatch<sync_group_handler> {
-    static process_result_stages
-    process(request_context&& ctx, ss::smp_service_group g) {
-        return sync_group_handler::handle(std::move(ctx), g);
     }
 };
 
@@ -104,7 +53,58 @@ requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
 
+    /**
+     * Dispatch API versions request without version checks.
+     *
+     * The version bounds checks are not applied to this request because the
+     * client does not yet know what versions this server supports. The api
+     * versions request is used by a client to query this information.
+     */
+    if constexpr (!std::same_as<Request, api_versions_handler>) {
+        if (
+          ctx.header().version < Request::min_supported
+          || ctx.header().version > Request::max_supported) {
+            throw kafka_api_version_not_supported_exception(fmt::format(
+              "Unsupported version {} for {} API",
+              ctx.header().version,
+              Request::api::name));
+        }
+    }
+
     return process_dispatch<Request>::process(std::move(ctx), g);
+}
+
+process_result_stages process_generic(
+  handler handler,
+  request_context&& ctx,
+  ss::smp_service_group g,
+  const session_resources& sres) {
+    vlog(
+      klog.trace,
+      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}",
+      ctx.connection()->client_host(),
+      ctx.connection()->client_port(),
+      handler->name(),
+      ctx.header().key,
+      ctx.header().version,
+      ctx.header().client_id.value_or(std::string_view("unset-client-id")),
+      sres.memlocks.count());
+
+    // We do a version check for most API requests, but for api_version
+    // requests we skip them. We do not apply them for api_versions,
+    // because the client does not yet know what
+    // versions this server supports. The api versions request is used by a
+    // client to query this information.
+    if (ctx.header().key != api_versions_api::key &&
+      (ctx.header().version < handler->min_supported() ||
+       ctx.header().version > handler->max_supported())) {
+        throw kafka_api_version_not_supported_exception(fmt::format(
+          "Unsupported version {} for {} API",
+          ctx.header().version,
+          handler->name()));
+    }
+
+    return handler->handle(std::move(ctx), g);
 }
 
 class kafka_authentication_exception : public std::runtime_error {
@@ -126,15 +126,16 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
          * is set the input connection is assumed to contain raw authentication
          * tokens not wrapped in a normal kafka request envelope.
          */
-        conn->sasl().set_handshake_v0();
+        conn->sasl()->set_handshake_v0();
     }
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .response.then([conn = std::move(conn)](response_ptr r) {
-          if (conn->sasl().has_mechanism()) {
-              conn->sasl().set_state(
+          if (conn->sasl()->has_mechanism()) {
+              conn->sasl()->set_state(
                 security::sasl_server::sasl_state::authenticate);
           } else {
-              conn->sasl().set_state(security::sasl_server::sasl_state::failed);
+              conn->sasl()->set_state(
+                security::sasl_server::sasl_state::failed);
           }
           return r;
       });
@@ -147,10 +148,10 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
 static ss::future<response_ptr>
 handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
     switch (ctx.header().key) {
-    case api_versions_handler::api::key: {
+    case api_versions_api::key: {
         auto r = api_versions_handler::handle_raw(ctx);
         if (r.data.error_code == error_code::none) {
-            ctx.sasl().set_state(security::sasl_server::sasl_state::handshake);
+            ctx.sasl()->set_state(security::sasl_server::sasl_state::handshake);
         }
         return ctx.respond(std::move(r));
     }
@@ -170,7 +171,7 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
 
 static ss::future<response_ptr>
 handle_auth(request_context&& ctx, ss::smp_service_group g) {
-    switch (ctx.sasl().state()) {
+    switch (ctx.sasl()->state()) {
     case security::sasl_server::sasl_state::initial:
         return handle_auth_initial(std::move(ctx), g);
 
@@ -199,11 +200,11 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
                * there may be multiple authentication round-trips so it is fine
                * to return without entering an end state like complete/failed.
                */
-              if (conn->sasl().mechanism().complete()) {
-                  conn->sasl().set_state(
+              if (conn->sasl()->mechanism().complete()) {
+                  conn->sasl()->set_state(
                     security::sasl_server::sasl_state::complete);
-              } else if (conn->sasl().mechanism().failed()) {
-                  conn->sasl().set_state(
+              } else if (conn->sasl()->mechanism().failed()) {
+                  conn->sasl()->set_state(
                     security::sasl_server::sasl_state::failed);
               }
               return ss::make_ready_future<response_ptr>(std::move(r));
@@ -233,74 +234,43 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
 // only track latency for push and fetch requests
 bool track_latency(api_key key) {
     switch (key) {
-    case fetch_handler::api::key:
-    case produce_handler::api::key:
+    case fetch_api::key:
+    case produce_api::key:
         return true;
     default:
         return false;
     }
 }
 
-process_result_stages
-process_request(request_context&& ctx, ss::smp_service_group g) {
+process_result_stages process_request(
+  request_context&& ctx,
+  ss::smp_service_group g,
+  const session_resources& sres) {
     /*
      * requests are handled as normal when auth is disabled. otherwise no
      * request is handled until the auth process has completed.
      */
-    if (unlikely(!ctx.sasl().complete())) {
+    if (unlikely(ctx.sasl() && !ctx.sasl()->complete())) {
         auto conn = ctx.connection();
         return process_result_stages::single_stage(
           handle_auth(std::move(ctx), g)
             .then_wrapped([conn](ss::future<response_ptr> f) {
                 if (f.failed()) {
-                    conn->sasl().set_state(
+                    conn->sasl()->set_state(
                       security::sasl_server::sasl_state::failed);
                 }
                 return f;
             }));
     }
 
-    switch (ctx.header().key) {
-    case api_versions_handler::api::key:
-        return do_process<api_versions_handler>(std::move(ctx), g);
-    case metadata_handler::api::key:
-        return do_process<metadata_handler>(std::move(ctx), g);
-    case list_groups_handler::api::key:
-        return do_process<list_groups_handler>(std::move(ctx), g);
-    case find_coordinator_handler::api::key:
-        return do_process<find_coordinator_handler>(std::move(ctx), g);
-    case offset_fetch_handler::api::key:
-        return do_process<offset_fetch_handler>(std::move(ctx), g);
-    case produce_handler::api::key:
-        return do_process<produce_handler>(std::move(ctx), g);
-    case list_offsets_handler::api::key:
-        return do_process<list_offsets_handler>(std::move(ctx), g);
-    case offset_commit_handler::api::key:
-        return do_process<offset_commit_handler>(std::move(ctx), g);
-    case fetch_handler::api::key:
-        return do_process<fetch_handler>(std::move(ctx), g);
-    case join_group_handler::api::key:
-        return do_process<join_group_handler>(std::move(ctx), g);
-    case heartbeat_handler::api::key:
-        return do_process<heartbeat_handler>(std::move(ctx), g);
-    case leave_group_handler::api::key:
-        return do_process<leave_group_handler>(std::move(ctx), g);
-    case sync_group_handler::api::key:
-        return do_process<sync_group_handler>(std::move(ctx), g);
-    case create_topics_handler::api::key:
-        return do_process<create_topics_handler>(std::move(ctx), g);
-    case describe_configs_handler::api::key:
-        return do_process<describe_configs_handler>(std::move(ctx), g);
-    case alter_configs_handler::api::key:
-        return do_process<alter_configs_handler>(std::move(ctx), g);
-    case delete_topics_handler::api::key:
-        return do_process<delete_topics_handler>(std::move(ctx), g);
-    case describe_groups_handler::api::key:
-        return do_process<describe_groups_handler>(std::move(ctx), g);
-    case sasl_handshake_handler::api::key:
+    auto& key = ctx.header().key;
+
+    if (key == sasl_handshake_handler::api::key) {
         return process_result_stages::single_stage(ctx.respond(
           sasl_handshake_response(error_code::illegal_sasl_state, {})));
-    case sasl_authenticate_handler::api::key: {
+    }
+
+    if (key == sasl_authenticate_handler::api::key) {
         sasl_authenticate_response_data data{
           .error_code = error_code::illegal_sasl_state,
           .error_message = "Authentication process already completed",
@@ -308,33 +278,11 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return process_result_stages::single_stage(
           ctx.respond(sasl_authenticate_response(std::move(data))));
     }
-    case init_producer_id_handler::api::key:
-        return do_process<init_producer_id_handler>(std::move(ctx), g);
-    case incremental_alter_configs_handler::api::key:
-        return do_process<incremental_alter_configs_handler>(std::move(ctx), g);
-    case delete_groups_handler::api::key:
-        return do_process<delete_groups_handler>(std::move(ctx), g);
-    case describe_acls_handler::api::key:
-        return do_process<describe_acls_handler>(std::move(ctx), g);
-    case describe_log_dirs_handler::api::key:
-        return do_process<describe_log_dirs_handler>(std::move(ctx), g);
-    case create_acls_handler::api::key:
-        return do_process<create_acls_handler>(std::move(ctx), g);
-    case delete_acls_handler::api::key:
-        return do_process<delete_acls_handler>(std::move(ctx), g);
-    case add_partitions_to_txn_handler::api::key:
-        return do_process<add_partitions_to_txn_handler>(std::move(ctx), g);
-    case txn_offset_commit_handler::api::key:
-        return do_process<txn_offset_commit_handler>(std::move(ctx), g);
-    case add_offsets_to_txn_handler::api::key:
-        return do_process<add_offsets_to_txn_handler>(std::move(ctx), g);
-    case end_txn_handler::api::key:
-        return do_process<end_txn_handler>(std::move(ctx), g);
-    case create_partitions_handler::api::key:
-        return do_process<create_partitions_handler>(std::move(ctx), g);
-    case offset_for_leader_epoch_handler::api::key:
-        return do_process<offset_for_leader_epoch_handler>(std::move(ctx), g);
-    };
+
+    if (auto handler = handler_for_key(key)) {
+        return process_generic(*handler, std::move(ctx), g, sres);
+    }
+
     throw std::runtime_error(
       fmt::format("Unsupported API {}", ctx.header().key));
 }
@@ -348,21 +296,9 @@ std::ostream& operator<<(std::ostream& os, const request_header& header) {
       header.version,
       header.correlation,
       header.client_id.value_or(std::string_view("nullopt")),
-      (header.tags ? header.tags->size() : 0),
+      (header.tags ? (*header.tags)().size() : 0),
       header.tags_size_bytes);
     return os;
-}
-
-std::ostream& operator<<(std::ostream& os, config_resource_type t) {
-    switch (t) {
-    case config_resource_type::topic:
-        return os << "{topic}";
-    case config_resource_type::broker:
-        [[fallthrough]];
-    case config_resource_type::broker_logger:
-        break;
-    }
-    return os << "{unknown type}";
 }
 
 std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
@@ -377,18 +313,6 @@ std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
         return os << "subtract";
     }
     return os << "unknown type";
-}
-
-std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
-    switch (s) {
-    case describe_configs_source::topic:
-        return os << "{topic}";
-    case describe_configs_source::static_broker_config:
-        return os << "{static_broker_config}";
-    case describe_configs_source::default_config:
-        return os << "{default_config}";
-    }
-    return os << "{unknown type}";
 }
 
 } // namespace kafka

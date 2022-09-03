@@ -51,6 +51,8 @@ static constexpr std::string_view topic_property_remote_write
   = "redpanda.remote.write";
 static constexpr std::string_view topic_property_remote_read
   = "redpanda.remote.read";
+static constexpr std::string_view topic_property_read_replica
+  = "redpanda.remote.readreplica";
 
 // Data-policy property
 static constexpr std::string_view topic_property_data_policy_function_name
@@ -105,8 +107,10 @@ from_cluster_topic_result(const cluster::topic_result& err) {
 }
 
 config_map_t config_map(const std::vector<createable_topic_config>& config);
+config_map_t config_map(const std::vector<creatable_topic_configs>& config);
 
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
+config_map_t from_cluster_type(const cluster::topic_properties&);
 } // namespace kafka

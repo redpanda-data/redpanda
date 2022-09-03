@@ -32,6 +32,14 @@ std::vector<broker_ptr> members_table::all_brokers() const {
 
     return brokers;
 }
+
+size_t members_table::all_brokers_count() const {
+    return std::count_if(_brokers.begin(), _brokers.end(), [](auto entry) {
+        return entry.second->get_membership_state()
+               != model::membership_state::removed;
+    });
+}
+
 std::vector<model::node_id> members_table::all_broker_ids() const {
     std::vector<model::node_id> ids;
     ids.reserve(_brokers.size());
@@ -154,8 +162,17 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     // no rules to enforce when disabling maintenance mode
     const auto enable = cmd.value;
     if (!enable) {
+        if (
+          target->second->get_maintenance_state()
+          == model::maintenance_state::inactive) {
+            return errc::success;
+        }
+
         target->second->set_maintenance_state(
           model::maintenance_state::inactive);
+        notify_maintenance_state_change(
+          target->second->id(), model::maintenance_state::inactive);
+
         return errc::success;
     }
 
@@ -200,6 +217,9 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
 
     target->second->set_maintenance_state(model::maintenance_state::active);
 
+    notify_maintenance_state_change(
+      target->second->id(), model::maintenance_state::active);
+
     return errc::success;
 }
 
@@ -207,6 +227,32 @@ bool members_table::contains(model::node_id id) const {
     return _brokers.contains(id)
            && _brokers.find(id)->second->get_membership_state()
                 != model::membership_state::removed;
+}
+
+notification_id_type
+members_table::register_maintenance_state_change_notification(
+  maintenance_state_cb_t cb) {
+    auto id = _notification_id++;
+    _notifications.emplace_back(id, std::move(cb));
+    return id;
+}
+
+void members_table::unregister_maintenance_state_change_notification(
+  notification_id_type id) {
+    auto it = std::find_if(
+      _notifications.begin(), _notifications.end(), [id](const auto& n) {
+          return n.first == id;
+      });
+    if (it != _notifications.end()) {
+        _notifications.erase(it);
+    }
+}
+
+void members_table::notify_maintenance_state_change(
+  model::node_id node_id, model::maintenance_state ms) {
+    for (const auto& [id, cb] : _notifications) {
+        cb(node_id, ms);
+    }
 }
 
 } // namespace cluster

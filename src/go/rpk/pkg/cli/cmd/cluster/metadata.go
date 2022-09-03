@@ -25,7 +25,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func NewMetadataCommand(fs afero.Fs) *cobra.Command {
+func newMetadataCommand(fs afero.Fs) *cobra.Command {
 	var (
 		cluster  bool
 		brokers  bool
@@ -36,7 +36,7 @@ func NewMetadataCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "metadata",
 		Aliases: []string{"status", "info"},
-		Short:   "Request broker metadata.",
+		Short:   "Request broker metadata",
 		Long: `Request broker metadata.
 
 The Kafka protocol's metadata contains information about brokers, topics, and
@@ -120,11 +120,11 @@ In the broker section, the controller node is suffixed with *.
 		},
 	}
 
-	cmd.Flags().BoolVarP(&cluster, "print-cluster", "c", false, "print cluster section")
-	cmd.Flags().BoolVarP(&brokers, "print-brokers", "b", false, "print brokers section")
-	cmd.Flags().BoolVarP(&topics, "print-topics", "t", false, "print topics section (implied if any topics are specified)")
-	cmd.Flags().BoolVarP(&internal, "print-internal-topics", "i", false, "print internal topics (if all topics requested, implies -t)")
-	cmd.Flags().BoolVarP(&detailed, "print-detailed-topics", "d", false, "print per-partition information for topics (implies -t)")
+	cmd.Flags().BoolVarP(&cluster, "print-cluster", "c", false, "Print cluster section")
+	cmd.Flags().BoolVarP(&brokers, "print-brokers", "b", false, "Print brokers section")
+	cmd.Flags().BoolVarP(&topics, "print-topics", "t", false, "Print topics section (implied if any topics are specified)")
+	cmd.Flags().BoolVarP(&internal, "print-internal-topics", "i", false, "Print internal topics (if all topics requested, implies -t)")
+	cmd.Flags().BoolVarP(&detailed, "print-detailed-topics", "d", false, "Print per-partition information for topics (implies -t)")
 	return cmd
 }
 

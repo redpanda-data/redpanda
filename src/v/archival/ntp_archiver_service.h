@@ -14,8 +14,8 @@
 #include "archival/types.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
+#include "cluster/fwd.h"
 #include "cluster/partition.h"
-#include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
@@ -26,7 +26,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <functional>
@@ -56,6 +55,12 @@ public:
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
 
+    enum class loop_state {
+        initial,
+        started,
+        stopped,
+    };
+
     /// Create new instance
     ///
     /// \param ntp is an ntp that archiver is responsible for
@@ -73,13 +78,29 @@ public:
     /// storage. Can be started only once.
     void run_upload_loop();
 
+    void run_sync_manifest_loop();
+
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be
     /// completed
     ss::future<> stop();
 
-    bool upload_loop_stopped() const { return _upload_loop_stopped; }
+    bool upload_loop_stopped() const {
+        return _upload_loop_state == loop_state::stopped;
+    }
+
+    bool sync_manifest_loop_stopped() const {
+        return _sync_manifest_loop_state == loop_state::stopped;
+    }
+
+    /// Query if either of the manifest sync loop or upload loop has stopped
+    /// These are mutually exclusive loops, and if any one has transitioned to a
+    /// stopped state then the archiver is stopped.
+    bool is_loop_stopped() const {
+        return _sync_manifest_loop_state == loop_state::stopped
+               || _upload_loop_state == loop_state::stopped;
+    }
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -100,6 +121,7 @@ public:
     struct batch_result {
         size_t num_succeded;
         size_t num_failed;
+        size_t num_cancelled;
     };
 
     /// \brief Upload next set of segments to S3 (if any)
@@ -112,7 +134,13 @@ public:
     ss::future<batch_result> upload_next_candidates(
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
 
+    ss::future<cloud_storage::download_result> sync_manifest();
+
     uint64_t estimate_backlog_size();
+
+    /// \brief Probe remote storage and truncate the manifest if needed
+    ss::future<std::optional<cloud_storage::partition_manifest>>
+    maybe_truncate_manifest(retry_chain_node& rtc);
 
 private:
     /// Information about started upload
@@ -134,6 +162,9 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
+        /// Protects the underlying segment from being deleted while the upload
+        /// is in flight.
+        std::optional<ss::rwlock::holder> segment_read_lock;
     };
 
     /// Start upload without waiting for it to complete
@@ -152,9 +183,15 @@ private:
 
     /// Upload individual segment to S3.
     ///
-    /// \return true on success and false otherwise
+    /// \return error code
     ss::future<cloud_storage::upload_result>
     upload_segment(upload_candidate candidate);
+
+    /// Upload segment's transactions metadata to S3.
+    ///
+    /// \return error code
+    ss::future<cloud_storage::upload_result>
+    upload_tx(upload_candidate candidate);
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();
@@ -162,7 +199,11 @@ private:
     /// Launch the upload loop fiber.
     ss::future<> upload_loop();
 
+    /// Launch the sync manifest loop fiber.
+    ss::future<> sync_manifest_loop();
+
     bool upload_loop_can_continue() const;
+    bool sync_manifest_loop_can_continue() const;
 
     ntp_level_probe _probe;
     model::ntp _ntp;
@@ -183,16 +224,18 @@ private:
     ss::lowres_clock::duration _cloud_storage_initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
-    ss::semaphore _mutex{1};
+    ssx::semaphore _mutex{1, "archive/ntp"};
     ss::lowres_clock::duration _upload_loop_initial_backoff;
     ss::lowres_clock::duration _upload_loop_max_backoff;
+    config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
     ss::scheduling_group _upload_sg;
     ss::io_priority_class _io_priority;
-    bool _upload_loop_started = false;
-    bool _upload_loop_stopped = false;
+
+    loop_state _upload_loop_state{loop_state::initial};
+    loop_state _sync_manifest_loop_state{loop_state::initial};
 };
 
 } // namespace archival

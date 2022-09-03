@@ -41,7 +41,7 @@ class server {
 public:
     struct context_t {
         std::vector<net::unresolved_address> advertised_listeners;
-        ss::semaphore& mem_sem;
+        ssx::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
     };
@@ -80,10 +80,12 @@ public:
 
     server(
       const ss::sstring& server_name,
+      const ss::sstring& public_metrics_group_name,
       ss::api_registry_builder20&& api20,
       const ss::sstring& header,
       const ss::sstring& definitions,
-      context_t& ctx);
+      context_t& ctx,
+      json::serialization_format exceptional_mime_type);
 
     void route(route_t route);
     void routes(routes_t&& routes);
@@ -91,16 +93,17 @@ public:
     ss::future<> start(
       const std::vector<model::broker_endpoint>& endpoints,
       const std::vector<config::endpoint_tls_config>& endpoints_tls,
-      const std::vector<model::broker_endpoint>& advertised,
-      json::serialization_format exceptional_mime_type);
+      const std::vector<model::broker_endpoint>& advertised);
     ss::future<> stop();
 
 private:
     ss::httpd::http_server _server;
+    ss::sstring _public_metrics_group_name;
     ss::gate _pending_reqs;
     ss::api_registry_builder20 _api20;
     bool _has_routes;
     context_t& _ctx;
+    json::serialization_format _exceptional_mime_type;
 };
 
 template<typename service_t>

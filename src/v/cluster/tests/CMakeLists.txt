@@ -17,6 +17,7 @@ rp_test(
 
 set(srcs
     partition_allocator_tests.cc
+    partition_balancer_planner_test.cc
     simple_batch_builder_test.cc
     serialization_rt_test.cc
     cluster_utils_tests.cc
@@ -50,7 +51,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_cluster
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine v::cluster
   LABELS cluster
 )
 

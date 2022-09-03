@@ -17,6 +17,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/coroutine.hh>
 
 #include <fmt/ostream.h>
 
@@ -128,11 +129,13 @@ log_segment_batch_reader::log_segment_batch_reader(
   , _config(config)
   , _probe(p) {}
 
-std::unique_ptr<continuous_batch_parser> log_segment_batch_reader::initialize(
+ss::future<std::unique_ptr<continuous_batch_parser>>
+log_segment_batch_reader::initialize(
   model::timeout_clock::time_point timeout,
   std::optional<model::offset> next_cached_batch) {
-    auto input = _seg.offset_data_stream(_config.start_offset, _config.prio);
-    return std::make_unique<continuous_batch_parser>(
+    auto input = co_await _seg.offset_data_stream(
+      _config.start_offset, _config.prio);
+    co_return std::make_unique<continuous_batch_parser>(
       std::make_unique<skipping_consumer>(*this, timeout, next_cached_batch),
       std::move(input));
 }
@@ -141,6 +144,7 @@ ss::future<> log_segment_batch_reader::close() {
     if (_iterator) {
         return _iterator->close();
     }
+
     return ss::make_ready_future<>();
 }
 
@@ -181,8 +185,7 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
         _probe.add_bytes_read(cache_read.memory_usage);
         _probe.add_cached_bytes_read(cache_read.memory_usage);
         _probe.add_cached_batches_read(cache_read.batches.size());
-        return ss::make_ready_future<result<records_t>>(
-          std::move(cache_read.batches));
+        co_return result<records_t>(std::move(cache_read.batches));
     }
 
     /*
@@ -192,14 +195,14 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
      * on disk reads which is bound by the stable offset.
      */
     if (_config.start_offset > _seg.offsets().stable_offset) {
-        return ss::make_ready_future<result<records_t>>(records_t{});
+        co_return result<records_t>(records_t{});
     }
 
     if (!_iterator) {
-        _iterator = initialize(timeout, cache_read.next_cached_batch);
+        _iterator = co_await initialize(timeout, cache_read.next_cached_batch);
     }
     auto ptr = _iterator.get();
-    return ptr->consume().then(
+    co_return co_await ptr->consume().then(
       [this](result<size_t> bytes_consumed) -> result<records_t> {
           if (!bytes_consumed) {
               return bytes_consumed.error();

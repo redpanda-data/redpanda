@@ -10,8 +10,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"os"
+	"reflect"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -22,6 +23,7 @@ import (
 //
 // The use of this file is to support our transition to a strongly typed
 // config file and our migration away from viper and mapstructure.
+// TODO: Print deprecation warning when using weak types https://github.com/redpanda-data/redpanda/issues/5262
 
 // weakBool is an intermediary boolean type to be used during our transition
 // to strictly typed configuration parameters. This will allow us to support
@@ -46,18 +48,15 @@ func (wb *weakBool) UnmarshalYAML(n *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("cannot parse '%s' as bool: %s", n.Value, err)
 		}
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from int to bool is deprecated and will be removed in the future")
 		*wb = ni != 0
 		return nil
 	case "!!str":
 		// it accepts 1, t, T, TRUE, true, True, 0, f, F
 		nb, err := strconv.ParseBool(n.Value)
 		if err == nil {
-			fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from str to bool is deprecated and will be removed in the future")
 			*wb = weakBool(nb)
 			return nil
 		} else if n.Value == "" {
-			fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from str to bool is deprecated and will be removed in the future")
 			*wb = false
 			return nil
 		} else {
@@ -94,7 +93,6 @@ func (wi *weakInt) UnmarshalYAML(n *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("cannot parse '%s' as an integer: %s", str, err)
 		}
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from str to int is deprecated and will be removed in the future")
 		*wi = weakInt(ni)
 		return nil
 	case "!!bool":
@@ -102,7 +100,6 @@ func (wi *weakInt) UnmarshalYAML(n *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("cannot parse '%s' as an integer: %s", n.Value, err)
 		}
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from bool to int is deprecated and will be removed in the future")
 		if nb {
 			*wi = 1
 			return nil
@@ -132,7 +129,6 @@ func (ws *weakString) UnmarshalYAML(n *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("cannot parse '%s' as a boolean: %s", n.Value, err)
 		}
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from bool to str is deprecated and will be removed in the future")
 		if nb {
 			*ws = "1"
 			return nil
@@ -140,7 +136,6 @@ func (ws *weakString) UnmarshalYAML(n *yaml.Node) error {
 		*ws = "0"
 		return nil
 	case "!!int", "!!float":
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: conversion from numbers to str is deprecated and will be removed in the future")
 		*ws = weakString(n.Value)
 		return nil
 	default:
@@ -172,7 +167,6 @@ func (wsa *weakStringArray) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %q must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", n.Value)
 	*wsa = []string{string(single)}
 	return nil
 }
@@ -197,7 +191,6 @@ func (s *socketAddresses) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %+v must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", single)
 	*s = []SocketAddress{single}
 	return nil
 }
@@ -222,8 +215,31 @@ func (nsa *namedSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %+v must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", single)
 	*nsa = []NamedSocketAddress{single}
+	return nil
+}
+
+// namedAuthNSocketAddresses is an intermediary one_or_many type to be used
+// during our transition to strictly typed configuration parameters.
+// This type will:
+//   - parse an array of NamedAuthNSocketAddress
+//   - parse a single NamedAuthNSocketAddress to an array.
+type namedAuthNSocketAddresses []NamedAuthNSocketAddress
+
+func (nsa *namedAuthNSocketAddresses) UnmarshalYAML(n *yaml.Node) error {
+	var multi []NamedAuthNSocketAddress
+	err := n.Decode(&multi)
+	if err == nil {
+		*nsa = multi
+		return nil
+	}
+
+	var single NamedAuthNSocketAddress
+	err = n.Decode(&single)
+	if err != nil {
+		return err
+	}
+	*nsa = []NamedAuthNSocketAddress{single}
 	return nil
 }
 
@@ -246,7 +262,7 @@ func (s *serverTLSArray) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %+v must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", single)
+	// do not log serverTLS because the Other field may contain a secret
 	*s = []ServerTLS{single}
 	return nil
 }
@@ -270,7 +286,6 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "redpanda.yaml: %+v must be an array; a non-array value in array fields is deprecated and will be removed in the future\n", single)
 	*ss = []SeedServer{single}
 	return nil
 }
@@ -283,7 +298,6 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 		Organization         weakString      `yaml:"organization"`
 		LicenseKey           weakString      `yaml:"license_key"`
 		ClusterID            weakString      `yaml:"cluster_id"`
-		ConfigFile           weakString      `yaml:"config_file"`
 		Redpanda             RedpandaConfig  `yaml:"redpanda"`
 		Rpk                  RpkConfig       `yaml:"rpk"`
 		Pandaproxy           *Pandaproxy     `yaml:"pandaproxy"`
@@ -300,7 +314,6 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	c.Organization = string(internal.Organization)
 	c.LicenseKey = string(internal.LicenseKey)
 	c.ClusterID = string(internal.ClusterID)
-	c.ConfigFile = string(internal.ConfigFile)
 	c.Redpanda = internal.Redpanda
 	c.Rpk = internal.Rpk
 	c.Pandaproxy = internal.Pandaproxy
@@ -314,25 +327,28 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 
 func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		Directory                  weakString             `yaml:"data_directory"`
-		ID                         weakInt                `yaml:"node_id" `
-		Rack                       weakString             `yaml:"rack"`
-		SeedServers                seedServers            `yaml:"seed_servers"`
-		RPCServer                  SocketAddress          `yaml:"rpc_server"`
-		RPCServerTLS               serverTLSArray         `yaml:"rpc_server_tls"`
-		KafkaAPI                   namedSocketAddresses   `yaml:"kafka_api"`
-		KafkaAPITLS                serverTLSArray         `yaml:"kafka_api_tls"`
-		AdminAPI                   namedSocketAddresses   `yaml:"admin"`
-		AdminAPITLS                serverTLSArray         `yaml:"admin_api_tls"`
-		CoprocSupervisorServer     SocketAddress          `yaml:"coproc_supervisor_server"`
-		AdminAPIDocDir             weakString             `yaml:"admin_api_doc_dir"`
-		DashboardDir               weakString             `yaml:"dashboard_dir"`
-		CloudStorageCacheDirectory weakString             `yaml:"cloud_storage_cache_directory"`
-		AdvertisedRPCAPI           *SocketAddress         `yaml:"advertised_rpc_api"`
-		AdvertisedKafkaAPI         namedSocketAddresses   `yaml:"advertised_kafka_api"`
-		DeveloperMode              weakBool               `yaml:"developer_mode"`
-		Other                      map[string]interface{} `yaml:",inline"`
+		Directory                  weakString                `yaml:"data_directory"`
+		ID                         weakInt                   `yaml:"node_id" `
+		Rack                       weakString                `yaml:"rack"`
+		SeedServers                seedServers               `yaml:"seed_servers"`
+		RPCServer                  SocketAddress             `yaml:"rpc_server"`
+		RPCServerTLS               serverTLSArray            `yaml:"rpc_server_tls"`
+		KafkaAPI                   namedAuthNSocketAddresses `yaml:"kafka_api"`
+		KafkaAPITLS                serverTLSArray            `yaml:"kafka_api_tls"`
+		AdminAPI                   namedSocketAddresses      `yaml:"admin"`
+		AdminAPITLS                serverTLSArray            `yaml:"admin_api_tls"`
+		CoprocSupervisorServer     SocketAddress             `yaml:"coproc_supervisor_server"`
+		AdminAPIDocDir             weakString                `yaml:"admin_api_doc_dir"`
+		DashboardDir               weakString                `yaml:"dashboard_dir"`
+		CloudStorageCacheDirectory weakString                `yaml:"cloud_storage_cache_directory"`
+		AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api"`
+		AdvertisedKafkaAPI         namedSocketAddresses      `yaml:"advertised_kafka_api"`
+		DeveloperMode              weakBool                  `yaml:"developer_mode"`
+		AggregateMetrics           weakBool                  `yaml:"aggregate_metrics"`
+		DisablePublicMetrics       weakBool                  `yaml:"disable_public_metrics"`
+		Other                      map[string]interface{}    `yaml:",inline"`
 	}
+
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
@@ -353,6 +369,8 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.AdvertisedRPCAPI = internal.AdvertisedRPCAPI
 	rpc.AdvertisedKafkaAPI = internal.AdvertisedKafkaAPI
 	rpc.DeveloperMode = bool(internal.DeveloperMode)
+	rpc.AggregateMetrics = bool(internal.AggregateMetrics)
+	rpc.DisablePublicMetrics = bool(internal.DisablePublicMetrics)
 	rpc.Other = internal.Other
 	return nil
 }
@@ -391,12 +409,6 @@ func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
-	}
-	if internal.TLS != nil {
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: rpk.tls has been replaced with rpk.kafka_api.tls and will be removed in the future")
-	}
-	if internal.SASL != nil {
-		fmt.Fprintln(os.Stderr, "redpanda.yaml: rpk.sasl has been replaced with rpk.kafka_api.sasl and will be removed in the future")
 	}
 
 	rpkc.TLS = internal.TLS
@@ -480,7 +492,7 @@ func (k *KafkaClient) UnmarshalYAML(n *yaml.Node) error {
 		SASLMechanism *weakString            `yaml:"sasl_mechanism"`
 		SCRAMUsername *weakString            `yaml:"scram_username"`
 		SCRAMPassword *weakString            `yaml:"scram_password"`
-		Other         map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+		Other         map[string]interface{} `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -518,7 +530,7 @@ func (s *ServerTLS) UnmarshalYAML(n *yaml.Node) error {
 		TruststoreFile    weakString             `yaml:"truststore_file"`
 		Enabled           weakBool               `yaml:"enabled"`
 		RequireClientAuth weakBool               `yaml:"require_client_auth"`
-		Other             map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+		Other             map[string]interface{} `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -530,6 +542,45 @@ func (s *ServerTLS) UnmarshalYAML(n *yaml.Node) error {
 	s.Enabled = bool(internal.Enabled)
 	s.RequireClientAuth = bool(internal.RequireClientAuth)
 	s.Other = internal.Other
+	return nil
+}
+
+func (ss *SeedServer) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		// New schema should only contain Address and Port, but we will
+		// support this under Host also.
+		Address weakString    `yaml:"address"`
+		Port    weakInt       `yaml:"port"`
+		Host    SocketAddress `yaml:"host"`
+		// deprecated
+		NodeID *weakInt `yaml:"node_id"`
+	}
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+	if internal.NodeID != nil {
+		fmt.Println("redpanda yaml: redpanda.seed_server.node_id is deprecated and unused")
+	}
+
+	if internal.Address != "" || internal.Port != 0 {
+		embedded := SocketAddress{string(internal.Address), int(internal.Port)}
+		nested := internal.Host
+
+		embeddedZero := reflect.DeepEqual(embedded, SocketAddress{})
+		nestedZero := reflect.DeepEqual(nested, SocketAddress{})
+
+		if !embeddedZero && !nestedZero && !reflect.DeepEqual(embedded, nested) {
+			return errors.New("redpanda.yaml redpanda.seed_server: nested host differs from address and port fields; only one must be set")
+		}
+
+		ss.Host = embedded
+		if embeddedZero {
+			ss.Host = nested
+		}
+		return nil
+	}
+
+	ss.Host = internal.Host
 	return nil
 }
 
@@ -549,8 +600,8 @@ func (sa *SocketAddress) UnmarshalYAML(n *yaml.Node) error {
 func (nsa *NamedSocketAddress) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Name    weakString `yaml:"name"`
-		Address weakString `yaml:"address" mapstructure:"address"`
-		Port    weakInt    `yaml:"port" mapstructure:"port"`
+		Address weakString `yaml:"address"`
+		Port    weakInt    `yaml:"port"`
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -560,6 +611,25 @@ func (nsa *NamedSocketAddress) UnmarshalYAML(n *yaml.Node) error {
 	nsa.Name = string(internal.Name)
 	nsa.Address = string(internal.Address)
 	nsa.Port = int(internal.Port)
+	return nil
+}
+
+func (nsa *NamedAuthNSocketAddress) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		Name    weakString  `yaml:"name"`
+		Address weakString  `yaml:"address" mapstructure:"address"`
+		Port    weakInt     `yaml:"port" mapstructure:"port"`
+		AuthN   *weakString `yaml:"authentication_method" mapstructure:"authentication_method"`
+	}
+
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+
+	nsa.Name = string(internal.Name)
+	nsa.Address = string(internal.Address)
+	nsa.Port = int(internal.Port)
+	nsa.AuthN = (*string)(internal.AuthN)
 	return nil
 }
 

@@ -24,15 +24,6 @@
 
 namespace kafka {
 
-struct txn_offset_commit_response;
-
-struct txn_offset_commit_api final {
-    using response_type = txn_offset_commit_response;
-
-    static constexpr const char* name = "txn offset commit";
-    static constexpr api_key key = api_key(28);
-};
-
 struct txn_offset_commit_request final {
     using api_type = txn_offset_commit_api;
 

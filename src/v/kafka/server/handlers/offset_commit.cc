@@ -53,6 +53,7 @@ struct offset_commit_ctx {
       , ssg(ssg) {}
 };
 
+template<>
 process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_commit_request request;

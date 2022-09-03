@@ -24,7 +24,7 @@ import (
 func newDisableCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "disable <broker-id>",
-		Short: "Disable maintenance mode for a node.",
+		Short: "Disable maintenance mode for a node",
 		Long:  `Disable maintenance mode for a node.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -44,7 +44,7 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			err = client.DisableMaintenanceMode(nodeID)
+			err = client.DisableMaintenanceMode(cmd.Context(), nodeID)
 			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()

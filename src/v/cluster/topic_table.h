@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/non_replicable_topics_frontend.h"
+#include "cluster/topic_table_probe.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
@@ -20,7 +21,7 @@
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -36,11 +37,65 @@ namespace cluster {
 
 class topic_table {
 public:
+    enum class in_progress_state {
+        update_requested,
+        cancel_requested,
+        force_cancel_requested
+    };
+    /**
+     * Replicas revision map is used to track revision of brokers in a replica
+     * set. When a node is added into replica set its gets the revision assigned
+     */
+    using replicas_revision_map
+      = absl::flat_hash_map<model::node_id, model::revision_id>;
+
+    struct in_progress_update {
+        std::vector<model::broker_shard> previous_replicas;
+        in_progress_state state;
+        model::revision_id update_revision;
+        replicas_revision_map replicas_revisions;
+    };
+
+    struct topic_metadata_item {
+        topic_metadata metadata;
+        // replicas revisions for each partition
+        absl::node_hash_map<model::partition_id, replicas_revision_map>
+          replica_revisions;
+
+        bool is_topic_replicable() const {
+            return metadata.is_topic_replicable();
+        }
+
+        assignments_set& get_assignments() {
+            return metadata.get_assignments();
+        }
+
+        const assignments_set& get_assignments() const {
+            return metadata.get_assignments();
+        }
+        model::revision_id get_revision() const {
+            return metadata.get_revision();
+        }
+        std::optional<model::initial_revision_id> get_remote_revision() const {
+            return metadata.get_remote_revision();
+        }
+        const model::topic& get_source_topic() const {
+            return metadata.get_source_topic();
+        }
+
+        const topic_configuration& get_configuration() const {
+            return metadata.get_configuration();
+        }
+        topic_configuration& get_configuration() {
+            return metadata.get_configuration();
+        }
+    };
+
     using delta = topic_table_delta;
 
-    using underlying_t = absl::flat_hash_map<
+    using underlying_t = absl::node_hash_map<
       model::topic_namespace,
-      topic_metadata,
+      topic_metadata_item,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
     using hierarchy_t = absl::node_hash_map<
@@ -51,6 +106,9 @@ public:
 
     using delta_cb_t
       = ss::noncopyable_function<void(const std::vector<delta>&)>;
+
+    explicit topic_table()
+      : _probe(*this){};
 
     cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
@@ -65,6 +123,8 @@ public:
               return n.first == id;
           });
     }
+
+    using updates_t = absl::node_hash_map<model::ntp, in_progress_update>;
 
     bool is_batch_applicable(const model::record_batch& b) const {
         return b.header().type
@@ -94,6 +154,8 @@ public:
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
     ss::future<std::error_code>
       apply(create_non_replicable_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
@@ -111,6 +173,9 @@ public:
 
     /// Returns list of all topics that exists in the cluster.
     std::vector<model::topic_namespace> all_topics() const;
+
+    // Returns the number of topics that exist in the cluster.
+    size_t all_topics_count() const;
 
     ///\brief Returns metadata of single topic.
     ///
@@ -167,7 +232,11 @@ public:
     bool is_update_in_progress(const model::ntp&) const;
 
     bool has_updates_in_progress() const {
-        return !_update_in_progress.empty();
+        return !_updates_in_progress.empty();
+    }
+
+    const updates_t& updates_in_progress() const {
+        return _updates_in_progress;
     }
 
     ///\brief Returns initial revision id of the topic
@@ -177,6 +246,36 @@ public:
     ///\brief Returns initial revision id of the partition
     std::optional<model::initial_revision_id>
     get_initial_revision(const model::ntp& ntp) const;
+
+    /**
+     * returns previous replica set of partition if partition is currently being
+     * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
+     * will return [1,2,3].
+     */
+    std::optional<std::vector<model::broker_shard>>
+    get_previous_replica_set(const model::ntp&) const;
+
+    const absl::node_hash_map<model::ntp, in_progress_update>&
+    in_progress_updates() const {
+        return _updates_in_progress;
+    }
+
+    /**
+     * Lists all NTPs that replicas are being move to a node
+     */
+    std::vector<model::ntp> ntps_moving_to_node(model::node_id) const;
+
+    /**
+     * Lists all NTPs that replicas are being move from a node
+     */
+    std::vector<model::ntp> ntps_moving_from_node(model::node_id) const;
+
+    /**
+     * Lists all ntps moving either from or to a node
+     */
+    std::vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
+
+    std::vector<model::ntp> all_updates_in_progress() const;
 
 private:
     struct waiter {
@@ -191,13 +290,13 @@ private:
     void notify_waiters();
 
     template<typename Func>
-    std::vector<std::invoke_result_t<Func, const topic_metadata&>>
+    std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
     transform_topics(Func&&) const;
 
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
-    absl::flat_hash_set<model::ntp> _update_in_progress;
+    updates_t _updates_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
@@ -207,5 +306,8 @@ private:
     uint64_t _waiter_id{0};
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
+    topic_table_probe _probe;
 };
+
+std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
 } // namespace cluster

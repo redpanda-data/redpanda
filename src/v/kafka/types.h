@@ -11,9 +11,11 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "bytes/details/out_of_range.h"
 #include "model/fundamental.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "utils/base64.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -91,6 +93,51 @@ using leader_epoch = named_type<int32_t, struct leader_epoch_tag>;
  */
 static constexpr leader_epoch invalid_leader_epoch(-1);
 
+/**
+ * Immutable UUID, represents a 128 bit value of the variant 2 (Leach-Salz)
+ * version 4 UUID type. Conversions to/from string will expect or perform a b64
+ * encoding/decoding
+ */
+class uuid {
+public:
+    static constexpr auto length = 16;
+    using underlying_t = std::array<uint8_t, length>;
+
+    static uuid from_string(std::string_view encoded) {
+        if (encoded.size() > 24) {
+            details::throw_out_of_range(
+              "Input size of {} too long to be decoded as b64-UUID, expected "
+              "{} bytes or less",
+              encoded.size(),
+              24);
+        }
+        auto decoded = base64_to_bytes(encoded);
+        if (decoded.size() != length) {
+            details::throw_out_of_range(
+              "Expected {} byte value post b64decoding the input: {} bytes",
+              length,
+              decoded.size());
+        }
+        underlying_t ul;
+        std::copy_n(decoded.begin(), length, ul.begin());
+        return uuid(ul);
+    }
+
+    explicit uuid(const underlying_t& uuid)
+      : _uuid(uuid) {}
+
+    bytes_view view() const { return {_uuid.data(), _uuid.size()}; }
+
+    ss::sstring to_string() const { return bytes_to_base64(view()); }
+
+    friend std::ostream& operator<<(std::ostream& os, const uuid& u) {
+        return os << u.to_string();
+    }
+
+private:
+    underlying_t _uuid{};
+};
+
 // TODO Ben: Why is this an undefined reference for pandaproxy when defined in
 // kafka/requests.cc
 inline std::ostream& operator<<(std::ostream& os, coordinator_type t) {
@@ -109,7 +156,17 @@ enum class config_resource_type : int8_t {
     broker_logger = 8,
 };
 
-std::ostream& operator<<(std::ostream& os, config_resource_type);
+inline std::ostream& operator<<(std::ostream& os, config_resource_type t) {
+    switch (t) {
+    case config_resource_type::topic:
+        return os << "{topic}";
+    case config_resource_type::broker:
+        [[fallthrough]];
+    case config_resource_type::broker_logger:
+        break;
+    }
+    return os << "{unknown type}";
+}
 
 enum class config_resource_operation : int8_t {
     set = 0,
@@ -136,7 +193,17 @@ enum class describe_configs_source : int8_t {
     // DYNAMIC_BROKER_LOGGER_CONFIG((byte) 6);
 };
 
-std::ostream& operator<<(std::ostream& os, describe_configs_source);
+inline std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
+    switch (s) {
+    case describe_configs_source::topic:
+        return os << "{topic}";
+    case describe_configs_source::static_broker_config:
+        return os << "{static_broker_config}";
+    case describe_configs_source::default_config:
+        return os << "{default_config}";
+    }
+    return os << "{unknown type}";
+}
 
 /// \brief A protocol configuration supported by a group member.
 ///

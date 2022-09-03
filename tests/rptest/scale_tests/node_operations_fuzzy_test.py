@@ -8,11 +8,13 @@
 # by the Apache License, Version 2.0
 
 import random
+import re
 import threading
 import time
 import requests
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
@@ -22,13 +24,27 @@ from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 
 DECOMMISSION = "decommission"
 ADD = "add"
-ADD_TOPIC = "add_tp"
-DELETE_TOPIC = "delete_tp"
+ADD_NO_WAIT = "add_no_wait"
+
 ALLOWED_REPLICATION = [1, 3]
+
+# Allow logs from previously allowed on old versions.
+V22_1_CHAOS_ALLOW_LOGS = [
+    re.compile("storage - Could not parse header"),
+    re.compile("storage - Cannot continue parsing"),
+    re.compile(
+        ".*controller_backend.*exception while executing partition operation:.*"
+    ),
+    # rpc - Service handler threw an exception: std::exception (std::exception)
+    re.compile("rpc - Service handler threw an exception: std"),
+    # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
+    re.compile("rpc - Service handler threw an exception: seastar"),
+]
 
 
 class NodeOperationFuzzyTest(EndToEndTest):
@@ -36,19 +52,12 @@ class NodeOperationFuzzyTest(EndToEndTest):
     min_inter_failure_time = 30
     max_inter_failure_time = 60
 
-    def generate_random_workload(self, count, skip_nodes, available_nodes):
-        op_types = [ADD, DECOMMISSION]
-        tp_op_types = [ADD_TOPIC, DELETE_TOPIC]
+    def generate_random_workload(self, count, available_nodes):
+        op_types = [ADD, ADD_NO_WAIT, DECOMMISSION]
         # current state
         active_nodes = list(available_nodes)
         decommissioned_nodes = []
         operations = []
-        topics = []
-
-        def eligible_active_nodes():
-            return list(
-                filter(lambda n: not (n == 1 or n in skip_nodes),
-                       active_nodes))
 
         def decommission(id):
             active_nodes.remove(id)
@@ -59,37 +68,24 @@ class NodeOperationFuzzyTest(EndToEndTest):
             decommissioned_nodes.remove(id)
 
         for _ in range(0, count):
-            if len(decommissioned_nodes) == 2:
+            if len(active_nodes) <= 3:
                 id = random.choice(decommissioned_nodes)
                 operations.append((ADD, id))
                 add(id)
             elif len(decommissioned_nodes) == 0:
-                id = random.choice(eligible_active_nodes())
+                id = random.choice(active_nodes)
                 operations.append((DECOMMISSION, id))
                 decommission(id)
             else:
                 op = random.choice(op_types)
                 if op == DECOMMISSION:
-                    id = random.choice(eligible_active_nodes())
+                    id = random.choice(active_nodes)
                     operations.append((DECOMMISSION, id))
                     decommission(id)
-                elif op == ADD:
+                elif op == ADD or op == ADD_NO_WAIT:
                     id = random.choice(decommissioned_nodes)
-                    operations.append((ADD, id))
+                    operations.append((op, id))
                     add(id)
-            # topic operation
-            if len(topics) == 0:
-                op = ADD_TOPIC
-            else:
-                op = random.choice(tp_op_types)
-
-            if op == ADD_TOPIC:
-                operations.append((
-                    ADD_TOPIC,
-                    f"test-topic-{random.randint(0,2000)}-{round(time.time()*1000000)}",
-                    random.choice(ALLOWED_REPLICATION), 3))
-            else:
-                operations.append((DELETE_TOPIC, random.choice(topics)))
 
         return operations
 
@@ -111,26 +107,32 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         return topics
 
-    """
-    Adding nodes to the cluster should result in partition reallocations to new
-    nodes
-    """
-
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(enable_failures=True)
-    @parametrize(enable_failures=False)
-    def test_node_operations(self, enable_failures):
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS)
+    @matrix(enable_failures=[True, False], num_to_upgrade=[0, 3])
+    def test_node_operations(self, enable_failures, num_to_upgrade):
         # allocate 5 nodes for the cluster
-        self.redpanda = RedpandaService(
-            self.test_context,
-            5,
-            extra_rp_conf={
-                "enable_auto_rebalance_on_node_add": True,
-                "group_topic_partitions": 3,
-                "default_topic_replications": 3,
-            })
-
-        self.redpanda.start()
+        extra_rp_conf = {
+            "group_topic_partitions": 3,
+            "default_topic_replications": 3,
+        }
+        if num_to_upgrade > 0:
+            # Use the deprecated config to bootstrap older nodes.
+            extra_rp_conf["enable_auto_rebalance_on_node_add"] = True
+        else:
+            extra_rp_conf["partition_autobalancing_mode"] = "node_add"
+        self.redpanda = RedpandaService(self.test_context,
+                                        5,
+                                        extra_rp_conf=extra_rp_conf)
+        if num_to_upgrade > 0:
+            installer = self.redpanda._installer
+            installer.install(self.redpanda.nodes, (22, 1, 4))
+            self.redpanda.start()
+            installer.install(self.redpanda.nodes[:num_to_upgrade],
+                              RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(self.redpanda.nodes[:num_to_upgrade])
+        else:
+            self.redpanda.start()
         # create some topics
         topics = self._create_random_topics(10)
         self.redpanda.logger.info(f"using topics: {topics}")
@@ -140,6 +142,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                           operations_interval=3)
+
+        admin_fuzz.start()
         self.active_nodes = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
         # collect current mapping
@@ -156,29 +162,31 @@ class NodeOperationFuzzyTest(EndToEndTest):
             return id
 
         def failure_injector_loop():
-            f_injector = FailureInjector(self.redpanda)
-            while enable_failures:
-                f_type = random.choice(FailureSpec.FAILURE_TYPES)
-                length = 0
-                # allow suspending any node
-                if f_type == FailureSpec.FAILURE_SUSPEND:
-                    length = random.randint(
-                        1, NodeOperationFuzzyTest.max_suspend_duration_seconds)
-                    node = random.choice(self.redpanda.nodes)
-                else:
-                    #kill/termianate only active nodes (not to influence the test outcome)
-                    idx = random.choice(list(self.active_nodes))
-                    node = self.redpanda.get_node(idx)
+            with FailureInjector(self.redpanda) as f_injector:
+                while enable_failures:
+                    f_type = random.choice(FailureSpec.NETEM_FAILURE_TYPES +
+                                           FailureSpec.FAILURE_TYPES)
+                    length = 0
+                    # allow suspending any node
+                    if f_type == FailureSpec.FAILURE_SUSPEND:
+                        length = random.randint(
+                            1, NodeOperationFuzzyTest.
+                            max_suspend_duration_seconds)
+                        node = random.choice(self.redpanda.nodes)
+                    else:
+                        #kill/terminate only active nodes (not to influence the test outcome)
+                        idx = random.choice(list(self.active_nodes))
+                        node = self.redpanda.get_node(idx)
 
-                f_injector.inject_failure(
-                    FailureSpec(node=node, type=f_type, length=length))
+                    f_injector.inject_failure(
+                        FailureSpec(node=node, type=f_type, length=length))
 
-                delay = random.randint(
-                    NodeOperationFuzzyTest.min_inter_failure_time,
-                    NodeOperationFuzzyTest.max_inter_failure_time)
-                self.redpanda.logger.info(
-                    f"waiting {delay} seconds before next failure")
-                time.sleep(delay)
+                    delay = random.randint(
+                        NodeOperationFuzzyTest.min_inter_failure_time,
+                        NodeOperationFuzzyTest.max_inter_failure_time)
+                    self.redpanda.logger.info(
+                        f"waiting {delay} seconds before next failure")
+                    time.sleep(delay)
 
         if enable_failures:
             finjector_thread = threading.Thread(target=failure_injector_loop,
@@ -193,7 +201,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             def decommissioned():
                 try:
                     admin = Admin(self.redpanda)
-                    # if broker is already draining, it is suceess
+                    # if broker is already draining, it is success
 
                     brokers = admin.get_brokers()
                     for b in brokers:
@@ -277,7 +285,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.redpanda.stop_node(self.redpanda.get_node(idx))
             if cleanup:
                 self.redpanda.clean_node(self.redpanda.get_node(idx),
-                                         preserve_logs=True)
+                                         preserve_logs=True,
+                                         preserve_current_install=True)
             # we do not reuse previous node ids and override seed server list
             self.redpanda.start_node(
                 self.redpanda.get_node(idx),
@@ -288,7 +297,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
                     "seed_servers": seed_servers_for(idx)
                 })
 
+        def wait_for_new_replicas(idx):
             def has_new_replicas():
+                id = self.ids_mapping[idx]
                 per_node = replicas_per_node()
                 self.logger.info(f"replicas per node: {per_node}")
                 return id in per_node
@@ -297,42 +308,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
 
-        def is_topic_present(name):
-            kcl = KCL(self.redpanda)
-            lines = kcl.list_topics().splitlines()
-            self.redpanda.logger.debug(
-                f"checking if topic {name} is present in {lines}")
-            for l in lines:
-                if l.startswith(name):
-                    return True
-            return False
-
-        def create_topic(spec):
-            try:
-                DefaultClient(self.redpanda).create_topic(spec)
-            except Exception as e:
-                self.redpanda.logger.warn(
-                    f"error creating topic {spec.name} - {e}")
-            try:
-                return is_topic_present(spec.name)
-            except Exception as e:
-                self.redpanda.logger.warn(f"error while listing topics - {e}")
-                return False
-
-        def delete_topic(name):
-            try:
-                DefaultClient(self.redpanda).delete_topic(name)
-            except Exception as e:
-                self.redpanda.logger.warn(f"error deleting topic {name} - {e}")
-            try:
-                return not is_topic_present(name)
-            except Exception as e:
-                self.redpanda.logger.warn(f"error while listing topics - {e}")
-                return False
-
-        work = self.generate_random_workload(10,
-                                             skip_nodes=set(),
+        work = self.generate_random_workload(30,
                                              available_nodes=self.active_nodes)
+
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
             op_type = op[0]
@@ -342,23 +320,19 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 idx = op[1]
                 self.active_nodes.add(idx)
                 add_node(idx)
+                wait_for_new_replicas(idx)
+            if op_type == ADD_NO_WAIT:
+                idx = op[1]
+                self.active_nodes.add(idx)
+                add_node(idx)
             if op_type == DECOMMISSION:
                 idx = op[1]
                 self.active_nodes.remove(idx)
                 decommission(idx)
-            elif op_type == ADD_TOPIC:
-                spec = TopicSpec(name=op[1],
-                                 replication_factor=op[2],
-                                 partition_count=op[3])
-                wait_until(lambda: create_topic(spec) == True,
-                           timeout_sec=180,
-                           backoff_sec=2)
-            elif op_type == DELETE_TOPIC:
-                wait_until(lambda: delete_topic(op[1]) == True,
-                           timeout_sec=180,
-                           backoff_sec=2)
 
         enable_failures = False
+        admin_fuzz.wait(20, 180)
+        admin_fuzz.stop()
         self.run_validation(enable_idempotence=False,
                             producer_timeout_sec=60,
                             consumer_timeout_sec=180)

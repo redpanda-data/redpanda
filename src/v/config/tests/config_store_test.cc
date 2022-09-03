@@ -33,10 +33,13 @@ struct test_config : public config::config_store {
     config::property<std::vector<ss::sstring>> strings;
     config::property<std::optional<int16_t>> nullable_int;
     config::property<std::optional<ss::sstring>> nullable_string;
+    config::property<std::optional<std::vector<ss::sstring>>> nullable_strings;
     config::property<bool> boolean;
     config::property<std::chrono::seconds> seconds;
     config::property<std::optional<std::chrono::seconds>> optional_seconds;
     config::property<std::chrono::milliseconds> milliseconds;
+    config::property<ss::sstring> default_secret_string;
+    config::property<ss::sstring> secret_string;
 
     test_config()
       : optional_int(
@@ -75,6 +78,12 @@ struct test_config : public config::config_store {
           "An optional string value",
           {},
           std::nullopt)
+      , nullable_strings(
+          *this,
+          "optional_strings",
+          "An optional strings vector",
+          {},
+          std::nullopt)
       , boolean(
           *this,
           "boolean",
@@ -84,7 +93,17 @@ struct test_config : public config::config_store {
           false)
       , seconds(*this, "seconds", "Plain seconds")
       , optional_seconds(*this, "optional_seconds", "Optional seconds")
-      , milliseconds(*this, "milliseconds", "Plain milliseconds") {}
+      , milliseconds(*this, "milliseconds", "Plain milliseconds")
+      , default_secret_string(
+          *this,
+          "default_secret_string",
+          "Secret string value set to the default",
+          {.secret = config::is_secret::yes})
+      , secret_string(
+          *this,
+          "secret_string",
+          "Secret string value",
+          {.secret = config::is_secret::yes}) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -106,7 +125,8 @@ YAML::Node valid_configuration() {
                       " - one\n"
                       " - two\n"
                       " - three\n"
-                      "nullable_int: 111\n");
+                      "nullable_int: 111\n"
+                      "secret_string: actual_secret\n");
 }
 
 } // namespace
@@ -183,6 +203,7 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     BOOST_TEST(cfg.strings().at(1) == "two");
     BOOST_TEST(cfg.strings().at(2) == "three");
     BOOST_TEST(cfg.nullable_int() == std::make_optional(111));
+    BOOST_TEST(cfg.secret_string() == "actual_secret");
 };
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
@@ -208,68 +229,92 @@ SEASTAR_THREAD_TEST_CASE(validate_invalid_configuration) {
 }
 
 SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
-    auto cfg = test_config();
-    auto errors = cfg.read_yaml(valid_configuration());
-    BOOST_TEST(errors.size() == 0);
-    lg.info("Config: {}", cfg);
-    // json data
-    const char* expected_result = "{"
-                                  "\"strings\": [\"one\", \"two\", \"three\"],"
-                                  "\"an_int64_t\": 55,"
-                                  "\"optional_int\": 3,"
-                                  "\"an_aggregate\": {"
-                                  "\"string_value\": \"some_value\","
-                                  "\"int_value\": 88"
-                                  "},"
-                                  "\"required_string\": \"test_value_2\","
-                                  "\"nullable_int\": 111"
-                                  "}";
+    const auto test_with_redaction = [](config::redact_secrets redact) {
+        auto cfg = test_config();
+        auto errors = cfg.read_yaml(valid_configuration());
+        BOOST_TEST(errors.size() == 0);
+        lg.info("Config: {}", cfg);
+        // json data
+        // TODO: get this to work with fmt.
+        auto expected_result = redact == config::redact_secrets::yes
+                                 ? "{"
+                                   "\"strings\": [\"one\", \"two\", \"three\"],"
+                                   "\"an_int64_t\": 55,"
+                                   "\"optional_int\": 3,"
+                                   "\"an_aggregate\": {"
+                                   "\"string_value\": \"some_value\","
+                                   "\"int_value\": 88"
+                                   "},"
+                                   "\"required_string\": \"test_value_2\","
+                                   "\"nullable_int\": 111,"
+                                   "\"default_secret_string\": \"\","
+                                   "\"secret_string\": \"[secret]\""
+                                   "}"
+                                 : "{"
+                                   "\"strings\": [\"one\", \"two\", \"three\"],"
+                                   "\"an_int64_t\": 55,"
+                                   "\"optional_int\": 3,"
+                                   "\"an_aggregate\": {"
+                                   "\"string_value\": \"some_value\","
+                                   "\"int_value\": 88"
+                                   "},"
+                                   "\"required_string\": \"test_value_2\","
+                                   "\"nullable_int\": 111,"
+                                   "\"default_secret_string\": \"\","
+                                   "\"secret_string\": \"actual_secret\""
+                                   "}";
 
-    // cfg -> json string
-    json::StringBuffer cfg_sb;
-    json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
-    cfg.to_json(cfg_writer);
-    auto jstr = cfg_sb.GetString();
+        // cfg -> json string
+        json::StringBuffer cfg_sb;
+        json::Writer<json::StringBuffer> cfg_writer(cfg_sb);
+        cfg.to_json(cfg_writer, redact);
+        auto jstr = cfg_sb.GetString();
 
-    // json string -> rapidjson doc
-    json::Document res_doc;
-    res_doc.Parse(jstr);
+        // json string -> rapidjson doc
+        json::Document res_doc;
+        res_doc.Parse(jstr);
 
-    // json string -> rapidjson doc
-    json::Document exp_doc;
-    exp_doc.Parse(expected_result);
+        // json string -> rapidjson doc
+        json::Document exp_doc;
+        exp_doc.Parse(expected_result);
 
-    // test equivalence
-    BOOST_TEST(res_doc["required_string"].IsString());
-    BOOST_TEST(
-      res_doc["required_string"].GetString()
-      == exp_doc["required_string"].GetString());
+        // test equivalence
+        BOOST_TEST(res_doc["required_string"].IsString());
+        BOOST_TEST(
+          res_doc["required_string"].GetString()
+          == exp_doc["required_string"].GetString());
 
-    BOOST_TEST(res_doc["optional_int"].IsInt());
-    BOOST_TEST(
-      res_doc["optional_int"].GetInt() == exp_doc["optional_int"].GetInt());
+        BOOST_TEST(res_doc["optional_int"].IsInt());
+        BOOST_TEST(
+          res_doc["optional_int"].GetInt() == exp_doc["optional_int"].GetInt());
 
-    BOOST_TEST(res_doc["an_int64_t"].IsInt64());
-    BOOST_TEST(
-      res_doc["an_int64_t"].GetInt64() == exp_doc["an_int64_t"].GetInt64());
+        BOOST_TEST(res_doc["an_int64_t"].IsInt64());
+        BOOST_TEST(
+          res_doc["an_int64_t"].GetInt64() == exp_doc["an_int64_t"].GetInt64());
 
-    BOOST_TEST(res_doc["an_aggregate"].IsObject());
+        BOOST_TEST(res_doc["an_aggregate"].IsObject());
 
-    BOOST_TEST(res_doc["an_aggregate"]["int_value"].IsInt());
-    BOOST_TEST(
-      res_doc["an_aggregate"]["int_value"].GetInt()
-      == exp_doc["an_aggregate"]["int_value"].GetInt());
+        BOOST_TEST(res_doc["an_aggregate"]["int_value"].IsInt());
+        BOOST_TEST(
+          res_doc["an_aggregate"]["int_value"].GetInt()
+          == exp_doc["an_aggregate"]["int_value"].GetInt());
 
-    BOOST_TEST(res_doc["an_aggregate"]["string_value"].IsString());
-    BOOST_TEST(
-      res_doc["an_aggregate"]["string_value"].GetString()
-      == exp_doc["an_aggregate"]["string_value"].GetString());
+        BOOST_TEST(res_doc["an_aggregate"]["string_value"].IsString());
+        BOOST_TEST(
+          res_doc["an_aggregate"]["string_value"].GetString()
+          == exp_doc["an_aggregate"]["string_value"].GetString());
 
-    BOOST_TEST(res_doc["strings"].IsArray());
+        BOOST_TEST(res_doc["strings"].IsArray());
 
-    BOOST_TEST(res_doc["nullable_int"].IsInt());
-    BOOST_TEST(
-      res_doc["nullable_int"].GetInt() == exp_doc["nullable_int"].GetInt());
+        BOOST_TEST(res_doc["nullable_int"].IsInt());
+        BOOST_TEST(
+          res_doc["nullable_int"].GetInt() == exp_doc["nullable_int"].GetInt());
+        BOOST_TEST(
+          res_doc["secret_string"].GetString()
+          == exp_doc["secret_string"].GetString());
+    };
+    test_with_redaction(config::redact_secrets::yes);
+    test_with_redaction(config::redact_secrets::no);
 }
 
 /// Test that unset std::optional options are decoded correctly
@@ -319,6 +364,10 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.nullable_string.type_name() == "string");
     BOOST_TEST(cfg.nullable_string.is_nullable() == true);
     BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.nullable_strings.type_name() == "string");
+    BOOST_TEST(cfg.nullable_strings.is_nullable() == true);
+    BOOST_TEST(cfg.nullable_strings.is_array() == true);
 
     BOOST_TEST(cfg.nullable_int.type_name() == "integer");
     BOOST_TEST(cfg.nullable_int.is_nullable() == true);

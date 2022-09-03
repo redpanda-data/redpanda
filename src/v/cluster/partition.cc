@@ -32,10 +32,13 @@ partition::partition(
   consensus_ptr r,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<feature_table>& feature_table,
+  std::optional<s3::bucket_name> read_replica_bucket)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
+  , _feature_table(feature_table)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value()) {
@@ -70,7 +73,7 @@ partition::partition(
 
         if (has_rm_stm) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
-              clusterlog, _raft.get(), _tx_gateway_frontend);
+              clusterlog, _raft.get(), _tx_gateway_frontend, _feature_table);
             stm_manager->add_stm(_rm_stm);
         }
 
@@ -86,11 +89,22 @@ partition::partition(
             if (cloud_storage_cache.local_is_initialized()) {
                 auto bucket
                   = config::shard_local_cfg().cloud_storage_bucket.value();
+                if (
+                  read_replica_bucket
+                  && _raft->log_config().is_read_replica_mode_enabled()) {
+                    vlog(
+                      clusterlog.info,
+                      "{} Remote topic bucket is {}",
+                      _raft->ntp(),
+                      read_replica_bucket);
+                    // Override the bucket for read replicas
+                    _read_replica_bucket = read_replica_bucket;
+                    bucket = read_replica_bucket;
+                }
                 if (!bucket) {
                     throw std::runtime_error{
                       "configuration property cloud_storage_bucket is not set"};
                 }
-
                 _cloud_storage_partition
                   = ss::make_lw_shared<cloud_storage::remote_partition>(
                     _archival_meta_stm->manifest(),
@@ -102,21 +116,15 @@ partition::partition(
     }
 }
 
-ss::future<result<raft::replicate_result>> partition::replicate(
+ss::future<result<kafka_result>> partition::replicate(
   model::record_batch_reader&& r, raft::replicate_options opts) {
-    return _raft->replicate(std::move(r), opts);
-}
-
-raft::replicate_stages partition::replicate_in_stages(
-  model::record_batch_reader&& r, raft::replicate_options opts) {
-    return _raft->replicate_in_stages(std::move(r), opts);
-}
-
-ss::future<result<raft::replicate_result>> partition::replicate(
-  model::term_id term,
-  model::record_batch_reader&& r,
-  raft::replicate_options opts) {
-    return _raft->replicate(term, std::move(r), opts);
+    using ret_t = result<kafka_result>;
+    auto res = co_await _raft->replicate(std::move(r), opts);
+    if (!res) {
+        co_return ret_t(res.error());
+    }
+    co_return ret_t(kafka_result{
+      kafka::offset(_translator->from_log_offset(res.value().last_offset)())});
 }
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
@@ -138,10 +146,11 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     return _rm_stm;
 }
 
-raft::replicate_stages partition::replicate_in_stages(
+kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
+    using ret_t = result<kafka_result>;
     if (bid.is_transactional) {
         if (!_is_tx_enabled) {
             vlog(
@@ -149,7 +158,7 @@ raft::replicate_stages partition::replicate_in_stages(
               "Can't process a transactional request to {}. Transactional "
               "processing isn't enabled.",
               _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
+            return kafka_stages(raft::errc::timeout);
         }
 
         if (!_rm_stm) {
@@ -157,7 +166,7 @@ raft::replicate_stages partition::replicate_in_stages(
               clusterlog.error,
               "Topic {} doesn't support transactional processing.",
               _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
+            return kafka_stages(raft::errc::timeout);
         }
     }
 
@@ -168,7 +177,7 @@ raft::replicate_stages partition::replicate_in_stages(
               "Can't process an idempotent request to {}. Idempotency isn't "
               "enabled.",
               _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
+            return kafka_stages(raft::errc::timeout);
         }
 
         if (!_rm_stm) {
@@ -176,79 +185,27 @@ raft::replicate_stages partition::replicate_in_stages(
               clusterlog.error,
               "Topic {} doesn't support idempotency.",
               _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
+            return kafka_stages(raft::errc::timeout);
         }
     }
 
     if (_rm_stm) {
-        ss::promise<> p;
-        auto f = p.get_future();
-        auto replicate_finished
-          = _rm_stm->replicate(bid, std::move(r), opts)
-              .then(
-                [p = std::move(p)](result<raft::replicate_result> res) mutable {
-                    p.set_value();
-                    return res;
-                });
-        return raft::replicate_stages(
-          std::move(f), std::move(replicate_finished));
-
-    } else {
-        return _raft->replicate_in_stages(std::move(r), opts);
-    }
-}
-
-ss::future<result<raft::replicate_result>> partition::replicate(
-  model::batch_identity bid,
-  model::record_batch_reader&& r,
-  raft::replicate_options opts) {
-    if (bid.is_transactional) {
-        if (!_is_tx_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Transactional "
-              "processing isn't enabled.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
-        if (!_rm_stm) {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support transactional processing.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
+        return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
     }
 
-    if (bid.has_idempotent()) {
-        if (!_is_idempotence_enabled) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Idempotency isn't "
-              "enabled.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
-        if (!_rm_stm) {
-            vlog(
-              clusterlog.error,
-              "Topic {} doesn't support idempotency.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-    }
-
-    if (_rm_stm) {
-        return _rm_stm->replicate(bid, std::move(r), opts);
-    } else {
-        return _raft->replicate(std::move(r), opts);
-    }
+    auto res = _raft->replicate_in_stages(std::move(r), opts);
+    auto replicate_finished = res.replicate_finished.then(
+      [this](result<raft::replicate_result> r) {
+          if (!r) {
+              return ret_t(r.error());
+          }
+          auto old_offset = r.value().last_offset;
+          auto new_offset = kafka::offset(
+            _translator->from_log_offset(old_offset)());
+          return ret_t(kafka_result{new_offset});
+      });
+    return kafka_stages(
+      std::move(res.request_enqueued), std::move(replicate_finished));
 }
 
 ss::future<> partition::start() {
@@ -256,7 +213,8 @@ ss::future<> partition::start() {
 
     _probe.setup_metrics(ntp);
 
-    auto f = _raft->start();
+    auto f = _raft->start().then(
+      [this] { _translator = _raft->get_offset_translator_state(); });
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });

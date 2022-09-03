@@ -21,8 +21,9 @@
 
 cluster::partition_assignment
 make_assignment(const std::vector<model::node_id>& nodes) {
-    cluster::partition_assignment p_as{
-      .group = raft::group_id(1), .id = model::partition_id(1)};
+    cluster::partition_assignment p_as;
+    p_as.group = raft::group_id(1);
+    p_as.id = model::partition_id(1);
     p_as.replicas.reserve(nodes.size());
     for (auto n : nodes) {
         p_as.replicas.push_back(model::broker_shard{

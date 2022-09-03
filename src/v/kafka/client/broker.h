@@ -63,14 +63,15 @@ public:
               vlog(kclog.debug, "Dispatch: {} req: {}", api_t::name, r);
               return _client.dispatch(std::move(r)).then([](Ret res) {
                   vlog(kclog.debug, "Dispatch: {} res: {}", api_t::name, res);
-                  return std::move(res);
+                  return res;
               });
           })
-          .handle_exception_type([this](const std::bad_optional_access&) {
-              // Short read
-              return ss::make_exception_future<Ret>(
-                broker_error(_node_id, error_code::broker_not_available));
-          })
+          .handle_exception_type(
+            [this](const kafka_request_disconnected_exception&) {
+                // Short read
+                return ss::make_exception_future<Ret>(
+                  broker_error(_node_id, error_code::broker_not_available));
+            })
           .finally([b = shared_from_this()]() {});
     }
 

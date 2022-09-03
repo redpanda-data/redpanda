@@ -14,6 +14,7 @@
 
 namespace kafka {
 
-using sasl_authenticate_handler = handler<sasl_authenticate_api, 0, 1>;
+using sasl_authenticate_handler
+  = single_stage_handler<sasl_authenticate_api, 0, 1>;
 
 }

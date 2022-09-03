@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs) *cobra.Command {
 	var (
 		detailed bool
 		internal bool
@@ -29,7 +29,7 @@ func NewListCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List topics, optionally listing specific topics.",
+		Short:   "List topics, optionally listing specific topics",
 		Long: `List topics, optionally listing specific topics.
 
 This command lists all topics that you have access to by default. If specifying
@@ -52,7 +52,7 @@ information.
 		Run: func(cmd *cobra.Command, topics []string) {
 			// The purpose of the regex flag really is for users to
 			// know what topics they will delete when using regex.
-			// We forbit deleting internal topics (redpanda
+			// We forbid deleting internal topics (redpanda
 			// actually does not expose these currently), so we
 			// make -r and -i incompatible.
 			if internal && re {
@@ -78,8 +78,8 @@ information.
 		},
 	}
 
-	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "print per-partition information for topics")
-	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "print internal topics")
-	cmd.Flags().BoolVarP(&re, "regex", "r", false, "parse topics as regex; list any topic that matches any input topic expression")
+	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print per-partition information for topics")
+	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "Print internal topics")
+	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; list any topic that matches any input topic expression")
 	return cmd
 }

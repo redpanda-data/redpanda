@@ -83,10 +83,14 @@ partition_recovery_manager::~partition_recovery_manager() {
     vassert(_gate.is_closed(), "S3 downloader is not stopped properly");
 }
 
-ss::future<> partition_recovery_manager::stop() { co_await _gate.close(); }
+ss::future<> partition_recovery_manager::stop() {
+    vlog(cst_log.debug, "Stopping partition_recovery_manager");
+    _as.request_abort();
+    return _gate.close();
+}
 
-ss::future<log_recovery_result>
-partition_recovery_manager::download_log(const storage::ntp_config& ntp_cfg) {
+ss::future<log_recovery_result> partition_recovery_manager::download_log(
+  const storage::ntp_config& ntp_cfg, cluster::remote_topic_properties rtp) {
     if (!ntp_cfg.has_overrides()) {
         vlog(
           cst_log.debug, "No overrides for {} found, skipping", ntp_cfg.ntp());
@@ -101,25 +105,29 @@ partition_recovery_manager::download_log(const storage::ntp_config& ntp_cfg) {
         co_return log_recovery_result{};
     }
     partition_downloader downloader(
-      ntp_cfg, &_remote.local(), _bucket, _gate, _root);
+      ntp_cfg, &_remote.local(), rtp, _bucket, _gate, _root, _as);
     co_return co_await downloader.download_log();
 }
 
 partition_downloader::partition_downloader(
   const storage::ntp_config& ntpc,
   remote* remote,
+  cluster::remote_topic_properties rtp,
   s3::bucket_name bucket,
   ss::gate& gate_root,
-  retry_chain_node& parent)
+  retry_chain_node& parent,
+  storage::opt_abort_source_t as)
   : _ntpc(ntpc)
   , _bucket(std::move(bucket))
   , _remote(remote)
+  , _rtp(rtp)
   , _gate(gate_root)
   , _rtcnode(download_timeout, initial_backoff, &parent)
   , _ctxlog(
       cst_log,
       _rtcnode,
-      ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision())) {}
+      ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision()))
+  , _as(as) {}
 
 ss::future<log_recovery_result> partition_downloader::download_log() {
     vlog(_ctxlog.debug, "Check conditions for S3 recovery for {}", _ntpc);
@@ -244,22 +252,13 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
       retention);
     auto mat = co_await find_recovery_material(manifest_key);
     auto offset_map = co_await build_offset_map(mat);
-    partition_manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
-    for (const auto& kv : offset_map) {
-        target.add(kv.second.manifest_key, kv.second.meta);
-    }
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
-        target.serialize(ostr);
-        vlog(_ctxlog.debug, "Generated partition manifest: {}", ostr.str());
-    }
-    // Here the partition manifest 'target' may contain segments
-    // that have different revision ids inside the path.
-    if (target.size() == 0) {
+        mat.partition_manifest.serialize(ostr);
         vlog(
-          _ctxlog.error,
-          "No segments found. Empty partition manifest generated.");
-        throw missing_partition_exception(_ntpc);
+          _ctxlog.debug,
+          "Partition manifest used for recovery: {}",
+          ostr.str());
     }
     download_part part;
     if (std::holds_alternative<std::monostate>(retention)) {
@@ -267,7 +266,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
         static constexpr auto one_week = one_day * 7;
         vlog(_ctxlog.info, "Default retention parameters are used.");
         part = co_await download_log_with_capped_time(
-          offset_map, target, prefix, one_week);
+          offset_map, mat.partition_manifest, prefix, one_week);
     } else if (std::holds_alternative<size_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<size_bound_deletion_parameters>(retention);
@@ -276,7 +275,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Size bound retention is used. Size limit: {} bytes.",
           r.retention_bytes);
         part = co_await download_log_with_capped_size(
-          offset_map, target, prefix, r.retention_bytes);
+          offset_map, mat.partition_manifest, prefix, r.retention_bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
@@ -285,48 +284,16 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Time bound retention is used. Time limit: {}ms.",
           r.retention_duration.count());
         part = co_await download_log_with_capped_time(
-          offset_map, target, prefix, r.retention_duration);
+          offset_map, mat.partition_manifest, prefix, r.retention_duration);
     }
     // Move parts to final destinations
     co_await move_parts(part);
 
-    auto upl_result = co_await _remote->upload_manifest(
-      _bucket, target, _rtcnode);
-    // If the manifest upload fails we can't continue
-    // since it will damage the data in S3. The archival subsystem
-    // will pick new partition after the leader will be elected. Then
-    // it won't find the manifest in place and will create a new one.
-    // If the manifest name in S3 matches the old manifest name it will
-    // be overwriten and some data may be lost as a result.
-    vassert(
-      upl_result == upload_result::success,
-      "Can't upload new manifest {} after recovery",
-      target.get_manifest_path());
-
-    // TODO (evgeny): clean up old manifests on success. Take into account
-    //                that old and new manifest names could match.
-
-    // Upload topic manifest for re-created topic (here we don't prevent
-    // other partitions of the same topic to read old topic manifest if the
-    // revision is different).
-    if (mat.topic_manifest.get_revision() != _ntpc.get_initial_revision()) {
-        mat.topic_manifest.set_revision(_ntpc.get_initial_revision());
-        upl_result = co_await _remote->upload_manifest(
-          _bucket, mat.topic_manifest, _rtcnode);
-        if (upl_result != upload_result::success) {
-            // That's probably fine since the archival subsystem will
-            // re-upload topic manifest eventually.
-            vlog(
-              _ctxlog.warn,
-              "Failed to upload new topic manifest {} after recovery",
-              target.get_manifest_path());
-        }
-    }
     log_recovery_result result{
       .completed = true,
       .min_kafka_offset = part.range.min_offset,
       .max_kafka_offset = part.range.max_offset,
-      .manifest = target,
+      .manifest = mat.partition_manifest,
     };
     co_return result;
 }
@@ -334,6 +301,11 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
 void partition_downloader::update_downloaded_offsets(
   std::vector<partition_downloader::offset_range> dloffsets,
   partition_downloader::download_part& dlpart) {
+    auto to_erase = std::remove_if(
+      dloffsets.begin(), dloffsets.end(), [](offset_range r) {
+          return r.max_offset == model::offset::min();
+      });
+    dloffsets.erase(to_erase, dloffsets.end());
     std::sort(dloffsets.begin(), dloffsets.end());
     for (auto it = dloffsets.rbegin(); it != dloffsets.rend(); it++) {
         auto offsets = *it;
@@ -350,11 +322,14 @@ void partition_downloader::update_downloaded_offsets(
                 break;
             }
         }
+        // Only count non-empty files
         dlpart.range.min_offset = std::min(
           dlpart.range.min_offset, offsets.min_offset);
         dlpart.range.max_offset = std::max(
           dlpart.range.max_offset, offsets.max_offset);
-        ++dlpart.num_files;
+        if (dlpart.range.max_offset > dlpart.range.min_offset) {
+            ++dlpart.num_files;
+        }
     }
 }
 
@@ -434,6 +409,12 @@ partition_downloader::download_log_with_capped_size(
           }
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
+    if (dlpart.num_files == 0) {
+        // The segments didn't have data batches
+        vlog(_ctxlog.debug, "Log segments didn't have data batches");
+        dlpart.range.min_offset = model::offset{0};
+        dlpart.range.max_offset = model::offset{0};
+    }
     co_return dlpart;
 }
 
@@ -520,6 +501,12 @@ partition_downloader::download_log_with_capped_time(
           }
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
+    if (dlpart.num_files == 0) {
+        // The segments didn't have data batches
+        vlog(_ctxlog.debug, "Log segments didn't have data batches");
+        dlpart.range.min_offset = model::offset{0};
+        dlpart.range.max_offset = model::offset{0};
+    }
     co_return dlpart;
 }
 
@@ -539,13 +526,8 @@ ss::future<partition_downloader::recovery_material>
 partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading topic manifest {}", key);
     recovery_material recovery_mat;
-    auto result = co_await _remote->download_manifest(
-      _bucket, key, recovery_mat.topic_manifest, _rtcnode);
-    if (result != download_result::success) {
-        throw missing_partition_exception(key);
-    }
-    auto orig_rev = recovery_mat.topic_manifest.get_revision();
-    partition_manifest tmp(_ntpc.ntp(), orig_rev);
+
+    partition_manifest tmp(_ntpc.ntp(), _rtp.remote_revision);
     auto res = co_await _remote->download_manifest(
       _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
     if (res != download_result::success) {
@@ -580,7 +562,7 @@ partition_downloader::download_segment_file(
       segm.meta.size_bytes,
       part.part_prefix.string());
 
-    offset_translator otl{segm.meta.delta_offset};
+    offset_translator otl{segm.meta.delta_offset, _as};
 
     auto localpath = part.part_prefix
                      / std::string{otl.get_adjusted_segment_name(
@@ -625,12 +607,22 @@ partition_downloader::download_segment_file(
         min_offset = stream_stats.min_offset;
         max_offset = stream_stats.max_offset;
 
-        vlog(
-          _ctxlog.debug,
-          "Log segment downloaded. {} bytes expected, {} bytes after "
-          "pre-processing.",
-          len,
-          stream_stats.size_bytes);
+        if (stream_stats.size_bytes == 0) {
+            vlog(
+              _ctxlog.debug,
+              "Log segment downloaded empty. Original size: {}.",
+              len);
+            // The segment is empty after filtering
+            co_await ss::remove_file(localpath.native());
+        } else {
+            vlog(
+              _ctxlog.debug,
+              "Log segment downloaded. {} bytes expected, {} bytes after "
+              "pre-processing.",
+              len,
+              stream_stats.size_bytes);
+        }
+
         co_return stream_stats.size_bytes;
     };
 

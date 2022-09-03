@@ -21,6 +21,36 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/partition_balancer/status",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get partition autobalancer status",
+                    "type": "get_partition_balancer_status",
+                    "nickname": "get_partition_balancer_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/cancel_reconfigurations",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Cancel all partition reconfigurations",
+                    "type": "cancel_all_partitions_reconfigurations",
+                    "nickname": "cancel_all_partitions_reconfigurations",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -56,6 +86,44 @@
                         "type": "string"
                     },
                     "description": "list of partitions for which no leader is elected"
+                }
+            }
+        },
+        "partition_balancer_status": {
+            "id": "partition_balancer_status",
+            "description": "Returns status of the partition autobalancer",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "off/ready/in_progress/stalled"
+                },
+                "violations": {
+                    "type": "partition_balancer_violations"
+                },
+                "seconds_since_last_tick": {
+                    "type": "int",
+                    "description": "last time the partition balancer ran"
+                },
+                "current_reassignments_count": {
+                    "type": "int",
+                    "description": "current number of partition reassignments in progress"
+                }
+            }
+        },
+        "partition_balancer_violations": {
+            "id": "partition_balancer_violations",
+            "properties": {
+                "unavailable_nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    }
+                },
+                "over_disk_limit_nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    }
                 }
             }
         }

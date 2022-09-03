@@ -17,6 +17,7 @@
 #include <seastar/util/log.hh>
 
 #include <boost/program_options/options_description.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 /// Parses command line options passed to the redpanda binary. Validates the
 /// options against a set of registered values. The values should include both
@@ -37,7 +38,10 @@ struct cli_parser {
       ss_opts seastar_opts,
       ss::logger& log);
 
-    bool validate();
+    // Validates the arguments, returning true if the input arguments match
+    // those expected by the configured options. Upon success, the resulting
+    // variables are placed into 'vm'.
+    bool validate_into(boost::program_options::variables_map& vm);
 
 private:
     int _ac;

@@ -42,7 +42,7 @@ public:
 
 private:
     configuration _config;
-    ss::semaphore _mem_sem;
+    ssx::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
     ctx_server<proxy>::context_t _ctx;
     ctx_server<proxy> _server;

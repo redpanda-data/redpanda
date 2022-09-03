@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "model/metadata.h"
 #include "s3/client.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -53,10 +54,17 @@ enum class upload_result : int32_t {
     success,
     timedout,
     failed,
+    cancelled,
 };
 
 enum class manifest_version : int32_t {
     v1 = 1,
+};
+
+enum class tx_range_manifest_version : int32_t {
+    v1 = 1,
+    current_version = v1,
+    compat_version = v1,
 };
 
 static constexpr int32_t topic_manifest_version = 1;
@@ -74,6 +82,8 @@ struct configuration {
     remote_metrics_disabled metrics_disabled;
     /// The bucket to use
     s3::bucket_name bucket_name;
+
+    model::cloud_credentials_source cloud_credentials_source;
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 

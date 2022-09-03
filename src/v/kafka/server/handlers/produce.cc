@@ -25,6 +25,7 @@
 #include "model/timestamp.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 #include "vlog.h"
@@ -32,6 +33,7 @@
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/container_hash/extensions.hpp>
@@ -39,9 +41,12 @@
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 
 namespace kafka {
+
+static constexpr auto despam_interval = std::chrono::minutes(5);
 
 produce_response produce_request::make_error_response(error_code error) const {
     produce_response response;
@@ -62,6 +67,12 @@ produce_response produce_request::make_error_response(error_code error) const {
     }
 
     return response;
+}
+produce_response produce_request::make_full_disk_response() const {
+    auto resp = make_error_response(error_code::broker_not_available);
+    // TODO set a field in response to signal to quota manager to throttle the
+    // client
+    return resp;
 }
 
 struct produce_ctx {
@@ -133,7 +144,7 @@ static error_code map_produce_error_code(std::error_code ec) {
         case raft::errc::shutting_down:
             return error_code::request_timed_out;
         default:
-            return error_code::unknown_server_error;
+            return error_code::request_timed_out;
         }
     }
 
@@ -148,12 +159,14 @@ static error_code map_produce_error_code(std::error_code ec) {
             return error_code::invalid_producer_epoch;
         case cluster::errc::sequence_out_of_order:
             return error_code::out_of_order_sequence_number;
+        case cluster::errc::invalid_request:
+            return error_code::invalid_request;
         default:
-            return error_code::unknown_server_error;
+            return error_code::request_timed_out;
         }
     }
 
-    return error_code::unknown_server_error;
+    return error_code::request_timed_out;
 }
 
 /*
@@ -190,11 +203,27 @@ static partition_produce_stages partition_append(
                     p.error_code = map_produce_error_code(r.error());
                 }
             } catch (...) {
-                p.error_code = error_code::unknown_server_error;
+                p.error_code = error_code::request_timed_out;
             }
             return p;
         }),
     };
+}
+
+ss::future<produce_response::partition> finalize_request_with_error_code(
+  error_code ec,
+  std::unique_ptr<ss::promise<>> dispatch,
+  model::ntp ntp,
+  ss::shard_id source_shard) {
+    // submit back to promise source shard
+    ssx::background = ss::smp::submit_to(
+      source_shard, [dispatch = std::move(dispatch)]() mutable {
+          dispatch->set_value();
+          dispatch.reset();
+      });
+    return ss::make_ready_future<produce_response::partition>(
+      produce_response::partition{
+        .partition_index = ntp.tp.partition, .error_code = ec});
 }
 
 /**
@@ -264,28 +293,25 @@ static partition_produce_stages produce_topic_partition(
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
                 if (!partition) {
-                    // submit back to promise source shard
-                    (void)ss::smp::submit_to(
-                      source_shard, [dispatch = std::move(dispatch)]() mutable {
-                          dispatch->set_value();
-                          dispatch.reset();
-                      });
-                    return ss::make_ready_future<produce_response::partition>(
-                      produce_response::partition{
-                        .partition_index = ntp.tp.partition,
-                        .error_code = error_code::unknown_topic_or_partition});
+                    return finalize_request_with_error_code(
+                      error_code::unknown_topic_or_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
                 }
                 if (unlikely(!partition->is_leader())) {
-                    // submit back to promise source shard
-                    (void)ss::smp::submit_to(
-                      source_shard, [dispatch = std::move(dispatch)]() mutable {
-                          dispatch->set_value();
-                          dispatch.reset();
-                      });
-                    return ss::make_ready_future<produce_response::partition>(
-                      produce_response::partition{
-                        .partition_index = ntp.tp.partition,
-                        .error_code = error_code::not_leader_for_partition});
+                    return finalize_request_with_error_code(
+                      error_code::not_leader_for_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
+                }
+                if (partition->is_read_replica_mode_enabled()) {
+                    return finalize_request_with_error_code(
+                      error_code::invalid_topic_exception,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
                 }
                 auto stages = partition_append(
                   ntp.tp.partition,
@@ -456,10 +482,25 @@ static std::vector<topic_produce_stages> produce_topics(produce_ctx& octx) {
     return topics;
 }
 
+template<>
 process_result_stages
 produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
+
+    if (ctx.metadata_cache().should_reject_writes()) {
+        thread_local static ss::logger::rate_limit rate(despam_interval);
+        klog.log(
+          ss::log_level::warn,
+          rate,
+          "[{}:{}] rejecting produce request: no disk space; bytes free less "
+          "than configurable threshold",
+          ctx.connection()->client_host(),
+          ctx.connection()->client_port());
+
+        return process_result_stages::single_stage(
+          ctx.respond(request.make_full_disk_response()));
+    }
 
     // determine if the request has transactional / idemponent batches
     for (auto& topic : request.data.topics) {

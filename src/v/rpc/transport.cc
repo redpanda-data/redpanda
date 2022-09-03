@@ -10,6 +10,7 @@
 #include "rpc/transport.h"
 
 #include "likely.h"
+#include "net/connection.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
@@ -33,7 +34,7 @@ struct client_context_impl final : streaming_context {
     client_context_impl(transport& s, header h)
       : _c(std::ref(s))
       , _h(std::move(h)) {}
-    ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
+    ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
             _c.get()._probe.waiting_for_available_memory();
@@ -57,7 +58,7 @@ transport::transport(
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
   })
-  , _memory(c.max_queued_bytes) {
+  , _memory(c.max_queued_bytes, "rpc/transport-mem") {
     if (!c.disable_metrics) {
         setup_metrics(service_name);
     }
@@ -80,9 +81,14 @@ ss::future<> transport::connect(clock_type::duration connection_timeout) {
 }
 
 void transport::reset_state() {
-    _correlation_idx = 0;
+    /*
+     * the _correlation_idx is explicitly not reset as a pragmatic approach to
+     * dealing with an apparent race condition in which two requests with the
+     * same correlation id are in flight shortly after a reset.
+     */
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
+    _version = transport_version::v1;
 }
 
 ss::future<>
@@ -96,7 +102,19 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
                 try {
                     f.get();
                 } catch (...) {
-                    _probe.read_dispatch_error(std::current_exception());
+                    auto e = std::current_exception();
+                    if (net::is_disconnect_exception(e)) {
+                        rpc::rpclog.info(
+                          "Disconnected from server {}: {}",
+                          server_address(),
+                          e);
+                    } else {
+                        rpc::rpclog.error(
+                          "Error dispatching client reads to {}: {}",
+                          server_address(),
+                          e);
+                    }
+                    _probe.read_dispatch_error();
                 }
             });
         });
@@ -135,7 +153,12 @@ transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
     item_raw_ptr->with_timeout(opts.timeout, [this, idx] {
         auto it = _correlations.find(idx);
         if (likely(it != _correlations.end())) {
-            vlog(rpclog.info, "Request timeout, correlation id: {}", idx);
+            vlog(
+              rpclog.info,
+              "Request timeout to {}, correlation id: {} ({} in flight)",
+              server_address(),
+              idx,
+              _correlations.size());
             _probe.request_timeout();
             _correlations.erase(it);
         }
@@ -166,7 +189,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                    f = std::move(f),
                    seq,
                    u = std::move(opts.resource_units)](
-                    ss::semaphore_units<> units) mutable {
+                    ssx::semaphore_units units) mutable {
                 auto e = entry{
                   .buffer = std::make_unique<netbuf>(std::move(b)),
                   .resource_units = std::move(u),

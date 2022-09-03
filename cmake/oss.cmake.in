@@ -179,7 +179,7 @@ ExternalProject_Add(fmt
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
-  GIT_TAG 0fd17f4cb57365c4a340fbb4435fcc903871512a
+  GIT_TAG bdf4c58630f06aaffa02c98edc1192a2d8db2fe8
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -198,6 +198,7 @@ ExternalProject_Add(seastar
     -DSeastar_API_LEVEL=6
     -DSeastar_CXX_DIALECT=c++20
     -DSeastar_UNUSED_RESULT_ERROR=ON
+    -Dvalgrind_PC_INCLUDEDIR=<INSTALL_DIR>/include
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
   DEPENDS ${default_depends} boost cryptopp)
 
@@ -256,36 +257,6 @@ ExternalProject_Add(alien_thread
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
 
-ExternalProject_Add(
-  librdkafka
-  GIT_REPOSITORY https://github.com/edenhill/librdkafka
-  GIT_TAG v1.2.2
-  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends} boost
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DWITH_ZLIB=OFF
-    -DWITH_ZSTD=OFF
-    -DENABLE_LZ4_EXT=OFF
-    -DRDKAFKA_BUILD_STATIC=ON
-    -DRDKAFKA_BUILD_EXAMPLES=OFF
-    -DRDKAFKA_BUILD_TESTS=OFF)
-
-ExternalProject_Add(cppkafka
-  GIT_REPOSITORY https://github.com/mfontanini/cppkafka.git
-  GIT_TAG c3b4580
-  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  DEPENDS librdkafka
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DCPPKAFKA_BUILD_SHARED=OFF
-    -DCPPKAFKA_RDKAFKA_STATIC_LIB=ON
-    -DCPPKAFKA_BOOST_STATIC_LIBS=OFF
-    -DCPPKAFKA_DISABLE_EXAMPLES=OFF
-    -DCPPKAFKA_DISABLE_TESTS=OFF)
-
 ExternalProject_Add(base64_ext
   GIT_REPOSITORY https://github.com/redpanda-data/base64
   GIT_TAG eaebee8
@@ -308,20 +279,8 @@ ExternalProject_Add(kafka-codegen-pex
   BUILD_COMMAND ""
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
-  COMMAND <SOURCE_DIR>/env/bin/pip install pex
+  COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
   COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv)
-
-ExternalProject_Add(kafka-python-pex
-  DOWNLOAD_COMMAND ""
-  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  PATCH_COMMAND ""
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND ""
-  INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
-  COMMAND <SOURCE_DIR>/env/bin/pip install pex
-  COMMAND <SOURCE_DIR>/env/bin/pex kafka-python -o <INSTALL_DIR>/bin/kafka-python-env
-  )
 
 ExternalProject_Add(ctre
   GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions

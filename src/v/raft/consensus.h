@@ -26,13 +26,14 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/raft_feature_table.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
-#include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
@@ -94,7 +95,8 @@ public:
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
-      recovery_memory_quota&);
+      recovery_memory_quota&,
+      raft_feature_table&);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -121,15 +123,23 @@ public:
     // Removes members from group
     ss::future<std::error_code>
       remove_members(std::vector<model::node_id>, model::revision_id);
-    // Replace configuration of raft group with given set of nodes
+
+    /**
+     * Replace configuration, uses revision provided with brokers
+     */
     ss::future<std::error_code>
-      replace_configuration(std::vector<model::broker>, model::revision_id);
+      replace_configuration(std::vector<broker_revision>, model::revision_id);
     // Abort ongoing configuration change - may cause data loss
     ss::future<std::error_code> abort_configuration_change(model::revision_id);
     // Revert current configuration change - this is safe and will never cause
     // data loss
-    ss::future<std::error_code> revert_configuration_change(model::revision_id);
-    bool is_leader() const { return _vstate == vote_state::leader; }
+    ss::future<std::error_code> cancel_configuration_change(model::revision_id);
+    bool is_elected_leader() const { return _vstate == vote_state::leader; }
+    // The node won the elections and made sure that the records written in
+    // previous term are behind committed index
+    bool is_leader() const {
+        return is_elected_leader() && _term == _confirmed_term;
+    }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
@@ -150,6 +160,9 @@ public:
     group_configuration config() const;
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
+    clock_type::time_point became_leader_at() const {
+        return _became_leader_at;
+    };
 
     clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
     /**
@@ -251,6 +264,16 @@ public:
         });
     }
 
+    ss::future<> step_down() {
+        return _op_lock.with([this] {
+            do_step_down("external_stepdown");
+            if (_leader_id) {
+                _leader_id = std::nullopt;
+                trigger_leadership_notification();
+            }
+        });
+    }
+
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
 
@@ -324,6 +347,7 @@ public:
 
     std::vector<follower_metrics> get_follower_metrics() const;
     result<follower_metrics> get_follower_metrics(model::node_id) const;
+    size_t get_follower_count() const;
     bool has_followers() const { return _fstats.size() > 0; }
 
     offset_monitor& visible_offset_monitor() {
@@ -369,7 +393,7 @@ private:
 
     ss::future<result<replicate_result>> dispatch_replicate(
       append_entries_request,
-      std::vector<ss::semaphore_units<>>,
+      std::vector<ssx::semaphore_units>,
       absl::flat_hash_map<vnode, follower_req_seq>);
     /**
      * Hydrate the consensus state with the data from the snapshot
@@ -410,7 +434,7 @@ private:
     bool needs_recovery(const follower_index_metadata&, model::offset);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
+    ss::future<> do_maybe_update_leader_commit_idx(ssx::semaphore_units);
 
     clock_type::time_point majority_heartbeat() const;
     /*
@@ -425,7 +449,7 @@ private:
     /// Replicates configuration to other nodes,
     //  caller have to pass in _op_sem semaphore units
     ss::future<std::error_code>
-    replicate_configuration(ss::semaphore_units<> u, group_configuration);
+    replicate_configuration(ssx::semaphore_units u, group_configuration);
 
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
@@ -460,7 +484,7 @@ private:
     ss::future<std::error_code>
       interrupt_configuration_change(model::revision_id, Func);
 
-    ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
+    ss::future<> maybe_commit_configuration(ssx::semaphore_units);
     void maybe_promote_to_voter(vnode);
 
     ss::future<model::record_batch_reader>
@@ -537,10 +561,11 @@ private:
             vlog(
               _ctxlog.warn,
               "received {} request addressed to different node: {}, current "
-              "node: {}",
+              "node: {}, source: {}",
               request_name,
               target,
-              _self);
+              _self,
+              request.source_node());
             return true;
         }
         return false;
@@ -559,6 +584,18 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
+    // It's common to use raft log as a foundation for state machines:
+    // when a node becomes a leader it replays the log, reconstructs
+    // the state and becomes ready to serve the requests. However it is
+    // not enough for a node to become a leader, it should successfully
+    // replicate a new record to be sure that older records stored in
+    // the local log were actually replicated and do not constitute an
+    // artifact of the previously crashed leader. Redpanda uses a confi-
+    // guration batch for the initial replication to gain certainty. When
+    // commit index moves past the configuration batch _confirmed_term
+    // gets updated. So when _term==_confirmed_term it's safe to use
+    // local log to reconstruct the state.
+    model::term_id _confirmed_term;
     model::offset _flushed_offset{};
 
     // read at `ss::future<> start()`
@@ -602,6 +639,7 @@ private:
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
+    raft_feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;

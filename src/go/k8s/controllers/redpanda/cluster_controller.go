@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -24,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	appsv1 "k8s.io/api/apps/v1"
@@ -45,11 +47,12 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                   logr.Logger
-	configuratorSettings  resources.ConfiguratorSettings
-	clusterDomain         string
-	Scheme                *runtime.Scheme
-	AdminAPIClientFactory adminutils.AdminAPIClientFactory
+	Log                      logr.Logger
+	configuratorSettings     resources.ConfiguratorSettings
+	clusterDomain            string
+	Scheme                   *runtime.Scheme
+	AdminAPIClientFactory    adminutils.AdminAPIClientFactory
+	DecommissionWaitInterval time.Duration
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -125,7 +128,7 @@ func (r *ClusterReconciler) Reconcile(
 		subdomain,
 		clusterSvc.Key().Name,
 		resources.PandaproxyPortExternalName,
-		log)
+		log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"})
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
@@ -155,6 +158,8 @@ func (r *ClusterReconciler) Reconcile(
 		sa.Key().Name,
 		r.configuratorSettings,
 		configMapResource.GetNodeConfigHash,
+		r.AdminAPIClientFactory,
+		r.DecommissionWaitInterval,
 		log)
 
 	toApply := []resources.Reconciler{
@@ -179,7 +184,7 @@ func (r *ClusterReconciler) Reconcile(
 
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
-			log.Error(e, e.Msg)
+			log.Info(e.Error())
 			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
 		}
 
@@ -324,7 +329,8 @@ func (r *ClusterReconciler) reportStatus(
 			}
 
 			cluster.Status.Nodes = *nodeList
-			cluster.Status.Replicas = sts.LastObservedState.Status.ReadyReplicas
+			cluster.Status.ReadyReplicas = sts.LastObservedState.Status.ReadyReplicas
+			cluster.Status.Replicas = sts.LastObservedState.Status.Replicas
 			cluster.Status.Version = sts.Version()
 
 			err = r.Status().Update(ctx, &cluster)
@@ -353,7 +359,8 @@ func statusShouldBeUpdated(
 			!reflect.DeepEqual(nodeList.ExternalPandaproxy, status.Nodes.ExternalPandaproxy) ||
 			!reflect.DeepEqual(nodeList.SchemaRegistry, status.Nodes.SchemaRegistry) ||
 			!reflect.DeepEqual(nodeList.ExternalBootstrap, status.Nodes.ExternalBootstrap)) ||
-		status.Replicas != sts.LastObservedState.Status.ReadyReplicas ||
+		status.Replicas != sts.LastObservedState.Status.Replicas ||
+		status.ReadyReplicas != sts.LastObservedState.Status.ReadyReplicas ||
 		status.Version != sts.Version()
 }
 
@@ -495,7 +502,7 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminTLSConfigProvider resources.AdminTLSConfigProvider,
+	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
 	objs []types.NamespacedName,
 ) error {
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminTLSConfigProvider)
@@ -518,7 +525,7 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		username := string(secret.Data[corev1.BasicAuthUsernameKey])
 		password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-		err = adminAPI.CreateUser(username, password, admin.ScramSha256)
+		err = adminAPI.CreateUser(ctx, username, password, admin.ScramSha256)
 		// {"message": "Creating user: User already exists", "code": 400}
 		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
 			return &resources.RequeueAfterError{

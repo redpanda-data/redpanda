@@ -106,7 +106,7 @@ public:
     ss::future<> close();
 
 private:
-    std::unique_ptr<continuous_batch_parser> initialize(
+    ss::future<std::unique_ptr<continuous_batch_parser>> initialize(
       model::timeout_clock::time_point,
       std::optional<model::offset> next_cached_batch);
 

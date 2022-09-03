@@ -6,7 +6,8 @@ set(srcs
     socket_address_convert_test.cc
     tls_config_convert_test.cc
     advertised_kafka_api_test.cc
-    seed_server_property_test.cc)
+    seed_server_property_test.cc
+    cloud_credentials_source_test.cc)
 
 rp_test(
   UNIT_TEST

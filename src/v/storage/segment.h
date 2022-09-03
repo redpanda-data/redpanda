@@ -17,6 +17,7 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 
@@ -36,6 +37,7 @@ struct segment_closed_exception final : std::exception {
 
 class segment {
 public:
+    using generation_id = named_type<uint64_t, struct segment_gen_tag>;
     struct offset_tracker {
         offset_tracker(model::term_id t, model::offset base)
           : term(t)
@@ -69,7 +71,9 @@ public:
       segment_index,
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
-      std::optional<batch_cache_index>) noexcept;
+      std::optional<batch_cache_index>,
+      storage_resources&,
+      generation_id = generation_id{}) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -91,7 +95,7 @@ public:
     ss::future<bool> materialize_index();
 
     /// main read interface
-    ss::input_stream<char>
+    ss::future<segment_reader_handle>
       offset_data_stream(model::offset, ss::io_priority_class);
 
     const offset_tracker& offsets() const { return _tracker; }
@@ -112,7 +116,8 @@ public:
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
-    const segment_reader& reader() const;
+    size_t file_size() const { return _reader.file_size(); }
+    const ss::sstring& filename() const { return _reader.filename(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -145,6 +150,9 @@ public:
 
     ss::future<> remove_persistent_state();
 
+    generation_id get_generation_id() const { return _generation_id; }
+    void advance_generation() { _generation_id++; }
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
@@ -172,9 +180,23 @@ private:
         segment* _segment;
     };
 
+    storage_resources& _resources;
+
     appender_callbacks _appender_callbacks;
 
     void advance_stable_offset(size_t offset);
+    /**
+     * Generation id is incremented every time the destructive operation is
+     * executed on the segment, it is used when atomically swapping the staging
+     * compacted segment content with current segment content.
+     *
+     * Generation is advanced when:
+     * - segment is truncated
+     * - batches are appended to the segment
+     * - segment appender is flushed
+     * - segment is compacted
+     */
+    generation_id _generation_id;
 
     offset_tracker _tracker;
     segment_reader _reader;
@@ -211,7 +233,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
-  unsigned read_ahead);
+  unsigned read_ahead,
+  storage_resources&);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -222,7 +245,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   size_t buf_size,
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
-  std::optional<batch_cache_index> batch_cache);
+  std::optional<batch_cache_index> batch_cache,
+  storage_resources&);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags
@@ -338,7 +362,6 @@ inline bool segment::is_closed() const {
     return (_flags & bitflags::closed) == bitflags::closed;
 }
 inline segment_reader& segment::reader() { return _reader; }
-inline const segment_reader& segment::reader() const { return _reader; }
 inline segment_index& segment::index() { return _idx; }
 inline const segment_index& segment::index() const { return _idx; }
 inline segment_appender_ptr segment::release_appender() {

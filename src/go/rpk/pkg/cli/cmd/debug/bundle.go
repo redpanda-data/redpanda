@@ -53,7 +53,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "bundle",
-		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect.",
+		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
@@ -70,7 +70,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			err = executeBundle(fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
+			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}
@@ -78,7 +78,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		&adminURL,
 		"admin-url",
 		"",
-		"The address to the broker's admin API. Defaults to the one in the config file.",
+		"The address to the broker's admin API. Defaults to the one in the config file",
 	)
 	command.Flags().DurationVar(
 		&timeout,
@@ -102,7 +102,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		&logsSizeLimit,
 		"logs-size-limit",
 		"100MiB",
-		"Read the logs until the given size is reached. Multipliers are also supported, e.g. 3MB, 1GiB.",
+		"Read the logs until the given size is reached. Multipliers are also supported, e.g. 3MB, 1GiB",
 	)
 
 	common.AddKafkaFlags(

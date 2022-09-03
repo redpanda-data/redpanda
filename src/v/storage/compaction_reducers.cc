@@ -97,8 +97,7 @@ index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     const bool should_add = _bm.contains(_natural_index);
     ++_natural_index;
     if (should_add) {
-        bytes_view bv = e.key;
-        return _writer->index(bv, e.offset, e.delta)
+        return _writer->index(e.key, e.offset, e.delta)
           .then([k = std::move(e.key)] {
               return ss::make_ready_future<stop_t>(stop_t::no);
           });
@@ -118,9 +117,7 @@ std::optional<model::record_batch>
 copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // do not compact raft configuration and archival metadata as they shift
     // offset translation
-    if (
-      batch.header().type == model::record_batch_type::raft_configuration
-      || batch.header().type == model::record_batch_type::archival_metadata) {
+    if (!is_compactible(batch)) {
         return std::move(batch);
     }
 
@@ -296,8 +293,9 @@ index_rebuilder_reducer::operator()(model::record_batch&& b) {
 ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) {
         return model::for_each_record(
-          b, [this, o = b.base_offset()](model::record& r) {
-              return _w->index(r.key(), o, r.offset_delta());
+          b,
+          [this, bt = b.header().type, o = b.base_offset()](model::record& r) {
+              return _w->index(bt, r.key(), o, r.offset_delta());
           });
     });
 }

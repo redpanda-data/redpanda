@@ -30,6 +30,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<security::authorizer>&);
 
@@ -53,6 +54,8 @@ public:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
+    ss::future<std::error_code> maybe_create_bootstrap_user();
+
 private:
     ss::future<std::vector<errc>> do_create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);
@@ -75,6 +78,7 @@ private:
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<feature_table>& _features;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<security::authorizer>& _authorizer;
 };

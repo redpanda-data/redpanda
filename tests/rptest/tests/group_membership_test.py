@@ -66,7 +66,7 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
                 admin.transfer_leadership_to(namespace=namespace,
                                              topic=topic,
                                              partition=partition,
-                                             target=target_id)
+                                             target_id=target_id)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 503:
                     time.sleep(1)
@@ -127,7 +127,8 @@ class GroupMetricsTest(RedpandaTest):
 
         # Require internal_kafka topic to have an increased replication factor
         extra_rp_conf = dict(default_topic_replications=3,
-                             enable_leader_balancer=False)
+                             enable_leader_balancer=False,
+                             group_topic_partitions=1)
         super(GroupMetricsTest, self).__init__(test_context=ctx,
                                                num_brokers=3,
                                                extra_rp_conf=extra_rp_conf)
@@ -321,10 +322,11 @@ class GroupMetricsTest(RedpandaTest):
             """
             self.logger.debug(
                 f"Transferring leadership to {new_leader.account.hostname}")
-            admin.transfer_leadership_to(namespace="kafka",
-                                         topic="__consumer_offsets",
-                                         partition=0,
-                                         target=self.redpanda.idx(new_leader))
+            admin.transfer_leadership_to(
+                namespace="kafka",
+                topic="__consumer_offsets",
+                partition=0,
+                target_id=self.redpanda.idx(new_leader))
             for _ in range(3):  # re-check a few times
                 leader = get_group_leader()
                 self.logger.debug(f"Current leader: {leader}")
@@ -373,6 +375,9 @@ class GroupMetricsTest(RedpandaTest):
                        timeout_sec=30,
                        backoff_sec=5)
 
+            self.logger.debug(
+                f"Waiting for metrics from the single node: {new_leader.account.hostname}"
+            )
             wait_until(lambda: metrics_from_single_node(new_leader),
                        timeout_sec=30,
                        backoff_sec=5)

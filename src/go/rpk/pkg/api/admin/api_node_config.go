@@ -9,7 +9,10 @@
 
 package admin
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 type NodeConfig struct {
 	NodeID int `json:"node_id"`
@@ -19,8 +22,8 @@ type NodeConfig struct {
 // NodeConfig returns a single node configuration.
 // It's expected to be called from an AdminAPI with a single broker URL,
 // otherwise the method will return an error.
-func (a *AdminAPI) GetNodeConfig() (NodeConfig, error) {
+func (a *AdminAPI) GetNodeConfig(ctx context.Context) (NodeConfig, error) {
 	var nodeconfig NodeConfig
 
-	return nodeconfig, a.sendOne(http.MethodGet, "/v1/node_config", nil, &nodeconfig, false)
+	return nodeconfig, a.sendOne(ctx, http.MethodGet, "/v1/node_config", nil, &nodeconfig, false)
 }

@@ -33,13 +33,13 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
     auto error = error_code::none;
 
     if (request.data.mechanism == security::scram_sha256_authenticator::name) {
-        ctx.sasl().set_mechanism(
+        ctx.sasl()->set_mechanism(
           std::make_unique<security::scram_sha256_authenticator::auth>(
             ctx.credentials()));
 
     } else if (
       request.data.mechanism == security::scram_sha512_authenticator::name) {
-        ctx.sasl().set_mechanism(
+        ctx.sasl()->set_mechanism(
           std::make_unique<security::scram_sha512_authenticator::auth>(
             ctx.credentials()));
 

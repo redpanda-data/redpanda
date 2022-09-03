@@ -10,7 +10,6 @@
 #include "pandaproxy/json/requests/produce.h"
 
 #include "kafka/protocol/produce.h"
-#include "kafka/server/response.h"
 #include "model/timestamp.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"

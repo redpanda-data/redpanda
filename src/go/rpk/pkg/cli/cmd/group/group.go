@@ -25,7 +25,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "group",
 		Aliases: []string{"g"},
-		Short:   `Describe, list, and delete consumer groups and manage their offsets.`,
+		Short:   `Describe, list, and delete consumer groups and manage their offsets`,
 		Long: `Describe, list, and delete consumer groups and manage their offsets.
 
 Consumer groups allow you to horizontally scale consuming from topics. A
@@ -108,7 +108,7 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List all groups.",
+		Short:   "List all groups",
 		Long: `List all groups.
 
 This command lists all groups currently known to Redpanda, including empty
@@ -144,7 +144,7 @@ groups, or to list groups that need to be cleaned up.
 func newDeleteCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete [GROUPS...]",
-		Short: "Delete groups from brokers.",
+		Short: "Delete groups from brokers",
 		Long: `Delete groups from brokers.
 
 Older versions of the Kafka protocol included a retention_millis field in

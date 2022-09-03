@@ -252,13 +252,14 @@ static ss::future<> get_file_range(
         size_t scan_from = ix_begin ? ix_begin->filepos : 0;
         model::offset sto = ix_begin ? ix_begin->offset
                                      : segment->offsets().base_offset;
-        auto istr = segment->reader().data_stream(scan_from, io_priority);
+        auto reader_handle = co_await segment->reader().data_stream(
+          scan_from, io_priority);
         auto ostr = make_null_output_stream();
 
         size_t bytes_to_skip = 0;
         model::timestamp ts = upl.base_timestamp;
         auto res = co_await storage::transform_stream(
-          std::move(istr),
+          reader_handle.take_stream(),
           std::move(ostr),
           [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
               if (hdr.last_offset() < begin_inclusive) {
@@ -275,6 +276,7 @@ static ss::future<> get_file_range(
               ts = hdr.first_timestamp;
               return storage::batch_consumer::consume_result::stop_parser;
           });
+        co_await reader_handle.close();
         if (res.has_error()) {
             vlog(
               archival_log.error,
@@ -326,12 +328,13 @@ static ss::future<> get_file_range(
           scan_from,
           fo);
 
-        auto istr = segment->reader().data_stream(scan_from, io_priority);
+        auto reader_handle = co_await segment->reader().data_stream(
+          scan_from, io_priority);
         auto ostr = make_null_output_stream();
         model::timestamp ts = upl.max_timestamp;
         size_t stop_at = 0;
         auto res = co_await storage::transform_stream(
-          std::move(istr),
+          reader_handle.take_stream(),
           std::move(ostr),
           [off_end = end_inclusive.value(), &fo, &ts](
             model::record_batch_header& hdr) {
@@ -346,6 +349,8 @@ static ss::future<> get_file_range(
               ts = hdr.max_timestamp;
               return storage::batch_consumer::consume_result::stop_parser;
           });
+        co_await reader_handle.close();
+
         if (res.has_error()) {
             vlog(
               archival_log.error,
@@ -417,7 +422,7 @@ static ss::future<upload_candidate> create_upload_candidate(
     auto term = segment->offsets().term;
     auto version = storage::record_version_type::v1;
     auto meta = storage::segment_path::parse_segment_filename(
-      segment->reader().filename());
+      segment->filename());
     if (meta) {
         version = meta->version;
     }
@@ -435,7 +440,7 @@ static ss::future<upload_candidate> create_upload_candidate(
           "Using adjusted segment name: {}",
           result.exposed_name);
     } else {
-        auto orig_path = std::filesystem::path(segment->reader().filename());
+        auto orig_path = std::filesystem::path(segment->filename());
         result.exposed_name = segment_name(orig_path.filename().string());
         vlog(
           archival_log.debug,

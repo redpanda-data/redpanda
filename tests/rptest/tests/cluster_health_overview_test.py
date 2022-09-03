@@ -19,8 +19,14 @@ from ducktape.utils.util import wait_until
 
 class ClusterHealthOverviewTest(RedpandaTest):
     def __init__(self, test_context):
-        super(ClusterHealthOverviewTest,
-              self).__init__(test_context=test_context, num_brokers=5)
+        super(ClusterHealthOverviewTest, self).__init__(
+            test_context=test_context,
+            num_brokers=5,
+            extra_rp_conf={
+                # Work around bug where leadership transfers cause bad health reports
+                # https://github.com/redpanda-data/redpanda/issues/5253
+                'enable_leader_balancer': False
+            })
 
         self.admin = Admin(self.redpanda)
 

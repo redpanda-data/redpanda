@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
+#include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
@@ -29,6 +30,7 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <variant>
 
 using namespace std::chrono_literals;
@@ -445,20 +447,10 @@ model::offset remote_partition::first_uploaded_offset() {
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
     try {
-        if (_first_uploaded_offset) {
-            return *_first_uploaded_offset;
-        }
-        model::offset starting_offset = model::offset::max();
-        for (const auto& m : _manifest) {
-            starting_offset = std::min(
-              starting_offset, get_kafka_base_offset(m.second));
-        }
-        _first_uploaded_offset = starting_offset;
-        vlog(
-          _ctxlog.debug,
-          "remote partition first_uploaded_offset set to {}",
-          starting_offset);
-        return starting_offset;
+        auto it = _manifest.begin();
+        auto off = get_kafka_base_offset(it->second);
+        vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", off);
+        return off;
     } catch (...) {
         vlog(
           _ctxlog.error,
@@ -467,6 +459,14 @@ model::offset remote_partition::first_uploaded_offset() {
 
         throw;
     }
+}
+
+model::offset remote_partition::last_uploaded_offset() {
+    vassert(
+      _manifest.size() > 0,
+      "The manifest for {} is not expected to be empty",
+      _manifest.get_ntp());
+    return _manifest.get_last_offset();
 }
 
 const model::ntp& remote_partition::get_ntp() const {
@@ -500,6 +500,56 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     return std::nullopt;
 }
 
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+remote_partition::aborted_transactions(offset_range offsets) {
+    gate_guard guard(_gate);
+    // Here we have to use kafka offsets to locate the segments and
+    // redpanda offsets to extract aborted transactions metadata because
+    // tx-manifests contains redpanda offsets.
+    std::vector<cluster::rm_stm::tx_range> result;
+
+    // that's a stable btree iterator that makes key lookup on increment
+    auto first_it = upper_bound(offsets.begin);
+    if (first_it != begin()) {
+        first_it = std::prev(first_it);
+    }
+    for (auto it = first_it; it != end(); it++) {
+        if (it->first > offsets.end) {
+            break;
+        }
+        auto tx = co_await ss::visit(
+          it->second,
+          [this, offsets, offset_key = it->first](
+            offloaded_segment_state& off_state) {
+              auto tmp = off_state->materialize(*this, offset_key);
+              auto res = tmp->segment->aborted_transactions(
+                offsets.begin_rp, offsets.end_rp);
+              _segments.insert_or_assign(offset_key, std::move(tmp));
+              return res;
+          },
+          [offsets](materialized_segment_ptr& m_state) {
+              return m_state->segment->aborted_transactions(
+                offsets.begin_rp, offsets.end_rp);
+          });
+        std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+    }
+    // Adjacent segments might return the same transaction record.
+    // In this case we will have a duplicate. The duplicates will always
+    // be located next to each other in the sequence.
+    auto last = std::unique(result.begin(), result.end());
+    result.erase(last, result.end());
+    vlog(
+      _ctxlog.debug,
+      "found {} aborted transactions for {}-{} offset range ({}-{} before "
+      "offset translaction)",
+      result.size(),
+      offsets.begin,
+      offsets.end,
+      offsets.begin_rp,
+      offsets.end_rp);
+    co_return result;
+}
+
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
     _stm_timer.cancel();
@@ -513,9 +563,9 @@ ss::future<> remote_partition::stop() {
         co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
     }
 
-    for (auto& [offset, seg] : _segments) {
-        vlog(_ctxlog.debug, "remote partition stop {}", offset);
-        co_await std::visit([](auto&& st) { return st->stop(); }, seg);
+    for (auto it = begin(); it != end(); it++) {
+        vlog(_ctxlog.debug, "remote partition stop {}", it->first);
+        co_await std::visit([](auto&& st) { return st->stop(); }, it->second);
     }
 }
 

@@ -24,7 +24,9 @@ namespace cluster {
 class data_policy_frontend final {
 public:
     data_policy_frontend(
-      ss::sharded<controller_stm>&, ss::sharded<ss::abort_source>&) noexcept;
+      ss::sharded<controller_stm>&,
+      ss::sharded<feature_table>&,
+      ss::sharded<ss::abort_source>&) noexcept;
 
     ss::future<std::error_code> create_data_policy(
       model::topic_namespace,
@@ -36,6 +38,7 @@ public:
 
 private:
     ss::sharded<controller_stm>& _stm;
+    ss::sharded<feature_table>& _features;
     ss::sharded<ss::abort_source>& _as;
 };
 

@@ -22,10 +22,17 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/topic"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
@@ -37,7 +44,6 @@ import (
 func Execute() {
 	verbose := false
 	fs := afero.NewOsFs()
-	mgr := config.NewManager(fs)
 
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
@@ -57,27 +63,30 @@ func Execute() {
 
 	root := &cobra.Command{
 		Use:   "rpk",
-		Short: "rpk is the Redpanda CLI & toolbox.",
+		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
+
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
 	}
 	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
-		"v", false, "Enable verbose logging (default: false).")
+		"v", false, "Enable verbose logging (default: false)")
 
 	root.AddCommand(
-		NewGenerateCommand(fs),
-		NewVersionCommand(),
-		NewWasmCommand(fs),
-		NewContainerCommand(),
-		NewTopicCommand(fs),
-		NewClusterCommand(fs),
-		NewACLCommand(fs),
-
+		acl.NewCommand(fs),
+		cluster.NewCommand(fs),
+		container.NewCommand(),
 		debug.NewCommand(fs),
+		generate.NewCommand(fs),
 		group.NewCommand(fs),
 		plugincmd.NewCommand(fs),
+		topic.NewCommand(fs),
+		version.NewCommand(),
+		wasm.NewCommand(fs),
 	)
 
-	addPlatformDependentCmds(fs, mgr, root)
+	addPlatformDependentCmds(fs, root)
 
 	// To support autocompletion even for plugins, we list all plugins now
 	// and add tiny commands to our root command. Cobra works by creating
@@ -89,7 +98,7 @@ func Execute() {
 	// rpk command. We do not want `rpk-acl-foo` to exec a plugin, when
 	// `rpk acl` exists and the single argument foo may be important. We
 	// block rpk command shadowing by not keeping any plugin that shares an
-	// argument search path with an rpk command.
+	// argument search path with a rpk command.
 	//
 	// Further, unlike kubectl, we do not allow one plugin to be at the end
 	// of another plugin (rpk foo bar cannot exist if rpk foo does). This
@@ -114,6 +123,13 @@ func Execute() {
 			os.Exit(0)
 		}
 	}
+
+	// Cobra creates help flag as: help for <command> if you want to override
+	// that message (capitalize the first letter) then this is the way.
+	// See: spf13/cobra#480
+	walk(root, func(c *cobra.Command) {
+		c.Flags().BoolP("help", "h", false, "Help for "+c.Name())
+	})
 
 	err := root.Execute()
 	if len(os.Args) > 1 {
@@ -423,4 +439,12 @@ func (*osPluginHandler) exec(path string, args []string) error {
 		}).Run()
 	}
 	return syscall.Exec(path, args, env)
+}
+
+// walk calls f for c and all of its children.
+func walk(c *cobra.Command, f func(*cobra.Command)) {
+	f(c)
+	for _, c := range c.Commands() {
+		walk(c, f)
+	}
 }

@@ -14,6 +14,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/types.h"
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
@@ -23,7 +24,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 
 #include <compare>
@@ -71,14 +71,15 @@ public:
     /// \return download result struct that contains 'completed=true'
     ///         if actual download happened. The 'last_offset' field will
     ///         be set to max offset of the downloaded log.
-    ss::future<log_recovery_result>
-    download_log(const storage::ntp_config& ntp_cfg);
+    ss::future<log_recovery_result> download_log(
+      const storage::ntp_config& ntp_cfg, cluster::remote_topic_properties rtp);
 
 private:
     s3::bucket_name _bucket;
     ss::sharded<remote>& _remote;
     ss::gate _gate;
     retry_chain_node _root;
+    ss::abort_source _as;
 };
 
 /// Topic downloader is used to download topic segments from S3 (or compatible
@@ -90,9 +91,11 @@ public:
     partition_downloader(
       const storage::ntp_config& ntpc,
       remote* remote,
+      cluster::remote_topic_properties rtp,
       s3::bucket_name bucket,
       ss::gate& gate_root,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      storage::opt_abort_source_t as);
 
     partition_downloader(const partition_downloader&) = delete;
     partition_downloader(partition_downloader&&) = delete;
@@ -121,7 +124,6 @@ private:
     download_manifest(const remote_manifest_path& path);
 
     struct recovery_material {
-        topic_manifest topic_manifest;
         partition_manifest partition_manifest;
     };
 
@@ -191,9 +193,11 @@ private:
     const storage::ntp_config& _ntpc;
     s3::bucket_name _bucket;
     remote* _remote;
+    cluster::remote_topic_properties _rtp;
     ss::gate& _gate;
     retry_chain_node _rtcnode;
     retry_chain_logger _ctxlog;
+    storage::opt_abort_source_t _as;
 };
 
 } // namespace cloud_storage

@@ -176,6 +176,16 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
+ss::future<server::reply_t> get_mode(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    rq.req.reset();
+
+    rp.rep->write_body("json", ss::sstring{R"({
+  "mode": "READWRITE"
+})"});
+    co_return rp;
+}
+
 ss::future<server::reply_t>
 get_schemas_types(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);

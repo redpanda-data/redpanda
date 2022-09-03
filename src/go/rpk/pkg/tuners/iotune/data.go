@@ -14,7 +14,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type IoProperties struct {

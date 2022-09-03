@@ -95,9 +95,9 @@ get_configurations() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration s3conf{
       .uri = s3::access_point_uri(httpd_host_name),
-      .access_key = s3::public_key_str("acess-key"),
-      .secret_key = s3::private_key_str("secret-key"),
-      .region = s3::aws_region_name("us-east-1"),
+      .access_key = cloud_roles::public_key_str("acess-key"),
+      .secret_key = cloud_roles::private_key_str("secret-key"),
+      .region = cloud_roles::aws_region_name("us-east-1"),
     };
     s3conf.server_addr = server_addr;
     archival::configuration aconf;
@@ -116,6 +116,8 @@ get_configurations() {
     cconf.bucket_name = s3::bucket_name("test-bucket");
     cconf.connection_limit = archival::s3_connection_limit(2);
     cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
+    cconf.cloud_credentials_source
+      = model::cloud_credentials_source::config_file;
     return std::make_tuple(aconf, cconf);
 }
 
@@ -239,12 +241,10 @@ void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {
     vlog(fixt_log.trace, "waiting for partition {}", ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, ntp] {
         auto& table = app.controller->get_partition_leaders().local();
-        model::node_id node(0);
-        int cnt = 0;
         auto self = app.controller->self();
         ss::lowres_clock::time_point deadline = ss::lowres_clock::now() + 100ms;
         return table.wait_for_leader(ntp, deadline, {}).get0() == self
-               && app.partition_manager.local().get(ntp)->is_leader();
+               && app.partition_manager.local().get(ntp)->is_elected_leader();
     }).get();
 }
 void archiver_fixture::delete_topic(model::ns ns, model::topic topic) {
@@ -393,9 +393,10 @@ void segment_matcher<Fixture>::verify_segment(
     auto segment = get_segment(ntp, name);
     auto pos = segment->offsets().base_offset;
     auto size = segment->size_bytes();
-    auto stream = segment->offset_data_stream(
-      pos, ss::default_priority_class());
-    auto tmp = stream.read_exactly(size).get0();
+    auto reader_handle
+      = segment->offset_data_stream(pos, ss::default_priority_class()).get();
+    auto tmp = reader_handle.stream().read_exactly(size).get0();
+    reader_handle.close().get();
     ss::sstring actual = {tmp.get(), tmp.size()};
     vlog(
       fixt_log.info,

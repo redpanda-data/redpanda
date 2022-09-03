@@ -28,7 +28,7 @@ func NewDescribeCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
-		Short: "Describe group offset status & lag.",
+		Short: "Describe group offset status & lag",
 		Long: `Describe group offset status & lag.
 
 This command describes group members, calculates their lag, and prints detailed
@@ -64,8 +64,13 @@ information about the members.
 				out.Die("unable to fetch offsets for any group")
 			}
 
-			listed, err := adm.ListEndOffsets(ctx, described.AssignedPartitions().Topics()...)
-			out.HandleShardError("ListOffsets", err)
+			var listed kadm.ListedOffsets
+			listPartitions := described.AssignedPartitions()
+			listPartitions.Merge(fetched.CommittedPartitions())
+			if topics := listPartitions.Topics(); len(topics) > 0 {
+				listed, err = adm.ListEndOffsets(ctx, topics...)
+				out.HandleShardError("ListOffsets", err)
+			}
 
 			printDescribed(
 				described,

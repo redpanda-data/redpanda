@@ -35,7 +35,8 @@ ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  storage::readers_cache&);
+  storage::readers_cache&,
+  storage::storage_resources&);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -54,15 +55,19 @@ ss::future<compaction_result> self_compact_segment(
  * segment, and upper range offsets (e.g. stable_offset) taken from the last
  * segment in the input range.
  */
-ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+ss::future<
+  std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
+make_concatenated_segment(
   std::filesystem::path,
   std::vector<ss::lw_shared_ptr<segment>>,
-  compaction_config);
+  compaction_config,
+  storage_resources& resources);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,
   std::vector<ss::lw_shared_ptr<segment>>,
-  compaction_config);
+  compaction_config,
+  storage_resources& resources);
 
 ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
@@ -84,8 +89,10 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
   int retries);
 
 /// make file handle with default opts
-ss::future<ss::file>
-make_writer_handle(const std::filesystem::path&, storage::debug_sanitize_files);
+ss::future<ss::file> make_writer_handle(
+  const std::filesystem::path&,
+  storage::debug_sanitize_files,
+  bool truncate = false);
 /// make file handle with default opts
 ss::future<ss::file>
 make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
@@ -98,16 +105,19 @@ ss::future<ss::file> make_handle(
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
   storage::debug_sanitize_files debug,
-  ss::io_priority_class iopc);
+  ss::io_priority_class iopc,
+  storage_resources& resources);
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
   storage::debug_sanitize_files debug,
   size_t number_of_chunks,
+  std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
-  config::binding<size_t> fallocate_size);
+  storage_resources& resources);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
+uint64_t segment_size_from_config(const storage::ntp_config&);
 
 /*
 1. if footer.flags == truncate write new .compacted_index file
@@ -129,7 +139,9 @@ ss::future<> copy_filtered_entries(
 /// \brief writes a new `*.compacted_index` file and *closes* the
 /// input compacted_index_reader file
 ss::future<> write_clean_compacted_index(
-  storage::compacted_index_reader, storage::compaction_config);
+  storage::compacted_index_reader,
+  storage::compaction_config,
+  storage_resources& resources);
 
 ss::future<compacted_offset_list>
   generate_compacted_list(model::offset, storage::compacted_index_reader);
@@ -149,7 +161,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  ss::rwlock::holder);
+  ss::rwlock::holder,
+  storage_resources&);
 
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
@@ -162,14 +175,31 @@ std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 static constexpr jitter_percents default_segment_size_jitter(5);
 
-size_t
-  jitter_segment_size(size_t, jitter_percents = default_segment_size_jitter);
+// Generates a random jitter percentage [as a fraction] with in the passed
+// percents range.
+float random_jitter(jitter_percents = default_segment_size_jitter);
 
 // key types used to store data in key-value store
 enum class kvstore_key_type : int8_t {
     start_offset = 0,
+    clean_segment = 1,
 };
 
 bytes start_offset_key(model::ntp ntp);
+bytes clean_segment_key(model::ntp ntp);
+
+struct clean_segment_value
+  : serde::envelope<
+      clean_segment_value,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    ss::sstring segment_name;
+};
+
+inline bool is_compactible(const model::record_batch& b) {
+    return !(
+      b.header().type == model::record_batch_type::raft_configuration
+      || b.header().type == model::record_batch_type::archival_metadata);
+}
 
 } // namespace storage::internal

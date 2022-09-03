@@ -14,6 +14,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
@@ -23,6 +24,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/async-clear.h"
 #include "storage/offset_translator_state.h"
 #include "storage/segment_utils.h"
 #include "storage/snapshot.h"
@@ -47,13 +49,15 @@ partition_manager::partition_manager(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::sharded<feature_table>& feature_table)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
-  , _cloud_storage_cache(cloud_storage_cache) {}
+  , _cloud_storage_cache(cloud_storage_cache)
+  , _feature_table(feature_table) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -70,9 +74,11 @@ partition_manager::get_topic_partition_table(
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
-  std::vector<model::broker> initial_nodes) {
+  std::vector<model::broker> initial_nodes,
+  std::optional<remote_topic_properties> rtp,
+  std::optional<s3::bucket_name> read_replica_bucket) {
     gate_guard guard(_gate);
-    auto dl_result = co_await maybe_download_log(ntp_cfg);
+    auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
     auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
       = dl_result;
     if (logs_recovered) {
@@ -85,28 +91,51 @@ ss::future<consensus_ptr> partition_manager::manage(
           min_kafka_offset,
           max_kafka_offset);
 
-        // Manifest is not empty since we were able to recovery
-        // some data.
-        vassert(manifest.size() != 0, "Manifest is empty");
-        auto last_segm_it = manifest.rbegin();
-        auto last_included_term = last_segm_it->second.archiver_term;
+        if (
+          min_kafka_offset == max_kafka_offset
+          && min_kafka_offset == model::offset{0}) {
+            vlog(
+              clusterlog.info,
+              "{} no data in the downloaded segments, empty partition will be "
+              "created",
+              ntp_cfg.ntp());
+        } else {
+            // Manifest is not empty since we were able to recovery
+            // some data.
+            vassert(manifest.size() != 0, "Manifest is empty");
+            auto last_segm_it = manifest.rbegin();
+            auto last_included_term = last_segm_it->second.archiver_term;
 
-        co_await raft::details::bootstrap_pre_existing_partition(
-          _storage,
-          ntp_cfg,
-          group,
-          min_kafka_offset,
-          max_kafka_offset,
-          last_included_term,
-          initial_nodes);
+            vlog(
+              clusterlog.info,
+              "Bootstrap on-disk state for pre existing partition {}. "
+              "Group: {}, "
+              "Min offset: {}, "
+              "Max offset: {}, "
+              "Last included term: {}, ",
+              ntp_cfg.ntp(),
+              group,
+              min_kafka_offset,
+              max_kafka_offset,
+              last_included_term);
 
-        // Initialize archival snapshot
-        co_await archival_metadata_stm::make_snapshot(
-          ntp_cfg, manifest, max_kafka_offset);
+            co_await raft::details::bootstrap_pre_existing_partition(
+              _storage,
+              ntp_cfg,
+              group,
+              min_kafka_offset,
+              max_kafka_offset,
+              last_included_term,
+              initial_nodes);
+
+            // Initialize archival snapshot
+            co_await archival_metadata_stm::make_snapshot(
+              ntp_cfg, manifest, max_kafka_offset);
+        }
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
-      clusterlog.info,
+      clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "
       "segments, {} bytes",
       log.config().ntp(),
@@ -119,7 +148,12 @@ ss::future<consensus_ptr> partition_manager::manage(
         group, std::move(initial_nodes), log);
 
     auto p = ss::make_lw_shared<partition>(
-      c, _tx_gateway_frontend, _cloud_storage_api, _cloud_storage_cache);
+      c,
+      _tx_gateway_frontend,
+      _cloud_storage_api,
+      _cloud_storage_cache,
+      _feature_table,
+      read_replica_bucket);
 
     _ntp_table.emplace(log.config().ntp(), p);
     _raft_table.emplace(group, p);
@@ -144,10 +178,11 @@ ss::future<consensus_ptr> partition_manager::manage(
 }
 
 ss::future<cloud_storage::log_recovery_result>
-partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
-    if (_partition_recovery_mgr.local_is_initialized()) {
+partition_manager::maybe_download_log(
+  storage::ntp_config& ntp_cfg, std::optional<remote_topic_properties> rtp) {
+    if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
         auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg);
+          ntp_cfg, *rtp);
         co_return res;
     }
     vlog(
@@ -162,10 +197,14 @@ ss::future<> partition_manager::stop_partitions() {
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
-    _raft_table.clear();
+
+    co_await ssx::async_clear(_raft_table)();
+
     // shutdown all partitions
-    co_await ss::parallel_for_each(
-      partitions, [this](auto& e) { return do_shutdown(e.second); });
+    co_await ss::max_concurrent_for_each(
+      partitions, 1024, [this](auto& e) { return do_shutdown(e.second); });
+
+    co_await ssx::async_clear(partitions)();
 }
 
 ss::future<>

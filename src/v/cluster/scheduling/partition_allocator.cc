@@ -36,14 +36,17 @@ partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
-  config::binding<size_t> fallocation_step,
+  config::binding<uint32_t> partitions_per_shard,
+  config::binding<uint32_t> partitions_reserve_shard0,
   config::binding<bool> enable_rack_awareness)
-  : _state(std::make_unique<allocation_state>())
+  : _state(std::make_unique<allocation_state>(
+    partitions_per_shard, partitions_reserve_shard0))
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
   , _memory_per_partition(memory_per_partition)
   , _fds_per_partition(fds_per_partition)
-  , _fallocation_step(fallocation_step)
+  , _partitions_per_shard(partitions_per_shard)
+  , _partitions_reserve_shard0(partitions_reserve_shard0)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
 allocation_constraints default_constraints() {
@@ -58,7 +61,9 @@ allocation_constraints default_constraints() {
 }
 
 result<std::vector<model::broker_shard>>
-partition_allocator::allocate_partition(partition_constraints p_constraints) {
+partition_allocator::allocate_partition(
+  partition_constraints p_constraints,
+  const std::vector<model::broker_shard>& not_changed_replicas) {
     vlog(
       clusterlog.trace,
       "allocating partition with constraints: {}",
@@ -78,11 +83,17 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
 
+        std::vector<model::broker_shard> current_replicas;
         // rack-placement contraint
         if (_enable_rack_awareness()) {
+            current_replicas = replicas.get();
+            current_replicas.insert(
+              current_replicas.end(),
+              not_changed_replicas.begin(),
+              not_changed_replicas.end());
             effective_constraits.soft_constraints.push_back(
               ss::make_lw_shared<soft_constraint_evaluator>(
-                distinct_rack(replicas.get(), *_state)));
+                distinct_rack(current_replicas, *_state)));
         }
 
         effective_constraits.add(p_constraints.constraints);
@@ -190,14 +201,13 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create a partition count that would violate the per-core
     // limit.
-    const uint64_t core_limit = effective_cpu_count
-                                * allocation_node::max_allocations_per_core;
+    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard());
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
           "Refusing to create {} partitions, exceeds core limit {}",
           create_count,
-          effective_cpu_count * allocation_node::max_allocations_per_core);
+          effective_cpu_count * _partitions_per_shard());
         return errc::topic_invalid_partitions;
     }
 
@@ -246,20 +256,6 @@ std::error_code partition_allocator::check_cluster_limits(
         }
     }
 
-    // Refuse to create partitions if there isn't enough space to at least
-    // falloc the first part of a segment for each partition
-    if (_fallocation_step() > 0) {
-        uint64_t disk_limit = effective_cluster_disk / _fallocation_step();
-        if (disk_limit > 0 && (proposed_total_partitions > disk_limit)) {
-            vlog(
-              clusterlog.warn,
-              "Refusing to create {} partitions, exceeds disk limit {}",
-              create_count,
-              disk_limit);
-            return errc::topic_invalid_partitions;
-        }
-    }
-
     return errc::success;
 }
 
@@ -284,11 +280,8 @@ partition_allocator::allocate(allocation_request request) {
         if (!replicas) {
             return replicas.error();
         }
-        assignments.push_back(partition_assignment{
-          .group = _state->next_group_id(),
-          .id = partition_id,
-          .replicas = std::move(replicas.value()),
-        });
+        assignments.emplace_back(
+          _state->next_group_id(), partition_id, std::move(replicas.value()));
     }
 
     return allocation_units(std::move(assignments).finish(), _state.get());
@@ -313,7 +306,8 @@ partition_allocator::do_reallocate_partition(
       ss::make_lw_shared<hard_constraint_evaluator>(
         distinct_from(not_changed_replicas)));
     p_constraints.replication_factor -= not_changed_replicas.size();
-    auto result = allocate_partition(std::move(p_constraints));
+    auto result = allocate_partition(
+      std::move(p_constraints), not_changed_replicas);
     if (!result) {
         return result.error();
     }
@@ -337,9 +331,9 @@ result<allocation_units> partition_allocator::reallocate_partition(
     }
 
     partition_assignment assignment{
-      .group = current_assignment.group,
-      .id = current_assignment.id,
-      .replicas = std::move(replicas.value()),
+      current_assignment.group,
+      current_assignment.id,
+      std::move(replicas.value()),
     };
 
     return allocation_units(
@@ -370,9 +364,9 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
     }
 
     partition_assignment assignment{
-      .group = current_assignment.group,
-      .id = current_assignment.id,
-      .replicas = std::move(replicas.value()),
+      current_assignment.group,
+      current_assignment.id,
+      std::move(replicas.value()),
     };
 
     return allocation_units(
@@ -396,31 +390,13 @@ void partition_allocator::update_allocation_state(
     _state->apply_update(shards, gid);
 }
 
-void partition_allocator::update_allocation_state(
-  const std::vector<model::broker_shard>& current,
-  const std::vector<model::broker_shard>& previous) {
-    std::vector<model::broker_shard> to_add;
-    std::vector<model::broker_shard> to_remove;
-
-    std::copy_if(
-      current.begin(),
-      current.end(),
-      std::back_inserter(to_add),
-      [&previous](const model::broker_shard& current_bs) {
-          auto it = std::find(previous.begin(), previous.end(), current_bs);
-          return it == previous.end();
-      });
-
-    std::copy_if(
-      previous.begin(),
-      previous.end(),
-      std::back_inserter(to_remove),
-      [&current](const model::broker_shard& prev_bs) {
-          auto it = std::find(current.begin(), current.end(), prev_bs);
-          return it == current.end();
-      });
-
+void partition_allocator::add_allocations(
+  const std::vector<model::broker_shard>& to_add) {
     _state->apply_update(to_add, raft::group_id{});
+}
+
+void partition_allocator::remove_allocations(
+  const std::vector<model::broker_shard>& to_remove) {
     for (const auto& bs : to_remove) {
         _state->deallocate(bs);
     }

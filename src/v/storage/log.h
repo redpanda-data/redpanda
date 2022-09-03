@@ -57,7 +57,7 @@ public:
         virtual log_appender make_appender(log_append_config) = 0;
 
         // final operation. Invalid filesystem state after
-        virtual ss::future<> close() = 0;
+        virtual ss::future<std::optional<ss::sstring>> close() = 0;
         // final operation. Invalid state after
         virtual ss::future<> remove() = 0;
 
@@ -99,7 +99,7 @@ public:
 public:
     explicit log(ss::shared_ptr<impl> i)
       : _impl(std::move(i)) {}
-    ss::future<> close() { return _impl->close(); }
+    ss::future<std::optional<ss::sstring>> close() { return _impl->close(); }
     ss::future<> remove() { return _impl->remove(); }
     ss::future<> flush() { return _impl->flush(); }
 

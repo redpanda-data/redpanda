@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -27,8 +28,10 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -44,11 +47,14 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	k8sClient           client.Client
-	testEnv             *envtest.Environment
-	cfg                 *rest.Config
-	testAdminAPI        *mockAdminAPI
-	testAdminAPIFactory adminutils.AdminAPIClientFactory
+	k8sClient             client.Client
+	testEnv               *envtest.Environment
+	cfg                   *rest.Config
+	testAdminAPI          *mockAdminAPI
+	testAdminAPIFactory   adminutils.AdminAPIClientFactory
+	testStore             *consolepkg.Store
+	testKafkaAdmin        *mockKafkaAdmin
+	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
 )
 
 func TestAPIs(t *testing.T) {
@@ -92,16 +98,29 @@ var _ = BeforeSuite(func(done Done) {
 		_ client.Reader,
 		_ *redpandav1alpha1.Cluster,
 		_ string,
-		_ resources.AdminTLSConfigProvider,
+		_ types.AdminTLSConfigProvider,
+		ordinals ...int32,
 	) (adminutils.AdminAPIClient, error) {
+		if len(ordinals) == 1 {
+			return &scopedMockAdminAPI{
+				mockAdminAPI: testAdminAPI,
+				ordinal:      ordinals[0],
+			}, nil
+		}
 		return testAdminAPI, nil
+	}
+	testStore = consolepkg.NewStore(k8sManager.GetClient())
+	testKafkaAdmin = &mockKafkaAdmin{}
+	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster) (consolepkg.KafkaAdminClient, error) {
+		return testKafkaAdmin, nil
 	}
 
 	err = (&redpandacontrollers.ClusterReconciler{
-		Client:                k8sManager.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
-		Scheme:                k8sManager.GetScheme(),
-		AdminAPIClientFactory: testAdminAPIFactory,
+		Client:                   k8sManager.GetClient(),
+		Log:                      ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme:                   k8sManager.GetScheme(),
+		AdminAPIClientFactory:    testAdminAPIFactory,
+		DecommissionWaitInterval: 100 * time.Millisecond,
 	}).WithClusterDomain("cluster.local").WithConfiguratorSettings(resources.ConfiguratorSettings{
 		ConfiguratorBaseImage: "vectorized/configurator",
 		ConfiguratorTag:       "latest",
@@ -116,6 +135,17 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme:                k8sManager.GetScheme(),
 		AdminAPIClientFactory: testAdminAPIFactory,
 		DriftCheckPeriod:      &driftCheckPeriod,
+	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&redpandacontrollers.ConsoleReconciler{
+		Client:                  k8sManager.GetClient(),
+		Scheme:                  k8sManager.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   testAdminAPIFactory,
+		Store:                   testStore,
+		EventRecorder:           k8sManager.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: testKafkaAdminFactory,
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -148,8 +178,13 @@ var _ = BeforeEach(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	gexec.KillAndWait(5 * time.Second)
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
+	// kube-apiserver hanging during cleanup
+	// REF https://book.kubebuilder.io/reference/envtest.html#kubernetes-120-and-121-binary-issues
+	timeout := 30 * time.Second
+	poll := 5 * time.Second
+	Eventually(func() error {
+		return testEnv.Stop()
+	}, timeout, poll).ShouldNot(HaveOccurred())
 })
 
 type mockAdminAPI struct {
@@ -160,7 +195,13 @@ type mockAdminAPI struct {
 	invalid          []string
 	unknown          []string
 	directValidation bool
+	brokers          []admin.Broker
 	monitor          sync.Mutex
+}
+
+type scopedMockAdminAPI struct {
+	*mockAdminAPI
+	ordinal int32
 }
 
 var _ adminutils.AdminAPIClient = &mockAdminAPI{}
@@ -171,7 +212,7 @@ func (*unavailableError) Error() string {
 	return "unavailable"
 }
 
-func (m *mockAdminAPI) Config() (admin.Config, error) {
+func (m *mockAdminAPI) Config(_ context.Context) (admin.Config, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -182,10 +223,9 @@ func (m *mockAdminAPI) Config() (admin.Config, error) {
 	return res, nil
 }
 
-func (m *mockAdminAPI) ClusterConfigStatus() (
-	admin.ConfigStatusResponse,
-	error,
-) {
+func (m *mockAdminAPI) ClusterConfigStatus(
+	_ context.Context, _ bool,
+) (admin.ConfigStatusResponse, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -198,7 +238,9 @@ func (m *mockAdminAPI) ClusterConfigStatus() (
 	return []admin.ConfigStatus{node}, nil
 }
 
-func (m *mockAdminAPI) ClusterConfigSchema() (admin.ConfigSchema, error) {
+func (m *mockAdminAPI) ClusterConfigSchema(
+	_ context.Context,
+) (admin.ConfigSchema, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -210,7 +252,7 @@ func (m *mockAdminAPI) ClusterConfigSchema() (admin.ConfigSchema, error) {
 }
 
 func (m *mockAdminAPI) PatchClusterConfig(
-	upsert map[string]interface{}, remove []string,
+	_ context.Context, upsert map[string]interface{}, remove []string,
 ) (admin.ClusterConfigWriteResult, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
@@ -269,7 +311,16 @@ func (m *mockAdminAPI) PatchClusterConfig(
 	return admin.ClusterConfigWriteResult{}, nil
 }
 
-func (m *mockAdminAPI) CreateUser(_, _, _ string) error {
+func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return &unavailableError{}
+	}
+	return nil
+}
+
+func (m *mockAdminAPI) DeleteUser(_ context.Context, _ string) error {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -286,9 +337,12 @@ func (m *mockAdminAPI) Clear() {
 	m.patches = nil
 	m.unavailable = false
 	m.directValidation = false
+	m.brokers = nil
 }
 
-func (m *mockAdminAPI) GetFeatures() (admin.FeaturesResponse, error) {
+func (m *mockAdminAPI) GetFeatures(
+	_ context.Context,
+) (admin.FeaturesResponse, error) {
 	return admin.FeaturesResponse{
 		ClusterVersion: 0,
 		Features: []admin.Feature{
@@ -362,10 +416,112 @@ func (m *mockAdminAPI) SetUnavailable(unavailable bool) {
 	m.unavailable = unavailable
 }
 
+func (m *mockAdminAPI) GetNodeConfig(
+	_ context.Context,
+) (admin.NodeConfig, error) {
+	return admin.NodeConfig{}, nil
+}
+
+// nolint:goerr113 // test code
+func (s *scopedMockAdminAPI) GetNodeConfig(
+	ctx context.Context,
+) (admin.NodeConfig, error) {
+	brokers, err := s.Brokers(ctx)
+	if err != nil {
+		return admin.NodeConfig{}, err
+	}
+	if len(brokers) <= int(s.ordinal) {
+		return admin.NodeConfig{}, fmt.Errorf("broker not registered")
+	}
+	return admin.NodeConfig{
+		NodeID: brokers[int(s.ordinal)].NodeID,
+	}, nil
+}
+
 func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.directValidation = directValidation
+}
+
+func (m *mockAdminAPI) AddBroker(broker admin.Broker) {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	m.brokers = append(m.brokers, broker)
+}
+
+func (m *mockAdminAPI) RemoveBroker(id int) bool {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	idx := -1
+	for i := range m.brokers {
+		if m.brokers[i].NodeID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	m.brokers = append(m.brokers[:idx], m.brokers[idx+1:]...)
+	return true
+}
+
+func (m *mockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	return append([]admin.Broker{}, m.brokers...), nil
+}
+
+func (m *mockAdminAPI) BrokerStatusGetter(
+	id int,
+) func() admin.MembershipStatus {
+	return func() admin.MembershipStatus {
+		m.monitor.Lock()
+		defer m.monitor.Unlock()
+
+		for i := range m.brokers {
+			if m.brokers[i].NodeID == id {
+				return m.brokers[i].MembershipStatus
+			}
+		}
+		return ""
+	}
+}
+
+func (m *mockAdminAPI) DecommissionBroker(_ context.Context, id int) error {
+	return m.SetBrokerStatus(id, admin.MembershipStatusDraining)
+}
+
+func (m *mockAdminAPI) RecommissionBroker(_ context.Context, id int) error {
+	return m.SetBrokerStatus(id, admin.MembershipStatusActive)
+}
+
+func (m *mockAdminAPI) EnableMaintenanceMode(_ context.Context, _ int) error {
+	return nil
+}
+
+func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
+	return nil
+}
+
+// nolint:goerr113 // test code
+func (m *mockAdminAPI) SetBrokerStatus(
+	id int, status admin.MembershipStatus,
+) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+
+	for i := range m.brokers {
+		if m.brokers[i].NodeID == id {
+			m.brokers[i].MembershipStatus = status
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown broker %d", id)
 }
 
 func makeCopy(input, output interface{}) {

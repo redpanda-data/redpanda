@@ -20,6 +20,7 @@ import (
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -455,7 +456,7 @@ func (cc *ClusterCertificates) Volumes() (
 ) {
 	var vols []corev1.Volume
 	var mounts []corev1.VolumeMount
-	mountPoints := resources.GetTLSMountPoints()
+	mountPoints := resourcetypes.GetTLSMountPoints()
 
 	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaCAVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir)
 	vols = append(vols, vol...)

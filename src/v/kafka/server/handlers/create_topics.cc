@@ -33,17 +33,18 @@
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 10> supported_configs{
-  {"compression.type",
-   "cleanup.policy",
-   "message.timestamp.type",
-   "segment.bytes",
-   "compaction.strategy",
-   "retention.bytes",
-   "retention.ms",
-   "redpanda.remote.recovery",
-   "redpanda.remote.write",
-   "redpanda.remote.read"}};
+static constexpr std::array<std::string_view, 11> supported_configs{
+  topic_property_compression,
+  topic_property_cleanup_policy,
+  topic_property_timestamp_type,
+  topic_property_segment_size,
+  topic_property_compaction_strategy,
+  topic_property_retention_bytes,
+  topic_property_retention_duration,
+  topic_property_recovery,
+  topic_property_remote_write,
+  topic_property_remote_read,
+  topic_property_read_replica};
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -62,7 +63,50 @@ using validators = make_validator_types<
   compression_type_validator,
   compaction_strategy_validator,
   timestamp_type_validator,
-  cleanup_policy_validator>;
+  cleanup_policy_validator,
+  remote_read_and_write_are_not_supported_for_read_replica>;
+
+static std::vector<creatable_topic_configs>
+properties_to_result_configs(config_map_t config_map) {
+    std::vector<creatable_topic_configs> configs;
+    configs.reserve(config_map.size());
+    std::transform(
+      config_map.begin(),
+      config_map.end(),
+      std::back_inserter(configs),
+      [](auto& cfg) {
+          return creatable_topic_configs{
+            .name = cfg.first,
+            .value = {std::move(cfg.second)},
+            .config_source = kafka::describe_configs_source::default_config,
+          };
+      });
+    return configs;
+}
+
+static void
+append_topic_configs(request_context& ctx, create_topics_response& response) {
+    for (auto& ct_result : response.data.topics) {
+        if (ct_result.error_code != kafka::error_code::none) {
+            ct_result.topic_config_error_code = ct_result.error_code;
+            continue;
+        }
+        auto cfg = ctx.metadata_cache().get_topic_cfg(
+          model::topic_namespace_view{model::kafka_namespace, ct_result.name});
+        if (cfg) {
+            auto config_map = from_cluster_type(cfg->properties);
+            ct_result.configs = {
+              properties_to_result_configs(std::move(config_map))};
+            ct_result.topic_config_error_code = kafka::error_code::none;
+        } else {
+            // Topic was sucessfully created but metadata request did not
+            // succeed, if possible, could mean topic was deleted just after
+            // creation
+            ct_result.topic_config_error_code
+              = kafka::error_code::unknown_server_error;
+        }
+    }
+}
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
@@ -151,8 +195,15 @@ ss::future<response_ptr> create_topics_handler::handle(
                 begin,
                 valid_range_end,
                 std::back_inserter(response.data.topics),
-                [](const creatable_topic& t) {
-                    return generate_successfull_result(t);
+                [&ctx](const creatable_topic& t) {
+                    auto result = generate_successfull_result(t);
+                    if (ctx.header().version >= api_version(5)) {
+                        auto default_properties
+                          = ctx.metadata_cache().get_default_properties();
+                        result.configs = {properties_to_result_configs(
+                          from_cluster_type(default_properties))};
+                    }
+                    return result;
                 });
               return ctx.respond(std::move(response));
           }
@@ -185,6 +236,9 @@ ss::future<response_ptr> create_topics_handler::handle(
                     std::vector<cluster::topic_result> c_res) mutable {
                 // Append controller results to validation errors
                 append_cluster_results(c_res, response.data.topics);
+                if (ctx.header().version >= api_version(5)) {
+                    append_topic_configs(ctx, response);
+                }
                 return ctx.respond(response);
             });
       });

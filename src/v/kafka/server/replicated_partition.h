@@ -12,6 +12,7 @@
 
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -36,6 +37,13 @@ public:
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
     model::offset start_offset() const final {
+        if (
+          _partition->is_read_replica_mode_enabled()
+          && _partition->cloud_data_available()) {
+            // Always assume remote read in this case.
+            return _partition->start_cloud_offset();
+        }
+
         auto local_kafka_start_offset = _translator->from_log_offset(
           _partition->start_offset());
         if (
@@ -48,11 +56,30 @@ public:
     }
 
     model::offset high_watermark() const final {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                return model::next_offset(_partition->last_cloud_offset());
+            } else {
+                return model::offset(0);
+            }
+        }
         return _translator->from_log_offset(_partition->high_watermark());
     }
 
     model::offset last_stable_offset() const final {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                // There is no difference between HWM and LO in this mode
+                return model::next_offset(_partition->last_cloud_offset());
+            } else {
+                return model::offset(0);
+            }
+        }
         return _translator->from_log_offset(_partition->last_stable_offset());
+    }
+
+    bool is_elected_leader() const final {
+        return _partition->is_elected_leader();
     }
 
     bool is_leader() const final { return _partition->is_leader(); }
@@ -94,10 +121,20 @@ public:
         return leader_epoch_from_term(_partition->term());
     }
 
-    ss::future<bool> is_fetch_offset_valid(
+    ss::future<error_code> validate_fetch_offset(
       model::offset, model::timeout_clock::time_point) final;
 
 private:
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+      aborted_transactions_local(
+        cloud_storage::offset_range,
+        ss::lw_shared_ptr<const storage::offset_translator_state>);
+
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions_remote(
+      cloud_storage::offset_range offsets,
+      ss::lw_shared_ptr<const storage::offset_translator_state> ot_state);
+
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };

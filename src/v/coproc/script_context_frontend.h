@@ -28,7 +28,7 @@ using input_read_results = std::vector<process_batch_request::data>;
 /// Arugments to pass to 'read_from_inputs', trivially copyable
 struct input_read_args {
     script_id id;
-    ss::semaphore& read_sem;
+    ssx::semaphore& read_sem;
     ss::abort_source& abort_src;
     routes_t& inputs;
 };

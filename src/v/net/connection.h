@@ -14,11 +14,11 @@
 #include "net/batched_output_stream.h"
 #include "net/server_probe.h"
 #include "seastarx.h"
-#include "security/mtls.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/intrusive/list.hpp>
 
@@ -28,6 +28,8 @@
  */
 namespace net {
 
+std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr);
+
 class connection : public boost::intrusive::list_base_hook<> {
 public:
     connection(
@@ -36,7 +38,7 @@ public:
       ss::connected_socket f,
       ss::socket_address a,
       server_probe& p,
-      std::optional<security::tls::principal_mapper> tls_pm);
+      std::optional<size_t> in_max_buffer_size);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -57,12 +59,7 @@ public:
     /// The value can only be returned by the server socket and
     /// only in case if the client authentication is enabled.
     ss::future<std::optional<ss::session_dn>> get_distinguished_name() {
-        return _fd.get_distinguished_name();
-    }
-
-    const std::optional<security::tls::principal_mapper>&
-    get_principal_mapping() const {
-        return _tls_pm;
+        return ss::tls::get_dn_information(_fd);
     }
 
 private:
@@ -72,7 +69,6 @@ private:
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     server_probe& _probe;
-    std::optional<security::tls::principal_mapper> _tls_pm;
 };
 
 } // namespace net

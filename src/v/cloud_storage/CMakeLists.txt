@@ -3,6 +3,7 @@ v_cc_library(
   NAME cloud_storage
   SRCS
     cache_service.cc
+    access_time_tracker.cc
     cache_probe.cc
     topic_manifest.cc
     partition_manifest.cc
@@ -16,6 +17,7 @@ v_cc_library(
     remote_segment.cc
     remote_partition.cc
     remote_segment_index.cc
+    tx_range_manifest.cc
   DEPS
     Seastar::seastar
     v::bytes
@@ -25,5 +27,6 @@ v_cc_library(
     v::model
     v::cluster
     v::rphashing
+    v::cloud_roles
 )
 add_subdirectory(tests)

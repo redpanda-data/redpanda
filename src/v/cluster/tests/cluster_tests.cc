@@ -19,7 +19,7 @@ using namespace std::chrono_literals; // NOLINT
 
 FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
     model::node_id id{0};
-    auto app = create_node_application(id);
+    create_node_application(id);
     wait_for_controller_leadership(id).get();
 
     wait_for_all_members(3s).get();
@@ -32,16 +32,16 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
 }
 
 FIXTURE_TEST(test_two_node_cluster, cluster_test_fixture) {
-    auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
+    create_node_application(model::node_id{0});
+    create_node_application(model::node_id{1});
     // Check if all brokers were registered
     wait_for_all_members(3s).get();
 }
 
 FIXTURE_TEST(test_three_node_cluster, cluster_test_fixture) {
-    auto n1 = create_node_application(model::node_id{0});
-    auto n2 = create_node_application(model::node_id{1});
-    auto n3 = create_node_application(model::node_id{2});
+    create_node_application(model::node_id{0});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
 
     wait_for_all_members(3s).get();
 }

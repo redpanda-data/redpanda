@@ -87,11 +87,7 @@ void metadata_dissemination_service::disseminate_leadership(
       ntp,
       leader_id.value());
 
-    _requests.push_back(ntp_leader_revision{
-      .ntp = std::move(ntp),
-      .term = term,
-      .leader_id = leader_id,
-      .revision = revision});
+    _requests.emplace_back(std::move(ntp), term, leader_id, revision);
 }
 
 ss::future<> metadata_dissemination_service::start() {
@@ -375,9 +371,9 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
-    for (auto& node_report : report.node_reports) {
+    for (const auto& node_report : report.node_reports) {
         co_await _leaders.invoke_on_all(
-          [node_report](partition_leaders_table& leaders) {
+          [&node_report](partition_leaders_table& leaders) {
               for (auto& tp : node_report.topics) {
                   for (auto& p : tp.partitions) {
                       // Nodes may report a null leader if they're out of
@@ -409,11 +405,8 @@ std::vector<cluster::ntp_leader> from_ntp_leader_revision_vector(
       leaders.end(),
       std::back_inserter(old_leaders),
       [](cluster::ntp_leader_revision& leader) {
-          return cluster::ntp_leader{
-            .ntp = std::move(leader.ntp),
-            .term = leader.term,
-            .leader_id = leader.leader_id,
-          };
+          return cluster::ntp_leader(
+            std::move(leader.ntp), leader.term, leader.leader_id);
       });
     return old_leaders;
 }
@@ -436,7 +429,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
               target_id);
             return proto
               .update_leadership_v2(
-                update_leadership_request_v2{std::move(updates)},
+                update_leadership_request_v2(std::move(updates)),
                 rpc::client_opts(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);
@@ -460,8 +453,8 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                         updates,
                         target_id);
                       return proto.update_leadership(
-                        update_leadership_request{
-                          from_ntp_leader_revision_vector(std::move(updates))},
+                        update_leadership_request(
+                          from_ntp_leader_revision_vector(std::move(updates))),
                         rpc::client_opts(
                           _dissemination_interval + rpc::clock_type::now()));
                   })
@@ -480,8 +473,12 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
             r.error().message(),
             target_id);
       })
-      .handle_exception([](std::exception_ptr e) {
-          vlog(clusterlog.warn, "Error when sending metadata update {}", e);
+      .handle_exception([target_id](std::exception_ptr e) {
+          vlog(
+            clusterlog.warn,
+            "Error when sending metadata update {} to node {}",
+            e,
+            target_id);
       });
 }
 

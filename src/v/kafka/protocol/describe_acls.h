@@ -22,16 +22,6 @@
 
 namespace kafka {
 
-struct describe_acls_response;
-
-class describe_acls_api final {
-public:
-    using response_type = describe_acls_response;
-
-    static constexpr const char* name = "describe_acls";
-    static constexpr api_key key = api_key(29);
-};
-
 struct describe_acls_request final {
     using api_type = describe_acls_api;
 

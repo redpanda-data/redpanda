@@ -9,7 +9,6 @@
 
 organization: "vectorized"
 
-{% if enable_rp %}
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
@@ -21,9 +20,15 @@ redpanda:
     - name: dnslistener
       address: "{{node.account.hostname}}"
       port: 9092
+      {% if endpoint_authn_method %}
+      authentication_method: {{ endpoint_authn_method }}
+      {% endif %}
     - name: iplistener
       address: "{{node_ip}}"
       port: {{kafka_alternate_port}}
+      {% if endpoint_authn_method %}
+      authentication_method: {{ endpoint_authn_method }}
+      {% endif %}
   admin:
     - address: 127.0.0.1
       port: 9644
@@ -40,7 +45,6 @@ redpanda:
         address: {{nodes[1].account.hostname}}
         port: 33145
       node_id: 1
-{% endif %}
 {% endif %}
 
 {% if enable_pp %}

@@ -189,7 +189,7 @@ make_remote_segment_index_builder(
     auto parser = ss::make_lw_shared<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_index_builder>(
         ix, initial_delta, sampling_step),
-      std::move(stream));
+      storage::segment_reader_handle(std::move(stream)));
     return parser;
 }
 

@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
@@ -18,23 +19,29 @@
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/errc.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
+#include "s3/client.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 
 #include <algorithm>
 #include <iterator>
 #include <regex>
+#include <sstream>
 #include <system_error>
 
 namespace cluster {
@@ -47,7 +54,9 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_leaders_table>& l,
   ss::sharded<topic_table>& topics,
   ss::sharded<data_policy_frontend>& dp_frontend,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<ss::abort_source>& as,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<feature_table>& features)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -55,7 +64,9 @@ topics_frontend::topics_frontend(
   , _leaders(l)
   , _topics(topics)
   , _dp_frontend(dp_frontend)
-  , _as(as) {}
+  , _as(as)
+  , _cloud_storage_api(cloud_storage_api)
+  , _features(features) {}
 
 static bool
 needs_linearizable_barrier(const std::vector<topic_result>& results) {
@@ -167,8 +178,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
               return do_update_topic_properties(std::move(update), timeout);
           });
 
-        // we are not really interested in the result comming from the
-        // linearizable barrier, results comming from the previous steps will be
+        // we are not really interested in the result coming from the
+        // linearizable barrier, results coming from the previous steps will be
         // propagated to clients, this is just an optimization, this doesn't
         // affect correctness of the protocol
         if (needs_linearizable_barrier(results)) {
@@ -231,7 +242,7 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
               std::move(update.tp_ns), cluster::errc(update_dp_res.value()));
         }
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(std::move(update.tp_ns), map_errc(ec));
     } catch (...) {
         vlog(
@@ -255,7 +266,7 @@ ss::future<topic_result> topics_frontend::do_create_non_replicable_topic(
     create_non_replicable_topic_cmd cmd(data, 0);
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(data.name, map_errc(ec));
     } catch (const std::exception& ex) {
         vlog(
@@ -313,7 +324,8 @@ topics_frontend::dispatch_create_non_replicable_to_leader(
         timeout,
         [topics, timeout](controller_client_protocol cp) mutable {
             return cp.create_non_replicable_topics(
-              create_non_replicable_topics_request{std::move(topics), timeout},
+              create_non_replicable_topics_request{
+                .topics = std::move(topics), .timeout = timeout},
               rpc::client_opts(timeout));
         })
       .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>)
@@ -416,27 +428,89 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     auto validation_err = validate_topic_configuration(assignable_config);
 
     if (validation_err != errc::success) {
-        return ss::make_ready_future<topic_result>(
-          topic_result(assignable_config.cfg.tp_ns, validation_err));
+        co_return topic_result(assignable_config.cfg.tp_ns, validation_err);
     }
 
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [assignable_config](partition_allocator& al) {
-            return al.allocate(make_allocation_request(assignable_config));
-        })
-      .then([this, t_cfg = std::move(assignable_config.cfg), timeout](
-              result<allocation_units> units) mutable {
-          // no assignments, error
-          if (!units) {
-              return ss::make_ready_future<topic_result>(
-                make_error_result(t_cfg.tp_ns, units.error()));
-          }
+    if (assignable_config.is_read_replica()) {
+        if (!assignable_config.cfg.properties.read_replica_bucket) {
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+        }
+        auto rr_manager = remote_topic_configuration_source(
+          _cloud_storage_api.local());
 
-          return replicate_create_topic(
-            std::move(t_cfg), std::move(units.value()), timeout);
+        errc download_res = co_await rr_manager.set_remote_properties_in_config(
+          assignable_config,
+          s3::bucket_name(
+            assignable_config.cfg.properties.read_replica_bucket.value()),
+          _as.local());
+
+        if (download_res != errc::success) {
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_operation_error);
+        }
+
+        if (!assignable_config.cfg.properties.remote_topic_properties) {
+            vassert(
+              assignable_config.cfg.properties.remote_topic_properties,
+              "remote_topic_properties not set after successful download of "
+              "valid topic manifest");
+        }
+        assignable_config.cfg.partition_count
+          = assignable_config.cfg.properties.remote_topic_properties
+              ->remote_partition_count;
+    }
+
+    if (assignable_config.is_recovery_enabled()) {
+        // Before running the recovery we need to download topic_manifest.
+
+        auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
+        if (!bucket.has_value()) {
+            vlog(
+              clusterlog.error,
+              "Can't run topic recovery for the topic {}, bucket is not set",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_operation_error);
+        }
+        auto cfg_source = remote_topic_configuration_source(
+          _cloud_storage_api.local());
+
+        errc download_res = co_await cfg_source.set_recovered_topic_properties(
+          assignable_config, s3::bucket_name(bucket.value()), _as.local());
+
+        if (download_res != errc::success) {
+            vlog(
+              clusterlog.error,
+              "Can't run topic recovery for the topic {}",
+              assignable_config.cfg.tp_ns);
+            co_return make_error_result(
+              assignable_config.cfg.tp_ns, errc::topic_invalid_config);
+        }
+
+        vassert(
+          static_cast<bool>(
+            assignable_config.cfg.properties.remote_topic_properties),
+          "remote_topic_properties not set after successful download of valid "
+          "topic manifest");
+
+        vlog(
+          clusterlog.info,
+          "Configured topic recovery for {}, topic configuration: {}",
+          assignable_config.cfg.tp_ns,
+          assignable_config.cfg);
+    }
+
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard, [assignable_config](partition_allocator& al) {
+          return al.allocate(make_allocation_request(assignable_config));
       });
+
+    if (!units) {
+        co_return make_error_result(assignable_config.cfg.tp_ns, units.error());
+    }
+    co_return co_await replicate_create_topic(
+      std::move(assignable_config.cfg), std::move(units.value()), timeout);
 }
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
@@ -455,7 +529,7 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
           random_generators::internal::gen);
     }
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
       .then_wrapped([tp_ns = std::move(tp_ns), units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
           try {
@@ -480,6 +554,8 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
 ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
   std::vector<model::topic_namespace> topics,
   model::timeout_clock::time_point timeout) {
+    vlog(clusterlog.info, "Delete topics {}", topics);
+
     std::vector<ss::future<topic_result>> futures;
     futures.reserve(topics.size());
 
@@ -508,7 +584,7 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
   model::topic_namespace tp_ns, model::timeout_clock::time_point timeout) {
     delete_topic_cmd cmd(tp_ns, tp_ns);
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
       .then_wrapped(
         [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
             try {
@@ -564,7 +640,8 @@ topics_frontend::dispatch_create_to_leader(
         timeout,
         [topics, timeout](controller_client_protocol cp) mutable {
             return cp.create_topics(
-              create_topics_request{std::move(topics), timeout},
+              create_topics_request{
+                .topics = std::move(topics), .timeout = timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<create_topics_reply>)
@@ -591,13 +668,38 @@ bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
 ss::future<std::error_code> topics_frontend::move_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
-  model::timeout_clock::time_point tout) {
+  model::timeout_clock::time_point tout,
+  std::optional<model::term_id> term) {
     if (_partition_movement_disabled) {
         return ss::make_ready_future<std::error_code>(errc::feature_disabled);
     }
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
-    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout, term);
+}
+
+ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
+  model::ntp ntp,
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term) {
+    cancel_moving_partition_replicas_cmd cmd(
+      std::move(ntp),
+      cancel_moving_partition_replicas_cmd_data(force_abort_update::no));
+
+    return replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout, term);
+}
+
+ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
+  model::ntp ntp,
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term) {
+    cancel_moving_partition_replicas_cmd cmd(
+      std::move(ntp),
+      cancel_moving_partition_replicas_cmd_data(force_abort_update::yes));
+
+    return replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout, term);
 }
 
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
@@ -611,12 +713,17 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         return ss::make_ready_future<std::error_code>(
           errc::no_leader_controller);
     }
+    // optimization: if update is not in progress return early
+    if (!_topics.local().is_update_in_progress(ntp)) {
+        return ss::make_ready_future<std::error_code>(
+          errc::no_update_in_progress);
+    }
     // current node is a leader, just replicate
     if (leader == _self) {
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
-        return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+        return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
     }
 
     return _connections.local()
@@ -648,7 +755,7 @@ ss::future<result<model::offset>> topics_frontend::stm_linearizable_barrier(
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
-  std::vector<create_partititions_configuration> partitions,
+  std::vector<create_partitions_configuration> partitions,
   model::timeout_clock::time_point timeout) {
     auto r = co_await stm_linearizable_barrier(timeout);
     if (!r) {
@@ -658,7 +765,7 @@ ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
           partitions.begin(),
           partitions.end(),
           std::back_inserter(results),
-          [err = r.error()](const create_partititions_configuration& cfg) {
+          [err = r.error()](const create_partitions_configuration& cfg) {
               return make_error_result(cfg.tp_ns, err);
           });
         co_return results;
@@ -667,7 +774,7 @@ ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
     auto result = co_await ssx::parallel_transform(
       partitions.begin(),
       partitions.end(),
-      [this, timeout](create_partititions_configuration cfg) {
+      [this, timeout](create_partitions_configuration cfg) {
           return do_create_partition(std::move(cfg), timeout);
       });
 
@@ -685,7 +792,7 @@ topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
 allocation_request make_allocation_request(
   int16_t replication_factor,
   const int32_t current_partitions_count,
-  const create_partititions_configuration& cfg) {
+  const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
     allocation_request req;
@@ -697,7 +804,7 @@ allocation_request make_allocation_request(
 }
 
 ss::future<topic_result> topics_frontend::do_create_partition(
-  create_partititions_configuration p_cfg,
+  create_partitions_configuration p_cfg,
   model::timeout_clock::time_point timeout) {
     auto tp_cfg = _topics.local().get_topic_cfg(p_cfg.tp_ns);
     if (!tp_cfg) {
@@ -723,13 +830,13 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     }
 
     auto tp_ns = p_cfg.tp_ns;
-    create_partititions_configuration_assignment payload(
+    create_partitions_configuration_assignment payload(
       std::move(p_cfg), units.value().get_assignments());
     create_partition_cmd cmd = create_partition_cmd(tp_ns, std::move(payload));
 
     try {
         auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), timeout);
+          _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(tp_ns, map_errc(ec));
     } catch (...) {
         vlog(
@@ -739,6 +846,104 @@ ss::future<topic_result> topics_frontend::do_create_partition(
           std::current_exception());
         co_return topic_result(std::move(tp_ns), errc::replication_error);
     }
+}
+
+ss::future<result<std::vector<move_cancellation_result>>>
+topics_frontend::cancel_moving_partition_replicas_node(
+  model::node_id node_id,
+  partition_move_direction dir,
+  model::timeout_clock::time_point timeout) {
+    using ret_t = result<std::vector<move_cancellation_result>>;
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    if (leader == _self) {
+        switch (dir) {
+        case partition_move_direction::from_node:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().ntps_moving_from_node(node_id), timeout);
+        case partition_move_direction::to_node:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().ntps_moving_to_node(node_id), timeout);
+        case partition_move_direction::all:
+            co_return co_await do_cancel_moving_partition_replicas(
+              _topics.local().all_ntps_moving_per_node(node_id), timeout);
+        }
+        __builtin_unreachable();
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout, node_id, dir](controller_client_protocol client) mutable {
+            return client
+              .cancel_node_partition_movements(
+                cancel_node_partition_movements_request{
+                  .node_id = node_id, .direction = dir},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<cancel_partition_movements_reply>);
+        })
+      .then([](result<cancel_partition_movements_reply> r) {
+          return r.has_error() ? ret_t(r.error())
+                               : std::move(r.value().partition_results);
+      });
+}
+
+ss::future<result<std::vector<move_cancellation_result>>>
+topics_frontend::cancel_moving_all_partition_replicas(
+  model::timeout_clock::time_point timeout) {
+    using ret_t = result<std::vector<move_cancellation_result>>;
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    if (leader == _self) {
+        co_return co_await do_cancel_moving_partition_replicas(
+          _topics.local().all_updates_in_progress(), timeout);
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout](controller_client_protocol client) mutable {
+            return client
+              .cancel_all_partition_movements(
+                cancel_all_partition_movements_request{},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<cancel_partition_movements_reply>);
+        })
+      .then([](result<cancel_partition_movements_reply> r) {
+          return r.has_error() ? ret_t(r.error())
+                               : std::move(r.value().partition_results);
+      });
+}
+
+ss::future<std::vector<move_cancellation_result>>
+topics_frontend::do_cancel_moving_partition_replicas(
+  std::vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
+    std::vector<move_cancellation_result> results;
+    results.reserve(ntps.size());
+    co_await ss::max_concurrent_for_each(
+      ntps, 32, [this, &results, timeout](model::ntp& ntp) {
+          return cancel_moving_partition_replicas(ntp, timeout)
+            .then([ntp = std::move(ntp), &results](std::error_code ec) mutable {
+                results.emplace_back(
+                  std::move(ntp), map_update_interruption_error_code(ec));
+            });
+      });
+
+    co_return results;
 }
 
 } // namespace cluster

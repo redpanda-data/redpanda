@@ -82,20 +82,28 @@ class DefaultClient:
         Describe topics. Pass topics=None to describe all topics, or a pass a
         list of topic names to restrict the call to a set of specific topics.
         """
-        def make_partition_desc(d):
-            return PartitionDescription(id=d['partition'],
-                                        leader=d['leader'],
-                                        replicas=d['replicas'])
+        def make_partition_desc(p_md):
+            return PartitionDescription(id=p_md.id,
+                                        leader=p_md.leader,
+                                        replicas=p_md.replicas)
 
-        def make_topic_desc(d):
-            partitions = [make_partition_desc(d) for d in d['partitions']]
-            return TopicDescription(name=d['topic'], partitions=partitions)
+        def make_topic_desc(tp_md):
+            partitions = [
+                make_partition_desc(p_md)
+                for p_md in tp_md.partitions.values()
+            ]
+            return TopicDescription(name=tp_md.topic, partitions=partitions)
 
-        client = KafkaAdminClient(
-            bootstrap_servers=self._redpanda.brokers_list(),
-            **self._redpanda.security_config())
-        res = client.describe_topics(topics)
-        return [make_topic_desc(d) for d in res]
+        client = PythonLibrdkafka(self._redpanda)
+
+        res = []
+        if topics is not None:
+            for t in topics:
+                res += client.topics(t).values()
+        else:
+            res = client.topics().values()
+
+        return [make_topic_desc(md) for md in res]
 
     def describe_topic(self, topic: str):
         td = self.describe_topics([topic])

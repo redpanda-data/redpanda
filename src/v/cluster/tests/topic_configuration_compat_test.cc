@@ -557,7 +557,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_request_upgrade_rt_test) {
 
 SEASTAR_THREAD_TEST_CASE(create_topics_request_uniform_rt_test) {
     create_topics_request_roundtrip<
-      old::create_topics_request,
+      cluster::create_topics_request,
       cluster::create_topics_request>();
 }
 
@@ -675,20 +675,20 @@ void topic_configuration_assignment_roundtrip() {
         tc.properties.shadow_indexing = model::shadow_indexing_mode::archival;
     }
     auto p1 = cluster::partition_assignment{
-      .group = raft::group_id{42},
-      .id = model::partition_id{34},
-      .replicas = {
-          model::broker_shard{.node_id = model::node_id{1}, .shard = 2},
-          model::broker_shard{.node_id = model::node_id{3}, .shard = 4},
-        },
+      raft::group_id{42},
+      model::partition_id{34},
+      {
+        model::broker_shard{.node_id = model::node_id{1}, .shard = 2},
+        model::broker_shard{.node_id = model::node_id{3}, .shard = 4},
+      },
     };
     auto p2 = cluster::partition_assignment{
-      .group = raft::group_id{51},
-      .id = model::partition_id{15},
-      .replicas = {
-          model::broker_shard{.node_id = model::node_id{4}, .shard = 1},
-          model::broker_shard{.node_id = model::node_id{5}, .shard = 2},
-        },
+      raft::group_id{51},
+      model::partition_id{15},
+      {
+        model::broker_shard{.node_id = model::node_id{4}, .shard = 1},
+        model::broker_shard{.node_id = model::node_id{5}, .shard = 2},
+      },
     };
 
     ReqIn assign_cfg(tc, {p1, p2});

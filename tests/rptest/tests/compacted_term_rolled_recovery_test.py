@@ -16,7 +16,8 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class CompactionTermRollRecoveryTest(RedpandaTest):
-    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                        partition_count=1), )
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
@@ -41,7 +42,10 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         TODO: this test should be generalized so we can test this basic recovery
         scenario with various topic configurations.
         """
-        # operate on a partition. doesn't matter which one
+        # Operate on the topics single partition. This is relevant
+        # because we use a metric that is aggregated by partition
+        # to retrieve the number of compacted segments, which means
+        # that it cannot differentiate between multiple partitions.
         partition = self.redpanda.partitions(self.topic)[0]
 
         # stop a replica in order to test its recovery
@@ -50,7 +54,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         self.redpanda.stop_node(needs_recovery)
 
         # produce until segments have been compacted
-        self._produce_until_compaction(others, self.topic, partition.index)
+        self._produce_until_compaction(others, self.topic)
 
         # restart all replicas: rolls term, starts recovery
         self.redpanda.restart_nodes(all_replicas)
@@ -58,7 +62,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         # ensure that the first stopped node recovered ok
         self._wait_until_recovered(all_replicas, self.topic, partition.index)
 
-    def _produce_until_compaction(self, nodes, topic, partition):
+    def _produce_until_compaction(self, nodes, topic):
         """
         Produce into the topic until some new segments have been compacted.
         """
@@ -66,13 +70,13 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
 
         target = list(
             map(lambda cnt: cnt + num_segs,
-                self._compacted_segments(nodes, topic, partition)))
+                self._compacted_segments(nodes, topic)))
 
         kafka_tools = KafkaCliTools(self.redpanda)
 
         def done():
             kafka_tools.produce(self.topic, 1024, 1024)
-            curr = self._compacted_segments(nodes, topic, partition)
+            curr = self._compacted_segments(nodes, topic)
             return all(map(lambda cnt: cnt[0] > cnt[1], zip(curr, target)))
 
         wait_until(done,
@@ -80,7 +84,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
                    backoff_sec=2,
                    err_msg="Compacted segments were not created")
 
-    def _compacted_segments(self, nodes, topic, partition):
+    def _compacted_segments(self, nodes, topic):
         """
         Fetch the number of compacted segments.
 
@@ -95,8 +99,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
                 for sample in family.samples:
                     if sample.name == "vectorized_storage_log_compacted_segment_total" and \
                             sample.labels["namespace"] == "kafka" and \
-                            sample.labels["topic"] == topic and \
-                            int(sample.labels["partition"]) == partition:
+                            sample.labels["topic"] == topic:
                         count += int(sample.value)
             self.logger.debug(count)
             return count

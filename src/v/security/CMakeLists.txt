@@ -6,10 +6,13 @@ v_cc_library(
     scram_authenticator.cc
     acl_store.cc
     mtls.cc
+    license.cc
   DEPS
     v::bytes
+    v::utils
     absl::flat_hash_map
     absl::flat_hash_set
-)
+    cryptopp
+ )
 
 add_subdirectory(tests)

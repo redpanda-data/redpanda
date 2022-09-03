@@ -21,6 +21,7 @@
 #include <vector>
 
 struct pod {
+    using rpc_serde_exempt = std::true_type;
     int16_t x = 1;
     int32_t y = 2;
     int64_t z = 3;

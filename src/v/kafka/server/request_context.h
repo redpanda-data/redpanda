@@ -161,10 +161,10 @@ public:
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
         /// that there will be no tags in the response header.
-        bool is_flexible = header().is_flexible();
+        auto is_flexible = flex_enabled(header().is_flexible());
         api_version version = header().version;
         if constexpr (std::is_same_v<ResponseType, api_versions_response>) {
-            is_flexible = false;
+            is_flexible = flex_enabled::no;
             if (r.data.error_code == kafka::error_code::unsupported_version) {
                 /// Furthermore if the client has made an api_versions_request
                 /// outside of the max supported version, any assumptions about
@@ -184,7 +184,7 @@ public:
     }
 
     const ss::sstring& listener() const { return _conn->listener(); }
-    security::sasl_server& sasl() { return _conn->sasl(); }
+    std::optional<security::sasl_server>& sasl() { return _conn->sasl(); }
     security::credential_store& credentials() {
         return _conn->server().credentials();
     }
@@ -219,7 +219,8 @@ private:
 };
 
 // Executes the API call identified by the specified request_context.
-process_result_stages process_request(request_context&&, ss::smp_service_group);
+process_result_stages process_request(
+  request_context&&, ss::smp_service_group, const session_resources&);
 
 bool track_latency(api_key);
 

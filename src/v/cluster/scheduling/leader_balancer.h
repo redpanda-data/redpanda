@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "absl/container/node_hash_map.h"
+#include "absl/container/flat_hash_map.h"
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
@@ -62,19 +62,27 @@ class leader_balancer {
      */
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
+    /*
+     * Used to reschedule the balancer after it has been throttled due to it
+     * hitting its max in flight limit. This delay will occur after one of the
+     * in flight transfers successfully completes.
+     */
+    static constexpr clock_type::duration throttle_reactivation_delay = 5s;
+
 public:
     leader_balancer(
       topic_table&,
       partition_leaders_table&,
+      members_table&,
       raft::consensus_client_protocol,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
-      ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
       config::binding<bool>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
       config::binding<std::chrono::milliseconds>&&,
+      config::binding<size_t>&&,
       consensus_ptr);
 
     ss::future<> start();
@@ -85,7 +93,6 @@ private:
     using reassignment = leader_balancer_strategy::reassignment;
 
     index_type build_index();
-    std::optional<model::broker_shard> find_leader_shard(const model::ntp&);
     absl::flat_hash_set<raft::group_id> muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
 
@@ -94,6 +101,17 @@ private:
     ss::future<bool> do_transfer_remote(reassignment);
 
     void on_enable_changed();
+
+    void check_if_controller_leader(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
+    void on_leadership_change(
+      model::ntp, model::term_id, std::optional<model::node_id>);
+
+    void on_maintenance_change(model::node_id, model::maintenance_state);
+
+    void check_register_leadership_change_notification();
+    void check_unregister_leadership_change_notification();
 
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
@@ -137,6 +155,13 @@ private:
      */
     config::binding<std::chrono::milliseconds> _node_mute_timeout;
 
+    /*
+     * limits the total in flight leadership transfers (those where the metadata
+     * has yet to propagate across the cluster) to this factor per shard in the
+     * cluster.
+     */
+    config::binding<size_t> _transfer_limit_per_shard;
+
     struct last_known_leader {
         model::broker_shard shard;
         clock_type::time_point expires;
@@ -145,18 +170,29 @@ private:
 
     leader_balancer_probe _probe;
     bool _need_controller_refresh{true};
+    bool _throttled{false};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
     cluster::notification_id_type _leader_notify_handle;
+    std::optional<cluster::notification_id_type>
+      _leadership_change_notify_handle;
+    cluster::notification_id_type _maintenance_state_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
+    members_table& _members;
     raft::consensus_client_protocol _client;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
-    ss::sharded<raft::group_manager>& _group_manager;
     ss::sharded<ss::abort_source>& _as;
     consensus_ptr _raft0;
     ss::gate _gate;
     ss::timer<clock_type> _timer;
+
+    struct in_flight_reassignment {
+        reassignment value;
+        clock_type::time_point expires;
+    };
+    absl::flat_hash_map<raft::group_id, in_flight_reassignment>
+      _in_flight_changes;
 };
 
 } // namespace cluster

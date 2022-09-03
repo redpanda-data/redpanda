@@ -20,6 +20,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "resource_mgmt/io_priority.h"
+#include "rpc/connection_cache.h"
 #include "utils/file_io.h"
 #include "vlog.h"
 
@@ -150,11 +151,11 @@ ss::future<> config_manager::do_bootstrap() {
           if (!p.is_default()) {
               json::StringBuffer buf;
               json::Writer<json::StringBuffer> writer(buf);
-              p.to_json(writer);
+              p.to_json(writer, config::redact_secrets::no);
               ss::sstring key_str(p.name());
               ss::sstring val_str = buf.GetString();
               vlog(clusterlog.info, "Importing property {}", p);
-              update.upsert.push_back({key_str, val_str});
+              update.upsert.emplace_back(key_str, val_str);
           }
       });
 
@@ -190,7 +191,7 @@ ss::future<> config_manager::start() {
     if (_seen_version == config_version_unset) {
         vlog(clusterlog.trace, "Starting config_manager... (initial)");
 
-        // Background: wait til we have a leader. If this node is leader
+        // Background: wait till we have a leader. If this node is leader
         // then bootstrap cluster configuration from local config.
         start_bootstrap();
     } else {
@@ -216,7 +217,7 @@ ss::future<> config_manager::start() {
 }
 
 ss::future<> config_manager::stop() {
-    vlog(clusterlog.info, "stopping cluster::config_manager...");
+    vlog(clusterlog.info, "Stopping Config Manager...");
     _reconcile_wait.broken();
     co_await _gate.close();
 }
@@ -472,7 +473,8 @@ ss::future<> config_manager::reconcile_status() {
         } else {
             vlog(
               clusterlog.trace,
-              "reconcile_status: sending status update to leader");
+              "reconcile_status: sending status update to leader: {}",
+              my_latest_status);
             if (_self == *leader) {
                 auto err = co_await _frontend.local().set_status(
                   my_latest_status, model::timeout_clock::now() + timeout);
@@ -528,11 +530,11 @@ ss::future<> config_manager::reconcile_status() {
             // We are clean: sleep until signalled.
             co_await _reconcile_wait.wait();
         }
-    } catch (ss::condition_variable_timed_out) {
+    } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
-    } catch (ss::broken_condition_variable) {
+    } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted) {
+    } catch (ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
     }
 }
@@ -554,17 +556,17 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
     auto& cfg = config::shard_local_cfg();
     auto result = config_manager::apply_result{};
     for (const auto& u : data.upsert) {
-        if (!cfg.contains(u.first)) {
+        if (!cfg.contains(u.key)) {
             // We never heard of this property.  Record it as unknown
             // in our config_status.
             if (!silent) {
-                vlog(clusterlog.info, "Unknown property {}", u.first);
+                vlog(clusterlog.info, "Unknown property {}", u.key);
             }
-            result.unknown.push_back(u.first);
+            result.unknown.push_back(u.key);
             continue;
         }
-        auto& property = cfg.get(u.first);
-        auto& val_yaml = u.second;
+        auto& property = cfg.get(u.key);
+        auto& val_yaml = u.value;
 
         try {
             auto val = YAML::Load(val_yaml);
@@ -572,7 +574,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
             vlog(
               clusterlog.trace,
               "apply: upsert {}={}",
-              u.first,
+              u.key,
               property.format_raw(val_yaml));
 
             auto validation_err = property.validate(val);
@@ -581,11 +583,11 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                     vlog(
                       clusterlog.warn,
                       "Invalid property value {}: {} ({})",
-                      u.first,
+                      u.key,
                       property.format_raw(val_yaml),
                       validation_err.value().error_message());
                 }
-                result.invalid.push_back(u.first);
+                result.invalid.push_back(u.key);
 
                 // We still proceed to set_value after failing validation.
                 // The property class is responsible for clamping or rejecting
@@ -596,27 +598,27 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
 
             bool changed = property.set_value(val);
             result.restart |= (property.needs_restart() && changed);
-        } catch (YAML::ParserException) {
+        } catch (YAML::ParserException&) {
             if (!silent) {
                 vlog(
                   clusterlog.warn,
                   "Invalid syntax in property {}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml));
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
-        } catch (YAML::BadConversion) {
+        } catch (YAML::BadConversion&) {
             if (!silent) {
                 vlog(
                   clusterlog.warn,
                   "Invalid value for property {}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml));
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
-        } catch (std::bad_alloc) {
+        } catch (std::bad_alloc&) {
             // Don't include bad_alloc in the catch-all below
             throw;
         } catch (...) {
@@ -629,11 +631,11 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                 vlog(
                   clusterlog.warn,
                   "Unexpected error setting property {}={}: {}",
-                  u.first,
+                  u.key,
                   property.format_raw(val_yaml),
                   std::current_exception());
             }
-            result.invalid.push_back(u.first);
+            result.invalid.push_back(u.key);
             continue;
         }
     }
@@ -675,8 +677,8 @@ void config_manager::merge_apply_result(
         ok_properties.insert(i);
     }
     for (const auto& i : data.upsert) {
-        if (!errored_properties.contains(i.first)) {
-            ok_properties.insert(i.first);
+        if (!errored_properties.contains(i.key)) {
+            ok_properties.insert(i.key);
         }
     }
 
@@ -729,7 +731,7 @@ ss::future<> config_manager::store_delta(
     _frontend.local().set_next_version(_seen_version + config_version{1});
 
     for (const auto& u : data.upsert) {
-        _raw_values[u.first] = u.second;
+        _raw_values[u.key] = u.value;
     }
     for (const auto& d : data.remove) {
         _raw_values.erase(d);
@@ -858,6 +860,28 @@ config_manager::apply_update(model::record_batch b) {
       [this](cluster_config_status_cmd cmd) {
           return apply_status(std::move(cmd));
       });
+}
+
+config_manager::status_map config_manager::get_projected_status() const {
+    status_map r = status;
+
+    // If our local status is ahead of the persistent status map,
+    // update the projected result: the persistent status map is
+    // guaranteed to catch up to this eventually via reconcile_status.
+    //
+    // This behaviour is useful to get read-after-write consistency
+    // when writing config updates to the controller leader + then
+    // reading back the status from the same leader node.
+    //
+    // A more comprehensive approach to waiting for status updates
+    // inline with config updates is discussed in
+    // https://github.com/redpanda-data/redpanda/issues/5833
+    auto it = r.find(_self);
+    if (it == r.end() || it->second.version < my_latest_status.version) {
+        r[_self] = my_latest_status;
+    }
+
+    return r;
 }
 
 } // namespace cluster

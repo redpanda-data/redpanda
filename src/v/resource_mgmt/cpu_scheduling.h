@@ -65,7 +65,24 @@ public:
     }
     ss::scheduling_group archival_upload() { return _archival_upload; }
 
+    std::vector<std::reference_wrapper<const ss::scheduling_group>>
+    all_scheduling_groups() const {
+        return {
+          std::cref(_default),
+          std::cref(_admin),
+          std::cref(_raft),
+          std::cref(_kafka),
+          std::cref(_cluster),
+          std::cref(_coproc),
+          std::cref(_cache_background_reclaim),
+          std::cref(_compaction),
+          std::cref(_raft_learner_recovery),
+          std::cref(_archival_upload)};
+    }
+
 private:
+    ss::scheduling_group _default{
+      seastar::default_scheduling_group()}; // created and managed by seastar
     ss::scheduling_group _admin;
     ss::scheduling_group _raft;
     ss::scheduling_group _kafka;

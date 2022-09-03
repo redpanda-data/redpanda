@@ -11,15 +11,18 @@
 
 #include "raft/follower_queue.h"
 
+#include "ssx/semaphore.h"
+
 #include <seastar/core/coroutine.hh>
 
 namespace raft {
 
 follower_queue::follower_queue(uint32_t max_concurrent_append_entries)
   : _max_concurrent_append_entries(max_concurrent_append_entries)
-  , _sem(std::make_unique<ss::semaphore>(_max_concurrent_append_entries)) {}
+  , _sem(std::make_unique<ssx::semaphore>(
+      _max_concurrent_append_entries, "raft/follow")) {}
 
-ss::future<ss::semaphore_units<>> follower_queue::get_append_entries_unit() {
+ss::future<ssx::semaphore_units> follower_queue::get_append_entries_unit() {
     co_return co_await ss::get_units(*_sem, 1);
 }
 

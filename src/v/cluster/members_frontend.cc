@@ -43,10 +43,6 @@ members_frontend::members_frontend(
   , _feature_table(feature_table)
   , _as(as) {}
 
-ss::future<> members_frontend::start() { return ss::now(); }
-
-ss::future<> members_frontend::stop() { return ss::now(); }
-
 ss::future<std::error_code>
 members_frontend::finish_node_reallocations(model::node_id id) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
@@ -153,6 +149,7 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
     if (leader == _self) {
         co_return co_await replicate_and_wait(
           _stm,
+          _feature_table,
           _as,
           maintenance_mode_cmd(id, enabled),
           _node_op_timeout + model::timeout_clock::now());

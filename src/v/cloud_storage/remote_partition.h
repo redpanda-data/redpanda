@@ -48,8 +48,7 @@ namespace details {
 /// iterator stability guarantee by caching the key and
 /// doing a lookup on every increment.
 /// This turns iterator increment into O(logN) operation
-/// but this is OK since the underlying btree_map has high
-/// fan-out ratio so the logarithm base is relatively large.
+/// Deleting from underlying btree_map is not supported.
 template<class TKey, class TVal>
 class btree_map_stable_iterator
   : public boost::iterator_facade<
@@ -93,6 +92,10 @@ private:
         vassert(
           _key.has_value(), "btree_map_stable_iterator can't be incremented");
         auto it = _map.get().find(*_key);
+        // _key should be present since deletions are not supported
+        vassert(
+          it != _map.get().end(),
+          "btree_map_stable_iterator can't be incremented");
         ++it;
         if (it == _map.get().end()) {
             set_end();
@@ -132,6 +135,13 @@ private:
 };
 
 } // namespace details
+
+struct offset_range {
+    model::offset begin;
+    model::offset end;
+    model::offset begin_rp;
+    model::offset end_rp;
+};
 
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
@@ -180,6 +190,9 @@ public:
     /// Return first uploaded kafka offset
     model::offset first_uploaded_offset();
 
+    /// Return last uploaded kafka offset
+    model::offset last_uploaded_offset();
+
     /// Get partition NTP
     const model::ntp& get_ntp() const;
 
@@ -188,6 +201,10 @@ public:
 
     // returns term last kafka offset
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
+
+    // Get list of aborted transactions that overlap with the offset range
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions(offset_range offsets);
 
 private:
     /// Create new remote_segment instances for all new
@@ -311,8 +328,11 @@ private:
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
-    std::optional<model::offset> _first_uploaded_offset;
     s3::bucket_name _bucket;
+
+    // Deleting from _segments is not supported.
+    // absl::btree_map doesn't provide a pointer stabilty. We are
+    // using remote_partition::btree_map_stable_iterator to work around this.
     segment_map_t _segments;
     eviction_list_t _eviction_list;
     intrusive_list<

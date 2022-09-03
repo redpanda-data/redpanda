@@ -15,7 +15,13 @@ from rptest.services.admin import Admin
 import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
+import re
 import requests
+
+NON_EXISTENT_TID_LOG_ALLOW_LIST = [
+    re.compile(r".*Unexpected tx_error error: Unknown server error.*")
+]
 
 
 class TxAdminTest(RedpandaTest):
@@ -125,7 +131,7 @@ class TxAdminTest(RedpandaTest):
                 self.admin.transfer_leadership_to(namespace="kafka",
                                                   topic=topic,
                                                   partition=partition,
-                                                  target=None)
+                                                  target_id=None)
 
                 def leader_is_changed():
                     new_leader = self.admin.get_partition_leader(
@@ -392,7 +398,9 @@ class TxAdminTest(RedpandaTest):
 
         producer.commit_transaction()
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=DEFAULT_LOG_ALLOW_LIST +
+             NON_EXISTENT_TID_LOG_ALLOW_LIST)
     def test_delete_non_existent_tid(self):
         tx_id = "0"
         producer = ck.Producer({

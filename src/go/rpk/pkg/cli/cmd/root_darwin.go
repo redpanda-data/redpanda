@@ -10,13 +10,11 @@
 package cmd
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func addPlatformDependentCmds(
-	fs afero.Fs, mgr config.Manager, cmd *cobra.Command,
-) {
-	cmd.AddCommand(NewRedpandaDarwinCommand(fs))
+func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
+	cmd.AddCommand(redpanda.NewRedpandaDarwinCommand(fs))
 }

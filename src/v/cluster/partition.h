@@ -13,6 +13,7 @@
 
 #include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
+#include "cluster/feature_table.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -44,27 +45,18 @@ public:
       consensus_ptr r,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<feature_table>&,
+      std::optional<s3::bucket_name> read_replica_bucket = std::nullopt);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
     ss::future<> stop();
 
-    ss::future<result<raft::replicate_result>>
+    ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
-    raft::replicate_stages
-    replicate_in_stages(model::record_batch_reader&&, raft::replicate_options);
-
-    ss::future<result<raft::replicate_result>> replicate(
-      model::term_id, model::record_batch_reader&&, raft::replicate_options);
-
-    ss::future<result<raft::replicate_result>> replicate(
-      model::batch_identity,
-      model::record_batch_reader&&,
-      raft::replicate_options);
-
-    raft::replicate_stages replicate_in_stages(
+    kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
@@ -137,6 +129,7 @@ public:
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
 
+    bool is_elected_leader() const { return _raft->is_elected_leader(); }
     bool is_leader() const { return _raft->is_leader(); }
     bool has_followers() const { return _raft->has_followers(); }
 
@@ -149,7 +142,11 @@ public:
 
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
-        return _raft->do_transfer_leadership(target);
+        if (_rm_stm) {
+            return _rm_stm->transfer_leadership(target);
+        } else {
+            return _raft->do_transfer_leadership(target);
+        }
     }
 
     ss::future<std::error_code>
@@ -158,7 +155,8 @@ public:
     }
 
     ss::future<std::error_code> update_replica_set(
-      std::vector<model::broker> brokers, model::revision_id new_revision_id) {
+      std::vector<raft::broker_revision> brokers,
+      model::revision_id new_revision_id) {
         return _raft->replace_configuration(
           std::move(brokers), new_revision_id);
     }
@@ -210,9 +208,23 @@ public:
         return _rm_stm->aborted_transactions(from, to);
     }
 
+    ss::future<std::vector<rm_stm::tx_range>>
+    aborted_transactions_cloud(cloud_storage::offset_range offsets) {
+        return _cloud_storage_partition->aborted_transactions(offsets);
+    }
+
     const ss::shared_ptr<cluster::archival_metadata_stm>&
     archival_meta_stm() const {
         return _archival_meta_stm;
+    }
+
+    bool is_read_replica_mode_enabled() const {
+        const auto& cfg = _raft->log_config();
+        return cfg.is_read_replica_mode_enabled();
+    }
+
+    s3::bucket_name get_read_replica_bucket() const {
+        return _read_replica_bucket.value();
     }
 
     /// Return true if shadow indexing is enabled for the partition
@@ -236,8 +248,18 @@ public:
     model::offset start_cloud_offset() const {
         vassert(
           cloud_data_available(),
-          "Method can only be called if cloud data is available");
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
         return _cloud_storage_partition->first_uploaded_offset();
+    }
+
+    /// Last available cloud offset
+    model::offset last_cloud_offset() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
+        return _cloud_storage_partition->last_uploaded_offset();
     }
 
     /// Create a reader that will fetch data from remote storage
@@ -246,7 +268,8 @@ public:
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
         vassert(
           cloud_data_available(),
-          "Method can only be called if cloud data is available");
+          "Method can only be called if cloud data is available, ntp: {}",
+          _raft->ntp());
         return _cloud_storage_partition->make_reader(config, deadline);
     }
 
@@ -274,11 +297,17 @@ public:
     std::optional<model::offset>
     get_cloud_term_last_offset(model::term_id term) const;
 
-private:
-    friend partition_manager;
-    friend replicated_partition_probe;
+    ss::future<std::error_code>
+    cancel_replica_set_update(model::revision_id rev) {
+        return _raft->cancel_configuration_change(rev);
+    }
 
-    consensus_ptr raft() { return _raft; }
+    ss::future<std::error_code>
+    force_abort_replica_set_update(model::revision_id rev) {
+        return _raft->abort_configuration_change(rev);
+    }
+
+    consensus_ptr raft() const { return _raft; }
 
 private:
     consensus_ptr _raft;
@@ -290,9 +319,12 @@ private:
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<feature_table>& _feature_table;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
+    std::optional<s3::bucket_name> _read_replica_bucket{std::nullopt};
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

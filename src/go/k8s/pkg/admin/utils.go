@@ -9,14 +9,20 @@
 
 package admin
 
-import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+import (
+	"context"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+)
 
 // CentralConfigFeatureName is the name of the centralized configuration feature in Redpanda
 const CentralConfigFeatureName = "central_config"
 
 // IsFeatureActive is a helper function that checks if a given feature is active in the cluster
-func IsFeatureActive(c AdminAPIClient, name string) (bool, error) {
-	res, err := c.GetFeatures()
+func IsFeatureActive(
+	ctx context.Context, c AdminAPIClient, name string,
+) (bool, error) {
+	res, err := c.GetFeatures(ctx)
 	if err != nil {
 		return false, err
 	}

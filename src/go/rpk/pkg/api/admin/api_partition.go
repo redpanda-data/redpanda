@@ -10,6 +10,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 )
@@ -33,10 +34,11 @@ type Partition struct {
 
 // GetPartition returns detailed partition information.
 func (a *AdminAPI) GetPartition(
-	namespace, topic string, partition int,
+	ctx context.Context, namespace, topic string, partition int,
 ) (Partition, error) {
 	var pa Partition
 	return pa, a.sendAny(
+		ctx,
 		http.MethodGet,
 		fmt.Sprintf("/v1/partitions/%s/%s/%d", namespace, topic, partition),
 		nil,

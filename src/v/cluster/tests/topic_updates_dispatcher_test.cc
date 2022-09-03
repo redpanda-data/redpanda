@@ -56,8 +56,8 @@ struct topic_table_updates_dispatcher_fixture : topic_table_fixture {
 };
 
 constexpr uint64_t node_initial_capacity(uint32_t cores) {
-    return (cluster::allocation_node::max_allocations_per_core * cores)
-           - cluster::allocation_node::core0_extra_weight;
+    return (topic_table_fixture::partitions_per_shard * cores)
+           - topic_table_fixture::partitions_reserve_shard0;
 }
 
 uint64_t
@@ -115,18 +115,18 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_dispatching_happy_path_delete, topic_table_updates_dispatcher_fixture) {
     create_topics();
-    auto res_1 = dispatcher
-                   .apply_update(serialize_cmd(cluster::delete_topic_cmd(
-                                                 make_tp_ns("test_tp_2"),
-                                                 make_tp_ns("test_tp_2")))
-                                   .get0())
-                   .get0();
-    auto res_2 = dispatcher
-                   .apply_update(serialize_cmd(cluster::delete_topic_cmd(
-                                                 make_tp_ns("test_tp_3"),
-                                                 make_tp_ns("test_tp_3")))
-                                   .get0())
-                   .get0();
+    dispatcher
+      .apply_update(
+        serialize_cmd(cluster::delete_topic_cmd(
+                        make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")))
+          .get0())
+      .get0();
+    dispatcher
+      .apply_update(
+        serialize_cmd(cluster::delete_topic_cmd(
+                        make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")))
+          .get0())
+      .get0();
 
     auto md = table.local().all_topics_metadata();
     BOOST_REQUIRE_EQUAL(md.size(), 1);

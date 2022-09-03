@@ -20,6 +20,7 @@ class KafProducer(BackgroundThreadService):
         self._topic = topic
         self._num_records = num_records
         self._stopping = Event()
+        self._output_line_count = 0
 
     def _worker(self, _idx, node):
         cmd = f"echo $$ ; for (( i=0; i < {self._num_records}; i++ )) ; do export KEY=key-$(printf %08d $i) ; export VALUE={self.value_gen()} ; echo $VALUE | kaf produce -b {self._redpanda.brokers()} --key $KEY {self._topic} ; done"
@@ -36,12 +37,17 @@ class KafProducer(BackgroundThreadService):
                         f"Spawned remote shell {self._pid}")
                     continue
                 else:
+                    self._output_line_count += 1
                     self.logger.debug(line.rstrip())
         except RemoteCommandError:
             if self._stopping.is_set():
                 pass
             else:
                 raise
+
+    @property
+    def output_line_count(self):
+        return self._output_line_count
 
     def stop_node(self, node):
         self._stopping.set()

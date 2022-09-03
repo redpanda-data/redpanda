@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
@@ -214,8 +215,9 @@ inline std::ostream& operator<<(std::ostream& os, principal_type type) {
 /*
  * Kafka principal is (principal-type, principal)
  */
-class acl_principal {
+class acl_principal : public serde::envelope<acl_principal, serde::version<0>> {
 public:
+    acl_principal() = default;
     acl_principal(principal_type type, ss::sstring name)
       : _type(type)
       , _name(std::move(name)) {}
@@ -238,6 +240,8 @@ public:
     principal_type type() const { return _type; }
     bool wildcard() const { return _name == "*"; }
 
+    auto serde_fields() { return std::tie(_type, _name); }
+
 private:
     principal_type _type;
     ss::sstring _name;
@@ -249,10 +253,11 @@ inline const acl_principal acl_wildcard_user(principal_type::user, "*");
  * Resource pattern matches resources using a (type, name, pattern) tuple. The
  * pattern type changes how matching occurs (e.g. literal, name prefix).
  */
-class resource_pattern {
+class resource_pattern
+  : public serde::envelope<resource_pattern, serde::version<0>> {
 public:
     static constexpr const char* wildcard = "*";
-
+    resource_pattern() = default;
     resource_pattern(resource_type type, ss::sstring name, pattern_type pattern)
       : _resource(type)
       , _name(std::move(name))
@@ -281,6 +286,8 @@ public:
     const ss::sstring& name() const { return _name; }
     pattern_type pattern() const { return _pattern; }
 
+    auto serde_fields() { return std::tie(_resource, _name, _pattern); }
+
 private:
     resource_type _resource;
     ss::sstring _name;
@@ -290,8 +297,9 @@ private:
 /*
  * A host (or wildcard) in an ACL rule.
  */
-class acl_host {
+class acl_host : public serde::envelope<acl_host, serde::version<0>> {
 public:
+    acl_host() = default;
     explicit acl_host(const ss::sstring& host)
       : _addr(host) {}
 
@@ -324,9 +332,9 @@ public:
 
     std::optional<ss::net::inet_address> address() const { return _addr; }
 
-private:
-    acl_host() = default;
+    auto serde_fields() { return std::tie(_addr); }
 
+private:
     std::optional<ss::net::inet_address> _addr;
 };
 
@@ -337,8 +345,9 @@ inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
  * permitted to execute an operation on. When associated with a resource, it
  * describes if the principal can execute the operation on that resource.
  */
-class acl_entry {
+class acl_entry : public serde::envelope<acl_entry, serde::version<0>> {
 public:
+    acl_entry() = default;
     acl_entry(
       acl_principal principal,
       acl_host host,
@@ -373,6 +382,10 @@ public:
     acl_operation operation() const { return _operation; }
     acl_permission permission() const { return _permission; }
 
+    auto serde_fields() {
+        return std::tie(_principal, _host, _operation, _permission);
+    }
+
 private:
     acl_principal _principal;
     acl_host _host;
@@ -384,8 +397,9 @@ private:
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
  * binding describes if a principal may access resources.
  */
-class acl_binding {
+class acl_binding : public serde::envelope<acl_binding, serde::version<0>> {
 public:
+    acl_binding() = default;
     acl_binding(resource_pattern pattern, acl_entry entry)
       : _pattern(std::move(pattern))
       , _entry(std::move(entry)) {}
@@ -407,6 +421,8 @@ public:
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
 
+    auto serde_fields() { return std::tie(_pattern, _entry); }
+
 private:
     resource_pattern _pattern;
     acl_entry _entry;
@@ -415,10 +431,38 @@ private:
 /*
  * A filter for matching resources.
  */
-class resource_pattern_filter {
+class resource_pattern_filter
+  : public serde::envelope<resource_pattern_filter, serde::version<0>> {
 public:
-    struct pattern_match {};
+    enum class serialized_pattern_type {
+        literal = 0,
+        prefixed = 1,
+        match = 2,
+    };
+
+    static serialized_pattern_type to_pattern(security::pattern_type from) {
+        switch (from) {
+        case security::pattern_type::literal:
+            return serialized_pattern_type::literal;
+        case security::pattern_type::prefixed:
+            return serialized_pattern_type::prefixed;
+        }
+        __builtin_unreachable();
+    }
+
+    struct pattern_match {
+        friend bool operator==(const pattern_match&, const pattern_match&)
+          = default;
+
+        friend std::ostream&
+        operator<<(std::ostream& os, const pattern_match&) {
+            fmt::print(os, "{{}}");
+            return os;
+        }
+    };
     using pattern_filter_type = std::variant<pattern_type, pattern_match>;
+
+    resource_pattern_filter() = default;
 
     resource_pattern_filter(
       std::optional<resource_type> type,
@@ -449,11 +493,91 @@ public:
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
 
+    friend void read_nested(
+      iobuf_parser& in,
+      resource_pattern_filter& filter,
+      size_t const bytes_left_limit) {
+        using serde::read_nested;
+
+        read_nested(in, filter._resource, bytes_left_limit);
+        read_nested(in, filter._name, bytes_left_limit);
+
+        auto pattern = read_nested<std::optional<serialized_pattern_type>>(
+          in, bytes_left_limit);
+
+        if (!pattern) {
+            filter._pattern = std::nullopt;
+            return;
+        }
+
+        switch (*pattern) {
+        case serialized_pattern_type::literal:
+            filter._pattern = security::pattern_type::literal;
+            break;
+
+        case serialized_pattern_type::prefixed:
+            filter._pattern = security::pattern_type::prefixed;
+            break;
+        case serialized_pattern_type::match:
+            filter._pattern
+              = security::resource_pattern_filter::pattern_match{};
+            break;
+        }
+    }
+
+    friend void write(iobuf& out, resource_pattern_filter filter) {
+        using serde::write;
+        std::optional<serialized_pattern_type> pattern;
+        if (filter.pattern()) {
+            if (std::holds_alternative<
+                  security::resource_pattern_filter::pattern_match>(
+                  *filter.pattern())) {
+                pattern = serialized_pattern_type::match;
+            } else {
+                auto source_pattern = std::get<security::pattern_type>(
+                  *filter.pattern());
+                pattern = to_pattern(source_pattern);
+            }
+        }
+        write(out, filter._resource);
+        write(out, filter._name);
+        write(out, pattern);
+    }
+
+    friend bool
+    operator==(const resource_pattern_filter&, const resource_pattern_filter&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const resource_pattern_filter& f) {
+        fmt::print(
+          o,
+          "{{ resource: {} name: {} pattern: {} }}",
+          f._resource,
+          f._name,
+          f._pattern);
+        return o;
+    }
+
 private:
     std::optional<resource_type> _resource;
     std::optional<ss::sstring> _name;
     std::optional<pattern_filter_type> _pattern;
 };
+
+inline std::ostream& operator<<(
+  std::ostream& os, resource_pattern_filter::serialized_pattern_type type) {
+    using pattern_type = resource_pattern_filter::serialized_pattern_type;
+    switch (type) {
+    case pattern_type::literal:
+        return os << "literal";
+    case pattern_type::match:
+        return os << "match";
+    case pattern_type::prefixed:
+        return os << "prefixed";
+    }
+    __builtin_unreachable();
+}
 
 inline bool
 resource_pattern_filter::matches(const resource_pattern& pattern) const {
@@ -522,8 +646,10 @@ resource_pattern_filter::to_resource_patterns() const {
 /*
  * A filter for matching ACL entries.
  */
-class acl_entry_filter {
+class acl_entry_filter
+  : public serde::envelope<acl_entry_filter, serde::version<0>> {
 public:
+    acl_entry_filter() = default;
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     acl_entry_filter(const acl_entry& entry)
       : acl_entry_filter(
@@ -558,6 +684,25 @@ public:
     std::optional<acl_operation> operation() const { return _operation; }
     std::optional<acl_permission> permission() const { return _permission; }
 
+    auto serde_fields() {
+        return std::tie(_principal, _host, _operation, _permission);
+    }
+
+    friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const acl_entry_filter& f) {
+        fmt::print(
+          o,
+          "{{ pattern: {} host: {} operation: {}, permission: {} }}",
+          f._principal,
+          f._host,
+          f._operation,
+          f._permission);
+        return o;
+    }
+
 private:
     std::optional<acl_principal> _principal;
     std::optional<acl_host> _host;
@@ -584,8 +729,10 @@ inline bool acl_entry_filter::matches(const acl_entry& other) const {
 /*
  * A filter for matching ACL bindings.
  */
-class acl_binding_filter {
+class acl_binding_filter
+  : public serde::envelope<acl_binding_filter, serde::version<0>> {
 public:
+    acl_binding_filter() = default;
     acl_binding_filter(resource_pattern_filter pattern, acl_entry_filter acl)
       : _pattern(std::move(pattern))
       , _acl(std::move(acl)) {}
@@ -606,6 +753,17 @@ public:
 
     const resource_pattern_filter& pattern() const { return _pattern; }
     const acl_entry_filter& entry() const { return _acl; }
+
+    friend bool operator==(const acl_binding_filter&, const acl_binding_filter&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const acl_binding_filter& f) {
+        fmt::print(o, "{{ pattern: {} acl: {} }}", f._pattern, f._acl);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(_pattern, _acl); }
 
 private:
     resource_pattern_filter _pattern;

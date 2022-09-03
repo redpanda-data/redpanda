@@ -13,7 +13,7 @@
 package debug
 
 import (
-	"io/ioutil"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,7 +38,7 @@ func TestLimitedWriter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			lim := &limitedWriter{
-				w:          ioutil.Discard,
+				w:          io.Discard,
 				limitBytes: tt.limit,
 			}
 			var writeErr error

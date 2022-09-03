@@ -20,6 +20,7 @@
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 #include "units.h"
@@ -181,7 +182,8 @@ struct log_config {
  */
 class log_manager {
 public:
-    explicit log_manager(log_config, kvstore& kvstore) noexcept;
+    explicit log_manager(
+      log_config, kvstore& kvstore, storage_resources&) noexcept;
 
     ss::future<log> manage(ntp_config);
 
@@ -227,6 +229,8 @@ public:
 
     int64_t compaction_backlog() const;
 
+    storage_resources& resources() { return _resources; }
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
@@ -234,6 +238,7 @@ private:
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
     ss::future<log> do_manage(ntp_config);
+    ss::future<> clean_close(storage::log&);
 
     /**
      * \brief delete old segments and trigger compacted segments
@@ -246,11 +251,13 @@ private:
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
     ss::future<> recover_log_state(const ntp_config&);
+    ss::future<> async_clear_logs();
 
     ss::future<> housekeeping_scan(model::timestamp);
 
     log_config _config;
     kvstore& _kvstore;
+    storage_resources& _resources;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _compaction_timer;
     logs_type _logs;

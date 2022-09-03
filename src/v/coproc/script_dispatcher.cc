@@ -373,7 +373,7 @@ ss::future<result<bool>> script_dispatcher::heartbeat(int8_t connect_attempts) {
     auto size = co_await _sdb.invoke_on(
       script_database_main_shard,
       [](script_database& sdb) { return sdb.size(); });
-    if (heartbeat.value().data() == static_cast<long>(size)) {
+    if (heartbeat.value().data.size == static_cast<long>(size)) {
         co_return true;
     }
     /// There is a discrepency between the number of registered coprocs

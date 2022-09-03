@@ -10,12 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRemoveCommand(fs afero.Fs) *cobra.Command {
+func newRemoveCommand(fs afero.Fs) *cobra.Command {
 	var coprocType string
 
 	cmd := &cobra.Command{
 		Use:   "remove [NAME]",
-		Short: "Remove inline WASM function.",
+		Short: "Remove inline WASM function",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)

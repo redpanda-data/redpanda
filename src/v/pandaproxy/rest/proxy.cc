@@ -65,23 +65,24 @@ proxy::proxy(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client)
   : _config(config)
-  , _mem_sem(max_memory)
+  , _mem_sem(max_memory, "pproxy/mem")
   , _client(client)
   , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
       "pandaproxy",
+      "rest_proxy",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "header",
       "/definitions",
-      _ctx) {}
+      _ctx,
+      json::serialization_format::application_json) {}
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes());
     return _server.start(
       _config.pandaproxy_api(),
       _config.pandaproxy_api_tls(),
-      _config.advertised_pandaproxy_api(),
-      json::serialization_format::application_json);
+      _config.advertised_pandaproxy_api());
 }
 
 ss::future<> proxy::stop() { return _server.stop(); }

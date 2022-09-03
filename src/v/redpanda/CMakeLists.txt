@@ -10,7 +10,8 @@ set(swags
   hbadger
   transaction
   cluster
-  debug)
+  debug
+  shadow_indexing)
 
 set(swag_files)
 foreach(swag ${swags})
@@ -23,10 +24,21 @@ foreach(swag ${swags})
   list(APPEND swag_files ${${swag}_swagger_files})
 endforeach()
 
+# Client facing utilities
+v_cc_library(
+  NAME clientutil
+  SRCS
+    cluster_config_schema_util.cc
+    ${cluster_config_swagger_files}
+  DEPS
+    v::config
+)
+
 v_cc_library(
   NAME application
   SRCS
     ${swag_files}
+    cluster_config_schema_util.cc
     admin_server.cc
     cli_parser.cc
     request_auth.cc
@@ -56,4 +68,5 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     set_property(TARGET redpanda PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
   endif()
 endif()
+
 install(TARGETS redpanda DESTINATION bin)

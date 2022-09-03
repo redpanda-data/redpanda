@@ -10,16 +10,19 @@ import random
 import socket
 import string
 import requests
+from requests.exceptions import HTTPError
 import time
 
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.admin import Admin
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, SaslCredentials, SecurityConfig
+from rptest.util import expect_http_error
 
 
 class ScramTest(RedpandaTest):
@@ -299,3 +302,90 @@ class ScramLiveUpdateTest(RedpandaTest):
 
         # An unauthenticated client should be accepted again
         assert len(unauthenticated_client.topics()) == 1
+
+
+class ScramBootstrapUserTest(RedpandaTest):
+    BOOTSTRAP_USERNAME = 'bob'
+    BOOTSTRAP_PASSWORD = 'sekrit'
+
+    def __init__(self, *args, **kwargs):
+        # Configure the cluster as a user might configure it for secure
+        # bootstrap: i.e. all auth turned on from moment of creation.
+
+        security_config = SecurityConfig()
+        security_config.enable_sasl = True
+
+        super().__init__(
+            *args,
+            environment={
+                'RP_BOOTSTRAP_USER':
+                f'{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}'
+            },
+            extra_rp_conf={
+                'enable_sasl': True,
+                'admin_api_require_auth': True,
+                'superusers': ['bob']
+            },
+            security=security_config,
+            superuser=SaslCredentials(self.BOOTSTRAP_USERNAME,
+                                      self.BOOTSTRAP_PASSWORD,
+                                      "SCRAM-SHA-256"),
+            **kwargs)
+
+    def _check_http_status_everywhere(self, expect_status, callable):
+        """
+        Check that the callback results in an HTTP error with the
+        given status code from all nodes in the cluster.  This enables
+        checking that auth state has propagated as expected.
+
+        :returns: true if all nodes throw an error with the expected status code
+        """
+
+        for n in self.redpanda.nodes:
+            try:
+                callable(n)
+            except HTTPError as e:
+                if e.response.status_code != expect_status:
+                    return False
+            else:
+                return False
+
+        return True
+
+    @cluster(num_nodes=3)
+    def test_bootstrap_user(self):
+        # Anonymous access should be refused
+        admin = Admin(self.redpanda)
+        with expect_http_error(403):
+            admin.list_users()
+
+        # Access using the bootstrap credentials should succeed
+        admin = Admin(self.redpanda,
+                      auth=(self.BOOTSTRAP_USERNAME, self.BOOTSTRAP_PASSWORD))
+        assert self.BOOTSTRAP_USERNAME in admin.list_users()
+
+        # Modify the bootstrap user's credential
+        admin.update_user(self.BOOTSTRAP_USERNAME, "newpassword",
+                          "SCRAM-SHA-256")
+
+        # Getting 401 with old credentials everywhere will show that the
+        # credential update has propagated to all nodes
+        wait_until(lambda: self._check_http_status_everywhere(
+            401, lambda n: admin.list_users(node=n)),
+                   timeout_sec=10,
+                   backoff_sec=0.5)
+
+        # Using old password should fail
+        with expect_http_error(401):
+            admin.list_users()
+
+        # Using new credential should succeed
+        admin = Admin(self.redpanda,
+                      auth=(self.BOOTSTRAP_USERNAME, 'newpassword'))
+        admin.list_users()
+
+        # Modified credential should survive a restart: this verifies that
+        # the RP_BOOTSTRAP_USER setting does not fight with changes made
+        # by other means.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        admin.list_users()

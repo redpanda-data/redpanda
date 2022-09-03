@@ -11,7 +11,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "kafka/server/flex_versions.h"
+#include "kafka/protocol/flex_versions.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -63,7 +63,10 @@ parse_header(ss::input_stream<char>& src) {
     buf = co_await src.read_exactly(client_id_size);
 
     if (src.eof()) {
-        throw std::runtime_error(fmt::format("Unexpected EOF for client ID"));
+        throw std::runtime_error(fmt::format(
+          "Unexpected EOF for client ID, client_id_size: {}, header: {}",
+          client_id_size,
+          header));
     }
     header.client_id_buffer = std::move(buf);
     header.client_id = std::string_view(
@@ -83,59 +86,6 @@ parse_header(ss::input_stream<char>& src) {
     co_return header;
 }
 
-ss::future<std::pair<std::optional<tagged_fields>, size_t>>
-parse_tags(ss::input_stream<char>& src) {
-    size_t total_bytes_read = 0;
-    auto read_unsigned_vint =
-      [](size_t& total_bytes_read, ss::input_stream<char>& src) {
-          return unsigned_vint::stream_deserialize(src).then(
-            [&total_bytes_read](std::pair<uint32_t, size_t> pair) {
-                auto& [n, bytes_read] = pair;
-                total_bytes_read += bytes_read;
-                return n;
-            });
-      };
-
-    auto num_tags = co_await read_unsigned_vint(total_bytes_read, src);
-    if (num_tags == 0) {
-        /// In the likely event that no tags are parsed as headers, return
-        /// nullopt instead of an empty vector to reduce the memory overhead
-        /// (that will never be used) per request
-        co_return std::make_pair(std::nullopt, total_bytes_read);
-    }
-
-    tagged_fields tags;
-    while (num_tags-- > 0) {
-        auto tag_id = co_await read_unsigned_vint(total_bytes_read, src);
-        auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
-        auto buf = co_await src.read_exactly(next_len);
-        iobuf data;
-        data.append(std::move(buf));
-        total_bytes_read += next_len;
-        tags.emplace_back(tag_id, std::move(data));
-    }
-    co_return std::make_pair(std::move(tags), total_bytes_read);
-}
-
-size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
-    iobuf data;
-    data.append(std::move(buf));
-    request_reader reader(std::move(data));
-    auto size = reader.read_int32();
-    if (size < 0) {
-        throw std::runtime_error("kafka::parse_size_buffer is negative");
-    }
-    return size_t(size);
-}
-
-ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
-    auto buf = co_await src.read_exactly(sizeof(int32_t));
-    if (!buf) {
-        co_return std::nullopt;
-    }
-    co_return parse_size_buffer(std::move(buf));
-}
-
 ss::scattered_message<char> response_as_scattered(response_ptr response) {
     /*
      * response header:
@@ -146,14 +96,8 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
     iobuf tags_header;
     if (response->is_flexible()) {
         response_writer writer(tags_header);
-        if (response->tags()) {
-            writer.write_tags(std::move(*response->tags()));
-        } else {
-            // Currently sending tags to client is an unused feature however if
-            // the request is flexible at least a single 0 byte must be written
-            // to be compliant with the protocol
-            writer.write_tags();
-        }
+        vassert(response->tags(), "If flexible, tags should be filled");
+        writer.write_tags(std::move(*response->tags()));
     }
     const auto size = static_cast<int32_t>(
       sizeof(response->correlation()) + tags_header.size_bytes()

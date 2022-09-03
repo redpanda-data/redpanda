@@ -30,8 +30,9 @@ static ss::logger lg("kvstore");
 
 namespace storage {
 
-kvstore::kvstore(kvstore_config kv_conf)
+kvstore::kvstore(kvstore_config kv_conf, storage_resources& resources)
   : _conf(kv_conf)
+  , _resources(resources)
   , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
@@ -66,7 +67,7 @@ ss::future<> kvstore::start() {
               "cached_bytes",
               [this] { return _probe.cached_bytes; },
               ss::metrics::description("Size of the database in memory")),
-            ss::metrics::make_derive(
+            ss::metrics::make_counter(
               "key_count",
               [this] { return _db.size(); },
               ss::metrics::description("Number of keys in the database")),
@@ -259,7 +260,8 @@ ss::future<> kvstore::roll() {
                  config::shard_local_cfg().storage_read_buffer_size(),
                  config::shard_local_cfg().storage_read_readahead_count(),
                  _conf.sanitize_fileops,
-                 std::nullopt)
+                 std::nullopt,
+                 _resources)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
           });
@@ -300,7 +302,8 @@ ss::future<> kvstore::roll() {
                        config::shard_local_cfg().storage_read_buffer_size(),
                        config::shard_local_cfg().storage_read_readahead_count(),
                        _conf.sanitize_fileops,
-                       std::nullopt)
+                       std::nullopt,
+                       _resources)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
                 });
@@ -385,7 +388,9 @@ ss::future<> kvstore::recover() {
               [] { return std::nullopt; },
               _as,
               config::shard_local_cfg().storage_read_buffer_size(),
-              config::shard_local_cfg().storage_read_readahead_count())
+              config::shard_local_cfg().storage_read_readahead_count(),
+              std::nullopt,
+              _resources)
               .get0();
 
         replay_segments_in_thread(std::move(segments));
@@ -506,12 +511,14 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           seg->offsets().base_offset,
           _next_offset);
 
-        auto input = seg->reader().data_stream(0, ss::default_priority_class());
+        auto reader_handle
+          = seg->reader().data_stream(0, ss::default_priority_class()).get();
         auto parser = std::make_unique<continuous_batch_parser>(
-          std::make_unique<replay_consumer>(this), std::move(input));
+          std::make_unique<replay_consumer>(this), std::move(reader_handle));
         auto p = parser.get();
         p->consume()
           .discard_result()
+          .then([p]() { return p->close(); })
           .finally([parser = std::move(parser)] {})
           .get();
 

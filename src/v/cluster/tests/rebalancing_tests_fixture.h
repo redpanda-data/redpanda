@@ -26,7 +26,9 @@ class rebalancing_tests_fixture : public cluster_test_fixture {
 public:
     rebalancing_tests_fixture()
       : test_logger("rebalancing-test") {
-        set_configuration("enable_auto_rebalance_on_node_add", true);
+        set_configuration(
+          "partition_autobalancing_mode",
+          model::partition_autobalancing_mode::node_add);
     }
 
     ~rebalancing_tests_fixture() {
@@ -47,7 +49,7 @@ public:
         // wait for cluster to be stable
         tests::cooperative_spin_wait_with_timeout(60s, [this, node_count] {
             return std::all_of(
-              apps.cbegin(), apps.cend(), [this, node_count](auto c) {
+              apps.cbegin(), apps.cend(), [node_count](auto c) {
                   return c.second->controller->get_members_table()
                            .local()
                            .all_broker_ids()
@@ -61,7 +63,9 @@ public:
         auto nid = model::node_id(id);
         apps.emplace(nid, create_node_application(nid));
         set_configuration("disable_metrics", true);
-        set_configuration("enable_auto_rebalance_on_node_add", true);
+        set_configuration(
+          "partition_autobalancing_mode",
+          model::partition_autobalancing_mode::node_add);
     }
 
     cluster::topic_configuration create_topic_cfg(
@@ -77,7 +81,7 @@ public:
         auto it = std::find_if(apps.begin(), apps.end(), [](auto& app) {
             auto partition = app.second->partition_manager.local().get(
               model::controller_ntp);
-            return partition && partition->is_leader();
+            return partition && partition->is_elected_leader();
         });
 
         if (it != apps.end()) {
@@ -144,14 +148,13 @@ public:
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
                     *shard, [ntp](cluster::partition_manager& pm) {
-                        return pm.get(ntp)->is_leader();
+                        return pm.get(ntp)->is_elected_leader();
                     });
               })
               .handle_exception([](std::exception_ptr) { return false; });
         }).get0();
 
         auto retries = 10;
-        bool stop = false;
         foreign_batches_t ret;
         auto single_retry = [count, ntp](cluster::partition_manager& pm) {
             auto batches = model::test::make_random_batches(
@@ -159,7 +162,7 @@ public:
             auto rdr = model::make_memory_record_batch_reader(
               std::move(batches));
             // replicate
-            auto f = pm.get(ntp)->replicate(
+            auto f = pm.get(ntp)->raft()->replicate(
               std::move(rdr),
               raft::replicate_options(raft::consistency_level::quorum_ack));
 

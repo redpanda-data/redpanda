@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
+#include "cluster/feature_table.h"
 #include "cluster/rm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -36,13 +37,16 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -53,7 +57,7 @@ FIXTURE_TEST(
       .producer_id = -1,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
-      .pid = model::producer_identity{.id = -1, .epoch = 0},
+      .pid = model::producer_identity{-1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
     auto r1 = stm
@@ -71,7 +75,7 @@ FIXTURE_TEST(
       .producer_id = -1,
       .base_sequence = 0});
     auto bid2 = model::batch_identity{
-      .pid = model::producer_identity{.id = -1, .epoch = 0},
+      .pid = model::producer_identity{-1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
     auto r2 = stm
@@ -81,6 +85,7 @@ FIXTURE_TEST(
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE((bool)r2);
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(
@@ -88,13 +93,16 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -105,7 +113,7 @@ FIXTURE_TEST(
       .producer_id = 1,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
     auto r1 = stm
@@ -123,7 +131,7 @@ FIXTURE_TEST(
       .producer_id = 1,
       .base_sequence = count});
     auto bid2 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = count,
       .last_seq = count + (count - 1)};
     auto r2 = stm
@@ -135,22 +143,26 @@ FIXTURE_TEST(
     BOOST_REQUIRE((bool)r2);
 
     BOOST_REQUIRE(r1.value().last_offset < r2.value().last_offset);
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
-    std::vector<model::offset> offsets;
+    std::vector<kafka::offset> offsets;
 
     auto count = 5;
 
@@ -162,7 +174,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
           .producer_id = 1,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
-          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
           .last_seq = i * count + (count - 1)};
         auto r1 = stm
@@ -187,7 +199,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
           .producer_id = 1,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
-          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
           .last_seq = i * count + (count - 1)};
         auto r1 = stm
@@ -200,19 +212,23 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
         BOOST_REQUIRE((bool)r1);
         BOOST_REQUIRE(r1.value().last_offset == offsets[i]);
     }
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -225,7 +241,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
           .producer_id = 1,
           .base_sequence = i * count});
         auto bid = model::batch_identity{
-          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
           .last_seq = i * count + (count - 1)};
         auto r1 = stm
@@ -246,7 +262,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
           .producer_id = 1,
           .base_sequence = 0});
         auto bid = model::batch_identity{
-          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .pid = model::producer_identity{1, 0},
           .first_seq = 0,
           .last_seq = count - 1};
         auto r1 = stm
@@ -260,19 +276,23 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
           r1
           == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
     }
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -283,7 +303,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
       .producer_id = 1,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
     auto r1 = stm
@@ -301,7 +321,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
       .producer_id = 1,
       .base_sequence = count + 1});
     auto bid2 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = count + 1,
       .last_seq = count + 1 + (count - 1)};
     auto r2 = stm
@@ -312,6 +332,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
                 .get0();
     BOOST_REQUIRE(
       r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(
@@ -319,13 +340,16 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -337,7 +361,7 @@ FIXTURE_TEST(
       .base_sequence = 1});
 
     auto bid = model::batch_identity{
-      .pid = model::producer_identity{.id = 0, .epoch = 0},
+      .pid = model::producer_identity{0, 0},
       .first_seq = 1,
       .last_seq = 1 + (count - 1)};
 
@@ -349,19 +373,23 @@ FIXTURE_TEST(
                .get0();
     BOOST_REQUIRE(
       r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+    feature_table.stop().get0();
 }
 
 FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    ss::sharded<cluster::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
-    wait_for_leader();
+    wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
     auto count = 5;
@@ -372,7 +400,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
       .producer_id = 1,
       .base_sequence = 0});
     auto bid1 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
 
@@ -386,7 +414,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
       .producer_id = 1,
       .base_sequence = 0});
     auto bid2 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
+      .pid = model::producer_identity{1, 0},
       .first_seq = 0,
       .last_seq = count - 1};
 
@@ -404,4 +432,5 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     BOOST_REQUIRE((bool)r1);
     BOOST_REQUIRE((bool)r2);
     BOOST_REQUIRE(r1.value().last_offset == r2.value().last_offset);
+    feature_table.stop().get0();
 }

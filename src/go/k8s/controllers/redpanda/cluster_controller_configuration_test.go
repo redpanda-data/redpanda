@@ -27,7 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -128,7 +127,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Marking the last applied configuration in the configmap")
-			baseConfig, err := testAdminAPI.Config()
+			baseConfig, err := testAdminAPI.Config(context.Background())
 			Expect(err).To(BeNil())
 			expectedAnnotation, err := json.Marshal(baseConfig)
 			Expect(err).To(BeNil())
@@ -672,7 +671,7 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		It("Should report configuration errors present in the .bootstrap.yaml file", func() {
 			// Inject property before creating the cluster, simulating .bootstrap.yaml
 			const val = "nown"
-			_, err := testAdminAPI.PatchClusterConfig(map[string]interface{}{
+			_, err := testAdminAPI.PatchClusterConfig(context.Background(), map[string]interface{}{
 				"unk": val,
 			}, nil)
 			Expect(err).To(BeNil())
@@ -819,68 +818,4 @@ func getInitialTestCluster(
 		},
 	}
 	return key, baseKey, cluster
-}
-
-func resourceGetter(key client.ObjectKey, res client.Object) func() error {
-	return func() error {
-		return k8sClient.Get(context.Background(), key, res)
-	}
-}
-
-func resourceDataGetter(
-	key client.ObjectKey, res client.Object, extractor func() interface{},
-) func() interface{} {
-	return func() interface{} {
-		err := resourceGetter(key, res)()
-		if err != nil {
-			return err
-		}
-		return extractor()
-	}
-}
-
-func annotationGetter(
-	key client.ObjectKey, res client.Object, name string,
-) func() string {
-	return func() string {
-		if err := resourceGetter(key, res)(); err != nil {
-			return fmt.Sprintf("client error: %+v", err)
-		}
-		if sts, ok := res.(*appsv1.StatefulSet); ok {
-			return sts.Spec.Template.Annotations[name]
-		}
-		return res.GetAnnotations()[name]
-	}
-}
-
-func clusterConfiguredConditionGetter(
-	key client.ObjectKey,
-) func() *v1alpha1.ClusterCondition {
-	return func() *v1alpha1.ClusterCondition {
-		var cluster v1alpha1.Cluster
-		if err := k8sClient.Get(context.Background(), key, &cluster); err != nil {
-			return nil
-		}
-		return cluster.Status.GetCondition(v1alpha1.ClusterConfiguredConditionType)
-	}
-}
-
-func clusterConfiguredConditionStatusGetter(key client.ObjectKey) func() bool {
-	return func() bool {
-		cond := clusterConfiguredConditionGetter(key)()
-		return cond != nil && cond.Status == corev1.ConditionTrue
-	}
-}
-
-func clusterUpdater(
-	clusterNamespacedName types.NamespacedName, upd func(*v1alpha1.Cluster),
-) func() error {
-	return func() error {
-		cl := &v1alpha1.Cluster{}
-		if err := k8sClient.Get(context.Background(), clusterNamespacedName, cl); err != nil {
-			return err
-		}
-		upd(cl)
-		return k8sClient.Update(context.Background(), cl)
-	}
 }

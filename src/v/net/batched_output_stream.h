@@ -12,14 +12,26 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/semaphore.h"
 
 #include <seastar/core/iostream.hh>
-#include <seastar/core/semaphore.hh>
 
 #include <cstddef>
 #include <memory>
 
 namespace net {
+
+class batched_output_stream_closed : std::exception {
+public:
+    batched_output_stream_closed(size_t ignored_bytes)
+      : msg(fmt::format(
+        "Output stream closed (dropped {} bytes)", ignored_bytes)) {}
+
+    const char* what() const noexcept final { return msg.c_str(); }
+
+private:
+    std::string msg;
+};
 
 /// \brief batch operations for zero copy interface of an output_stream<char>
 class batched_output_stream {
@@ -61,7 +73,7 @@ private:
 
     ss::output_stream<char> _out;
     size_t _cache_size{0};
-    std::unique_ptr<ss::semaphore> _write_sem;
+    std::unique_ptr<ssx::semaphore> _write_sem;
     size_t _unflushed_bytes{0};
     bool _closed = false;
 };

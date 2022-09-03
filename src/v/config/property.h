@@ -113,8 +113,13 @@ public:
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w) const override {
-        json::rjson_serialize(w, _value);
+    void to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact)
+      const override {
+        if (is_secret() && !is_default() && redact == redact_secrets::yes) {
+            json::rjson_serialize(w, secret_placeholder);
+        } else {
+            json::rjson_serialize(w, _value);
+        }
     }
 
     void set_value(std::any v) override {
@@ -377,7 +382,7 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::is_same_v<type, bool>) {
         // boolean check must come before is_integral check
         return "boolean";
-    } else if constexpr (reflection::is_std_optional_v<type>) {
+    } else if constexpr (reflection::is_std_optional<type>) {
         return property_type_name<typename type::value_type>();
     } else if constexpr (is_collection<type>) {
         return property_type_name<typename type::value_type>();
@@ -412,10 +417,17 @@ consteval std::string_view property_type_name() {
         return "broker_endpoint";
     } else if constexpr (std::is_same_v<type, model::rack_id>) {
         return "rack_id";
+    } else if constexpr (std::is_same_v<
+                           type,
+                           model::partition_autobalancing_mode>) {
+        return "partition_autobalancing_mode";
     } else if constexpr (std::is_floating_point_v<type>) {
         return "number";
     } else if constexpr (std::is_integral_v<type>) {
         return "integer";
+    } else if constexpr (std::
+                           is_same_v<type, model::cloud_credentials_source>) {
+        return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }
@@ -428,12 +440,28 @@ consteval std::string_view property_units_name() {
         return "ms";
     } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
         return "s";
-    } else if constexpr (reflection::is_std_optional_v<type>) {
+    } else if constexpr (reflection::is_std_optional<type>) {
         return property_units_name<typename type::value_type>();
     } else {
         // This will be transformed to nullopt at runtime: returning
         // std::optional from this function triggered a clang crash.
         return "";
+    }
+}
+
+template<typename T>
+consteval bool is_array() {
+    if constexpr (
+      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
+        // Special case for strings, which are collections but we do not
+        // want to report them that way.
+        return false;
+    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
+        return true;
+    } else if constexpr (reflection::is_std_optional<T>) {
+        return is_array<typename T::value_type>();
+    } else {
+        return false;
     }
 }
 
@@ -459,25 +487,12 @@ std::optional<std::string_view> property<T>::units_name() const {
 
 template<typename T>
 bool property<T>::is_nullable() const {
-    if constexpr (reflection::is_std_optional_v<std::decay_t<T>>) {
-        return true;
-    } else {
-        return false;
-    }
+    return reflection::is_std_optional<std::decay_t<T>>;
 }
 
 template<typename T>
 bool property<T>::is_array() const {
-    if constexpr (
-      std::is_same_v<T, ss::sstring> || std::is_same_v<T, std::string>) {
-        // Special case for strings, which are collections but we do not
-        // want to report them that way.
-        return false;
-    } else if constexpr (detail::is_collection<std::decay_t<T>>) {
-        return true;
-    } else {
-        return false;
-    }
+    return detail::is_array<T>();
 }
 
 /*
@@ -612,19 +627,19 @@ public:
     }
 
     void print(std::ostream& o) const final {
-        o << name() << ":";
-
-        if (is_secret() && !is_default()) {
-            o << secret_placeholder;
-        } else {
-            o << _value.value_or(-1ms);
-        }
+        vassert(!is_secret(), "{} must not be a secret", name());
+        o << name() << ":" << _value.value_or(-1ms);
     }
 
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
     // forced to consume the property as a json object.
-    void to_json(json::Writer<json::StringBuffer>& w) const final {
+    void
+    to_json(json::Writer<json::StringBuffer>& w, redact_secrets) const final {
+        // TODO: there's nothing forcing the retention duration to be a
+        // non-secret; if a secret retention duration is ever introduced,
+        // redact it, but consider the implications on the JSON type.
+        vassert(!is_secret(), "{} must not be a secret", name());
         json::rjson_serialize(w, _value.value_or(-1ms));
     }
 

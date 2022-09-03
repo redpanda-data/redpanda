@@ -10,8 +10,8 @@
 package config
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 
@@ -25,7 +25,7 @@ import (
 func newEditCommand(fs afero.Fs, all *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit cluster configuration properties.",
+		Short: "Edit cluster configuration properties",
 		Long: `Edit cluster-wide configuration properties.
 
 This command opens a text editor to modify the cluster's configuration.
@@ -51,14 +51,14 @@ to edit all properties including these tunables.
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
-			schema, err := client.ClusterConfigSchema()
+			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config()
+			currentConfig, err := client.Config(cmd.Context())
 			out.MaybeDie(err, "unable to get current config: %v", err)
 
-			err = executeEdit(client, schema, currentConfig, all)
+			err = executeEdit(cmd.Context(), client, schema, currentConfig, all)
 			out.MaybeDie(err, "unable to edit: %v", err)
 		},
 	}
@@ -66,13 +66,14 @@ to edit all properties including these tunables.
 }
 
 func executeEdit(
+	ctx context.Context,
 	client *admin.AdminAPI,
 	schema admin.ConfigSchema,
 	currentConfig admin.Config,
 	all *bool,
 ) error {
 	// Generate a yaml template for editing
-	file, err := ioutil.TempFile("/tmp", "config_*.yaml")
+	file, err := os.CreateTemp("/tmp", "config_*.yaml")
 	filename := file.Name()
 	defer func() {
 		err := os.Remove(filename)
@@ -115,7 +116,7 @@ func executeEdit(
 	}
 
 	// Read back template & parse
-	err = importConfig(client, filename, currentConfig, schema, *all)
+	err = importConfig(ctx, client, filename, currentConfig, schema, *all)
 	if err != nil {
 		return fmt.Errorf("error updating config: %v", err)
 	}

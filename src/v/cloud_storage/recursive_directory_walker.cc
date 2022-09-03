@@ -10,6 +10,7 @@
 
 #include "cloud_storage/recursive_directory_walker.h"
 
+#include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
@@ -29,7 +30,8 @@
 namespace cloud_storage {
 
 ss::future<std::pair<uint64_t, std::vector<file_list_item>>>
-recursive_directory_walker::walk(ss::sstring start_dir) {
+recursive_directory_walker::walk(
+  ss::sstring start_dir, const access_time_tracker& tracker) {
     gate_guard guard{_gate};
 
     std::vector<file_list_item> files;
@@ -49,9 +51,13 @@ recursive_directory_walker::walk(ss::sstring start_dir) {
         try {
             ss::file target_dir = co_await open_directory(target);
             auto sub = target_dir.list_directory(
-              [&files, &current_cache_size, &dirlist, _target{target}](
-                ss::directory_entry entry) -> ss::future<> {
+              [&files,
+               &current_cache_size,
+               &dirlist,
+               _target{target},
+               _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
                   auto target{_target};
+                  auto tracker{_tracker};
                   vlog(cst_log.debug, "Looking at directory {}", target);
 
                   auto entry_path = std::filesystem::path(target)
@@ -64,7 +70,9 @@ recursive_directory_walker::walk(ss::sstring start_dir) {
                       auto file_stats = co_await ss::file_stat(
                         entry_path.string());
 
-                      auto last_access_timepoint = file_stats.time_accessed;
+                      auto last_access_timepoint
+                        = tracker.estimate_timestamp(entry_path.native())
+                            .value_or(file_stats.time_accessed);
 
                       current_cache_size += static_cast<uint64_t>(
                         file_stats.size);

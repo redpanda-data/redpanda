@@ -26,7 +26,7 @@ namespace rpc {
 
 /// \brief most service implementations will be codegenerated
 struct service {
-    template<typename Input, typename Output>
+    template<typename Input, typename Output, typename Codec>
     struct execution_helper;
 
     service() = default;
@@ -50,10 +50,29 @@ private:
     seastar::sstring _what;
 };
 
-template<typename Input, typename Output>
+template<typename Input, typename Output, typename Codec>
 struct service::execution_helper {
     using input = Input;
     using output = Output;
+
+    /*
+     * ensure that request and response types are compatible. this solves a
+     * particular class of issue where someone marks for example the request as
+     * exempt but forgets to mark the response. in this scenario it is then
+     * possible for the assertion regarding unexpected encodings to fire.
+     */
+    static_assert(is_rpc_adl_exempt<Input> == is_rpc_adl_exempt<Output>);
+    static_assert(is_rpc_serde_exempt<Input> == is_rpc_serde_exempt<Output>);
+
+    /*
+     * provided that input/output are no exempt from serde support, require that
+     * they are both serde envelopes. this prevents a class of situation in
+     * which a request/response is a natively supported type, but not actually
+     * an envelope, such as a request being a raw integer or a named_type. we
+     * want our rpc's to be versioned.
+     */
+    static_assert(is_rpc_serde_exempt<Input> || serde::is_envelope<Input>);
+    static_assert(is_rpc_serde_exempt<Output> || serde::is_envelope<Output>);
 
     template<typename Func>
     static ss::future<netbuf> exec(
@@ -63,7 +82,7 @@ struct service::execution_helper {
       Func&& f) {
         return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
           .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
-              return parse_type<Input>(in, ctx.get_header())
+              return parse_type<Input, Codec>(in, ctx.get_header())
                 .then_wrapped([f = std::forward<Func>(f),
                                &ctx](ss::future<Input> input_f) mutable {
                     if (input_f.failed()) {
@@ -74,13 +93,32 @@ struct service::execution_helper {
                     auto input = input_f.get0();
                     return f(std::move(input), ctx);
                 })
-                .then([method_id](Output out) mutable {
+                .then([method_id, &ctx](Output out) mutable {
+                    const auto version = Codec::response_version(
+                      ctx.get_header());
                     auto b = std::make_unique<netbuf>();
                     auto raw_b = b.get();
                     raw_b->set_service_method_id(method_id);
-                    return reflection::async_adl<Output>{}
-                      .to(raw_b->buffer(), std::move(out))
-                      .then([b = std::move(b)] { return std::move(*b); });
+                    raw_b->set_version(version);
+                    return Codec::encode(
+                             raw_b->buffer(), std::move(out), version)
+                      .then([version, b = std::move(b)](
+                              transport_version effective_version) {
+                          /*
+                           * this assertion is safe because the conditions under
+                           * which this assertion would fail should have been
+                           * verified in parse_type above.
+                           */
+                          vassert(
+                            effective_version == version,
+                            "Unexpected encoding at effective {} != {}. Input "
+                            "{} Output {}",
+                            effective_version,
+                            version,
+                            serde::type_str<Input>(),
+                            serde::type_str<Output>());
+                          return std::move(*b);
+                      });
                 });
           });
     }

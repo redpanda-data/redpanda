@@ -171,9 +171,13 @@ std::ostream& operator<<(std::ostream& o, const segment_set& s) {
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
-static ss::future<segment_set>
-unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
-    return ss::async([segments = std::move(segments), &as]() mutable {
+static ss::future<segment_set> unsafe_do_recover(
+  segment_set&& segments,
+  std::optional<ss::sstring> last_clean_segment,
+  ss::abort_source& as) {
+    return ss::async([segments = std::move(segments),
+                      last_clean_segment = std::move(last_clean_segment),
+                      &as]() mutable {
         if (segments.empty() || as.abort_requested()) {
             return std::move(segments);
         }
@@ -197,35 +201,29 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
                 }
             }
 
-            if (i + 1 < good.size()) {
-                try {
-                    // use the segment materialize instead of going through
-                    // the index directly to hydrate the max_offset state
-                    if (s.materialize_index().get()) {
-                        vassert(
-                          s.offsets().dirty_offset == s.index().max_offset(),
-                          "dirty_offset and index max_offset must be equal for "
-                          "segment {}",
-                          s);
-                    } else {
-                        to_recover_set.insert(&s);
-                    }
-                } catch (...) {
-                    vlog(
-                      stlog.info,
-                      "Error materializing index:{}. Recovering parent "
-                      "segment:{}. Details:{}",
-                      s.index().filename(),
-                      s.reader().filename(),
-                      std::current_exception());
+            try {
+                // use the segment materialize instead of going through
+                // the index directly to hydrate the max_offset state
+                if (s.materialize_index().get()) {
+                    vassert(
+                      s.offsets().dirty_offset == s.index().max_offset(),
+                      "dirty_offset and index max_offset must be equal for "
+                      "segment {}",
+                      s);
+                } else {
                     to_recover_set.insert(&s);
                 }
-            } else {
-                // always recover the last segment
+            } catch (...) {
+                vlog(
+                  stlog.info,
+                  "Error materializing index:{}. Recovering parent "
+                  "segment:{}. Details:{}",
+                  s.index().filename(),
+                  s.filename(),
+                  std::current_exception());
                 to_recover_set.insert(&s);
             }
         }
-
         segment_set::underlying_t to_recover;
         // keep segments sorted
         auto good_end = std::stable_partition(
@@ -254,7 +252,16 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
               vlog(stlog.info, "Removing empty segment: {}", segment);
               segment->close().get();
               ss::remove_file(segment->reader().filename()).get();
-              ss::remove_file(segment->index().filename()).get();
+              try {
+                  ss::remove_file(segment->index().filename()).get();
+              } catch (const std::filesystem::filesystem_error& e) {
+                  // Ignore ENOENT on deletion: segments are allowed to
+                  // exist without an index if redpanda shutdown without
+                  // a flush.
+                  if (e.code() != std::errc::no_such_file_or_directory) {
+                      throw;
+                  }
+              }
               return false;
           });
         // remove empty from to recover set
@@ -271,6 +278,20 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
             if (unlikely(as.abort_requested())) {
                 return segment_set(std::move(good));
             }
+
+            if (
+              last_clean_segment
+              && std::filesystem::path(s->filename()).filename().string()
+                   == last_clean_segment.value()) {
+                vlog(
+                  stlog.debug,
+                  "Skipping recovery of {}, it is marked clean",
+                  s);
+                good.emplace_back(std::move(s));
+                continue;
+            }
+
+            // Check if the segment was marked clean on shutdown
             auto replayer = log_replayer(*s);
             auto recovered = replayer.recover_in_thread(
               ss::default_priority_class());
@@ -296,8 +317,10 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
     });
 }
 
-static ss::future<segment_set>
-do_recover(segment_set&& segments, ss::abort_source& as) {
+static ss::future<segment_set> do_recover(
+  segment_set&& segments,
+  std::optional<ss::sstring> last_clean_segment,
+  ss::abort_source& as) {
     // light-weight copy used for clean-up if recovery fails
     segment_set::underlying_t copy;
     copy.reserve(segments.size());
@@ -309,7 +332,7 @@ do_recover(segment_set&& segments, ss::abort_source& as) {
     // are any pending io operations on a file associated with the segment
     // at the time of destruction seastar will complain about the file handle
     // being destroyed with pending ops.
-    return unsafe_do_recover(std::move(segments), as)
+    return unsafe_do_recover(std::move(segments), last_clean_segment, as)
       .handle_exception(
         [copy = std::move(copy)](const std::exception_ptr& ex) mutable {
             return ss::do_with(
@@ -341,7 +364,8 @@ static ss::future<segment_set::underlying_t> open_segments(
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as,
   size_t buf_size,
-  unsigned read_ahead) {
+  unsigned read_ahead,
+  storage_resources& resources) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
@@ -350,7 +374,8 @@ static ss::future<segment_set::underlying_t> open_segments(
        sanitize_fileops,
        dir = std::move(dir),
        buf_size,
-       read_ahead](segs_type& segs) {
+       read_ahead,
+       &resources](segs_type& segs) {
           auto f = directory_walker::walk(
             dir,
             [&as,
@@ -359,7 +384,8 @@ static ss::future<segment_set::underlying_t> open_segments(
              sanitize_fileops,
              &segs,
              buf_size,
-             read_ahead](ss::directory_entry seg) {
+             read_ahead,
+             &resources](ss::directory_entry seg) {
                 // abort if requested
                 if (as.abort_requested()) {
                     return ss::now();
@@ -388,7 +414,8 @@ static ss::future<segment_set::underlying_t> open_segments(
                          sanitize_fileops,
                          cache_factory(),
                          buf_size,
-                         read_ahead)
+                         read_ahead,
+                         resources)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
@@ -411,23 +438,30 @@ ss::future<segment_set> recover_segments(
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as,
   size_t read_buf_size,
-  unsigned read_readahead_count) {
+  unsigned read_readahead_count,
+  std::optional<ss::sstring> last_clean_segment,
+  storage_resources& resources) {
     return ss::recursive_touch_directory(path.string())
       .then([&as,
              cache_factory,
              sanitize_fileops,
              path = std::move(path),
              read_buf_size,
-             read_readahead_count] {
+             read_readahead_count,
+             &resources] {
           return open_segments(
             path.string(),
             sanitize_fileops,
             cache_factory,
             as,
             read_buf_size,
-            read_readahead_count);
+            read_readahead_count,
+            resources);
       })
-      .then([&as, is_compaction_enabled](segment_set::underlying_t segs) {
+      .then([&as,
+             is_compaction_enabled,
+             last_clean_segment = std::move(last_clean_segment)](
+              segment_set::underlying_t segs) {
           auto segments = segment_set(std::move(segs));
           // we have to mark compacted segments before recovery to allow reading
           // gaps introduced by compaction
@@ -436,7 +470,7 @@ ss::future<segment_set> recover_segments(
                   s->mark_as_compacted_segment();
               }
           }
-          return do_recover(std::move(segments), as);
+          return do_recover(std::move(segments), last_clean_segment, as);
       });
 }
 

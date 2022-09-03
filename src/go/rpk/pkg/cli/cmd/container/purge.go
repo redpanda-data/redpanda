@@ -19,10 +19,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Purge() *cobra.Command {
+func newPurgeCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "purge",
-		Short: "Stop and remove an existing local container cluster's data.",
+		Short: "Stop and remove an existing local container cluster's data",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			c, err := common.NewDockerClient()
 			if err != nil {

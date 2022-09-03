@@ -150,12 +150,12 @@ struct mem_log_impl final : log::impl {
     mem_log_impl& operator=(const mem_log_impl&) = delete;
     mem_log_impl(mem_log_impl&&) noexcept = default;
     mem_log_impl& operator=(mem_log_impl&&) noexcept = delete;
-    ss::future<> close() final {
+    ss::future<std::optional<ss::sstring>> close() final {
         if (_eviction_monitor) {
             _eviction_monitor->promise.set_exception(
               std::runtime_error("log closed"));
         }
-        return ss::make_ready_future<>();
+        return ss::make_ready_future<std::optional<ss ::sstring>>(std::nullopt);
     }
     ss::future<> remove() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }

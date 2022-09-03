@@ -29,6 +29,18 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kafka {
+
+using offset = named_type<int64_t, struct kafka_offset_type>;
+
+} // namespace kafka
+
+namespace s3 {
+
+using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
+
+} // namespace s3
+
 namespace model {
 
 // Named after Kafka cleanup.policy topic property
@@ -173,6 +185,20 @@ struct topic_partition {
 
     friend std::ostream& operator<<(std::ostream&, const topic_partition&);
 
+    friend void read_nested(
+      iobuf_parser& in, topic_partition& tp, size_t const bytes_left_limit) {
+        using serde::read_nested;
+
+        read_nested(in, tp.topic, bytes_left_limit);
+        read_nested(in, tp.partition, bytes_left_limit);
+    }
+
+    friend void write(iobuf& out, topic_partition tp) {
+        using serde::write;
+
+        write(out, std::move(tp.topic));
+        write(out, tp.partition);
+    }
     template<typename H>
     friend H AbslHashValue(H h, const topic_partition& tp) {
         return H::combine(std::move(h), tp.topic, tp.partition);
@@ -201,6 +227,21 @@ struct ntp {
 
     bool operator<(const ntp& other) const {
         return ns < other.ns || (ns == other.ns && tp < other.tp);
+    }
+
+    friend void
+    read_nested(iobuf_parser& in, ntp& ntp, size_t const bytes_left_limit) {
+        using serde::read_nested;
+
+        read_nested(in, ntp.ns, bytes_left_limit);
+        read_nested(in, ntp.tp, bytes_left_limit);
+    }
+
+    friend void write(iobuf& out, ntp ntp) {
+        using serde::write;
+
+        write(out, std::move(ntp.ns));
+        write(out, std::move(ntp.tp));
     }
 
     ss::sstring path() const;
@@ -242,7 +283,7 @@ enum class shadow_indexing_mode : uint8_t {
     drop_archival = 0xfe,
     // Remove fetch flag (used for incremental updates)
     drop_fetch = 0xfd,
-    // Remove both fetch and archival falgs
+    // Remove both fetch and archival flags
     drop_full = 0xfc,
 };
 

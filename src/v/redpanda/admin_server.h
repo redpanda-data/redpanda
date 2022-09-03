@@ -10,11 +10,13 @@
  */
 
 #pragma once
+#include "archival/service.h"
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
 #include "model/metadata.h"
 #include "request_auth.h"
+#include "rpc/connection_cache.h"
 #include "seastarx.h"
 
 #include <seastar/core/scheduling.hh>
@@ -48,7 +50,9 @@ public:
       ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
-      ss::sharded<cluster::metadata_cache>&);
+      ss::sharded<cluster::metadata_cache>&,
+      ss::sharded<archival::scheduler_service>&,
+      ss::sharded<rpc::connection_cache>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -92,6 +96,20 @@ private:
         return auth_state;
     }
 
+    void log_exception(
+      const ss::sstring& url,
+      const request_auth_result& auth_state,
+      std::exception_ptr eptr) const;
+
+    template<typename R>
+    auto exception_intercepter(
+      const ss::sstring& url, const request_auth_result& auth_state) {
+        return [this, url, auth_state](std::exception_ptr eptr) mutable {
+            log_exception(url, auth_state, eptr);
+            return ss::make_exception_future<R>(eptr);
+        };
+    };
+
     /**
      * Helper for binding handlers to routes, which also adds in
      * authentication step and common request logging.  Expects
@@ -109,10 +127,20 @@ private:
               // from authenticate().
               log_request(*req, auth_state);
 
+              // Intercept exceptions
+              const auto url = req->get_url();
               if constexpr (peek_auth) {
-                  return handler(std::move(req), auth_state);
+                  return handler(std::move(req), auth_state)
+                    .handle_exception(
+                      exception_intercepter<
+                        decltype(handler(std::move(req), auth_state).get0())>(
+                        url, auth_state));
+
               } else {
-                  return handler(std::move(req));
+                  return handler(std::move(req))
+                    .handle_exception(exception_intercepter<
+                                      decltype(handler(std::move(req)).get0())>(
+                      url, auth_state));
               }
           });
     }
@@ -135,7 +163,14 @@ private:
 
               log_request(req, auth_state);
 
-              return handler(req, reply);
+              /// Intercept and log exceptions
+              try {
+                  return handler(req, reply);
+              } catch (...) {
+                  log_exception(
+                    req.get_url(), auth_state, std::current_exception());
+                  throw;
+              }
           },
           "json"};
 
@@ -162,6 +197,7 @@ private:
     void register_transaction_routes();
     void register_debug_routes();
     void register_cluster_routes();
+    void register_shadow_indexing_routes();
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
@@ -170,6 +206,9 @@ private:
       model::node_id id = model::node_id{-1}) const;
     ss::future<ss::httpd::redirect_exception>
     redirect_to_leader(ss::httpd::request& req, model::ntp const& ntp) const;
+
+    ss::future<ss::json::json_return_type> cancel_node_partition_moves(
+      ss::httpd::request& req, cluster::partition_move_direction direction);
 
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;
@@ -195,6 +234,8 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
     request_authenticator _auth;
     bool _ready{false};
+    ss::sharded<archival::scheduler_service>& _archival_service;
 };

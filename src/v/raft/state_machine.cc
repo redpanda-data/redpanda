@@ -26,7 +26,7 @@ state_machine::state_machine(
   , _bootstrap_last_applied(_raft->read_last_applied()) {}
 
 ss::future<> state_machine::start() {
-    vlog(_log.info, "Starting state machine for ntp={}", _raft->ntp());
+    vlog(_log.debug, "Starting state machine for ntp={}", _raft->ntp());
     ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); }, [this] { return apply(); });

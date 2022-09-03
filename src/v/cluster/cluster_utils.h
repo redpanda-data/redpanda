@@ -10,10 +10,11 @@
  */
 
 #pragma once
-#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/types.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
 #include "net/dns.h"
@@ -23,6 +24,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <system_error>
 #include <utility>
 
 namespace detail {
@@ -206,17 +208,29 @@ bool are_replica_sets_equal(
 template<typename Cmd>
 ss::future<std::error_code> replicate_and_wait(
   ss::sharded<controller_stm>& stm,
+  ss::sharded<feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as,
   Cmd&& cmd,
-  model::timeout_clock::time_point timeout) {
+  model::timeout_clock::time_point timeout,
+  std::optional<model::term_id> term = std::nullopt) {
+    const bool use_serde_serialization = feature_table.local().is_active(
+      feature::serde_raft_0);
     return stm.invoke_on(
       controller_stm_shard,
-      [cmd = std::forward<Cmd>(cmd), &as = as, timeout](
-        controller_stm& stm) mutable {
+      [cmd = std::forward<Cmd>(cmd),
+       term,
+       &as = as,
+       timeout,
+       use_serde_serialization](controller_stm& stm) mutable {
+          if (likely(use_serde_serialization)) {
+              auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
+              return stm.replicate_and_wait(
+                std::move(b), timeout, as.local(), term);
+          }
           return serialize_cmd(std::forward<Cmd>(cmd))
-            .then([&stm, timeout, &as](model::record_batch b) {
+            .then([&stm, timeout, term, &as](model::record_batch b) {
                 return stm.replicate_and_wait(
-                  std::move(b), timeout, as.local());
+                  std::move(b), timeout, as.local(), term);
             });
       });
 }
@@ -235,9 +249,63 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
     case op_t::update:
     case op_t::update_finished:
     case op_t::update_properties:
+    case op_t::cancel_update:
+    case op_t::force_abort_update:
         return false;
     }
     __builtin_unreachable();
 }
+/**
+ * Subtracts second replica set from the first one. Result contains only brokers
+ * shards that are present in first replica set but not in the second one.
+ */
+inline std::vector<model::broker_shard> subtract_replica_sets(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    std::vector<model::broker_shard> ret;
+    std::copy_if(
+      lhs.begin(),
+      lhs.end(),
+      std::back_inserter(ret),
+      [&rhs](const model::broker_shard& bs) {
+          return std::find(rhs.begin(), rhs.end(), bs) == rhs.end();
+      });
+    return ret;
+}
+
+/**
+ * Subtracts second replica set from the first one. Result contains only brokers
+ * that node_ids are present in the first list but not the other one
+ */
+inline std::vector<model::broker_shard> subtract_replica_sets_by_node_id(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    std::vector<model::broker_shard> ret;
+    std::copy_if(
+      lhs.begin(),
+      lhs.end(),
+      std::back_inserter(ret),
+      [&rhs](const model::broker_shard& lhs_bs) {
+          return std::find_if(
+                   rhs.begin(),
+                   rhs.end(),
+                   [&lhs_bs](const model::broker_shard& rhs_bs) {
+                       return rhs_bs.node_id == lhs_bs.node_id;
+                   })
+                 == rhs.end();
+      });
+    return ret;
+}
+// check if replica set contains a node
+inline bool contains_node(
+  const std::vector<model::broker_shard>& replicas, model::node_id id) {
+    return std::find_if(
+             replicas.begin(),
+             replicas.end(),
+             [id](const model::broker_shard& bs) { return bs.node_id == id; })
+           != replicas.end();
+}
+
+cluster::errc map_update_interruption_error_code(std::error_code);
 
 } // namespace cluster

@@ -8,6 +8,8 @@
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/metrics.hh>
+
 #include <chrono>
 
 namespace kafka {
@@ -76,7 +78,7 @@ fetch_session_cache::maybe_get_session(const fetch_request& req) {
         // Any session specified in a FULL fetch request will be closed.
         if (session_id != invalid_fetch_session_id) {
             if (auto it = _sessions.find(session_id); it != _sessions.end()) {
-                vlog(klog.info, "removing fetch session {}", session_id);
+                vlog(klog.debug, "removing fetch session {}", session_id);
                 _sessions_mem_usage -= it->second->mem_usage();
                 _sessions.erase(it);
             }
@@ -104,7 +106,7 @@ fetch_session_cache::maybe_get_session(const fetch_request& req) {
           "fetch session {} already exists, can not insert the session",
           *new_id);
 
-        vlog(klog.info, "fetch session created: {}", *new_id);
+        vlog(klog.debug, "fetch session created: {}", *new_id);
         _sessions_mem_usage += it->second->mem_usage();
         return fetch_session_ctx(it->second, true);
     }

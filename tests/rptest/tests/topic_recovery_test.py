@@ -5,15 +5,15 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
-
 import datetime
+import io
 import json
 import os
+import pprint
 import time
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 from typing import Optional, Callable
 
-import xxhash
 from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
@@ -22,168 +22,26 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
-
-default_log_segment_size = 1048576  # 1MB
-
-NTP = namedtuple("NTP", ['ns', 'topic', 'partition'])
-
-TopicManifestMetadata = namedtuple('TopicManifestMetadata',
-                                   ['ntp', 'revision'])
-
-SegmentMetadata = namedtuple(
-    'SegmentMetadata',
-    ['ntp', 'revision', 'base_offset', 'term', 'md5', 'size'])
-
-SegmentPathComponents = namedtuple('SegmentPathComponents',
-                                   ['ntp', 'revision', 'name'])
-
-ManifestPathComponents = namedtuple('ManifestPathComponents',
-                                    ['ntp', 'revision'])
-
-
-def _parse_s3_manifest_path(path):
-    """Parse S3 manifest path. Return ntp and revision.
-    Sample name: 50000000/meta/kafka/panda-topic/0_19/manifest.json
-    """
-    items = path.split('/')
-    ns = items[2]
-    topic = items[3]
-    part_rev = items[4].split('_')
-    partition = int(part_rev[0])
-    revision = int(part_rev[1])
-    ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return ManifestPathComponents(ntp=ntp, revision=revision)
-
-
-def _parse_s3_segment_path(path):
-    """Parse S3 segment path. Return ntp, revision and name.
-    Sample name: b525cddd/kafka/panda-topic/0_9/4109-1-v1.log
-    """
-    items = path.split('/')
-    ns = items[1]
-    topic = items[2]
-    part_rev = items[3].split('_')
-    partition = int(part_rev[0])
-    revision = int(part_rev[1])
-    fname = items[4]
-    ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return SegmentPathComponents(ntp=ntp, revision=revision, name=fname)
-
-
-def _parse_checksum_entry(path, value, ignore_rev):
-    """Parse output of the '_collect_file_checksums. Interprets path as a
-    normalized path
-    (e.g. <ns>/<topic>/<partition>_<revision>/<baseoffset>-<term>-v1.log).
-    The value should contain a pair of md5 hash and file size."""
-    md5, segment_size = value
-    items = path.split('/')
-    ns = items[0]
-    topic = items[1]
-    part_rev = items[2].split('_')
-    partition = int(part_rev[0])
-    revision = 0 if ignore_rev else int(part_rev[1])
-    fname = items[3].split('-')
-    base_offset = int(fname[0])
-    term = int(fname[1])
-    ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return SegmentMetadata(ntp=ntp,
-                           revision=revision,
-                           base_offset=base_offset,
-                           term=term,
-                           md5=md5,
-                           size=segment_size)
-
-
-def _verify_file_layout(baseline_per_host,
-                        restored_per_host,
-                        expected_topics,
-                        logger,
-                        size_overrides=None):
-    """This function checks the restored segments over the expected ones.
-    It takes into account the fact that the md5 checksum as well as the
-    file name of the restored segment might be different from the original
-    segment. This is because we're deleting raft configuration batches
-    from the segments.
-    The function checks the size of the parition over the size of the original.
-    The assertion is triggered only if the difference can't be explained by the
-    upload lag and removal of configuration/archival-metadata batches.
-    """
-
-    if size_overrides is None:
-        size_overrides = {}
-
-    def get_ntp_sizes(fdata_per_host, hosts_can_vary=True):
-        """Pre-process file layout data from the cluster. Input is a dictionary
-        that maps host to dict of ntps where each ntp is mapped to the list of
-        segments. The result is a map from ntp to the partition size on disk.
-        """
-        ntps = defaultdict(int)
-        for _, fdata in fdata_per_host.items():
-            ntp_size = defaultdict(int)
-            for path, entry in fdata.items():
-                it = _parse_checksum_entry(path, entry, ignore_rev=True)
-                if it.ntp.topic in expected_topics:
-                    if it.size > 4096:
-                        # filter out empty segments created at the end of the log
-                        # which are created after recovery
-                        ntp_size[it.ntp] += it.size
-
-            for ntp, total_size in ntp_size.items():
-                if ntp in ntps and not hosts_can_vary:
-                    # the size of the partition should be the
-                    # same on every replica in the restored
-                    # cluster
-                    logger.info(
-                        f"checking size of the partition for {ntp}, new {total_size} vs already accounted {ntps[ntp]}"
-                    )
-                    assert total_size == ntps[ntp]
-                else:
-                    ntps[ntp] = max(total_size, ntps[ntp])
-        return ntps
-
-    restored_ntps = get_ntp_sizes(restored_per_host, hosts_can_vary=False)
-    baseline_ntps = get_ntp_sizes(baseline_per_host, hosts_can_vary=True)
-
-    logger.info(
-        f"before matching\nrestored ntps: {restored_ntps}baseline ntps: {baseline_ntps}\nexpected topics: {expected_topics}"
-    )
-
-    for ntp, orig_ntp_size in baseline_ntps.items():
-        # Restored ntp should be equal or less than original
-        # but not by much. It can be off by one segment size.
-        # Also, each segment may lose a configuration batch or two.
-        if ntp in size_overrides:
-            logger.info(
-                f"NTP {ntp} uses size override {orig_ntp_size} - {size_overrides[ntp]}"
-            )
-            orig_ntp_size -= size_overrides[ntp]
-        assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data"
-        rest_ntp_size = restored_ntps[ntp]
-        assert rest_ntp_size <= orig_ntp_size, f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
-        delta = orig_ntp_size - rest_ntp_size
-        # NOTE: 1.5x is because the segments can be larger than default_log_segment_size
-        assert delta <= int(
-            1.5 * default_log_segment_size
-        ), f"NTP {ntp} the restored partition is too small {rest_ntp_size}. The original is {orig_ntp_size} bytes which {delta} bytes larger."
-
-
-def _gen_manifest_path(ntp, rev):
-    x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()[0] + '0000000'
-    return f"{hash}/meta/{path}/manifest.json"
-
-
-def _gen_segment_path(ntp, rev, name):
-    x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}/{name}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()
-    return f"{hash}/{path}"
+from rptest.utils.si_utils import (
+    SegmentReader,
+    parse_s3_manifest_path,
+    parse_s3_segment_path,
+    verify_file_layout,
+    gen_manifest_path,
+    get_on_disk_size_per_ntp,
+    is_close_size,
+    EMPTY_SEGMENT_SIZE,
+    default_log_segment_size,
+    NTP,
+    MISSING_DATA_ERRORS,
+    TRANSIENT_ERRORS,
+    PathMatcher,
+    BLOCK_SIZE,
+    S3View,
+)
 
 
 class BaseCase:
@@ -290,7 +148,7 @@ class BaseCase:
         revisions = {}
         for key in self._list_objects():
             if key.endswith("/manifest.json"):
-                res = _parse_s3_manifest_path(key)
+                res = parse_s3_manifest_path(key)
                 rev = res.revision
                 ntp = res.ntp
                 revisions[ntp] = rev
@@ -299,7 +157,7 @@ class BaseCase:
                 hw = partition.high_watermark
                 ntp = NTP(ns='kafka', topic=topic.name, partition=partition.id)
                 rev = revisions[ntp]
-                partition_uri = _gen_manifest_path(ntp, rev)
+                partition_uri = gen_manifest_path(ntp, rev)
                 data = self._s3.get_object_data(self._bucket, partition_uri)
                 obj = json.loads(data)
                 last_offset = obj['last_offset']
@@ -319,17 +177,42 @@ class BaseCase:
 
     def _produce_and_verify(self, topic_spec):
         """Try to produce to the topic. The method produces data to the topic and
-        checks that high watermark advanced."""
-        old_hw = None
-        new_hw = None
-        for partition in self._rpk.describe_topic(topic_spec.name):
-            old_hw = partition.high_watermark
-        assert old_hw is not None
+        checks that high watermark advanced. Wait for partition metadata to appear
+        in case of a recent leader election"""
+
+        # Utility to capture the watermark using wait_until as soon as it is not None.
+        class PartitionState:
+            def __init__(self, rpk, topic_name):
+                self.rpk = rpk
+                self.topic_name = topic_name
+                self.hwm = None
+
+            def watermark_is_present(self):
+                for partition_info in self.rpk.describe_topic(self.topic_name):
+                    self.hwm = partition_info.high_watermark
+                return self.hwm is not None
+
+        old_state = PartitionState(self._rpk, topic_spec.name)
+        wait_until(
+            lambda: old_state.watermark_is_present(),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f'failed to get high watermark before produce for {topic_spec}')
+
         self._kafka_tools.produce(topic_spec.name, 10000, 1024)
-        for topic in self._rpk.describe_topic(topic_spec.name):
-            new_hw = topic.high_watermark
-        assert new_hw is not None
-        assert old_hw != new_hw
+
+        new_state = PartitionState(self._rpk, topic_spec.name)
+        wait_until(
+            lambda: new_state.watermark_is_present(),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f'failed to get high watermark after produce for {topic_spec}')
+
+        assert old_state.hwm != new_state.hwm, \
+            f'old_hw {old_state.hwm} unexpectedly same as new_hw {new_state.hwm} ' \
+            f'for topic spec: {topic_spec}'
 
     def _list_objects(self):
         """Return list of all topics in the bucket (only names)"""
@@ -433,6 +316,77 @@ class NoDataCase(BaseCase):
         return False
 
 
+class EmptySegmentsCase(BaseCase):
+    """Restore topic that has segments in S3, but segments have only non-data 
+    batches (raft configuration, raft configuration).
+    """
+
+    topics = (TopicSpec(name='panda-topic',
+                        partition_count=1,
+                        replication_factor=3), )
+
+    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
+                 rpk_producer_maker, redpanda):
+        self._redpanda = redpanda
+        super(EmptySegmentsCase,
+              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
+                             logger, rpk_producer_maker)
+
+    def generate_baseline(self):
+        """Restart redpanda several times to get segments with no
+        data batches."""
+        for node in self._redpanda.nodes:
+            self._redpanda.stop_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.start_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.stop_node(node)
+        time.sleep(1)
+        for node in self._redpanda.nodes:
+            self._redpanda.start_node(node)
+        time.sleep(1)
+
+    def validate_node(self, host, baseline, restored):
+        """Validate restored node data using two sets of checksums.
+        The checksums are sampled from data directory before and after recovery."""
+        self.logger.info(f"Node: {baseline} checksums: {restored}")
+        # get rid of ntp part of the path
+        self.logger.info(
+            f"validate node host: {host}, baseline: {baseline}, restored: {restored}"
+        )
+        it = [os.path.basename(key) for key, _ in restored.items()]
+        assert len(it) == 1
+
+    def validate_cluster(self, baseline, restored):
+        """This method is invoked after the recovery and partition validation are
+        done.
+        Check that high_watermark is 0 for the new partition."""
+        def verify():
+            topic_state = list(self._rpk.describe_topic("panda-topic"))
+            for partition in topic_state:
+                self.logger.info(
+                    f"partition id: {partition.id} hw: {partition.high_watermark}, so: {partition.start_offset}"
+                )
+                return partition.high_watermark == partition.start_offset
+            return False
+
+        wait_until(verify,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg='Invalid topic state')
+
+    @property
+    def second_restart_needed(self):
+        """Return True if the restart is needed afer first validation steps"""
+        return True
+
+    @property
+    def verify_s3_content_after_produce(self):
+        return False
+
+
 class MissingTopicManifest(BaseCase):
     """Check the case where the topic manifest doesn't exist.
     We can't download any data but we should create an empty topic and add an error
@@ -488,7 +442,8 @@ class MissingPartition(BaseCase):
     only one key).
     """
 
-    topics = (TopicSpec(name='panda-topic',
+    topic_name = 'panda-topic'
+    topics = (TopicSpec(name=topic_name,
                         partition_count=2,
                         replication_factor=3), )
 
@@ -520,8 +475,9 @@ class MissingPartition(BaseCase):
         consistent in Minio S3 implementation)."""
         manifest = None
         for key in self._list_objects():
-            if key.endswith("/manifest.json"):
-                attr = _parse_s3_manifest_path(key)
+            if key.endswith("/manifest.json") and self.topic_name in key:
+                attr = parse_s3_manifest_path(key)
+                assert attr.ntp.topic == self.topic_name
                 if attr.ntp.partition == 0:
                     manifest = key
                 else:
@@ -619,7 +575,7 @@ class MissingSegment(BaseCase):
         """Find and remove single segment with base offset 0."""
         for key in self._list_objects():
             if key.endswith(".log.1"):
-                attr = _parse_s3_segment_path(key)
+                attr = parse_s3_segment_path(key)
                 if attr.name.startswith('0'):
                     self._delete(key)
                     self._smaller_ntp = attr.ntp
@@ -643,7 +599,7 @@ class MissingSegment(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _verify_file_layout(
+        verify_file_layout(
             baseline,
             restored,
             expected_topics,
@@ -683,6 +639,47 @@ class FastCheck(BaseCase):
             producer.wait()
             producer.free()
 
+    def _collect_non_data_batch_sizes(self, expected_topics):
+        """
+        Parses segment file and calculates sizes of all non-data batches present in the file.
+        These sizes are used when comparing S3 segment sizes with restored data, to account
+        for differences caused because configuration batches are not written to restored data.
+        """
+        non_data_batches_per_ntp = defaultdict(lambda: 0)
+        s3_view = S3View(expected_topics, self._s3, self._bucket, self.logger)
+        segments = [
+            item for item in self._s3.list_objects(self._bucket)
+            if s3_view.is_segment_part_of_a_manifest(item)
+        ]
+        for seg in segments:
+            components = parse_s3_segment_path(seg.Key)
+            ntp = components.ntp
+            segment_data = self._s3.get_object_data(self._bucket, seg.Key)
+            segment_size = len(segment_data)
+            segment = SegmentReader(io.BytesIO(segment_data))
+            # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
+            # since the size of these segments is not accounted for in the final comparison
+            # when verifying file layout. If we accumulate size of config batch from these
+            # "skipped" segments, we will mistakenly adjust the size of the baseline NTP to
+            # be smaller than it should be, in the final tally.
+
+            # e.g. for segment A of size 455 bytes (config batch + archival stm batch),
+            # since it is smaller than EMPTY_SEGMENT_SIZE, it will not be used in the final
+            # total for baseline calculation. But if we still add the 455 bytes here into
+            # non_data_batches_per_ntp, baseline will be reduced by 455 bytes, causing an assertion
+            # error that baseline is smaller than restored by 455 bytes.
+            if segment_size >= EMPTY_SEGMENT_SIZE:
+                for batch in segment:
+                    if batch.type != 1:
+                        non_data_batches_per_ntp[ntp] += batch.batch_size
+                        self.logger.debug(
+                            f'non data batch {batch.type} of size {batch.batch_size} is found for {ntp}, '
+                            f'record count is {batch.record_count}')
+        self.logger.info(
+            f'non data batch sizes per ntp: '
+            f'{pprint.pformat(dict(non_data_batches_per_ntp), indent=2)}')
+        return non_data_batches_per_ntp
+
     def validate_cluster(self, baseline, restored):
         """Check that the topic is writeable"""
         self.logger.info(f"FastCheck.validate_cluster - baseline - {baseline}")
@@ -691,7 +688,13 @@ class FastCheck(BaseCase):
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
-        _verify_file_layout(baseline, restored, expected_topics, self.logger)
+        config_batch_sizes = self._collect_non_data_batch_sizes(
+            self.expected_recovered_topics)
+        verify_file_layout(baseline,
+                           restored,
+                           expected_topics,
+                           self.logger,
+                           size_overrides=config_batch_sizes)
         for topic in self.topics:
             self._produce_and_verify(topic)
 
@@ -705,34 +708,6 @@ class FastCheck(BaseCase):
         self.logger.info("after restart validation")
         for topic in self.topics:
             self._produce_and_verify(topic)
-
-
-def get_on_disk_size_per_ntp(chk):
-    """Get number of bytes used per ntp"""
-    size_bytes_per_ntp = {}
-    for _, data in chk.items():
-        tmp_size = defaultdict(int)
-        for path, summary in data.items():
-            segment = _parse_checksum_entry(path, summary, True)
-            ntp = segment.ntp
-            size = summary[1]
-            tmp_size[ntp] += size
-        for ntp, size in tmp_size.items():
-            if not ntp in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
-                size_bytes_per_ntp[ntp] = size
-    return size_bytes_per_ntp
-
-
-def is_close_size(actual_size, expected_size):
-    """Checks if the log size is close to expected size.
-    The actual size shouldn't be less than expected. Also, the difference
-    between two values shouldn't be greater than the size of one segment.
-    It also takes into account segment size jitter.
-    """
-    lower_bound = expected_size
-    upper_bound = expected_size + default_log_segment_size + \
-                  int(default_log_segment_size * 0.2)
-    return actual_size in range(lower_bound, upper_bound)
 
 
 class SizeBasedRetention(BaseCase):
@@ -956,23 +931,13 @@ class TimeBasedRetention(BaseCase):
             self._produce_and_verify(topic)
 
 
-MISSING_DATA_ERRORS = [
-    "No segments found. Empty partition manifest generated",
-    "Error during log recovery: cloud_storage::missing_partition_exception",
-    "Failed segment download",
-]
-
-TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
-    "raft::offset_monitor::wait_aborted",
-    "Upload loop error: seastar::timed_out_error"
-]
-
-
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=50,
-                                 cloud_storage_max_connections=5,
-                                 log_segment_size=default_log_segment_size)
+        si_settings = SISettings(
+            cloud_storage_reconciliation_interval_ms=50,
+            cloud_storage_max_connections=5,
+            cloud_storage_segment_max_upload_interval_sec=10,
+            log_segment_size=default_log_segment_size)
 
         self.s3_bucket = si_settings.cloud_storage_bucket
 
@@ -1095,54 +1060,72 @@ class TopicRecoveryTest(RedpandaTest):
     def _wait_for_data_in_s3(self,
                              expected_topics,
                              timeout=datetime.timedelta(minutes=1)):
+        deltas = deque(maxlen=6)
+        total_partitions = sum([t.partition_count for t in expected_topics])
+        tolerance = default_log_segment_size * total_partitions
+        path_matcher = PathMatcher(expected_topics)
         """Wait until all topics are uploaded to S3"""
         def verify():
-            total_partitions = sum(
-                [t.partition_count for t in expected_topics])
             manifests = []
             topic_manifests = []
             segments = []
             lst = self.s3_client.list_objects(self.s3_bucket)
-            topic_manifest_paths = {
-                f'/{t.name}/topic_manifest.json'
-                for t in expected_topics
-            }
             for obj in lst:
-                if obj.Key.endswith("/manifest.json"):
+                self.logger.debug(f'checking S3 object: {obj.Key}')
+                if path_matcher.is_partition_manifest(obj):
                     manifests.append(obj)
-                elif any(obj.Key.endswith(p) for p in topic_manifest_paths):
+                elif path_matcher.is_topic_manifest(obj):
                     topic_manifests.append(obj)
-                else:
+                elif path_matcher.is_segment(obj):
                     segments.append(obj)
             if len(expected_topics) != len(topic_manifests):
                 self.logger.info(
-                    f"can't find enough topic_manifest.json objects, expected: {len(expected_topics)}, actual: {len(topic_manifests)}"
-                )
+                    f"can't find enough topic_manifest.json objects, "
+                    f"expected: {len(expected_topics)}, "
+                    f"actual: {len(topic_manifests)}")
                 return False
             if total_partitions != len(manifests):
-                self.logger.info(
-                    f"can't find enough manifest.json objects, expected: {len(manifests)}, actual: {total_partitions}"
-                )
+                self.logger.info(f"can't find enough manifest.json objects, "
+                                 f"manifest found: {len(manifests)}, "
+                                 f"expected partitions: {total_partitions}, "
+                                 f"{pprint.pformat(manifests, indent=2)}")
                 return False
             size_on_disk = 0
             for node, files in self._collect_file_checksums().items():
                 tmp_size = 0
                 for path, (_, size) in files.items():
-                    tmp_size += size
-                size_on_disk = max([tmp_size, size_on_disk])
-            size_in_cloud = 0
-            for obj in segments:
-                size_in_cloud += obj.ContentLength
-            max_delta = default_log_segment_size * 1.5 * total_partitions
-            if (size_on_disk - size_in_cloud) > max_delta:
-                self.logger.info(
-                    f"not enough data uploaded to S3, uploaded {size_in_cloud} bytes, with {size_on_disk} bytes on disk"
-                )
-                return False
+                    if path_matcher.path_matches_any_topic(
+                            path) and size > EMPTY_SEGMENT_SIZE:
+                        tmp_size += size
+                size_on_disk = max(tmp_size, size_on_disk)
 
+            size_in_cloud = sum(obj.ContentLength for obj in segments
+                                if obj.ContentLength > EMPTY_SEGMENT_SIZE)
+            self.logger.debug(
+                f'segments in cloud: {pprint.pformat(segments, indent=2)}, '
+                f'size in cloud: {size_in_cloud}')
+
+            delta = size_on_disk - size_in_cloud
+            deltas.append(delta)
+            # We want to make sure the diff between disk and s3 is stable
+            # IE unchanging for last N iterations, and also the diff is less than
+            # tolerated limit
+            is_stable = (delta <= tolerance and len(deltas) == deltas.maxlen
+                         and deltas.count(delta) == len(deltas))
+            if not is_stable:
+                self.logger.info(
+                    f"not enough data uploaded to S3, "
+                    f"uploaded {size_in_cloud} bytes, "
+                    f"with {size_on_disk} bytes on disk. "
+                    f"current delta: {delta} "
+                    f"tracked deltas: {pprint.pformat(deltas, indent=2)}")
+                return False
             return True
 
-        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
+        wait_until(verify,
+                   timeout_sec=timeout.total_seconds(),
+                   backoff_sec=1,
+                   err_msg='objects not found in S3')
 
     def _wait_for_topic(self,
                         recovered_topics,
@@ -1247,6 +1230,16 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
+    def test_empty_segments(self):
+        """Test case in which the segments are uploaded but they doesn't
+        have any data batches but they do have configuration batches."""
+        test_case = EmptySegmentsCase(self.s3_client, self.kafka_tools,
+                                      self.rpk, self.s3_bucket, self.logger,
+                                      self.rpk_producer_maker, self.redpanda)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_topic_manifest(self):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
@@ -1270,7 +1263,6 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.rpk_producer_maker)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4849
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     def test_missing_segment(self):
@@ -1313,7 +1305,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4972
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     def test_fast3(self):
         """Basic recovery test. This test stresses successful recovery
@@ -1334,6 +1325,7 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4887
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.

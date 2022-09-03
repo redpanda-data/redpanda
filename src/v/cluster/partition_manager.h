@@ -14,8 +14,11 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_recovery_manager.h"
 #include "cloud_storage/remote.h"
+#include "cluster/feature_table.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
+#include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
@@ -37,7 +40,8 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<feature_table>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -72,8 +76,12 @@ public:
 
     ss::future<> start() { return ss::now(); }
     ss::future<> stop_partitions();
-    ss::future<consensus_ptr>
-      manage(storage::ntp_config, raft::group_id, std::vector<model::broker>);
+    ss::future<consensus_ptr> manage(
+      storage::ntp_config,
+      raft::group_id,
+      std::vector<model::broker>,
+      std::optional<remote_topic_properties> = std::nullopt,
+      std::optional<s3::bucket_name> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
     ss::future<> remove(const model::ntp& ntp);
@@ -170,8 +178,8 @@ private:
     /// In this case this method always returns false.
     /// \param ntp_cfg is an ntp_config instance to recover
     /// \return true if the recovery was invoked, false otherwise
-    ss::future<cloud_storage::log_recovery_result>
-    maybe_download_log(storage::ntp_config& ntp_cfg);
+    ss::future<cloud_storage::log_recovery_result> maybe_download_log(
+      storage::ntp_config& ntp_cfg, std::optional<remote_topic_properties> rtp);
 
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 
@@ -190,6 +198,7 @@ private:
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
+    ss::sharded<feature_table>& _feature_table;
     ss::gate _gate;
     bool _block_new_leadership{false};
 

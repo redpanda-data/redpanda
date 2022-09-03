@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/cluster_utils.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "model/metadata.h"
@@ -17,6 +18,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 
 void validate_replica_set_diversity(
@@ -123,6 +125,39 @@ FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_fixture) {
 
     BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 0);
 }
+
+FIXTURE_TEST(diverse_replica_sets, partition_allocator_fixture) {
+    // This tests that all possible replica sets are chosen, rather than some
+    // fixed subset (e.g., if the allocator uses a repeating sequential pattern
+    // for allocating replica sets, most sets won't be chosen).
+
+    constexpr int node_count = 6;
+    constexpr int r = 3;
+    constexpr int possible_sets = 20; // 6 choose 3
+
+    for (int node = 0; node < node_count; node++) {
+        register_node(node, 2);
+    }
+
+    // for the 6 nodes, r=3 case, all replica sets will be chosen with
+    // probability about 1 - 1e-21 (i.e., with an astronomically high chance)
+    // after 1,000 samples.
+    absl::flat_hash_set<std::vector<model::broker_shard>> seen_replicas;
+    for (int i = 0; i < 1000; i++) {
+        auto req = make_allocation_request(1, r);
+        auto result = allocator.allocate(std::move(req));
+        BOOST_REQUIRE(result);
+        auto assignments = result.value().get_assignments();
+        BOOST_REQUIRE(assignments.size() == 1);
+        auto replicas = assignments.front().replicas;
+        // we need to sort the replica set
+        std::sort(replicas.begin(), replicas.end());
+        seen_replicas.insert(replicas);
+    }
+
+    BOOST_REQUIRE_EQUAL(seen_replicas.size(), possible_sets);
+}
+
 FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
     register_node(0, 2);
     register_node(1, 2);
@@ -276,8 +311,10 @@ FIXTURE_TEST(
         new_assignment = reallocated.value().get_assignments().front();
     }
     // update allocation state after units left scope
-    allocator.update_allocation_state(
-      new_assignment.replicas, previous_assignment.replicas);
+    allocator.add_allocations(cluster::subtract_replica_sets(
+      new_assignment.replicas, previous_assignment.replicas));
+    allocator.remove_allocations(cluster::subtract_replica_sets(
+      previous_assignment.replicas, new_assignment.replicas));
 
     auto total_allocated = std::accumulate(
       allocator.state().allocation_nodes().begin(),
@@ -348,8 +385,10 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
           cluster::allocation_node::allocation_capacity(1));
     }
     // update allocation state after units left scope
-    allocator.update_allocation_state(
-      new_assignment.replicas, previous_assignment.replicas);
+    allocator.add_allocations(cluster::subtract_replica_sets(
+      new_assignment.replicas, previous_assignment.replicas));
+    allocator.remove_allocations(cluster::subtract_replica_sets(
+      previous_assignment.replicas, new_assignment.replicas));
     BOOST_REQUIRE_EQUAL(
       allocator.state()
         .allocation_nodes()
@@ -481,8 +520,8 @@ FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(it->second->allocated_partitions(), allocated);
     BOOST_REQUIRE_EQUAL(
       it->second->max_capacity(),
-      10 * cluster::allocation_node::max_allocations_per_core
-        - cluster::allocation_node::core0_extra_weight);
+      10 * partition_allocator_fixture::partitions_per_shard
+        - partition_allocator_fixture::partitions_reserve_shard0);
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
@@ -533,9 +572,15 @@ FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
         nodes.insert(node_id);
     }
     BOOST_REQUIRE(nodes.size() == 3);
-    BOOST_REQUIRE(nodes.contains(model::node_id(0))); // rack-a
-    BOOST_REQUIRE(nodes.contains(model::node_id(2))); // rack-b
-    BOOST_REQUIRE(nodes.contains(model::node_id(4))); // rack-c
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(0))
+      || nodes.contains(model::node_id(1))); // rack-a
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(2))
+      || nodes.contains(model::node_id(3))); // rack-b
+    BOOST_REQUIRE(
+      nodes.contains(model::node_id(4))
+      || nodes.contains(model::node_id(5))); // rack-c
 }
 FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
     std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {

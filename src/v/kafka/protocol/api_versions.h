@@ -19,15 +19,6 @@
 
 namespace kafka {
 
-struct api_versions_response;
-
-struct api_versions_api final {
-    using response_type = api_versions_response;
-
-    static constexpr const char* name = "api-versions";
-    static constexpr api_key key = api_key(18);
-};
-
 struct api_versions_request final {
     using api_type = api_versions_api;
 
@@ -65,11 +56,5 @@ struct api_versions_response final {
         return os << r.data;
     }
 };
-
-inline bool operator==(
-  const api_versions_response_key& a, const api_versions_response_key& b) {
-    return a.api_key == b.api_key && a.min_version == b.min_version
-           && a.max_version == b.max_version;
-}
 
 } // namespace kafka

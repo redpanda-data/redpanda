@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -215,9 +214,9 @@ var rng = func() func(int) int {
 	}
 }()
 
-func (a *AdminAPI) mapBrokerIDsToURLs() {
+func (a *AdminAPI) mapBrokerIDsToURLs(ctx context.Context) {
 	err := a.eachBroker(func(aa *AdminAPI) error {
-		nc, err := aa.GetNodeConfig()
+		nc, err := aa.GetNodeConfig(ctx)
 		if err != nil {
 			return err
 		}
@@ -232,8 +231,8 @@ func (a *AdminAPI) mapBrokerIDsToURLs() {
 }
 
 // GetLeaderID returns the broker ID of the leader of the Admin API.
-func (a *AdminAPI) GetLeaderID() (*int, error) {
-	pa, err := a.GetPartition("redpanda", "controller", 0)
+func (a *AdminAPI) GetLeaderID(ctx context.Context) (*int, error) {
+	pa, err := a.GetPartition(ctx, "redpanda", "controller", 0)
 	if pa.LeaderID == -1 {
 		return nil, ErrNoAdminAPILeader
 	}
@@ -249,12 +248,15 @@ func (a *AdminAPI) GetLeaderID() (*int, error) {
 // On errors, this function will keep trying all the nodes we know about until
 // one of them succeeds, or we run out of nodes.  In the latter case, we will return
 // the error from the last node we tried.
-func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
+func (a *AdminAPI) sendAny(ctx context.Context, method, path string, body, into interface{}) error {
 	// Shuffle the list of URLs
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	shuffled := make([]string, len(a.urls))
 	copy(shuffled, a.urls)
 	rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	// After a 503 or 504, wait a little for an election
+	const unavailableBackoff = 1500 * time.Millisecond
 
 	var err error
 	for i := range shuffled {
@@ -263,6 +265,16 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 		// If err is set, we are retrying after a failure on the previous node
 		if err != nil {
 			log.Infof("Request error, trying another node: %s", err.Error())
+			var httpErr *HTTPResponseError
+			if errors.As(err, &httpErr) {
+				status := httpErr.Response.StatusCode
+
+				// The node was up but told us the cluster
+				// wasn't ready: wait before retry.
+				if status == 503 || status == 504 {
+					time.Sleep(unavailableBackoff)
+				}
+			}
 		}
 
 		// Where there are multiple nodes, disable the HTTP request retry in favour of our
@@ -270,7 +282,7 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 		retryable := len(shuffled) == 1
 
 		var res *http.Response
-		res, err = a.sendAndReceive(context.Background(), method, url, body, retryable)
+		res, err = a.sendAndReceive(ctx, method, url, body, retryable)
 		if err == nil {
 			// Success, return the result from this node.
 			return maybeUnmarshalRespInto(method, url, res, into)
@@ -284,7 +296,7 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 // sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
 // otherwise, it broadcasts the request.
 func (a *AdminAPI) sendToLeader(
-	method, path string, body, into interface{},
+	ctx context.Context, method, path string, body, into interface{},
 ) error {
 	const (
 		// When there is no leader, we wait long enough for an election to complete
@@ -296,7 +308,7 @@ func (a *AdminAPI) sendToLeader(
 	)
 	// If there's only one broker, let's just send the request to it
 	if len(a.urls) == 1 {
-		return a.sendOne(method, path, body, into, true)
+		return a.sendOne(ctx, method, path, body, into, true)
 	}
 
 	retries := 3
@@ -304,7 +316,7 @@ func (a *AdminAPI) sendToLeader(
 	var leaderURL string
 	for leaderID == nil || leaderURL == "" {
 		var err error
-		leaderID, err = a.GetLeaderID()
+		leaderID, err = a.GetLeaderID(ctx)
 		if errors.Is(err, ErrNoAdminAPILeader) {
 			// No leader?  We might have contacted a recently-started node
 			// who doesn't know yet, or there might be an election pending,
@@ -320,11 +332,11 @@ func (a *AdminAPI) sendToLeader(
 			return err
 		} else {
 			// Got a leader ID, check if it's resolvable
-			leaderURL, err = a.brokerIDToURL(*leaderID)
+			leaderURL, err = a.brokerIDToURL(ctx, *leaderID)
 			if err != nil && len(a.brokerIDToUrls) == 0 {
 				// Could not map any IDs: probably this is an old redpanda
 				// with no node_config endpoint.  Fall back to broadcast.
-				return a.sendAll(method, path, body, into)
+				return a.sendAll(ctx, method, path, body, into)
 			} else if err != nil {
 				// Have ID mapping for some nodes but not the one that is
 				// allegedly the leader.  This leader ID is probably stale,
@@ -348,15 +360,15 @@ func (a *AdminAPI) sendToLeader(
 	if err != nil {
 		return err
 	}
-	return aLeader.sendOne(method, path, body, into, true)
+	return aLeader.sendOne(ctx, method, path, body, into, true)
 }
 
-func (a *AdminAPI) brokerIDToURL(brokerID int) (string, error) {
+func (a *AdminAPI) brokerIDToURL(ctx context.Context, brokerID int) (string, error) {
 	if url, ok := a.getURLFromBrokerID(brokerID); ok {
 		return url, nil
 	} else {
 		// Try once to map again broker IDs to URLs
-		a.mapBrokerIDsToURLs()
+		a.mapBrokerIDsToURLs(ctx)
 		if url, ok := a.getURLFromBrokerID(brokerID); ok {
 			return url, nil
 		}
@@ -378,13 +390,13 @@ func (a *AdminAPI) getURLFromBrokerID(brokerID int) (string, bool) {
 // as temporarily having no leader for a raft group.  Set it to false if the endpoint
 // should always work while the node is up, e.g. GETs of node-local state.
 func (a *AdminAPI) sendOne(
-	method, path string, body, into interface{}, retryable bool,
+	ctx context.Context, method, path string, body, into interface{}, retryable bool,
 ) error {
 	if len(a.urls) != 1 {
 		return fmt.Errorf("unable to issue a single-admin-endpoint request to %d admin endpoints", len(a.urls))
 	}
 	url := a.urls[0] + path
-	res, err := a.sendAndReceive(context.Background(), method, url, body, retryable)
+	res, err := a.sendAndReceive(ctx, method, url, body, retryable)
 	if err != nil {
 		return err
 	}
@@ -404,7 +416,7 @@ func (a *AdminAPI) sendOne(
 // Unfortunately these assumptions do not match all environments in which
 // Redpanda is deployed, hence, we need to reintroduce the sendAll method and
 // broadcast on writes to the Admin API.
-func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
+func (a *AdminAPI) sendAll(rootCtx context.Context, method, path string, body, into interface{}) error {
 	var (
 		once   sync.Once
 		resURL string
@@ -426,7 +438,7 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 	)
 
 	for i, url := range a.urlsWithPath(path) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(rootCtx)
 		myURL := url
 		except := i
 		cancels = append(cancels, cancel)
@@ -480,7 +492,7 @@ func maybeUnmarshalRespInto(
 	if into == nil {
 		return nil
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("unable to read %s %s response body: %w", method, url, err)
 	}
@@ -499,16 +511,23 @@ func maybeUnmarshalRespInto(
 
 // sendAndReceive sends a request and returns the response. If body is
 // non-nil, this json encodes the body and sends it with the request.
+// If the body is already an io.Reader, the reader is used directly
+// without marshaling.
 func (a *AdminAPI) sendAndReceive(
 	ctx context.Context, method, url string, body interface{}, retryable bool,
 ) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
-		bs, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
+		// We might be passing io reader already as body, e.g: license file.
+		if v, ok := body.(io.Reader); ok {
+			r = v
+		} else {
+			bs, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
+			}
+			r = bytes.NewBuffer(bs)
 		}
-		r = bytes.NewBuffer(bs)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, r)
@@ -544,12 +563,12 @@ func (a *AdminAPI) sendAndReceive(
 	}
 
 	if res.StatusCode/100 != 2 {
-		resBody, err := ioutil.ReadAll(res.Body)
+		resBody, err := io.ReadAll(res.Body)
 		status := http.StatusText(res.StatusCode)
 		if err != nil {
 			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return nil, &HTTPResponseError{Response: res, Body: resBody}
+		return nil, &HTTPResponseError{Response: res, Body: resBody, Method: method, URL: url}
 	}
 
 	return res, nil
@@ -562,6 +581,6 @@ func (he HTTPResponseError) DecodeGenericErrorBody() (GenericErrorBody, error) {
 }
 
 func (he HTTPResponseError) Error() string {
-	return fmt.Sprintf("request %s %s failed: %s, body: %q",
+	return fmt.Sprintf("request %s %s failed: %s, body: %q\n",
 		he.Method, he.URL, http.StatusText(he.Response.StatusCode), he.Body)
 }

@@ -29,6 +29,8 @@
 #include <bits/stdint-intn.h>
 #include <boost/test/tools/old/interface.hpp>
 
+#include <vector>
+
 using namespace std::chrono_literals;
 
 struct cmd_test_fixture {
@@ -73,8 +75,10 @@ struct cmd_test_fixture {
         std::vector<cluster::partition_assignment> ret;
         ret.reserve(cfg.partition_count);
         for (int i = 0; i < cfg.partition_count; i++) {
-            ret.push_back(cluster::partition_assignment{
-              raft::group_id(0), model::partition_id(i), {}});
+            ret.emplace_back(
+              raft::group_id(0),
+              model::partition_id(i),
+              std::vector<model::broker_shard>{});
         }
         return {};
     }

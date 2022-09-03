@@ -40,12 +40,14 @@ public:
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
         // if set, log will not use batch cache
         with_cache cache_enabled = with_cache::yes;
-        // if set the value will be used during parititon recovery
+        // if set the value will be used during partition recovery
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
         // if set the value will control how data is uploaded and retrieved
         // to/from S3
         model::shadow_indexing_mode shadow_indexing_mode
           = model::shadow_indexing_mode::disabled;
+
+        std::optional<bool> read_replica;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -148,6 +150,11 @@ public:
     bool is_remote_fetch_enabled() const {
         return _overrides != nullptr
                && model::is_fetch_enabled(_overrides->shadow_indexing_mode);
+    }
+
+    bool is_read_replica_mode_enabled() const {
+        return _overrides != nullptr && _overrides->read_replica
+               && _overrides->read_replica.value();
     }
 
 private:

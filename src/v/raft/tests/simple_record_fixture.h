@@ -13,6 +13,9 @@
 
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
+#include "model/tests/randoms.h"
+#include "raft/types.h"
 #include "storage/record_batch_builder.h"
 // testing
 #include "test_utils/randoms.h"
@@ -60,8 +63,8 @@ struct simple_record_fixture {
         std::vector<model::broker> learners;
 
         for (auto i = 0; i < active_nodes; ++i) {
-            nodes.push_back(tests::random_broker(i, i));
-            learners.push_back(tests::random_broker(
+            nodes.push_back(model::random_broker(i, i));
+            learners.push_back(model::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
         return raft::group_configuration(

@@ -55,10 +55,13 @@ enum class errc : int16_t {
     data_policy_not_exists,
     source_topic_not_exists,
     source_topic_still_in_use,
-    wating_for_partition_shutdown,
+    waiting_for_partition_shutdown,
     error_collecting_health_report,
     leadership_changed,
     feature_disabled,
+    invalid_request,
+    no_update_in_progress,
+    unknown_update_interruption_error
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -156,7 +159,7 @@ struct errc_category final : public std::error_category {
         case errc::source_topic_still_in_use:
             return "Cannot delete source topic for which there still are "
                    "materialized topics for";
-        case errc::wating_for_partition_shutdown:
+        case errc::waiting_for_partition_shutdown:
             return "Partition update on current core can not be finished since "
                    "backend is waiting for the partition to be shutdown on its "
                    "originating core";
@@ -167,6 +170,12 @@ struct errc_category final : public std::error_category {
                    "to finish";
         case errc::feature_disabled:
             return "Requested feature is disabled";
+        case errc::invalid_request:
+            return "Invalid request";
+        case errc::no_update_in_progress:
+            return "Partition configuration is not being updated";
+        case errc::unknown_update_interruption_error:
+            return "Error while cancelling partition reconfiguration";
         }
         return "cluster::errc::unknown";
     }

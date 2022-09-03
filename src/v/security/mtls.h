@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/property.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -18,7 +19,6 @@
 
 #include <fmt/core.h>
 
-#include <iosfwd>
 #include <optional>
 #include <regex>
 #include <string_view>
@@ -53,25 +53,11 @@ private:
     make_upper _to_upper{false};
 };
 
-namespace detail {
-
-std::vector<rule> parse_rules(std::optional<std::string_view> unparsed_rules);
-
-} // namespace detail
-
 class principal_mapper {
 public:
-    explicit principal_mapper(std::optional<std::string_view> sv)
-      : _rules{detail::parse_rules(sv)} {}
-
-    std::optional<ss::sstring> apply(std::string_view sv) const {
-        for (const auto& r : _rules) {
-            if (auto p = r.apply(sv); p.has_value()) {
-                return {std::move(p).value()};
-            }
-        }
-        return std::nullopt;
-    }
+    explicit principal_mapper(
+      config::binding<std::optional<std::vector<ss::sstring>>> cb);
+    std::optional<ss::sstring> apply(std::string_view sv) const;
 
 private:
     friend struct fmt::formatter<principal_mapper>;
@@ -79,8 +65,23 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const principal_mapper& p);
 
+    config::binding<std::optional<std::vector<ss::sstring>>> _binding;
     std::vector<rule> _rules;
 };
+
+class mtls_state {
+public:
+    explicit mtls_state(ss::sstring principal)
+      : _principal{std::move(principal)} {}
+
+    const ss::sstring& principal() { return _principal; }
+
+private:
+    ss::sstring _principal;
+};
+
+std::optional<ss::sstring>
+validate_rules(const std::optional<std::vector<ss::sstring>>& r) noexcept;
 
 } // namespace security::tls
 

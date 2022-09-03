@@ -31,9 +31,11 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
+#include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "storage/fwd.h"
 #include "v8_engine/fwd.h"
 
@@ -112,7 +114,6 @@ private:
       = std::vector<ss::deferred_action<std::function<void()>>>;
 
     // All methods are calleds from Seastar thread
-    void init_env();
     ss::app_template::config setup_app_config();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
@@ -134,7 +135,10 @@ private:
     template<typename Service, typename... Args>
     void construct_single_service(std::unique_ptr<Service>& s, Args&&... args) {
         s = std::make_unique<Service>(std::forward<Args>(args)...);
-        _deferred.emplace_back([&s] { s->stop().get(); });
+        _deferred.emplace_back([&s] {
+            s->stop().get();
+            s.reset();
+        });
     }
 
     template<typename Service, typename... Args>
@@ -146,8 +150,9 @@ private:
     }
 
     void setup_metrics();
+    void setup_public_metrics();
+    void setup_internal_metrics();
     std::unique_ptr<ss::app_template> _app;
-    bool _redpanda_enabled{true};
     cluster::config_manager::preload_result _config_preload;
     std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
@@ -155,9 +160,11 @@ private:
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
     scheduling_groups _scheduling_groups;
+    scheduling_groups_probe _scheduling_groups_probe;
     ss::logger _log;
 
     ss::sharded<rpc::connection_cache> _connection_cache;
+    ss::sharded<cluster::feature_table> _feature_table;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<kafka::group_manager> _co_group_manager;
     ss::sharded<net::server> _rpc;
@@ -171,6 +178,7 @@ private:
     ss::sharded<archival::upload_controller> _archival_upload_controller;
 
     ss::metrics::metric_groups _metrics;
+    ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;

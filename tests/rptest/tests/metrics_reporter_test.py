@@ -27,7 +27,7 @@ class MetricsReporterTest(RedpandaTest):
             test_context=test_ctx,
             num_brokers=num_brokers,
             extra_rp_conf={
-                "health_monitor_tick_interval": 1000,
+                "health_monitor_max_metadata_age": 1000,
                 # report every two seconds
                 "metrics_reporter_tick_interval": 2000,
                 "metrics_reporter_report_interval": 1000,

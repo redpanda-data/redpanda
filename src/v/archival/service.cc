@@ -13,6 +13,7 @@
 #include "archival/logger.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
+#include "cloud_roles/signature.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
@@ -25,7 +26,6 @@
 #include "model/namespace.h"
 #include "s3/client.h"
 #include "s3/error.h"
-#include "s3/signature.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
@@ -39,7 +39,6 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/scheduling.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
@@ -170,15 +169,10 @@ ss::future<> scheduler_service_impl::start() {
 ss::future<> scheduler_service_impl::stop() {
     vlog(_rtclog.info, "Scheduler service stop");
     _timer.cancel();
-    std::vector<ss::future<>> outstanding;
+    co_await _gate.close();
     for (auto& it : _archivers) {
-        outstanding.emplace_back(it.second->stop());
+        co_await it.second->stop();
     }
-    return ss::do_with(
-      std::move(outstanding), [this](std::vector<ss::future<>>& outstanding) {
-          return ss::when_all_succeed(outstanding.begin(), outstanding.end())
-            .finally([this] { return _gate.close(); });
-      });
 }
 
 ss::future<> scheduler_service_impl::upload_topic_manifest(
@@ -229,50 +223,70 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
       archiver->get_ntp());
 
     if (_gate.is_closed()) {
-        return ss::now();
+        co_return;
     }
-    return archiver->download_manifest().then(
-      [this, archiver](cloud_storage::download_result result) {
-          auto ntp = archiver->get_ntp();
-          switch (result) {
-          case cloud_storage::download_result::success:
-              vlog(
-                _rtclog.info,
-                "Found manifest for partition {}",
-                archiver->get_ntp());
-              _probe.start_archiving_ntp();
 
-              _archivers.emplace(archiver->get_ntp(), archiver);
-              archiver->run_upload_loop();
+    ss::gate::holder gh(_gate);
 
-              return ss::now();
-          case cloud_storage::download_result::notfound:
-              vlog(
-                _rtclog.info,
-                "Start archiving new partition {}",
-                archiver->get_ntp());
-              // Start topic manifest upload
-              // asynchronously
-              if (ntp.tp.partition == 0) {
-                  // Upload manifest once per topic. GCS has strict
-                  // limits for single object updates.
-                  (void)upload_topic_manifest(
-                    model::topic_namespace(ntp.ns, ntp.tp.topic),
-                    archiver->get_revision_id());
-              }
-              _probe.start_archiving_ntp();
+    _archivers.emplace(archiver->get_ntp(), archiver);
+    auto result = co_await archiver->download_manifest();
 
-              _archivers.emplace(archiver->get_ntp(), archiver);
-              archiver->run_upload_loop();
+    auto ntp = archiver->get_ntp();
+    auto part = _partition_manager.local().get(ntp);
+    if (!part) {
+        co_return;
+    }
+    switch (result) {
+    case cloud_storage::download_result::success:
+        vlog(_rtclog.info, "Found manifest for partition {}", ntp);
 
-              return ss::now();
-          case cloud_storage::download_result::failed:
-          case cloud_storage::download_result::timedout:
-              vlog(_rtclog.warn, "Manifest download failed");
-              return ss::make_exception_future<>(ss::timed_out_error());
-          }
-          return ss::now();
-      });
+        if (part->get_ntp_config().is_read_replica_mode_enabled()) {
+            archiver->run_sync_manifest_loop();
+        } else {
+            if (ntp.tp.partition == 0) {
+                // Upload manifest once per topic. GCS has strict
+                // limits for single object updates.
+                ssx::background = upload_topic_manifest(
+                  model::topic_namespace(ntp.ns, ntp.tp.topic),
+                  archiver->get_revision_id());
+            }
+            _probe.start_archiving_ntp();
+            archiver->run_upload_loop();
+        }
+
+        co_return;
+    case cloud_storage::download_result::notfound:
+        if (part->get_ntp_config().is_read_replica_mode_enabled()) {
+            vlog(
+              _rtclog.info,
+              "Couldn't download manifest for partition {} in read replica",
+              ntp);
+            archiver->run_sync_manifest_loop();
+        } else {
+            vlog(_rtclog.info, "Start archiving new partition {}", ntp);
+            // Start topic manifest upload
+            // asynchronously
+            if (ntp.tp.partition == 0) {
+                // Upload manifest once per topic. GCS has strict
+                // limits for single object updates.
+                ssx::background = upload_topic_manifest(
+                  model::topic_namespace(ntp.ns, ntp.tp.topic),
+                  archiver->get_revision_id());
+            }
+            _probe.start_archiving_ntp();
+
+            archiver->run_upload_loop();
+        }
+
+        co_return;
+    case cloud_storage::download_result::failed:
+    case cloud_storage::download_result::timedout:
+        vlog(_rtclog.warn, "Manifest download failed");
+        _archivers.erase(archiver->get_ntp());
+        co_return co_await archiver->stop().finally([archiver]() {
+            return ss::make_exception_future<>(ss::timed_out_error());
+        });
+    }
 }
 
 ss::future<>
@@ -284,9 +298,13 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
       std::move(to_create), concurrency, [this](const model::ntp& ntp) {
           auto log = _partition_manager.local().log(ntp);
           auto part = _partition_manager.local().get(ntp);
-          if (log.has_value() && part && part->is_leader()
-              && (part->get_ntp_config().is_archival_enabled()
-                  || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
+          if (!log.has_value() || !part || !part->is_elected_leader()) {
+              return ss::now();
+          }
+          if (
+            part->get_ntp_config().is_archival_enabled()
+            || part->get_ntp_config().is_read_replica_mode_enabled()
+            || config::shard_local_cfg().cloud_storage_enable_remote_write()) {
               auto archiver = ss::make_lw_shared<ntp_archiver>(
                 log->config(),
                 _partition_manager.local(),
@@ -325,7 +343,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     // find archivers that have already stopped
     for (const auto& [ntp, archiver] : _archivers) {
         auto p = pm.get(ntp);
-        if (!p || archiver->upload_loop_stopped()) {
+        if (!p || archiver->is_loop_stopped()) {
             to_remove.push_back(ntp);
         }
     }
@@ -335,7 +353,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     for (const auto& [ntp, p] : pm.partitions()) {
         if (
           ntp.ns != model::redpanda_ns && !_archivers.contains(ntp)
-          && p->is_leader()) {
+          && p->is_elected_leader()) {
             to_create.push_back(ntp);
         }
     }
@@ -379,6 +397,14 @@ uint64_t scheduler_service_impl::estimate_backlog_size() {
         size += archiver->estimate_backlog_size();
     }
     return size;
+}
+
+ss::future<std::optional<cloud_storage::partition_manifest>>
+scheduler_service_impl::maybe_truncate_manifest(const model::ntp& ntp) {
+    if (auto it = _archivers.find(ntp); it != _archivers.end()) {
+        co_return co_await it->second->maybe_truncate_manifest(_rtcnode);
+    }
+    co_return std::nullopt;
 }
 
 } // namespace archival::internal
