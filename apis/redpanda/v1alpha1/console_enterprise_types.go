@@ -28,6 +28,12 @@ type EnterpriseLogin struct {
 	Google *EnterpriseLoginGoogle `json:"google,omitempty"`
 }
 
+// IsGoogleLoginEnabled returns true if Google SSO provider is enabled
+func (c *Console) IsGoogleLoginEnabled() bool {
+	login := c.Spec.Login
+	return login != nil && login.Google != nil && login.Google.Enabled
+}
+
 // EnterpriseLoginGoogle defines configurable fields for Google provider
 type EnterpriseLoginGoogle struct {
 	Enabled bool `json:"enabled"`
