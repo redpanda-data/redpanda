@@ -203,7 +203,14 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 		}
 		enterpriseLogin.JWTSecret = string(jwt)
 
-		switch { // nolint:gocritic // will support more providers
+		switch {
+		case provider.RedpandaCloud != nil:
+			enterpriseLogin.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
+				Enabled:        provider.RedpandaCloud.Enabled,
+				Domain:         provider.RedpandaCloud.Domain,
+				Audience:       provider.RedpandaCloud.Audience,
+				AllowedOrigins: provider.RedpandaCloud.AllowedOrigins,
+			}
 		case provider.Google != nil:
 			cc := redpandav1alpha1.SecretKeyRef{
 				Namespace: provider.Google.ClientCredentialsRef.Namespace,

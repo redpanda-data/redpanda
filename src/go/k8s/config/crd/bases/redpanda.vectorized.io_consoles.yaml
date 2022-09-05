@@ -350,6 +350,28 @@ spec:
                     - name
                     - namespace
                     type: object
+                  redpandaCloud:
+                    description: EnterpriseLoginRedpandaCloud defines configurable
+                      fields for RedpandaCloud provider
+                    properties:
+                      allowedOrigins:
+                        description: AllowedOrigins indicates if response is allowed
+                          from given origin
+                        type: string
+                      audience:
+                        description: Audience is the domain where this auth is intended
+                          for
+                        type: string
+                      domain:
+                        description: Domain is the domain of the auth server
+                        type: string
+                      enabled:
+                        type: boolean
+                    required:
+                    - audience
+                    - domain
+                    - enabled
+                    type: object
                 required:
                 - enabled
                 - jwtSecretRef
