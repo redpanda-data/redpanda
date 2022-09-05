@@ -286,19 +286,10 @@ func (r *StatefulSetResource) obj(
 	externalListener := r.pandaCluster.ExternalListener()
 	externalSubdomain := ""
 	externalAddressType := ""
-	externalEndpointTemplate := ""
 	if externalListener != nil {
 		externalSubdomain = externalListener.External.Subdomain
 		externalAddressType = externalListener.External.PreferredAddressType
-		externalEndpointTemplate = externalListener.External.EndpointTemplate
 	}
-
-	externalPandaProxyAPI := r.pandaCluster.PandaproxyAPIExternal()
-	externalPandaProxyEndpointTemplate := ""
-	if externalPandaProxyAPI != nil {
-		externalPandaProxyEndpointTemplate = externalPandaProxyAPI.External.EndpointTemplate
-	}
-
 	tlsVolumes, tlsVolumeMounts := r.volumeProvider.Volumes()
 
 	// We set statefulset replicas via status.currentReplicas in order to control it from the handleScaling function
@@ -395,23 +386,6 @@ func (r *StatefulSetResource) obj(
 								{
 									Name:  "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE",
 									Value: externalAddressType,
-								},
-								{
-									Name:  "EXTERNAL_CONNECTIVITY_KAFKA_ENDPOINT_TEMPLATE",
-									Value: externalEndpointTemplate,
-								},
-								{
-									Name:  "EXTERNAL_CONNECTIVITY_PANDA_PROXY_ENDPOINT_TEMPLATE",
-									Value: externalPandaProxyEndpointTemplate,
-								},
-								{
-									Name: "HOST_IP_ADDRESS",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											APIVersion: "v1",
-											FieldPath:  "status.hostIP",
-										},
-									},
 								},
 								{
 									Name:  "HOST_PORT",

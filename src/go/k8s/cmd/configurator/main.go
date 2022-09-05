@@ -21,7 +21,6 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
@@ -32,39 +31,33 @@ import (
 )
 
 const (
-	hostNameEnvVar                                       = "HOSTNAME"
-	svcFQDNEnvVar                                        = "SERVICE_FQDN"
-	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
-	configDestinationEnvVar                              = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
-	nodeNameEnvVar                                       = "NODE_NAME"
-	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
-	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
-	externalConnectivityAddressTypeEnvVar                = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
-	externalConnectivityKafkaEndpointTemplateEnvVar      = "EXTERNAL_CONNECTIVITY_KAFKA_ENDPOINT_TEMPLATE"
-	externalConnectivityPandaProxyEndpointTemplateEnvVar = "EXTERNAL_CONNECTIVITY_PANDA_PROXY_ENDPOINT_TEMPLATE"
-	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
-	hostPortEnvVar                                       = "HOST_PORT"
-	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
+	hostNameEnvVar                        = "HOSTNAME"
+	svcFQDNEnvVar                         = "SERVICE_FQDN"
+	configSourceDirEnvVar                 = "CONFIG_SOURCE_DIR"
+	configDestinationEnvVar               = "CONFIG_DESTINATION"
+	redpandaRPCPortEnvVar                 = "REDPANDA_RPC_PORT"
+	nodeNameEnvVar                        = "NODE_NAME"
+	externalConnectivityEnvVar            = "EXTERNAL_CONNECTIVITY"
+	externalConnectivitySubDomainEnvVar   = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	externalConnectivityAddressTypeEnvVar = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
+	hostPortEnvVar                        = "HOST_PORT"
+	proxyHostPortEnvVar                   = "PROXY_HOST_PORT"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName                                       string
-	svcFQDN                                        string
-	configSourceDir                                string
-	configDestination                              string
-	nodeName                                       string
-	subdomain                                      string
-	externalConnectivity                           bool
-	externalConnectivityAddressType                corev1.NodeAddressType
-	externalConnectivityKafkaEndpointTemplate      string
-	externalConnectivityPandaProxyEndpointTemplate string
-	redpandaRPCPort                                int
-	hostPort                                       int
-	proxyHostPort                                  int
-	hostIP                                         string
+	hostName                        string
+	svcFQDN                         string
+	configSourceDir                 string
+	configDestination               string
+	nodeName                        string
+	subdomain                       string
+	externalConnectivity            bool
+	externalConnectivityAddressType corev1.NodeAddressType
+	redpandaRPCPort                 int
+	hostPort                        int
+	proxyHostPort                   int
 }
 
 func (c *configuratorConfig) String() string {
@@ -212,14 +205,8 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
-		ep, err := utils.ComputeEndpoint(c.externalConnectivityKafkaEndpointTemplate, data)
-		if err != nil {
-			return err
-		}
-
 		cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
-			Address: fmt.Sprintf("%s.%s", ep, c.subdomain),
+			Address: fmt.Sprintf("%d.%s", index, c.subdomain),
 			Port:    c.hostPort,
 			Name:    "kafka-external",
 		})
@@ -257,14 +244,8 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
-		ep, err := utils.ComputeEndpoint(c.externalConnectivityPandaProxyEndpointTemplate, data)
-		if err != nil {
-			return err
-		}
-
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-			Address: fmt.Sprintf("%s.%s", ep, c.subdomain),
+			Address: fmt.Sprintf("%d.%s", index, c.subdomain),
 			Port:    c.proxyHostPort,
 			Name:    "proxy-external",
 		})
@@ -297,7 +278,6 @@ func getExternalIP(node *corev1.Node) string {
 	return ""
 }
 
-// nolint:funlen // envs are many
 func checkEnvVars() (configuratorConfig, error) {
 	var result error
 	var extCon string
@@ -345,18 +325,6 @@ func checkEnvVars() (configuratorConfig, error) {
 		{
 			value: &hostPort,
 			name:  hostPortEnvVar,
-		},
-		{
-			value: &c.externalConnectivityKafkaEndpointTemplate,
-			name:  externalConnectivityKafkaEndpointTemplateEnvVar,
-		},
-		{
-			value: &c.externalConnectivityPandaProxyEndpointTemplate,
-			name:  externalConnectivityPandaProxyEndpointTemplateEnvVar,
-		},
-		{
-			value: &c.hostIP,
-			name:  hostIPEnvVar,
 		},
 	}
 	for _, envVar := range envVarList {
