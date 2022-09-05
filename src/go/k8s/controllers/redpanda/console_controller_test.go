@@ -212,7 +212,7 @@ var _ = Describe("Console controller", func() {
 		It("Should create Enterprise fields in ConfigMap", func() {
 			var (
 				rbacName    = fmt.Sprintf("%s-rbac", ConsoleName)
-				rbacDataKey = "rbac.yaml"
+				rbacDataKey = consolepkg.EnterpriseRBACDataKey
 				rbacDataVal = `roleBindings:
 - roleName: admin
   metadata:

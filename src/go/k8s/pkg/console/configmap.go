@@ -158,7 +158,7 @@ func (cm *ConfigMap) genEnterprise() (e Enterprise) {
 		return Enterprise{
 			RBAC: EnterpriseRBAC{
 				Enabled:              cm.consoleobj.Spec.Enterprise.RBAC.Enabled,
-				RoleBindingsFilepath: fmt.Sprintf("%s/%s", enterpriseRBACMountPath, "rbac.yaml"),
+				RoleBindingsFilepath: fmt.Sprintf("%s/%s", enterpriseRBACMountPath, EnterpriseRBACDataKey),
 			},
 		}
 	}
@@ -166,8 +166,25 @@ func (cm *ConfigMap) genEnterprise() (e Enterprise) {
 }
 
 var (
-	defaultLicenseSecretKey = "license"
-	defaultJWTSecretKey     = "jwt"
+	// DefaultLicenseSecretKey is the default key required in secret referenced by `SecretKeyRef`.
+	// The license will be provided to console to allow enterprise features.
+	DefaultLicenseSecretKey = "license"
+
+	// DefaultJWTSecretKey is the default key required in secret referenced by `SecretKeyRef`.
+	// The secret should consist of JWT used to authenticate into google SSO.
+	DefaultJWTSecretKey = "jwt"
+
+	// EnterpriseRBACDataKey is the required key in Enterprise RBAC
+	EnterpriseRBACDataKey = "rbac.yaml"
+
+	// EnterpriseGoogleSADataKey is the required key in EnterpriseLoginGoogle SA
+	EnterpriseGoogleSADataKey = "sa.json"
+
+	// EnterpriseGoogleClientIDSecretKey is the required key in EnterpriseLoginGoogle Client ID
+	EnterpriseGoogleClientIDSecretKey = "clientId"
+
+	// EnterpriseGoogleClientSecretKey is the required key in EnterpriseLoginGoogle Client secret
+	EnterpriseGoogleClientSecretKey = "clientSecret"
 )
 
 func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
@@ -180,7 +197,7 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 		if err != nil {
 			return e, err
 		}
-		jwt, err := provider.JWTSecretRef.GetValue(jwtSecret, defaultJWTSecretKey)
+		jwt, err := provider.JWTSecretRef.GetValue(jwtSecret, DefaultJWTSecretKey)
 		if err != nil {
 			return e, err
 		}
@@ -193,11 +210,11 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 			if err != nil {
 				return e, err
 			}
-			clientID, err := cc.GetValue(ccSecret, "clientId")
+			clientID, err := cc.GetValue(ccSecret, EnterpriseGoogleClientIDSecretKey)
 			if err != nil {
 				return e, err
 			}
-			clientSecret, err := cc.GetValue(ccSecret, "clientSecret")
+			clientSecret, err := cc.GetValue(ccSecret, EnterpriseGoogleClientSecretKey)
 			if err != nil {
 				return e, err
 			}
@@ -209,7 +226,7 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 			}
 			if dir := provider.Google.Directory; dir != nil {
 				enterpriseLogin.Google.Directory = &EnterpriseLoginGoogleDirectory{
-					ServiceAccountFilepath: fmt.Sprintf("%s/%s", enterpriseGoogleSAMountPath, "sa.json"),
+					ServiceAccountFilepath: fmt.Sprintf("%s/%s", enterpriseGoogleSAMountPath, EnterpriseGoogleSADataKey),
 					TargetPrincipal:        provider.Google.Directory.TargetPrincipal,
 				}
 			}
@@ -225,7 +242,7 @@ func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		licenseValue, err := license.GetValue(licenseSecret, defaultLicenseSecretKey)
+		licenseValue, err := license.GetValue(licenseSecret, DefaultLicenseSecretKey)
 		if err != nil {
 			return "", err
 		}
