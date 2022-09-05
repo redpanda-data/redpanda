@@ -49,11 +49,71 @@ public:
     using replicas_revision_map
       = absl::flat_hash_map<model::node_id, model::revision_id>;
 
-    struct in_progress_update {
-        std::vector<model::broker_shard> previous_replicas;
-        in_progress_state state;
-        model::revision_id update_revision;
-        replicas_revision_map replicas_revisions;
+    class in_progress_update {
+    public:
+        explicit in_progress_update(
+          std::vector<model::broker_shard> previous_replicas,
+          std::vector<model::broker_shard> result_replicas,
+          in_progress_state state,
+          model::revision_id update_revision,
+          replicas_revision_map replicas_revisions,
+          topic_table_probe& probe)
+          : _previous_replicas(std::move(previous_replicas))
+          , _result_replicas(std::move(result_replicas))
+          , _state(state)
+          , _update_revision(update_revision)
+          , _replicas_revisions(std::move(replicas_revisions))
+          , _probe(probe) {
+            _probe.handle_update(_previous_replicas, _result_replicas);
+        }
+
+        ~in_progress_update() {
+            _probe.handle_update_finish(_previous_replicas, _result_replicas);
+            if (
+              _state == in_progress_state::cancel_requested
+              || _state == in_progress_state::force_cancel_requested) {
+                _probe.handle_update_cancel_finish(
+                  _previous_replicas, _result_replicas);
+                ;
+            }
+        }
+
+        in_progress_update(const in_progress_update&) = delete;
+        in_progress_update(in_progress_update&&) = default;
+        in_progress_update& operator=(const in_progress_update&) = delete;
+        in_progress_update& operator=(in_progress_update&&) = delete;
+
+        const in_progress_state& get_state() const { return _state; }
+
+        void set_state(in_progress_state state) {
+            if (
+              _state == in_progress_state::update_requested
+              && (state == in_progress_state::cancel_requested || state == in_progress_state::force_cancel_requested)) {
+                _probe.handle_update_cancel(
+                  _previous_replicas, _result_replicas);
+            }
+            _state = state;
+        }
+
+        const std::vector<model::broker_shard>& get_previous_replicas() const {
+            return _previous_replicas;
+        }
+
+        const replicas_revision_map& get_replicas_revisions() const {
+            return _replicas_revisions;
+        }
+
+        const model::revision_id& get_update_revision() const {
+            return _update_revision;
+        }
+
+    private:
+        std::vector<model::broker_shard> _previous_replicas;
+        std::vector<model::broker_shard> _result_replicas;
+        in_progress_state _state;
+        model::revision_id _update_revision;
+        replicas_revision_map _replicas_revisions;
+        topic_table_probe& _probe;
     };
 
     struct topic_metadata_item {
@@ -278,6 +338,8 @@ public:
     std::vector<model::ntp> all_updates_in_progress() const;
 
 private:
+    friend topic_table_probe;
+
     struct waiter {
         explicit waiter(uint64_t id)
           : id(id) {}

@@ -2510,7 +2510,7 @@ void admin_server::register_partition_routes() {
         -> ss::future<ss::json::json_return_type> {
           using reconfiguration = ss::httpd::partition_json::reconfiguration;
           std::vector<reconfiguration> ret;
-          auto in_progress
+          auto& in_progress
             = _controller->get_topics_state().local().updates_in_progress();
 
           ret.reserve(in_progress.size());
@@ -2519,9 +2519,9 @@ void admin_server::register_partition_routes() {
               r.ns = ntp.ns;
               r.topic = ntp.tp.topic;
               r.partition = ntp.tp.partition;
-              r.status = fmt::format("{}", status.state);
+              r.status = fmt::format("{}", status.get_state());
 
-              for (auto& bs : status.previous_replicas) {
+              for (auto& bs : status.get_previous_replicas()) {
                   ss::httpd::partition_json::assignment replica;
                   replica.node_id = bs.node_id;
                   replica.core = bs.shard;
