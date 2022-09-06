@@ -1,10 +1,12 @@
 import logging
-from io import BufferedReader, BytesIO
+from io import BytesIO
 from model import *
 from reader import Reader
-from storage import Batch, Segment
+from storage import Segment
 from storage import BatchType
 import datetime
+
+logger = logging.getLogger('controller')
 
 
 def read_topic_properties_serde(rdr: Reader, version):
@@ -263,8 +265,7 @@ def decode_topic_command(record):
         return decode_topic_command_adl(k_rdr, rdr)
 
 
-def decode_config(record):
-    rdr = Reader(BytesIO(record.value))
+def decode_config(k_rdr: Reader, rdr: Reader):
     return read_raft_config(rdr)
 
 
@@ -551,14 +552,7 @@ def decode_feature_command_adl(k_rdr: Reader, rdr: Reader):
     return cmd
 
 
-def decode_node_management_command(record):
-    rdr = Reader(BufferedReader(BytesIO(record.value)))
-    k_rdr = Reader(BytesIO(record.key))
-    either_adl_or_serde = rdr.peek_int8()
-    assert either_adl_or_serde >= -1, "unsupported serialization format"
-    if either_adl_or_serde == -1:
-        # serde encoding flag, consume it and proceed
-        rdr.skip(1)
+def decode_node_management_command(k_rdr: Reader, rdr: Reader):
     cmd = {'type': rdr.read_int8()}
     if cmd['type'] == 0:
         cmd |= {
@@ -610,9 +604,7 @@ def decode_cluster_bootstrap_command(record):
 
     return cmd
 
-def decode_adl_or_serde(record, adl_fn, serde_fn):
-    rdr = Reader(BufferedReader(BytesIO(record.value)))
-    k_rdr = Reader(BytesIO(record.key))
+def decode_adl_or_serde(k_rdr: Reader, rdr: Reader, adl_fn, serde_fn):
     either_adl_or_serde = rdr.peek_int8()
     assert either_adl_or_serde >= -1, "unsupported serialization format"
     if either_adl_or_serde == -1:
@@ -636,28 +628,41 @@ def decode_record(batch, record, bin_dump: bool):
         ret['value_dump'] = record.value.__str__()
     ret['data'] = None
 
+    rdr = Reader(BytesIO(record.value))
+    k_rdr = Reader(BytesIO(record.key))
+
     if batch.type == BatchType.raft_configuration:
-        ret['data'] = decode_config(record)
+        ret['data'] = decode_config(k_rdr, rdr)
     if batch.type == BatchType.topic_management_cmd:
-        ret['data'] = decode_adl_or_serde(record, decode_topic_command_adl,
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr, decode_topic_command_adl,
                                           decode_topic_command_serde)
     if batch.type == BatchType.user_management_cmd:
-        ret['data'] = decode_adl_or_serde(record, decode_user_command_adl,
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr, decode_user_command_adl,
                                           decode_user_command_serde)
     if batch.type == BatchType.acl_management_cmd:
-        ret['data'] = decode_adl_or_serde(record, decode_acl_command_adl,
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr, decode_acl_command_adl,
                                           decode_acl_command_serde)
     if batch.type == BatchType.cluster_config_cmd:
-        ret['data'] = decode_adl_or_serde(record, decode_config_command_adl,
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr,
+                                          decode_config_command_adl,
                                           decode_config_command_serde)
     if batch.type == BatchType.feature_update:
-        ret['data'] = decode_adl_or_serde(record, decode_feature_command_adl,
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr,
+                                          decode_feature_command_adl,
                                           decode_feature_command_serde)
-    # TODO: serde for node_management_cmd, cluster_bootstrap_cmd
     if batch.type == BatchType.node_management_cmd:
-        ret['data'] = decode_node_management_command(record)
+        ret['data'] = decode_adl_or_serde(k_rdr, rdr,
+                                          decode_node_management_command,
+                                          decode_node_management_command)
+    # TODO: serde for cluster_bootstrap_cmd
     if batch.type == BatchType.cluster_bootstrap_cmd:
         ret['data'] = decode_cluster_bootstrap_command(record)
+
+    k_unread = k_rdr.remaining()
+    v_unread = rdr.remaining()
+    if k_unread != 0 or v_unread != 0:
+        ret['unread'] = {'key': k_unread, 'value': v_unread}
+        logger.error(f"@{ret['type']} unread bytes. k:{k_unread} v:{v_unread}")
 
     return ret
 
