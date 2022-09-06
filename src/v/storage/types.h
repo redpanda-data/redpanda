@@ -308,11 +308,13 @@ struct compaction_config {
     explicit compaction_config(
       model::timestamp upper,
       std::optional<size_t> max_bytes_in_log,
+      model::offset max_collect_offset,
       ss::io_priority_class p,
       ss::abort_source& as,
       debug_sanitize_files should_sanitize = debug_sanitize_files::no)
       : eviction_time(upper)
       , max_bytes(max_bytes_in_log)
+      , max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitize(should_sanitize)
       , asrc(&as) {}
@@ -321,6 +323,9 @@ struct compaction_config {
     model::timestamp eviction_time;
     // remove one segment if log is > max_bytes
     std::optional<size_t> max_bytes;
+    // Cannot delete or compact past this offset (i.e. for unresolved txn
+    // records): that is, only offsets <= this may be compacted.
+    model::offset max_collectible_offset;
     // priority for all IO in compaction
     ss::io_priority_class iopc;
     // use proxy fileops with assertions

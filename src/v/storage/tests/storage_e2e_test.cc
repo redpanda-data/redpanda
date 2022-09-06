@@ -19,13 +19,17 @@
 #include "reflection/adl.h"
 #include "storage/batch_cache.h"
 #include "storage/log_manager.h"
+#include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_utils.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/tests/utils/log_gap_analysis.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
+#include "units.h"
 #include "utils/to_string.h"
+#include "vassert.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/sleep.hh>
@@ -482,6 +486,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
         return storage::compaction_config(
           model::timestamp(timestamp),
           std::nullopt,
+          model::offset::max(),
           ss::default_priority_class(),
           as);
     };
@@ -552,6 +557,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
     storage::compaction_config ccfg(
       model::timestamp::min(),
       (total_size - first_size) + 1,
+      model::offset::max(),
       ss::default_priority_class(),
       as);
     log.set_collectible_offset(log.offsets().dirty_offset);
@@ -596,7 +602,11 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
       model::term_id(0),
       custom_ts_batch_generator(model::timestamp(gc_ts() + 10)));
     storage::compaction_config ccfg(
-      gc_ts, std::nullopt, ss::default_priority_class(), as);
+      gc_ts,
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     log.compact(ccfg).get0();
 
@@ -684,7 +694,11 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     log.set_collectible_offset(model::offset(10000000));
     auto compact = [log, &as]() mutable {
         storage::compaction_config ccfg(
-          model::timestamp::min(), 1000, ss::default_priority_class(), as);
+          model::timestamp::min(),
+          1000,
+          model::offset::max(),
+          ss::default_priority_class(),
+          as);
         return log.compact(ccfg);
     };
 
@@ -863,7 +877,11 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
       ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
 
     storage::compaction_config compaction_cfg(
-      model::timestamp::min(), 1, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      1,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto offsets_after_recovery = log.offsets();
@@ -1024,6 +1042,7 @@ FIXTURE_TEST(compacted_log_truncation, storage_test_fixture) {
         storage::compaction_config c_cfg(
           model::timestamp::min(),
           std::nullopt,
+          model::offset::max(),
           ss::default_priority_class(),
           as);
         log.flush().get0();
@@ -1087,7 +1106,11 @@ FIXTURE_TEST(
     append_single_record_batch(log, 14, model::term_id(1));
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
     log.flush().get0();
     model::offset truncate_at(7);
     info("Truncating at offset:{}", truncate_at);
@@ -1207,7 +1230,11 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     log.set_collectible_offset(log.offsets().dirty_offset);
     storage::compaction_config ccfg(
-      model::timestamp::min(), 60_KiB, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      60_KiB,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     // Compact 10 times, with a configuration calling for 60kiB max log size.
     // This results in approximately prefix truncating at offset 50, although
@@ -1313,7 +1340,11 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     log.compact(c_cfg).get0();
     log.compact(c_cfg).get0();
@@ -1367,7 +1398,11 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     log.compact(c_cfg).get0();
     log.compact(c_cfg).get0();
@@ -1441,7 +1476,11 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     // self compaction steps
     log.compact(c_cfg).get0();
@@ -1640,7 +1679,11 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
     /**
      * Initially all compaction rations are equal to 1.0 so it is easy to
      * calculate backlog size.
@@ -1950,7 +1993,11 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
 
     // self compaction steps
     log.compact(c_cfg).get0();
@@ -2177,7 +2224,11 @@ FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
 
     storage::compaction_config c_cfg(
-      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
     auto before_compaction = compact_in_memory(log);
 
     BOOST_REQUIRE_EQUAL(before_compaction.size(), 3);
@@ -2405,6 +2456,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
                            .compact(storage::compaction_config(
                              model::timestamp::min(),
                              std::nullopt,
+                             model::offset::max(),
                              ss::default_priority_class(),
                              as))
                            .handle_exception_type(
@@ -2478,6 +2530,7 @@ FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
             .compact(storage::compaction_config(
               model::timestamp::min(),
               std::nullopt,
+              model::offset::max(),
               ss::default_priority_class(),
               as))
             .get();
@@ -2551,4 +2604,212 @@ FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
         // empty log have a dirty offset equal to (start_offset - 1)
         BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(10));
     }
+}
+
+static storage::log_gap_analysis analyze(storage::log::impl& log) {
+    // TODO factor out common constant
+    storage::log_reader_config reader_cfg(
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      0,
+      10_MiB,
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+    return storage::make_log_gap_analysis(
+      log.make_reader(reader_cfg).get(), model::offset(0));
+}
+
+FIXTURE_TEST(test_max_compact_offset, storage_test_fixture) {
+    // Test setup.
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    // (1) append some random data, with limited number of distinct keys, so
+    // compaction can make progress.
+    auto headers = append_random_batches<key_limited_random_batch_generator>(
+      log, 20);
+
+    // (2) remember log offset, roll log, and produce more messages
+    log.flush().get0();
+    auto first_stats = log.offsets();
+    info("Offsets to be compacted {}", first_stats);
+    disk_log->force_roll(ss::default_priority_class()).get();
+    headers = append_random_batches<key_limited_random_batch_generator>(
+      log, 20);
+
+    // (3) roll log and trigger compaction, analyzing offset gaps before and
+    // after, to observe compaction behavior.
+    log.flush().get0();
+    auto second_stats = log.offsets();
+    auto pre_compact_gaps = analyze(*disk_log);
+    disk_log->force_roll(ss::default_priority_class()).get();
+    auto max_compact_offset = first_stats.committed_offset;
+    storage::compaction_config ccfg(
+      model::timestamp::max(), // no time-based deletion
+      std::nullopt,
+      max_compact_offset,
+      ss::default_priority_class(),
+      as);
+    log.compact(ccfg).get0();
+    auto final_stats = log.offsets();
+    auto post_compact_gaps = analyze(*disk_log);
+
+    // (4) check correctness.
+    info("pre-compact gaps {}", pre_compact_gaps);
+    info("post-compact gaps {}", post_compact_gaps);
+
+    // Compaction doesn't change offset values, it creates holes in offset
+    // space.
+    BOOST_REQUIRE(
+      final_stats.committed_offset == second_stats.committed_offset);
+
+    // No gaps before compacting, and >0 gaps after.
+    BOOST_REQUIRE_EQUAL(pre_compact_gaps.num_gaps, 0);
+    BOOST_REQUIRE_GT(post_compact_gaps.num_gaps, 0);
+    // Verify no compaction happened past the max_compactable_offset we
+    // specified.
+    BOOST_REQUIRE_LE(post_compact_gaps.first_gap_start, max_compact_offset);
+    BOOST_REQUIRE_LE(post_compact_gaps.last_gap_end, max_compact_offset);
+};
+
+struct compact_test_args {
+    model::offset max_compact_offs;
+    long num_compactable_msg;
+    long msg_per_segment;
+    long segments;
+};
+
+static void
+do_compact_test(const compact_test_args args, storage_test_fixture& f) {
+    // Test setup.
+    auto cfg = f.default_log_config(f.test_dir);
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = f.make_log_manager(cfg);
+    tlog.info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    auto append_batch = [](storage::log log, model::term_id term) {
+        iobuf key = bytes_to_iobuf(bytes("key"));
+        iobuf value = model::test::make_iobuf(100);
+
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        builder.add_raw_kv(key.copy(), value.copy());
+
+        auto batch = std::move(builder).build();
+
+        batch.set_term(term);
+        batch.header().first_timestamp = model::timestamp::now();
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+          .io_priority = ss::default_priority_class(),
+          .timeout = model::no_timeout,
+        };
+
+        std::move(reader)
+          .for_each_ref(log.make_appender(cfg), cfg.timeout)
+          .get();
+    };
+
+    for (int s = 0; s < args.segments; s++) {
+        for (int i = 0; i < args.msg_per_segment; i++) {
+            append_batch(log, model::term_id(0));
+        }
+        disk_log->force_roll(ss::default_priority_class()).get0();
+    }
+    append_batch(log, model::term_id(0)); // write single message for final
+                                          // segment after last roll
+
+    auto pre_gaps = analyze(*disk_log);
+    auto pre_stats = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      pre_stats.committed_offset, args.segments * args.msg_per_segment);
+    BOOST_REQUIRE_EQUAL(pre_gaps.num_gaps, 0);
+    tlog.info("pre-compact stats: {}, analysis: {}", pre_stats, pre_gaps);
+
+    storage::compaction_config ccfg(
+      model::timestamp::max(), // no time-based deletion
+      std::nullopt,
+      model::offset(args.max_compact_offs),
+      ss::default_priority_class(),
+      as);
+    log.compact(ccfg).get0();
+    auto final_stats = log.offsets();
+    auto final_gaps = analyze(*disk_log);
+    tlog.info("post-compact stats: {}, analysis: {}", final_stats, final_gaps);
+    BOOST_REQUIRE_EQUAL(
+      final_stats.committed_offset, args.segments * args.msg_per_segment);
+    // we used the same key for all messages, so we should have one huge gap at
+    // the beginning of the log
+    BOOST_REQUIRE_EQUAL(final_gaps.num_gaps, 1);
+    BOOST_REQUIRE_EQUAL(final_gaps.first_gap_start, model::offset(0));
+
+    // If adjacent segment compaction worked in order from oldest to newest, we
+    // could use this assert.
+#if 0
+    // We can compact the whole first segment, ending at num_compactible_msg -
+    // 1, but compaction leaves at least one message per key in the segment,
+    // thus the - 2 here.
+    BOOST_REQUIRE_EQUAL(
+      final_gaps.last_gap_end, model::offset(args.num_compactable_msg - 2));
+#else
+    BOOST_REQUIRE_LE(final_gaps.last_gap_end, args.max_compact_offs);
+#endif
+}
+
+FIXTURE_TEST(test_max_compact_offset_mid_segment, storage_test_fixture) {
+    // Create a log with three segments. We will set max compactible offset to
+    // be in the middle of the second segment. This should cause only the first
+    // segment to be compacted, as we do not support partial compaction of a
+    // segment.
+    do_compact_test(
+      {.max_compact_offs = model::offset(150),
+       .num_compactable_msg = 100,
+       .msg_per_segment = 100,
+       .segments = 3},
+      *this);
+}
+
+FIXTURE_TEST(test_max_compact_offset_unset, storage_test_fixture) {
+    // Same as above, but leave max_compact_offset unset.
+    do_compact_test(
+      {.max_compact_offs = model::offset::max(),
+       // XXX AJF: I expected this to be 300, because I force segment roll
+       // after writing the third segment.
+       .num_compactable_msg = 200,
+       .msg_per_segment = 100,
+       .segments = 3},
+      *this);
 }

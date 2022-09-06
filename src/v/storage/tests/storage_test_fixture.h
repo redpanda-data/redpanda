@@ -42,6 +42,19 @@ struct random_batches_generator {
     }
 };
 
+struct key_limited_random_batch_generator {
+    static constexpr int cardinality = 10;
+
+    ss::circular_buffer<model::record_batch> operator()() {
+        return model::test::make_random_batches(model::test::record_batch_spec{
+          .allow_compression = true,
+          .count = random_generators::get_int(1, 10),
+          .max_key_cardinality = cardinality,
+          .bt = model::record_batch_type::raft_data,
+        });
+    }
+};
+
 class storage_test_fixture {
 public:
     ss::sstring test_dir;

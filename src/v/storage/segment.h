@@ -51,8 +51,12 @@ public:
         /// \brief These offsets are the `batch.last_offset()` and not
         /// `batch.base_offset()` which might be confusing at first,
         /// but allow us to keep track of the actual last logical offset
+
+        // Offset of last message fsync'd to disk
         model::offset committed_offset;
+        // Offset of last message written to this log
         model::offset dirty_offset;
+        // Offset of last message written to disk
         model::offset stable_offset;
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };
@@ -126,6 +130,9 @@ public:
     bool has_appender() const;
     compacted_index_writer& compaction_index();
     const compacted_index_writer& compaction_index() const;
+    // We currently use `max_collectible_offset` to control both
+    // deletion/eviction, and compaction.
+    bool has_compactible_offsets(const compaction_config& cfg) const;
 
     void release_batch_cache_index() { _cache.reset(); }
     /** Cache methods */
@@ -292,6 +299,14 @@ inline size_t segment::size_bytes() const {
 inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
 }
+
+inline bool
+segment::has_compactible_offsets(const compaction_config& cfg) const {
+    // since we don't support partially-compacted segments, a segment must
+    // end before the max compactible offset to be eligible for compaction.
+    return offsets().stable_offset <= cfg.max_collectible_offset;
+}
+
 inline void segment::mark_as_compacted_segment() {
     _flags |= bitflags::is_compacted_segment;
 }

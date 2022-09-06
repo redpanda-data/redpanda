@@ -24,6 +24,8 @@ struct record_batch_spec {
     bool allow_compression{true};
     int count{0};
     std::optional<int> records{std::nullopt};
+    std::optional<int> max_key_cardinality{std::nullopt};
+
     model::record_batch_type bt{model::record_batch_type::raft_data};
     bool enable_idempotence{false};
     int64_t producer_id{-1};
@@ -33,6 +35,9 @@ struct record_batch_spec {
     std::optional<std::vector<size_t>> record_sizes;
     std::optional<model::timestamp> timestamp;
 };
+
+// Makes an random alphanumeric string, encoded in an iobuf.
+iobuf make_iobuf(size_t);
 
 /**
  * Makes random batch starting at requested offset.

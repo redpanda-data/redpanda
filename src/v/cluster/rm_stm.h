@@ -174,6 +174,10 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
+    model::offset max_collectible_offset() override {
+        return last_stable_offset();
+    }
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader,

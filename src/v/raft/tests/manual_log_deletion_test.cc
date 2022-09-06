@@ -61,6 +61,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
                     ->compact(storage::compaction_config(
                       retention_timestamp,
                       100_MiB,
+                      model::offset::max(),
                       ss::default_priority_class(),
                       as,
                       storage::debug_sanitize_files::yes))

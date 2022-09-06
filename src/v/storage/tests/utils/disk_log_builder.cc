@@ -96,6 +96,7 @@ ss::future<> disk_log_builder::gc(
     return get_log().compact(compaction_config(
       collection_upper_bound,
       max_partition_retention_size,
+      model::offset::max(),
       ss::default_priority_class(),
       _abort_source));
 }

@@ -26,7 +26,6 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
-#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <vector>

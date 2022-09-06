@@ -548,6 +548,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
           ->compact(storage::compaction_config(
             first_ts,
             100_MiB,
+            model::offset::max(),
             ss::default_priority_class(),
             as,
             storage::debug_sanitize_files::yes))
