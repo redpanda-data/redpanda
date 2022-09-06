@@ -149,6 +149,8 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
         cmd['type_string'] = 'create_topic'
+        cmd['namespace'] = k_rdr.read_string()
+        cmd['topic'] = k_rdr.read_string()
         cmd |= read_topic_assignment_serde(rdr)
     elif cmd['type'] == 1:
         cmd['type_string'] = 'delete_topic'
@@ -174,6 +176,7 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
         cmd['type_string'] = 'create_partitions'
         cmd |= read_create_partitions_serde(rdr)
     elif cmd['type'] == 6:
+        rdr.skip(1)  #unused
         cmd['type_string'] = 'create_non_replicable_topic'
         cmd['topic'] = k_rdr.read_envelope(
             lambda k_rdr, _: {
@@ -271,7 +274,7 @@ def decode_config(k_rdr: Reader, rdr: Reader):
 
 def decode_user_command_serde(k_rdr: Reader, rdr: Reader):
     cmd = {'type': rdr.read_int8()}
-    cmd['str_type'] = decode_user_cmd_type(cmd['type'])
+    cmd['type_string'] = decode_user_cmd_type(cmd['type'])
 
     if cmd['type'] == 5 or cmd['type'] == 7:
         cmd['user'] = k_rdr.read_string()
@@ -284,6 +287,7 @@ def decode_user_command_serde(k_rdr: Reader, rdr: Reader):
                 'iterations': rdr.read_int32(),
             })
     elif cmd['type'] == 6:
+        rdr.skip(1)  # unused
         cmd['user'] = k_rdr.read_string()
 
     return cmd
@@ -408,10 +412,12 @@ def decode_acl_command_serde(k_rdr: Reader, rdr: Reader):
     cmd['type'] = rdr.read_int8()
     cmd['str_type'] = decode_acls_cmd_type(cmd['type'])
     if cmd['type'] == 8:
+        rdr.skip(1)  # unused
         cmd['acls'] = k_rdr.read_envelope(
             lambda k_rdr, _:
             {'bindings': k_rdr.read_serde_vector(read_acl_binding_serde)})
     elif cmd['type'] == 9:
+        rdr.skip(1)  # unused
         cmd |= k_rdr.read_envelope(lambda k_rdr, _: {
             'filters':
             k_rdr.read_serde_vector(read_acl_binding_filter_serde)
@@ -506,6 +512,7 @@ def decode_action_t(v):
 def decode_feature_command_serde(k_rdr: Reader, rdr: Reader):
     cmd = {'type': rdr.read_int8()}
     if cmd['type'] == 0:
+        rdr.skip(1)  # value unused
         cmd['type_name'] = 'feature_update'
         cmd |= k_rdr.read_envelope(
             lambda k_rdr, _: {
@@ -519,6 +526,7 @@ def decode_feature_command_serde(k_rdr: Reader, rdr: Reader):
                     }))
             })
     elif cmd['type'] == 1:
+        rdr.skip(1)  # value unused
         cmd['type_name'] = 'license_update'
         cmd |= k_rdr.read_envelope(
             lambda k_rdr, _: {
@@ -544,6 +552,7 @@ def decode_feature_command_adl(k_rdr: Reader, rdr: Reader):
 
     cmd = {}
     cmd['type'] = rdr.read_int8()
+    rdr.skip(1)  #value unused
     if cmd['type'] == 0:
         cmd['type_name'] = 'feature_update'
         cmd['v'] = k_rdr.read_int8()
@@ -555,16 +564,19 @@ def decode_feature_command_adl(k_rdr: Reader, rdr: Reader):
 def decode_node_management_command(k_rdr: Reader, rdr: Reader):
     cmd = {'type': rdr.read_int8()}
     if cmd['type'] == 0:
+        rdr.skip(1)
         cmd |= {
             'type_string': 'decommission_node',
             'node_id': k_rdr.read_int32()
         }
     elif cmd['type'] == 1:
+        rdr.skip(1)
         cmd |= {
             'type_string': 'recommission_node',
             'node_id': k_rdr.read_int32()
         }
     elif cmd['type'] == 2:
+        rdr.skip(1)
         cmd |= {
             'type_string': 'finish_reallocations',
             'node_id': k_rdr.read_int32()
