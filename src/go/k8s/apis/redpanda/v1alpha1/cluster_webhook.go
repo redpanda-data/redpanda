@@ -15,6 +15,7 @@ import (
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -277,6 +278,12 @@ func (r *Cluster) validateAdminListeners() field.ErrorList {
 				r.Spec.Configuration.AdminAPI,
 				"bootstrap loadbalancer not available for http admin api"))
 	}
+	if externalAdmin != nil && externalAdmin.External.EndpointTemplate != "" {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"cannot provide an endpoint template for admin listener"))
+	}
 
 	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
 	foundListenerWithTLS := false
@@ -306,6 +313,7 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 	}
 
 	var external *KafkaAPI
+	var externalIdx int
 	for i, p := range r.Spec.Configuration.KafkaAPI {
 		if p.External.Enabled {
 			if external != nil {
@@ -315,6 +323,7 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 						"only one kafka api listener can be marked as external"))
 			}
 			external = &r.Spec.Configuration.KafkaAPI[i]
+			externalIdx = i
 		}
 	}
 
@@ -357,10 +366,36 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 				r.Spec.Configuration.KafkaAPI,
 				"bootstrap port cannot be empty"))
 	}
+	// nolint:dupl // not identical
+	if external != nil && external.External.EndpointTemplate != "" {
+		if external.External.Subdomain == "" {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(externalIdx).Child("external"),
+					external.External,
+					"endpointTemplate can only be used in combination with subdomain"))
+		}
+
+		err := checkValidEndpointTemplate(external.External.EndpointTemplate)
+		if err != nil {
+			log.Error(err, "Invalid endpoint template received", "template", external.External.EndpointTemplate)
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(externalIdx).Child("external").Child("endpointTemplate"),
+					external.External.EndpointTemplate,
+					fmt.Sprintf("template is invalid: %v", err)))
+		}
+	}
 
 	return allErrs
 }
 
+func checkValidEndpointTemplate(tmpl string) error {
+	// Using an example input to ensure that the template expression is allowed
+	data := utils.NewEndpointTemplateData(0, "1.2.3.4")
+	_, err := utils.ComputeEndpoint(tmpl, data)
+	return err
+}
+
+// nolint:funlen,gocyclo // it's a sequence of checks
 func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	var allErrs field.ErrorList
 	var proxyExternal *PandaproxyAPI
@@ -411,6 +446,25 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i),
 					r.Spec.Configuration.PandaproxyAPI[i],
 					"sudomain of external pandaproxy must be the same as kafka's"))
+		}
+		// nolint:dupl // not identical
+		if kafkaExternal != nil && proxyExternal.External.EndpointTemplate != "" {
+			if proxyExternal.External.Subdomain == "" {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("external"),
+						proxyExternal.External,
+						"endpointTemplate can only be used in combination with subdomain"))
+			}
+
+			err := checkValidEndpointTemplate(proxyExternal.External.EndpointTemplate)
+			if err != nil {
+				log.Error(err, "Invalid endpoint template received", "template", proxyExternal.External.EndpointTemplate)
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).
+						Child("external").Child("endpointTemplate"),
+						proxyExternal.External.EndpointTemplate,
+						fmt.Sprintf("template is invalid: %v", err)))
+			}
 		}
 	}
 
@@ -510,6 +564,13 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 				r.Spec.Configuration.SchemaRegistry.External,
 				"bootstrap loadbalancer not available for schema reigstry"))
 	}
+	if schemaRegistry.External.EndpointTemplate != "" {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("endpointTemplate"),
+				r.Spec.Configuration.SchemaRegistry.External.EndpointTemplate,
+				"cannot provide an endpoint template for schema registry"))
+	}
+
 	return allErrs
 }
 

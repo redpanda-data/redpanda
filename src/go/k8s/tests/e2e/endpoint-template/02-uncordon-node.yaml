@@ -1,0 +1,5 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  # Uncordon all nodes (selects all nodes not matching an non-existent label)
+  - command: kubectl uncordon -l any!=node

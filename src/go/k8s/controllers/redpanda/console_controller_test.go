@@ -342,4 +342,49 @@ var _ = Describe("Console controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
+
+	Context("When enabling multiple Login providers", func() {
+		ctx := context.Background()
+		It("Should prioritize RedpandaCloud", func() {
+			var (
+				rpCloudDomain   = "test.auth.vectorized.io"
+				rpCloudAudience = "dev.vectorized.io"
+			)
+
+			By("Updating Console RedpandaCloud Login fields")
+			console := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
+			console.Spec.Login.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
+				Enabled:  true,
+				Domain:   rpCloudDomain,
+				Audience: rpCloudAudience,
+			}
+			Expect(k8sClient.Update(ctx, console)).Should(Succeed())
+
+			By("Having only RedpandaCloud provider in ConfigMap")
+			createdConfigMaps := &corev1.ConfigMapList{}
+			Eventually(func() bool {
+				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(console)), client.InNamespace(ConsoleNamespace)); err != nil {
+					return false
+				}
+				if len(createdConfigMaps.Items) != 1 {
+					return false
+				}
+				for _, cm := range createdConfigMaps.Items {
+					cc := &consolepkg.ConsoleConfig{}
+					if err := yaml.Unmarshal([]byte(cm.Data["config.yaml"]), cc); err != nil {
+						return false
+					}
+					if cc.Login.Google != nil {
+						return false
+					}
+					rpCloudConfig := cc.Login.RedpandaCloud
+					if !rpCloudConfig.Enabled || rpCloudConfig.Domain != rpCloudDomain || rpCloudConfig.Audience != rpCloudAudience {
+						return false
+					}
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
 })
