@@ -210,17 +210,17 @@ int application::run(int ac, char** av) {
     }
     // use endl for explicit flushing
     std::cout << community_msg << std::endl;
-    vlog(_log.info, "Redpanda {}", redpanda_version());
-    struct ::utsname buf;
-    ::uname(&buf);
-    vlog(
-      _log.info,
-      "kernel={}, nodename={}, machine={}",
-      buf.release,
-      buf.nodename,
-      buf.machine);
 
     return app.run(ac, av, [this, &app] {
+        vlog(_log.info, "Redpanda {}", redpanda_version());
+        struct ::utsname buf;
+        ::uname(&buf);
+        vlog(
+          _log.info,
+          "kernel={}, nodename={}, machine={}",
+          buf.release,
+          buf.nodename,
+          buf.machine);
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
         // NOTE: we validate required args here instead of above because run()
