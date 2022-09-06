@@ -2778,15 +2778,15 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
 
     // If adjacent segment compaction worked in order from oldest to newest, we
     // could use this assert.
-#if 0
     // We can compact the whole first segment, ending at num_compactible_msg -
     // 1, but compaction leaves at least one message per key in the segment,
     // thus the - 2 here.
-    BOOST_REQUIRE_EQUAL(
-      final_gaps.last_gap_end, model::offset(args.num_compactable_msg - 2));
-#else
+    //   BOOST_REQUIRE_EQUAL(
+    //     final_gaps.last_gap_end, model::offset(args.num_compactable_msg -
+    //     2));
+    //  Instead, we use weaker assert for now:
+
     BOOST_REQUIRE_LE(final_gaps.last_gap_end, args.max_compact_offs);
-#endif
 }
 
 FIXTURE_TEST(test_max_compact_offset_mid_segment, storage_test_fixture) {
