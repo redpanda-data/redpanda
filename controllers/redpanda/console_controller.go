@@ -89,7 +89,7 @@ func (r *ConsoleReconciler) Reconcile(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
 				"Unable to reconcile Console as the referenced Cluster %s/%s is not found",
-				console.Spec.ClusterKeyRef.Namespace, console.Spec.ClusterKeyRef.Name,
+				console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name,
 			)
 		}
 		return ctrl.Result{}, err

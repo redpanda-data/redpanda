@@ -7,7 +7,7 @@ spec:
     listenPort: 8080
   schema:
     enabled: true
-  clusterKeyRef:
+  clusterRef:
     name: cluster
     namespace: default
   deployment:
