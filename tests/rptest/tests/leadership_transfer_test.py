@@ -156,12 +156,14 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
                    backoff_sec=2,
                    err_msg="Leadership did not move to running nodes")
 
-        leaders = self._get_leaders_by_node()
-        assert self.redpanda.idx(node) not in leaders
-
         # sleep for a bit to avoid triggering any of the sticky leaderhsip
         # optimizations
         time.sleep(60)
+
+        # sanity check -- the node we stopped shouldn't be a leader for any
+        # partition after the sleep above as releection should have taken place
+        leaders = self._get_leaders_by_node()
+        assert self.redpanda.idx(node) not in leaders
 
         # restart the stopped node and wait for 15 (out of 21) leaders to be
         # rebalanced on to the node. the error minimization done in the leader
