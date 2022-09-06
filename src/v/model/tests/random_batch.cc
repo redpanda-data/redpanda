@@ -28,13 +28,6 @@
 namespace model::test {
 using namespace random_generators; // NOLINT
 
-iobuf make_iobuf(size_t n = 128) {
-    const auto b = gen_alphanum_string(n);
-    iobuf io;
-    io.append(b.data(), n);
-    return io;
-}
-
 std::vector<model::record_header> make_headers(int n = 2) {
     std::vector<model::record_header> ret;
     ret.reserve(n);

@@ -2719,7 +2719,7 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
 
     auto append_batch = [](storage::log log, model::term_id term) {
         iobuf key = bytes_to_iobuf(bytes("key"));
-        iobuf value = model::test::make_iobuf(100);
+        iobuf value = random_generators::make_iobuf(100);
 
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));

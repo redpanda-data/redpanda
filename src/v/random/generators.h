@@ -51,6 +51,9 @@ static constexpr size_t alphanum_max_distinct_strlen = 32;
  */
 ss::sstring gen_alphanum_max_distinct(size_t max_cardinality);
 
+// Makes an random alphanumeric string, encoded in an iobuf.
+iobuf make_iobuf(size_t n = 128);
+
 template<typename T>
 T get_int() {
     std::uniform_int_distribution<T> dist;
