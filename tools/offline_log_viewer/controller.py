@@ -251,7 +251,7 @@ def decode_topic_command_adl(k_rdr: Reader, rdr: Reader):
 
 
 def decode_topic_command(record):
-    rdr = Reader(BufferedReader(BytesIO(record.value)))
+    rdr = Reader(BytesIO(record.value))
     k_rdr = Reader(BytesIO(record.key))
     either_ald_or_serde = rdr.peek_int8()
     assert either_ald_or_serde >= -1, "unsupported serialization format"

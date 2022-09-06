@@ -1,5 +1,6 @@
 import struct
 import collections
+from io import BufferedReader, BytesIO
 
 SERDE_ENVELOPE_FORMAT = "<BBI"
 SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
@@ -9,8 +10,9 @@ SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
 
 
 class Reader:
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, stream: BytesIO):
+        # BytesIO provides .getBuffer(), BufferedReader peek()
+        self.stream = BufferedReader(stream)
 
     @staticmethod
     def _decode_zig_zag(v):
@@ -128,3 +130,6 @@ class Reader:
 
     def skip(self, length):
         self.stream.read(length)
+
+    def remaining(self):
+        return len(self.stream.raw.getbuffer()) - self.stream.tell()
