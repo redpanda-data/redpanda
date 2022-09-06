@@ -51,6 +51,7 @@ group::group(
   group_state s,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -67,10 +68,15 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {
+  , _enable_group_metrics(group_metrics)
+  , _transactional_id_expiration(
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_frontend(tx_frontend) {
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
+
+    start_abort_timer();
 }
 
 group::group(
@@ -78,6 +84,7 @@ group::group(
   group_metadata_value& md,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -91,7 +98,10 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
-  , _enable_group_metrics(group_metrics) {
+  , _enable_group_metrics(group_metrics)
+  , _transactional_id_expiration(
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_frontend(tx_frontend) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
@@ -114,6 +124,8 @@ group::group(
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
+
+    start_abort_timer();
 }
 
 bool group::valid_previous_state(group_state s) const {
@@ -1193,7 +1205,9 @@ void group::remove_pending_member(kafka::member_id member_id) {
     }
 }
 
-void group::shutdown() {
+ss::future<> group::shutdown() {
+    _auto_abort_timer.cancel();
+    co_await _gate.close();
     // cancel join timer
     _join_timer.cancel();
     // cancel pending members timers
@@ -1676,75 +1690,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     // we commit only if a provided tx_seq matches prepared tx_seq
 
-    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
-    // Problem is group_*_tx contains only producer_id in key, so compaction
-    // save only last records for this events. We need only save in logs
-    // consumed offset after commit_txs. For this we can write store_offset
-    // event together with group_commit_tx.
-    //
-    // Problem: this 2 events contains different record batch type. So we can
-    // not put it in one batch and write on disk atomically. But it is not a
-    // problem, because client got ok for commit_request (see
-    // tx_gateway_frontend). So redpanda will eventually finish commit and
-    // complete write for both this events.
-    model::record_batch_reader::data_t batches;
-    batches.reserve(2);
-
-    cluster::simple_batch_builder store_offset_builder(
-      model::record_batch_type::raft_data, model::offset(0));
-    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
-        update_store_offset_builder(
-          store_offset_builder,
-          tp.topic,
-          tp.partition,
-          metadata.offset,
-          metadata.committed_leader_epoch,
-          metadata.metadata,
-          model::timestamp{-1});
-    }
-
-    batches.push_back(std::move(store_offset_builder).build());
-
-    group_log_commit_tx commit_tx;
-    commit_tx.group_id = r.group_id;
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_commit_tx,
-      commit_tx_record_version,
-      r.pid,
-      std::move(commit_tx));
-
-    batches.push_back(std::move(batch));
-
-    auto reader = model::make_memory_record_batch_reader(std::move(batches));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    prepare_it = _prepared_txs.find(r.pid);
-    if (prepare_it == _prepared_txs.end()) {
-        vlog(
-          _ctx_txlog.error,
-          "can't find already observed prepared tx pid:{}",
-          r.pid);
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    for (const auto& [tp, md] : prepare_it->second.offsets) {
-        try_upsert_offset(tp, md);
-    }
-
-    _prepared_txs.erase(prepare_it);
-
-    co_return make_commit_tx_reply(cluster::tx_errc::none);
+    co_return co_await do_commit(r.group_id, r.pid);
 }
 
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
@@ -1840,6 +1786,10 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
     }
 
+    auto res = _expiration_info.insert_or_assign(
+      r.pid, expiration_info(r.timeout));
+    try_arm(res.first->second.deadline());
+
     cluster::begin_group_tx_reply reply;
     reply.etag = _term;
     reply.ec = cluster::tx_errc::none;
@@ -1906,7 +1856,6 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     }
 
     volatile_tx tx = tx_it->second;
-    _volatile_txs.erase(tx_it);
 
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish
@@ -1924,8 +1873,24 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
+        // Situation: replication has passed but the replicate method returns
+        // error - _volatile_txs is empty, _prepared_txs is empty so when a
+        // fetch happens the group thinks there is no active transaction and
+        // doesn't block while it should. So we do step_down to give next leader
+        // reply log and understand status of transaction
+        co_await _partition->raft()->step_down();
+
+        _volatile_txs.erase(r.pid);
+        _expiration_info.erase(r.pid);
+
         co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
+
+    // We move deletion tx from volatile after replication, because
+    // fetch_offset can see internal state when redpanda has ongoing tx, but it
+    // is not inside internal maps. So we need do moving tx between maps in
+    // atomic section
+    _volatile_txs.erase(r.pid);
 
     prepared_tx ptx;
     ptx.tx_seq = r.tx_seq;
@@ -1938,6 +1903,15 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         ptx.offsets[tp] = md;
     }
     _prepared_txs[r.pid] = ptx;
+
+    auto exp_it = _expiration_info.find(r.pid);
+    if (exp_it == _expiration_info.end()) {
+        vlog(
+          _ctx_txlog.error, "pid({}) should be inside _expiration_info", r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+    exp_it->second.update_last_update_time();
+
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
@@ -1979,6 +1953,15 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     if (origin == cluster::abort_origin::past) {
         // rejecting a delayed abort command to prevent aborting
         // a wrong transaction
+        auto it = _expiration_info.find(r.pid);
+        if (it != _expiration_info.end()) {
+            it->second.is_expiration_requested = true;
+        } else {
+            vlog(
+              _ctx_txlog.error,
+              "pid({}) should be inside _expiration_info",
+              r.pid);
+        }
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
     if (origin == cluster::abort_origin::future) {
@@ -1994,38 +1977,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    // preventing prepare and replicte once we
-    // know we're going to abort tx and abandon pid
-    _volatile_txs.erase(r.pid);
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2197
-    // (check for tx_seq to prevent old abort requests aborting
-    // new transactions in the same session)
-
-    auto tx = group_log_aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_abort_tx,
-      aborted_tx_record_version,
-      r.pid,
-      std::move(tx));
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
-    }
-
-    _prepared_txs.erase(r.pid);
-
-    co_return make_abort_tx_reply(cluster::tx_errc::none);
+    co_return co_await do_abort(r.group_id, r.pid, r.tx_seq);
 }
 
 ss::future<txn_offset_commit_response>
@@ -2053,6 +2005,14 @@ group::store_txn_offsets(txn_offset_commit_request r) {
               .metadata = p.committed_metadata};
             tx_it->second.offsets[tp] = md;
         }
+    }
+
+    auto it = _expiration_info.find(pid);
+    if (it != _expiration_info.end()) {
+        it->second.update_last_update_time();
+    } else {
+        vlog(
+          _ctx_txlog.error, "pid({}) should be inside _expiration_info", pid);
     }
 
     co_return txn_offset_commit_response(r, error_code::none);
@@ -2776,6 +2736,246 @@ void group::add_pending_member(
       member_id);
 
     res.first->second.arm(timeout);
+}
+
+ss::future<cluster::abort_group_tx_reply> group::do_abort(
+  kafka::group_id group_id,
+  model::producer_identity pid,
+  model::tx_seq tx_seq) {
+    // preventing prepare and replicate once we
+    // know we're going to abort tx and abandon pid
+    _volatile_txs.erase(pid);
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2197
+    // (check for tx_seq to prevent old abort requests aborting
+    // new transactions in the same session)
+
+    auto tx = group_log_aborted_tx{.group_id = group_id, .tx_seq = tx_seq};
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_abort_tx,
+      aborted_tx_record_version,
+      pid,
+      std::move(tx));
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    _prepared_txs.erase(pid);
+    _expiration_info.erase(pid);
+
+    co_return make_abort_tx_reply(cluster::tx_errc::none);
+}
+
+ss::future<cluster::commit_group_tx_reply>
+group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
+    auto prepare_it = _prepared_txs.find(pid);
+    if (prepare_it == _prepared_txs.end()) {
+        // Impossible situation
+        vlog(_ctx_txlog.error, "Can not find prepared tx for pid: {}", pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    // It is fix for https://github.com/redpanda-data/redpanda/issues/5163.
+    // Problem is group_*_tx contains only producer_id in key, so compaction
+    // save only last records for this events. We need only save in logs
+    // consumed offset after commit_txs. For this we can write store_offset
+    // event together with group_commit_tx.
+    //
+    // Problem: this 2 events contains different record batch type. So we can
+    // not put it in one batch and write on disk atomically. But it is not a
+    // problem, because client got ok for commit_request (see
+    // tx_gateway_frontend). So redpanda will eventually finish commit and
+    // complete write for both this events.
+    model::record_batch_reader::data_t batches;
+    batches.reserve(2);
+
+    cluster::simple_batch_builder store_offset_builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (const auto& [tp, metadata] : prepare_it->second.offsets) {
+        update_store_offset_builder(
+          store_offset_builder,
+          tp.topic,
+          tp.partition,
+          metadata.offset,
+          metadata.committed_leader_epoch,
+          metadata.metadata,
+          model::timestamp{-1});
+    }
+
+    batches.push_back(std::move(store_offset_builder).build());
+
+    group_log_commit_tx commit_tx;
+    commit_tx.group_id = group_id;
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_commit_tx,
+      commit_tx_record_version,
+      pid,
+      std::move(commit_tx));
+
+    batches.push_back(std::move(batch));
+
+    auto reader = model::make_memory_record_batch_reader(std::move(batches));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    prepare_it = _prepared_txs.find(pid);
+    if (prepare_it == _prepared_txs.end()) {
+        vlog(
+          _ctx_txlog.error,
+          "can't find already observed prepared tx pid:{}",
+          pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+    }
+
+    for (const auto& [tp, md] : prepare_it->second.offsets) {
+        try_upsert_offset(tp, md);
+    }
+
+    _prepared_txs.erase(prepare_it);
+    _expiration_info.erase(pid);
+
+    co_return make_commit_tx_reply(cluster::tx_errc::none);
+}
+
+void group::abort_old_txes() {
+    ssx::spawn_with_gate(_gate, [this] {
+        return do_abort_old_txes().finally([this] {
+            try_arm(clock_type::now() + _transactional_id_expiration);
+        });
+    });
+}
+
+void group::maybe_rearm_timer() {
+    std::optional<time_point_type> earliest_deadline;
+    for (auto& [pid, expiration] : _expiration_info) {
+        auto candidate = expiration.deadline();
+        if (earliest_deadline) {
+            earliest_deadline = std::min(earliest_deadline.value(), candidate);
+        } else {
+            earliest_deadline = candidate;
+        }
+    }
+
+    if (earliest_deadline) {
+        auto deadline = std::max(
+          earliest_deadline.value(),
+          clock_type::now() + _transactional_id_expiration);
+        try_arm(deadline);
+    }
+}
+
+ss::future<> group::do_abort_old_txes() {
+    std::vector<model::producer_identity> pids;
+    for (auto& [id, _] : _prepared_txs) {
+        pids.push_back(id);
+    }
+    for (auto& [id, _] : _volatile_txs) {
+        pids.push_back(id);
+    }
+
+    absl::btree_set<model::producer_identity> expired;
+    for (auto pid : pids) {
+        auto expiration_it = _expiration_info.find(pid);
+        if (expiration_it != _expiration_info.end()) {
+            if (!expiration_it->second.is_expired()) {
+                continue;
+            }
+        }
+        expired.insert(pid);
+    }
+
+    for (auto pid : expired) {
+        co_await try_abort_old_tx(pid);
+    }
+
+    maybe_rearm_timer();
+}
+
+ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
+    return get_tx_lock(pid.get_id())->with([this, pid]() {
+        return do_try_abort_old_tx(pid);
+    });
+}
+
+ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
+    auto expiration_it = _expiration_info.find(pid);
+    if (expiration_it != _expiration_info.end()) {
+        if (!expiration_it->second.is_expired()) {
+            co_return;
+        }
+    }
+
+    auto p_it = _prepared_txs.find(pid);
+    if (p_it != _prepared_txs.end()) {
+        auto tx_seq = p_it->second.tx_seq;
+        auto r = co_await _tx_frontend.local().try_abort(
+          model::partition_id(
+            0), // TODO: Pass partition_id to prepare request and use it here.
+                // https://github.com/redpanda-data/redpanda/issues/6137
+          pid,
+          tx_seq,
+          config::shard_local_cfg().rm_sync_timeout_ms.value());
+        if (r.ec == cluster::tx_errc::none) {
+            if (r.commited) {
+                auto res = co_await do_commit(_id, pid);
+                if (res.ec != cluster::tx_errc::none) {
+                    vlog(
+                      _ctxlog.error,
+                      "Can not commit prepared tx with pid({})",
+                      pid);
+                }
+            } else if (r.aborted) {
+                auto res = co_await do_abort(_id, pid, tx_seq);
+                if (res.ec != cluster::tx_errc::none) {
+                    vlog(
+                      _ctxlog.error,
+                      "Can not abort prepared tx with pid({})",
+                      pid);
+                }
+            }
+        }
+    } else {
+        auto v_it = _volatile_txs.find(pid);
+        if (v_it == _volatile_txs.end()) {
+            co_return;
+        }
+
+        auto res = co_await do_abort(_id, pid, v_it->second.tx_seq);
+        if (res.ec != cluster::tx_errc::none) {
+            vlog(_ctxlog.error, "Can not abort volatile tx with pid({})", pid);
+        }
+    }
+}
+
+void group::try_arm(time_point_type deadline) {
+    if (
+      _auto_abort_timer.armed() && _auto_abort_timer.get_timeout() > deadline) {
+        _auto_abort_timer.cancel();
+        _auto_abort_timer.arm(deadline);
+    } else if (!_auto_abort_timer.armed()) {
+        _auto_abort_timer.arm(deadline);
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {

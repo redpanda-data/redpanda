@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_utils.h"
 #include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
@@ -118,6 +119,7 @@ class group final : public ss::enable_lw_shared_from_this<group> {
 public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
+    using time_point_type = clock_type::time_point;
 
     static constexpr int8_t fence_control_record_version{0};
     static constexpr int8_t prepared_tx_record_version{0};
@@ -185,6 +187,7 @@ public:
       group_state s,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
+      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -194,6 +197,7 @@ public:
       group_metadata_value& md,
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
+      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -590,7 +594,7 @@ public:
       const ss::sstring&) const;
 
     // shutdown group. cancel all pending operations
-    void shutdown();
+    ss::future<> shutdown();
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
@@ -757,6 +761,26 @@ private:
       const ss::sstring& metadata,
       model::timestamp commited_timestemp);
 
+    ss::future<cluster::abort_group_tx_reply> do_abort(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq);
+
+    ss::future<cluster::commit_group_tx_reply>
+    do_commit(kafka::group_id group_id, model::producer_identity pid);
+
+    void start_abort_timer() {
+        _auto_abort_timer.set_callback([this] { abort_old_txes(); });
+        try_arm(clock_type::now() + _transactional_id_expiration);
+    }
+
+    void abort_old_txes();
+    ss::future<> do_abort_old_txes();
+    ss::future<> try_abort_old_tx(model::producer_identity);
+    ss::future<> do_try_abort_old_tx(model::producer_identity);
+    void try_arm(time_point_type);
+    void maybe_rearm_timer();
+
     kafka::group_id _id;
     group_state _state;
     model::timestamp _state_timestamp;
@@ -814,6 +838,37 @@ private:
 
     absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
+
+    struct expiration_info {
+        explicit expiration_info(model::timeout_clock::duration timeout)
+          : timeout(timeout)
+          , last_update(model::timeout_clock::now()) {}
+
+        model::timeout_clock::duration timeout;
+        model::timeout_clock::time_point last_update;
+        bool is_expiration_requested{false};
+
+        model::timeout_clock::time_point deadline() const {
+            return last_update + timeout;
+        }
+
+        bool is_expired() const {
+            return is_expiration_requested || deadline() <= clock_type::now();
+        }
+
+        void update_last_update_time() {
+            last_update = model::timeout_clock::now();
+        }
+    };
+
+    absl::node_hash_map<model::producer_identity, expiration_info>
+      _expiration_info;
+
+    ss::gate _gate;
+    ss::timer<clock_type> _auto_abort_timer;
+    std::chrono::milliseconds _transactional_id_expiration;
+
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

@@ -21,6 +21,11 @@ class rm_group_proxy {
 public:
     virtual ~rm_group_proxy() = default;
 
+    // Timeout from begin_group_tx is not
+    // used inside handler for begin_group_tx.
+    // So we can pass usefull tx timeout
+    // to store it in group service for expire
+    // old txs.
     virtual ss::future<begin_group_tx_reply> begin_group_tx(
       kafka::group_id,
       model::producer_identity,

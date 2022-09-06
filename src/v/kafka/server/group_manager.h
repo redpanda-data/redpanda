@@ -35,6 +35,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -118,6 +119,7 @@ public:
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>&,
+      ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       group_metadata_serializer_factory,
       config::configuration& conf,
       enable_group_metrics group_metrics);
@@ -245,9 +247,15 @@ private:
         return it->second;
     }
 
+    ss::future<> shutdown_groups(std::vector<group_ptr> groups) {
+        return ss::parallel_for_each(
+          groups, [](auto group_ptr) { return group_ptr->shutdown(); });
+    }
+
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
     ss::sharded<cluster::topic_table>& _topic_table;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
     group_metadata_serializer_factory _serializer_factory;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
