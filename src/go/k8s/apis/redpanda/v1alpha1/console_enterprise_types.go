@@ -40,7 +40,7 @@ type EnterpriseLoginGoogle struct {
 
 	// ClientCredentials is the Secret that contains SSO credentials
 	// The Secret should contain keys "clientId", "clientSecret"
-	ClientCredentialsRef SecretKeyRef `json:"clientCredentialsRef"`
+	ClientCredentialsRef NamespaceNameRef `json:"clientCredentialsRef"`
 
 	// Use Google groups in your RBAC role bindings.
 	Directory *EnterpriseLoginGoogleDirectory `json:"directory,omitempty"`

@@ -35,13 +35,13 @@ func (v *ConsoleValidator) Handle(
 	}
 
 	if !console.IsAllowedNamespace() {
-		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterKeyRef.Namespace, console.Spec.ClusterKeyRef.Name))
+		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 	}
 
 	cluster := &redpandav1alpha1.Cluster{}
 	if err := v.Client.Get(ctx, console.GetClusterRef(), cluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			return admission.Denied(fmt.Sprintf("cluster %s/%s not found", console.Spec.ClusterKeyRef.Namespace, console.Spec.ClusterKeyRef.Name))
+			return admission.Denied(fmt.Sprintf("cluster %s/%s not found", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 		}
 		return admission.Errored(http.StatusBadRequest, err)
 	}

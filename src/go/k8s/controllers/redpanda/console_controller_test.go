@@ -79,7 +79,7 @@ var _ = Describe("Console controller", func() {
 					Namespace: ConsoleNamespace,
 				},
 				Spec: redpandav1alpha1.ConsoleSpec{
-					ClusterKeyRef:  corev1.ObjectReference{Namespace: key.Namespace, Name: key.Name},
+					ClusterRef:     redpandav1alpha1.NamespaceNameRef{Namespace: key.Namespace, Name: key.Name},
 					SchemaRegistry: redpandav1alpha1.Schema{Enabled: enableSchemaRegistry},
 					Deployment:     redpandav1alpha1.Deployment{Image: deploymentImage},
 					Connect:        redpandav1alpha1.Connect{Enabled: enableConnect},
@@ -308,7 +308,7 @@ var _ = Describe("Console controller", func() {
 				},
 				Google: &redpandav1alpha1.EnterpriseLoginGoogle{
 					Enabled: true,
-					ClientCredentialsRef: redpandav1alpha1.SecretKeyRef{
+					ClientCredentialsRef: redpandav1alpha1.NamespaceNameRef{
 						Name:      googleName,
 						Namespace: ConsoleNamespace,
 					},
