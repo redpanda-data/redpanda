@@ -205,7 +205,10 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 
 		switch { // nolint:gocritic // will support more providers
 		case provider.Google != nil:
-			cc := provider.Google.ClientCredentialsRef
+			cc := redpandav1alpha1.SecretKeyRef{
+				Namespace: provider.Google.ClientCredentialsRef.Namespace,
+				Name:      provider.Google.ClientCredentialsRef.Name,
+			}
 			ccSecret, err := cc.GetSecret(ctx, cm.Client)
 			if err != nil {
 				return e, err

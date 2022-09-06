@@ -35,7 +35,7 @@ type ConsoleSpec struct {
 	SchemaRegistry Schema `json:"schema"`
 
 	// The referenced Redpanda Cluster
-	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+	ClusterRef NamespaceNameRef `json:"clusterRef"`
 
 	Deployment Deployment `json:"deployment"`
 	Connect    Connect    `json:"connect"`
@@ -216,12 +216,12 @@ var AllowConsoleAnyNamespace bool
 
 // IsAllowedNamespace returns true if Console is valid to be created in current namespace
 func (c *Console) IsAllowedNamespace() bool {
-	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterKeyRef.Namespace
+	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterRef.Namespace
 }
 
 // GetClusterRef returns the NamespacedName of referenced Cluster object
 func (c *Console) GetClusterRef() types.NamespacedName {
-	return types.NamespacedName{Name: c.Spec.ClusterKeyRef.Name, Namespace: c.Spec.ClusterKeyRef.Namespace}
+	return types.NamespacedName{Name: c.Spec.ClusterRef.Name, Namespace: c.Spec.ClusterRef.Namespace}
 }
 
 //+kubebuilder:object:root=true
