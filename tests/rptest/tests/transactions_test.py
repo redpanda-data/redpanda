@@ -17,8 +17,11 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_consumer import RpkConsumer
 import confluent_kafka as ck
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.services.admin import Admin
 
 import subprocess
+
+from rptest.clients.rpk import RpkTool
 
 
 class TransactionsTest(RedpandaTest):
@@ -249,3 +252,92 @@ class TransactionsTest(RedpandaTest):
             assert kafka_error.code() == ck.cimpl.KafkaError.FENCED_INSTANCE_ID
 
         producer.abort_transaction()
+
+    @cluster(num_nodes=3)
+    def delete_topic_with_active_txns_test(self):
+
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+        rpk.create_topic("t1")
+        rpk.create_topic("t2")
+
+        # Transactional
+        producer_t = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            # Intentional long timeout to avoid cleanup of state.
+            'transaction.timeout.ms': 10000000,
+        })
+
+        # Non transactional
+        producer_nt = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+        })
+
+        # Two consumers for 't2' with different isolation levels.
+        consumer_1 = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+            'group.id': 'test1',
+            'isolation.level': 'read_committed',
+        })
+
+        consumer_2 = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+            'group.id': 'test2',
+            'isolation.level': 'read_uncommitted',
+        })
+
+        consumer_1.subscribe([TopicSpec(name='t2')])
+        consumer_2.subscribe([TopicSpec(name='t2')])
+
+        producer_t.init_transactions()
+        producer_t.begin_transaction()
+
+        def add_records(topic, producer):
+            for i in range(0, 100):
+                producer.produce(topic,
+                                 str(i),
+                                 str(i),
+                                 partition=0,
+                                 on_delivery=self.on_delivery)
+            producer.flush()
+
+        add_records("t1", producer_t)
+        add_records("t2", producer_t)
+
+        rpk.delete_topic("t1")
+
+        try:
+            producer_t.commit_transaction()
+            assert False, "commit_tx did not throw"
+        except Exception as e:
+            self.redpanda.logger.error(e)
+
+        # Attempt to write some non transactional batches
+        add_records("t2", producer_nt)
+
+        committed_records = 100  # from nt producer
+        all_records = 200  # Includes non committed flush
+
+        def consume_records(consumer, count):
+            total = 0
+            while total != count:
+                total += len(self.consume(consumer))
+
+        # Make sure that the consumer on a different topic is not blocked due to LSO
+        # .. and the abort marker correctly written in the remaining partitions
+        consume_records(consumer_1, committed_records)
+        consume_records(consumer_2, all_records)
+
+        no_txns = lambda: len(admin.get_all_transactions()) == 0
+        try:
+            wait_until_result(no_txns,
+                              timeout_sec=30,
+                              backoff_sec=2,
+                              err_msg="Failed to expire transactions.")
+        except TimeoutError:
+            assert False, admin.get_all_transactions()
