@@ -10,6 +10,7 @@
 import os
 import re
 import itertools
+from typing import Optional
 
 
 class Segment:
@@ -117,10 +118,15 @@ class Namespace:
         return self.name
 
 
+class PartitionNotFoundError(Exception):
+    pass
+
+
 class NodeStorage:
-    def __init__(self, data_dir):
+    def __init__(self, name, data_dir):
         self.data_dir = data_dir
         self.ns = dict()
+        self.name = name
 
     def add_namespace(self, ns, path):
         n = Namespace(ns, path)
@@ -134,6 +140,17 @@ class NodeStorage:
                 return [p[1] for p in parts.items()]
         return []
 
+    def segments(self, ns: str, topic: str,
+                 partition_idx: int) -> Optional[list[Segment]]:
+        partitions = self.partitions(ns, topic)
+        if len(partitions) <= partition_idx:
+            # Segments for unkown partition requested
+            raise PartitionNotFoundError(
+                f"Partition {partition_idx} of topic {topic} is not present on node {self.name}"
+            )
+
+        return partitions[partition_idx].segments.values()
+
 
 class ClusterStorage:
     def __init__(self):
@@ -145,3 +162,10 @@ class ClusterStorage:
     def partitions(self, ns, topic):
         return itertools.chain(
             *map(lambda n: n.partitions(ns, topic), self.nodes))
+
+    def segments_by_node(self, ns: str, topic: str,
+                         partition_idx: int) -> dict[str, list[Segment]]:
+        return {
+            node.name: node.segments(ns, topic, partition_idx)
+            for node in self.nodes
+        }
