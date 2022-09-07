@@ -208,6 +208,13 @@ void health_manager::tick() {
                     ok = co_await ensure_topic_replication(
                       model::tx_manager_nt);
                 }
+
+                if (ok) {
+                    const model::topic_namespace schema_registry_nt{
+                      model::kafka_namespace,
+                      model::schema_registry_internal_tp.topic};
+                    ok = co_await ensure_topic_replication(schema_registry_nt);
+                }
             }
 
             _timer.arm(_tick_interval);

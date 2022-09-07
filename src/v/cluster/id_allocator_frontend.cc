@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/id_allocator_service.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -148,7 +149,7 @@ id_allocator_frontend::dispatch_allocate_id_to_leader(
               vlog(
                 clusterlog.warn,
                 "got error {} on remote allocate_id",
-                r.error());
+                r.error().message());
               return allocate_id_reply{0, errc::timeout};
           }
           return r.value();
@@ -221,7 +222,7 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
       model::kafka_internal_namespace,
       model::id_allocator_topic,
       1,
-      config::shard_local_cfg().id_allocator_replication()};
+      _controller->internal_topic_replication()};
 
     topic.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::none;

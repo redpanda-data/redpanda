@@ -680,7 +680,8 @@ void application::wire_up_services() {
           // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
           *_schema_reg_client_config,
-          *_schema_reg_config);
+          *_schema_reg_config,
+          std::reference_wrapper(controller));
     }
 }
 

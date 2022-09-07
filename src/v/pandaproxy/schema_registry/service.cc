@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/service.h"
 
+#include "cluster/controller.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
@@ -144,7 +145,7 @@ ss::future<> service::create_internal_topic() {
     // for the schema registry chooses to override it.
     int16_t replication_factor
       = _config.schema_registry_replication_factor().value_or(
-        config::shard_local_cfg().default_topic_replication());
+        _controller->internal_topic_replication());
 
     vlog(
       plog.debug,
@@ -210,7 +211,8 @@ service::service(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
   sharded_store& store,
-  ss::sharded<seq_writer>& sequencer)
+  ss::sharded<seq_writer>& sequencer,
+  std::unique_ptr<cluster::controller>& controller)
   : _config(config)
   , _mem_sem(max_memory, "pproxy/schema-svc")
   , _client(client)
@@ -225,6 +227,7 @@ service::service(
       json::serialization_format::schema_registry_v1_json)
   , _store(store)
   , _writer(sequencer)
+  , _controller(controller)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

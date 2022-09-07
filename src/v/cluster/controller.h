@@ -112,6 +112,8 @@ public:
         return _raft0->is_elected_leader();
     }
 
+    int16_t internal_topic_replication() const;
+
     ss::future<> wire_up();
 
     ss::future<> start();

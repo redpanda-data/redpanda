@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/controller_api.h"
 #include "kafka/client/fwd.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/fwd.h"
@@ -22,6 +23,10 @@ namespace YAML {
 class Node;
 }
 
+namespace cluster {
+class controller;
+}
+
 namespace pandaproxy::schema_registry {
 
 class api {
@@ -31,7 +36,8 @@ public:
       ss::smp_service_group sg,
       size_t max_memory,
       kafka::client::configuration& client_cfg,
-      configuration& cfg) noexcept;
+      configuration& cfg,
+      std::unique_ptr<cluster::controller>&) noexcept;
     ~api() noexcept;
 
     ss::future<> start();
@@ -43,6 +49,7 @@ private:
     size_t _max_memory;
     kafka::client::configuration& _client_cfg;
     configuration& _cfg;
+    std::unique_ptr<cluster::controller>& _controller;
 
     ss::sharded<kafka::client::client> _client;
     std::unique_ptr<pandaproxy::schema_registry::sharded_store> _store;
