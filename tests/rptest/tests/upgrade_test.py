@@ -130,6 +130,13 @@ class UpgradeBackToBackTest(PreallocNodesTest):
     topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
     def __init__(self, test_context):
+        if self.debug_mode:
+            self.MSG_SIZE = 10
+            self.RANDOM_READ_COUNT = 10
+            self.RANDOM_READ_PARALLEL = 1
+            self.CONSUMER_GROUP_READERS = 1
+            self.topics = (TopicSpec(partition_count=1,
+                                     replication_factor=3), )
         super(UpgradeBackToBackTest, self).__init__(test_context,
                                                     num_brokers=3,
                                                     node_prealloc_count=1)
