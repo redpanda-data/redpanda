@@ -66,6 +66,7 @@ ntp_archiver::ntp_archiver(
   , _cloud_storage_initial_backoff(conf.cloud_storage_initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _mutex(ntp.ntp().to_name("archive"))
   , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
   , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
   , _sync_manifest_timeout(
@@ -721,14 +722,13 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     return ss::with_gate(
              _gate,
              [this, last_stable_offset] {
-                 return ss::with_semaphore(
-                   _mutex, 1, [this, last_stable_offset] {
-                       return schedule_uploads(last_stable_offset)
-                         .then([this](std::vector<scheduled_upload> scheduled) {
-                             return wait_all_scheduled_uploads(
-                               std::move(scheduled));
-                         });
-                   });
+                 return _mutex.with([this, last_stable_offset] {
+                     return schedule_uploads(last_stable_offset)
+                       .then([this](std::vector<scheduled_upload> scheduled) {
+                           return wait_all_scheduled_uploads(
+                             std::move(scheduled));
+                       });
+                 });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {
           return ss::make_ready_future<batch_result>(batch_result{});
