@@ -46,4 +46,11 @@ ss::sstring gen_alphanum_max_distinct(size_t cardinality) {
     return s;
 }
 
+iobuf make_iobuf(size_t n) {
+    const auto b = gen_alphanum_string(n);
+    iobuf io;
+    io.append(b.data(), n);
+    return io;
+}
+
 } // namespace random_generators

@@ -36,9 +36,6 @@ struct record_batch_spec {
     std::optional<model::timestamp> timestamp;
 };
 
-// Makes an random alphanumeric string, encoded in an iobuf.
-iobuf make_iobuf(size_t);
-
 /**
  * Makes random batch starting at requested offset.
  *
