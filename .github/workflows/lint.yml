@@ -10,14 +10,13 @@
 name: Lint all codez
 on:
   push:
-    tags: 'v2**'
     branches:
-      - dev
-      - release
+      - '**'
+    tags-ignore:
+      - '**'
   pull_request:
     branches:
-      - main
-      - dev
+      - '**'
 
 jobs:
   go:
@@ -83,22 +82,14 @@ jobs:
   cpp:
     name: Lint files with clang-format
     runs-on: ubuntu-20.04
-    # Use ubuntu:hirsute explicitly as it is the first version to have
-    # clang-format 12 available
-    container: ubuntu:hirsute
     steps:
-
-    - name: Fetch clang-format
-      run: apt-get update && apt-get install -y git clang-format
-      env:
-        DEBIAN_FRONTEND: noninteractive
 
     - name: Check out code
       uses: actions/checkout@v2
 
     - name: Run clang fmt
       run: |
-        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format -i -style=file -fallback-style=none
+        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-12 -i -style=file -fallback-style=none
         git diff --exit-code
 
   sh:

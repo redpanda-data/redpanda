@@ -927,7 +927,13 @@ func parseNamedAddress(
 	}, nil
 }
 
-func sendEnv(fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, skipChecks bool, err error) {
+func sendEnv(
+	fs afero.Fs,
+	env api.EnvironmentPayload,
+	conf *config.Config,
+	skipChecks bool,
+	err error,
+) {
 	if err != nil {
 		env.ErrorMsg = err.Error()
 	}

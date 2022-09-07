@@ -94,10 +94,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 }
 
 func SendEnvironment(
-	fs afero.Fs,
-	env EnvironmentPayload,
-	conf config.Config,
-	skipCloudCheck bool,
+	fs afero.Fs, env EnvironmentPayload, conf config.Config, skipCloudCheck bool,
 ) error {
 	cloudVendor := "N/A"
 	vmType := "N/A"
