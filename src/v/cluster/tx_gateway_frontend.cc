@@ -990,46 +990,47 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
       _ssg,
       [request = std::move(request),
        timeout](tx_gateway_frontend& self) mutable {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<add_offsets_tx_reply>(
-                add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<add_offsets_tx_reply>(
-                add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
-          }
-
-          return stm->read_lock().then(
-            [&self, stm, request = std::move(request), timeout](
-              ss::basic_rwlock<>::holder unit) mutable {
-                auto tx_id = request.transactional_id;
-                return with(
-                         stm,
-                         tx_id,
-                         "add_offsets_to_tx",
-                         [&self,
-                          stm,
-                          request = std::move(request),
-                          timeout]() mutable {
-                             return self.do_add_offsets_to_tx(
-                               stm, std::move(request), timeout);
-                         })
-                  .finally([u = std::move(unit)] {});
-            });
+          return self.do_add_offsets_to_tx(request, timeout);
       });
+}
+
+ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
+  add_offsets_tx_request request, model::timeout_clock::duration timeout) {
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return ss::make_ready_future<add_offsets_tx_reply>(
+          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
+    }
+
+    auto stm = partition->tm_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return ss::make_ready_future<add_offsets_tx_reply>(
+          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
+    }
+
+    return stm->read_lock().then([this,
+                                  stm,
+                                  request = std::move(request),
+                                  timeout](
+                                   ss::basic_rwlock<>::holder unit) mutable {
+        auto tx_id = request.transactional_id;
+        return with(
+                 stm,
+                 tx_id,
+                 "add_offsets_to_tx",
+                 [this, stm, request = std::move(request), timeout]() mutable {
+                     return do_add_offsets_to_tx(
+                       stm, std::move(request), timeout);
+                 })
+          .finally([u = std::move(unit)] {});
+    });
 }
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(

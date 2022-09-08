@@ -179,6 +179,8 @@ private:
       add_paritions_tx_request,
       model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
+      add_offsets_tx_request, model::timeout_clock::duration);
+    ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
       ss::shared_ptr<tm_stm>,
       add_offsets_tx_request,
       model::timeout_clock::duration);
