@@ -89,3 +89,9 @@ class EndToEndFinjectorTest(EndToEndTest):
             self.redpanda.logger.info(
                 f"waiting {delay} seconds before next failure")
             time.sleep(delay)
+
+    def teardown(self):
+        self.enable_failures = False
+        if self.finjector_thread:
+            self.finjector_thread.join()
+        FailureInjector(self.redpanda)._heal_all()
