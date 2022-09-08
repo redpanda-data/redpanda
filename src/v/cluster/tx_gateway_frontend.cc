@@ -1098,80 +1098,71 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
       _ssg,
       [request = std::move(request),
        timeout](tx_gateway_frontend& self) mutable {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::invalid_txn_state});
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::invalid_txn_state});
-          }
-
-          auto outcome = ss::make_lw_shared<available_promise<tx_errc>>();
-          // commit_tm_tx and abort_tm_tx remove transient data during its
-          // execution. however the outcome of the commit/abort operation
-          // is already known before the cleanup started. to optimize this
-          // they return the outcome promise to return the outcome before
-          // cleaning up and before returing the actual control flow
-          auto decided = outcome->get_future();
-
-          ssx::spawn_with_gate(
-            self._gate,
-            [request = std::move(request),
-             &self,
-             stm,
-             timeout,
-             outcome]() mutable {
-                return stm->read_lock()
-                  .then([request = std::move(request),
-                         &self,
-                         stm,
-                         timeout,
-                         outcome](ss::basic_rwlock<>::holder unit) mutable {
-                      auto tx_id = request.transactional_id;
-                      return with(
-                               stm,
-                               tx_id,
-                               "end_txn",
-                               [request = std::move(request),
-                                &self,
-                                stm,
-                                timeout,
-                                outcome]() mutable {
-                                   return self
-                                     .do_end_txn(
-                                       std::move(request),
-                                       stm,
-                                       timeout,
-                                       outcome)
-                                     .finally([outcome]() {
-                                         if (!outcome->available()) {
-                                             outcome->set_value(
-                                               tx_errc::unknown_server_error);
-                                         }
-                                     });
-                               })
-                        .finally([u = std::move(unit)] {});
-                  })
-                  .discard_result();
-            });
-
-          return decided.then(
-            [](tx_errc ec) { return end_tx_reply{.error_code = ec}; });
+          return self.do_end_txn(std::move(request), timeout);
       });
+}
+
+ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
+  end_tx_request request, model::timeout_clock::duration timeout) {
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return ss::make_ready_future<end_tx_reply>(
+          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
+    }
+
+    auto stm = partition->tm_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return ss::make_ready_future<end_tx_reply>(
+          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
+    }
+
+    auto outcome = ss::make_lw_shared<available_promise<tx_errc>>();
+    // commit_tm_tx and abort_tm_tx remove transient data during its
+    // execution. however the outcome of the commit/abort operation
+    // is already known before the cleanup started. to optimize this
+    // they return the outcome promise to return the outcome before
+    // cleaning up and before returing the actual control flow
+    auto decided = outcome->get_future();
+
+    ssx::spawn_with_gate(
+      _gate,
+      [request = std::move(request), this, stm, timeout, outcome]() mutable {
+          return stm->read_lock()
+            .then([request = std::move(request), this, stm, timeout, outcome](
+                    ss::basic_rwlock<>::holder unit) mutable {
+                auto tx_id = request.transactional_id;
+                return with(
+                         stm,
+                         tx_id,
+                         "end_txn",
+                         [request = std::move(request),
+                          this,
+                          stm,
+                          timeout,
+                          outcome]() mutable {
+                             return do_end_txn(
+                                      std::move(request), stm, timeout, outcome)
+                               .finally([outcome]() {
+                                   if (!outcome->available()) {
+                                       outcome->set_value(
+                                         tx_errc::unknown_server_error);
+                                   }
+                               });
+                         })
+                  .finally([u = std::move(unit)] {});
+            })
+            .discard_result();
+      });
+
+    return decided.then(
+      [](tx_errc ec) { return end_tx_reply{.error_code = ec}; });
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>

@@ -145,6 +145,8 @@ private:
       std::chrono::milliseconds,
       model::timeout_clock::duration);
 
+    ss::future<end_tx_reply>
+      do_end_txn(end_tx_request, model::timeout_clock::duration);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
       end_tx_request,
       ss::shared_ptr<cluster::tm_stm>,
