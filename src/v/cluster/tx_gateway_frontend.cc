@@ -274,7 +274,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
       shard.value(),
       _ssg,
       [tm, pid, tx_seq, timeout](tx_gateway_frontend& self) {
-          return self.do_try_abort(tm, pid, tx_seq, timeout);
+          return ss::with_gate(self._gate, [tm, pid, tx_seq, timeout, &self] {
+              return self.do_try_abort(tm, pid, tx_seq, timeout);
+          });
       });
 
     vlog(
