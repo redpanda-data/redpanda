@@ -136,7 +136,6 @@ private:
       std::chrono::milliseconds,
       model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
-      ss::shard_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration);

@@ -575,8 +575,12 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
         co_return cluster::init_tm_tx_reply{tx_errc::shard_not_found};
     }
 
-    auto reply = co_await do_init_tm_tx(
-      *shard, tx_id, transaction_timeout_ms, timeout);
+    auto reply = co_await container().invoke_on(
+      shard.value(),
+      _ssg,
+      [tx_id, transaction_timeout_ms, timeout](tx_gateway_frontend& self) {
+          return self.do_init_tm_tx(tx_id, transaction_timeout_ms, timeout);
+      });
 
     vlog(
       txlog.trace,
@@ -617,52 +621,40 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
 }
 
 ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
-  ss::shard_id shard,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
-    return container().invoke_on(
-      shard,
-      _ssg,
-      [tx_id, transaction_timeout_ms, timeout](tx_gateway_frontend& self) {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{tx_errc::partition_not_found});
-          }
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return ss::make_ready_future<init_tm_tx_reply>(
+          init_tm_tx_reply{tx_errc::partition_not_found});
+    }
 
-          auto stm = partition->tm_stm();
+    auto stm = partition->tm_stm();
 
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<init_tm_tx_reply>(
-                init_tm_tx_reply{tx_errc::stm_not_found});
-          }
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return ss::make_ready_future<init_tm_tx_reply>(
+          init_tm_tx_reply{tx_errc::stm_not_found});
+    }
 
-          return stm->read_lock().then([&self,
-                                        stm,
-                                        tx_id,
-                                        transaction_timeout_ms,
-                                        timeout](
-                                         ss::basic_rwlock<>::holder unit) {
-              return with(
-                       stm,
-                       tx_id,
-                       "init_tm_tx",
-                       [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
-                           return self.do_init_tm_tx(
-                             stm, tx_id, transaction_timeout_ms, timeout);
-                       })
-                .finally([u = std::move(unit)] {});
-          });
+    return stm->read_lock().then(
+      [this, stm, tx_id, transaction_timeout_ms, timeout](
+        ss::basic_rwlock<>::holder unit) {
+          return with(
+                   stm,
+                   tx_id,
+                   "init_tm_tx",
+                   [this, stm, tx_id, transaction_timeout_ms, timeout]() {
+                       return do_init_tm_tx(
+                         stm, tx_id, transaction_timeout_ms, timeout);
+                   })
+            .finally([u = std::move(unit)] {});
       });
 }
 
