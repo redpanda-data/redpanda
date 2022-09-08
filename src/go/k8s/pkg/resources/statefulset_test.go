@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// nolint:funlen // Test function can have more than 100 lines
+//nolint:funlen // Test function can have more than 100 lines
 func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)

@@ -74,7 +74,7 @@ func (r *ConsoleReconciler) Reconcile(
 	}
 	// Checks if Console is valid to be created in specified namespace
 	if !console.IsAllowedNamespace() {
-		err := fmt.Errorf("invalid Console namespace") // nolint:goerr113 // no need to declare new error type
+		err := fmt.Errorf("invalid Console namespace") //nolint:goerr113 // no need to declare new error type
 		log.Error(err, "Console must be created in Redpanda namespace. Set --allow-console-any-ns=true to enable")
 		return ctrl.Result{}, err
 	}
@@ -159,7 +159,7 @@ func (r *Reconciling) Do(
 		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName())),
 	}
 	for _, each := range applyResources {
-		if err := each.Ensure(ctx); err != nil { // nolint:gocritic // more readable
+		if err := each.Ensure(ctx); err != nil { //nolint:gocritic // more readable
 			var ra *resources.RequeueAfterError
 			if errors.As(err, &ra) {
 				log.V(debugLogLevel).Info(fmt.Sprintf("Requeue ensuring resource after %d: %s", ra.RequeueAfter, ra.Msg))

@@ -36,7 +36,7 @@ func NewStore(cl client.Client) *Store {
 
 // Sync synchronizes watched resources to the store
 func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
-	if cluster.IsSchemaRegistryTLSEnabled() { // nolint:nestif // sync is complex
+	if cluster.IsSchemaRegistryTLSEnabled() { //nolint:nestif // sync is complex
 		if cluster.IsSchemaRegistryMutualTLSEnabled() {
 			schemaRegistryClientCert, err := syncSchemaRegistryCert(
 				s.context,

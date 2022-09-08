@@ -48,7 +48,8 @@ type ClusterConfigurationDriftReconciler struct {
 }
 
 // Reconcile detects drift in configuration for clusters and schedules a patch.
-// nolint:funlen // May be broken down
+//
+//nolint:funlen // May be broken down
 func (r *ClusterConfigurationDriftReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {

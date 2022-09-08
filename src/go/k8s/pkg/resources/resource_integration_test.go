@@ -187,7 +187,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	}
 }
 
-// nolint:funlen // the subtests might causes linter to complain
+//nolint:funlen // the subtests might causes linter to complain
 func TestEnsure_HeadlessService(t *testing.T) {
 	t.Run("create-headless-service", func(t *testing.T) {
 		cluster := pandaCluster()
