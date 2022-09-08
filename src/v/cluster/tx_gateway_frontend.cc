@@ -579,7 +579,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       shard.value(),
       _ssg,
       [tx_id, transaction_timeout_ms, timeout](tx_gateway_frontend& self) {
-          return self.do_init_tm_tx(tx_id, transaction_timeout_ms, timeout);
+          return ss::with_gate(
+            self._gate, [tx_id, transaction_timeout_ms, timeout, &self] {
+                return self.do_init_tm_tx(
+                  tx_id, transaction_timeout_ms, timeout);
+            });
       });
 
     vlog(
