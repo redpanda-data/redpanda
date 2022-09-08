@@ -270,7 +270,13 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
         co_return try_abort_reply{tx_errc::shard_not_found};
     }
 
-    auto reply = co_await do_try_abort(*shard, tm, pid, tx_seq, timeout);
+    auto reply = co_await container().invoke_on(
+      shard.value(),
+      _ssg,
+      [tm, pid, tx_seq, timeout](tx_gateway_frontend& self) {
+          return self.do_try_abort(tm, pid, tx_seq, timeout);
+      });
+
     vlog(
       txlog.trace,
       "sending name:try_abort, pid:{}, tx_seq:{}, ec:{}, committed:{}, "
@@ -312,72 +318,64 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
-  ss::shard_id shard,
   model::partition_id,
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    return container().invoke_on(
-      shard, _ssg, [pid, tx_seq, timeout](tx_gateway_frontend& self) {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<try_abort_reply>(
-                try_abort_reply{tx_errc::partition_not_found});
-          }
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return ss::make_ready_future<try_abort_reply>(
+          try_abort_reply{tx_errc::partition_not_found});
+    }
 
-          auto stm = partition->tm_stm();
+    auto stm = partition->tm_stm();
 
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<try_abort_reply>(
-                try_abort_reply{tx_errc::stm_not_found});
-          }
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return ss::make_ready_future<try_abort_reply>(
+          try_abort_reply{tx_errc::stm_not_found});
+    }
 
-          return stm->read_lock().then([&self, stm, pid, tx_seq, timeout](
-                                         ss::basic_rwlock<>::holder unit) {
-              return stm->barrier()
-                .then([&self, stm, pid, tx_seq, timeout](
-                        checked<model::term_id, tm_stm::op_status> term_opt) {
-                    if (!term_opt.has_value()) {
-                        if (term_opt.error() == tm_stm::op_status::not_leader) {
-                            return ss::make_ready_future<try_abort_reply>(
-                              try_abort_reply{tx_errc::not_coordinator});
-                        }
+    return stm->read_lock().then(
+      [this, stm, pid, tx_seq, timeout](ss::basic_rwlock<>::holder unit) {
+          return stm->barrier()
+            .then([this, stm, pid, tx_seq, timeout](
+                    checked<model::term_id, tm_stm::op_status> term_opt) {
+                if (!term_opt.has_value()) {
+                    if (term_opt.error() == tm_stm::op_status::not_leader) {
                         return ss::make_ready_future<try_abort_reply>(
-                          try_abort_reply{tx_errc::unknown_server_error});
+                          try_abort_reply{tx_errc::not_coordinator});
                     }
-                    auto term = term_opt.value();
-                    auto tx_id_opt = stm->get_id_by_pid(pid);
-                    if (!tx_id_opt) {
-                        return ss::make_ready_future<try_abort_reply>(
-                          try_abort_reply::make_aborted());
-                    }
-                    auto tx_id = tx_id_opt.value();
+                    return ss::make_ready_future<try_abort_reply>(
+                      try_abort_reply{tx_errc::unknown_server_error});
+                }
+                auto term = term_opt.value();
+                auto tx_id_opt = stm->get_id_by_pid(pid);
+                if (!tx_id_opt) {
+                    return ss::make_ready_future<try_abort_reply>(
+                      try_abort_reply::make_aborted());
+                }
+                auto tx_id = tx_id_opt.value();
 
-                    return with(
-                             stm,
-                             tx_id,
-                             "try_abort",
-                             timeout,
-                             [&self, stm, term, tx_id, pid, tx_seq, timeout]() {
-                                 return self.do_try_abort(
-                                   term, stm, tx_id, pid, tx_seq, timeout);
-                             })
-                      .handle_exception_type([](
-                                               const ss::semaphore_timed_out&) {
-                          return try_abort_reply{tx_errc::unknown_server_error};
-                      });
-                })
-                .finally([u = std::move(unit)] {});
-          });
+                return with(
+                         stm,
+                         tx_id,
+                         "try_abort",
+                         timeout,
+                         [this, stm, term, tx_id, pid, tx_seq, timeout]() {
+                             return do_try_abort(
+                               term, stm, tx_id, pid, tx_seq, timeout);
+                         })
+                  .handle_exception_type([](const ss::semaphore_timed_out&) {
+                      return try_abort_reply{tx_errc::unknown_server_error};
+                  });
+            })
+            .finally([u = std::move(unit)] {});
       });
 }
 

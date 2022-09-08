@@ -118,7 +118,6 @@ private:
       model::tx_seq,
       model::timeout_clock::duration);
     ss::future<try_abort_reply> do_try_abort(
-      ss::shard_id,
       model::partition_id,
       model::producer_identity,
       model::tx_seq,
