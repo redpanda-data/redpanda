@@ -141,9 +141,11 @@ void tx_gateway_frontend::start_expire_timer() {
 }
 
 ss::future<> tx_gateway_frontend::stop() {
+    vlog(txlog.debug, "Asked to stop tx coordinator");
     _expire_timer.cancel();
     _as.request_abort();
-    return _gate.close();
+    return _gate.close().then(
+      [] { vlog(txlog.debug, "Tx coordinator is stopped"); });
 }
 
 ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
