@@ -12,7 +12,7 @@ package resources
 import (
 	"bytes"
 	"context"
-	"crypto/md5" // nolint:gosec // this is not encrypting secure info
+	"crypto/md5" //nolint:gosec // this is not encrypting secure info
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -211,7 +211,8 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 }
 
 // CreateConfiguration creates a global configuration for the current cluster
-// nolint:funlen // let's keep the configuration in one function for now and refactor later
+//
+//nolint:funlen // let's keep the configuration in one function for now and refactor later
 func (r *ConfigMapResource) CreateConfiguration(
 	ctx context.Context,
 ) (*configuration.GlobalConfiguration, error) {
@@ -650,7 +651,7 @@ func (r *ConfigMapResource) GetNodeConfigHash(
 	}
 	configMap := obj.(*corev1.ConfigMap)
 	configString = configMap.Data[configKey]
-	md5Hash := md5.Sum([]byte(configString)) // nolint:gosec // this is not encrypting secure info
+	md5Hash := md5.Sum([]byte(configString)) //nolint:gosec // this is not encrypting secure info
 	return fmt.Sprintf("%x", md5Hash), nil
 }
 

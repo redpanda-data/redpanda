@@ -187,7 +187,7 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
 	if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
 		clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
 		if !exists {
-			return "", fmt.Errorf("get schema registry client certificate: %s", "not found") // nolint:goerr113 // no need to declare new error type
+			return "", fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
 		certfile := getOrEmpty("tls.crt", clientCert.Data)
 		keyfile := getOrEmpty("tls.key", clientCert.Data)
@@ -200,7 +200,7 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
 	if ca.useCaCert() {
 		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
 		if !exists {
-			return "", fmt.Errorf("get schema registry node certificate: %s", "not found") // nolint:goerr113 // no need to declare new error type
+			return "", fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
 		cafile := getOrEmpty("ca.crt", caCert.Data)
 		data["ca.crt"] = []byte(cafile)

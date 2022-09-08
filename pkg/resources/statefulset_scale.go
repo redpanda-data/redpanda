@@ -64,7 +64,7 @@ const (
 // The strategy implemented here (to initialize the cluster at 1 replica, then upscaling to the desired number, without hacks on the seed server list),
 // should fix this problem, since the list of seeds servers will be the same in all nodes once the cluster is created.
 //
-// nolint:nestif // for clarity
+//nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	if r.pandaCluster.Status.DecommissioningNode != nil {
 		decommissionTargetReplicas := *r.pandaCluster.Status.DecommissioningNode
