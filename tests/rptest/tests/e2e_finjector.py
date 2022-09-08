@@ -62,14 +62,6 @@ class EndToEndFinjectorTest(EndToEndTest):
         self.finjector_thread.daemon = True
         self.finjector_thread.start()
 
-    def disable_failures(self):
-        self.enable_failures = False
-        self.finjector_thread.join()
-
-    def enable_failures(self):
-        self.enable_failures = True
-        self.start_finjector()
-
     def random_failure_spec(self):
         f_type = random.choice(self.allowed_failures)
         length = self.failure_length_provider(f_type)
