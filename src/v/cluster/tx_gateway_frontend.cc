@@ -990,7 +990,10 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
       _ssg,
       [request = std::move(request),
        timeout](tx_gateway_frontend& self) mutable {
-          return self.do_add_offsets_to_tx(request, timeout);
+          return ss::with_gate(
+            self._gate, [request = std::move(request), timeout, &self] {
+                return self.do_add_offsets_to_tx(request, timeout);
+            });
       });
 }
 
