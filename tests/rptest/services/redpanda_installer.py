@@ -108,7 +108,7 @@ class RedpandaInstaller:
     # cluster, and that directories therein are only ever created (never
     # deleted) during the lifetime of the RedpandaInstaller.
     INSTALLER_ROOT = "/opt/redpanda_installs"
-    TGZ_URL_TEMPLATE = "https://packages.vectorized.io/qSZR7V26sJx7tCXe/redpanda/raw/names/redpanda-{arch}/versions/{version}/redpanda-{version}-{arch}.tar.gz"
+    TGZ_URL_TEMPLATE = "https://dl.redpanda.com/qSZR7V26sJx7tCXe/redpanda/raw/names/redpanda-{arch}/versions/{version}/redpanda-{version}-{arch}.tar.gz"
 
     # File path to be used for locking to prevent multiple local test processes
     # from operating on the same volume mounts.

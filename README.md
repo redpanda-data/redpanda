@@ -48,7 +48,7 @@ brew install redpanda-data/tap/redpanda && rpk container start
 
 ```
 curl -1sLf \
-  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
+  'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
   | sudo -E bash
   
 sudo apt-get install redpanda
@@ -58,7 +58,7 @@ sudo apt-get install redpanda
 
 ```
 curl -1sLf \
-  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  'https://dl.redpanda.com/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
   | sudo -E bash
   
 sudo yum install redpanda
@@ -101,7 +101,7 @@ RC builds are not recommended for production use.
 
 ```bash
 curl -1sLf \
-  'https://packages.vectorized.io/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.deb.sh' \
+  'https://dl.redpanda.com/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.deb.sh' \
   | sudo -E bash
 
 sudo apt-get install redpanda
@@ -111,7 +111,7 @@ sudo apt-get install redpanda
 
 ```bash
 curl -1sLf \
-  'https://packages.vectorized.io/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.rpm.sh' \
+  'https://dl.redpanda.com/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.rpm.sh' \
   | sudo -E bash
 
 sudo yum install redpanda
