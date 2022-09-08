@@ -21,7 +21,7 @@ import (
 	"k8s.io/utils/pointer"
 )
 
-// nolint:funlen // this is ok for a test
+//nolint:funlen // this is ok for a test
 func TestRedpandaResourceRequirements(t *testing.T) {
 	type test struct {
 		name                string

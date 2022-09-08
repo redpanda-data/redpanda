@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// nolint:funlen // this is ok for a test
+//nolint:funlen // this is ok for a test
 func TestRedpandaPorts(t *testing.T) {
 	tests := []struct {
 		name           string

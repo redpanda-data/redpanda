@@ -297,7 +297,7 @@ func getExternalIP(node *corev1.Node) string {
 	return ""
 }
 
-// nolint:funlen // envs are many
+//nolint:funlen // envs are many
 func checkEnvVars() (configuratorConfig, error) {
 	var result error
 	var extCon string

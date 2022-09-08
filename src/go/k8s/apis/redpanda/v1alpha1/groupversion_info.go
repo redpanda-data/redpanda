@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 // Package v1alpha1 contains API Schema definitions for the redpanda v1alpha1 API group
-//+kubebuilder:object:generate=true
-//+groupName=redpanda.vectorized.io
+// +kubebuilder:object:generate=true
+// +groupName=redpanda.vectorized.io
 package v1alpha1
 
 import (

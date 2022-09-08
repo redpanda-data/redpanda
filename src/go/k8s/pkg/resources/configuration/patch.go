@@ -97,7 +97,8 @@ func ThreeWayMerge(
 
 // PropertiesEqual tries to compare two property values using metadata information about the schema,
 // falling back to loose comparison in case of missing data (e.g. it happens with unknown properties).
-// nolint:gocritic // code more readable
+//
+//nolint:gocritic // code more readable
 func PropertiesEqual(
 	log logr.Logger, v1, v2 interface{}, metadata admin.ConfigPropertyMetadata,
 ) bool {
