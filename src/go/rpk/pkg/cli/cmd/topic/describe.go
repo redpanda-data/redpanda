@@ -188,10 +188,10 @@ partitions section. By default, the summary and configs sections are printed.
 }
 
 // We optionally include the following columns:
-//  * epoch, if any leader epoch is non-negative
-//  * offline-replicas, if any are offline
-//  * load-error, if metadata indicates load errors any partitions
-//  * last-stable-offset, if it is ever not equal to the high watermark (transactions)
+//   - epoch, if any leader epoch is non-negative
+//   - offline-replicas, if any are offline
+//   - load-error, if metadata indicates load errors any partitions
+//   - last-stable-offset, if it is ever not equal to the high watermark (transactions)
 func getDescribeUsed(
 	partitions []kmsg.MetadataResponseTopicPartition,
 	offsets []startStableEndOffset,

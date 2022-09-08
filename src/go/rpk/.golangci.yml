@@ -58,6 +58,13 @@ linters-settings:
     require-explanation: true
     require-specific: true
 
+  # If gofumpt is run outside a module, it assumes Go 1.0 rather than the
+  # latest Go. We always want the latest formatting.
+  #
+  # https://github.com/mvdan/gofumpt/issues/137
+  gofumpt:
+    lang-version: "1.17"
+
   # Revive is yet another metalinter with a lot of useful lints. 
   # The below opts in to all the ones we would like to use.
   revive:
@@ -89,6 +96,7 @@ linters-settings:
       - name: modifies-value-receiver
       - name: optimize-operands-order
       - name: package-comments
+        disabled: true # disabling this in favor of https://github.com/redpanda-data/redpanda/issues/6340
       - name: range
       - name: range-val-in-closure
       - name: receiver-naming

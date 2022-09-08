@@ -354,7 +354,6 @@ func (c *consumer) setParts(
 //
 // - if !atStart && !atEnd, then we consume at the returned start number
 // - rel is used for relative offsets from atStart or atEnd.
-//
 func parseFromToOffset(
 	o string,
 ) (

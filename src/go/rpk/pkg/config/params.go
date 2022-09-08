@@ -232,12 +232,11 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 
 // Load returns the param's config file. In order, this
 //
-//  * Finds the config file, per the --config flag or the default search set.
-//  * Decodes the config over the default configuration.
-//  * Back-compats any old format into any new format.
-//  * Processes env and flag overrides.
-//  * Sets unset default values.
-//
+//   - Finds the config file, per the --config flag or the default search set.
+//   - Decodes the config over the default configuration.
+//   - Back-compats any old format into any new format.
+//   - Processes env and flag overrides.
+//   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	// If we have a config path loaded (through --config flag) the user
 	// expect to load or create the file from this directory.
@@ -554,10 +553,10 @@ func (c *Config) addUnsetDefaults() {
 
 // Set allow to set a single configuration field by passing a key value pair
 //
-//   Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
-//   Value:  string representation of the value, either single value or partial
-//           representation.
-//   Format: either json or yaml (default: yaml).
+//	Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
+//	Value:  string representation of the value, either single value or partial
+//	        representation.
+//	Format: either json or yaml (default: yaml).
 func (c *Config) Set(key, value, format string) error {
 	if key == "" {
 		return fmt.Errorf("key field must not be empty")
@@ -687,9 +686,9 @@ func getField(tags []string, parentRawTag string, v reflect.Value) (reflect.Valu
 
 // getFieldByTag finds a field with a given yaml tag and returns 3 parameters:
 //
-//   1. if tag is found within the struct, return the field.
-//   2. if tag is not found _but_ the struct has "Other" field, return Other.
-//   3. Error if it can't find the given tag and "Other" field is unavailable.
+//  1. if tag is found within the struct, return the field.
+//  2. if tag is not found _but_ the struct has "Other" field, return Other.
+//  3. Error if it can't find the given tag and "Other" field is unavailable.
 func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, error) {
 	t := v.Type()
 	var other bool

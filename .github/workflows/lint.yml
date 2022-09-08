@@ -35,7 +35,8 @@ jobs:
     - name: lint rpk
       uses: golangci/golangci-lint-action@v3
       with:
-        version: v1.45.2
+        version: v1.49.0
+        args: --timeout 5m
         working-directory: src/go/rpk/
 
     - name: install gofumpt
