@@ -814,48 +814,49 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
       _ssg,
       [request = std::move(request),
        timeout](tx_gateway_frontend& self) mutable {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
-          if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<add_paritions_tx_reply>(
-                make_add_partitions_error_response(
-                  request, tx_errc::invalid_txn_state));
-          }
-
-          auto stm = partition->tm_stm();
-
-          if (!stm) {
-              vlog(
-                txlog.warn,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              return ss::make_ready_future<add_paritions_tx_reply>(
-                make_add_partitions_error_response(
-                  request, tx_errc::invalid_txn_state));
-          }
-
-          return stm->read_lock().then(
-            [&self, stm, request = std::move(request), timeout](
-              ss::basic_rwlock<>::holder unit) mutable {
-                auto tx_id = request.transactional_id;
-                return with(
-                         stm,
-                         tx_id,
-                         "add_partition_to_tx",
-                         [&self,
-                          stm,
-                          request = std::move(request),
-                          timeout]() mutable {
-                             return self.do_add_partition_to_tx(
-                               stm, std::move(request), timeout);
-                         })
-                  .finally([u = std::move(unit)] {});
-            });
+          return self.do_add_partition_to_tx(request, timeout);
       });
+}
+
+ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
+  add_paritions_tx_request request, model::timeout_clock::duration timeout) {
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return ss::make_ready_future<add_paritions_tx_reply>(
+          make_add_partitions_error_response(
+            request, tx_errc::invalid_txn_state));
+    }
+
+    auto stm = partition->tm_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return ss::make_ready_future<add_paritions_tx_reply>(
+          make_add_partitions_error_response(
+            request, tx_errc::invalid_txn_state));
+    }
+
+    return stm->read_lock().then([this,
+                                  stm,
+                                  request = std::move(request),
+                                  timeout](
+                                   ss::basic_rwlock<>::holder unit) mutable {
+        auto tx_id = request.transactional_id;
+        return with(
+                 stm,
+                 tx_id,
+                 "add_partition_to_tx",
+                 [this, stm, request = std::move(request), timeout]() mutable {
+                     return do_add_partition_to_tx(
+                       stm, std::move(request), timeout);
+                 })
+          .finally([u = std::move(unit)] {});
+    });
 }
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
@@ -888,15 +889,6 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
           request, tx_errc::invalid_txn_state);
     }
 
-    co_return co_await do_add_partition_to_tx(
-      std::move(tx), stm, request, timeout);
-}
-
-ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
-  tm_transaction tx,
-  ss::shared_ptr<tm_stm> stm,
-  add_paritions_tx_request request,
-  model::timeout_clock::duration timeout) {
     add_paritions_tx_reply response;
 
     std::vector<ss::future<begin_tx_reply>> bfs;

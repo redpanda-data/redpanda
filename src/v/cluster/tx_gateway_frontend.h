@@ -173,11 +173,8 @@ private:
       reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
 
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
-      ss::shared_ptr<tm_stm>,
-      add_paritions_tx_request,
-      model::timeout_clock::duration);
+      add_paritions_tx_request, model::timeout_clock::duration);
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
-      tm_transaction,
       ss::shared_ptr<tm_stm>,
       add_paritions_tx_request,
       model::timeout_clock::duration);
