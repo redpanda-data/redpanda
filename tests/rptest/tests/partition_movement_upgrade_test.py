@@ -101,8 +101,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
         self.move_worker.join()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5827
-    # https://github.com/redpanda-data/redpanda/issues/5868
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5868
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_basic_upgrade(self):
         topic = TopicSpec(partition_count=16, replication_factor=3)

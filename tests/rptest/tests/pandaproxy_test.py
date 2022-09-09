@@ -716,7 +716,6 @@ class PandaProxyTest(RedpandaTest):
             })
         assert sc_res.status_code == requests.codes.no_content
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3454
     @cluster(num_nodes=3)
     def test_consumer_group_binary_v2(self):
         """
