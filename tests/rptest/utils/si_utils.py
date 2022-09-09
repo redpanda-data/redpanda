@@ -277,13 +277,14 @@ class PathMatcher:
 
 
 class Producer:
-    def __init__(self, brokers, name, logger):
+    def __init__(self, brokers, name, logger, timeout_sec: float = 60.0):
         self.keys = []
         self.cur_offset = 0
         self.brokers = brokers
         self.logger = logger
         self.num_aborted = 0
         self.name = name
+        self.timeout_sec = timeout_sec
         self.reconnect()
 
     def reconnect(self):
@@ -295,7 +296,7 @@ class Producer:
             'transaction.timeout.ms':
             5000,
         })
-        self.producer.init_transactions()
+        self.producer.init_transactions(self.timeout_sec)
 
     def produce(self, topic):
         """produce some messages inside a transaction with increasing keys
