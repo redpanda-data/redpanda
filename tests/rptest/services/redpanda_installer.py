@@ -269,10 +269,14 @@ class RedpandaInstaller:
         # releases when requested.
         releases_resp = requests.get(
             "https://api.github.com/repos/redpanda-data/redpanda/releases")
-        self._released_versions = [
-            int_tuple(VERSION_RE.findall(f["tag_name"])[0])
-            for f in releases_resp.json()
-        ]
+        try:
+            self._released_versions = [
+                int_tuple(VERSION_RE.findall(f["tag_name"])[0])
+                for f in releases_resp.json()
+            ]
+        except:
+            self._redpanda.logger.error(releases_resp.text)
+            raise
         self._released_versions.sort(reverse=True)
 
     def highest_from_prior_feature_version(self, version):

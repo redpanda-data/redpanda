@@ -102,17 +102,16 @@ members_table::apply(model::offset version, decommission_node_cmd cmd) {
     _version = model::revision_id(version());
 
     if (auto it = _brokers.find(cmd.key); it != _brokers.end()) {
-        if (
-          it->second->get_membership_state()
-          != model::membership_state::active) {
+        auto& [id, broker] = *it;
+        if (broker->get_membership_state() != model::membership_state::active) {
             return errc::invalid_node_operation;
         }
         vlog(
           clusterlog.info,
           "changing node {} membership state to: {}",
-          it->first,
+          id,
           model::membership_state::draining);
-        it->second->set_membership_state(model::membership_state::draining);
+        broker->set_membership_state(model::membership_state::draining);
         return errc::success;
     }
     return errc::node_does_not_exists;
@@ -123,17 +122,17 @@ members_table::apply(model::offset version, recommission_node_cmd cmd) {
     _version = model::revision_id(version());
 
     if (auto it = _brokers.find(cmd.key); it != _brokers.end()) {
+        auto& [id, broker] = *it;
         if (
-          it->second->get_membership_state()
-          != model::membership_state::draining) {
+          broker->get_membership_state() != model::membership_state::draining) {
             return errc::invalid_node_operation;
         }
         vlog(
           clusterlog.info,
           "changing node {} membership state to: {}",
-          it->first,
+          id,
           model::membership_state::active);
-        it->second->set_membership_state(model::membership_state::active);
+        broker->set_membership_state(model::membership_state::active);
         return errc::success;
     }
     return errc::node_does_not_exists;
@@ -158,20 +157,22 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     if (target == _brokers.end()) {
         return errc::node_does_not_exists;
     }
+    auto& [id, broker] = *target;
 
     // no rules to enforce when disabling maintenance mode
     const auto enable = cmd.value;
     if (!enable) {
         if (
-          target->second->get_maintenance_state()
+          broker->get_maintenance_state()
           == model::maintenance_state::inactive) {
+            vlog(
+              clusterlog.trace, "node {} already not in maintenance state", id);
             return errc::success;
         }
 
-        target->second->set_maintenance_state(
-          model::maintenance_state::inactive);
-        notify_maintenance_state_change(
-          target->second->id(), model::maintenance_state::inactive);
+        vlog(clusterlog.info, "marking node {} not in maintenance state", id);
+        broker->set_maintenance_state(model::maintenance_state::inactive);
+        notify_maintenance_state_change(id, model::maintenance_state::inactive);
 
         return errc::success;
     }
@@ -187,9 +188,8 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
         return errc::success;
     }
 
-    if (
-      target->second->get_maintenance_state()
-      == model::maintenance_state::active) {
+    if (broker->get_maintenance_state() == model::maintenance_state::active) {
+        vlog(clusterlog.trace, "node {} already in maintenance state", id);
         return errc::success;
     }
 
@@ -207,18 +207,16 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
           clusterlog.info,
           "cannot place node {} into maintenance mode. node {} already in "
           "maintenance mode",
-          target->first,
+          id,
           other->first);
         return errc::invalid_node_operation;
     }
 
-    vlog(
-      clusterlog.info, "marking node {} in maintenance state", target->first);
+    vlog(clusterlog.info, "marking node {} in maintenance state", id);
 
-    target->second->set_maintenance_state(model::maintenance_state::active);
+    broker->set_maintenance_state(model::maintenance_state::active);
 
-    notify_maintenance_state_change(
-      target->second->id(), model::maintenance_state::active);
+    notify_maintenance_state_change(id, model::maintenance_state::active);
 
     return errc::success;
 }

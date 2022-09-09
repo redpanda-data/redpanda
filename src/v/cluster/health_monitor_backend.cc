@@ -384,6 +384,7 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     }
 
     _reports_disk_health = cluster_disk_health;
+    _last_refresh = ss::lowres_clock::now();
     co_return make_error_code(errc::success);
 }
 
@@ -479,7 +480,6 @@ health_monitor_backend::maybe_refresh_cluster_health(
               "previous cluster health snapshot");
             co_return errc::timeout;
         }
-        _last_refresh = ss::lowres_clock::now();
     }
     co_return errc::success;
 }
@@ -612,6 +612,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
         }
     }
     _reports_disk_health = cluster_disk_health;
+    _last_refresh = ss::lowres_clock::now();
     co_return errc::success;
 }
 
