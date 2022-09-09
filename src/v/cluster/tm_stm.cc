@@ -69,6 +69,10 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
+    return ss::with_gate(_gate, [this] { return do_barrier(); });
+}
+
+ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
     if (!_c->is_leader()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
@@ -104,6 +108,11 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::sync(model::timeout_clock::duration timeout) {
+    return ss::with_gate(_gate, [this, timeout] { return do_sync(timeout); });
+}
+
+ss::future<checked<model::term_id, tm_stm::op_status>>
+tm_stm::do_sync(model::timeout_clock::duration timeout) {
     if (!_c->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
@@ -122,6 +131,12 @@ tm_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
+    return ss::with_gate(
+      _gate, [this, tx, term] { return do_update_tx(tx, term); });
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
@@ -300,6 +315,18 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid) {
+    return ss::with_gate(
+      _gate, [this, expected_term, tx_id, transaction_timeout_ms, pid] {
+          return do_register_new_producer(
+            expected_term, tx_id, transaction_timeout_ms, pid);
+      });
+}
+
+ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
+  model::term_id expected_term,
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::producer_identity pid) {
     vlog(clusterlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
     auto tx_opt = get_tx(tx_id);
@@ -429,6 +456,10 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 }
 
 ss::future<stm_snapshot> tm_stm::take_snapshot() {
+    return ss::with_gate(_gate, [this] { return do_take_snapshot(); });
+}
+
+ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
     tm_snapshot tm_ss;
     tm_ss.offset = _insync_offset;
     for (auto& entry : _log_txes) {

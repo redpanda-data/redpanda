@@ -242,6 +242,18 @@ private:
       _tx_locks;
     ss::future<> apply(model::record_batch b) override;
 
+    ss::future<checked<model::term_id, tm_stm::op_status>> do_barrier();
+    ss::future<checked<model::term_id, tm_stm::op_status>>
+      do_sync(model::timeout_clock::duration);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      do_update_tx(tm_transaction, model::term_id);
+    ss::future<tm_stm::op_status> do_register_new_producer(
+      model::term_id,
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::producer_identity);
+    ss::future<stm_snapshot> do_take_snapshot();
+
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       update_tx(tm_transaction, model::term_id);
     ss::future<result<raft::replicate_result>>
