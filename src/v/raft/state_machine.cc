@@ -45,9 +45,11 @@ ss::future<> state_machine::handle_eviction() {
 }
 
 ss::future<> state_machine::stop() {
+    vlog(_log.debug, "Asked to stop state_machine");
     _waiters.stop();
     _as.request_abort();
-    return _gate.close();
+    return _gate.close().then(
+      [this] { vlog(_log.debug, "state_machine is stopped"); });
 }
 
 ss::future<> state_machine::wait(
