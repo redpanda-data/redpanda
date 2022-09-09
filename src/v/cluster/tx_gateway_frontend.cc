@@ -1098,7 +1098,10 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
       _ssg,
       [request = std::move(request),
        timeout](tx_gateway_frontend& self) mutable {
-          return self.do_end_txn(std::move(request), timeout);
+          return ss::with_gate(
+            self._gate, [request = std::move(request), timeout, &self] {
+                return self.do_end_txn(std::move(request), timeout);
+            });
       });
 }
 
