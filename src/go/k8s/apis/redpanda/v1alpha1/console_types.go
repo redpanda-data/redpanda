@@ -35,10 +35,23 @@ type ConsoleSpec struct {
 	SchemaRegistry Schema `json:"schema"`
 
 	// The referenced Redpanda Cluster
-	ClusterKeyRef corev1.ObjectReference `json:"clusterKeyRef"`
+	ClusterRef NamespaceNameRef `json:"clusterRef"`
 
 	Deployment Deployment `json:"deployment"`
 	Connect    Connect    `json:"connect"`
+
+	Enterprise *Enterprise `json:"enterprise,omitempty"`
+
+	// If you don't provide an enterprise license, Console ignores configurations for enterprise features
+	// REF https://docs.redpanda.com/docs/console/reference/config/
+	// If key is not provided in the SecretRef, Secret data should have key "license"
+	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
+
+	// Login contains all configurations in order to protect Console with a login screen
+	// Configure one or more of the below identity providers in order to support SSO
+	// This feature requires an Enterprise license
+	// REF https://docs.redpanda.com/docs/console/single-sign-on/identity-providers/google/
+	Login *EnterpriseLogin `json:"login,omitempty"`
 }
 
 // Server is the Console app HTTP server config
@@ -203,12 +216,12 @@ var AllowConsoleAnyNamespace bool
 
 // IsAllowedNamespace returns true if Console is valid to be created in current namespace
 func (c *Console) IsAllowedNamespace() bool {
-	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterKeyRef.Namespace
+	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterRef.Namespace
 }
 
 // GetClusterRef returns the NamespacedName of referenced Cluster object
 func (c *Console) GetClusterRef() types.NamespacedName {
-	return types.NamespacedName{Name: c.Spec.ClusterKeyRef.Name, Namespace: c.Spec.ClusterKeyRef.Namespace}
+	return types.NamespacedName{Name: c.Spec.ClusterRef.Name, Namespace: c.Spec.ClusterRef.Namespace}
 }
 
 //+kubebuilder:object:root=true

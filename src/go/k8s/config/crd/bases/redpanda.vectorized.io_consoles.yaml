@@ -37,41 +37,18 @@ spec:
             description: ConsoleSpec defines the desired state of Console Most of
               the fields here are copied from Console config REF https://github.com/redpanda-data/console/blob/master/backend/pkg/api/config.go
             properties:
-              clusterKeyRef:
+              clusterRef:
                 description: The referenced Redpanda Cluster
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: 'If referring to a piece of an object instead of
-                      an entire object, this string should contain a valid JSON/Go
-                      field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within
-                      a pod, this would take on a value like: "spec.containers{name}"
-                      (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]"
-                      (container with index 2 in this pod). This syntax is chosen
-                      only to have some well-defined way of referencing a part of
-                      an object. TODO: this design is not final and this field is
-                      subject to change in the future.'
-                    type: string
-                  kind:
-                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                    type: string
                   name:
                     description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
                     type: string
                   namespace:
                     description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
                     type: string
-                  resourceVersion:
-                    description: 'Specific resourceVersion to which this reference
-                      is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
-                    type: string
-                  uid:
-                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
-                    type: string
+                required:
+                - name
+                - namespace
                 type: object
               connect:
                 description: Connect defines configurable fields for Kafka Connect
@@ -255,6 +232,128 @@ spec:
                 required:
                 - image
                 type: object
+              enterprise:
+                description: Enterprise defines configurable fields for features that
+                  require license
+                properties:
+                  rbac:
+                    description: Console uses role-based access control (RBAC) to
+                      restrict system access to authorized users
+                    properties:
+                      enabled:
+                        type: boolean
+                      roleBindingsRef:
+                        description: RoleBindingsRef is the ConfigMap that contains
+                          the RBAC file The ConfigMap should contain "rbac.yaml" key
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                    required:
+                    - enabled
+                    - roleBindingsRef
+                    type: object
+                required:
+                - rbac
+                type: object
+              licenseRef:
+                description: If you don't provide an enterprise license, Console ignores
+                  configurations for enterprise features REF https://docs.redpanda.com/docs/console/reference/config/
+                  If key is not provided in the SecretRef, Secret data should have
+                  key "license"
+                properties:
+                  key:
+                    description: Key in Secret data to get value from
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              login:
+                description: Login contains all configurations in order to protect
+                  Console with a login screen Configure one or more of the below identity
+                  providers in order to support SSO This feature requires an Enterprise
+                  license REF https://docs.redpanda.com/docs/console/single-sign-on/identity-providers/google/
+                properties:
+                  enabled:
+                    type: boolean
+                  google:
+                    description: EnterpriseLoginGoogle defines configurable fields
+                      for Google provider
+                    properties:
+                      clientCredentialsRef:
+                        description: ClientCredentials is the Secret that contains
+                          SSO credentials The Secret should contain keys "clientId",
+                          "clientSecret"
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                          namespace:
+                            description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      directory:
+                        description: Use Google groups in your RBAC role bindings.
+                        properties:
+                          serviceAccountRef:
+                            description: ServiceAccountRef is the ConfigMap that contains
+                              the Google Service Account json The ConfigMap should
+                              contain "sa.json" key
+                            properties:
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  TODO: Add other useful fields. apiVersion, kind,
+                                  uid?'
+                                type: string
+                            type: object
+                          targetPrincipal:
+                            description: TargetPrincipal is the user that shall be
+                              impersonated by the service account
+                            type: string
+                        required:
+                        - serviceAccountRef
+                        - targetPrincipal
+                        type: object
+                      enabled:
+                        type: boolean
+                    required:
+                    - clientCredentialsRef
+                    - enabled
+                    type: object
+                  jwtSecretRef:
+                    description: JWTSecret is the Secret that is used to sign and
+                      encrypt the JSON Web tokens that are used by the backend for
+                      session management If not provided, the default key is "jwt"
+                    properties:
+                      key:
+                        description: Key in Secret data to get value from
+                        type: string
+                      name:
+                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                        type: string
+                      namespace:
+                        description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                        type: string
+                    required:
+                    - name
+                    - namespace
+                    type: object
+                required:
+                - enabled
+                - jwtSecretRef
+                type: object
               metricsNamespace:
                 default: console
                 description: Prefix for all exported prometheus metrics
@@ -335,7 +434,7 @@ spec:
                     type: string
                 type: object
             required:
-            - clusterKeyRef
+            - clusterRef
             - connect
             - deployment
             - schema

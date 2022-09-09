@@ -2,7 +2,7 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster
-  namespace: default
+  namespace: console
 spec:
   image: "localhost/redpanda"
   version: "dev"

@@ -2,15 +2,15 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Console
 metadata:
   name: console
-  namespace: default
+  namespace: console
 spec:
   server:
     listenPort: 8080
   schema:
     enabled: true
-  clusterKeyRef:
+  clusterRef:
     name: cluster
-    namespace: default
+    namespace: console
   deployment:
     image: vectorized/console:master-173596f
   connect:

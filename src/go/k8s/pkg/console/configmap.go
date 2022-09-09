@@ -121,25 +121,137 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
 func (cm *ConfigMap) generateConsoleConfig(
 	ctx context.Context, username, password string,
-) (string, error) {
+) (configString string, err error) {
 	consoleConfig := &ConsoleConfig{
 		MetricsNamespace: cm.consoleobj.Spec.MetricsPrefix,
 		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
 		Server:           cm.genServer(),
 		Kafka:            cm.genKafka(username, password),
+		Enterprise:       cm.genEnterprise(),
 	}
 
-	connectConfig, err := cm.genConnect(ctx)
+	consoleConfig.Connect, err = cm.genConnect(ctx)
 	if err != nil {
 		return "", err
 	}
-	consoleConfig.Connect = *connectConfig
+
+	consoleConfig.License, err = cm.genLicense(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Enterprise features
+	consoleConfig.Login, err = cm.genLogin(ctx)
+	if err != nil {
+		return "", err
+	}
 
 	config, err := yaml.Marshal(consoleConfig)
 	if err != nil {
 		return "", err
 	}
 	return string(config), nil
+}
+
+func (cm *ConfigMap) genEnterprise() (e Enterprise) {
+	if enterprise := cm.consoleobj.Spec.Enterprise; enterprise != nil {
+		return Enterprise{
+			RBAC: EnterpriseRBAC{
+				Enabled:              cm.consoleobj.Spec.Enterprise.RBAC.Enabled,
+				RoleBindingsFilepath: fmt.Sprintf("%s/%s", enterpriseRBACMountPath, EnterpriseRBACDataKey),
+			},
+		}
+	}
+	return e
+}
+
+var (
+	// DefaultLicenseSecretKey is the default key required in secret referenced by `SecretKeyRef`.
+	// The license will be provided to console to allow enterprise features.
+	DefaultLicenseSecretKey = "license"
+
+	// DefaultJWTSecretKey is the default key required in secret referenced by `SecretKeyRef`.
+	// The secret should consist of JWT used to authenticate into google SSO.
+	DefaultJWTSecretKey = "jwt"
+
+	// EnterpriseRBACDataKey is the required key in Enterprise RBAC
+	EnterpriseRBACDataKey = "rbac.yaml"
+
+	// EnterpriseGoogleSADataKey is the required key in EnterpriseLoginGoogle SA
+	EnterpriseGoogleSADataKey = "sa.json"
+
+	// EnterpriseGoogleClientIDSecretKey is the required key in EnterpriseLoginGoogle Client ID
+	EnterpriseGoogleClientIDSecretKey = "clientId"
+
+	// EnterpriseGoogleClientSecretKey is the required key in EnterpriseLoginGoogle Client secret
+	EnterpriseGoogleClientSecretKey = "clientSecret"
+)
+
+func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
+	if provider := cm.consoleobj.Spec.Login; provider != nil { // nolint:nestif // login config is complex
+		enterpriseLogin := EnterpriseLogin{
+			Enabled: provider.Enabled,
+		}
+
+		jwtSecret, err := provider.JWTSecretRef.GetSecret(ctx, cm.Client)
+		if err != nil {
+			return e, err
+		}
+		jwt, err := provider.JWTSecretRef.GetValue(jwtSecret, DefaultJWTSecretKey)
+		if err != nil {
+			return e, err
+		}
+		enterpriseLogin.JWTSecret = string(jwt)
+
+		switch { // nolint:gocritic // will support more providers
+		case provider.Google != nil:
+			cc := redpandav1alpha1.SecretKeyRef{
+				Namespace: provider.Google.ClientCredentialsRef.Namespace,
+				Name:      provider.Google.ClientCredentialsRef.Name,
+			}
+			ccSecret, err := cc.GetSecret(ctx, cm.Client)
+			if err != nil {
+				return e, err
+			}
+			clientID, err := cc.GetValue(ccSecret, EnterpriseGoogleClientIDSecretKey)
+			if err != nil {
+				return e, err
+			}
+			clientSecret, err := cc.GetValue(ccSecret, EnterpriseGoogleClientSecretKey)
+			if err != nil {
+				return e, err
+			}
+
+			enterpriseLogin.Google = &EnterpriseLoginGoogle{
+				Enabled:      provider.Google.Enabled,
+				ClientID:     string(clientID),
+				ClientSecret: string(clientSecret),
+			}
+			if dir := provider.Google.Directory; dir != nil {
+				enterpriseLogin.Google.Directory = &EnterpriseLoginGoogleDirectory{
+					ServiceAccountFilepath: fmt.Sprintf("%s/%s", enterpriseGoogleSAMountPath, EnterpriseGoogleSADataKey),
+					TargetPrincipal:        provider.Google.Directory.TargetPrincipal,
+				}
+			}
+		}
+		return enterpriseLogin, nil
+	}
+	return e, nil
+}
+
+func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
+	if license := cm.consoleobj.Spec.LicenseRef; license != nil {
+		licenseSecret, err := license.GetSecret(ctx, cm.Client)
+		if err != nil {
+			return "", err
+		}
+		licenseValue, err := license.GetValue(licenseSecret, DefaultLicenseSecretKey)
+		if err != nil {
+			return "", err
+		}
+		return string(licenseValue), nil
+	}
+	return "", nil
 }
 
 func (cm *ConfigMap) genServer() rest.Config {
@@ -271,17 +383,17 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 	return clusterobj.Status.Nodes.External
 }
 
-func (cm *ConfigMap) genConnect(ctx context.Context) (*connect.Config, error) {
+func (cm *ConfigMap) genConnect(ctx context.Context) (conn connect.Config, err error) {
 	clusters := []connect.ConfigCluster{}
 	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
 		cluster, err := cm.buildConfigCluster(ctx, c)
 		if err != nil {
-			return nil, err
+			return conn, err
 		}
 		clusters = append(clusters, *cluster)
 	}
 
-	return &connect.Config{
+	return connect.Config{
 		Enabled:        cm.consoleobj.Spec.Connect.Enabled,
 		Clusters:       clusters,
 		ConnectTimeout: cm.consoleobj.Spec.Connect.ConnectTimeout.Duration,
