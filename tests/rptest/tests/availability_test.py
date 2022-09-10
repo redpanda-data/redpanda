@@ -34,7 +34,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/3450
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
         self.redpanda = RedpandaService(self.test_context,
