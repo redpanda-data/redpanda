@@ -50,6 +50,8 @@ using s3_connection_limit
 /// Version of the segment name format
 enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
 
+std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
+
 enum class download_result : int32_t {
     success,
     notfound,
