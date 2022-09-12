@@ -11,7 +11,6 @@
 #pragma once
 
 #include "cloud_storage/types.h"
-#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"

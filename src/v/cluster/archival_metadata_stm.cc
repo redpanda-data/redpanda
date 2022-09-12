@@ -9,6 +9,9 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote.h"
+#include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -120,7 +123,8 @@ archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
-  , _manifest(raft->ntp(), raft->log_config().get_initial_revision())
+  , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
+      raft->ntp(), raft->log_config().get_initial_revision()))
   , _cloud_storage_api(remote) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
@@ -197,7 +201,7 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
         as->get().check();
     }
 
-    auto so = _manifest.get_start_offset();
+    auto so = _manifest->get_start_offset();
     if (so && so.value() > start_rp_offset) {
         co_return errc::success;
     }
@@ -255,7 +259,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     }
 
     auto add_segments = segments_from_manifest(
-      new_manifest.difference(_manifest));
+      new_manifest.difference(*_manifest));
     if (add_segments.empty()) {
         co_return errc::success;
     }
@@ -326,7 +330,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     retry_chain_node rc_node(_download_as, timeout, backoff);
     auto res = co_await _cloud_storage_api.download_manifest(
       s3::bucket_name{*bucket},
-      _manifest.get_manifest_path(),
+      _manifest->get_manifest_path(),
       manifest,
       rc_node);
 
@@ -341,19 +345,19 @@ ss::future<> archival_metadata_stm::handle_eviction() {
         co_await ss::sleep_abortable(rc_node.get_timeout(), _download_as);
         throw std::runtime_error{fmt::format(
           "couldn't download manifest {}: {}",
-          _manifest.get_manifest_path(),
+          _manifest->get_manifest_path(),
           res)};
     }
 
-    _manifest = std::move(manifest);
-    for (const auto& segment : _manifest) {
+    *_manifest = std::move(manifest);
+    for (const auto& segment : *_manifest) {
         if (
           _start_offset == model::offset{}
           || segment.second.base_offset < _start_offset) {
             _start_offset = segment.second.base_offset;
         }
     }
-    _last_offset = _manifest.get_last_offset();
+    _last_offset = _manifest->get_last_offset();
 
     // We can skip all offsets up to the _last_offset because we can be sure
     // that in the skipped batches there won't be any new remote segments.
@@ -375,7 +379,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
   stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
-    _manifest = cloud_storage::partition_manifest(
+    *_manifest = cloud_storage::partition_manifest(
       _raft->ntp(), _raft->log_config().get_initial_revision());
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
@@ -395,7 +399,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
 }
 
 ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
-    auto segments = segments_from_manifest(_manifest);
+    auto segments = segments_from_manifest(*_manifest);
     iobuf snap_data = serde::to_iobuf(
       snapshot{.segments = std::move(segments)});
 
@@ -427,7 +431,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         // ntp_revision field.
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
-    _manifest.add(segment.name, segment.meta);
+    _manifest->add(segment.name, segment.meta);
 
     // NOTE: here we don't take into account possibility of holes in the
     // remote offset range. Archival tries to upload segments in order, and
@@ -455,13 +459,13 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
 }
 
 void archival_metadata_stm::apply_truncate(const start_offset& so) {
-    auto removed = _manifest.truncate(so.start_offset);
+    auto removed = _manifest->truncate(so.start_offset);
     vlog(
       _logger.debug,
       "Truncate command applied, new start offset: {}",
-      _manifest.get_start_offset());
-    if (_manifest.size()) {
-        _start_offset = *_manifest.get_start_offset();
+      _manifest->get_start_offset());
+    if (_manifest->size()) {
+        _start_offset = *_manifest->get_start_offset();
     } else {
         _start_offset = model::offset{};
         _last_offset = model::offset{};
@@ -471,6 +475,11 @@ void archival_metadata_stm::apply_truncate(const start_offset& so) {
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
     co_await raft::state_machine::stop();
+}
+
+const cloud_storage::partition_manifest&
+archival_metadata_stm::manifest() const {
+    return *_manifest;
 }
 
 } // namespace cluster

@@ -20,6 +20,8 @@
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
+#include "utils/to_string.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 

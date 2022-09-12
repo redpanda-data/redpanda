@@ -9,6 +9,7 @@
 
 #include "cluster/topics_frontend.h"
 
+#include "cloud_storage/remote.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"

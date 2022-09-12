@@ -136,13 +136,6 @@ private:
 
 } // namespace details
 
-struct offset_range {
-    model::offset begin;
-    model::offset end;
-    model::offset begin_rp;
-    model::offset end_rp;
-};
-
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
 /// maintained per segment. The idea here is that the
@@ -151,8 +144,7 @@ struct offset_range {
 /// won't conflict frequently. The conflict will result
 /// in rescan of the segment (since we don't have indexes
 /// for remote segments).
-class remote_partition
-  : public ss::enable_lw_shared_from_this<remote_partition> {
+class remote_partition : public ss::enable_shared_from_this<remote_partition> {
     friend class partition_record_batch_reader_impl;
 
     static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
@@ -203,7 +195,7 @@ public:
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
 
     // Get list of aborted transactions that overlap with the offset range
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
 private:

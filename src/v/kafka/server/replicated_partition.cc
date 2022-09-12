@@ -10,6 +10,7 @@
  */
 #include "kafka/server/replicated_partition.h"
 
+#include "cloud_storage/types.h"
 #include "cluster/errc.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/logger.h"

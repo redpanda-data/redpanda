@@ -182,7 +182,7 @@ partition_manager::maybe_download_log(
   storage::ntp_config& ntp_cfg, std::optional<remote_topic_properties> rtp) {
     if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
         auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg, *rtp);
+          ntp_cfg, rtp->remote_revision, rtp->remote_partition_count);
         co_return res;
     }
     vlog(

@@ -15,5 +15,12 @@ namespace cloud_storage {
 class cache;
 class partition_recovery_manager;
 class remote;
+class remote_partition;
+class remote_segment;
+class partition_manifest;
+class topic_manifest;
+
+struct log_recovery_result;
+struct offset_range;
 
 } // namespace cloud_storage

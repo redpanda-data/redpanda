@@ -24,6 +24,7 @@
 #include "json/writer.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timestamp.h"
 
 #include <seastar/core/coroutine.hh>
@@ -156,7 +157,7 @@ struct topic_manifest_handler
     std::optional<model::initial_revision_id> _revision_id{};
 
     // optional fields
-    cluster::topic_properties _properties;
+    manifest_topic_configuration::topic_properties _properties;
     std::optional<ss::sstring> compaction_strategy_sv;
     std::optional<ss::sstring> timestamp_type_sv;
     std::optional<ss::sstring> compression_sv;
@@ -164,7 +165,7 @@ struct topic_manifest_handler
 };
 
 topic_manifest::topic_manifest(
-  const cluster::topic_configuration& cfg, model::initial_revision_id rev)
+  const manifest_topic_configuration& cfg, model::initial_revision_id rev)
   : _topic_config(cfg)
   , _rev(rev) {}
 
@@ -207,12 +208,12 @@ void topic_manifest::update(const topic_manifest_handler& handler) {
           fmt::format, "Missing _revision_id value in parsed topic manifest"));
     }
 
-    _topic_config = cluster::topic_configuration(
-      handler._namespace.value(),
-      handler._topic.value(),
-      handler._partition_count.value(),
-      handler._replication_factor.value());
-    _topic_config->properties = handler._properties;
+    _topic_config = manifest_topic_configuration{
+      .tp_ns = model::topic_namespace(
+        handler._namespace.value(), handler._topic.value()),
+      .partition_count = handler._partition_count.value(),
+      .replication_factor = handler._replication_factor.value(),
+      .properties = handler._properties};
 
     if (handler.compaction_strategy_sv) {
         try {

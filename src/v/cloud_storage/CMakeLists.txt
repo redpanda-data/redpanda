@@ -25,8 +25,8 @@ v_cc_library(
     v::s3
     v::json
     v::model
-    v::cluster
     v::rphashing
     v::cloud_roles
+    # NOTE: do not add v::cloud as a dependency
 )
 add_subdirectory(tests)

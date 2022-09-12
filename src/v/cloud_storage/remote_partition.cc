@@ -68,7 +68,7 @@ class partition_record_batch_reader_impl final
 public:
     explicit partition_record_batch_reader_impl(
       const storage::log_reader_config& config,
-      ss::lw_shared_ptr<remote_partition> part,
+      ss::shared_ptr<remote_partition> part,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
@@ -328,7 +328,7 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
 
-    ss::lw_shared_ptr<remote_partition> _partition;
+    ss::shared_ptr<remote_partition> _partition;
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Currently accessed segment
     remote_partition::iterator _it;
@@ -500,13 +500,13 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     return std::nullopt;
 }
 
-ss::future<std::vector<cluster::rm_stm::tx_range>>
+ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
     gate_guard guard(_gate);
     // Here we have to use kafka offsets to locate the segments and
     // redpanda offsets to extract aborted transactions metadata because
     // tx-manifests contains redpanda offsets.
-    std::vector<cluster::rm_stm::tx_range> result;
+    std::vector<model::tx_range> result;
 
     // that's a stable btree iterator that makes key lookup on increment
     auto first_it = upper_bound(offsets.begin);

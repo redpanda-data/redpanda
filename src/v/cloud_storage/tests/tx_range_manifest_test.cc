@@ -38,7 +38,7 @@ static remote_segment_path
 static remote_manifest_path
   manifest_path("abcdef01/kafka/topic/0_1/0-1-v1.log.1.tx");
 
-using tx_range_t = cluster::rm_stm::tx_range;
+using tx_range_t = model::tx_range;
 
 static std::vector<tx_range_t> ranges = {
   tx_range_t{

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/remote.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/controller_stm.h"
 #include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"

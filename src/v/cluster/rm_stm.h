@@ -54,13 +54,7 @@ public:
     using duration_type = clock_type::duration;
 
     static constexpr const int8_t abort_snapshot_version = 0;
-    struct tx_range {
-        model::producer_identity pid;
-        model::offset first;
-        model::offset last;
-
-        auto operator<=>(const tx_range&) const = default;
-    };
+    using tx_range = model::tx_range;
 
     struct abort_index {
         model::offset first;

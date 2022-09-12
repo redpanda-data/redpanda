@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/remote_partition.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/feature_table.h"
 #include "cluster/id_allocator_stm.h"
@@ -206,9 +206,7 @@ public:
     }
 
     ss::future<std::vector<rm_stm::tx_range>>
-    aborted_transactions_cloud(cloud_storage::offset_range offsets) {
-        return _cloud_storage_partition->aborted_transactions(offsets);
-    }
+    aborted_transactions_cloud(const cloud_storage::offset_range& offsets);
 
     const ss::shared_ptr<cluster::archival_metadata_stm>&
     archival_meta_stm() const {
@@ -225,50 +223,24 @@ public:
     }
 
     /// Return true if shadow indexing is enabled for the partition
-    bool is_remote_fetch_enabled() const {
-        const auto& cfg = _raft->log_config();
-        return cfg.is_remote_fetch_enabled()
-               || config::shard_local_cfg()
-                    .cloud_storage_enable_remote_read.value();
-    }
+    bool is_remote_fetch_enabled() const;
 
     /// Check if cloud storage is connected to cluster partition
     ///
     /// The remaining 'cloud' methods can only be called if this
     /// method returned 'true'.
-    bool cloud_data_available() const {
-        return static_cast<bool>(_cloud_storage_partition)
-               && _cloud_storage_partition->is_data_available();
-    }
+    bool cloud_data_available() const;
 
     /// Starting offset in the object store
-    model::offset start_cloud_offset() const {
-        vassert(
-          cloud_data_available(),
-          "Method can only be called if cloud data is available, ntp: {}",
-          _raft->ntp());
-        return _cloud_storage_partition->first_uploaded_offset();
-    }
+    model::offset start_cloud_offset() const;
 
     /// Last available cloud offset
-    model::offset last_cloud_offset() const {
-        vassert(
-          cloud_data_available(),
-          "Method can only be called if cloud data is available, ntp: {}",
-          _raft->ntp());
-        return _cloud_storage_partition->last_uploaded_offset();
-    }
+    model::offset last_cloud_offset() const;
 
     /// Create a reader that will fetch data from remote storage
     ss::future<storage::translating_reader> make_cloud_reader(
       storage::log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
-        vassert(
-          cloud_data_available(),
-          "Method can only be called if cloud data is available, ntp: {}",
-          _raft->ntp());
-        return _cloud_storage_partition->make_reader(config, deadline);
-    }
+      std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
     ss::future<> remove_persistent_state() {
         if (_rm_stm) {
@@ -319,7 +291,7 @@ private:
     ss::sharded<feature_table>& _feature_table;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
-    ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     std::optional<s3::bucket_name> _read_replica_bucket{std::nullopt};
 
