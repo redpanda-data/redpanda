@@ -644,6 +644,84 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
     BOOST_REQUIRE(m == restored);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    m.add(
+      segment_name("0-1-v1.log"),
+      {.base_offset = model::offset{0},
+       .committed_offset = model::offset{9},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("10-1-v1.log"),
+      {.base_offset = model::offset{10},
+       .committed_offset = model::offset{19},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("20-1-v1.log"),
+      {.base_offset = model::offset{20},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("30-1-v1.log"),
+      {.base_offset = model::offset{30},
+       .committed_offset = model::offset{39},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("40-1-v1.log"),
+      {.base_offset = model::offset{40},
+       .committed_offset = model::offset{49},
+       .sname_format = segment_name_format::v2});
+    // There shouldn't be any replaced segments
+    {
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.empty());
+    }
+    // Try to replace in the middle
+    m.add(
+      segment_name("20-1-v1.log"),
+      {.base_offset = model::offset{20},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
+    {
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.size() == 1);
+        BOOST_REQUIRE(res[0].meta.base_offset == model::offset{20});
+        BOOST_REQUIRE(res[0].meta.committed_offset == model::offset{29});
+    }
+    // Replace several segments
+    m.add(
+      segment_name("0-1-v1.log"),
+      {.base_offset = model::offset{0},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
+    {
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.size() == 4);
+        BOOST_REQUIRE(res[0].meta.base_offset == model::offset{0});
+        BOOST_REQUIRE(res[0].meta.committed_offset == model::offset{9});
+        BOOST_REQUIRE(res[1].meta.base_offset == model::offset{10});
+        BOOST_REQUIRE(res[1].meta.committed_offset == model::offset{19});
+        BOOST_REQUIRE(res[2].meta.base_offset == model::offset{20});
+        BOOST_REQUIRE(res[2].meta.committed_offset == model::offset{29});
+        // The segment with base offset 20 was replaced twice
+        BOOST_REQUIRE(res[3].meta.base_offset == model::offset{20});
+        BOOST_REQUIRE(res[3].meta.committed_offset == model::offset{29});
+    }
+}
+
+namespace cloud_storage {
+
+struct partition_manifest_accessor {
+    static void add_replaced_segment(
+      partition_manifest* m,
+      const segment_name& key,
+      const partition_manifest::segment_meta& meta) {
+        auto comp = parse_segment_name(key);
+        m->_replaced.insert(std::make_pair(*comp, meta));
+    }
+};
+} // namespace cloud_storage
+
 // modeled after cluster::archival_metadata_stm::segment
 struct metadata_stm_segment
   : public serde::envelope<

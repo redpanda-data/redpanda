@@ -63,8 +63,14 @@ segment_name generate_local_segment_name(model::offset o, model::term_id t);
 remote_manifest_path
 generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
 
+// This structure can be impelenented
+// to allow access to private fields of the manifest.
+struct partition_manifest_accessor;
+
 /// Manifest file stored in S3
 class partition_manifest final : public base_manifest {
+    friend struct partition_manifest_accessor;
+
 public:
     struct segment_meta {
         using value_t = segment_meta;
@@ -200,11 +206,9 @@ public:
     /// Returns an iterator to the segment containing offset o, such that o >=
     /// segment.base_offset and o <= segment.committed_offset.
     const_iterator segment_containing(model::offset o) const;
-    using iterator_pair = std::pair<const_iterator, const_iterator>;
 
-    /// Return iterators that can be used to access
-    /// segments that were replaced by newer segments.
-    iterator_pair replaced_segments() const;
+    /// Return collection of segments that were replaced by newer segments.
+    std::vector<segment_name_meta> replaced_segments() const;
 
 private:
     /// Update manifest content from json document that supposed to be generated
@@ -219,7 +223,7 @@ private:
     model::initial_revision_id _rev;
     segment_map _segments;
     /// Collection of replaced but not yet removed segments
-    segment_map _replaced;
+    segment_multimap _replaced;
     model::offset _last_offset;
 };
 

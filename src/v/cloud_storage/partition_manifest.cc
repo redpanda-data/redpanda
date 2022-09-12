@@ -29,7 +29,9 @@
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
 
+#include <algorithm>
 #include <charconv>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -304,10 +306,18 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(key);
 }
 
-std::
-  pair<partition_manifest::const_iterator, partition_manifest::const_iterator>
-  partition_manifest::replaced_segments() const {
-    return std::make_pair(_replaced.begin(), _replaced.end());
+std::vector<partition_manifest::segment_name_meta>
+partition_manifest::replaced_segments() const {
+    std::vector<partition_manifest::segment_name_meta> segments;
+    segments.reserve(_replaced.size());
+    for (const auto& kv : _replaced) {
+        segments.push_back(segment_name_meta{
+          .name = generate_local_segment_name(
+            kv.first.base_offset, kv.first.term),
+          .meta = kv.second,
+        });
+    }
+    return segments;
 }
 
 void partition_manifest::move_aligned_offset_range(
@@ -669,7 +679,7 @@ struct partition_manifest_handler
                 _state = state::expect_segment_path;
             } else {
                 if (!_replaced) {
-                    _replaced = std::make_unique<segment_map>();
+                    _replaced = std::make_unique<segment_multimap>();
                 }
                 _replaced->insert(std::make_pair(_segment_key, _meta));
                 _state = state::expect_replaced_path;
@@ -776,7 +786,7 @@ struct partition_manifest_handler
     partition_manifest::key _segment_key;
     partition_manifest::segment_meta _meta;
     std::unique_ptr<segment_map> _segments;
-    std::unique_ptr<segment_map> _replaced;
+    std::unique_ptr<segment_multimap> _replaced;
 
     // required manifest fields
     std::optional<int32_t> _version;
