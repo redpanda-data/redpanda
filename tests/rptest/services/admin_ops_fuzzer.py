@@ -9,7 +9,7 @@
 from enum import Enum, auto, unique
 import json
 import random
-import re
+import itertools
 import string
 from threading import Event, Condition
 import threading
@@ -26,9 +26,26 @@ from rptest.services.admin import Admin
 class OperationCtx:
     def __init__(self, redpanda):
         self.redpanda = redpanda
+        self.brokers_list = redpanda.brokers_list()
+        self.cur_first_broker = itertools.cycle(self.brokers_list)
+
+    def _get_brokers(self):
+        # This is a bit of an ugly hack to deal with the consequences of
+        # https://github.com/redpanda-data/redpanda/issues/6317
+        # If the first broker in the list is suspended, rpk won't try other
+        # brokers and will fail straight away. This is a problem even if we
+        # shuffle the brokers list (as redpanda.brokers_list() does) and add
+        # retries - there is a small chance that the first broker will be the
+        # bad one in all retries! To mitigate this we deteriministically choose
+        # the first broker so that it is always different from the previous
+        # invocation and shuffle the rest.
+        first = next(self.cur_first_broker)
+        others = [b for b in self.brokers_list if b != first]
+        random.shuffle(others)
+        return ",".join([first] + others)
 
     def rpk(self):
-        return RpkTool(self.redpanda)
+        return RpkTool(self.redpanda, get_brokers=self._get_brokers)
 
     def admin(self):
         return Admin(self.redpanda)
