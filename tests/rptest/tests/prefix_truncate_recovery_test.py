@@ -175,7 +175,6 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
                                          self.initial_version)
         super(PrefixTruncateRecoveryUpgradeTest, self).setUp()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5589
     @cluster(num_nodes=3,
              log_allow_list=LOG_ALLOW_LIST +
              MixedVersionWorkloadRunner.ALLOWED_LOGS)

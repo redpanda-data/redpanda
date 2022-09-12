@@ -220,7 +220,6 @@ class KafkaStreamsPageView(RedpandaTest):
 
         self._timeout = 300
 
-    @ok_to_fail  # For https://github.com/redpanda-data/redpanda/issues/4637
     @cluster(num_nodes=5)
     def test_kafka_streams_page_view(self):
         example_jar = KafkaStreamExamples.KafkaStreamsPageView(self.redpanda,
