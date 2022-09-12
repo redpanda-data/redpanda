@@ -172,7 +172,14 @@ class KgoVerifierService(Service):
 
         # Permit the subprocess to exit, and wait for it to do so
         self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
-        self._remote(node, "shutdown")
+        try:
+            self._remote(node, "shutdown")
+        except requests.exceptions.ConnectionError:
+            # It is permitted for the remote process to abort connection and fail
+            # to send a response, as it does not wait for HTTP response to flush
+            # before shutting down.
+            pass
+
         self.logger.debug(
             f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
         )
