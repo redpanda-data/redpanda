@@ -16,6 +16,18 @@
 
 namespace cloud_storage {
 
+std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
+    switch (r) {
+    case segment_name_format::v1:
+        o << "{v1}";
+        break;
+    case segment_name_format::v2:
+        o << "{v2}";
+        break;
+    }
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const download_result& r) {
     switch (r) {
     case download_result::success:
