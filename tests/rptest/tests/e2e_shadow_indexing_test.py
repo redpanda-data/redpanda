@@ -126,7 +126,6 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                          })
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4639
-    # https://github.com/redpanda-data/redpanda/issues/5390
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write_with_node_failures(self):
         self.start_producer()
