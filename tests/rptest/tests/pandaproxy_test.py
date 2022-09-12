@@ -655,7 +655,6 @@ class PandaProxyTest(RedpandaTest):
         assert sc_res.status_code == requests.codes.not_found
         assert sc_res.json()["error_code"] == 40403
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5638
     @cluster(num_nodes=3)
     def test_remove_consumer_validation(self):
         """
@@ -802,7 +801,6 @@ class PandaProxyTest(RedpandaTest):
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/2501
     @cluster(num_nodes=3)
     def test_consumer_group_json_v2(self):
         """
