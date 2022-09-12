@@ -113,12 +113,16 @@ class RpkTool:
                  username: str = None,
                  password: str = None,
                  sasl_mechanism: str = None,
-                 tls_cert: Optional[tls.Certificate] = None):
+                 tls_cert: Optional[tls.Certificate] = None,
+                 get_brokers=None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._sasl_mechanism = sasl_mechanism
         self._tls_cert = tls_cert
+        if get_brokers is None:
+            get_brokers = lambda: self._redpanda.brokers()
+        self._get_brokers = get_brokers
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
@@ -172,8 +176,8 @@ class RpkTool:
         cmd = [
             "acl", "create", "--allow-principal", principal, "--operation",
             ",".join(operations), resource, resource_name, "--brokers",
-            self._redpanda.brokers(), "--user", username, "--password",
-            password, "--sasl-mechanism", mechanism
+            self._get_brokers(), "--user", username, "--password", password,
+            "--sasl-mechanism", mechanism
         ]
         return self._run(cmd)
 
@@ -501,13 +505,12 @@ class RpkTool:
     def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
-            self._redpanda.brokers(), '--name', name, '--description',
-            description
+            self._get_brokers(), '--name', name, '--description', description
         ]
         return self._execute(cmd)
 
     def wasm_remove(self, name):
-        cmd = ['wasm', 'remove', name, '--brokers', self._redpanda.brokers()]
+        cmd = ['wasm', 'remove', name, '--brokers', self._get_brokers()]
         return self._execute(cmd)
 
     def wasm_gen(self, directory):
@@ -552,7 +555,7 @@ class RpkTool:
 
         cmd = [
             self._rpk_binary(), 'cluster', 'info', '--brokers',
-            self._redpanda.brokers()
+            self._get_brokers()
         ]
         output = self._execute(cmd, stdin=None, timeout=timeout)
         parsed = map(_parse_out, output.splitlines())
@@ -715,7 +718,7 @@ class RpkTool:
     def _kafka_conn_settings(self):
         flags = [
             "--brokers",
-            self._redpanda.brokers(),
+            self._get_brokers(),
         ]
         if self._username:
             flags += [
@@ -786,7 +789,7 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(), '--brokers',
-            self._redpanda.brokers(), 'cluster', 'metadata'
+            self._get_brokers(), 'cluster', 'metadata'
         ]
         output = self._execute(cmd)
         lines = output.strip().split("\n")
