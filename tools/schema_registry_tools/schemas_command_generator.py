@@ -7,8 +7,7 @@
 # directly to the _schemas topic again.
 #
 # Run the following command that parses the dump file and
-# generate runnable commands. This will fail without generating
-# the commands when a seq is higher than the corresponding offset.
+# generate runnable commands.
 #
 # $ ./schemas_command_generator.py schemas-dump.txt > run.sh
 #
@@ -20,10 +19,10 @@
 #    $ rpk topic create _schemas -r 3 -c cleanup.policy=compact -c compression.type=none
 # 4. Run the generated script above
 #    $ chmod 755 run.sh
-#    $ sh run.sh
+#    $ ./run.sh
 #
 # Example outputs:
-# $ sh run.sh
+# $ ./run.sh
 # Produced to partition 0 at offset 0 with timestamp 1662516019353.
 # Produced to partition 0 at offset 1 with timestamp 1662516020736.
 # Produced to partition 0 at offset 2 with timestamp 1662516021788.
@@ -34,6 +33,91 @@
 import json
 from pprint import pprint
 import re
+import types
+
+
+def generate_records(j):
+    # Extracting Key-Value pairs
+    expected_offset = 0
+    records = []
+    for item in j:
+        while item['offset'] > expected_offset:
+            records.append({
+                "key": '''{\"keytype\":\"NOOP\",\"magic\":0}''',
+                "value": "",
+                "offset": expected_offset
+            })
+            expected_offset += 1
+        records.append({
+            "key": item['key'],
+            "value": item['value'],
+            "offset": expected_offset
+        })
+        expected_offset += 1
+
+    return records
+
+
+def sort_and_validate_offset(j):
+    # Sort by the offset
+    j.sort(key=lambda x: x['offset'])
+    # Validate if there's a duplicated offset in the offset chain
+    previous_offset = -1
+    for item in j:
+        if item['offset'] == previous_offset:
+            return f"The offset {item['offset']} is duplicated unexpectedly at key {item['key']}, hence exiting..."
+        previous_offset = item['offset']
+
+    return j
+
+
+def run_tests():
+    print('##### Test: offset not in order #####')
+    not_in_order = '''[
+{"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 0}, 
+{"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 2},
+{"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 1}
+]'''
+    expected = '''[{"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 0}, {"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 1}, {"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 2}]'''
+
+    print(f"Original:\n{not_in_order}\n")
+    j = json.loads(not_in_order)
+    validated = sort_and_validate_offset(j)
+    assert json.dumps(
+        validated) == expected, 'Offset order validation has failed'
+    print(f"Result, offset in order:\n{json.dumps(validated, indent=2,)}")
+    print('\n')
+
+    print('##### Test: offset duplicated #####')
+    duplicated = '''[
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"SCHEMA\\",\\"subject\\":\\"apple_value\\",\\"magic\\":0}", "value": "", "offset": 0},
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"SCHEMA\\",\\"subject\\":\\"orange_value\\",\\\"magic\\":0}", "value": "", "offset": 1},
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"SCHEMA\\",\\"subject\\":\\"grape_value\\",\\\"magic\\":0}", "value": "", "offset": 1}
+]'''
+    print(f"Original:\n{duplicated}")
+    j = json.loads(duplicated)
+    validated = sort_and_validate_offset(j)
+    assert isinstance(validated,
+                      str), 'Offset order duplication validation has failed'
+    print(f"Result:\n{validated}")
+    print('\n')
+
+    print('##### Test: offset gap #####')
+    gap = '''[
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 0},
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 1},
+  {"topic": "_schemas", "key": "{\\"keytype\\":\\"NOOP\\",\\"magic\\":0}", "value": "", "offset": 3}
+]'''
+    expected = list(range(4))
+    print(f"Original:\n{gap}")
+    j = json.loads(gap)
+    validated = generate_records(j)
+    validated_list = list(i['offset'] for i in validated)
+    assert validated_list == expected, 'Offset gap validation has failed'
+    print(f"Result, 2 is filled:\n{validated}")
+    print('\n')
+
+    print('\nAll tests have passed!')
 
 
 def main():
@@ -43,10 +127,17 @@ def main():
         parser = argparse.ArgumentParser(
             description='Redpanda Schema Registry _schemas Command Generator')
         parser.add_argument('path', type=str, help='Path to the file')
+        parser.add_argument('-t',
+                            '--test',
+                            action='store_true',
+                            help='Run tests')
         return parser
 
     parser = generate_options()
     options, _ = parser.parse_known_args()
+    if options.test:
+        run_tests()
+        exit(0)
 
     # Formatting as a single json
     tmp = '['
@@ -59,21 +150,18 @@ def main():
     tmp = re.sub('},$', '}]', tmp)
     j = json.loads(tmp)
 
-    # Generating rpk topic create commands
-    cmd_all = ''
-    cmd_all += f"#!/bin/bash\n\n"
-    for c, i in enumerate(j):
-        d = json.loads(i['key'])
-        if d['seq'] > i['offset']:
-            cmd_all = f"The seq {d['seq']} is unexpectedly higher than the \
-offset {i['offset']} at key {i['key']}. \nThat is it's likely broken, hence exiting...."
+    # Pre-check the dump
+    j = sort_and_validate_offset(j)
+    assert isinstance(j, list), j
 
-            break
-        cmd_all += f"echo '{i['value']}' | rpk topic produce _schemas --compression none -k '{i['key']}'\n"
-        if c == len(j) - 1:
-            cmd_all += "echo Done"
-        else:
-            cmd_all += "sleep 1s\n"
+    records = generate_records(j)
+
+    # Formatting as a bash script
+    cmd_all = "#!/usr/bin/env bash\nset -euo pipefail\n\necho '"
+    for r in records:
+        cmd_all += f"{r['key']}, {r['value']}\n"
+    cmd_all += "\' | rpk topic produce _schemas --compression none -f \'%k, %v\\n\'\n"
+    cmd_all += "echo Done"
 
     print(cmd_all)
 
