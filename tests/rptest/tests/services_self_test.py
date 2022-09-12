@@ -15,6 +15,8 @@ from rptest.clients.types import TopicSpec
 
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
+from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -62,3 +64,61 @@ class KgoRepeaterSelfTest(RedpandaTest):
                               workers=1) as repeater:
             repeater.await_group_ready()
             repeater.await_progress(1024, timeout_sec=60)
+
+
+class KgoVerifierSelfTest(PreallocNodesTest):
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context=test_context,
+                         node_prealloc_count=1,
+                         *args,
+                         **kwargs)
+
+    @cluster(num_nodes=4)
+    def test_kgo_verifier(self):
+        topic = 'test'
+        self.client().create_topic(
+            TopicSpec(name=topic,
+                      partition_count=16,
+                      retention_bytes=16 * 1024 * 1024,
+                      segment_bytes=1024 * 1024))
+
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic,
+                                       16384,
+                                       1000,
+                                       custom_node=self.preallocated_nodes)
+        producer.start()
+        producer.wait_for_acks(1000, timeout_sec=30, backoff_sec=1)
+        producer.wait_for_offset_map()
+
+        rand_consumer = KgoVerifierRandomConsumer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            16384,
+            100,
+            2,
+            nodes=self.preallocated_nodes)
+        rand_consumer.start(clean=False)
+
+        seq_consumer = KgoVerifierSeqConsumer(self.test_context,
+                                              self.redpanda,
+                                              topic,
+                                              16384,
+                                              nodes=self.preallocated_nodes)
+        seq_consumer.start(clean=False)
+
+        group_consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            topic,
+            16384,
+            2,
+            nodes=self.preallocated_nodes)
+        group_consumer.start(clean=False)
+
+        producer.wait(timeout_sec=60)
+        rand_consumer.wait(timeout_sec=60)
+        group_consumer.wait(timeout_sec=60)
+        seq_consumer.wait(timeout_sec=60)
