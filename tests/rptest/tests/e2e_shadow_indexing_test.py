@@ -301,7 +301,6 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         rpk.alter_topic_config(self.topic, 'retention.bytes',
                                str(self.segment_size))
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6111
     @cluster(num_nodes=8)
     def test_create_or_delete_topics_while_busy(self):
         self.logger.info(f"Environment: {os.environ}")
@@ -321,9 +320,8 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         msg_count = 500000 if self.redpanda.dedicated_nodes else 100000
         timeout = 600
 
-        # This must be very low to avoid hitting bad_allocs:
-        # https://github.com/redpanda-data/redpanda/issues/6111
-        random_parallelism = 10 if self.redpanda.dedicated_nodes else 2
+        random_parallelism = 100 if self.redpanda.dedicated_nodes else 10
+        reader_read_count = 100
 
         producer = KgoVerifierProducer(self.test_context, self.redpanda,
                                        self.topic, msg_size, msg_count,
@@ -338,7 +336,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
 
         rand_consumer = KgoVerifierRandomConsumer(self.test_context,
                                                   self.redpanda, self.topic,
-                                                  msg_size, 100,
+                                                  msg_size, reader_read_count,
                                                   random_parallelism,
                                                   self.preallocated_nodes)
 
@@ -375,3 +373,5 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
 
         producer.wait()
         rand_consumer.wait()
+        assert rand_consumer.consumer_status.validator.total_reads >= random_parallelism * reader_read_count
+        assert rand_consumer.consumer_status.validator.invalid_reads == 0
