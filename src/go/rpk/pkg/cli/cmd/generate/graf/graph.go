@@ -26,6 +26,7 @@ type GraphPanel struct {
 	Tooltip       Tooltip     `json:"tooltip"`
 	AliasColors   AliasColors `json:"aliasColors"`
 	SteppedLine   bool        `json:"steppedLine"`
+	Interval      string      `json:"interval,omitempty"`
 }
 
 func (*GraphPanel) Type() string {
