@@ -315,7 +315,10 @@ void heartbeat_manager::process_reply(
         auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
 
-        if (unlikely(m.target_node_id != consensus->self())) {
+        if (
+          unlikely(m.target_node_id != consensus->self())
+          && m.target_node_id.id() != model::node_id{}
+          && m.target_node_id.revision() != model::revision_id{}) {
             vlog(
               hbeatlog.warn,
               "Heartbeat response addressed to different node: {}, current "
