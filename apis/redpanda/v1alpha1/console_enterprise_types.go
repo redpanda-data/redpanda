@@ -26,6 +26,22 @@ type EnterpriseLogin struct {
 	JWTSecretRef SecretKeyRef `json:"jwtSecretRef"`
 
 	Google *EnterpriseLoginGoogle `json:"google,omitempty"`
+
+	RedpandaCloud *EnterpriseLoginRedpandaCloud `json:"redpandaCloud,omitempty"`
+}
+
+// EnterpriseLoginRedpandaCloud defines configurable fields for RedpandaCloud SSO provider
+type EnterpriseLoginRedpandaCloud struct {
+	Enabled bool `json:"enabled" yaml:"enabled"`
+
+	// Domain is the domain of the auth server
+	Domain string `json:"domain" yaml:"domain"`
+
+	// Audience is the domain where this auth is intended for
+	Audience string `json:"audience" yaml:"audience"`
+
+	// AllowedOrigins indicates if response is allowed from given origin
+	AllowedOrigins string `json:"allowedOrigins,omitempty" yaml:"allowedOrigins,omitempty"`
 }
 
 // IsGoogleLoginEnabled returns true if Google SSO provider is enabled
