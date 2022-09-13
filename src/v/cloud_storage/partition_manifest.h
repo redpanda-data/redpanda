@@ -182,7 +182,9 @@ public:
     /// Return collection of segments that were replaced by newer segments.
     std::vector<segment_meta> replaced_segments() const;
 
-    /// Delete all replaced segments from the manifest
+    /// Removes all replaced segments from the manifest.
+    /// Method 'replaced_segments' will return empty value
+    /// after the call.
     void delete_replaced_segments();
 
 private:

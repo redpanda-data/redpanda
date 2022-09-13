@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/types.h"
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -58,9 +59,16 @@ public:
     static ss::future<> make_snapshot(
       const storage::ntp_config& ntp_cfg,
       const cloud_storage::partition_manifest& m,
-      model::offset insync_offset);
+      model::offset insync_offset,
+      model::offset start_ofset);
 
     using persisted_stm::sync;
+
+    model::offset get_start_offset() const;
+
+    // Return list of all segments that has to be
+    // removed from S3.
+    std::vector<cloud_storage::segment_meta> get_segments_to_cleanup() const;
 
 private:
     ss::future<std::error_code> do_add_segments(
@@ -89,6 +97,8 @@ private:
     struct start_offset;
     struct add_segment_cmd;
     struct truncate_cmd;
+    struct update_start_offset_cmd;
+    struct cleanup_metadata_cmd;
     struct snapshot;
 
     static std::vector<segment>
@@ -96,6 +106,8 @@ private:
 
     void apply_add_segment(const segment& segment);
     void apply_truncate(const start_offset& so);
+    void apply_cleanup_metadata();
+    void apply_update_start_offset(const start_offset& so);
 
 private:
     prefix_logger _logger;

@@ -292,7 +292,7 @@ ss::future<> archiver_fixture::add_topic_with_archival_enabled(
 ss::future<> archiver_fixture::create_archival_snapshot(
   const storage::ntp_config& cfg, cloud_storage::partition_manifest manifest) {
     return cluster::archival_metadata_stm::make_snapshot(
-      cfg, manifest, model::offset(0));
+      cfg, manifest, model::offset(0), model::offset(0));
 }
 
 storage::api& archiver_fixture::get_local_storage_api() {

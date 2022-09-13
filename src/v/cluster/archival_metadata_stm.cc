@@ -68,17 +68,45 @@ struct archival_metadata_stm::truncate_cmd {
     using value = start_offset;
 };
 
+struct archival_metadata_stm::update_start_offset_cmd {
+    static constexpr cmd_key key{2};
+
+    using value = start_offset;
+};
+
+struct archival_metadata_stm::cleanup_metadata_cmd {
+    static constexpr cmd_key key{3};
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
+    /// List of segments
     std::vector<segment> segments;
+    /// Start offset (might be different from the base offset of the first
+    /// segment)
+    model::offset start_offset;
 };
 
 std::vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
+    auto replaced = manifest.replaced_segments();
     std::vector<segment> segments;
-    segments.reserve(manifest.size());
+    segments.reserve(manifest.size() + replaced.size());
+
+    for (auto meta : replaced) {
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = manifest.get_revision_id();
+        }
+        auto key = cloud_storage::generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
+        segments.push_back(segment{
+          .ntp_revision_deprecated = meta.ntp_revision,
+          .name = std::move(key),
+          .meta = meta});
+    }
+
     for (auto [key, meta] : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -91,22 +119,18 @@ archival_metadata_stm::segments_from_manifest(
           .meta = meta});
     }
 
-    std::sort(
-      segments.begin(), segments.end(), [](const auto& s1, const auto& s2) {
-          return s1.meta.base_offset < s2.meta.base_offset;
-      });
-
     return segments;
 }
 
 ss::future<> archival_metadata_stm::make_snapshot(
   const storage::ntp_config& ntp_cfg,
   const cloud_storage::partition_manifest& m,
-  model::offset insync_offset) {
+  model::offset insync_offset,
+  model::offset start_offset) {
     // Create archival_stm_snapshot
     auto segments = segments_from_manifest(m);
     iobuf snap_data = serde::to_iobuf(
-      snapshot{.segments = std::move(segments)});
+      snapshot{.segments = std::move(segments), .start_offset = start_offset});
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -189,6 +213,11 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    vlog(
+      _logger.trace,
+      "do_truncate called, old so {}, new so {}",
+      _start_offset,
+      start_rp_offset);
     {
         auto now = ss::lowres_clock::now();
         auto timeout = now < deadline ? deadline - now : 0ms;
@@ -201,15 +230,15 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
         as->get().check();
     }
 
-    auto so = _manifest->get_start_offset();
-    if (so && so.value() > start_rp_offset) {
+    if (_start_offset > start_rp_offset) {
         co_return errc::success;
     }
 
     storage::record_batch_builder b(
       model::record_batch_type::archival_metadata, model::offset(0));
-    iobuf key_buf = serde::to_iobuf(truncate_cmd::key);
-    auto record_val = truncate_cmd::value{.start_offset = start_rp_offset};
+    iobuf key_buf = serde::to_iobuf(update_start_offset_cmd::key);
+    auto record_val = update_start_offset_cmd::value{
+      .start_offset = start_rp_offset};
     iobuf val_buf = serde::to_iobuf(record_val);
     b.add_raw_kv(std::move(key_buf), std::move(val_buf));
 
@@ -302,15 +331,24 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
 
     b.for_each_record([this](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
-        if (key == add_segment_cmd::key) {
-            auto value = serde::from_iobuf<add_segment_cmd::value>(
-              r.release_value());
-            apply_add_segment(value);
-        } else if (key == truncate_cmd::key) {
-            auto value = serde::from_iobuf<truncate_cmd::value>(
-              r.release_value());
-            apply_truncate(value);
-        }
+        switch (key) {
+        case add_segment_cmd::key:
+            apply_add_segment(
+              serde::from_iobuf<add_segment_cmd::value>(r.release_value()));
+            break;
+        case truncate_cmd::key:
+            apply_truncate(
+              serde::from_iobuf<truncate_cmd::value>(r.release_value()));
+            break;
+        case update_start_offset_cmd::key:
+            apply_update_start_offset(
+              serde::from_iobuf<update_start_offset_cmd::value>(
+                r.release_value()));
+            break;
+        case cleanup_metadata_cmd::key:
+            apply_cleanup_metadata();
+            break;
+        };
     });
 
     _insync_offset = b.last_offset();
@@ -394,6 +432,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
 
     _last_snapshot_offset = header.offset;
     _insync_offset = header.offset;
+    _start_offset = snap.start_offset;
     co_return;
 }
 
@@ -464,11 +503,41 @@ void archival_metadata_stm::apply_truncate(const start_offset& so) {
       "Truncate command applied, new start offset: {}",
       _manifest->get_start_offset());
     if (_manifest->size()) {
-        _start_offset = *_manifest->get_start_offset();
+        _start_offset = so.start_offset;
     } else {
         _start_offset = model::offset{};
         _last_offset = model::offset{};
     }
+    vlog(
+      _logger.debug,
+      "Truncate command applied, new start offset: {}",
+      _start_offset);
+}
+
+void archival_metadata_stm::apply_cleanup_metadata() {
+    auto backlog = get_segments_to_cleanup();
+    if (backlog.empty()) {
+        return;
+    }
+    _manifest->delete_replaced_segments();
+    _manifest->truncate(_start_offset);
+}
+
+void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
+    vlog(
+      _logger.debug,
+      "Start offset updated, current value {}, update {}",
+      _start_offset,
+      so.start_offset);
+    _start_offset = std::max(so.start_offset, _start_offset);
+}
+
+std::vector<cloud_storage::segment_meta>
+archival_metadata_stm::get_segments_to_cleanup() const {
+    using replaced_segment = cloud_storage::segment_meta;
+    // Include replaced segments to the backlog
+    std::vector<replaced_segment> backlog = _manifest->replaced_segments();
+    return backlog;
 }
 
 ss::future<> archival_metadata_stm::stop() {
@@ -479,6 +548,10 @@ ss::future<> archival_metadata_stm::stop() {
 const cloud_storage::partition_manifest&
 archival_metadata_stm::manifest() const {
     return *_manifest;
+}
+
+model::offset archival_metadata_stm::get_start_offset() const {
+    return _start_offset;
 }
 
 } // namespace cluster

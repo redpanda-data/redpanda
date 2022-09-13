@@ -130,7 +130,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
             // Initialize archival snapshot
             co_await archival_metadata_stm::make_snapshot(
-              ntp_cfg, manifest, max_kafka_offset);
+              ntp_cfg, manifest, max_kafka_offset, min_kafka_offset);
         }
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
