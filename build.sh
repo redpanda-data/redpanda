@@ -22,8 +22,6 @@ ccache -p # print the config
 ccache -s # print the stats before reusing
 ccache -z # zero the stats
 
-go=$(which go)
-
 # Change Debug via  -DCMAKE_BUILD_TYPE=Debug
 cmake -DCMAKE_BUILD_TYPE=Release \
   -B$root/build \
@@ -31,7 +29,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
-  -DCMAKE_GO_BINARY=$(go) \
   -DDEPOT_TOOLS_DIR=$DEPOT_TOOLS_DIR \
   "$@"
 
