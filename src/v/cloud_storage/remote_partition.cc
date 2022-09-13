@@ -184,10 +184,11 @@ public:
                 }
                 co_return storage_t{std::move(d)};
             }
-        } catch (const ss::gate_closed_exception&) {
+        } catch (const std::exception& e) {
             vlog(
               _ctxlog.debug,
-              "gate_closed_exception while reading from remote_partition");
+              "exception thrown while reading from remote_partition: {}",
+              e.what());
             _it = _end;
             _reader = {};
         }

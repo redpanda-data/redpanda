@@ -1,0 +1,17 @@
+diff --git a/src/v/cloud_storage/remote_partition.cc b/src/v/cloud_storage/remote_partition.cc
+index 1fcae8123..3f972311f 100644
+--- a/src/v/cloud_storage/remote_partition.cc
++++ b/src/v/cloud_storage/remote_partition.cc
+@@ -184,10 +184,10 @@ public:
+                 }
+                 co_return storage_t{std::move(d)};
+             }
+-        } catch (const ss::gate_closed_exception&) {
++        } catch (const std::exception& e) {
+             vlog(
+               _ctxlog.debug,
+-              "gate_closed_exception while reading from remote_partition");
++              "exception thrown while reading from remote_partition: {}", e.what());
+             _it = _end;
+             _reader = {};
+         }
