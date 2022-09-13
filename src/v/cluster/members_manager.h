@@ -173,11 +173,11 @@ private:
     ss::future<std::error_code>
       apply_raft_configuration_batch(model::record_batch);
 
-    std::vector<config::seed_server> _seed_servers;
-    model::broker _self;
+    const std::vector<config::seed_server> _seed_servers;
+    const model::broker _self;
     simple_time_jitter<model::timeout_clock> _join_retry_jitter;
-    std::chrono::milliseconds _join_timeout;
-    consensus_ptr _raft0;
+    const std::chrono::milliseconds _join_timeout;
+    const consensus_ptr _raft0;
     ss::sharded<members_table>& _members_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
 
@@ -198,7 +198,7 @@ private:
 
     ss::sharded<ss::abort_source>& _as;
 
-    config::tls_config _rpc_tls_config;
+    const config::tls_config _rpc_tls_config;
 
     // Gate with which to guard new work (e.g. if stop() has been called).
     ss::gate _gate;
