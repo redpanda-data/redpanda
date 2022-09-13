@@ -1112,6 +1112,12 @@ configuration::configuration()
       "Timeout to check if cache eviction should be triggered",
       {.visibility = visibility::tunable},
       30s)
+  , cloud_storage_readers_per_partition(
+      *this,
+      "cloud_storage_readers_per_partition",
+      "Maximum concurrent readers of cloud storage data per partition",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      4)
   , superusers(
       *this,
       "superusers",
