@@ -36,6 +36,7 @@ graph.Tooltip = graf.Tooltip{
 singlestat := graf.NewGraphPanel("single stat 1", "bytes")
 singlestat.ID = 2
 singlestat.Datasource = datasource
+singlestat.Interval = "2m"
 singlestat.NullPointMode = "connected"
 singlestat.Targets = []graf.Target{graf.Target{
    	Expr: `count(up{job=~"node"})`,
