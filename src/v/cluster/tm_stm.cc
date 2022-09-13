@@ -167,11 +167,53 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         });
 }
 
-ss::future<> tm_stm::checkpoint_ongoing_txs() { return ss::now(); }
+ss::future<> tm_stm::checkpoint_ongoing_txs() {
+    if (!use_new_tx_version()) {
+        co_return;
+    }
+
+    auto can_transfer = [](const tm_transaction& tx) {
+        return !tx.transferring
+               && (tx.status == tm_transaction::ready || tx.status == tm_transaction::ongoing);
+    };
+    // Loop through all ongoing/pending txns in memory and checkpoint.
+    std::deque<tm_transaction> txes_to_checkpoint;
+    for (auto& [_, tx] : _mem_txes) {
+        if (can_transfer(tx)) {
+            txes_to_checkpoint.push_back(tx);
+        }
+    }
+    size_t checkpointed_txes = 0;
+    for (auto& tx : txes_to_checkpoint) {
+        tx.transferring = true;
+        auto result = co_await update_tx(tx, tx.etag);
+        if (!result.has_value()) {
+            vlog(
+              txlog.error,
+              "Error {} transferring tx {} to new leader, transferred {}/{} "
+              "txns.",
+              result.error(),
+              tx,
+              checkpointed_txes,
+              txes_to_checkpoint.size());
+            // On failure, txn state does not carry over to the new leader
+            // and client gets a failure on next RPC and is expected to retry.
+            // This does not cause correctness issues.
+            co_return;
+        }
+        checkpointed_txes++;
+    }
+    vlog(
+      txlog.info,
+      "Checkpointed all txes: {} to the new leader.",
+      txes_to_checkpoint.size());
+}
 
 ss::future<std::error_code>
 tm_stm::transfer_leadership(std::optional<model::node_id> target) {
     auto units = co_await _state_lock.hold_write_lock();
+    // This is a best effort basis, we checkpoint as many as we can
+    // and stop at the first error.
     co_await checkpoint_ongoing_txs();
     co_return co_await _c->do_transfer_leadership(target);
 }
