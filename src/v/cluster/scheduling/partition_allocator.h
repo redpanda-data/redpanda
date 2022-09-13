@@ -21,6 +21,12 @@
 
 namespace cluster {
 
+// This class keeps track of the partition assignments of each group, also
+// tracking the lifecycle events (decommissioning, etc) of each node to
+// determine where to place new partitions.
+//
+// Under the hood, this doesn't do any bookkeeping of what partitions exist on
+// each shard, only how many partition replicas are assigned per shard.
 class partition_allocator {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -49,7 +55,7 @@ public:
 
     result<allocation_units> allocate(allocation_request);
 
-    /// Realocates partition replicas, moving them away from decommissioned
+    /// Reallocates partition replicas, moving them away from decommissioned
     /// nodes. Replicas on nodes that were left untouched are not changed.
     /// Allocation domain must match the one used to allocate the partition.
     ///
@@ -62,7 +68,7 @@ public:
       const partition_assignment&,
       partition_allocation_domain);
 
-    /// best effort. Does not throw if we cannot find the old partition.
+    /// Best effort. Does not throw if we cannot find the replicas.
     /// Allocation domain must match the one used to allocate the partition.
     void deallocate(
       const std::vector<model::broker_shard>&, partition_allocation_domain);

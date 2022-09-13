@@ -21,7 +21,7 @@
 namespace cluster {
 
 /// Class containing information about cluster members. The members class is
-/// instantiated on each core. Cluster members updates are comming directly from
+/// instantiated on each core. Cluster members updates are coming directly from
 /// cluster::members_manager
 class members_table {
 public:
