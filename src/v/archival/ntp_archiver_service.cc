@@ -472,18 +472,18 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         // invariant:
         // - A == C (because the name contains base offset)
         // cases:
-        // - B < C:
+        // - B < D:
         //   - We need to upload the segment since it has more data.
         //     Skipping the upload is not an option since partial upload
         //     is not guaranteed to start from an offset which is not equal
         //     to B (which will trigger a loop).
-        // - B > C:
+        // - B > D:
         //   - Normally this shouldn't happen because we will lookup
         //     offset B to start the next upload and the segment returned by
         //     the policy will have commited offset which is less than this
         //     value. We need to log a warning and continue with the largest
         //     offset.
-        // - B == C:
+        // - B == D:
         //   - Same as previoius. We need to log error and continue with the
         //   largest offset.
         const auto& meta = _manifest.get(upload.exposed_name);

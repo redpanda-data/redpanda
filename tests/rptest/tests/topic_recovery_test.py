@@ -10,11 +10,15 @@ import io
 import json
 import os
 import pprint
+from queue import Queue
+from threading import Thread
 import time
 from collections import namedtuple, defaultdict, deque
-from typing import Optional, Callable
+from typing import NamedTuple, Optional, Callable, Sequence, Tuple
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import ok_to_fail
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.archival.s3_client import S3Client
@@ -22,7 +26,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import FileToChecksumSize, RedpandaService, SISettings
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import (
@@ -66,7 +70,7 @@ class BaseCase:
     topics and topics that created to align revision ids. By default it's equal
     to topics.
     """
-    topics = None
+    topics: Sequence[TopicSpec] = []
 
     def __init__(self, s3_client: S3Client, kafka_tools: KafkaCliTools,
                  rpk_client: RpkTool, s3_bucket, logger,
@@ -83,7 +87,7 @@ class BaseCase:
 
     def create_initial_topics(self):
         """Create initial set of topics based on class/instance topics variable."""
-        for topic in self.topics or []:
+        for topic in self.topics:
             self._rpk.create_topic(topic.name,
                                    topic.partition_count,
                                    topic.replication_factor,
@@ -932,7 +936,10 @@ class TimeBasedRetention(BaseCase):
 
 
 class TopicRecoveryTest(RedpandaTest):
-    def __init__(self, test_context):
+    def __init__(self,
+                 test_context: TestContext,
+                 num_brokers: Optional[int] = None,
+                 extra_rp_conf=dict()):
         si_settings = SISettings(
             cloud_storage_reconciliation_interval_ms=50,
             cloud_storage_max_connections=5,
@@ -945,10 +952,12 @@ class TopicRecoveryTest(RedpandaTest):
             RedpandaService.DEDICATED_NODE_KEY, False)
         if dedicated_nodes:
             # Open more connections when running on real servers.
-            si_settings.cloud_storage_max_connections = 10
+            si_settings.cloud_storage_max_connections = 20
 
         super(TopicRecoveryTest, self).__init__(test_context=test_context,
-                                                si_settings=si_settings)
+                                                num_brokers=num_brokers,
+                                                si_settings=si_settings,
+                                                extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self._started = True
@@ -968,17 +977,35 @@ class TopicRecoveryTest(RedpandaTest):
                            acks=acks)
 
     def tearDown(self):
+        assert self.s3_client
         self.s3_client.empty_bucket(self.s3_bucket)
         super().tearDown()
 
-    def _collect_file_checksums(self):
+    def _collect_file_checksums(self) -> dict[str, FileToChecksumSize]:
         """Get checksums of all log segments (excl. controller log) on all nodes."""
-        nodes = {}
+
+        # This is slow in scale tests, so run on nodes in parallel.
+        # We can use python threading since the tasks are I/O bound.
+        class NodeChecksums(NamedTuple):
+            node: ClusterNode
+            checksums: FileToChecksumSize
+
+        nodes: dict[str, FileToChecksumSize] = {}
+        num_nodes = len(self.redpanda.nodes)
+        queue = Queue(num_nodes)
         for node in self.redpanda.nodes:
-            checksums = self._get_data_log_segment_checksums(node)
-            self.logger.info(
-                f"Node: {node.account.hostname} checksums: {checksums}")
-            nodes[node.account.hostname] = checksums
+            checksummer = lambda: queue.put(
+                NodeChecksums(node, self._get_data_log_segment_checksums(node))
+            )
+            Thread(target=checksummer).start()
+            self.logger.debug(
+                f"Started checksum thread for {node.account.hostname}..")
+        for i in range(num_nodes):
+            res = queue.get()
+            self.logger.debug(
+                f"Node: {res.node.account.hostname} checksums: {res.checksums}"
+            )
+            nodes[res.node.account.hostname] = res.checksums
         return nodes
 
     def _collect_controller_log_checksums(self):
@@ -991,7 +1018,8 @@ class TopicRecoveryTest(RedpandaTest):
             nodes[node.account.hostname] = checksums
         return nodes
 
-    def _get_data_log_segment_checksums(self, node):
+    def _get_data_log_segment_checksums(
+            self, node: ClusterNode) -> FileToChecksumSize:
         """Get MD5 checksums of log segments with data. Controller logs are
         excluded. The paths are normalized
         (<namespace>/<topic>/<partition>_<rev>/...)."""
@@ -1020,7 +1048,8 @@ class TopicRecoveryTest(RedpandaTest):
 
         return self._get_log_segment_checksums(node, included)
 
-    def _get_log_segment_checksums(self, node, include_condition):
+    def _get_log_segment_checksums(self, node: ClusterNode,
+                                   include_condition) -> FileToChecksumSize:
         """Get MD5 checksums of log segments that match the condition. The paths are
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         checksums = self.redpanda.data_checksum(node)
@@ -1069,6 +1098,7 @@ class TopicRecoveryTest(RedpandaTest):
             manifests = []
             topic_manifests = []
             segments = []
+            assert self.s3_client
             lst = self.s3_client.list_objects(self.s3_bucket)
             for obj in lst:
                 self.logger.debug(f'checking S3 object: {obj.Key}')
@@ -1156,7 +1186,7 @@ class TopicRecoveryTest(RedpandaTest):
 
         wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
 
-    def do_run(self, test_case: BaseCase):
+    def do_run(self, test_case: BaseCase, upload_delay_sec=60):
         """Template method invoked by all tests."""
 
         if test_case.initial_cleanup_needed:
@@ -1176,11 +1206,20 @@ class TopicRecoveryTest(RedpandaTest):
         self.logger.info("Generating test data")
         test_case.generate_baseline()
 
-        # Give time to finish all uploads
-        time.sleep(10)
+        # Give time to finish all uploads.
+        # NB: sleep() in a test is usually an anti-pattern, but in this case,
+        # we know this process takes time, and we can save $$ by delaying the
+        # start of polling for objects in S3.
+        pre_sleep = upload_delay_sec // 6
+        if pre_sleep > 0:
+            self.logger.info(f"Waiting {pre_sleep} sec for S3 uploads...")
+            time.sleep(pre_sleep)
+
         if test_case.verify_s3_content_after_produce:
             self.logger.info("Wait for data in S3")
-            self._wait_for_data_in_s3(test_case.topics)
+            self._wait_for_data_in_s3(
+                test_case.topics,
+                timeout=datetime.timedelta(seconds=upload_delay_sec))
 
         self._stop_redpanda_nodes()
 

@@ -22,7 +22,7 @@ import collections
 import re
 import uuid
 from enum import Enum
-from typing import Mapping, Optional, Union, Any
+from typing import Mapping, Optional, Tuple, Union, Any
 
 import yaml
 from ducktape.services.service import Service
@@ -51,6 +51,8 @@ MetricSample = collections.namedtuple(
 
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
+# Map of path -> (checksum, size)
+FileToChecksumSize = dict[str, Tuple[str, int]]
 
 DEFAULT_LOG_ALLOW_LIST = [
     # Tests currently don't run on XFS, although in future they should.
@@ -1787,7 +1789,7 @@ class RedpandaService(Service):
             for fn in os.listdir(data_dir):
                 shutil.move(os.path.join(data_dir, fn), dest)
 
-    def data_checksum(self, node):
+    def data_checksum(self, node: ClusterNode) -> FileToChecksumSize:
         """Run command that computes MD5 hash of every file in redpanda data
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
