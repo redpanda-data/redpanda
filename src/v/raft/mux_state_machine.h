@@ -221,8 +221,12 @@ requires(State<T>, ...)
 
     auto u = get_units();
     auto promise = std::make_unique<promise_t>();
-    auto f = promise->get_future_with_timeout(
-      timeout, [] { return make_error_code(errc::timeout); }, as);
+    auto f = promise
+               ->get_future_with_timeout(
+                 timeout, [] { return make_error_code(errc::timeout); }, as)
+               .handle_exception_type([](const ss::abort_requested_exception&) {
+                   return make_error_code(errc::shutting_down);
+               });
 
     ssx::spawn_with_gate(
       _gate,
