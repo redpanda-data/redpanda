@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// nolint:funlen // the subtests might causes linter to complain
+//nolint:funlen // the subtests might causes linter to complain
 func TestClusterCertificates(t *testing.T) {
 	secret := corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{

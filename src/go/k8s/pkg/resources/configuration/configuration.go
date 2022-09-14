@@ -11,7 +11,7 @@
 package configuration
 
 import (
-	"crypto/md5" // nolint:gosec // this is not encrypting secure info
+	"crypto/md5" //nolint:gosec // this is not encrypting secure info
 	"fmt"
 	"reflect"
 	"strings"
@@ -69,7 +69,8 @@ func (c *GlobalConfiguration) SetAdditionalRedpandaProperty(
 }
 
 // AppendToAdditionalRedpandaProperty allows appending values to string slices in additional redpanda properties.
-// nolint:goerr113 // no need to define static error
+//
+//nolint:goerr113 // no need to define static error
 func (c *GlobalConfiguration) AppendToAdditionalRedpandaProperty(
 	key string, value string,
 ) error {
@@ -111,7 +112,7 @@ func (c *GlobalConfiguration) GetCentralizedConfigurationHash(
 		return "", err
 	}
 	// We keep using md5 for having the same format as node hash
-	md5Hash := md5.Sum(serialized.BootstrapFile) // nolint:gosec // this is not encrypting secure info
+	md5Hash := md5.Sum(serialized.BootstrapFile) //nolint:gosec // this is not encrypting secure info
 	return fmt.Sprintf("%x", md5Hash), nil
 }
 
@@ -131,7 +132,7 @@ func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	md5Hash := md5.Sum(serialized.RedpandaFile) // nolint:gosec // this is not encrypting secure info
+	md5Hash := md5.Sum(serialized.RedpandaFile) //nolint:gosec // this is not encrypting secure info
 	return fmt.Sprintf("%x", md5Hash), nil
 }
 

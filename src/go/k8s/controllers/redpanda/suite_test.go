@@ -355,7 +355,7 @@ func (m *mockAdminAPI) GetFeatures(
 	}, nil
 }
 
-// nolint:gocritic // It's test API
+//nolint:gocritic // It's test API
 func (m *mockAdminAPI) RegisterPropertySchema(
 	name string, metadata admin.ConfigPropertyMetadata,
 ) {
@@ -422,7 +422,7 @@ func (m *mockAdminAPI) GetNodeConfig(
 	return admin.NodeConfig{}, nil
 }
 
-// nolint:goerr113 // test code
+//nolint:goerr113 // test code
 func (s *scopedMockAdminAPI) GetNodeConfig(
 	ctx context.Context,
 ) (admin.NodeConfig, error) {
@@ -508,7 +508,7 @@ func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
 	return nil
 }
 
-// nolint:goerr113 // test code
+//nolint:goerr113 // test code
 func (m *mockAdminAPI) SetBrokerStatus(
 	id int, status admin.MembershipStatus,
 ) error {

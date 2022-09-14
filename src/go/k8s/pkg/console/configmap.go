@@ -188,7 +188,7 @@ var (
 )
 
 func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
-	if provider := cm.consoleobj.Spec.Login; provider != nil { // nolint:nestif // login config is complex
+	if provider := cm.consoleobj.Spec.Login; provider != nil { //nolint:nestif // login config is complex
 		enterpriseLogin := EnterpriseLogin{
 			Enabled: provider.Enabled,
 		}
@@ -289,7 +289,7 @@ var (
 	// REF https://github.com/redpanda-data/console/blob/master/backend/pkg/schema/client.go#L60
 	DefaultCaFilePath = "/etc/ssl/certs/ca-certificates.crt"
 
-	SchemaRegistryTLSDir          = "/redpanda/schema-registry" // nolint:revive // readable enough
+	SchemaRegistryTLSDir          = "/redpanda/schema-registry"
 	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
 	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
 	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
@@ -469,7 +469,7 @@ func (cm *ConfigMap) delete(ctx context.Context, skip string) error {
 	if err := cm.List(ctx, cms, client.MatchingLabels(labels.ForConsole(cm.consoleobj)), client.InNamespace(cm.consoleobj.GetNamespace())); err != nil {
 		return err
 	}
-	for _, obj := range cms.Items { // nolint:gocritic // more readable, configmap list is few
+	for _, obj := range cms.Items { //nolint:gocritic // more readable, configmap list is few
 		if skip != "" && skip == obj.GetName() {
 			continue
 		}

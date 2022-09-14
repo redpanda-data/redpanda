@@ -80,7 +80,8 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-// nolint:funlen // todo break down
+//
+//nolint:funlen // todo break down
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -297,7 +298,7 @@ func (r *ClusterReconciler) reportStatus(
 	}
 
 	observedNodesInternal := make([]string, 0, len(observedPods.Items))
-	// nolint:gocritic // the copies are necessary for further redpandacluster updates
+	//nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
 		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, internalFQDN))
 	}
@@ -382,7 +383,7 @@ func (r *ClusterReconciler) WithClusterDomain(
 	return r
 }
 
-// nolint:funlen,gocyclo // External nodes list should be refactored
+//nolint:funlen,gocyclo // External nodes list should be refactored
 func (r *ClusterReconciler) createExternalNodesList(
 	ctx context.Context,
 	pods []corev1.Pod,

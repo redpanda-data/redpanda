@@ -268,7 +268,7 @@ var _ = Describe("Console controller", func() {
 
 			var (
 				googleName         = fmt.Sprintf("%s-google", ConsoleName)
-				googleClientId     = "123456654321-abcdefghi123456abcdefghi123456ab.apps.googleusercontent.com" // nolint:stylecheck,revive // Console uses clientId naming
+				googleClientId     = "123456654321-abcdefghi123456abcdefghi123456ab.apps.googleusercontent.com" //nolint:stylecheck // Console uses clientId naming
 				googleClientSecret = "some-random-client-secret"
 			)
 

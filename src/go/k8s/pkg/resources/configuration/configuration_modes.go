@@ -165,7 +165,8 @@ func builtInType(value string) bool {
 }
 
 // isEmpty helps to keep the "omitempty" behavior on additional fields
-// nolint:exhaustive // just care about these types
+//
+//nolint:exhaustive // just care about these types
 func isEmpty(val interface{}) bool {
 	if val == nil {
 		return true

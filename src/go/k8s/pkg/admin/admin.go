@@ -75,7 +75,8 @@ func NewInternalAdminAPI(
 }
 
 // AdminAPIClient is a sub interface of the admin API containing what we need in the operator
-// nolint:revive // usually package is called adminutils
+//
+
 type AdminAPIClient interface {
 	Config(ctx context.Context) (admin.Config, error)
 	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
@@ -99,7 +100,8 @@ type AdminAPIClient interface {
 var _ AdminAPIClient = &admin.AdminAPI{}
 
 // AdminAPIClientFactory is an abstract constructor of admin API clients
-// nolint:revive // usually package is called adminutils
+//
+
 type AdminAPIClientFactory func(
 	ctx context.Context,
 	k8sClient client.Reader,

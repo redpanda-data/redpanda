@@ -366,7 +366,7 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 				r.Spec.Configuration.KafkaAPI,
 				"bootstrap port cannot be empty"))
 	}
-	// nolint:dupl // not identical
+	//nolint:dupl // not identical
 	if external != nil && external.External.EndpointTemplate != "" {
 		if external.External.Subdomain == "" {
 			allErrs = append(allErrs,
@@ -395,7 +395,7 @@ func checkValidEndpointTemplate(tmpl string) error {
 	return err
 }
 
-// nolint:funlen,gocyclo // it's a sequence of checks
+//nolint:funlen,gocyclo // it's a sequence of checks
 func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	var allErrs field.ErrorList
 	var proxyExternal *PandaproxyAPI
@@ -447,7 +447,7 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 					r.Spec.Configuration.PandaproxyAPI[i],
 					"sudomain of external pandaproxy must be the same as kafka's"))
 		}
-		// nolint:dupl // not identical
+		//nolint:dupl // not identical
 		if kafkaExternal != nil && proxyExternal.External.EndpointTemplate != "" {
 			if proxyExternal.External.Subdomain == "" {
 				allErrs = append(allErrs,

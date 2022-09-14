@@ -50,11 +50,12 @@ type RedpandaResourceRequirements struct {
 // * Is limited by 2Gi per core if requests.memory is set.
 //
 // Example:
-//    in: minimum requirement per core, 2GB
-//    in: Requests.Memory, 16GB
-//    => maxAllowedCores = 8
-//    if requestedCores == 8, set smp = 8 (with 2GB per core)
-//    if requestedCores == 4, set smp = 4 (with 4GB per core)
+//
+//	in: minimum requirement per core, 2GB
+//	in: Requests.Memory, 16GB
+//	=> maxAllowedCores = 8
+//	if requestedCores == 8, set smp = 8 (with 2GB per core)
+//	if requestedCores == 4, set smp = 4 (with 4GB per core)
 func (r *RedpandaResourceRequirements) RedpandaCPU() *resource.Quantity {
 	q := r.Redpanda.Cpu()
 	if q == nil || q.IsZero() {
@@ -924,12 +925,14 @@ type TLSConfig struct {
 // Kafka API
 
 // GetPort returns API port
+//
 //nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetPort() int {
 	return k.Port
 }
 
 // GetTLS returns API TLSConfig
+//
 //nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetTLS() *TLSConfig {
 	return &TLSConfig{
@@ -941,6 +944,7 @@ func (k KafkaAPI) GetTLS() *TLSConfig {
 }
 
 // GetExternal returns API's ExternalConnectivityConfig
+//
 //nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
 func (k KafkaAPI) GetExternal() *ExternalConnectivityConfig {
 	return &k.External

@@ -260,7 +260,8 @@ func preparePVCResource(
 }
 
 // obj returns resource managed client.Object
-// nolint:funlen // The complexity of obj function will be address in the next version TODO
+//
+//nolint:funlen // The complexity of obj function will be address in the next version
 func (r *StatefulSetResource) obj(
 	ctx context.Context,
 ) (k8sclient.Object, error) {
@@ -279,7 +280,7 @@ func (r *StatefulSetResource) obj(
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
 	if len(r.pandaCluster.Spec.Configuration.KafkaAPI) == 0 {
-		// TODO
+		// TODO: Fix this
 		return nil, nil
 	}
 
@@ -610,7 +611,7 @@ func (r *StatefulSetResource) getPostStartHook() *corev1.Handler {
 	}
 }
 
-// nolint:goconst // no need
+//nolint:goconst // no need
 func (r *StatefulSetResource) composeCURLMaintenanceCommand(
 	options string, urlOverwrite *string,
 ) string {

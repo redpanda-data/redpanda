@@ -28,7 +28,7 @@ const (
 	nginx = "nginx"
 
 	// SSLPassthroughAnnotation is the annotation for ingress nginx SSL passthrough
-	SSLPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough" // nolint:gosec // This value does not contain credentials.
+	SSLPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough" //nolint:gosec // This value does not contain credentials.
 
 	debugLogLevel = 4
 
@@ -204,7 +204,7 @@ func objectLabels(obj metav1.Object) (labels.CommonLabels, error) {
 	case *redpandav1alpha1.Console:
 		objLabels = labels.ForConsole(o)
 	default:
-		return nil, fmt.Errorf("expected object to be Cluster or Console") // nolint:goerr113 // no need to declare new error type
+		return nil, fmt.Errorf("expected object to be Cluster or Console") //nolint:goerr113 // no need to declare new error type
 	}
 	return objLabels, nil
 }

@@ -42,7 +42,7 @@ func (s *SecretKeyRef) GetValue(secret *corev1.Secret, defaultKey string) ([]byt
 
 	value, ok := secret.Data[key]
 	if !ok {
-		return nil, fmt.Errorf("getting value from Secret %s/%s: key %s not found", s.Namespace, s.Name, key) // nolint:goerr113 // no need to declare new error type
+		return nil, fmt.Errorf("getting value from Secret %s/%s: key %s not found", s.Namespace, s.Name, key) //nolint:goerr113 // no need to declare new error type
 	}
 	return value, nil
 }

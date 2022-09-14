@@ -28,7 +28,8 @@ import (
 )
 
 // reconcileConfiguration ensures that the cluster configuration is synchronized with expected data
-// nolint:funlen // splitting makes it difficult to follow
+//
+//nolint:funlen // splitting makes it difficult to follow
 func (r *ClusterReconciler) reconcileConfiguration(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
@@ -345,7 +346,7 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	return redpandaCluster.Status.GetCondition(conditionData.Type), nil
 }
 
-// nolint:gocritic // I like this if else chain
+//nolint:gocritic // I like this if else chain
 func mapStatusToCondition(
 	clusterStatus admin.ConfigStatusResponse,
 ) redpandav1alpha1.ClusterCondition {

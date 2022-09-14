@@ -152,21 +152,21 @@ type pluginHandler interface {
 
 // tryExecPlugin looks for a plugin, based on the following rules:
 //
-//  - all "pieces" (non-flags) are joined with an underscore
-//  - we prefer the longest command match
-//  - we search upward by piece until we run out of pieces
-//  - the command must be executable
+//   - all "pieces" (non-flags) are joined with an underscore
+//   - we prefer the longest command match
+//   - we search upward by piece until we run out of pieces
+//   - the command must be executable
 //
 // So,
 //
-//     rpk foo-bar baz boz fizz-buzz --flag
+//	rpk foo-bar baz boz fizz-buzz --flag
 //
 // is translated into searching and execing (with osPluginHandler), in order:
 //
-//     rpk-foo-bar_baz_boz_fizz-buzz (with args "--flag")
-//     rpk-foo-bar_baz_boz           (with args "fizz-buzz --flag")
-//     rpk-foo-bar_baz               (with args "boz fizz-buzz --flag")
-//     rpk-foo-bar                   (with args "baz boz fizz-buzz --flag")
+//	rpk-foo-bar_baz_boz_fizz-buzz (with args "--flag")
+//	rpk-foo-bar_baz_boz           (with args "fizz-buzz --flag")
+//	rpk-foo-bar_baz               (with args "boz fizz-buzz --flag")
+//	rpk-foo-bar                   (with args "baz boz fizz-buzz --flag")
 //
 // If a plugin is run, this returns the run error and true, otherwise this
 // returns false.
@@ -290,9 +290,9 @@ var (
 //
 // We expect similar paths to the binary path of a plugin itself:
 //
-//     cloud_foo-bar corresponds to "rpk cloud foo bar"
-//     cloud_foo_bar corresponds to "rpk cloud foo-bar"
-//     cloud         corresponds to "rpk cloud"
+//	cloud_foo-bar corresponds to "rpk cloud foo bar"
+//	cloud_foo_bar corresponds to "rpk cloud foo-bar"
+//	cloud         corresponds to "rpk cloud"
 //
 // For sanity, all returned paths must begin with the plugin name itself and a
 // dash. The only path that can be without a dash is a help for the plugin name
