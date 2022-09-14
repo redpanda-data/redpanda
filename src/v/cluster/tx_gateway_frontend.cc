@@ -1704,8 +1704,17 @@ ss::future<> tx_gateway_frontend::do_expire_old_txs() {
 }
 
 ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
+    auto deleted_tx_ids = stm->get_txs_matching_ntp_filter(
+      [this](const model::ntp& ntp) {
+          // This can potentially be stale but we handle it later.
+          return !_metadata_cache.local().contains(ntp);
+      });
+    for (auto& tx_id : deleted_tx_ids) {
+        vlog(clusterlog.info, "Expiring tx {} with deleted partition.", tx_id);
+        co_await expire_old_tx(stm, tx_id);
+    }
     auto tx_ids = stm->get_expired_txs();
-    for (auto tx_id : tx_ids) {
+    for (auto& tx_id : tx_ids) {
         co_await expire_old_tx(stm, tx_id);
     }
 }

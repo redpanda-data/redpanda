@@ -574,6 +574,29 @@ absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
     return ids;
 }
 
+absl::btree_set<kafka::transactional_id>
+tm_stm::get_txs_matching_ntp_filter(ntp_filter&& filter) {
+    absl::btree_set<kafka::transactional_id> ids;
+    for (auto& [id, tx] : _log_txes) {
+        for (const auto& tx_part : tx.partitions) {
+            if (filter(tx_part.ntp)) {
+                ids.insert(id);
+                break;
+            }
+        }
+    }
+
+    for (auto& [id, tx] : _mem_txes) {
+        for (const auto& tx_part : tx.partitions) {
+            if (filter(tx_part.ntp)) {
+                ids.insert(id);
+                break;
+            }
+        }
+    }
+    return ids;
+}
+
 ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
     if (!_c->is_leader()) {
         co_return tm_stm::op_status::not_leader;

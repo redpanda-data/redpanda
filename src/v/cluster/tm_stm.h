@@ -213,6 +213,10 @@ public:
 
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
+    using ntp_filter = ss::noncopyable_function<bool(const model::ntp&)>;
+    absl::btree_set<kafka::transactional_id>
+    get_txs_matching_ntp_filter(ntp_filter&&);
+
     using get_txs_result
       = checked<std::vector<tm_transaction>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
