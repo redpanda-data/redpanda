@@ -15,6 +15,7 @@
 #include "config/rest_authn_endpoint.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -45,6 +46,7 @@ public:
         ssx::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
+        credential_t user;
         config::rest_authn_type authn_type;
     };
 
