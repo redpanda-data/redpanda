@@ -512,6 +512,11 @@ private:
     template<class T>
     void fill_snapshot_wo_seqs(T&);
 
+    ss::future<bool> wait_end_offset(
+      model::term_id appended_term,
+      model::producer_identity pid,
+      model::timeout_clock::duration timeout);
+
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;

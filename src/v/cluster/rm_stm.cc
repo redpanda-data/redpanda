@@ -11,9 +11,11 @@
 
 #include "cluster/logger.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/types.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
@@ -58,25 +60,6 @@ make_fence_batch(int8_t version, model::producer_identity pid) {
     builder.set_control_type();
     builder.add_raw_kv(std::move(key), std::move(value));
 
-    return std::move(builder).build();
-}
-
-static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_prepare, model::offset(0));
-    builder.set_producer_identity(record.pid.id, record.pid.epoch);
-    builder.set_control_type();
-
-    iobuf key;
-    reflection::serialize(key, model::record_batch_type::tx_prepare);
-    reflection::serialize(key, record.pid.id);
-
-    iobuf value;
-    reflection::serialize(value, rm_stm::prepare_control_record_version);
-    reflection::serialize(value, record.tm_partition());
-    reflection::serialize(value, record.tx_seq());
-
-    builder.add_raw_kv(std::move(key), std::move(value));
     return std::move(builder).build();
 }
 
@@ -399,6 +382,57 @@ ss::future<tx_errc> rm_stm::prepare_tx(
       });
 }
 
+ss::future<bool> rm_stm::wait_end_offset(
+  model::term_id appended_term,
+  model::producer_identity pid,
+  model::timeout_clock::duration timeout) {
+    model::timeout_clock::time_point end_time = model::timeout_clock::now()
+                                                + timeout;
+    auto appended_offset = _mem_state.tx_end[pid];
+    auto commited_offset = _c->committed_offset();
+
+    vlog(
+      clusterlog.info,
+      "committed:{}; waiting:{}; dirty: {}",
+      commited_offset,
+      appended_offset,
+      _c->log().offsets().dirty_offset);
+
+    while (commited_offset < appended_offset) {
+        if (_c->term() != appended_term) {
+            vlog(
+              clusterlog.error,
+              "Term has changed while waiting for raft offset {}, for pid({})",
+              appended_offset,
+              pid);
+            co_return false;
+        }
+
+        if (end_time <= model::timeout_clock::now()) {
+            vlog(
+              clusterlog.error,
+              "Timout for waiting end tx for pid({}) for offset({})",
+              pid,
+              appended_offset);
+            co_return false;
+        }
+
+        auto res = co_await _c->linearizable_barrier(
+          raft::append_entries_request::flush_after_append::yes);
+        if (res.has_error()) {
+            vlog(
+              clusterlog.error,
+              "Can not do linearizable_barrier for pid({})",
+              pid);
+            co_return false;
+        }
+
+        commited_offset = res.value();
+    }
+
+    co_return true;
+}
+
 ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::term_id etag,
   model::partition_id tm,
@@ -477,26 +511,13 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::conflict;
     }
 
-    auto batch = make_prepare_batch(marker);
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
-      etag,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
+    auto res = co_await wait_end_offset(etag, pid, timeout);
 
-    if (!r) {
-        vlog(
-          clusterlog.error,
-          "Error \"{}\" on replicating pid:{} prepare batch",
-          r.error(),
-          pid);
+    if (!res) {
         co_return tx_errc::unknown_server_error;
     }
 
-    if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), timeout)) {
-        co_return tx_errc::unknown_server_error;
-    }
+    apply_prepare(marker);
 
     co_return tx_errc::none;
 }
