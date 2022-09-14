@@ -1731,22 +1731,36 @@ consensus::do_append_entries(append_entries_request&& r) {
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
     if (r.batches().is_end_of_stream()) {
-        if (r.meta.prev_log_index < last_log_offset) {
-            // do not tuncate on heartbeat just response with false
-            reply.result = append_entries_reply::status::failure;
-            return ss::make_ready_future<append_entries_reply>(
-              std::move(reply));
-        }
-        auto last_visible = std::min(
-          lstats.dirty_offset, r.meta.last_visible_index);
-        // on the follower leader control visibility of entries in the log
-        maybe_update_last_visible_index(last_visible);
-        return maybe_update_follower_commit_idx(
-                 model::offset(r.meta.commit_index))
-          .then([reply = std::move(reply)]() mutable {
-              reply.result = append_entries_reply::status::success;
-              return ss::make_ready_future<append_entries_reply>(
-                std::move(reply));
+        return ss::now()
+          .then([this, flush = r.flush] {
+              if (flush == append_entries_request::flush_after_append::yes) {
+                  return flush_log();
+              } else {
+                  return ss::now();
+              }
+          })
+          .then([this,
+                 r = std::move(r),
+                 last_log_offset,
+                 reply = std::move(reply),
+                 lstats]() mutable {
+              if (r.meta.prev_log_index < last_log_offset) {
+                  // do not tuncate on heartbeat just response with false
+                  reply.result = append_entries_reply::status::failure;
+                  return ss::make_ready_future<append_entries_reply>(
+                    std::move(reply));
+              }
+              auto last_visible = std::min(
+                lstats.dirty_offset, r.meta.last_visible_index);
+              // on the follower leader control visibility of entries in the log
+              maybe_update_last_visible_index(last_visible);
+              return maybe_update_follower_commit_idx(
+                       model::offset(r.meta.commit_index))
+                .then([reply = std::move(reply)]() mutable {
+                    reply.result = append_entries_reply::status::success;
+                    return ss::make_ready_future<append_entries_reply>(
+                      std::move(reply));
+                });
           });
     }
 
