@@ -89,14 +89,13 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res.body.data(), ppj::create_consumer_response_handler());
         BOOST_REQUIRE_EQUAL(res_data.instance_id, "test_consumer");
         member_id = res_data.instance_id;
-        BOOST_REQUIRE_EQUAL(
-          res_data.base_uri,
-          fmt::format(
-            "http://{}:{}/consumers/{}/instances/{}",
-            "127.0.0.1",
-            "8082",
-            group_id(),
-            member_id()));
+        ss::sstring uri_should_be{fmt::format(
+          "http://{}:{}/consumers/{}/instances/{}",
+          "0.0.0.0",
+          "8082",
+          group_id(),
+          member_id())};
+        BOOST_REQUIRE_EQUAL(res_data.base_uri, uri_should_be);
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
           to_header_value(ppj::serialization_format::v2));
