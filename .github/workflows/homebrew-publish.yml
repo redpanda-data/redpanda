@@ -22,11 +22,10 @@ jobs:
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
     - name: Update the amd64 homebrew tap
-      uses: mislav/bump-homebrew-formula-action@v1.8
+      uses: mislav/bump-homebrew-formula-action@v2
       with:
         formula-name: redpanda
         homebrew-tap: vectorizedio/homebrew-tap
-        base-branch: main
-        download-url: https://github.com/vectorizedio/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
+        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
