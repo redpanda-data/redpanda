@@ -96,15 +96,6 @@ set(build_env
   "LDFLAGS=${ld_flags}"
 )
 
-# Don't include -std=c++20 for v8 build
-set(cxx_flags_v8 "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@")
-set(configure_env_v8
-  ${base_env}
-  CFLAGS=${c_flags}
-  CXXFLAGS=${cxx_flags_v8}
-  LDFLAGS=${ld_flags}
-)
-
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
     set(toolset clang)
     set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
@@ -179,7 +170,7 @@ ExternalProject_Add(fmt
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/redpanda-data/seastar.git
-  GIT_TAG bdf4c58630f06aaffa02c98edc1192a2d8db2fe8
+  GIT_TAG 72162179af702670bd8daba412eecd6af9f07367
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -203,8 +194,8 @@ ExternalProject_Add(seastar
   DEPENDS ${default_depends} boost cryptopp)
 
 ExternalProject_Add(HdrHistogram
-  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.2.tar.gz
-  URL_MD5 95970dea64f1a7a8d199aeb9f7c15e60
+  URL https://github.com/HdrHistogram/HdrHistogram_c/archive/refs/tags/0.11.5.tar.gz
+  URL_MD5 95f35abcaf7fae46e63a4dc4b6db81fd
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -214,8 +205,8 @@ ExternalProject_Add(HdrHistogram
   DEPENDS ${default_depends})
 
 ExternalProject_Add(abseil
-  GIT_REPOSITORY https://github.com/redpanda-data/abseil-cpp.git
-  GIT_TAG 20210324.2
+  GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+  GIT_TAG 20220623.0
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
@@ -224,8 +215,8 @@ ExternalProject_Add(abseil
     -DABSL_ENABLE_INSTALL=ON)
 
 ExternalProject_Add(crc32c
-  GIT_REPOSITORY https://github.com/redpanda-data/crc32c.git
-  GIT_TAG 47b40d220949c5b013d49c1179643334196ec5a9
+  GIT_REPOSITORY https://github.com/google/crc32c.git
+  GIT_TAG 1.1.2
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
@@ -236,8 +227,8 @@ ExternalProject_Add(crc32c
     -DCRC32C_USE_GLOG=0)
 
 ExternalProject_Add(roaring
-  GIT_REPOSITORY https://github.com/redpanda-data/CRoaring.git
-  GIT_TAG 7b9c83740d4f764941d38144cc8e2122076e38e4
+  GIT_REPOSITORY https://github.com/RoaringBitmap/CRoaring.git
+  GIT_TAG v0.6.0
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
@@ -258,18 +249,14 @@ ExternalProject_Add(alien_thread
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
 
 ExternalProject_Add(base64_ext
-  GIT_REPOSITORY https://github.com/redpanda-data/base64
-  GIT_TAG eaebee8
+  GIT_REPOSITORY https://github.com/aklomp/base64.git
+  GIT_TAG v0.5.0
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
-  CONFIGURE_COMMAND ""
-  BUILD_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
-    make ${build_env} lib/libbase64.o -j${build_concurrency_factor}
-  BUILD_IN_SOURCE true
-  INSTALL_COMMAND
-    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/libbase64.h <INSTALL_DIR>/include/libbase64.h
-    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/lib/libbase64.o <INSTALL_DIR>/lib/libbase64.o)
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    ${BASE64_CMAKE_ARGS})
 
 ExternalProject_Add(kafka-codegen-pex
   DOWNLOAD_COMMAND ""
@@ -284,7 +271,7 @@ ExternalProject_Add(kafka-codegen-pex
 
 ExternalProject_Add(ctre
   GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions
-  GIT_TAG v3.3.4
+  GIT_TAG v3.7
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -295,56 +282,9 @@ ExternalProject_Add(ctre
     -DCTRE_BUILD_PACKAGE_RPM=OFF
 )
 
-if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
-  set(is_clang true)
-else()
-  set(is_clang false)
-endif()
-
-if (@CMAKE_BUILD_TYPE@ MATCHES "Debug")
-  set(v8_debug true)
-else()
-  set(v8_debug false)
-endif()
-
-set(v8_flags
-  "--args=v8_monolithic=true\
-  is_debug=${v8_debug}\
-  is_clang=${is_clang}\
-  use_gold=false\
-  clang_use_chrome_plugins=false\
-  treat_warnings_as_errors=false\
-  use_custom_libcxx=false\
-  use_glib=false\
-  use_sysroot=false\
-  v8_use_external_startup_data=false\
-  is_component_build=false\
-  v8_enable_pointer_compression=false\
-  custom_toolchain=\"//build/toolchain/linux/unbundle:default\"\
-  host_toolchain=\"//build/toolchain/linux/unbundle:default\"")
-ExternalProject_Add(v8
-INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-DOWNLOAD_COMMAND
-  COMMAND @DEPOT_TOOLS_DIR@/gclient configure https://github.com/v8/v8.git
-  COMMAND @DEPOT_TOOLS_DIR@/gclient sync -r e04bb9be8542b166c4dda1a77bfb1c46552afdd8
-PATCH_COMMAND ""
-CONFIGURE_COMMAND
-  COMMAND cd <SOURCE_DIR> # Is used for run gn inside v8 dir
-  COMMAND ${CMAKE_COMMAND} -E copy @DEPOT_TOOLS_DIR@/installed-gn/gn <SOURCE_DIR>/buildtools/linux64/gn
-  COMMAND ${CMAKE_COMMAND} -E env ${configure_env_v8}
-   @DEPOT_TOOLS_DIR@/gn gen <BINARY_DIR> --root=<SOURCE_DIR> ${v8_flags}
-  COMMAND @DEPOT_TOOLS_DIR@/gn desc <BINARY_DIR> --root=<SOURCE_DIR> //:v8_monolith --tree
-BUILD_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E env ${configure_env_v8}
-   ninja -C <BINARY_DIR> v8_monolith
-INSTALL_COMMAND
-  COMMAND ${CMAKE_COMMAND} -E copy <BINARY_DIR>/obj/libv8_monolith.a <INSTALL_DIR>/lib/libv8_monolith.a
-  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include <INSTALL_DIR>/include
-)
-
 ExternalProject_Add(avro
   GIT_REPOSITORY https://github.com/redpanda-data/avro
-  GIT_TAG c64be3b874e3208b54ceb3d34bd464f281082147
+  GIT_TAG 53250636b5223e434a9819a34e7b5b89e829ffb8
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -357,7 +297,7 @@ ExternalProject_Add(avro
 
 ExternalProject_Add(rapidjson
   GIT_REPOSITORY https://github.com/redpanda-data/rapidjson.git
-  GIT_TAG 00dbcf2c6e03c47d6c399338b6de060c71356464
+  GIT_TAG 27c3a8dc0e2c9218fe94986d249a12b5ed838f1d
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
@@ -370,8 +310,8 @@ ExternalProject_Add(rapidjson
 )
 
 ExternalProject_Add(protobuf
-  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-  GIT_TAG v3.18.1
+  URL https://github.com/protocolbuffers/protobuf/releases/download/v21.5/protobuf-cpp-3.21.5.tar.gz
+  URL_MD5 240e69752162da336c5d1f09c7209fdb
   INSTALL_DIR   @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake

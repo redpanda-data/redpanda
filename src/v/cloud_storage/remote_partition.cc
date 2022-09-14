@@ -675,7 +675,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       "remote partition make_reader invoked, config: {}, num segments {}",
       config,
       _segments.size());
-    if (_segments.size() < static_cast<ssize_t>(_manifest.size())) {
+    if (_segments.size() < _manifest.size()) {
         update_segments_incrementally();
     }
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(

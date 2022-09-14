@@ -51,7 +51,7 @@ public:
       : _max_mem(max_mem) {}
 
     ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
-    Roaring end_of_stream();
+    roaring::Roaring end_of_stream();
 
 private:
     size_t idx_mem_usage() {
@@ -59,7 +59,7 @@ private:
           HashtableDebugAccess<underlying_t>;
         return debug::AllocatedByteSize(_indices);
     }
-    Roaring _inverted;
+    roaring::Roaring _inverted;
     underlying_t _indices;
     size_t _keys_mem_usage{0};
     size_t _max_mem{0};
@@ -70,7 +70,7 @@ private:
 /// wether ot keep the entry or not
 class index_filtered_copy_reducer : public compaction_reducer {
 public:
-    index_filtered_copy_reducer(Roaring b, compacted_index_writer& w)
+    index_filtered_copy_reducer(roaring::Roaring b, compacted_index_writer& w)
       : _bm(std::move(b))
       , _writer(&w) {}
 
@@ -79,7 +79,7 @@ public:
 
 private:
     uint32_t _natural_index = 0;
-    Roaring _bm;
+    roaring::Roaring _bm;
     compacted_index_writer* _writer;
 };
 
@@ -98,7 +98,7 @@ private:
 class compacted_offset_list_reducer : public compaction_reducer {
 public:
     explicit compacted_offset_list_reducer(model::offset base)
-      : _list(base, Roaring{}) {}
+      : _list(base, roaring::Roaring{}) {}
 
     ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
     compacted_offset_list end_of_stream() { return std::move(_list); }

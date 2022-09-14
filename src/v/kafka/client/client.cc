@@ -311,12 +311,13 @@ client::list_offsets(model::topic_partition tp) {
         const auto& topics = res.data.topics;
         auto ec = error_code::none;
         if (topics.size() != 1 || topics[0].partitions.size() != 1) {
-            co_return ss::coroutine::make_exception(
-              broker_error(node_id, error_code::unknown_server_error));
+            co_return ss::coroutine::exception(std::make_exception_ptr(
+              broker_error(node_id, error_code::unknown_server_error)));
         }
         ec = topics[0].partitions[0].error_code;
         if (ec != error_code::none) {
-            co_return ss::coroutine::make_exception(partition_error(tp, ec));
+            co_return ss::coroutine::exception(
+              std::make_exception_ptr(partition_error(tp, ec)));
         }
         co_return res;
     });

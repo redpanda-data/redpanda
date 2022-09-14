@@ -12,7 +12,6 @@ set -ex
 root="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
 if [[ -z ${CC} ]]; then export CC=clang; fi
 if [[ -z ${CXX} ]]; then export CXX=clang++; fi
-if [[ -z ${DEPOT_TOOLS_DIR} ]]; then DEPOT_TOOLS_DIR=/opt/depot_tools; fi
 if [[ -z ${CCACHE_DIR} && -e /dev/shm ]]; then
   mkdir -p /dev/shm/redpanda
   export CCACHE_DIR=/dev/shm/redpanda
@@ -26,17 +25,16 @@ go=$(which go)
 
 # Change Debug via  -DCMAKE_BUILD_TYPE=Debug
 cmake -DCMAKE_BUILD_TYPE=Release \
-  -B$root/build \
-  -H$root \
+  -B"$root"/build \
+  -H"$root" \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
-  -DCMAKE_GO_BINARY=$(go) \
-  -DDEPOT_TOOLS_DIR=$DEPOT_TOOLS_DIR \
+  -DCMAKE_GO_BINARY="$go" \
   "$@"
 
-(cd $root/build && ninja)
+(cd "$root"/build && ninja)
 
 ccache -s # print the stats after the build
 
-(cd $root/build && ctest --output-on-failure -R _rpunit)
+(cd "$root"/build && ctest --output-on-failure -R _rpunit)
