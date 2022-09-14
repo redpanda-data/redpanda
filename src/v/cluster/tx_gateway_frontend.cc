@@ -1704,6 +1704,10 @@ ss::future<> tx_gateway_frontend::do_expire_old_txs() {
 }
 
 ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
+    auto r = co_await stm->sync();
+    if (!r.has_value()) {
+        co_return;
+    }
     auto deleted_tx_ids = stm->get_txs_matching_ntp_filter(
       [this](const model::ntp& ntp) {
           // This can potentially be stale but we handle it later.
@@ -1802,13 +1806,6 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
             auto ec = co_await reabort_tm_tx(tx, timeout);
             if (ec != tx_errc::none) {
                 r = ec;
-            }
-            if (!r.has_value()) {
-                vlog(
-                  clusterlog.debug,
-                  "reabort for tx failed: {} err: {}",
-                  tx,
-                  r.error());
             }
         }
     }
