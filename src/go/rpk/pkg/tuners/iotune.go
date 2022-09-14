@@ -19,41 +19,43 @@ import (
 	"github.com/spf13/afero"
 )
 
+type ioTuner struct {
+	duration        time.Duration
+	evalDirectories []string
+	fs              afero.Fs
+	ioConfigFile    string
+	timeout         time.Duration
+}
+
 func NewIoTuneTuner(
 	fs afero.Fs,
 	evalDirectories []string,
 	ioConfigFile string,
 	duration, timeout time.Duration,
 ) Tunable {
-	return NewCheckedTunable(
-		NewIOConfigFileExistanceChecker(fs, ioConfigFile),
-		func() TuneResult {
-			return tune(evalDirectories, ioConfigFile, duration, timeout)
-		},
-		func() (bool, string) {
-			return checkIfIoTuneIsSupported(fs)
-		},
-		false)
+	return &ioTuner{
+		duration:        duration,
+		evalDirectories: evalDirectories,
+		fs:              fs,
+		ioConfigFile:    ioConfigFile,
+		timeout:         timeout,
+	}
 }
 
-func checkIfIoTuneIsSupported(fs afero.Fs) (bool, string) {
-	if exists, _ := afero.Exists(fs, iotune.Bin); !exists {
+func (tuner *ioTuner) CheckIfSupported() (bool, string) {
+	if exists, _ := afero.Exists(tuner.fs, iotune.Bin); !exists {
 		return false, fmt.Sprintf("'%s' not found in PATH", iotune.Bin)
 	}
 	return true, ""
 }
 
-func tune(
-	evalDirectories []string,
-	ioConfigFile string,
-	duration, timeout time.Duration,
-) TuneResult {
-	ioTune := iotune.NewIoTune(os.NewProc(), timeout)
+func (tuner *ioTuner) Tune() TuneResult {
+	ioTune := iotune.NewIoTune(os.NewProc(), tuner.timeout)
 	args := iotune.IoTuneArgs{
-		Dirs:           evalDirectories,
+		Dirs:           tuner.evalDirectories,
 		Format:         iotune.Seastar,
-		PropertiesFile: ioConfigFile,
-		Duration:       duration,
+		PropertiesFile: tuner.ioConfigFile,
+		Duration:       tuner.duration,
 		FsCheck:        false,
 	}
 	output, err := ioTune.Run(args)
