@@ -15,6 +15,7 @@
 #include "model/metadata.h"
 #include "units.h"
 
+#include <algorithm>
 #include <chrono>
 
 namespace pandaproxy::rest {
@@ -31,7 +32,9 @@ configuration::configuration()
     "pandaproxy_api",
     "Rest API listen address and port",
     {},
-    {model::broker_endpoint(net::unresolved_address("0.0.0.0", 8082))})
+    {config::rest_authn_endpoint{
+      .address = net::unresolved_address("0.0.0.0", 8082),
+      .authn_type = std::nullopt}})
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",
@@ -54,6 +57,29 @@ configuration::configuration()
       "consumer_instance_timeout_ms",
       "How long to wait for an idle consumer before removing it",
       {},
-      std::chrono::minutes{5}) {}
+      std::chrono::minutes{5})
+  , client_cache_size(
+      *this,
+      "client_cache_size",
+      "Size of the internal kafka client cache.",
+      {},
+      10) {}
+
+config::rest_authn_type
+configuration::authn_type(net::unresolved_address& address) {
+    auto pp_api = pandaproxy_api.value();
+    auto it = std::find_if(
+      pp_api.begin(),
+      pp_api.end(),
+      [&address](const config::rest_authn_endpoint& ep) {
+          return ep.address == address;
+      });
+
+    if (it != pp_api.end()) {
+        return it->authn_type.value_or(config::rest_authn_type::none);
+    } else {
+        return config::rest_authn_type::none;
+    }
+}
 
 } // namespace pandaproxy::rest

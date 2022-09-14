@@ -1,4 +1,4 @@
-// Copyright 2021 Redpanda Data, Inc.
+// Copyright 2022 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -27,36 +27,36 @@
 
 namespace config {
 
-enum class broker_authn_method {
+enum class rest_authn_type {
     none = 0,
-    sasl,
-    mtls_identity,
+    mtls,
+    http_basic,
 };
 
-std::string_view to_string_view(broker_authn_method m);
+std::string_view to_string_view(rest_authn_type m);
 
 template<>
-std::optional<broker_authn_method>
-from_string_view<broker_authn_method>(std::string_view sv);
+std::optional<rest_authn_type>
+from_string_view<rest_authn_type>(std::string_view sv);
 
-struct broker_authn_endpoint {
+struct rest_authn_endpoint {
     ss::sstring name;
     net::unresolved_address address;
-    std::optional<broker_authn_method> authn_method;
+    std::optional<rest_authn_type> authn_type;
 
     friend bool
-    operator==(const broker_authn_endpoint&, const broker_authn_endpoint&)
+    operator==(const rest_authn_endpoint&, const rest_authn_endpoint&)
       = default;
 
     friend std::ostream&
-    operator<<(std::ostream& os, const broker_authn_endpoint& ep);
+    operator<<(std::ostream& os, const rest_authn_endpoint& ep);
 };
 
 namespace detail {
 
 template<>
-consteval std::string_view property_type_name<broker_authn_endpoint>() {
-    return "config::broker_auth_endpoint";
+consteval std::string_view property_type_name<rest_authn_endpoint>() {
+    return "config::rest_authn_endpoint";
 }
 
 } // namespace detail
@@ -66,8 +66,8 @@ consteval std::string_view property_type_name<broker_authn_endpoint>() {
 namespace YAML {
 
 template<>
-struct convert<config::broker_authn_endpoint> {
-    using type = config::broker_authn_endpoint;
+struct convert<config::rest_authn_endpoint> {
+    using type = config::rest_authn_endpoint;
     static Node encode(const type& rhs);
     static bool decode(const Node& node, type& rhs);
 };
@@ -77,6 +77,6 @@ struct convert<config::broker_authn_endpoint> {
 namespace json {
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const config::broker_authn_endpoint& ep);
+  json::Writer<json::StringBuffer>& w, const config::rest_authn_endpoint& ep);
 
 }
