@@ -15,6 +15,7 @@
 #include "cluster/feature_table.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
+#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -44,6 +45,9 @@ public:
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
     using unmanage_cb_t = ss::noncopyable_function<void(model::partition_id)>;
+
+    using ntp_op_cb_t
+      = ss::noncopyable_function<void(model::ntp, topic_table::delta::op_type)>;
 
     /// \brief Copies table with ntps matching a given topic namespace
     ntp_table_container
@@ -139,6 +143,28 @@ public:
     }
 
     /*
+     * Register a call back that listens for ntp ops via topic table.
+     */
+    notification_id_type register_for_ntp_updates(ntp_op_cb_t cb) {
+        return _topic_table_watchers.register_notify(std::move(cb));
+    }
+
+    void unregister_ntp_update_cb(notification_id_type id) {
+        _topic_table_watchers.unregister_notify(id);
+    }
+
+    /*
+     * Hook registered with topic_table and that fans out updates to downstream
+     * subscribers.
+     */
+    void
+    notify_topic_table_deltas(const std::vector<topic_table::delta>& deltas) {
+        for (const auto& delta : deltas) {
+            _topic_table_watchers.notify(delta.ntp, delta.ntp, delta.type);
+        }
+    }
+
+    /*
      * read-only interface to partitions.
      *
      * note that users of this interface must take care not to hold iterators
@@ -187,6 +213,14 @@ private:
 
     ntp_callbacks<manage_cb_t> _manage_watchers;
     ntp_callbacks<unmanage_cb_t> _unmanage_watchers;
+
+    // Interface to listen to operations on ntps from topic table deltas.
+    // We route the deltas via partition_manager because of the tangled
+    // initialization dependency order between
+    // partition_manager/controller/topic_table and partitions do not have
+    // direct access to topic table interface.
+    ntp_callbacks<ntp_op_cb_t> _topic_table_watchers;
+
     // XXX use intrusive containers here
     ntp_table_container _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>

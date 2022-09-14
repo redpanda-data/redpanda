@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/partition_manager.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -23,6 +24,14 @@
 #include <optional>
 
 namespace cluster {
+
+topic_table::topic_table(ss::sharded<partition_manager>& pm)
+  : _probe(*this)
+  , _pm(pm) {
+    register_delta_notification([this](const std::vector<delta>& deltas) {
+        _pm.local().notify_topic_table_deltas(deltas);
+    });
+};
 
 template<typename Func>
 std::vector<std::invoke_result_t<Func, const topic_table::topic_metadata_item&>>

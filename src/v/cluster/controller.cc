@@ -95,7 +95,7 @@ ss::future<> controller::wire_up() {
           return _authorizer.start(
             []() { return config::shard_local_cfg().superusers.bind(); });
       })
-      .then([this] { return _tp_state.start(); })
+      .then([this] { return _tp_state.start(std::ref(_partition_manager)); })
       .then([this] { _probe.start(); });
 }
 

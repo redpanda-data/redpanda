@@ -167,8 +167,7 @@ public:
     using delta_cb_t
       = ss::noncopyable_function<void(const std::vector<delta>&)>;
 
-    explicit topic_table()
-      : _probe(*this){};
+    explicit topic_table(ss::sharded<partition_manager>&);
 
     cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
@@ -369,6 +368,7 @@ private:
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
     topic_table_probe _probe;
+    ss::sharded<partition_manager>& _pm;
 };
 
 std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
