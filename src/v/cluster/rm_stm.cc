@@ -1883,20 +1883,6 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 
     if (bid.is_transactional) {
-        if (_log_state.prepared.contains(bid.pid)) {
-            vlog(
-              clusterlog.error,
-              "Adding a record with pid:{} to a tx after it was prepared",
-              bid.pid);
-            if (_recovery_policy != best_effort) {
-                vassert(
-                  false,
-                  "Adding a record with pid:{} to a tx after it was prepared",
-                  bid.pid);
-            }
-            return;
-        }
-
         auto ongoing_it = _log_state.ongoing_map.find(bid.pid);
         if (ongoing_it != _log_state.ongoing_map.end()) {
             if (ongoing_it->second.last < last_offset) {
