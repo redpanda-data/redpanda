@@ -403,19 +403,35 @@ static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
 }
 
 template<class ResultT = void>
-ss::future<ResultT> parse_rest_error_response(iobuf&& buf) {
-    try {
-        auto resp = iobuf_to_ptree(std::move(buf));
-        constexpr const char* empty = "";
-        auto code = resp.get<ss::sstring>("Error.Code", empty);
-        auto msg = resp.get<ss::sstring>("Error.Message", empty);
-        auto rid = resp.get<ss::sstring>("Error.RequestId", empty);
-        auto res = resp.get<ss::sstring>("Error.Resource", empty);
-        rest_error_response err(code, msg, rid, res);
+ss::future<ResultT>
+parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
+    if (buf.empty()) {
+        // AWS errors occasionally come with an empty body
+        // (See https://github.com/redpanda-data/redpanda/issues/6061)
+        // Without a proper code, we treat it as a hint to gracefully retry
+        // (synthesize the slow_down code).
+        rest_error_response err(
+          fmt::format("{}", s3::s3_error_code::slow_down),
+          fmt::format("Empty error response, status code {}", result),
+          "",
+          "");
         return ss::make_exception_future<ResultT>(err);
-    } catch (...) {
-        vlog(s3_log.error, "!!error parse error {}", std::current_exception());
-        throw;
+
+    } else {
+        try {
+            auto resp = iobuf_to_ptree(std::move(buf));
+            constexpr const char* empty = "";
+            auto code = resp.get<ss::sstring>("Error.Code", empty);
+            auto msg = resp.get<ss::sstring>("Error.Message", empty);
+            auto rid = resp.get<ss::sstring>("Error.RequestId", empty);
+            auto res = resp.get<ss::sstring>("Error.Resource", empty);
+            rest_error_response err(code, msg, rid, res);
+            return ss::make_exception_future<ResultT>(err);
+        } catch (...) {
+            vlog(
+              s3_log.error, "!!error parse error {}", std::current_exception());
+            throw;
+        }
     }
 }
 
@@ -500,8 +516,8 @@ ss::future<http::client::response_stream_ref> client::get_object(
           // the header first
           return ref->prefetch_headers().then([ref = std::move(ref)]() mutable {
               vassert(ref->is_header_done(), "Header is not received");
-              if (
-                ref->get_headers().result() != boost::beast::http::status::ok) {
+              const auto result = ref->get_headers().result();
+              if (result != boost::beast::http::status::ok) {
                   // Got error response, consume the response body and produce
                   // rest api error
                   vlog(
@@ -509,9 +525,10 @@ ss::future<http::client::response_stream_ref> client::get_object(
                     "S3 replied with error: {}",
                     ref->get_headers());
                   return drain_response_stream(std::move(ref))
-                    .then([](iobuf&& res) {
+                    .then([result](iobuf&& res) {
                         return parse_rest_error_response<
-                          http::client::response_stream_ref>(std::move(res));
+                          http::client::response_stream_ref>(
+                          result, std::move(res));
                     });
               }
               return ss::make_ready_future<http::client::response_stream_ref>(
@@ -590,7 +607,8 @@ ss::future<> client::put_object(
                           s3_log.warn,
                           "S3 replied with error: {}",
                           ref->get_headers());
-                        return parse_rest_error_response<>(std::move(res));
+                        return parse_rest_error_response<>(
+                          status, std::move(res));
                     }
                     return ss::now();
                 });
@@ -642,7 +660,8 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
                           vlog(
                             s3_log.warn, "S3 replied with error: {}", header);
                           return parse_rest_error_response<
-                            client::list_bucket_result>(std::move(outbuf));
+                            client::list_bucket_result>(
+                            header.result(), std::move(outbuf));
                       }
                       auto res = iobuf_to_list_bucket_result(std::move(outbuf));
                       return ss::make_ready_future<list_bucket_result>(
@@ -673,7 +692,7 @@ ss::future<> client::delete_object(
                     s3_log.warn,
                     "S3 replied with error: {}",
                     ref->get_headers());
-                  return parse_rest_error_response<>(std::move(res));
+                  return parse_rest_error_response<>(status, std::move(res));
               }
               return ss::now();
           });
