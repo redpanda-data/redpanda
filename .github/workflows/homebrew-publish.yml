@@ -29,4 +29,4 @@ jobs:
         base-branch: main
         download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
       env:
-        COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
+        COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
