@@ -22,6 +22,6 @@ jobs:
       with:
         formula-name: redpanda
         homebrew-tap: ${{ github.repository_owner }}/homebrew-tap
-        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ github.ref_name }}/rpk-darwin-amd64.zip
+        download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rpk-darwin-amd64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
