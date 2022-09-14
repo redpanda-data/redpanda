@@ -109,7 +109,7 @@ static ss::future<> fetch_offsets_from_shards(
                   results.size(),
                   responses.size());
                 for (auto& r : results) {
-                    it->get() = r;
+                    it->get() = std::move(r);
                     ++it;
                 }
             });
