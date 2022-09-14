@@ -22,7 +22,6 @@ jobs:
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
     - name: Update the amd64 homebrew tap
-      if: contains(steps.get_version.outputs.VERSION, '-beta') == false
       uses: mislav/bump-homebrew-formula-action@v1.8
       with:
         formula-name: redpanda
