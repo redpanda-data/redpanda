@@ -57,11 +57,7 @@ class EndToEndTest(Test):
       - Perform some action (e.g. partition movement)
       - Run validation
     """
-    def __init__(self,
-                 test_context,
-                 extra_rp_conf=None,
-                 extra_node_conf=None,
-                 si_settings=None):
+    def __init__(self, test_context, extra_rp_conf=None, extra_node_conf=None):
         super(EndToEndTest, self).__init__(test_context=test_context)
         if extra_rp_conf is None:
             self._extra_rp_conf = {}
