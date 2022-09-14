@@ -129,7 +129,9 @@ request_auth_result request_authenticator::do_authenticate(
                   superusers.begin(), superusers.end(), username);
                 bool superuser = (found != superusers.end()) || (!require_auth);
                 return request_auth_result(
-                  username, request_auth_result::superuser(superuser));
+                  username,
+                  password,
+                  request_auth_result::superuser(superuser));
             }
         }
     } else if (!auth_hdr.empty()) {
