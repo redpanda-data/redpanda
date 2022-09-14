@@ -12,6 +12,7 @@ quick:
   included:
   - tests/group_membership_test.py::ListGroupsReplicationFactorTest.test_list_groups_has_no_duplicates
   - tests/pandaproxy_test.py::PandaProxyBrokersTest.test_get_brokers_with_stale_health_metadata
+  - tests/controller_recovery_test.py::ControllerRecoveryTest.test_controller_recovery
 
   excluded:
   - tests/librdkafka_test.py
