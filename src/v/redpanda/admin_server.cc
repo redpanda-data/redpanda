@@ -732,6 +732,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::leadership_changed:
         case cluster::errc::waiting_for_recovery:
         case cluster::errc::no_leader_controller:
+        case cluster::errc::shutting_down:
             throw ss::httpd::base_exception(
               fmt::format("Not ready ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
@@ -753,9 +754,14 @@ ss::future<> admin_server::throw_on_error(
         case raft::errc::disconnected_endpoint:
         case raft::errc::configuration_change_in_progress:
         case raft::errc::leadership_transfer_in_progress:
+        case raft::errc::shutting_down:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
+        case raft::errc::timeout:
+            throw ss::httpd::base_exception(
+              fmt::format("Timeout: {}", ec.message()),
+              ss::httpd::reply::status_type::gateway_timeout);
         case raft::errc::transfer_to_current_leader:
             co_return;
         case raft::errc::not_leader:
