@@ -17,15 +17,11 @@ jobs:
     name: Update Homebrew
     runs-on: ubuntu-latest
     steps:
-    - name: Get the version
-      id: get_version
-      run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-
     - name: Update the amd64 homebrew tap
       uses: mislav/bump-homebrew-formula-action@v2
       with:
         formula-name: redpanda
         homebrew-tap: ${{ github.repository_owner }}/homebrew-tap
-        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
+        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ github.ref_name }}/rpk-darwin-amd64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
