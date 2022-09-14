@@ -15,11 +15,11 @@ namespace pandaproxy {
 
 kafka_client_cache::kafka_client_cache(
   YAML::Node const& cfg,
-  size_t size,
+  size_t max_size,
   std::vector<config::broker_authn_endpoint> kafka_api,
   model::timestamp::type keep_alive)
   : _config{cfg}
-  , _cache_size{size}
+  , _cache_max_size{max_size}
   , _kafka_has_sasl{false}
   , _keep_alive{keep_alive} {
     // Is there a Kafka listener with SASL enabled?
@@ -36,21 +36,24 @@ kafka_client_cache::kafka_client_cache(
 }
 
 client_ptr kafka_client_cache::fetch(credential_t user) {
-    auto it = _user_client_map.find(user.name);
+    auto& inner_map = _cache.get<underlying_map>();
+    auto it_map = inner_map.find(user.name);
 
     // User not found
-    if (it == _user_client_map.end()) {
+    if (it_map == inner_map.end()) {
         throw std::out_of_range(fmt::format("User {} not found", user.name));
     }
 
-    // Otherwise user found. Move it to the beginning
-    // of the frequency list. Splice will shift the items
-    // over.
-    _user_client_list.splice(
-      _user_client_list.begin(), _user_client_list, it->second);
+    // Otherwise user found. Move them to the beginning
+    // of the frequency list.
 
-    // The client is at the second of the iterator.
-    return it->second->second;
+    client_ptr client{it_map->client};
+    auto& inner_list = _cache.get<underlying_list>();
+    // Convert the map iterator to list iterator
+    auto it_list = _cache.project<underlying_list>(it_map);
+    inner_list.relocate(it_list, inner_list.begin());
+
+    return client;
 }
 
 client_ptr kafka_client_cache::make_client(
@@ -69,46 +72,50 @@ client_ptr kafka_client_cache::make_client(
 }
 
 void kafka_client_cache::insert(credential_t user, client_ptr client) {
+    auto& inner_list = _cache.get<underlying_list>();
+    auto& inner_map = _cache.get<underlying_map>();
+
     // First remove the last used client if the
     // cache is full.
-    if (_user_client_map.size() >= _cache_size) {
-        auto lru = _user_client_list.end();
+    if (_cache.size() >= _cache_max_size) {
+        auto lru = inner_list.end();
         --lru; // Last item is back one step
-        _user_client_map.erase(lru->first);
-        _user_client_list.pop_back();
+        inner_map.erase(lru->username);
+        inner_list.erase(lru);
     }
+
+    user_client_pair pair{.username = user.name, .client = client};
 
     // Add the user-client pair to front of frequency
     // list since it will become recently "used"
-    _user_client_list.push_front(user_client_pair{user.name, client});
-
-    // Add the user-client pair to the map
-    _user_client_map[user.name] = _user_client_list.begin();
+    inner_list.push_front(pair);
+    inner_map.insert(pair);
 }
 
 void kafka_client_cache::clean_stale_clients() {
-    absl::erase_if(_user_client_map, [this](const auto& item) {
-        auto const& [key, it] = item;
-        auto live = (model::new_timestamp()() - it->second->creation_time());
+    // absl::erase_if(_user_client_map, [this](const auto& item) {
+    //     auto const& [key, it] = item;
+    //     auto live = (model::new_timestamp()() - it->second->creation_time());
 
-        if (live >= _keep_alive) {
-            vlog(plog.debug, "Erased {} from map", key);
-            return true;
-        }
-        return false;
-    });
+    //     if (live >= _keep_alive) {
+    //         vlog(plog.debug, "Erased {} from map", key);
+    //         return true;
+    //     }
+    //     return false;
+    // });
 
-    std::erase_if(_user_client_list, [this](const user_client_pair& item) {
-        auto live = (model::new_timestamp()() - item.second->creation_time());
+    // std::erase_if(_user_client_list, [this](const user_client_pair& item) {
+    //     auto live = (model::new_timestamp()() -
+    //     item.second->creation_time());
 
-        if (live >= _keep_alive) {
-            vlog(plog.debug, "Erased {} from list", item.first);
-            return true;
-        }
-        return false;
-    });
+    //     if (live >= _keep_alive) {
+    //         vlog(plog.debug, "Erased {} from list", item.first);
+    //         return true;
+    //     }
+    //     return false;
+    // });
 }
 
-size_t kafka_client_cache::size() const { return _user_client_list.size(); }
+size_t kafka_client_cache::size() const { return _cache.size(); }
 
 } // namespace pandaproxy

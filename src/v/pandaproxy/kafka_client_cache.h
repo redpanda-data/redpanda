@@ -17,37 +17,56 @@
 #include "security/credential_store.h"
 #include "ssx/future-util.h"
 
-#include <seastar/core/loop.hh>
-
-#include <absl/container/node_hash_map.h>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index_container.hpp>
 #include <fmt/format.h>
 
 #include <list>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
+
+namespace bmi = boost::multi_index;
 
 namespace pandaproxy {
 
 class sharded_client_cache;
 
 // A LRU cache implemented with a doubly-linked list and an
-// unordered map. The list tracks frequency where the most
-// recently used client is at the front. When the cache is full
-// remove the client from the end of the list. The map is for
-// constant time look-ups of the kafka clients.
+// unordered map using boost multi container. The list tracks
+// frequency where the most recently used client is at the front.
+// When the cache is full remove the client from the end of the
+// list. The map is for constant time look-ups of the kafka clients.
 class kafka_client_cache {
     friend class sharded_client_cache;
 
 public:
-    using user_client_pair = std::pair<ss::sstring, client_ptr>;
-    using user_client_list_it = std::list<user_client_pair>::iterator;
-    using user_client_map
-      = absl::flat_hash_map<ss::sstring, user_client_list_it>;
+    struct user_client_pair {
+        std::string username;
+        client_ptr client;
+    };
+
+    // Tags used for indexing
+    struct underlying_list {};
+    struct underlying_map {};
+
+    using underlying_t = bmi::multi_index_container<
+      user_client_pair,
+      bmi::indexed_by<
+        bmi::sequenced<bmi::tag<underlying_list>>,
+        bmi::hashed_unique<
+          bmi::tag<underlying_map>,
+          bmi::member<
+            user_client_pair,
+            std::string,
+            &user_client_pair::username>>>>;
 
     kafka_client_cache(
       YAML::Node const& cfg,
-      size_t size,
+      size_t max_size,
       std::vector<config::broker_authn_endpoint> kafka_api,
       model::timestamp::type keep_alive = 30000);
 
@@ -65,10 +84,9 @@ private:
     void clean_stale_clients();
 
     kafka::client::configuration _config;
-    size_t _cache_size;
+    size_t _cache_max_size;
     bool _kafka_has_sasl;
     model::timestamp::type _keep_alive;
-    std::list<user_client_pair> _user_client_list;
-    user_client_map _user_client_map;
+    underlying_t _cache;
 };
 } // namespace pandaproxy
