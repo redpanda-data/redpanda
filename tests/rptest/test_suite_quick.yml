@@ -9,7 +9,7 @@
 
 quick:
   included:
-  - tests/
+  - tests/tx_feature_flag_test.py::TxFeatureFlagTest.test_disabling_transactions_after_they_being_used
 
   excluded:
   - tests/librdkafka_test.py
