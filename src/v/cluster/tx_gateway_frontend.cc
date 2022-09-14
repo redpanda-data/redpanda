@@ -138,10 +138,18 @@ void tx_gateway_frontend::start_expire_timer() {
     }
     _expire_timer.set_callback([this] { expire_old_txs(); });
     rearm_expire_timer();
+    _delete_notifications = _partition_manager.local().register_for_ntp_updates(
+      [this](model::ntp ntp, topic_table::delta::op_type type) {
+          if (type == topic_table::delta::op_type::del) {
+              vlog(clusterlog.trace, "tickling expire timer for ntp {}", ntp);
+              tickle_expire_timer();
+          }
+      });
 }
 
 ss::future<> tx_gateway_frontend::stop() {
     vlog(txlog.debug, "Asked to stop tx coordinator");
+    _partition_manager.local().unregister_ntp_update_cb(_delete_notifications);
     _expire_timer.cancel();
     _as.request_abort();
     return _gate.close().then(

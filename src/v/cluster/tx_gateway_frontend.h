@@ -88,6 +88,7 @@ private:
     ss::timer<model::timeout_clock> _expire_timer;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _transactions_enabled;
+    notification_id_type _delete_notifications;
 
     void start_expire_timer();
 
@@ -100,6 +101,31 @@ private:
             auto delay = _transactional_id_expiration / 2;
             _expire_timer.arm(model::timeout_clock::now() + delay);
         }
+    }
+
+    // Rearms the expire timer to run within the next few seconds if not
+    // scheduled already. This is done if we notice some partitions were deleted
+    // and we want to trigger an earlier cleanup if any of the transactions are
+    // affected.
+    void tickle_expire_timer() {
+        static model::timeout_clock::duration expire_timer_max_wait = 5s;
+        if (_gate.is_closed()) {
+            return;
+        }
+        if (!_expire_timer.armed()) {
+            // Arm with some delay to account for multiple deletions in one go
+            // and let the metadata_cache warmup meanwhile.
+            _expire_timer.arm(
+              model::timeout_clock::now() + expire_timer_max_wait);
+            return;
+        }
+        // Timer is armed, check if it is already running soon.
+        auto expiry = _expire_timer.get_timeout() - model::timeout_clock::now();
+        if (expiry <= expire_timer_max_wait) {
+            return;
+        }
+        _expire_timer.rearm(
+          model::timeout_clock::now() + expire_timer_max_wait);
     }
 
     ss::future<bool> try_create_tx_topic();
