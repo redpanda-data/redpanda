@@ -1743,7 +1743,16 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     }
 
     auto tx = tx_opt.value();
-    if (!stm->is_expired(tx)) {
+
+    // Check for the list of deleted ntps, if any.
+    absl::flat_hash_set<model::ntp> deleted_ntps;
+    for (auto& tx_part : tx.partitions) {
+        if (!_metadata_cache.local().contains(tx_part.ntp)) {
+            deleted_ntps.insert(tx_part.ntp);
+        }
+    }
+
+    if (deleted_ntps.empty() && !stm->is_expired(tx)) {
         co_return;
     }
 
@@ -1778,6 +1787,34 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     }
 
     if (!r.has_value()) {
+        if (!deleted_ntps.empty()) {
+            vlog(
+              clusterlog.debug,
+              "Attempting force abort by removing deleted partitions. tx {}",
+              tx);
+            // Its possible that the original attempt failed because we are
+            // not able reach deleted partitions, remove the deleted partitions
+            // and try again.
+            std::erase_if(tx.partitions, [&deleted_ntps](auto& p) {
+                return deleted_ntps.contains(p.ntp);
+            });
+            r = tx;
+            auto ec = co_await reabort_tm_tx(tx, timeout);
+            if (ec != tx_errc::none) {
+                r = ec;
+            }
+            if (!r.has_value()) {
+                vlog(
+                  clusterlog.debug,
+                  "reabort for tx failed: {} err: {}",
+                  tx,
+                  r.error());
+            }
+        }
+    }
+    if (!r.has_value()) {
+        vlog(
+          clusterlog.trace, "expire for tx: {} failed err: {}", tx, r.error());
         co_return;
     }
 
