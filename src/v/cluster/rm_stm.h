@@ -389,6 +389,7 @@ private:
         // a map from producer_identity (a session) to the first offset of
         // the current transaction in this session
         absl::flat_hash_map<model::producer_identity, model::offset> tx_start;
+        absl::flat_hash_map<model::producer_identity, model::offset> tx_end;
         // a heap of the first offsets of all ongoing transactions
         absl::btree_set<model::offset> tx_starts;
         // before we replicate the first batch of a transaction we don't know
@@ -411,6 +412,7 @@ private:
             estimated.erase(pid);
             preparing.erase(pid);
             expiration.erase(pid);
+            tx_end.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);

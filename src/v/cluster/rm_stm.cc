@@ -1123,6 +1123,13 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     set_seq(bid, new_offset);
 
+    if (!_mem_state.tx_end.contains(bid.pid)) {
+        _mem_state.tx_end[bid.pid] = old_offset;
+    }
+
+    _mem_state.tx_end[bid.pid] = std::max(
+      _mem_state.tx_end[bid.pid], old_offset);
+
     if (!_mem_state.tx_start.contains(bid.pid)) {
         auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
         _mem_state.tx_start.emplace(bid.pid, base_offset);
