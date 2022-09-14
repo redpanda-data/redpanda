@@ -151,7 +151,9 @@ public:
      * updated their commit indices to at least reaturned offset). For more
      * details see paragraph 6.4 of Raft protocol dissertation.
      */
-    ss::future<result<model::offset>> linearizable_barrier();
+    ss::future<result<model::offset>> linearizable_barrier(
+      append_entries_request::flush_after_append should_flush
+      = append_entries_request::flush_after_append::no);
 
     vnode self() const { return _self; }
     protocol_metadata meta() const;

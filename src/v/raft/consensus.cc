@@ -548,7 +548,8 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
         });
 }
 
-ss::future<result<model::offset>> consensus::linearizable_barrier() {
+ss::future<result<model::offset>> consensus::linearizable_barrier(
+  append_entries_request::flush_after_append should_flush) {
     using ret_t = result<model::offset>;
     ssx::semaphore_units u;
     try {
@@ -570,8 +571,11 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     absl::flat_hash_map<vnode, follower_req_seq> sequences;
     std::vector<ss::future<>> send_futures;
     send_futures.reserve(cfg.unique_voter_count());
-    cfg.for_each_voter([this, dirty_offset, &sequences, &send_futures](
-                         vnode target) {
+    cfg.for_each_voter([this,
+                        dirty_offset,
+                        &sequences,
+                        &send_futures,
+                        should_flush](vnode target) {
         // do not send request to self
         if (target == _self) {
             return;
@@ -583,7 +587,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
-          append_entries_request::flush_after_append::no);
+          should_flush);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
 
