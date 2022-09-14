@@ -537,9 +537,15 @@ class Admin:
     def list_users(self, node=None):
         return self._request("get", "security/users", node=node).json()
 
-    def partition_transfer_leadership(self, namespace, topic, partition,
-                                      target_id):
-        path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
+    def partition_transfer_leadership(self,
+                                      namespace,
+                                      topic,
+                                      partition,
+                                      target_id=None):
+        path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership"
+        if target_id:
+            path += f"?target={target_id}"
+
         self._request("POST", path)
 
     def get_partition_leader(self, *, namespace, topic, partition, node=None):
