@@ -25,7 +25,7 @@ jobs:
       uses: mislav/bump-homebrew-formula-action@v2
       with:
         formula-name: redpanda
-        homebrew-tap: vectorizedio/homebrew-tap
+        homebrew-tap: ${{ github.repository_owner }}/homebrew-tap
         download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
       env:
         COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
