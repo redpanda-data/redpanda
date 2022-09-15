@@ -99,10 +99,15 @@ class TLSCertManager:
 
     def _exec(self, cmd):
         self._logger.info(f"Running command: {cmd}")
-        output = subprocess.check_output(cmd.split(),
-                                         cwd=self._dir.name,
-                                         stderr=subprocess.STDOUT)
-        self._logger.debug(output)
+        try:
+            output = subprocess.check_output(cmd.split(),
+                                             cwd=self._dir.name,
+                                             stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            self._logger.error(f"openssl error: {e.output}")
+            raise
+        else:
+            self._logger.debug(output)
 
     def _create_ca(self):
         cfg = self._with_dir("ca.conf")
