@@ -40,7 +40,7 @@ MISSING_DATA_ERRORS = [
 ]
 
 TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
-    "raft::offset_monitor::wait_aborted",
+    "raft::offset_monitor::wait_timed_out",
     "Upload loop error: seastar::timed_out_error"
 ]
 
