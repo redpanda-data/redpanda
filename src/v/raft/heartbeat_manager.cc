@@ -315,6 +315,15 @@ void heartbeat_manager::process_reply(
         auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
 
+        if (unlikely(m.result == append_entries_reply::status::timeout)) {
+            vlog(
+              hbeatlog.debug,
+              "Heartbeat request for group {} timed out on the node {}",
+              m.group,
+              n);
+            continue;
+        }
+
         if (unlikely(m.target_node_id != consensus->self())) {
             vlog(
               hbeatlog.warn,
