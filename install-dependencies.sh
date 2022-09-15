@@ -31,6 +31,7 @@ deb_deps=(
   git
   golang-go
   libsnappy-dev
+  libstdc++-10-dev
   libxxhash-dev
   libzstd-dev
   llvm
