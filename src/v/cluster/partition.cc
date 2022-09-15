@@ -55,7 +55,8 @@ partition::partition(
         }
 
         if (_is_tx_enabled) {
-            _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
+            _tm_stm = ss::make_shared<cluster::tm_stm>(
+              clusterlog, _raft.get(), feature_table);
             stm_manager->add_stm(_tm_stm);
         }
     } else {

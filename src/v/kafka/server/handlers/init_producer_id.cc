@@ -12,18 +12,37 @@
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "model/record.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/print.hh>
 
 namespace kafka {
+
+namespace {
+
+// Provided pid in init_producer_id request can not be {x >= 0, -1} or
+// {-1, x >= 0}.
+bool is_invalid_pid(model::producer_identity expected_pid) {
+    if (expected_pid == model::unknown_pid) {
+        return false;
+    }
+
+    if (expected_pid.id < 0 || expected_pid.epoch < 0) {
+        return true;
+    }
+    return false;
+}
+
+} // namespace
 
 template<>
 ss::future<response_ptr> init_producer_id_handler::handle(
@@ -42,11 +61,21 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 return ctx.respond(reply);
             }
 
+            model::producer_identity expected_pid = model::producer_identity{
+              request.data.producer_id, request.data.producer_epoch};
+
+            if (is_invalid_pid(expected_pid)) {
+                init_producer_id_response reply;
+                reply.data.error_code = error_code::invalid_request;
+                return ctx.respond(reply);
+            }
+
             return ctx.tx_gateway_frontend()
               .init_tm_tx(
                 request.data.transactional_id.value(),
                 request.data.transaction_timeout_ms,
-                config::shard_local_cfg().create_topic_timeout_ms())
+                config::shard_local_cfg().create_topic_timeout_ms(),
+                expected_pid)
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
 
@@ -65,6 +94,10 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                       break;
                   case cluster::tx_errc::not_coordinator:
                       reply.data.error_code = error_code::not_coordinator;
+                      break;
+                  case cluster::tx_errc::invalid_producer_epoch:
+                      reply.data.error_code
+                        = error_code::invalid_producer_epoch;
                       break;
                   default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);

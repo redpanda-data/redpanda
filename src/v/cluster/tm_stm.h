@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/feature_table.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
@@ -34,8 +35,12 @@
 
 namespace cluster {
 
+using use_tx_version_with_last_pid_bool
+  = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
+
 struct tm_transaction {
-    static constexpr uint8_t version = 1;
+    // Version 2 added last_pid field to tx log records
+    static constexpr uint8_t version = 2;
 
     enum tx_status {
         ongoing,
@@ -67,6 +72,9 @@ struct tm_transaction {
     // session of transactional_id'ed application as any given
     // moment there maybe only one session per tx.id
     model::producer_identity pid;
+    // Inforamtion about last producer_identity who worked with this
+    // transaction. It is needed for restore producer after redpanda failures
+    model::producer_identity last_pid;
     // tx_seq identifues a transactions within a session so a
     // triple (transactional_id, producer_identity, tx_seq) uniquely
     // identidies a transaction
@@ -140,7 +148,7 @@ public:
         partition_not_found
     };
 
-    explicit tm_stm(ss::logger&, raft::consensus*);
+    explicit tm_stm(ss::logger&, raft::consensus*, ss::sharded<feature_table>&);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
@@ -191,6 +199,7 @@ public:
       model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
+      model::producer_identity,
       model::producer_identity);
     ss::future<tm_stm::op_status> register_new_producer(
       model::term_id,
@@ -263,6 +272,107 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+
+    use_tx_version_with_last_pid_bool use_new_tx_version() {
+        return _feature_table.local().is_active(feature::transaction_ga)
+                 ? use_tx_version_with_last_pid_bool::yes
+                 : use_tx_version_with_last_pid_bool::no;
+    }
+
+    model::record_batch serialize_tx(tm_transaction tx);
+
+    ss::sharded<feature_table>& _feature_table;
+};
+
+// Version 1 added last_update_ts to tx lod record. And new status tombstone to
+// tx_status
+struct tm_transaction_v1 {
+    static constexpr uint8_t version = 1;
+
+    enum tx_status {
+        ongoing,
+        preparing,
+        prepared,
+        aborting, // abort is initiated by a client
+        killed,   // abort is initiated by a timeout
+        ready,
+        tombstone,
+    };
+
+    struct tx_partition {
+        model::ntp ntp;
+        model::term_id etag;
+
+        bool operator==(const tx_partition& other) const = default;
+    };
+
+    struct tx_group {
+        kafka::group_id group_id;
+        model::term_id etag;
+    };
+
+    // id of an application executing a transaction. in the early
+    // drafts of Kafka protocol transactional_id used to be named
+    // application_id
+    kafka::transactional_id id;
+    // another misnomer in fact producer_identity identifies a
+    // session of transactional_id'ed application as any given
+    // moment there maybe only one session per tx.id
+    model::producer_identity pid;
+    // tx_seq identifues a transactions within a session so a
+    // triple (transactional_id, producer_identity, tx_seq) uniquely
+    // identidies a transaction
+    model::tx_seq tx_seq;
+    // term of a transaction coordinated started a transaction.
+    // transactions can't span cross term to prevent loss of information stored
+    // only in memory (partitions and groups).
+    model::term_id etag;
+    tx_status status;
+    std::chrono::milliseconds timeout_ms;
+    ss::lowres_system_clock::time_point last_update_ts;
+    std::vector<tx_partition> partitions;
+    std::vector<tx_group> groups;
+
+    tm_transaction::tx_status upcast(tx_status status) {
+        switch (status) {
+        case tx_status::ongoing:
+            return tm_transaction::tx_status::ongoing;
+        case tx_status::preparing:
+            return tm_transaction::tx_status::preparing;
+        case tx_status::prepared:
+            return tm_transaction::tx_status::prepared;
+        case tx_status::aborting:
+            return tm_transaction::tx_status::aborting;
+        case tx_status::killed:
+            return tm_transaction::tx_status::killed;
+        case tx_status::ready:
+            return tm_transaction::tx_status::ready;
+        case tx_status::tombstone:
+            return tm_transaction::tx_status::tombstone;
+        }
+        vassert(false, "unknown status: {}", status);
+    };
+
+    tm_transaction upcast() {
+        tm_transaction result;
+        result.id = id;
+        result.pid = pid;
+        result.last_pid = model::unknown_pid;
+        result.tx_seq = tx_seq;
+        result.etag = etag;
+        result.status = upcast(status);
+        result.timeout_ms = timeout_ms;
+        result.last_update_ts = last_update_ts;
+        for (auto& partition : partitions) {
+            result.partitions.push_back(tm_transaction::tx_partition{
+              .ntp = partition.ntp, .etag = partition.etag});
+        }
+        for (auto& group : groups) {
+            result.groups.push_back(tm_transaction::tx_group{
+              .group_id = group.group_id, .etag = group.etag});
+        }
+        return result;
+    };
 };
 
 struct tm_transaction_v0 {
@@ -310,15 +420,15 @@ struct tm_transaction_v0 {
             return tm_transaction::tx_status::killed;
         case tx_status::ready:
             return tm_transaction::tx_status::ready;
-        default:
-            vassert(false, "unknown status: {}", status);
         }
+        vassert(false, "unknown status: {}", status);
     };
 
     tm_transaction upcast() {
         tm_transaction result;
         result.id = id;
         result.pid = pid;
+        result.last_pid = model::unknown_pid;
         result.tx_seq = tx_seq;
         result.etag = etag;
         result.status = upcast(status);

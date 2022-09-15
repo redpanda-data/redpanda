@@ -448,7 +448,7 @@ struct producer_identity
 
     producer_identity() noexcept = default;
 
-    producer_identity(int64_t id, int16_t epoch)
+    constexpr producer_identity(int64_t id, int16_t epoch)
       : id(id)
       , epoch(epoch) {}
 
@@ -480,6 +480,8 @@ struct tx_range {
 
     auto operator<=>(const tx_range&) const = default;
 };
+
+static constexpr producer_identity unknown_pid{-1, -1};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
