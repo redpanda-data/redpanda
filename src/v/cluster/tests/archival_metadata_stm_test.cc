@@ -27,6 +27,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <boost/test/tools/old/interface.hpp>
+
 #include <chrono>
 
 using namespace std::chrono_literals;
@@ -158,4 +160,69 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 1);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
+}
+
+FIXTURE_TEST(
+  test_archival_stm_segment_truncate, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    auto& ntp_cfg = _raft->log_config();
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("100-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(100),
+        .committed_offset = model::offset(199),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("200-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(200),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("300-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(300),
+        .committed_offset = model::offset(399),
+        .archiver_term = model::term_id(1),
+      });
+    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
+    BOOST_REQUIRE(archival_stm->manifest().size() == 4);
+    BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
+    BOOST_REQUIRE(archival_stm->manifest() == m);
+
+    // Truncate the STM, first segment should be added to the backlog
+    archival_stm->truncate(model::offset(100), ss::lowres_clock::now() + 10s)
+      .get();
+
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(100));
+    auto backlog = archival_stm->get_segments_to_cleanup();
+    BOOST_REQUIRE_EQUAL(backlog.size(), 1);
+    auto name = cloud_storage::generate_local_segment_name(
+      backlog[0].base_offset, backlog[0].segment_term);
+    BOOST_REQUIRE(m.get(name) != nullptr);
+    BOOST_REQUIRE(backlog[0] == *m.get(name));
+
+    // Truncate the STM, next segment should be added to the backlog
+    archival_stm->truncate(model::offset(200), ss::lowres_clock::now() + 10s)
+      .get();
+
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(200));
+    backlog = archival_stm->get_segments_to_cleanup();
+    BOOST_REQUIRE_EQUAL(backlog.size(), 2);
+    for (const auto& it : backlog) {
+        auto name = cloud_storage::generate_local_segment_name(
+          it.base_offset, it.segment_term);
+        BOOST_REQUIRE(m.get(name) != nullptr);
+        BOOST_REQUIRE(it == *m.get(name));
+    }
 }
