@@ -190,6 +190,15 @@ public:
               "gate_closed_exception while reading from remote_partition");
             _it = _end;
             _reader = {};
+        } catch (const std::exception& e) {
+            vlog(
+              _ctxlog.warn,
+              "exception thrown while reading from remote_partition: {}",
+              e.what());
+            _it = _end;
+            _reader = {};
+
+            throw;
         }
         vlog(
           _ctxlog.debug,
