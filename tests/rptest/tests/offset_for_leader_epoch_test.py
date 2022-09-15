@@ -188,6 +188,22 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
 
         rpk = RpkTool(self.redpanda)
 
+        def get_offsets_and_epochs():
+            offsets = []
+
+            def refresh():
+                result = rpk.describe_topic(topic.name)
+                offsets.clear()
+                offsets.extend(result)
+
+            def all_offsets_valid():
+                refresh()
+                return all([p.high_watermark >= 0 for p in offsets])
+
+            wait_until(all_offsets_valid, 30, 1)
+
+            return offsets
+
         # store offsets after each epoch change
         offsets_after_epochs = []
 
@@ -195,7 +211,7 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         for _ in range(5):
             produce_some()
             # store partition epoch and offsets
-            offsets = rpk.describe_topic(topic.name)
+            offsets = get_offsets_and_epochs()
             offsets_after_epochs.append(list(offsets))
 
             for p in offsets_after_epochs[-1]:
