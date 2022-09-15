@@ -17,7 +17,7 @@ namespace raft {
 
 void offset_monitor::stop() {
     for (auto& waiter : _waiters) {
-        waiter.second->done.set_exception(wait_aborted());
+        waiter.second->done.set_exception(ss::abort_requested_exception());
     }
     _waiters.clear();
 }
@@ -66,18 +66,27 @@ offset_monitor::waiter::waiter(
         if (opt_sub) {
             sub = std::move(*opt_sub);
         } else {
-            done.set_exception(wait_aborted());
+            done.set_exception(ss::abort_requested_exception());
             return;
         }
     }
     if (timeout != model::no_timeout) {
-        timer.set_callback([this] { handle_abort(); });
+        timer.set_callback([this] { handle_timeout(); });
         timer.arm(timeout);
     }
 }
 
 void offset_monitor::waiter::handle_abort() {
-    done.set_exception(wait_aborted());
+    done.set_exception(ss::abort_requested_exception());
+    remove_waiter();
+}
+
+void offset_monitor::waiter::handle_timeout() {
+    done.set_exception(ss::timed_out_error());
+    remove_waiter();
+}
+
+void offset_monitor::waiter::remove_waiter() {
     auto it = std::find_if(
       mon->_waiters.begin(),
       mon->_waiters.end(),
@@ -89,5 +98,6 @@ void offset_monitor::waiter::handle_abort() {
     // the timer is cancelled and the abort source subscription is removed.
     mon->_waiters.erase(it); // *this is no longer valid after erase
 }
+
 
 } // namespace raft

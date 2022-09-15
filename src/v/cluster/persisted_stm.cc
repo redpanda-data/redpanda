@@ -19,6 +19,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/timed_out_error.hh>
 
 #include <filesystem>
 
@@ -230,7 +231,7 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (const ss::condition_variable_timed_out&) {
             co_return false;
-        } catch (const raft::offset_monitor::wait_aborted&) {
+        } catch (const ss::timed_out_error&) {
             co_return false;
         } catch (...) {
             vlog(
@@ -304,8 +305,12 @@ ss::future<bool> persisted_stm::wait_no_throw(
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
       .then([] { return true; })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
+      .handle_exception_type([](const ss::abort_requested_exception&) {
           vlog(clusterlog.trace, "aborted while waiting (shutting down)");
+          return false;
+      })
+      .handle_exception_type([](const ss::timed_out_error&) {
+          vlog(clusterlog.trace, "timeout while waiting (shutting down)");
           return false;
       })
       .handle_exception([offset, ntp = _c->ntp()](std::exception_ptr e) {

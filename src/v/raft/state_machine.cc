@@ -136,7 +136,7 @@ ss::future<> state_machine::apply() {
                 }
             });
       })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {})
+      .handle_exception_type([](const ss::abort_requested_exception&) {})
       .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(
