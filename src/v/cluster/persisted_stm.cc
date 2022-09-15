@@ -230,7 +230,14 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (const ss::condition_variable_timed_out&) {
             co_return false;
-        } catch (const raft::offset_monitor::wait_aborted&) {
+        } catch (const raft::offset_monitor::wait_timed_out&) {
+            vlog(
+              clusterlog.warn,
+              "sync timeout: waiting for offset={}; committed "
+              "offset={}; ntp={}",
+              offset,
+              committed,
+              ntp);
             co_return false;
         } catch (...) {
             vlog(
@@ -304,10 +311,19 @@ ss::future<bool> persisted_stm::wait_no_throw(
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
       .then([] { return true; })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
-          vlog(clusterlog.trace, "aborted while waiting (shutting down)");
+      .handle_exception_type([](const ss::abort_requested_exception&) {
+          // Shutting down
           return false;
       })
+      .handle_exception_type(
+        [offset, ntp = _c->ntp()](const raft::offset_monitor::wait_timed_out&) {
+            vlog(
+              clusterlog.warn,
+              "timed out while waiting for offset: {}, ntp: {}",
+              offset,
+              ntp);
+            return false;
+        })
       .handle_exception([offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             clusterlog.error,
