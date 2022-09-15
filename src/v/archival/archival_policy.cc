@@ -26,6 +26,21 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
+namespace {
+
+std::optional<storage::disk_log_impl*> get_concrete_log_impl(storage::log log) {
+    // NOTE: we need to break encapsulation here to access underlying
+    // implementation because upload policy and archival subsystem needs to
+    // access individual log segments (disk backed).
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get_impl());
+    if (plog == nullptr || plog->segment_count() == 0) {
+        return std::nullopt;
+    }
+    return plog;
+}
+
+} // namespace
+
 namespace archival {
 
 using namespace std::chrono_literals;
@@ -75,6 +90,74 @@ bool archival_policy::upload_deadline_reached() {
     return _upload_deadline < now;
 }
 
+archival_policy::lookup_result archival_policy::find_compacted_segment(
+  model::offset start_offset, storage::log log) {
+    vlog(
+      archival_log.debug,
+      "Finding next compacted segment for {} , start_offset: {}",
+      _ntp,
+      start_offset);
+
+    auto maybe_plog = get_concrete_log_impl(std::move(log));
+    if (!maybe_plog) {
+        vlog(
+          archival_log.debug,
+          "Finding next compacted segment for {}: can't find candidate, no "
+          "segments or "
+          "in-memory log",
+          _ntp);
+        return {};
+    }
+
+    auto plog = maybe_plog.value();
+    const auto& set = plog->segments();
+    auto it = set.lower_bound(start_offset);
+
+    // iterator can reach end for two reasons, either all segments are behind
+    // start_offset or all segments are ahead of start_offset,
+    // which can happen in case of prefix truncation. In the second case, we
+    // want to find the first segment ahead of the start_offset.
+    if (it == set.end() && start_offset < plog->offsets().start_offset) {
+        it = set.begin();
+    }
+
+    if (it == set.end()) {
+        vlog(
+          archival_log.debug,
+          "Finding next compacted segment for {}: can't find candidate, "
+          "all "
+          "segment offsets are "
+          "less than start_offset: {}",
+          _ntp,
+          start_offset);
+        return {};
+    }
+
+    // it now points to either a real segment containing start_offset or the
+    // first segment ahead of start_offset.
+    const auto& segment = *it;
+
+    // This check may incorrectly fail after a node starts up, because even a
+    // compacted segment will have `finished_self_compaction()` to false by
+    // default. The first invocation of housekeeping scan by log manager will
+    // mark all compacted segments as `finished_self_compaction()`, by checking
+    // `.compaction_index` file state.
+    if (segment->finished_self_compaction()) {
+        return {
+          .segment = segment, .ntp_conf = &plog->config(), .forced = false};
+    }
+
+    // The segment we found is non-compacted. We will not find any compacted
+    // segments after a non-compacted segment, so we can stop the search.
+    vlog(
+      archival_log.debug,
+      "Finding next compacted segment for {}: no compacted "
+      "segments after start_offset: {}",
+      _ntp,
+      start_offset);
+    return {};
+}
+
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
@@ -85,11 +168,8 @@ archival_policy::lookup_result archival_policy::find_segment(
       "Upload policy for {} invoked, start offset: {}",
       _ntp,
       start_offset);
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get_impl());
-    // NOTE: we need to break encapsulation here to access underlying
-    // implementation because upload policy and archival subsystem needs to
-    // access individual log segments (disk backed).
-    if (plog == nullptr || plog->segment_count() == 0) {
+    auto maybe_plog = get_concrete_log_impl(std::move(log));
+    if (!maybe_plog) {
         vlog(
           archival_log.debug,
           "Upload policy for {}: can't find candidate, no segments or "
@@ -97,6 +177,8 @@ archival_policy::lookup_result archival_policy::find_segment(
           _ntp);
         return {};
     }
+
+    auto plog = maybe_plog.value();
     const auto& set = plog->segments();
 
     const auto& ntp_conf = plog->config();
@@ -454,28 +536,40 @@ ss::future<upload_candidate> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   storage::log log,
-  const storage::offset_translator_state& ot_state) {
+  const storage::offset_translator_state& ot_state,
+  search_for_compacted_segments search_compacted) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
-    auto [segment, ntp_conf, forced] = find_segment(
-      begin_inclusive, adjusted_lso, std::move(log), ot_state);
-    if (segment.get() == nullptr || ntp_conf == nullptr) {
+
+    lookup_result result;
+    std::optional<model::offset> last;
+    if (search_compacted) {
+        result = find_compacted_segment(begin_inclusive, std::move(log));
+    } else {
+        result = find_segment(
+          begin_inclusive, adjusted_lso, std::move(log), ot_state);
+        // We need to adjust LSO since it points to the first
+        // recordbatch with uncommitted transactions data
+        if (result.forced) {
+            last = adjusted_lso;
+        }
+    }
+
+    if (result.segment.get() == nullptr || result.ntp_conf == nullptr) {
         co_return upload_candidate{};
     }
-    // We need to adjust LSO since it points to the first
-    // recordbatch with uncommitted transactions data
-    auto last = forced ? std::make_optional(adjusted_lso) : std::nullopt;
+
     vlog(
       archival_log.debug,
       "Upload policy for {}, creating upload candidate: start_offset {}, "
       "segment offsets {}, adjusted LSO {}",
       _ntp,
       begin_inclusive,
-      segment->offsets(),
+      result.segment->offsets(),
       adjusted_lso);
     auto upload = co_await create_upload_candidate(
-      begin_inclusive, last, segment, ntp_conf, _io_priority);
+      begin_inclusive, last, result.segment, result.ntp_conf, _io_priority);
     if (upload.content_length == 0) {
         co_return upload_candidate{};
     }
