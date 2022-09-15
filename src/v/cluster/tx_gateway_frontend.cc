@@ -539,6 +539,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           tx_id, transaction_timeout_ms, timeout, expected_pid);
     }
 
+    // Kafka does not dispatch this request. So we should delete this logic in
+    // future TODO: https://github.com/redpanda-data/redpanda/issues/6418
+    co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
+
     vlog(
       txlog.trace,
       "dispatching name:init_tm_tx, tx_id:{}, from:{}, to:{}",
