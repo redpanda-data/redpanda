@@ -373,6 +373,10 @@ public:
      */
     void unblock_new_leadership() { _node_priority_override.reset(); }
 
+    ss::future<> force_flush() {
+        return _op_lock.with([this] { return flush_log(); });
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

@@ -417,6 +417,7 @@ ss::future<bool> rm_stm::wait_end_offset(
             co_return false;
         }
 
+        co_await _c->force_flush();
         auto res = co_await _c->linearizable_barrier(
           raft::append_entries_request::flush_after_append::yes);
         if (res.has_error()) {
