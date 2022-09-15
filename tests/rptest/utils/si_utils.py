@@ -4,7 +4,7 @@ import pprint
 import random
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence
+from typing import Sequence, Optional
 
 import confluent_kafka
 import xxhash
@@ -214,12 +214,14 @@ def gen_manifest_path(ntp, rev):
     return f"{hash}/meta/{path}/manifest.json"
 
 
-def _gen_segment_path(ntp, rev, name):
+def gen_segment_path(ntp: NTP, revision: int, name: str,
+                     archiver_term: Optional[int]) -> str:
     x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}/{name}"
+    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{revision}/{name}"
     x.update(path.encode('ascii'))
-    hash = x.hexdigest()
-    return f"{hash}/{path}"
+    if archiver_term is not None:
+        return f'{x.intdigest():08x}/{path}.{archiver_term}'
+    return f'{x.intdigest():08x}/{path}'
 
 
 def get_on_disk_size_per_ntp(chk):
