@@ -17,28 +17,11 @@ jobs:
     name: Update Homebrew
     runs-on: ubuntu-latest
     steps:
-    - name: Get the version
-      id: get_version
-      run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-
     - name: Update the amd64 homebrew tap
-      if: contains(steps.get_version.outputs.VERSION, '-beta') == false
-      uses: mislav/bump-homebrew-formula-action@v1.8
+      uses: mislav/bump-homebrew-formula-action@v2
       with:
         formula-name: redpanda
-        homebrew-tap: vectorizedio/homebrew-tap
-        base-branch: main
-        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-amd64.zip
+        homebrew-tap: ${{ github.repository_owner }}/homebrew-tap
+        download-url: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rpk-darwin-amd64.zip
       env:
-        COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
-
-    - name: Update the arm64 homebrew tap
-      if: contains(steps.get_version.outputs.VERSION, '-beta') == false
-      uses: mislav/bump-homebrew-formula-action@v1.8
-      with:
-        formula-name: redpanda
-        homebrew-tap: vectorizedio/homebrew-tap
-        base-branch: main
-        download-url: https://github.com/redpanda-data/redpanda/releases/download/${{ steps.get_version.outputs.VERSION }}/rpk-darwin-arm64.zip
-      env:
-        COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
+        COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_COMMITTER_TOKEN }}
