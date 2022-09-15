@@ -101,7 +101,7 @@ archival_policy::lookup_result archival_policy::find_segment(
 
     const auto& ntp_conf = plog->config();
     auto it = set.lower_bound(start_offset);
-    if (it == set.end() || (*it)->is_compacted_segment()) {
+    if (it == set.end() || (*it)->finished_self_compaction()) {
         // Skip forward if we hit a gap or compacted segment
         for (auto i = set.begin(); i != set.end(); i++) {
             const auto& sg = *i;

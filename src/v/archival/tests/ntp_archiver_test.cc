@@ -231,6 +231,60 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload5.source.get() == nullptr);
 }
 
+FIXTURE_TEST(
+  test_archival_policy_search_when_a_segment_is_compacted, archiver_fixture) {
+    model::offset lso{9999};
+
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset{0}, model::term_id(1)},
+      {manifest_ntp, model::offset{1000}, model::term_id(1)},
+    };
+
+    storage::ntp_config::default_overrides o;
+    o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+
+    init_storage_api_local(segments, o);
+    auto& lm = get_local_storage_api().log_mgr();
+
+    log_segment_set(lm);
+
+    auto log = lm.get(manifest_ntp);
+    BOOST_REQUIRE(log);
+
+    ss::abort_source as{};
+    log
+      ->compact(storage::compaction_config(
+        model::timestamp::now(),
+        std::nullopt,
+        model::offset::max(),
+        ss::default_priority_class(),
+        as))
+      .get0();
+
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+
+    auto seg = plog->segments().begin();
+
+    BOOST_REQUIRE((*seg)->finished_self_compaction());
+
+    auto partition = app.partition_manager.local().get(manifest_ntp);
+    BOOST_REQUIRE(partition);
+
+    auto candidate = archival::archival_policy{manifest_ntp}
+                       .get_next_candidate(
+                         model::offset(0),
+                         lso,
+                         *log,
+                         *partition->get_offset_translator_state())
+                       .get();
+
+    // The search is expected to find the next segment after the compacted
+    // segment, skipping the compacted one.
+    BOOST_REQUIRE_NE(candidate.source.get(), nullptr);
+    BOOST_REQUIRE_GT(candidate.starting_offset(), 0);
+    BOOST_REQUIRE_GT(candidate.source->offsets().base_offset, model::offset{0});
+}
+
 // NOLINTNEXTLINE
 SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     storage::disk_log_builder b;
