@@ -61,12 +61,7 @@ public:
       std::optional<YAML::Node> schema_reg_client_cfg = std::nullopt,
       std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
-    void configure_admin_server();
-    void wire_up_services();
-    void wire_up_redpanda_services();
-    void start(::stop_signal&);
-    void start_redpanda(::stop_signal&);
-    void start_kafka(::stop_signal&);
+    void wire_up_and_start(::stop_signal&);
 
     explicit application(ss::sstring = "redpanda::main");
     ~application();
@@ -112,6 +107,12 @@ public:
 private:
     using deferred_actions
       = std::vector<ss::deferred_action<std::function<void()>>>;
+
+    void configure_admin_server();
+    void wire_up_services();
+    void wire_up_redpanda_services();
+    void start_redpanda(::stop_signal&);
+    void start_kafka(::stop_signal&);
 
     // All methods are calleds from Seastar thread
     ss::app_template::config setup_app_config();
