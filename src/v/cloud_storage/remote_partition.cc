@@ -140,6 +140,7 @@ public:
 
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
+        std::exception_ptr unknown_exception_ptr = nullptr;
         try {
             if (is_end_of_stream()) {
                 vlog(
@@ -195,11 +196,19 @@ public:
               _ctxlog.warn,
               "exception thrown while reading from remote_partition: {}",
               e.what());
-            _it = _end;
-            _reader = {};
-
-            throw;
+            unknown_exception_ptr = std::current_exception();
         }
+
+        // The reader may have been left in an indeterminate state.
+        // Re-set the pointer to it to ensure that it will not be reused.
+        if (unknown_exception_ptr) {
+            if (_reader) {
+                co_await set_end_of_stream();
+            }
+
+            std::rethrow_exception(unknown_exception_ptr);
+        }
+
         vlog(
           _ctxlog.debug,
           "EOS reached, reader available: {}, is end of stream: {}",
