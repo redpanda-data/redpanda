@@ -35,10 +35,10 @@ public:
      * Exception used to indicate an aborted wait, either from a requested abort
      * via an abort source or because a timeout occurred.
      */
-    class wait_aborted final : public std::exception {
+    class wait_timed_out final : public std::exception {
     public:
         virtual const char* what() const noexcept final {
-            return "offset monitor wait aborted";
+            return "offset monitor wait timed out";
         }
     };
 
@@ -78,7 +78,7 @@ private:
           model::timeout_clock::time_point,
           std::optional<std::reference_wrapper<ss::abort_source>>);
 
-        void handle_abort();
+        void handle_abort(bool is_timeout);
     };
 
     friend waiter;
