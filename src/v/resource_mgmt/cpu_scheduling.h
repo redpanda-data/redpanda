@@ -36,6 +36,7 @@ public:
           "raft_learner_recovery", 50);
         _archival_upload = co_await ss::create_scheduling_group(
           "archival_upload", 100);
+        _node_status = co_await ss::create_scheduling_group("node_status", 50);
     }
 
     ss::future<> destroy_groups() {
@@ -48,6 +49,7 @@ public:
         co_await destroy_scheduling_group(_compaction);
         co_await destroy_scheduling_group(_raft_learner_recovery);
         co_await destroy_scheduling_group(_archival_upload);
+        co_await destroy_scheduling_group(_node_status);
         co_return;
     }
 
@@ -64,6 +66,7 @@ public:
         return _raft_learner_recovery;
     }
     ss::scheduling_group archival_upload() { return _archival_upload; }
+    ss::scheduling_group node_status() { return _node_status; }
 
     std::vector<std::reference_wrapper<const ss::scheduling_group>>
     all_scheduling_groups() const {
@@ -77,7 +80,9 @@ public:
           std::cref(_cache_background_reclaim),
           std::cref(_compaction),
           std::cref(_raft_learner_recovery),
-          std::cref(_archival_upload)};
+          std::cref(_archival_upload),
+          std::cref(_node_status),
+        };
     }
 
 private:
@@ -92,4 +97,5 @@ private:
     ss::scheduling_group _compaction;
     ss::scheduling_group _raft_learner_recovery;
     ss::scheduling_group _archival_upload;
+    ss::scheduling_group _node_status;
 };
