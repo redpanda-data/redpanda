@@ -24,6 +24,7 @@
 #include "test_utils/async.h"
 #include "test_utils/http_imposter.h"
 
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -33,13 +34,24 @@
 
 using namespace std::chrono_literals;
 
-struct archival_metadata_stm_fixture
+struct archival_metadata_stm_base_fixture
   : mux_state_machine_fixture
   , http_imposter_fixture {
     using mux_state_machine_fixture::start_raft;
     using mux_state_machine_fixture::wait_for_becoming_leader;
     using mux_state_machine_fixture::wait_for_confirmed_leader;
-    using mux_state_machine_fixture::wait_for_meta_initialized;
+
+    archival_metadata_stm_base_fixture(
+      const archival_metadata_stm_base_fixture&)
+      = delete;
+    archival_metadata_stm_base_fixture&
+    operator=(const archival_metadata_stm_base_fixture&)
+      = delete;
+    archival_metadata_stm_base_fixture(archival_metadata_stm_base_fixture&&)
+      = delete;
+    archival_metadata_stm_base_fixture&
+    operator=(archival_metadata_stm_base_fixture&&)
+      = delete;
 
     static s3::configuration get_s3_configuration() {
         net::unresolved_address server_addr(
@@ -58,7 +70,7 @@ struct archival_metadata_stm_fixture
         return conf;
     }
 
-    archival_metadata_stm_fixture() {
+    archival_metadata_stm_base_fixture() {
         // Cloud storage config
         cloud_cfg.start().get();
         cloud_cfg
@@ -75,7 +87,20 @@ struct archival_metadata_stm_fixture
         cloud_api
           .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
           .get();
+    }
 
+    ~archival_metadata_stm_base_fixture() override {
+        cloud_api.stop().get();
+        cloud_cfg.stop().get();
+    }
+
+    ss::sharded<cloud_storage::configuration> cloud_cfg;
+    ss::sharded<cloud_storage::remote> cloud_api;
+    ss::logger logger{"archival_metadata_stm_test"};
+};
+
+struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
+    archival_metadata_stm_fixture() {
         // Archival metadata STM
         start_raft();
         archival_stm = std::make_unique<cluster::archival_metadata_stm>(
@@ -84,16 +109,9 @@ struct archival_metadata_stm_fixture
         archival_stm->start().get();
     }
 
-    ~archival_metadata_stm_fixture() {
-        archival_stm->stop().get();
-        cloud_api.stop().get();
-        cloud_cfg.stop().get();
-    }
+    ~archival_metadata_stm_fixture() override { archival_stm->stop().get(); }
 
-    ss::sharded<cloud_storage::configuration> cloud_cfg;
-    ss::sharded<cloud_storage::remote> cloud_api;
     std::unique_ptr<cluster::archival_metadata_stm> archival_stm;
-    ss::logger logger{"archival_metadata_stm_test"};
 };
 
 using cloud_storage::partition_manifest;
@@ -162,6 +180,48 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
 }
 
+FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
+    start_raft();
+    auto& ntp_cfg = _raft->log_config();
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("100-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(100),
+        .committed_offset = model::offset(199),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .is_compacted = true,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v2,
+      });
+
+    cluster::archival_metadata_stm::make_snapshot(
+      ntp_cfg, m, model::offset{0}, model::offset{10})
+      .get();
+
+    cluster::archival_metadata_stm archival_stm(
+      _raft.get(), cloud_api.local(), logger);
+
+    archival_stm.start().get();
+    wait_for_confirmed_leader();
+
+    BOOST_REQUIRE(archival_stm.manifest() == m);
+    BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{10});
+}
+
 FIXTURE_TEST(
   test_archival_stm_segment_truncate, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
@@ -225,4 +285,124 @@ FIXTURE_TEST(
         BOOST_REQUIRE(m.get(name) != nullptr);
         BOOST_REQUIRE(it == *m.get(name));
     }
+}
+
+namespace old {
+
+using namespace cluster;
+
+struct segment
+  : public serde::
+      envelope<segment, serde::version<0>, serde::compat_version<0>> {
+    // ntp_revision is needed to reconstruct full remote path of
+    // the segment. Deprecated because ntp_revision is now part of
+    // segment_meta.
+    model::initial_revision_id ntp_revision_deprecated;
+    cloud_storage::segment_name name;
+    cloud_storage::partition_manifest::segment_meta meta;
+};
+
+struct snapshot
+  : public serde::
+      envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
+    /// List of segments
+    std::vector<segment> segments;
+};
+
+} // namespace old
+
+std::vector<old::segment>
+old_segments_from_manifest(const cloud_storage::partition_manifest& m) {
+    std::vector<old::segment> segments;
+    segments.reserve(m.size() + m.size());
+
+    for (auto [key, meta] : m) {
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = m.get_revision_id();
+        }
+        auto name = cloud_storage::generate_local_segment_name(
+          key.base_offset, key.term);
+        segments.push_back(old::segment{
+          .ntp_revision_deprecated = meta.ntp_revision,
+          .name = std::move(name),
+          .meta = meta});
+    }
+
+    std::sort(
+      segments.begin(), segments.end(), [](const auto& s1, const auto& s2) {
+          return s1.meta.base_offset < s2.meta.base_offset;
+      });
+
+    return segments;
+}
+
+namespace cluster::details {
+class archival_metadata_stm_accessor {
+public:
+    static ss::future<> persist_snapshot(
+      storage::simple_snapshot_manager& mgr, cluster::stm_snapshot&& snapshot) {
+        return archival_metadata_stm::persist_snapshot(
+          mgr, std::move(snapshot));
+    }
+};
+} // namespace cluster::details
+
+ss::future<> make_old_snapshot(
+  const storage::ntp_config& ntp_cfg,
+  const cloud_storage::partition_manifest& m,
+  model::offset insync_offset) {
+    // Create archival_stm_snapshot
+    auto segments = old_segments_from_manifest(m);
+    iobuf snap_data = serde::to_iobuf(
+      old::snapshot{.segments = std::move(segments)});
+
+    auto snapshot = cluster::stm_snapshot::create(
+      0, insync_offset, std::move(snap_data));
+
+    storage::simple_snapshot_manager tmp_snapshot_mgr(
+      std::filesystem::path(ntp_cfg.work_directory()),
+      "archival_metadata.snapshot",
+      ss::default_priority_class());
+
+    co_await cluster::details::archival_metadata_stm_accessor::persist_snapshot(
+      tmp_snapshot_mgr, std::move(snapshot));
+}
+
+FIXTURE_TEST(
+  test_archival_metadata_stm_snapshot_version_compatibility,
+  archival_metadata_stm_base_fixture) {
+    start_raft();
+    auto& ntp_cfg = _raft->log_config();
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("100-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(100),
+        .committed_offset = model::offset(199),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("200-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(200),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+      });
+
+    make_old_snapshot(ntp_cfg, m, model::offset{0}).get();
+
+    cluster::archival_metadata_stm archival_stm(
+      _raft.get(), cloud_api.local(), logger);
+
+    archival_stm.start().get();
+    wait_for_confirmed_leader();
+
+    BOOST_REQUIRE(archival_stm.manifest() == m);
 }
