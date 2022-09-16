@@ -753,3 +753,7 @@ class Admin:
                              "cluster/partition_balancer/status",
                              node=node,
                              **kwargs).json()
+
+    def get_peer_status(self, node, peer_id):
+        return self._request("GET", f"debug/peer_status/{peer_id}",
+                             node=node).json()
