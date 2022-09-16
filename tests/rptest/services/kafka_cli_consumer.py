@@ -26,7 +26,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                  isolation_level=None,
                  from_beginning=False,
                  consumer_properties={},
-                 formatter_properties={}):
+                 formatter_properties={},
+                 instance_name=None):
         super(KafkaCliConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -39,6 +40,7 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._formatter_properties = formatter_properties
         self._stopping = threading.Event()
         self._done = None
+        self._instance_name = "cli-consumer" if instance_name is None else instance_name
         assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
         self._cli = KafkaCliTools(self._redpanda)
@@ -73,7 +75,9 @@ class KafkaCliConsumer(BackgroundThreadService):
 
             for line in node.account.ssh_capture(' '.join(cmd)):
                 line.strip()
-                self.logger.debug(f"consumed: '{line}'")
+                line = line.replace("\n", "")
+                self.logger.debug(
+                    f"[{self._instance_name}] consumed: '{line}'")
                 self._messages.append(line)
         except:
             if self._stopping.is_set():

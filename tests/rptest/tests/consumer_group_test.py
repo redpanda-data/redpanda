@@ -43,6 +43,7 @@ class ConsumerGroupTest(RedpandaTest):
     def create_consumer(self,
                         topic,
                         group,
+                        instance_name,
                         instance_id=None,
                         consumer_properties={}):
         return KafkaCliConsumer(
@@ -51,6 +52,7 @@ class ConsumerGroupTest(RedpandaTest):
             topic=topic,
             group=group,
             from_beginning=True,
+            instance_name=instance_name,
             formatter_properties={
                 'print.value': 'false',
                 'print.key': 'false',
@@ -74,6 +76,7 @@ class ConsumerGroupTest(RedpandaTest):
                 self.create_consumer(topic,
                                      group=group,
                                      instance_id=instance_id,
+                                     instance_name=f"cli-consumer-{i}",
                                      consumer_properties=consumer_properties))
 
         for c in consumers:
@@ -147,10 +150,15 @@ class ConsumerGroupTest(RedpandaTest):
         group = 'test-gr-1'
         consumers = []
         consumers.append(
-            self.create_consumer(self.topic_spec.name, group,
-                                 "panda-instance"))
+            self.create_consumer(topic=self.topic_spec.name,
+                                 group=group,
+                                 instance_name="static-consumer",
+                                 instance_id="panda-instance"))
         consumers.append(
-            self.create_consumer(self.topic_spec.name, group, None))
+            self.create_consumer(topic=self.topic_spec.name,
+                                 group=group,
+                                 instance_name="dynamic-consumer",
+                                 instance_id=None))
 
         for c in consumers:
             c.start()
