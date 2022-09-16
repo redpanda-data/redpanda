@@ -1,0 +1,14 @@
+{
+    "namespace": "cluster",
+    "service_name": "node_status_rpc",
+    "includes": [
+        "cluster/node_status_rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "node_status",
+            "input_type": "node_status_request",
+            "output_type": "node_status_reply"
+        }
+    ]
+}
