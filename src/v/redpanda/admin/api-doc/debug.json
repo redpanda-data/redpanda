@@ -39,6 +39,28 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/peer_status/{id}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get peer status",
+                    "type": "peer_status",
+                    "nickname": "get_peer_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -77,6 +99,16 @@
                 "partition_revision": {
                     "type": "long",
                     "description": "partition revision"
+                }
+            }
+        },
+        "peer_status": {
+            "id": "peer_status",
+            "description": "Peer status",
+            "properties": {
+                "since_last_status": {
+                    "type": "long",
+                    "description": "Milliseconds since last update from peer"
                 }
             }
         }
