@@ -170,12 +170,12 @@ static heartbeat_requests requests_for_range(
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type interval,
+  config::binding<std::chrono::milliseconds> interval,
   consensus_client_protocol proto,
   model::node_id self,
-  duration_type heartbeat_timeout)
-  : _heartbeat_interval(interval)
-  , _heartbeat_timeout(heartbeat_timeout)
+  config::binding<std::chrono::milliseconds> heartbeat_timeout)
+  : _heartbeat_interval(std::move(interval))
+  , _heartbeat_timeout(std::move(heartbeat_timeout))
   , _client_protocol(std::move(proto))
   , _self(self) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
@@ -201,7 +201,7 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
 }
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
-    auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval);
+    auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval());
 
     for (const auto& node_id : reqs.reconnect_nodes) {
         if (co_await _client_protocol.ensure_disconnect(node_id)) {
@@ -244,7 +244,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
                  r.target,
                  std::move(r.request),
                  rpc::client_opts(
-                   clock_type::now() + _heartbeat_timeout,
+                   clock_type::now() + _heartbeat_timeout(),
                    rpc::compression_type::zstd,
                    512))
                .then([node = r.target,
@@ -396,7 +396,7 @@ ss::future<> heartbeat_manager::stop() {
 }
 
 clock_type::time_point heartbeat_manager::next_heartbeat_timeout() {
-    return clock_type::now() + _heartbeat_interval;
+    return clock_type::now() + _heartbeat_interval();
 }
 
 } // namespace raft

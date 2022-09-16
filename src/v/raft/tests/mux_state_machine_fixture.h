@@ -61,10 +61,16 @@ struct mux_state_machine_fixture {
         _group_mgr
           .start(
             _self,
-            30s,
             ss::default_scheduling_group(),
-            std::chrono::milliseconds(100),
-            std::chrono::milliseconds(2000),
+            [] {
+                return raft::group_manager::configuration{
+                  .heartbeat_interval
+                  = config::mock_binding<std::chrono::milliseconds>(100ms),
+                  .heartbeat_timeout
+                  = config::mock_binding<std::chrono::milliseconds>(2000ms),
+                  .raft_io_timeout_ms = 30s,
+                };
+            },
             [] {
                 return raft::recovery_memory_quota::configuration{
                   .max_recovery_memory

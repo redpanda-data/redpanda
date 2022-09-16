@@ -112,10 +112,12 @@ public:
                 storage::debug_sanitize_files::yes);
           })
       , _hbeats(
-          raft_heartbeat_interval,
+          config::mock_binding<std::chrono::milliseconds>(
+            std::chrono::milliseconds(raft_heartbeat_interval)),
           _consensus_client_protocol,
           self,
-          raft_heartbeat_interval * 20)
+          config::mock_binding<std::chrono::milliseconds>(
+            raft_heartbeat_interval * 20))
       , _recovery_memory_quota([] {
           return raft::recovery_memory_quota::configuration{
             .max_recovery_memory = config::mock_binding<std::optional<size_t>>(

@@ -121,10 +121,10 @@ public:
     };
 
     heartbeat_manager(
-      duration_type interval,
+      config::binding<std::chrono::milliseconds>,
       consensus_client_protocol,
       model::node_id,
-      duration_type);
+      config::binding<std::chrono::milliseconds>);
 
     ss::future<> register_group(ss::lw_shared_ptr<consensus>);
     ss::future<> deregister_group(raft::group_id);
@@ -162,8 +162,8 @@ private:
 
     mutex _lock;
     clock_type::time_point _hbeat = clock_type::now();
-    duration_type _heartbeat_interval;
-    duration_type _heartbeat_timeout;
+    config::binding<std::chrono::milliseconds> _heartbeat_interval;
+    config::binding<std::chrono::milliseconds> _heartbeat_timeout;
     timer_type _heartbeat_timer;
     /// \brief used to wait for background ops before shutting down
     ss::gate _bghbeats;

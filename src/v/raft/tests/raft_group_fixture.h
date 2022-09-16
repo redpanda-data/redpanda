@@ -57,7 +57,7 @@ inline ss::logger tstlog("raft_test");
 
 using namespace std::chrono_literals; // NOLINT
 
-inline static auto heartbeat_interval = 40ms;
+inline static std::chrono::milliseconds heartbeat_interval = 40ms;
 inline static const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
 
@@ -209,10 +209,12 @@ struct raft_node {
           .get0();
         server.invoke_on_all(&net::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
-          heartbeat_interval,
+          config::mock_binding<std::chrono::milliseconds>(
+            std::chrono::milliseconds(heartbeat_interval)),
           raft::make_rpc_client_protocol(broker.id(), cache),
           broker.id(),
-          heartbeat_interval * 20);
+          config::mock_binding<std::chrono::milliseconds>(
+            heartbeat_interval * 20));
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;
