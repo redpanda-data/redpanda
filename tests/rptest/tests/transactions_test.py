@@ -260,6 +260,45 @@ class TransactionsTest(RedpandaTest):
 
 
 class UpgradeTransactionTest(RedpandaTest):
+    def consume(self, consumer, max_records=10, timeout_s=2):
+        def consume_records():
+            records = consumer.consume(max_records, timeout_s)
+
+            if records:
+                return True, records
+            else:
+                False
+
+        return wait_until_result(consume_records,
+                                 timeout_sec=30,
+                                 backoff_sec=2,
+                                 err_msg="Can not consume data")
+
+    def check_consume(self, topic_name, max_tx):
+        consumer = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': f"consumer-{uuid.uuid4()}",
+            'auto.offset.reset': 'earliest',
+        })
+
+        consumer.subscribe([topic_name])
+
+        num_consumed = 0
+        prev_rec = bytes("0", 'UTF-8')
+
+        while num_consumed < max_tx:
+            self.redpanda.logger.debug(
+                f"Consumed {num_consumed}. Should consume at the end {max_tx}")
+            records = self.consume(consumer)
+
+            for record in records:
+                assert prev_rec == record.key()
+                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
+
+            num_consumed += len(records)
+
+        assert num_consumed == max_tx
+
     @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def check_parsing_test(self):
         self.redpanda = RedpandaService(
@@ -298,32 +337,15 @@ class UpgradeTransactionTest(RedpandaTest):
             producer.begin_transaction()
             producer.produce(topic_name, str(i), str(i), 0, on_del)
             producer.commit_transaction()
+        producer.flush()
+
+        self.check_consume(topic_name, max_tx)
 
         self.redpanda.set_environment({"__REDPANDA_LOGICAL_VERSION": 6})
         for n in self.redpanda.nodes:
             self.redpanda.restart_nodes(n, stop_timeout=60)
 
-        consumer = ck.Consumer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'group.id': "test",
-            'auto.offset.reset': 'earliest',
-        })
-
-        consumer.subscribe([topic_name])
-
-        num_consumed = 0
-        prev_rec = bytes("0", 'UTF-8')
-
-        while num_consumed != max_tx:
-            max_records = 10
-            timeout = 10
-            records = consumer.consume(max_records, timeout)
-
-            for record in records:
-                assert prev_rec == record.key()
-                prev_rec = bytes(str(int(prev_rec) + 1), 'UTF-8')
-
-            num_consumed += len(records)
+        self.check_consume(topic_name, max_tx)
 
 
 class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
