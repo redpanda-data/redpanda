@@ -30,7 +30,7 @@
     "mocha": "7.1.1",
     "prettier": "2.3.0",
     "rewire": "5.0.0",
-    "ts-loader": "^8.0.4",
+    "ts-loader": "^8.4.0",
     "ts-node": "^9.0.0",
     "typescript": "3.9.6",
     "webpack": "5.33.2",
