@@ -11,6 +11,7 @@ import http.client
 import json
 import uuid
 import requests
+import base64
 from rptest.services.cluster import cluster
 from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
@@ -19,7 +20,8 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, RedpandaService
+from rptest.services.admin import Admin
 
 
 def create_topic_names(count):
@@ -853,6 +855,61 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info("Remove consumer")
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
+
+
+class PandaProxyBasicAuthTest(RedpandaTest):
+    password = 'simple'
+    algorithm = 'SCRAM-SHA-256'
+
+    def __init__(self, context):
+        extra_rp_conf = dict(auto_create_topics_enabled=False, )
+
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.pp_authn_type = 'http_basic'
+
+        super(PandaProxyBasicAuthTest,
+              self).__init__(context,
+                             num_brokers=3,
+                             enable_pp=True,
+                             security=security,
+                             extra_rp_conf=extra_rp_conf)
+
+        self.admin = Admin(self.redpanda)
+
+        http.client.HTTPConnection.debuglevel = 1
+        http.client.print = lambda *args: self.logger.debug(" ".join(args))
+
+    def _base_uri(self):
+        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
+
+    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
+        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
+
+    def encode_base64(self, username: str, password: str):
+        msg = f'{username}:{password}'
+        # The decode at the end removes bytes type
+        return base64.b64encode(msg.encode('ascii')).decode()
+
+    @cluster(num_nodes=3)
+    def test_basic_auth(self):
+        # Base user has no access to Kafka API
+        headers = {
+            "authorization":
+            "Basic " + self.encode_base64("base", self.password)
+        }
+        brokers = self._get_brokers(headers=headers).json()
+        assert brokers['error_code'] == 40002
+
+        # Super user has full access to Kafka API
+        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        headers = {
+            "authorization": "Basic " + self.encode_base64(username, password)
+        }
+        brokers = self._get_brokers(headers=headers).json()
+        brokers['brokers'].sort()
+        assert brokers['brokers'] == [1, 2, 3]
 
 
 class PandaProxySASLTest(RedpandaTest):
