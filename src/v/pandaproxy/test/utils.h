@@ -11,10 +11,12 @@
 
 #pragma once
 
+#include "net/unresolved_address.h"
 #include "pandaproxy/json/types.h"
 
 #include <boost/beast/core/string_type.hpp>
 #include <http/client.h>
+#include <fmt/format.h>
 
 using serialization_format = pandaproxy::json::serialization_format;
 
@@ -40,12 +42,14 @@ inline boost::beast::string_view to_header_value(serialization_format fmt) {
 }
 
 inline http::client::request_header make_header(
+  boost::beast::string_view host,
   boost::beast::http::verb method,
   boost::beast::string_view target,
   iobuf const& body,
   serialization_format content,
   serialization_format accept) {
     http::client::request_header hdr;
+    hdr.set(boost::beast::http::field::host, host);
     hdr.method(method);
     hdr.target(target);
     hdr.insert(
@@ -61,14 +65,24 @@ inline http::client::request_header make_header(
     return hdr;
 }
 
+// TODO(@NyaliaLui): Update boost::beast because
+// this to_string_view is defined in latest version
+// https://github.com/boostorg/beast/blob/master/include/boost/beast/core/string_type.hpp
+inline boost::beast::string_view to_string_view(const ss::sstring& s)
+{
+    return boost::beast::string_view(s.data(), s.size());
+}
+
 inline consumed_response do_request(
   http::client& client,
+  net::unresolved_address& host,
   boost::beast::http::verb method,
   boost::beast::string_view target,
   iobuf&& body,
   serialization_format content,
   serialization_format accept) {
-    auto hdr = make_header(method, target, body, content, accept);
+    ss::sstring _host{fmt::format("{}:{}", host.host(), host.port())};
+    auto hdr = make_header(to_string_view(_host), method, target, body, content, accept);
     auto [req, res] = client.make_request(std::move(hdr)).get();
     req->send_some(std::move(body)).get();
     req->send_eof().get();
@@ -79,19 +93,21 @@ inline consumed_response do_request(
 
 inline consumed_response http_request(
   http::client& client,
+  net::unresolved_address& host,
   boost::beast::string_view target,
   boost::beast::http::verb method = boost::beast::http::verb::get,
   serialization_format content = serialization_format::none,
   serialization_format accept = serialization_format::none) {
-    return do_request(client, method, target, iobuf(), content, accept);
+    return do_request(client, host, method, target, iobuf(), content, accept);
 }
 
 inline consumed_response http_request(
   http::client& client,
+  net::unresolved_address& host,
   boost::beast::string_view target,
   iobuf&& body,
   boost::beast::http::verb method = boost::beast::http::verb::post,
   serialization_format content = serialization_format::none,
   serialization_format accept = serialization_format::none) {
-    return do_request(client, method, target, std::move(body), content, accept);
+    return do_request(client, host, method, target, std::move(body), content, accept);
 }

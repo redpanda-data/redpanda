@@ -33,9 +33,10 @@ inline iobuf make_body(const ss::sstring& body) {
 }
 
 inline auto post_schema(
-  http::client& client, const pps::subject& sub, const ss::sstring& payload) {
+  http::client& client, net::unresolved_address& host, const pps::subject& sub, const ss::sstring& payload) {
     return http_request(
       client,
+      host,
       fmt::format("/subjects/{}/versions", sub()),
       make_body(payload),
       boost::beast::http::verb::post,
@@ -45,10 +46,12 @@ inline auto post_schema(
 
 inline auto delete_subject(
   http::client& client,
+  net::unresolved_address& host,
   const pps::subject& sub,
   pps::permanent_delete del = {}) {
     return http_request(
       client,
+      host,
       fmt::format("/subjects/{}?permanent={}", sub(), del),
       boost::beast::http::verb::delete_,
       ppj::serialization_format::schema_registry_v1_json,
@@ -57,11 +60,13 @@ inline auto delete_subject(
 
 inline auto delete_subject_version(
   http::client& client,
+  net::unresolved_address& host,
   const pps::subject& sub,
   pps::schema_version ver,
   pps::permanent_delete del = {}) {
     return http_request(
       client,
+      host,
       fmt::format("/subjects/{}/versions/{}?permanent={}", sub(), ver(), del),
       boost::beast::http::verb::delete_,
       ppj::serialization_format::schema_registry_v1_json,
@@ -70,10 +75,12 @@ inline auto delete_subject_version(
 
 inline auto get_subject_versions(
   http::client& client,
+  net::unresolved_address& host,
   const pps::subject& sub,
   pps::include_deleted del = {}) {
     return http_request(
       client,
+      host,
       fmt::format("/subjects/{}/versions?deleted={}", sub(), del),
       boost::beast::http::verb::get,
       ppj::serialization_format::schema_registry_v1_json,

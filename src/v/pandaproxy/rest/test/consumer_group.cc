@@ -30,6 +30,7 @@ namespace {
 
 auto get_consumer_offsets(
   http::client& client,
+  net::unresolved_address& host,
   const kafka::group_id& g_id,
   const kafka::member_id& m_id) {
     const ss::sstring get_offsets_body(R"({
@@ -44,6 +45,7 @@ auto get_consumer_offsets(
     body.append(get_offsets_body.data(), get_offsets_body.size());
     auto res = http_request(
       client,
+      host,
       fmt::format("/consumers/{}/instances/{}/offsets", g_id(), m_id()),
       std::move(body),
       boost::beast::http::verb::get,
@@ -77,6 +79,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         req_body_buf.append(req_body.data(), req_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format("/consumers/{}", group_id()),
           std::move(req_body_buf),
           boost::beast::http::verb::post,
@@ -110,7 +113,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
     {
         info("List known topics");
-        auto res = http_request(client, "/topics");
+        auto res = http_request(client, proxy_ep.address, "/topics");
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"(["t"])");
@@ -127,6 +130,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         req_body_buf.append(req_body.data(), req_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format(
             "/consumers/{}/instances/{}/subscription", group_id(), member_id()),
           std::move(req_body_buf),
@@ -160,6 +164,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         body.append(produce_body.data(), produce_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -175,6 +180,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         info("Consume from topic");
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format(
             "/consumers/{}/instances/{}/records?timeout={}&max_bytes={}",
             group_id(),
@@ -193,7 +199,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
     {
         info("Get consumer offsets (expect -1)");
-        auto res = get_consumer_offsets(client, group_id, member_id);
+        auto res = get_consumer_offsets(client, proxy_ep.address, group_id, member_id);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
@@ -216,6 +222,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         body.append(commit_offsets_body.data(), commit_offsets_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format(
             "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
           std::move(body),
@@ -228,7 +235,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
     {
         info("Get consumer offsets (expect 1)");
-        auto res = get_consumer_offsets(client, group_id, member_id);
+        auto res = get_consumer_offsets(client, proxy_ep.address, group_id, member_id);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
@@ -240,6 +247,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         info("Commit all consumer offsets");
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format(
             "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
           boost::beast::http::verb::post,
@@ -251,7 +259,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
     {
         info("Get consumer offsets (expect 2)");
-        auto res = get_consumer_offsets(client, group_id, member_id);
+        auto res = get_consumer_offsets(client, proxy_ep.address, group_id, member_id);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
@@ -263,6 +271,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         info("Remove consumer (expect no_content)");
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
           boost::beast::http::verb::delete_,
           ppj::serialization_format::v2,
@@ -275,6 +284,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         info("Remove consumer (expect not_found)");
         auto res = http_request(
           client,
+          proxy_ep.address,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
           boost::beast::http::verb::delete_,
           ppj::serialization_format::v2,

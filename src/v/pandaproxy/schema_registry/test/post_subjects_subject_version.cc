@@ -59,7 +59,7 @@ FIXTURE_TEST(
     {
         info("Post a schema as key (expect schema_id=1)");
         auto res = post_schema(
-          client, pps::subject{"test-key"}, avro_int_payload);
+          client, schema_reg_ep.address, pps::subject{"test-key"}, avro_int_payload);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
@@ -71,7 +71,7 @@ FIXTURE_TEST(
     {
         info("Repost a schema as key (expect schema_id=1)");
         auto res = post_schema(
-          client, pps::subject{"test-key"}, avro_int_payload);
+          client, schema_reg_ep.address, pps::subject{"test-key"}, avro_int_payload);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
@@ -83,7 +83,7 @@ FIXTURE_TEST(
     {
         info("Repost a schema as value (expect schema_id=1)");
         auto res = post_schema(
-          client, pps::subject{"test-value"}, avro_int_payload);
+          client, schema_reg_ep.address, pps::subject{"test-value"}, avro_int_payload);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
@@ -95,7 +95,7 @@ FIXTURE_TEST(
     {
         info("Post a new schema as key (expect schema_id=2)");
         auto res = post_schema(
-          client, pps::subject{"test-key"}, avro_long_payload);
+          client, schema_reg_ep.address, pps::subject{"test-key"}, avro_long_payload);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
@@ -115,7 +115,7 @@ FIXTURE_TEST(
 
     {
         info("Post an invalid payload");
-        auto res = post_schema(client, pps::subject{"test-key"}, R"(
+        auto res = post_schema(client, schema_reg_ep.address, pps::subject{"test-key"}, R"(
 {
   "schema": "\"int\"",
   "InvalidField": "AVRO"
@@ -139,7 +139,7 @@ FIXTURE_TEST(
 
     {
         info("Post an invalid schema");
-        auto res = post_schema(client, pps::subject{"test-key"}, R"(
+        auto res = post_schema(client, schema_reg_ep.address, pps::subject{"test-key"}, R"(
 {
   "schema": "not_json",
   "schemaType": "AVRO"
@@ -163,7 +163,7 @@ FIXTURE_TEST(
 
     for (auto i = 0; i < 10; ++i) {
         info("Post a schema as key (expect schema_id=1)");
-        auto res = post_schema(client, pps::subject{"test-key"}, R"(
+        auto res = post_schema(client, schema_reg_ep.address, pps::subject{"test-key"}, R"(
 {
   "schema": "syntax = \"proto3\"; message Simple { string i = 1; }",
   "schemaType": "PROTOBUF"
@@ -234,7 +234,7 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post company schema (expect schema_id=1)");
     auto res = post_schema(
-      client, company_req.schema.sub(), ppj::rjson_serialize(company_req));
+      client, schema_reg_ep.address, company_req.schema.sub(), ppj::rjson_serialize(company_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),
@@ -242,7 +242,7 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post employee schema (expect schema_id=2)");
     res = post_schema(
-      client, employee_req.schema.sub(), ppj::rjson_serialize(employee_req));
+      client, schema_reg_ep.address, employee_req.schema.sub(), ppj::rjson_serialize(employee_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),

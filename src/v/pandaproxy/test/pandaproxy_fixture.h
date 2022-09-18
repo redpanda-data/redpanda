@@ -32,15 +32,13 @@ public:
 
     http::client make_proxy_client() {
         net::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = net::unresolved_address{
-          "localhost", proxy_port};
+        transport_cfg.server_addr = proxy_ep.address;
         return http::client(transport_cfg);
     }
 
     http::client make_schema_reg_client() {
         net::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = net::unresolved_address{
-          "localhost", schema_reg_port};
+        transport_cfg.server_addr = schema_reg_ep.address;
         return http::client(transport_cfg);
     }
 

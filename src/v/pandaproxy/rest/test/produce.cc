@@ -73,6 +73,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         body.append(produce_binary_body.data(), produce_binary_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -102,6 +103,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         body.append(produce_binary_body.data(), produce_binary_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -121,6 +123,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         body.append(produce_json_body.data(), produce_json_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,

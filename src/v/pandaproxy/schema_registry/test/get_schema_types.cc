@@ -27,7 +27,7 @@ FIXTURE_TEST(schema_registry_get_schema_types, pandaproxy_test_fixture) {
 
     {
         info("List schema types (no headers)");
-        auto res = http_request(client, "/schemas/types");
+        auto res = http_request(client, schema_reg_ep.address, "/schemas/types");
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"(["PROTOBUF","AVRO"])");
@@ -40,6 +40,7 @@ FIXTURE_TEST(schema_registry_get_schema_types, pandaproxy_test_fixture) {
         info("List schema types (accept schema_registry_json)");
         auto res = http_request(
           client,
+          schema_reg_ep.address,
           "/schemas/types",
           boost::beast::http::verb::get,
           ppj::serialization_format::schema_registry_json,

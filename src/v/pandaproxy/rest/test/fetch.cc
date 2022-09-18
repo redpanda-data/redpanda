@@ -64,6 +64,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics//partitions/0/"
           "records?max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -82,6 +83,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics//partitions/0/"
           "records?offset=0&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -100,6 +102,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t/partitions/0/"
           "records?offset=0&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -126,6 +129,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         body.append(batch_1_body.data(), batch_1_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -143,6 +147,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t/partitions/0/"
           "records?offset=0&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -163,6 +168,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         body.append(batch_2_body.data(), batch_2_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -179,6 +185,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         info("Fetch offset 3 - expect offset 3");
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t/partitions/0/"
           "records?offset=3&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -196,6 +203,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         info("Fetch offset 2 - expect offsets 0-3");
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t/partitions/0/"
           "records?offset=2&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
@@ -249,6 +257,7 @@ FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
         body.append(batch_body.data(), batch_body.size());
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
@@ -265,6 +274,7 @@ FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
         info("Fetch offset 1 as json - expect offsets 0-1");
         auto res = http_request(
           client,
+          proxy_ep.address,
           "/topics/t/partitions/0/"
           "records?offset=1&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,

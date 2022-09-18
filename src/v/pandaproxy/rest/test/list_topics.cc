@@ -29,7 +29,7 @@ FIXTURE_TEST(pandaproxy_list_topics, pandaproxy_test_fixture) {
 
     {
         info("List no topics");
-        auto res = http_request(client, "/topics");
+        auto res = http_request(client, proxy_ep.address, "/topics");
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"([])");
@@ -45,7 +45,7 @@ FIXTURE_TEST(pandaproxy_list_topics, pandaproxy_test_fixture) {
 
     {
         info("List known topics");
-        auto res = http_request(client, "/topics");
+        auto res = http_request(client, proxy_ep.address, "/topics");
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"(["t"])");
