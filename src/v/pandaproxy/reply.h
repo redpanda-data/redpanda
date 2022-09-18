@@ -13,6 +13,7 @@
 
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/exceptions.h"
+#include "pandaproxy/client_cache_error.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -105,6 +106,8 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
         return errored_body(e.code(), e.message());
     } catch (const seastar::httpd::base_exception& e) {
         return errored_body(reply_error_code::kafka_bad_request, e.what());
+    } catch(const client_cache_error& e) {
+        return errored_body(reply_error_code::internal_server_error, e.what());
     } catch (...) {
         vlog(plog.error, "exception_reply: {}", std::current_exception());
         auto ise = make_error_condition(
