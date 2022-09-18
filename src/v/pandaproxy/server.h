@@ -12,8 +12,10 @@
 #pragma once
 
 #include "config/config_store.h"
+#include "config/rest_authn_endpoint.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -44,6 +46,8 @@ public:
         ssx::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
+        credential_t user;
+        config::rest_authn_type authn_type;
     };
 
     struct request_t {
@@ -91,7 +95,7 @@ public:
     void routes(routes_t&& routes);
 
     ss::future<> start(
-      const std::vector<model::broker_endpoint>& endpoints,
+      const std::vector<config::rest_authn_endpoint>& endpoints,
       const std::vector<config::endpoint_tls_config>& endpoints_tls,
       const std::vector<model::broker_endpoint>& advertised);
     ss::future<> stop();

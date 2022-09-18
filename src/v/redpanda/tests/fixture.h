@@ -50,6 +50,7 @@
 class redpanda_thread_fixture {
 public:
     static constexpr const char* rack_name = "i-am-rack";
+    static constexpr const char* host_name = "127.0.0.1";
 
     redpanda_thread_fixture(
       model::node_id node_id,
@@ -63,8 +64,8 @@ public:
       std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown)
       : app(ssx::sformat("redpanda-{}", node_id()))
-      , proxy_port(proxy_port)
-      , schema_reg_port(schema_reg_port)
+      , proxy_ep{.address = net::unresolved_address(host_name, proxy_port)}
+      , schema_reg_ep{.address = net::unresolved_address(host_name, schema_reg_port)}
       , data_dir(std::move(base_dir))
       , remove_on_shutdown(remove_on_shutdown)
       , app_signal(std::make_unique<::stop_signal>()) {
@@ -75,9 +76,9 @@ public:
           coproc_supervisor_port,
           std::move(seed_servers));
         app.initialize(
-          proxy_config(proxy_port),
+          proxy_config(proxy_ep),
           proxy_client_config(kafka_port),
-          schema_reg_config(schema_reg_port),
+          schema_reg_config(schema_reg_ep),
           proxy_client_config(kafka_port),
           sch_groups);
         app.check_environment();
@@ -182,25 +183,24 @@ public:
               std::optional<model::rack_id>(model::rack_id(rack_name)));
             node_config.get("seed_servers").set_value(seed_servers);
             node_config.get("rpc_server")
-              .set_value(net::unresolved_address("127.0.0.1", rpc_port));
+              .set_value(net::unresolved_address(host_name, rpc_port));
             node_config.get("kafka_api")
               .set_value(std::vector<config::broker_authn_endpoint>{
                 config::broker_authn_endpoint{
                   .address = net::unresolved_address(
-                    "127.0.0.1", kafka_port)}});
+                    host_name, kafka_port)}});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
             node_config.get("coproc_supervisor_server")
               .set_value(
-                net::unresolved_address("127.0.0.1", coproc_supervisor_port));
+                net::unresolved_address(host_name, coproc_supervisor_port));
         }).get0();
     }
 
-    YAML::Node proxy_config(uint16_t proxy_port = 8082) {
+    YAML::Node proxy_config(config::rest_authn_endpoint proxy_ep = {.address = net::unresolved_address(host_name, 8082)}) {
         pandaproxy::rest::configuration cfg;
         cfg.get("pandaproxy_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", proxy_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{proxy_ep});
         return to_yaml(cfg, config::redact_secrets::no);
     }
 
@@ -214,11 +214,10 @@ public:
         return to_yaml(cfg, config::redact_secrets::no);
     }
 
-    YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
+    YAML::Node schema_reg_config(config::rest_authn_endpoint schema_reg_ep = {.address = net::unresolved_address(host_name, 8081)}) {
         pandaproxy::schema_registry::configuration cfg;
         cfg.get("schema_registry_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", listen_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{schema_reg_ep});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
         return to_yaml(cfg, config::redact_secrets::no);
@@ -435,8 +434,8 @@ public:
     }
 
     application app;
-    uint16_t proxy_port;
-    uint16_t schema_reg_port;
+    config::rest_authn_endpoint proxy_ep;
+    config::rest_authn_endpoint schema_reg_ep;
     std::filesystem::path data_dir;
     std::unique_ptr<kafka::protocol> proto;
     bool remove_on_shutdown;
