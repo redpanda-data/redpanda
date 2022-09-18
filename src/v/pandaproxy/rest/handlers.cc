@@ -9,6 +9,7 @@
 
 #include "handlers.h"
 
+#include "config/rest_authn_endpoint.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/client/exceptions.h"
@@ -35,6 +36,7 @@
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/sharded_client_cache.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -50,7 +52,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
-#include <algorithm>
 #include <chrono>
 #include <iterator>
 #include <system_error>
@@ -82,28 +83,29 @@ get_brokers(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = false};
     };
     return rq.service()
-      .client()
-      .local()
-      .dispatch(make_metadata_req)
-      .then([res_fmt, rp = std::move(rp)](
-              kafka::metadata_request::api_type::response_type res) mutable {
-          json::get_brokers_res brokers;
-          brokers.ids.reserve(res.data.brokers.size());
+      .client_cache()
+      .fetch_client(rq.ctx.user, rq.ctx.authn_type)
+      .then([make_metadata_req](client_ptr client) mutable {
+          return client->real.dispatch(make_metadata_req);
+        }).then([res_fmt, rp = std::move(rp)](
+                kafka::metadata_request::api_type::response_type res) mutable {
+                  json::get_brokers_res brokers;
+                  brokers.ids.reserve(res.data.brokers.size());
 
-          std::transform(
-            res.data.brokers.begin(),
-            res.data.brokers.end(),
-            std::back_inserter(brokers.ids),
-            [](const kafka::metadata_response::broker& b) {
-                return b.node_id;
-            });
+                  std::transform(
+                    res.data.brokers.begin(),
+                    res.data.brokers.end(),
+                    std::back_inserter(brokers.ids),
+                    [](const kafka::metadata_response::broker& b) {
+                        return b.node_id;
+                    });
 
-          auto json_rslt = ppj::rjson_serialize(brokers);
-          rp.rep->write_body("json", json_rslt);
+                  auto json_rslt = ppj::rjson_serialize(brokers);
+                  rp.rep->write_body("json", json_rslt);
 
-          rp.mime_type = res_fmt;
-          return std::move(rp);
-      });
+                  rp.mime_type = res_fmt;
+                  return std::move(rp);
+              });
 }
 
 ss::future<server::reply_t>
