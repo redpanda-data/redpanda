@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -107,7 +108,12 @@ func executeGrafanaDashboard(metricsEndpoint string) error {
 	if err != nil {
 		return err
 	}
-	dashboard := buildGrafanaDashboard(metricFamilies)
+	metricsURL, err := url.Parse(metricsEndpoint)
+	if err != nil {
+		return err
+	}
+	isPublicMetrics := metricsURL.EscapedPath() == "/public_metrics"
+	dashboard := buildGrafanaDashboard(metricFamilies, isPublicMetrics)
 	jsonSpec, err := json.MarshalIndent(dashboard, "", " ")
 	if err != nil {
 		return err
@@ -124,13 +130,19 @@ func executeGrafanaDashboard(metricsEndpoint string) error {
 
 func buildGrafanaDashboard(
 	metricFamilies map[string]*dto.MetricFamily,
+	isPublicMetrics bool,
 ) graf.Dashboard {
 	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
-	summaryPanels := buildSummary(metricFamilies)
+	var summaryPanels []graf.Panel
+	if isPublicMetrics {
+		summaryPanels = buildPublicMetricsSummary(metricFamilies)
+	} else {
+		summaryPanels = buildSummary(metricFamilies)
+	}
 	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
 	rowSet := newRowSet()
-	rowSet.processRows(metricFamilies)
+	rowSet.processRows(metricFamilies, isPublicMetrics)
 	rowSet.addCachePerformancePanels(metricFamilies)
 	rows := rowSet.finalize(lastY)
 	return graf.Dashboard{
@@ -173,7 +185,7 @@ func (rowSet *RowSet) finalize(fromY int) []graf.Panel {
 	return rows
 }
 
-func (rowSet *RowSet) processRows(metricFamilies map[string]*dto.MetricFamily) {
+func (rowSet *RowSet) processRows(metricFamilies map[string]*dto.MetricFamily, isPublicMetrics bool) {
 	names := []string{}
 	for k := range metricFamilies {
 		names = append(names, k)
@@ -182,12 +194,14 @@ func (rowSet *RowSet) processRows(metricFamilies map[string]*dto.MetricFamily) {
 	for _, name := range names {
 		family := metricFamilies[name]
 		var panel graf.Panel
-		if family.GetType() == dto.MetricType_COUNTER {
-			panel = newCounterPanel(family)
+		// hack around redpanda_storage_* metrics: these should be gauge
+		// panels but the metrics type come as COUNTER
+		if family.GetType() == dto.MetricType_COUNTER && !strings.HasPrefix(name, "redpanda_storage") {
+			panel = newCounterPanel(family, isPublicMetrics)
 		} else if subtype(family) == "histogram" {
-			panel = newPercentilePanel(family, 0.95)
+			panel = newPercentilePanel(family, 0.95, isPublicMetrics)
 		} else {
-			panel = newGaugePanel(family)
+			panel = newGaugePanel(family, isPublicMetrics)
 		}
 
 		if panel == nil {
@@ -286,6 +300,8 @@ func buildTemplating() graf.Templating {
 	}
 }
 
+// buildSummary builds the Summary section of the Redpanda generated grafana
+// dashboard that uses the /metric endpoint.
 func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	maxWidth := 24
 	singleStatW := 2
@@ -334,7 +350,7 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	if kafkaExists {
 		width := (maxWidth - (singleStatW * 2)) / percentilesNo
 		for i, p := range percentiles {
-			panel := newPercentilePanel(kafkaFamily, p)
+			panel := newPercentilePanel(kafkaFamily, p, false)
 			panel.GridPos = graf.GridPos{
 				H: panelHeight,
 				W: width,
@@ -355,7 +371,7 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		y += rpcLatencyTitle.GridPos.H
 		panels = append(panels, rpcLatencyTitle)
 		for i, p := range percentiles {
-			panel := newPercentilePanel(rpcFamily, p)
+			panel := newPercentilePanel(rpcFamily, p, false)
 			panel.GridPos = graf.GridPos{
 				H: panelHeight,
 				W: width,
@@ -380,7 +396,7 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	readBytesFamily, readBytesExist := metricFamilies["vectorized_storage_log_read_bytes"]
 	writtenBytesFamily, writtenBytesExist := metricFamilies["vectorized_storage_log_written_bytes"]
 	if readBytesExist && writtenBytesExist {
-		readPanel := newCounterPanel(readBytesFamily)
+		readPanel := newCounterPanel(readBytesFamily, false)
 		readPanel.GridPos = graf.GridPos{
 			H: panelHeight,
 			W: width,
@@ -389,7 +405,7 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		}
 		panels = append(panels, readPanel)
 
-		writtenPanel := newCounterPanel(writtenBytesFamily)
+		writtenPanel := newCounterPanel(writtenBytesFamily, false)
 		writtenPanel.GridPos = graf.GridPos{
 			H: panelHeight,
 			W: width,
@@ -397,6 +413,186 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 			Y: y,
 		}
 		panels = append(panels, writtenPanel)
+	}
+
+	return panels
+}
+
+// buildPublicMetricsSummary builds the Summary section of the Redpanda
+// generated grafana dashboard that uses the /public_metrics endpoint.
+func buildPublicMetricsSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
+	maxWidth := 24
+	singleStatW := 2
+	percentiles := []float32{0.95, 0.99}
+	percentilesNo := len(percentiles)
+	panels := []graf.Panel{}
+	y := 0
+
+	summaryText := htmlHeader("Redpanda Summary")
+	summaryTitle := graf.NewTextPanel(summaryText, "html")
+	summaryTitle.GridPos = graf.GridPos{H: 2, W: maxWidth, X: 0, Y: y}
+	summaryTitle.Transparent = true
+	panels = append(panels, summaryTitle)
+	y += summaryTitle.GridPos.H
+
+	// Nodes Up Panel
+	nodesUp := graf.NewSingleStatPanel("Nodes Up")
+	nodesUp.Datasource = datasource
+	nodesUp.GridPos = graf.GridPos{H: 6, W: singleStatW, X: 0, Y: y}
+	nodesUp.Targets = []graf.Target{{
+		Expr:           `redpanda_cluster_brokers`,
+		Step:           40,
+		IntervalFactor: 1,
+		LegendFormat:   "Nodes Up",
+		Instant:        true,
+	}}
+	nodesUp.Transparent = true
+	panels = append(panels, nodesUp)
+	y += nodesUp.GridPos.H
+
+	// Partitions Panel
+	partitionCount := graf.NewSingleStatPanel("Partitions")
+	partitionCount.Datasource = datasource
+	partitionCount.GridPos = graf.GridPos{
+		H: 6,
+		W: singleStatW,
+		X: 0,
+		Y: nodesUp.GridPos.H,
+	}
+	partitionCount.Targets = []graf.Target{{
+		Expr:         "redpanda_cluster_partitions",
+		LegendFormat: "Partition count",
+		Instant:      true,
+	}}
+	partitionCount.Transparent = true
+	panels = append(panels, partitionCount)
+	y += partitionCount.GridPos.H
+
+	// Latency of Kafka consume/produce requests (p95 - p99)
+	_, kafkaExists := metricFamilies[`redpanda_kafka_request_latency_seconds`]
+	if kafkaExists {
+		width := (maxWidth - singleStatW) / percentilesNo
+		for i, p := range percentiles {
+			pTarget := graf.Target{
+				Expr:           fmt.Sprintf(`histogram_quantile(%.2f, sum(rate(redpanda_kafka_request_latency_seconds_bucket{instance=~"$node", redpanda_request="produce"}[$__rate_interval])) by (le, provider, region, instance, namespace, pod))`, p),
+				LegendFormat:   "node: {{instance}}",
+				Format:         "time_series",
+				Step:           10,
+				IntervalFactor: 2,
+				RefID:          "A",
+			}
+			pTitle := fmt.Sprintf("Latency of Kafka produce requests (p%.0f) per broker", p*100)
+			producePanel := newGraphPanel(pTitle, pTarget, "s")
+			producePanel.Interval = "1m"
+			producePanel.Lines = true
+			producePanel.SteppedLine = true
+			producePanel.NullPointMode = "null as zero"
+			producePanel.Tooltip.ValueType = "individual"
+			producePanel.Tooltip.Sort = 0
+			producePanel.GridPos = graf.GridPos{
+				H: panelHeight,
+				W: width,
+				X: i*width + singleStatW,
+				Y: y,
+			}
+			cTarget := graf.Target{
+				Expr:           fmt.Sprintf(`histogram_quantile(%.2f, sum(rate(redpanda_kafka_request_latency_seconds_bucket{instance=~"$node", redpanda_request="consume"}[$__rate_interval])) by (le, provider, region, instance, namespace, pod))`, p),
+				LegendFormat:   "node: {{instance}}",
+				Format:         "time_series",
+				Step:           10,
+				IntervalFactor: 2,
+				RefID:          "A",
+			}
+			cTitle := fmt.Sprintf("Latency of Kafka consume requests (p%.0f) per broker", p*100)
+			consumePanel := newGraphPanel(cTitle, cTarget, "s")
+			consumePanel.Interval = "1m"
+			consumePanel.Lines = true
+			consumePanel.SteppedLine = true
+			consumePanel.NullPointMode = "null as zero"
+			consumePanel.Tooltip.ValueType = "individual"
+			consumePanel.Tooltip.Sort = 0
+			consumePanel.GridPos = graf.GridPos{
+				H: panelHeight,
+				W: width,
+				X: i*width + singleStatW,
+				Y: producePanel.GridPos.H,
+			}
+			panels = append(panels, consumePanel, producePanel)
+		}
+		y += panelHeight
+	}
+	width := maxWidth / 4
+
+	// Internal RPC Latency Section
+	rpcLatencyText := htmlHeader("Internal RPC Latency")
+	rpcLatencyTitle := graf.NewTextPanel(rpcLatencyText, "html")
+	rpcLatencyTitle.GridPos = graf.GridPos{H: 2, W: maxWidth / 2, X: 0, Y: y}
+	rpcLatencyTitle.Transparent = true
+	rpcFamily, rpcExists := metricFamilies[`redpanda_rpc_request_latency_seconds`]
+	if rpcExists {
+		y += rpcLatencyTitle.GridPos.H
+		panels = append(panels, rpcLatencyTitle)
+		for i, p := range percentiles {
+			template := `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",redpanda_server="internal"}[$__rate_interval])) by (le, $aggr_criteria))`
+			expr := fmt.Sprintf(template, p, rpcFamily.GetName())
+			target := graf.Target{
+				Expr:           expr,
+				LegendFormat:   "node: {{instance}}",
+				Format:         "time_series",
+				Step:           10,
+				IntervalFactor: 2,
+				RefID:          "A",
+			}
+			title := fmt.Sprintf("%s (p%.0f)", rpcFamily.GetHelp(), p*100)
+			panel := newGraphPanel(title, target, "s")
+			panel.Interval = "1m"
+			panel.Lines = true
+			panel.SteppedLine = true
+			panel.NullPointMode = "null as zero"
+			panel.Tooltip.ValueType = "individual"
+			panel.Tooltip.Sort = 0
+			panel.GridPos = graf.GridPos{
+				H: panelHeight,
+				W: width,
+				X: i * width,
+				Y: y,
+			}
+			panels = append(panels, panel)
+		}
+	}
+
+	// Throughput section
+	throughputText := htmlHeader("Throughput")
+	throughputTitle := graf.NewTextPanel(throughputText, "html")
+	throughputTitle.GridPos = graf.GridPos{
+		H: 2,
+		W: maxWidth / 2,
+		X: rpcLatencyTitle.GridPos.W,
+		Y: rpcLatencyTitle.GridPos.Y,
+	}
+	throughputTitle.Transparent = true
+	panels = append(panels, throughputTitle)
+
+	reqBytesFamily, reqBytesExists := metricFamilies["redpanda_kafka_request_bytes_total"]
+	if reqBytesExists {
+		target := graf.Target{
+			Expr:           `sum(rate(redpanda_kafka_request_bytes_total[$__rate_interval])) by (redpanda_request)`,
+			LegendFormat:   "redpanda_request: {{redpanda_request}}",
+			Format:         "time_series",
+			Step:           10,
+			IntervalFactor: 2,
+		}
+		panel := newGraphPanel("Rate - "+reqBytesFamily.GetHelp(), target, "Bps")
+		panel.Interval = "1m"
+		panel.Lines = true
+		panel.GridPos = graf.GridPos{
+			H: panelHeight,
+			W: width * 2,
+			X: maxWidth / 2,
+			Y: y,
+		}
+		panel.Title = "Throughput of Kafka produce/consume requests for the cluster"
+		panels = append(panels, panel)
 	}
 
 	return panels
@@ -445,15 +641,14 @@ func fetchMetrics(
 }
 
 func newPercentilePanel(
-	m *dto.MetricFamily, percentile float32,
+	m *dto.MetricFamily, percentile float32, isPublicMetrics bool,
 ) *graf.GraphPanel {
-	expr := fmt.Sprintf(
-		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",shard=~"$node_shard"}[2m])) by (le, $aggr_criteria))`,
-		percentile,
-		m.GetName(),
-	)
+	template := `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",shard=~"$node_shard"}[2m])) by (le, $aggr_criteria))`
+	if isPublicMetrics {
+		template = `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node"}[$__rate_interval])) by (le, $aggr_criteria))`
+	}
 	target := graf.Target{
-		Expr:           expr,
+		Expr:           fmt.Sprintf(template, percentile, m.GetName()),
 		LegendFormat:   legendFormat(m),
 		Format:         "time_series",
 		Step:           10,
@@ -467,16 +662,17 @@ func newPercentilePanel(
 	panel.NullPointMode = "null as zero"
 	panel.Tooltip.ValueType = "individual"
 	panel.Tooltip.Sort = 0
+	panel.Interval = "1m"
 	return panel
 }
 
-func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
-	expr := fmt.Sprintf(
-		`sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`,
-		m.GetName(),
-	)
+func newCounterPanel(m *dto.MetricFamily, isPublicMetrics bool) *graf.GraphPanel {
+	template := `sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`
+	if isPublicMetrics {
+		template = `sum(rate(%s{instance=~"$node"}[$__rate_interval])) by ($aggr_criteria)`
+	}
 	target := graf.Target{
-		Expr:           expr,
+		Expr:           fmt.Sprintf(template, m.GetName()),
 		LegendFormat:   legendFormat(m),
 		Format:         "time_series",
 		Step:           10,
@@ -485,19 +681,22 @@ func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 	format := "ops"
 	if strings.Contains(m.GetName(), "bytes") {
 		format = "Bps"
+	} else if strings.Contains(m.GetName(), "redpanda_scheduler") {
+		format = "percentunit"
 	}
 	panel := newGraphPanel("Rate - "+m.GetHelp(), target, format)
 	panel.Lines = true
+	panel.Interval = "1m"
 	return panel
 }
 
-func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
-	expr := fmt.Sprintf(
-		`sum(%s{instance=~"$node",shard=~"$node_shard"}) by ($aggr_criteria)`,
-		m.GetName(),
-	)
+func newGaugePanel(m *dto.MetricFamily, isPublicMetrics bool) *graf.GraphPanel {
+	template := `sum(%s{instance=~"$node",shard=~"$node_shard"}) by ($aggr_criteria)`
+	if isPublicMetrics {
+		template = `sum(%s{instance=~"$node"}) by ($aggr_criteria)`
+	}
 	target := graf.Target{
-		Expr:           expr,
+		Expr:           fmt.Sprintf(template, m.GetName()),
 		LegendFormat:   legendFormat(m),
 		Format:         "time_series",
 		Step:           10,
