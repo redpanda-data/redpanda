@@ -283,6 +283,11 @@ requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_btree_set<
 void write(iobuf& out, T t);
 
 template<typename T>
+requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
+  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+void write(iobuf& out, T t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -432,6 +437,24 @@ void write(iobuf& out, T t) {
 }
 
 template<typename T>
+requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
+  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+void write(iobuf& out, T t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: {} size {} exceeds serde_size_t",
+          type_str<T>(),
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& v : t) {
+        write(out, v.first);
+        write(out, std::move(v.second));
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -500,31 +523,6 @@ void write(iobuf& out, T t) {
         out.append(t.share(0, t.size_bytes()));
     } else if constexpr (std::is_same_v<Type, uuid_t>) {
         out.append(t.uuid.data, uuid_t::length);
-    } else if constexpr (
-      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: absl map size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& v : t) {
-            write(out, v.first);
-            write(out, std::move(v.second));
-        }
-    } else if constexpr (is_std_unordered_map<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: std::unordered_map size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& v : t) {
-            write(out, v.first);
-            write(out, std::move(v.second));
-        }
     }
 }
 
