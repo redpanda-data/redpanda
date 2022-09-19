@@ -42,6 +42,7 @@ using use_tx_version_with_last_pid_bool
 // Current version of transaction record (v2).
 // Includes all changes for transactions GA.
 // + last_pid field - KIP-360 support
+// + transferring - tm_stm graceful failover support
 struct tm_transaction {
     static constexpr uint8_t version = 2;
 
@@ -91,6 +92,15 @@ struct tm_transaction {
     ss::lowres_system_clock::time_point last_update_ts;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
+
+    // Set when transferring a tx from one leader to another. Typically only
+    // applies to ready/ongoing txns that can have dirty uncommitted state
+    // whereas any other status beyond that is checkpointed to the log.
+
+    // Any `transferring` transactions are first checkpointed as `not
+    // transferring` on the new leader before it makes any changes to the state.
+    // This happens lazily on access.
+    bool transferring = false;
 
     friend std::ostream& operator<<(std::ostream&, const tm_transaction&);
 
@@ -376,6 +386,7 @@ struct tm_transaction_v1 {
         result.status = upcast(status);
         result.timeout_ms = timeout_ms;
         result.last_update_ts = last_update_ts;
+        result.transferring = false;
         for (auto& partition : partitions) {
             result.partitions.push_back(tm_transaction::tx_partition{
               .ntp = partition.ntp, .etag = partition.etag});
@@ -447,6 +458,7 @@ struct tm_transaction_v0 {
         result.status = upcast(status);
         result.timeout_ms = timeout_ms;
         result.last_update_ts = tm_stm::clock_type::now();
+        result.transferring = false;
         for (auto& partition : partitions) {
             result.partitions.push_back(tm_transaction::tx_partition{
               .ntp = partition.ntp, .etag = partition.etag});
