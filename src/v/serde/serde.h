@@ -256,6 +256,8 @@ void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
 inline void write(iobuf& out, ss::sstring t);
 
+inline void write(iobuf& out, bool t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -325,6 +327,8 @@ inline void write(iobuf& out, ss::sstring t) {
     out.append(t.data(), t.size());
 }
 
+inline void write(iobuf& out, bool t) { write(out, static_cast<int8_t>(t)); }
+
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
@@ -378,8 +382,6 @@ void write(iobuf& out, T t) {
             checksum_placeholder.write(
               reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
         }
-    } else if constexpr (std::is_same_v<bool, Type>) {
-        write<int8_t>(out, t);
     } else if constexpr (reflection::is_std_vector<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
