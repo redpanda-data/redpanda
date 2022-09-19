@@ -42,14 +42,16 @@ var _ Resource = &IngressResource{}
 // focusing on the internal connectivity management of redpanda cluster
 type IngressResource struct {
 	k8sclient.Client
-	scheme      *runtime.Scheme
-	object      metav1.Object
-	host        string
-	svcName     string
-	svcPortName string
-	annotations map[string]string
-	TLS         []netv1.IngressTLS
-	logger      logr.Logger
+	scheme          *runtime.Scheme
+	object          metav1.Object
+	subdomain       string
+	svcName         string
+	svcPortName     string
+	annotations     map[string]string
+	TLS             []netv1.IngressTLS
+	userConfig      *redpandav1alpha1.IngressConfig
+	defaultEndpoint string
+	logger          logr.Logger
 }
 
 // NewIngress creates IngressResource
@@ -57,7 +59,7 @@ func NewIngress(
 	client k8sclient.Client,
 	object metav1.Object,
 	scheme *runtime.Scheme,
-	host string,
+	subdomain string,
 	svcName string,
 	svcPortName string,
 	logger logr.Logger,
@@ -66,11 +68,13 @@ func NewIngress(
 		client,
 		scheme,
 		object,
-		host,
+		subdomain,
 		svcName,
 		svcPortName,
 		map[string]string{},
 		nil,
+		nil,
+		"",
 		logger.WithValues(
 			"Kind", ingressKind(),
 		),
@@ -88,15 +92,23 @@ func (r *IngressResource) WithAnnotations(
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(clusterIssuer, secretName string, additionalHosts ...string) *IngressResource {
+func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 
 	if r.TLS == nil {
 		r.TLS = []netv1.IngressTLS{}
 	}
+
+	host := r.host()
+	allHosts := []string{host}
+	if r.subdomain != host {
+		// Workaround to put short SAN entry so LE can fill CN of cert.
+		// See: https://github.com/redpanda-data/redpanda/pull/6471
+		allHosts = append(allHosts, r.subdomain)
+	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
-		Hosts: append([]string{r.host}, additionalHosts...),
+		Hosts: allHosts,
 		// Use the Cluster wildcard certificate
 		SecretName: secretName,
 	})
@@ -106,14 +118,67 @@ func (r *IngressResource) WithTLS(clusterIssuer, secretName string, additionalHo
 
 // GetAnnotations returns the annotations for the Ingress resource
 func (r *IngressResource) GetAnnotations() map[string]string {
-	return r.annotations
+	allAnnotations := make(map[string]string)
+	for k, v := range r.annotations {
+		allAnnotations[k] = v
+	}
+	if r.userConfig != nil {
+		// user configured annotations take precedence over default ones
+		for k, v := range r.userConfig.Annotations {
+			allAnnotations[k] = v
+		}
+	}
+
+	return allAnnotations
+}
+
+// WithUserConfig injects the end-user configuration for the ingress
+func (r *IngressResource) WithUserConfig(
+	userConfig *redpandav1alpha1.IngressConfig,
+) *IngressResource {
+	r.userConfig = userConfig
+	return r
+}
+
+// WithDefaultEndpoint allows to configure the default endpoint for the ingress,
+// that is used when user does not inject a different one.
+func (r *IngressResource) WithDefaultEndpoint(
+	defaultEndpoint string,
+) *IngressResource {
+	r.defaultEndpoint = defaultEndpoint
+	return r
+}
+
+func (r *IngressResource) host() string {
+	if r.subdomain == "" {
+		return ""
+	}
+
+	endpoint := r.defaultEndpoint
+	if r.userConfig != nil {
+		endpoint = r.userConfig.Endpoint
+	}
+	if endpoint == "" {
+		return r.subdomain
+	}
+
+	return fmt.Sprintf("%s.%s", endpoint, r.subdomain)
 }
 
 // Ensure will manage kubernetes Ingress for redpanda.vectorized.io custom resource
 func (r *IngressResource) Ensure(ctx context.Context) error {
-	if r.host == "" {
-		r.logger.V(debugLogLevel).Info("host not found, skip ensuring ingress")
-		return nil
+	ingressDisabled := r.userConfig != nil && r.userConfig.Enabled != nil && !*r.userConfig.Enabled
+	emptyHost := r.host() == ""
+	if ingressDisabled || emptyHost {
+		r.logger.V(debugLogLevel).Info("ingress will not be created", "disabled", ingressDisabled, "empty_host", emptyHost)
+		key := r.Key()
+		ingress := netv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: key.Namespace,
+				Name:      key.Name,
+			},
+		}
+		return DeleteIfExists(ctx, &ingress, r.Client)
 	}
 
 	obj, err := r.obj()
@@ -151,13 +216,13 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 			Name:        r.Key().Name,
 			Namespace:   r.Key().Namespace,
 			Labels:      objLabels,
-			Annotations: r.annotations,
+			Annotations: r.GetAnnotations(),
 		},
 		Spec: netv1.IngressSpec{
 			IngressClassName: &ingressClassName,
 			Rules: []netv1.IngressRule{
 				{
-					Host: r.host,
+					Host: r.host(),
 					IngressRuleValue: netv1.IngressRuleValue{
 						HTTP: &netv1.HTTPIngressRuleValue{
 							Paths: []netv1.HTTPIngressPath{
