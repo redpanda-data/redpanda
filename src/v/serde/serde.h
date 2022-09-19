@@ -251,6 +251,9 @@ requires(
 template<typename T>
 requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
 
+template<typename Rep, typename Period>
+void write(iobuf& out, std::chrono::duration<Rep, Period> t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -288,6 +291,31 @@ requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
           val)};
     }
     write(out, static_cast<serde_enum_serialized_t>(val));
+}
+
+template<typename Rep, typename Period>
+void write(iobuf& out, std::chrono::duration<Rep, Period> t) {
+    // We explicitly serialize it as ns to avoid any surprises like
+    // seastar updating underlying duration types without
+    // notice. See https://github.com/redpanda-data/redpanda/pull/5002
+    //
+    // Check for overflows/underflows.
+    // For ex: a millisecond and nanosecond use the same underlying
+    // type int64_t but converting from one to other can easily overflow,
+    // this is by design.
+    // Since we serialize with ns precision, there is a restriction of
+    // nanoseconds::max()'s equivalent on the duration to be serialized.
+    // On a typical platform which uses int64_t for 'rep', it roughly
+    // translates to ~292 years.
+    //
+    // If we detect an overflow, we will clamp it to maximum supported
+    // duration, which is nanosecond::max() and if there is an underflow,
+    // we clamp it to minimum supported duration which is nanosecond::min().
+    static_assert(
+      !std::is_floating_point_v<Rep>,
+      "Floating point duration conversions are prone to precision and "
+      "rounding issues.");
+    write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
 }
 
 template<typename T>
@@ -443,28 +471,6 @@ void write(iobuf& out, T t) {
 
         write(out, t.is_ipv4());
         write(out, std::move(address_bytes));
-    } else if constexpr (is_chrono_duration<Type>) {
-        // We explicitly serialize it as ns to avoid any surprises like
-        // seastar updating underlying duration types without
-        // notice. See https://github.com/redpanda-data/redpanda/pull/5002
-        //
-        // Check for overflows/underflows.
-        // For ex: a millisecond and nanosecond use the same underlying
-        // type int64_t but converting from one to other can easily overflow,
-        // this is by design.
-        // Since we serialize with ns precision, there is a restriction of
-        // nanoseconds::max()'s equivalent on the duration to be serialized.
-        // On a typical platform which uses int64_t for 'rep', it roughly
-        // translates to ~292 years.
-        //
-        // If we detect an overflow, we will clamp it to maximum supported
-        // duration, which is nanosecond::max() and if there is an underflow,
-        // we clamp it to minimum supported duration which is nanosecond::min().
-        static_assert(
-          !std::is_floating_point_v<typename Type::rep>,
-          "Floating point duration conversions are prone to precision and "
-          "rounding issues.");
-        write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
     }
 }
 
