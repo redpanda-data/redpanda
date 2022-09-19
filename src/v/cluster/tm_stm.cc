@@ -117,16 +117,17 @@ tm_stm::tm_stm(
       config::shard_local_cfg().tm_violation_recovery_policy.value())
   , _feature_table(feature_table) {}
 
-std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
+ss::future<std::optional<tm_transaction>>
+tm_stm::get_tx(kafka::transactional_id tx_id) {
     auto tx = _mem_txes.find(tx_id);
     if (tx != _mem_txes.end()) {
-        return tx->second;
+        co_return tx->second;
     }
     tx = _log_txes.find(tx_id);
     if (tx != _log_txes.end()) {
-        return tx->second;
+        co_return tx->second;
     }
-    return std::nullopt;
+    co_return std::nullopt;
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
@@ -265,7 +266,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
         co_return tm_stm::op_status::unknown;
     }
 
-    auto tx_opt = get_tx(tx.id);
+    auto tx_opt = co_await get_tx(tx.id);
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::conflict;
     }
@@ -290,7 +291,7 @@ tm_stm::mark_tx_preparing(
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
   model::term_id expected_term, kafka::transactional_id tx_id) {
-    auto ptx = get_tx(tx_id);
+    auto ptx = co_await get_tx(tx_id);
     if (!ptx.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -305,7 +306,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
   model::term_id expected_term, kafka::transactional_id tx_id) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -320,7 +321,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_killed(
   model::term_id expected_term, kafka::transactional_id tx_id) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -344,7 +345,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
   model::term_id term) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -358,11 +359,11 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-checked<tm_transaction, tm_stm::op_status>
+ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        return tm_stm::op_status::not_found;
+        co_return tm_stm::op_status::not_found;
     }
     tm_transaction tx = tx_opt.value();
     tx.status = tm_transaction::tx_status::ongoing;
@@ -371,14 +372,14 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
     _mem_txes[tx_id] = tx;
-    return tx;
+    co_return tx;
 }
 
-checked<tm_transaction, tm_stm::op_status>
+ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::reset_tx_ongoing(kafka::transactional_id tx_id, model::term_id term) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        return tm_stm::op_status::not_found;
+        co_return tm_stm::op_status::not_found;
     }
     tm_transaction tx = tx_opt.value();
     tx.status = tm_transaction::tx_status::ongoing;
@@ -388,7 +389,7 @@ tm_stm::reset_tx_ongoing(kafka::transactional_id tx_id, model::term_id term) {
     tx.last_update_ts = clock_type::now();
     tx.etag = term;
     _mem_txes[tx_id] = tx;
-    return tx;
+    co_return tx;
 }
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
@@ -399,7 +400,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   model::producer_identity last_pid) {
     vlog(txlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -443,7 +444,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
   model::producer_identity pid) {
     vlog(txlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (tx_opt.has_value()) {
         co_return tm_stm::op_status::conflict;
     }
@@ -733,7 +734,7 @@ tm_stm::delete_partition_from_tx(
         co_return tm_stm::op_status::not_leader;
     }
 
-    auto optional_tx = get_tx(tid);
+    auto optional_tx = co_await get_tx(tid);
     if (!optional_tx.has_value()) {
         co_return tm_stm::op_status::not_found;
     }
@@ -754,7 +755,7 @@ tm_stm::delete_partition_from_tx(
 }
 
 ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
-    auto tx_opt = get_tx(tx_id);
+    auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return;
     }
