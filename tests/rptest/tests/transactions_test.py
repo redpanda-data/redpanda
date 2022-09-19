@@ -11,22 +11,17 @@ from rptest.services.cluster import cluster
 from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 
-import time
 import uuid
 
+from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.services.rpk_consumer import RpkConsumer
 import confluent_kafka as ck
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-import random
-import string
-
-import subprocess
 
 
 class TransactionsTest(RedpandaTest):
@@ -49,6 +44,7 @@ class TransactionsTest(RedpandaTest):
         self.input_t = self.topics[0]
         self.output_t = self.topics[1]
         self.max_records = 100
+        self.admin = Admin(self.redpanda)
 
     def on_delivery(self, err, msg):
         assert err == None, msg
@@ -257,6 +253,98 @@ class TransactionsTest(RedpandaTest):
             assert kafka_error.code() == ck.cimpl.KafkaError.FENCED_INSTANCE_ID
 
         producer.abort_transaction()
+
+    @cluster(num_nodes=3)
+    def graceful_leadership_transfer_tx_coordinator_test(self):
+
+        p_count = 10
+        producers = [
+            ck.Producer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'transactional.id': str(i),
+                'transaction.timeout.ms': 1000000,
+            }) for i in range(0, p_count)
+        ]
+
+        # Initiate the transactions, should hit the existing tx coordinator.
+        for p in producers:
+            p.init_transactions()
+            p.begin_transaction()
+
+        count = 0
+        partition = 0
+        records_per_add = 10
+
+        def add_records():
+            nonlocal count
+            nonlocal partition
+            for p in producers:
+                for i in range(count, count + records_per_add):
+                    p.produce(self.input_t.name,
+                              str(i),
+                              str(i),
+                              partition=partition,
+                              on_delivery=self.on_delivery)
+                p.flush()
+                count = count + records_per_add
+
+        def graceful_transfer():
+            # Issue a graceful leadership transfer of tx coordinator
+            old_leader = self.admin.get_partition_leader(
+                namespace="kafka_internal", topic="tx",
+                partition="0")  # Fix this when we partition tx coordinator.
+            self.admin.transfer_leadership_to(namespace="kafka_internal",
+                                              topic="tx",
+                                              partition="0",
+                                              target_id=None)
+
+            def leader_is_changed():
+                new_leader = self.admin.get_partition_leader(
+                    namespace="kafka_internal", topic="tx", partition="0")
+                return (new_leader != -1) and (new_leader != old_leader)
+
+            wait_until(leader_is_changed,
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       err_msg="Failed to establish current leader")
+
+        # Add some records
+        add_records()
+        # Issue a leadership transfer
+        graceful_transfer()
+        # Add some more records
+        add_records()
+        # Issue another leadership transfer
+        graceful_transfer()
+        # Issue a commit on half of the producers
+        for p in range(0, int(p_count / 2)):
+            producers[p].commit_transaction()
+        # Issue a leadership transfer and then commit the rest.
+        graceful_transfer()
+        for p in range(int(p_count / 2), p_count):
+            producers[p].commit_transaction()
+
+        # Verify that all the records are ingested correctly.
+        consumer = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': "test",
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+        })
+        try:
+            consumer.subscribe([self.input_t])
+            records = []
+            while len(records) != count:
+                records.extend(
+                    self.consume(consumer, max_records=count, timeout_s=10))
+            assert len(
+                records
+            ) == count, f"Not all records consumed, expected {count}"
+            keys = set([int(r.key()) for r in records])
+            assert all(i in keys
+                       for i in range(0, count)), f"Missing records {keys}"
+        finally:
+            consumer.close()
 
 
 class UpgradeTransactionTest(RedpandaTest):
