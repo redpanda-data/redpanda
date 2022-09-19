@@ -85,6 +85,19 @@ func clusterUpdater(
 	}
 }
 
+func consoleUpdater(
+	consoleNamespacedName types.NamespacedName, upd func(*v1alpha1.Console),
+) func() error {
+	return func() error {
+		con := &v1alpha1.Console{}
+		if err := k8sClient.Get(context.Background(), consoleNamespacedName, con); err != nil {
+			return err
+		}
+		upd(con)
+		return k8sClient.Update(context.Background(), con)
+	}
+}
+
 func statefulSetReplicasReconciler(
 	key types.NamespacedName, cluster *v1alpha1.Cluster,
 ) func() error {
