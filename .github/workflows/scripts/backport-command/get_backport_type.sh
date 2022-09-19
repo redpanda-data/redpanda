@@ -9,7 +9,7 @@ set -e
 source "$SCRIPT_DIR/gh_wrapper.sh"
 
 gh_branch_exists() {
-  [[ -n $(gh api "/repos/$TARGET_FULL_REPO/branches" --jq \
+  [[ -n $(gh api "/repos/$TARGET_FULL_REPO/branches" --paginate --jq \
     '.[] | select(.name == '\""$1"\"')') ]] && return 0
   return 1
 }
