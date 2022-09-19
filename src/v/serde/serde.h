@@ -244,6 +244,33 @@ int64_t checked_duration_cast_to_nanoseconds(
 }
 
 template<typename T>
+requires(
+  std::is_scalar_v<std::decay_t<
+    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+
+template<typename T>
+requires(
+  std::is_scalar_v<std::decay_t<
+    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+    using Type = std::decay_t<T>;
+    if constexpr (sizeof(Type) == 1) {
+        out.append(reinterpret_cast<char const*>(&t), sizeof(t));
+    } else if constexpr (std::is_same_v<float, Type>) {
+        auto const le_t = htole32(bit_cast<uint32_t>(t));
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    } else if constexpr (std::is_same_v<double, Type>) {
+        auto const le_t = htole64(bit_cast<uint64_t>(t));
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    } else {
+        auto const le_t = ss::cpu_to_le(t);
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -311,22 +338,6 @@ void write(iobuf& out, T t) {
               val)};
         }
         write(out, static_cast<serde_enum_serialized_t>(val));
-    } else if constexpr (std::is_scalar_v<Type>) {
-        if constexpr (sizeof(Type) == 1) {
-            out.append(reinterpret_cast<char const*>(&t), sizeof(t));
-        } else if constexpr (std::is_same_v<float, Type>) {
-            auto const le_t = htole32(bit_cast<uint32_t>(t));
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        } else if constexpr (std::is_same_v<double, Type>) {
-            auto const le_t = htole64(bit_cast<uint64_t>(t));
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        } else {
-            auto const le_t = ss::cpu_to_le(t);
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        }
     } else if constexpr (reflection::is_std_vector<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
