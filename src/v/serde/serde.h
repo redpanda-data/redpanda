@@ -258,6 +258,8 @@ inline void write(iobuf& out, ss::sstring t);
 
 inline void write(iobuf& out, bool t);
 
+inline void write(iobuf& out, ss::net::inet_address t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -328,6 +330,16 @@ inline void write(iobuf& out, ss::sstring t) {
 }
 
 inline void write(iobuf& out, bool t) { write(out, static_cast<int8_t>(t)); }
+
+inline void write(iobuf& out, ss::net::inet_address t) {
+    iobuf address_bytes;
+
+    // NOLINTNEXTLINE
+    address_bytes.append((const char*)t.data(), t.size());
+
+    write(out, t.is_ipv4());
+    write(out, std::move(address_bytes));
+}
 
 template<typename T>
 void write(iobuf& out, T t) {
@@ -469,14 +481,6 @@ void write(iobuf& out, T t) {
             write<int8_t>(out, 1);
             write(out, std::move(t.value()));
         }
-    } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
-        iobuf address_bytes;
-
-        // NOLINTNEXTLINE
-        address_bytes.append((const char*)t.data(), t.size());
-
-        write(out, t.is_ipv4());
-        write(out, std::move(address_bytes));
     }
 }
 
