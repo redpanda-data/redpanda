@@ -86,11 +86,11 @@ func (r *IngressResource) WithAnnotations(
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(issuer, secretName string) *IngressResource {
+func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
 	if r.annotations == nil {
 		r.annotations = map[string]string{}
 	}
-	r.annotations["cert-manager.io/issuer"] = issuer
+	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 
 	if r.TLS == nil {
@@ -103,6 +103,11 @@ func (r *IngressResource) WithTLS(issuer, secretName string) *IngressResource {
 	})
 
 	return r
+}
+
+// GetAnnotations returns the annotations for the Ingress resource
+func (r *IngressResource) GetAnnotations() map[string]string {
+	return r.annotations
 }
 
 // Ensure will manage kubernetes Ingress for redpanda.vectorized.io custom resource
