@@ -15,6 +15,9 @@
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/when_all.hh>
+
 namespace archival {
 segment_collector::segment_collector(
   model::offset begin_inclusive,
@@ -307,10 +310,12 @@ void segment_collector::align_begin_offset_to_manifest() {
     }
 }
 
-ss::future<upload_candidate> segment_collector::make_upload_candidate(
-  ss::io_priority_class io_priority_class) {
+ss::future<upload_candidate_with_locks>
+segment_collector::make_upload_candidate(
+  ss::io_priority_class io_priority_class,
+  ss::lowres_clock::duration segment_lock_duration) {
     if (_segments.empty()) {
-        co_return upload_candidate{};
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
     auto first = _segments.front();
@@ -328,19 +333,32 @@ ss::future<upload_candidate> segment_collector::make_upload_candidate(
                             - (head_seek_result.bytes + last->size_bytes());
     content_length += tail_seek_result.bytes;
 
-    co_return upload_candidate{
-      .source = first,
-      .exposed_name = adjust_segment_name(),
-      .starting_offset = head_seek_result.offset,
-      .file_offset = head_seek_result.bytes,
-      .content_length = content_length,
-      .final_offset = tail_seek_result.offset,
-      .final_file_offset = tail_seek_result.bytes,
-      .base_timestamp = head_seek_result.ts,
-      .max_timestamp = tail_seek_result.ts,
-      .sources = _segments,
-      .upload_kind = upload_kind::multiple,
-    };
+    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
+    std::vector<ss::future<ss::rwlock::holder>> locks;
+    locks.reserve(_segments.size());
+    std::transform(
+      _segments.begin(),
+      _segments.end(),
+      std::back_inserter(locks),
+      [&deadline](auto& seg) { return seg->read_lock(deadline); });
+
+    auto locks_resolved = co_await ss::when_all_succeed(
+      locks.begin(), locks.end());
+
+    co_return upload_candidate_with_locks{
+      upload_candidate{
+        .exposed_name = adjust_segment_name(),
+        .starting_offset = head_seek_result.offset,
+        .file_offset = head_seek_result.bytes,
+        .content_length = content_length,
+        .final_offset = tail_seek_result.offset,
+        .final_file_offset = tail_seek_result.bytes,
+        .base_timestamp = head_seek_result.ts,
+        .max_timestamp = tail_seek_result.ts,
+        .term = first->offsets().term,
+        .sources = _segments,
+      },
+      std::move(locks_resolved)};
 }
 
 size_t segment_collector::collected_size() const { return _collected_size; }

@@ -36,6 +36,10 @@ namespace archival {
 
 using namespace std::chrono_literals;
 
+enum class segment_upload_kind { compacted, non_compacted };
+
+std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
+
 /// This class performs per-ntp arhcival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
 /// 'ntp_archiver' instances that the shard posesses are supposed to be
@@ -119,10 +123,20 @@ public:
       cloud_storage::partition_manifest,
       cloud_storage::download_result>>
     download_manifest();
-    struct batch_result {
-        size_t num_succeded;
+
+    struct upload_group_result {
+        size_t num_succeeded;
         size_t num_failed;
         size_t num_cancelled;
+
+        auto operator<=>(const upload_group_result&) const = default;
+    };
+
+    struct batch_result {
+        upload_group_result non_compacted_upload_result;
+        upload_group_result compacted_upload_result;
+
+        auto operator<=>(const batch_result&) const = default;
     };
 
     /// \brief Upload next set of segments to S3 (if any)
@@ -176,24 +190,68 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
-        /// Protects the underlying segment from being deleted while the upload
-        /// is in flight.
-        std::optional<ss::rwlock::holder> segment_read_lock;
+        /// Protects the underlying segment(s) from being deleted while the
+        /// upload is in flight.
+        std::vector<ss::rwlock::holder> segment_read_locks;
+        segment_upload_kind upload_kind;
+    };
+
+    using allow_reuploads_t = ss::bool_class<struct allow_reupload_tag>;
+    /// An upload context represents a range of offsets to be uploaded. It will
+    /// search for segments within this range and upload them, it also carries
+    /// some context information like whether re-uploads are allowed, what is
+    /// the maximum number of in-flight uploads that can be processed etc.
+    struct upload_context {
+        /// The kind of segment being uploaded
+        segment_upload_kind upload_kind;
+        /// The share of concurrency this context can use
+        double concurrency_ratio;
+        /// The next scheduled upload will start from this offset
+        model::offset start_offset;
+        /// Uploads will stop at this offset
+        model::offset last_offset;
+        /// Controls checks for reuploads, compacted segments have this check
+        /// disabled
+        allow_reuploads_t allow_reuploads;
+        /// Collection of uploads scheduled so far
+        std::vector<scheduled_upload> uploads{};
+
+        /// Schedules a single upload, adds it to upload collection and
+        /// progresses the start offset
+        ss::future<ss::stop_iteration>
+        schedule_single_upload(ntp_archiver& archiver);
+
+        upload_context(
+          segment_upload_kind upload_kind,
+          double concurrency_ratio,
+          model::offset start_offset,
+          model::offset last_offset,
+          allow_reuploads_t allow_reuploads);
     };
 
     /// Start upload without waiting for it to complete
-    ss::future<scheduled_upload> schedule_single_upload(
-      model::offset last_uploaded_offset, model::offset last_stable_offset);
+    ss::future<scheduled_upload>
+    schedule_single_upload(const upload_context& upload_ctx);
 
     /// Start all uploads
     ss::future<std::vector<scheduled_upload>>
     schedule_uploads(model::offset last_stable_offset);
+
+    ss::future<std::vector<scheduled_upload>>
+    schedule_uploads(std::vector<upload_context> loop_contexts);
 
     /// Wait until all scheduled uploads will be completed
     ///
     /// Update the probe and manifest
     ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
       std::vector<ntp_archiver::scheduled_upload> scheduled);
+
+    /// Waits for scheduled segment uploads. The uploaded segments could be
+    /// compacted or non-compacted, the actions taken are similar in both cases
+    /// with the major difference being the probe updates done after the upload.
+    ss::future<ntp_archiver::upload_group_result> wait_uploads(
+      std::vector<scheduled_upload> scheduled,
+      segment_upload_kind segment_kind);
 
     /// Upload individual segment to S3.
     ///
@@ -228,6 +286,10 @@ private:
     bool sync_manifest_loop_can_continue() const;
     bool housekeeping_can_continue() const;
     const cloud_storage::partition_manifest& manifest() const;
+
+    /// Helper to generate a segment path from candidate
+    remote_segment_path
+    segment_path_for_candidate(const upload_candidate& candidate);
 
     ntp_level_probe _probe;
     model::ntp _ntp;

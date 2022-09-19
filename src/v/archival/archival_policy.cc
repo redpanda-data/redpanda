@@ -50,39 +50,34 @@ namespace archival {
 
 using namespace std::chrono_literals;
 
-std::ostream& operator<<(std::ostream& os, upload_kind k) {
-    switch (k) {
-    case upload_kind::single:
-        os << "single";
-        break;
-    case upload_kind::multiple:
-        os << "multiple";
-        break;
-    }
-
-    return os;
-}
-
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
-    if (!c.source) {
+    if (c.sources.empty()) {
         s << "{empty}";
         return s;
     }
+
+    std::vector<ss::sstring> source_names;
+    source_names.reserve(c.sources.size());
+    std::transform(
+      c.sources.begin(),
+      c.sources.end(),
+      std::back_inserter(source_names),
+      [](const auto& src) { return src->filename(); });
 
     fmt::print(
       s,
       "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
       "file_offset: {}, content_length: {}, final_offset: {}, "
-      "final_file_offset: {}, upload_kind: {}, multiple source count: {}}}",
-      c.source->offsets(),
+      "final_file_offset: {}, term: {}, source names: {}}}",
+      c.sources.front()->offsets(),
       c.exposed_name,
       c.starting_offset,
       c.file_offset,
       c.content_length,
       c.final_offset,
       c.final_file_offset,
-      c.upload_kind,
-      c.sources.size());
+      c.term,
+      source_names);
     return s;
 }
 
@@ -455,12 +450,13 @@ static ss::future<> get_file_range(
 ///       a name '1000-1-v1.log'. If we were only able to find offset
 ///       990 instead of 1000, we will upload starting from it and
 ///       the name will be '990-1-v1.log'.
-static ss::future<upload_candidate> create_upload_candidate(
+static ss::future<upload_candidate_with_locks> create_upload_candidate(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   const ss::lw_shared_ptr<storage::segment>& segment,
   const storage::ntp_config* ntp_conf,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  ss::lowres_clock::duration segment_lock_duration) {
     auto term = segment->offsets().term;
     auto version = storage::record_version_type::v1;
     auto meta = storage::segment_path::parse_segment_filename(
@@ -469,7 +465,11 @@ static ss::future<upload_candidate> create_upload_candidate(
         version = meta->version;
     }
 
-    upload_candidate result{.source = segment};
+    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
+    std::vector<ss::rwlock::holder> locks;
+    locks.emplace_back(co_await segment->read_lock(deadline));
+    upload_candidate result{.term = term, .sources = {segment}};
+
     co_await get_file_range(
       begin_inclusive, end_inclusive, segment, result, io_priority);
     if (result.starting_offset != segment->offsets().base_offset) {
@@ -489,21 +489,23 @@ static ss::future<upload_candidate> create_upload_candidate(
           "Using original segment name: {}",
           result.exposed_name);
     }
-    co_return result;
+
+    co_return upload_candidate_with_locks{result, std::move(locks)};
 }
 
-ss::future<upload_candidate> archival_policy::get_next_candidate(
+ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   storage::log log,
-  const storage::offset_translator_state& ot_state) {
+  const storage::offset_translator_state& ot_state,
+  ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
       begin_inclusive, adjusted_lso, std::move(log), ot_state);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
-        co_return upload_candidate{};
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     // We need to adjust LSO since it points to the first
     // recordbatch with uncommitted transactions data
@@ -517,17 +519,24 @@ ss::future<upload_candidate> archival_policy::get_next_candidate(
       segment->offsets(),
       adjusted_lso);
     auto upload = co_await create_upload_candidate(
-      begin_inclusive, last, segment, ntp_conf, _io_priority);
-    if (upload.content_length == 0) {
-        co_return upload_candidate{};
+      begin_inclusive,
+      last,
+      segment,
+      ntp_conf,
+      _io_priority,
+      segment_lock_duration);
+    if (upload.candidate.content_length == 0) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     co_return upload;
 }
 
-ss::future<upload_candidate> archival_policy::get_next_compacted_segment(
+ss::future<upload_candidate_with_locks>
+archival_policy::get_next_compacted_segment(
   model::offset begin_inclusive,
   storage::log log,
-  const cloud_storage::partition_manifest* manifest) {
+  const cloud_storage::partition_manifest* manifest,
+  ss::lowres_clock::duration segment_lock_duration) {
     auto plog = get_concrete_log_impl(std::move(log));
     segment_collector compacted_segment_collector{
       begin_inclusive,
@@ -538,11 +547,11 @@ ss::future<upload_candidate> archival_policy::get_next_compacted_segment(
 
     compacted_segment_collector.collect_segments();
     if (!compacted_segment_collector.can_replace_manifest_segment()) {
-        co_return upload_candidate{};
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
     co_return co_await compacted_segment_collector.make_upload_candidate(
-      _io_priority);
+      _io_priority, segment_lock_duration);
 }
 
 } // namespace archival

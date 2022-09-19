@@ -717,7 +717,9 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
 
     archival::upload_candidate upload_candidate
-      = collector.make_upload_candidate(ss::default_priority_class()).get();
+      = collector.make_upload_candidate(ss::default_priority_class(), 60s)
+          .get()
+          .candidate;
 
     BOOST_REQUIRE(!upload_candidate.sources.empty());
     BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
