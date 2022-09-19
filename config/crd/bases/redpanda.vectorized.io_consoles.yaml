@@ -352,7 +352,7 @@ spec:
                     type: object
                   redpandaCloud:
                     description: EnterpriseLoginRedpandaCloud defines configurable
-                      fields for RedpandaCloud provider
+                      fields for RedpandaCloud SSO provider
                     properties:
                       allowedOrigins:
                         description: AllowedOrigins indicates if response is allowed
