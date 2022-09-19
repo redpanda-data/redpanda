@@ -479,7 +479,14 @@ tx_gateway_frontend::do_commit_tm_tx(
     auto term = term_opt.value();
     auto tx_opt = co_await stm->get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        co_return tx_errc::invalid_txn_state;
+        auto status = tx_opt.error();
+        tx_errc err = tx_errc::invalid_txn_state;
+        if (status == tm_stm::op_status::not_leader) {
+            err = tx_errc::leader_not_found;
+        } else if (status == tm_stm::op_status::unknown) {
+            err = tx_errc::unknown_server_error;
+        }
+        co_return err;
     }
     auto tx = tx_opt.value();
     if (tx.pid != pid) {
@@ -778,6 +785,9 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     auto tx_opt = co_await stm->get_tx(tx_id);
 
     if (!tx_opt.has_value()) {
+        if (tx_opt.error() == tm_stm::op_status::not_leader) {
+            co_return init_tm_tx_reply{tx_errc::leader_not_found};
+        }
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
@@ -1293,8 +1303,15 @@ tx_gateway_frontend::do_end_txn(
     auto tx_opt = co_await stm->get_tx(request.transactional_id);
 
     if (!tx_opt.has_value()) {
-        outcome->set_value(tx_errc::invalid_producer_id_mapping);
-        co_return tx_errc::invalid_producer_id_mapping;
+        auto status = tx_opt.error();
+        tx_errc err = tx_errc::invalid_producer_id_mapping;
+        if (status == tm_stm::op_status::not_leader) {
+            err = tx_errc::leader_not_found;
+        } else if (status == tm_stm::op_status::unknown) {
+            err = tx_errc::unknown_server_error;
+        }
+        outcome->set_value(err);
+        co_return err;
     }
 
     model::producer_identity pid{request.producer_id, request.producer_epoch};
@@ -1631,7 +1648,14 @@ tx_gateway_frontend::get_ongoing_tx(
   model::timeout_clock::duration timeout) {
     auto tx_opt = co_await stm->get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        co_return tx_errc::invalid_producer_id_mapping;
+        auto status = tx_opt.error();
+        tx_errc err = tx_errc::invalid_producer_id_mapping;
+        if (status == tm_stm::op_status::not_leader) {
+            err = tx_errc::leader_not_found;
+        } else if (status == tm_stm::op_status::unknown) {
+            err = tx_errc::unknown_server_error;
+        }
+        co_return err;
     }
     auto tx = tx_opt.value();
 

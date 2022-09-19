@@ -41,11 +41,6 @@ using op_status = cluster::tm_stm::op_status;
 using tm_transaction = cluster::tm_transaction;
 using tx_status = cluster::tm_transaction::tx_status;
 
-static tm_transaction expect_tx(std::optional<tm_transaction> maybe_tx) {
-    BOOST_REQUIRE((bool)maybe_tx);
-    return maybe_tx.value();
-}
-
 static tm_transaction expect_tx(checked<tm_transaction, op_status> maybe_tx) {
     BOOST_REQUIRE(maybe_tx.has_value());
     return maybe_tx.value();
