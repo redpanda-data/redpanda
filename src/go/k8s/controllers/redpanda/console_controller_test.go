@@ -187,8 +187,9 @@ var _ = Describe("Console controller", func() {
 			configmapNsn := fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
 
 			By("Adding label to Console")
-			createdConsole.SetLabels(map[string]string{"test.redpanda.vectorized.io/name": "updating-console"})
-			Expect(k8sClient.Update(ctx, createdConsole)).Should(Succeed())
+			Eventually(consoleUpdater(consoleLookupKey, func(console *redpandav1alpha1.Console) {
+				console.SetLabels(map[string]string{"test.redpanda.vectorized.io/name": "updating-console"})
+			}), timeout, interval).Should(Succeed())
 
 			By("Checking ConfigMapRef did not change")
 			Eventually(func() bool {
@@ -286,37 +287,38 @@ var _ = Describe("Console controller", func() {
 			Expect(k8sClient.Create(ctx, google)).Should(Succeed())
 
 			By("Updating Console Enterprise fields")
-			console := &redpandav1alpha1.Console{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
-			console.Spec.Enterprise = &redpandav1alpha1.Enterprise{
-				RBAC: redpandav1alpha1.EnterpriseRBAC{
-					Enabled:         true,
-					RoleBindingsRef: corev1.LocalObjectReference{Name: rbacName},
-				},
-			}
-			console.Spec.LicenseRef = &redpandav1alpha1.SecretKeyRef{
-				Name:      licenseName,
-				Namespace: ConsoleNamespace,
-				Key:       licenseDataKey,
-			}
-			console.Spec.Login = &redpandav1alpha1.EnterpriseLogin{
-				Enabled: true,
-				JWTSecretRef: redpandav1alpha1.SecretKeyRef{
-					Name:      jwtName,
-					Namespace: ConsoleNamespace,
-					Key:       jwtDataKey,
-				},
-				Google: &redpandav1alpha1.EnterpriseLoginGoogle{
-					Enabled: true,
-					ClientCredentialsRef: redpandav1alpha1.NamespaceNameRef{
-						Name:      googleName,
-						Namespace: ConsoleNamespace,
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
+				console.Spec.Enterprise = &redpandav1alpha1.Enterprise{
+					RBAC: redpandav1alpha1.EnterpriseRBAC{
+						Enabled:         true,
+						RoleBindingsRef: corev1.LocalObjectReference{Name: rbacName},
 					},
-				},
-			}
-			Expect(k8sClient.Update(ctx, console)).Should(Succeed())
+				}
+				console.Spec.LicenseRef = &redpandav1alpha1.SecretKeyRef{
+					Name:      licenseName,
+					Namespace: ConsoleNamespace,
+					Key:       licenseDataKey,
+				}
+				console.Spec.Login = &redpandav1alpha1.EnterpriseLogin{
+					Enabled: true,
+					JWTSecretRef: redpandav1alpha1.SecretKeyRef{
+						Name:      jwtName,
+						Namespace: ConsoleNamespace,
+						Key:       jwtDataKey,
+					},
+					Google: &redpandav1alpha1.EnterpriseLoginGoogle{
+						Enabled: true,
+						ClientCredentialsRef: redpandav1alpha1.NamespaceNameRef{
+							Name:      googleName,
+							Namespace: ConsoleNamespace,
+						},
+					},
+				}
+			}), timeout, interval).Should(Succeed())
 
 			By("Having a valid Enterprise ConfigMap")
+			console := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
 			createdConfigMaps := &corev1.ConfigMapList{}
 			Eventually(func() bool {
 				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(console)), client.InNamespace(ConsoleNamespace)); err != nil {
@@ -352,16 +354,17 @@ var _ = Describe("Console controller", func() {
 			)
 
 			By("Updating Console RedpandaCloud Login fields")
-			console := &redpandav1alpha1.Console{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
-			console.Spec.Login.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
-				Enabled:  true,
-				Domain:   rpCloudDomain,
-				Audience: rpCloudAudience,
-			}
-			Expect(k8sClient.Update(ctx, console)).Should(Succeed())
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
+				console.Spec.Login.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
+					Enabled:  true,
+					Domain:   rpCloudDomain,
+					Audience: rpCloudAudience,
+				}
+			}), timeout, interval).Should(Succeed())
 
 			By("Having only RedpandaCloud provider in ConfigMap")
+			console := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
 			createdConfigMaps := &corev1.ConfigMapList{}
 			Eventually(func() bool {
 				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(console)), client.InNamespace(ConsoleNamespace)); err != nil {
