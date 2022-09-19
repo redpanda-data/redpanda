@@ -266,6 +266,9 @@ void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
 template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
+template<typename Tag>
+void write(iobuf& out, ss::bool_class<Tag> t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -362,6 +365,11 @@ void write(iobuf& out, std::optional<T> t) {
     }
 }
 
+template<typename Tag>
+void write(iobuf& out, ss::bool_class<Tag> t) {
+    write(out, static_cast<int8_t>(bool(t)));
+}
+
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
@@ -426,8 +434,6 @@ void write(iobuf& out, T t) {
         for (auto& el : t) {
             write(out, std::move(el));
         }
-    } else if constexpr (reflection::is_ss_bool_class<Type>) {
-        write(out, static_cast<int8_t>(bool(t)));
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
