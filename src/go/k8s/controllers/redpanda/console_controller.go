@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -87,6 +88,12 @@ func (r *ConsoleReconciler) Reconcile(
 		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
 		switch {
 		case apierrors.IsNotFound(err):
+			// If deleting and cluster is not found, nothing to do
+			if console.GetDeletionTimestamp() != nil {
+				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleSAFinalizer)
+				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleACLFinalizer)
+				return ctrl.Result{}, r.Update(ctx, console)
+			}
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
