@@ -44,6 +44,9 @@ const (
 	// ClusterNotFoundEvent is a warning event if referenced Cluster not found
 	ClusterNotFoundEvent = "ClusterNotFound"
 
+	// ClusterNotConfiguredEvent is a warning event if referenced Cluster not yet configured
+	ClusterNotConfiguredEvent = "ClusterNotConfigured"
+
 	// NoSubdomainEvent is warning event if subdomain is not found in Cluster ExternalListener
 	NoSubdomainEvent = "NoSubdomain"
 )
@@ -79,24 +82,25 @@ func (r *ConsoleReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	cluster := &redpandav1alpha1.Cluster{}
-	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			// Console will never reconcile if Cluster is not found
-			// Users shouldn't check logs of operator to know this
-			// Adding Conditions in Console status might not be apt, record Event instead
+	cluster, err := console.GetCluster(ctx, r.Client)
+	if err != nil {
+		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
+		switch {
+		case apierrors.IsNotFound(err):
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
-				"Unable to reconcile Console as the referenced Cluster %s/%s is not found",
-				console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name,
+				"Unable to reconcile Console as the referenced Cluster %s is not found", console.GetClusterRef(),
 			)
+		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured):
+			r.EventRecorder.Eventf(
+				console,
+				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
+				"Unable to reconcile Console as the referenced Cluster %s is not yet configured", console.GetClusterRef(),
+			)
+			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
-	}
-	if cc := cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
-		log.Info("Cluster not yet configured, requeueing", "redpandacluster", client.ObjectKeyFromObject(cluster).String())
-		return ctrl.Result{Requeue: true}, nil
 	}
 
 	var s state
