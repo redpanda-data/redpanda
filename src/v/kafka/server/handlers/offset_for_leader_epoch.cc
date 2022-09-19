@@ -155,7 +155,7 @@ get_offsets_for_leader_epochs(
             if (!shard) {
                 partition_response = response_t::make_epoch_end_offset(
                   request_partition.partition,
-                  error_code::not_leader_for_partition);
+                  error_code::unknown_topic_or_partition);
                 continue;
             }
 
