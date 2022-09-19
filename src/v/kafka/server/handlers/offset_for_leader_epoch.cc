@@ -131,7 +131,7 @@ get_offsets_for_leader_epochs(
         result.back().partitions.reserve(request_topic.partitions.size());
 
         for (auto& request_partition : request_topic.partitions) {
-            // add response placeholder
+            // add reponse placeholder
             result.back().partitions.push_back(epoch_end_offset{});
             // we are reserving both topics and partitions, reference to
             // response is stable and we can capture it
@@ -150,7 +150,7 @@ get_offsets_for_leader_epochs(
             }
 
             auto shard = ctx.shards().shard_for(ntp);
-            // no shard found, we may be in the middle of partition move, return
+            // no shard found, we may be in the middle of partiton move, return
             // not leader for partition error
             if (!shard) {
                 partition_response = response_t::make_epoch_end_offset(
