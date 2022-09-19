@@ -7,21 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 import random
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_producer import RpkProducer
 
 
-class OffsetForLeaderEpochTest(PreallocNodesTest):
+class OffsetForLeaderEpochTest(RedpandaTest):
     """
     Check offset for leader epoch handling
     """
@@ -55,8 +53,7 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
                              extra_rp_conf={
                                  'enable_leader_balancer': False,
                                  "log_compaction_interval_ms": 1000
-                             },
-                             node_prealloc_count=1)
+                             })
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch(self):
@@ -132,78 +129,3 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
 
         for o in leader_epoch_offsets:
             assert o.error is not None and "UNKNOWN_LEADER_EPOCH" in o.error
-
-    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_offset_for_leader_epoch_transfer(self):
-
-        topic = TopicSpec(partition_count=64, replication_factor=3)
-
-        # create test topics
-        self.client().create_topic(topic)
-
-        kcl = KCL(self.redpanda)
-
-        def produce_some():
-            msg_size = 512
-            msg_cnt = 1000000 if self.redpanda.dedicated_nodes else 10000
-
-            producer = KgoVerifierProducer(self.test_context, self.redpanda,
-                                           topic.name, msg_size, msg_cnt,
-                                           self.preallocated_nodes)
-            producer.start()
-            producer.wait()
-
-        admin = Admin(self.redpanda)
-        offsets = {}
-
-        def get_offsets_for_leader_epoch(epoch):
-            offsets_for_leader_epoch = []
-
-            def have_all_offsets():
-                offsets_for_leader_epoch.clear()
-                offsets = kcl.offset_for_leader_epoch(topics=[topic.name],
-                                                      leader_epoch=epoch)
-                offsets_for_leader_epoch.extend(offsets)
-                return all([
-                    ofle.epoch_end_offset != -1
-                    for ofle in offsets_for_leader_epoch
-                ])
-
-            wait_until(have_all_offsets, 30, 1)
-
-            return offsets_for_leader_epoch
-
-        rpk = RpkTool(self.redpanda)
-
-        # store offsets after each epoch change
-        offsets_after_epochs = []
-
-        # generate some leader epoch changes
-        for _ in range(5):
-            produce_some()
-            # store partition epoch and offsets
-            offsets = rpk.describe_topic(topic.name)
-            offsets_after_epochs.append(list(offsets))
-
-            for p in offsets_after_epochs[-1]:
-                admin.partition_transfer_leadership("kafka",
-                                                    topic=topic.name,
-                                                    partition=p.id)
-        # generate some more leadership changes
-        for _ in range(5):
-            for p in offsets_after_epochs[-1]:
-                admin.partition_transfer_leadership("kafka",
-                                                    topic=topic.name,
-                                                    partition=p.id)
-        epoch_offsets = defaultdict(dict)
-
-        # group partitions per leader epoch
-        for offsets in offsets_after_epochs:
-            for p in offsets:
-                epoch_offsets[p.leader_epoch][p.id] = p.high_watermark
-
-        for epoch, partitions in epoch_offsets.items():
-            offsets_for_leader_epoch = get_offsets_for_leader_epoch(epoch)
-            for p in offsets_for_leader_epoch:
-                assert p.partition in partitions
-                assert partitions[p.partition] == p.epoch_end_offset
