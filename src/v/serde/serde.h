@@ -275,6 +275,9 @@ template<typename T, size_t fragment_size>
 void write(iobuf& out, fragmented_vector<T, fragment_size> t);
 
 template<typename T>
+void write(iobuf& out, tristate<T> t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -395,6 +398,18 @@ void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
 }
 
 template<typename T>
+void write(iobuf& out, tristate<T> t) {
+    if (t.is_disabled()) {
+        write<int8_t>(out, -1);
+    } else if (!t.has_value()) {
+        write<int8_t>(out, 0);
+    } else {
+        write<int8_t>(out, 1);
+        write(out, std::move(t.value()));
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -499,15 +514,6 @@ void write(iobuf& out, T t) {
         for (auto& v : t) {
             write(out, v.first);
             write(out, std::move(v.second));
-        }
-    } else if constexpr (reflection::is_tristate<T>) {
-        if (t.is_disabled()) {
-            write<int8_t>(out, -1);
-        } else if (!t.has_value()) {
-            write<int8_t>(out, 0);
-        } else {
-            write<int8_t>(out, 1);
-            write(out, std::move(t.value()));
         }
     }
 }
