@@ -69,7 +69,7 @@ func NewIngress(
 		host,
 		svcName,
 		svcPortName,
-		nil,
+		map[string]string{},
 		nil,
 		logger.WithValues(
 			"Kind", ingressKind(),
@@ -81,15 +81,14 @@ func NewIngress(
 func (r *IngressResource) WithAnnotations(
 	annot map[string]string,
 ) *IngressResource {
-	r.annotations = annot
+	for k, v := range annot {
+		r.annotations[k] = v
+	}
 	return r
 }
 
 // WithTLS sets Ingress TLS with specified issuer
 func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
-	if r.annotations == nil {
-		r.annotations = map[string]string{}
-	}
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 
