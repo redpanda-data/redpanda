@@ -264,6 +264,9 @@ template<typename T, typename Tag, typename IsConstexpr>
 void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
 
 template<typename T>
+void write(iobuf& out, std::optional<T> t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -350,6 +353,16 @@ void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t) {
 }
 
 template<typename T>
+void write(iobuf& out, std::optional<T> t) {
+    if (t) {
+        write(out, true);
+        write(out, std::move(t.value()));
+    } else {
+        write(out, false);
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -423,13 +436,6 @@ void write(iobuf& out, T t) {
         out.append(t.data(), t.size());
     } else if constexpr (std::is_same_v<Type, uuid_t>) {
         out.append(t.uuid.data, uuid_t::length);
-    } else if constexpr (reflection::is_std_optional<Type>) {
-        if (t) {
-            write(out, true);
-            write(out, std::move(t.value()));
-        } else {
-            write(out, false);
-        }
     } else if constexpr (
       is_absl_node_hash_set<Type> || is_absl_btree_set<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
