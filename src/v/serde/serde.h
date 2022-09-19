@@ -249,6 +249,9 @@ requires(
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
 
 template<typename T>
+requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -268,6 +271,23 @@ requires(
         static_assert(sizeof(le_t) == sizeof(Type));
         out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
     }
+}
+
+template<typename T>
+requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+    using Type = std::decay_t<T>;
+    auto const val = static_cast<std::underlying_type_t<Type>>(t);
+    if (unlikely(
+          val > std::numeric_limits<serde_enum_serialized_t>::max()
+          || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
+        throw serde_exception{fmt_with_ctx(
+          ssx::sformat,
+          "serde: enum of type {} has value {} which is out of bounds for "
+          "serde_enum_serialized_t",
+          type_str<T>(),
+          val)};
+    }
+    write(out, static_cast<serde_enum_serialized_t>(val));
 }
 
 template<typename T>
@@ -325,19 +345,6 @@ void write(iobuf& out, T t) {
         }
     } else if constexpr (std::is_same_v<bool, Type>) {
         write<int8_t>(out, t);
-    } else if constexpr (serde_is_enum_v<Type>) {
-        auto const val = static_cast<std::underlying_type_t<Type>>(t);
-        if (unlikely(
-              val > std::numeric_limits<serde_enum_serialized_t>::max()
-              || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
-            throw serde_exception{fmt_with_ctx(
-              ssx::sformat,
-              "serde: enum of type {} has value {} which is out of bounds for "
-              "serde_enum_serialized_t",
-              type_str<T>(),
-              val)};
-        }
-        write(out, static_cast<serde_enum_serialized_t>(val));
     } else if constexpr (reflection::is_std_vector<Type>) {
         if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
             throw serde_exception(fmt_with_ctx(
