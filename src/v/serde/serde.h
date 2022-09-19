@@ -254,6 +254,8 @@ requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
+inline void write(iobuf& out, ss::sstring t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -316,6 +318,11 @@ void write(iobuf& out, std::chrono::duration<Rep, Period> t) {
       "Floating point duration conversions are prone to precision and "
       "rounding issues.");
     write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
+}
+
+inline void write(iobuf& out, ss::sstring t) {
+    write<serde_size_t>(out, t.size());
+    out.append(t.data(), t.size());
 }
 
 template<typename T>
@@ -391,9 +398,6 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
-    } else if constexpr (std::is_same_v<Type, ss::sstring>) {
-        write<serde_size_t>(out, t.size());
-        out.append(t.data(), t.size());
     } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
