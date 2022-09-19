@@ -67,9 +67,8 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
               r.ntp,
               ctx.partition_manager().local(),
               ctx.coproc_partition_manager().local());
-            // offsets_for_leader_epoch request should only be answered by
-            // leader
-            if (!p || !p->is_leader()) {
+
+            if (!p) {
                 ret.push_back(response_t::make_epoch_end_offset(
                   r.ntp.tp.partition, error_code::not_leader_for_partition));
                 continue;
@@ -110,7 +109,7 @@ static ss::future<> fetch_offsets_from_shards(
                   results.size(),
                   responses.size());
                 for (auto& r : results) {
-                    it->get() = std::move(r);
+                    it->get() = r;
                     ++it;
                 }
             });
@@ -131,7 +130,7 @@ get_offsets_for_leader_epochs(
         result.back().partitions.reserve(request_topic.partitions.size());
 
         for (auto& request_partition : request_topic.partitions) {
-            // add response placeholder
+            // add reponse placeholder
             result.back().partitions.push_back(epoch_end_offset{});
             // we are reserving both topics and partitions, reference to
             // response is stable and we can capture it
@@ -150,12 +149,12 @@ get_offsets_for_leader_epochs(
             }
 
             auto shard = ctx.shards().shard_for(ntp);
-            // no shard found, we may be in the middle of partition move, return
+            // no shard found, we may be in the middle of partiton move, return
             // not leader for partition error
             if (!shard) {
                 partition_response = response_t::make_epoch_end_offset(
                   request_partition.partition,
-                  error_code::not_leader_for_partition);
+                  error_code::unknown_topic_or_partition);
                 continue;
             }
 
