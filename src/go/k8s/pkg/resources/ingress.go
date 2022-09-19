@@ -69,7 +69,7 @@ func NewIngress(
 		host,
 		svcName,
 		svcPortName,
-		map[string]string{},
+		nil,
 		nil,
 		logger.WithValues(
 			"Kind", ingressKind(),
@@ -81,14 +81,15 @@ func NewIngress(
 func (r *IngressResource) WithAnnotations(
 	annot map[string]string,
 ) *IngressResource {
-	for k, v := range annot {
-		r.annotations[k] = v
-	}
+	r.annotations = annot
 	return r
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(clusterIssuer, secretName string, additionalHosts ...string) *IngressResource {
+func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
+	if r.annotations == nil {
+		r.annotations = map[string]string{}
+	}
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 
@@ -96,7 +97,7 @@ func (r *IngressResource) WithTLS(clusterIssuer, secretName string, additionalHo
 		r.TLS = []netv1.IngressTLS{}
 	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
-		Hosts: append([]string{r.host}, additionalHosts...),
+		Hosts: []string{r.host},
 		// Use the Cluster wildcard certificate
 		SecretName: secretName,
 	})

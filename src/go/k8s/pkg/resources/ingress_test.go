@@ -10,20 +10,18 @@ import (
 
 func TestIngressWithTLS(t *testing.T) {
 	table := []struct {
-		host        string
-		tlsSecret   string
-		tlsIssuer   string
-		annotations map[string]string
+		host      string
+		tlsSecret string
+		tlsIssuer string
 	}{
 		{
-			host:        "test.example.local",
-			tlsSecret:   "rp-abc123-redpanda",
-			tlsIssuer:   resources.LEClusterIssuer,
-			annotations: map[string]string{"foo.vectorized.io": "bar"},
+			host:      "test.example.local",
+			tlsSecret: "rp-abc123-redpanda",
+			tlsIssuer: resources.LEClusterIssuer,
 		},
 	}
 	for _, tt := range table {
-		ingress := resources.NewIngress(nil, nil, nil, tt.host, "", "", logr.Discard()).WithTLS(tt.tlsIssuer, tt.tlsSecret).WithAnnotations(tt.annotations)
+		ingress := resources.NewIngress(nil, nil, nil, tt.host, "", "", logr.Discard()).WithTLS(tt.tlsIssuer, tt.tlsSecret)
 		annotations := ingress.GetAnnotations()
 
 		issuer, ok := annotations["cert-manager.io/cluster-issuer"]
@@ -33,12 +31,6 @@ func TestIngressWithTLS(t *testing.T) {
 		sslRedirect, ok := annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"]
 		require.True(t, ok)
 		require.Equal(t, "true", sslRedirect)
-
-		for k, v := range tt.annotations {
-			val, ok := annotations[k]
-			require.True(t, ok)
-			require.Equal(t, v, val)
-		}
 
 		var found bool
 		for _, tls := range ingress.TLS {
