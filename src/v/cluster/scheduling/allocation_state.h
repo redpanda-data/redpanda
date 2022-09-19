@@ -42,12 +42,17 @@ public:
     int16_t available_nodes() const;
 
     // Operations on state
-    void deallocate(const model::broker_shard&);
-    void apply_update(std::vector<model::broker_shard>, raft::group_id);
-    result<uint32_t> allocate(model::node_id id);
+    void deallocate(const model::broker_shard&, partition_allocation_domain);
+    void apply_update(
+      std::vector<model::broker_shard>,
+      raft::group_id,
+      partition_allocation_domain);
+    result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
 
-    void rollback(const std::vector<partition_assignment>& pa);
-    void rollback(const std::vector<model::broker_shard>& v);
+    void rollback(
+      const std::vector<partition_assignment>& pa, partition_allocation_domain);
+    void rollback(
+      const std::vector<model::broker_shard>& v, partition_allocation_domain);
 
     bool validate_shard(model::node_id node, uint32_t shard) const;
 

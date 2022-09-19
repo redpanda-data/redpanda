@@ -336,4 +336,10 @@ inline bool moving_to_node(
 
 cluster::errc map_update_interruption_error_code(std::error_code);
 
+partition_allocation_domain get_allocation_domain(model::topic_namespace_view);
+inline partition_allocation_domain
+get_allocation_domain(const model::ntp& ntp) {
+    return get_allocation_domain(model::topic_namespace_view(ntp));
+}
+
 } // namespace cluster

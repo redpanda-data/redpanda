@@ -42,7 +42,20 @@ hard_constraint_evaluator disk_not_overflowed_by_partition(
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
+/*
+ * scores nodes based on free overall allocation capacity left
+ * returning `0` for fully allocated nodes and `max_capacity` for empty nodes
+ */
 soft_constraint_evaluator least_allocated();
+
+/*
+ * scores nodes based on allocation capacity used by priorty partitions
+ * returning `0` for nodes fully allocated for priority partitons
+ * and `max_capacity` for nodes without any priority partitions
+ * non-priority partition allocations are ignored
+ */
+soft_constraint_evaluator
+  least_allocated_in_domain(partition_allocation_domain);
 
 /*
  * constraint scores nodes on free disk space

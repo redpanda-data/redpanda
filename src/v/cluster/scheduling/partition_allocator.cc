@@ -49,20 +49,28 @@ partition_allocator::partition_allocator(
   , _partitions_reserve_shard0(partitions_reserve_shard0)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
-allocation_constraints default_constraints() {
+allocation_constraints
+default_constraints(const partition_allocation_domain domain) {
     allocation_constraints req;
     req.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(not_fully_allocated()));
     req.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(is_active()));
-    req.soft_constraints.push_back(
-      ss::make_lw_shared<soft_constraint_evaluator>(least_allocated()));
+    if (domain == partition_allocation_domains::common) {
+        req.soft_constraints.push_back(
+          ss::make_lw_shared<soft_constraint_evaluator>(least_allocated()));
+    } else {
+        req.soft_constraints.push_back(
+          ss::make_lw_shared<soft_constraint_evaluator>(
+            least_allocated_in_domain(domain)));
+    }
     return req;
 }
 
 result<std::vector<model::broker_shard>>
 partition_allocator::allocate_partition(
   partition_constraints p_constraints,
+  const partition_allocation_domain domain,
   const std::vector<model::broker_shard>& not_changed_replicas) {
     vlog(
       clusterlog.trace,
@@ -75,10 +83,10 @@ partition_allocator::allocate_partition(
     }
 
     intermediate_allocation<model::broker_shard> replicas(
-      *_state, p_constraints.replication_factor);
+      *_state, p_constraints.replication_factor, domain);
 
     for (auto r = 0; r < p_constraints.replication_factor; ++r) {
-        auto effective_constraits = default_constraints();
+        auto effective_constraits = default_constraints(domain);
         effective_constraits.hard_constraints.push_back(
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
@@ -98,7 +106,7 @@ partition_allocator::allocate_partition(
 
         effective_constraits.add(p_constraints.constraints);
         auto replica = _allocation_strategy.allocate_replica(
-          effective_constraits, *_state);
+          effective_constraits, *_state, domain);
 
         if (!replica) {
             return replica.error();
@@ -272,11 +280,12 @@ partition_allocator::allocate(allocation_request request) {
     }
 
     intermediate_allocation<partition_assignment> assignments(
-      *_state, request.partitions.size());
+      *_state, request.partitions.size(), request.domain);
 
     for (auto& p_constraints : request.partitions) {
         auto const partition_id = p_constraints.partition_id;
-        auto replicas = allocate_partition(std::move(p_constraints));
+        auto replicas = allocate_partition(
+          std::move(p_constraints), request.domain);
         if (!replicas) {
             return replicas.error();
         }
@@ -284,12 +293,14 @@ partition_allocator::allocate(allocation_request request) {
           _state->next_group_id(), partition_id, std::move(replicas.value()));
     }
 
-    return allocation_units(std::move(assignments).finish(), _state.get());
+    return allocation_units(
+      std::move(assignments).finish(), _state.get(), request.domain);
 }
 
 result<std::vector<model::broker_shard>>
 partition_allocator::do_reallocate_partition(
   partition_constraints p_constraints,
+  const partition_allocation_domain domain,
   const std::vector<model::broker_shard>& not_changed_replicas) {
     vlog(
       clusterlog.debug,
@@ -307,7 +318,7 @@ partition_allocator::do_reallocate_partition(
         distinct_from(not_changed_replicas)));
     p_constraints.replication_factor -= not_changed_replicas.size();
     auto result = allocate_partition(
-      std::move(p_constraints), not_changed_replicas);
+      std::move(p_constraints), domain, not_changed_replicas);
     if (!result) {
         return result.error();
     }
@@ -322,9 +333,10 @@ partition_allocator::do_reallocate_partition(
 
 result<allocation_units> partition_allocator::reallocate_partition(
   partition_constraints partition_constraints,
-  const partition_assignment& current_assignment) {
+  const partition_assignment& current_assignment,
+  const partition_allocation_domain domain) {
     auto replicas = do_reallocate_partition(
-      std::move(partition_constraints), current_assignment.replicas);
+      std::move(partition_constraints), domain, current_assignment.replicas);
 
     if (!replicas) {
         return replicas.error();
@@ -337,11 +349,15 @@ result<allocation_units> partition_allocator::reallocate_partition(
     };
 
     return allocation_units(
-      {std::move(assignment)}, current_assignment.replicas, _state.get());
+      {std::move(assignment)},
+      current_assignment.replicas,
+      _state.get(),
+      domain);
 }
 
 result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
-  const partition_assignment& current_assignment) {
+  const partition_assignment& current_assignment,
+  const partition_allocation_domain domain) {
     uint16_t replication_factor = current_assignment.replicas.size();
     auto current_replicas = current_assignment.replicas;
     std::erase_if(current_replicas, [this](const model::broker_shard& bs) {
@@ -350,13 +366,14 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
                || it->second->is_decommissioned();
     });
 
-    auto req = default_constraints();
+    auto req = default_constraints(domain);
     req.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(
         distinct_from(current_replicas)));
 
     auto replicas = do_reallocate_partition(
       partition_constraints(current_assignment.id, replication_factor),
+      domain,
       current_replicas);
 
     if (!replicas) {
@@ -370,35 +387,40 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
     };
 
     return allocation_units(
-      {std::move(assignment)}, current_replicas, _state.get());
+      {std::move(assignment)}, current_replicas, _state.get(), domain);
 }
 
 void partition_allocator::deallocate(
-  const std::vector<model::broker_shard>& replicas) {
+  const std::vector<model::broker_shard>& replicas,
+  const partition_allocation_domain domain) {
     for (auto& r : replicas) {
         // find in brokers
-        _state->deallocate(r);
+        _state->deallocate(r, domain);
     }
 }
 
 void partition_allocator::update_allocation_state(
-  const std::vector<model::broker_shard>& shards, raft::group_id gid) {
+  const std::vector<model::broker_shard>& shards,
+  raft::group_id gid,
+  const partition_allocation_domain domain) {
     if (shards.empty()) {
         return;
     }
 
-    _state->apply_update(shards, gid);
+    _state->apply_update(shards, gid, domain);
 }
 
 void partition_allocator::add_allocations(
-  const std::vector<model::broker_shard>& to_add) {
-    _state->apply_update(to_add, raft::group_id{});
+  const std::vector<model::broker_shard>& to_add,
+  const partition_allocation_domain domain) {
+    _state->apply_update(to_add, raft::group_id{}, domain);
 }
 
 void partition_allocator::remove_allocations(
-  const std::vector<model::broker_shard>& to_remove) {
+  const std::vector<model::broker_shard>& to_remove,
+  const partition_allocation_domain domain) {
     for (const auto& bs : to_remove) {
-        _state->deallocate(bs);
+        _state->deallocate(bs, domain);
     }
 }
 

@@ -374,7 +374,7 @@ make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
 allocation_request
 make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
     // no custom assignments, lets allocator decide based on partition count
-    allocation_request req;
+    allocation_request req(get_allocation_domain(ca_cfg.cfg.tp_ns));
     if (!ca_cfg.has_custom_assignment()) {
         req.partitions.reserve(ca_cfg.cfg.partition_count);
         for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
@@ -796,7 +796,7 @@ allocation_request make_allocation_request(
   const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
-    allocation_request req;
+    allocation_request req(get_allocation_domain(cfg.tp_ns));
     req.partitions.reserve(new_partitions_cnt);
     for (auto p = 0; p < new_partitions_cnt; ++p) {
         req.partitions.emplace_back(model::partition_id(p), replication_factor);

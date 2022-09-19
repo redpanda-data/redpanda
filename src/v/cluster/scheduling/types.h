@@ -128,11 +128,15 @@ struct allocation_constraints {
  * after this object goes out of scope.
  */
 struct allocation_units {
-    allocation_units(std::vector<partition_assignment>, allocation_state*);
+    allocation_units(
+      std::vector<partition_assignment>,
+      allocation_state*,
+      partition_allocation_domain);
     allocation_units(
       std::vector<partition_assignment>,
       std::vector<model::broker_shard>,
-      allocation_state*);
+      allocation_state*,
+      partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -151,6 +155,7 @@ private:
     absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
     allocation_state* _state;
+    partition_allocation_domain _domain;
 };
 
 /**
@@ -173,7 +178,9 @@ struct partition_constraints {
 };
 
 struct allocation_request {
-    allocation_request() = default;
+    allocation_request() = delete;
+    explicit allocation_request(const partition_allocation_domain domain_)
+      : domain(domain_) {}
     allocation_request(const allocation_request&) = delete;
     allocation_request(allocation_request&&) = default;
     allocation_request& operator=(const allocation_request&) = delete;
@@ -181,6 +188,7 @@ struct allocation_request {
     ~allocation_request() = default;
 
     std::vector<partition_constraints> partitions;
+    partition_allocation_domain domain;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);
 };
