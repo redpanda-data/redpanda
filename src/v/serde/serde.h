@@ -260,6 +260,9 @@ inline void write(iobuf& out, bool t);
 
 inline void write(iobuf& out, ss::net::inet_address t);
 
+template<typename T, typename Tag, typename IsConstexpr>
+void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -341,6 +344,11 @@ inline void write(iobuf& out, ss::net::inet_address t) {
     write(out, std::move(address_bytes));
 }
 
+template<typename T, typename Tag, typename IsConstexpr>
+void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t) {
+    return write(out, static_cast<T>(t));
+}
+
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
@@ -405,8 +413,6 @@ void write(iobuf& out, T t) {
         for (auto& el : t) {
             write(out, std::move(el));
         }
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
-        return write(out, static_cast<typename Type::type>(t));
     } else if constexpr (reflection::is_ss_bool_class<Type>) {
         write(out, static_cast<int8_t>(bool(t)));
     } else if constexpr (std::is_same_v<Type, iobuf>) {
