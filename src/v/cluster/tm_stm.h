@@ -38,8 +38,11 @@ namespace cluster {
 using use_tx_version_with_last_pid_bool
   = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
 
+// Update this if your patch bumps the version.
+// Current version of transaction record (v2).
+// Includes all changes for transactions GA.
+// + last_pid field - KIP-360 support
 struct tm_transaction {
-    // Version 2 added last_pid field to tx log records
     static constexpr uint8_t version = 2;
 
     enum tx_status {
@@ -293,8 +296,9 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
 };
 
-// Version 1 added last_update_ts to tx lod record. And new status tombstone to
-// tx_status
+// Updates in v1.
+//  + last_update_ts - tracks last updated ts for transactions expiration
+//  + tx_status::tombstone - Removes all txn related state upon apply.
 struct tm_transaction_v1 {
     static constexpr uint8_t version = 1;
 
