@@ -271,6 +271,9 @@ void write(iobuf& out, ss::bool_class<Tag> t);
 
 inline void write(iobuf& out, bytes t);
 
+template<typename T, size_t fragment_size>
+void write(iobuf& out, fragmented_vector<T, fragment_size> t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -375,6 +378,20 @@ void write(iobuf& out, ss::bool_class<Tag> t) {
 inline void write(iobuf& out, bytes t) {
     write<serde_size_t>(out, t.size());
     out.append(t.data(), t.size());
+}
+
+template<typename T, size_t fragment_size>
+void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: fragmented vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, std::move(el));
+    }
 }
 
 template<typename T>
@@ -482,17 +499,6 @@ void write(iobuf& out, T t) {
         for (auto& v : t) {
             write(out, v.first);
             write(out, std::move(v.second));
-        }
-    } else if constexpr (is_fragmented_vector<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: fragmented vector size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
         }
     } else if constexpr (reflection::is_tristate<T>) {
         if (t.is_disabled()) {
