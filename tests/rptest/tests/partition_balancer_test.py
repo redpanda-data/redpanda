@@ -77,7 +77,7 @@ class PartitionBalancerTest(EndToEndTest):
     def wait_until_status(self, predicate, timeout_sec=120):
         # We may get a 504 if we proxy a status request to a suspended node.
         # It is okay to retry (the controller leader will get re-elected in the meantime).
-        admin = Admin(self.redpanda, retry_codes=[503, 504])
+        admin = Admin(self.redpanda, retry_codes=[503, 504], retries_amount=10)
         start = time.time()
 
         def check():
