@@ -31,6 +31,14 @@ class token_bucket {
 public:
     token_bucket(size_t rate, ss::sstring name)
       : _rate(rate)
+      , _capacity(rate)
+      , _sem{rate, std::move(name)}
+      , _last_refresh(clock_type::now())
+      , _refresh_timer([this] { handle_refresh(); }) {}
+
+    token_bucket(size_t rate, ss::sstring name, size_t capacity)
+      : _rate(rate)
+      , _capacity(capacity)
       , _sem{rate, std::move(name)}
       , _last_refresh(clock_type::now())
       , _refresh_timer([this] { handle_refresh(); }) {}
@@ -67,7 +75,6 @@ public:
          */
         return _sem.try_wait(size);
     }
-
     void shutdown() {
         _refresh_timer.cancel();
         _sem.broken();
@@ -79,10 +86,29 @@ public:
         }
 
         if (_rate > new_rate) {
-            _sem.consume(_rate - new_rate);
+            if (_sem.current() <= _rate) {
+                _sem.consume(_rate - new_rate);
+            } else {
+                /*
+                 * if current > rate it means that we have accumulated tokens
+                 * we should change current to new_rate to start accumulation
+                 * from begining
+                 */
+                _sem.consume(_sem.current() - new_rate);
+            }
         } else {
-            _sem.signal(new_rate - _rate);
+            if (_sem.current() <= _rate) {
+                _sem.signal(new_rate - _rate);
+            } else {
+                // Same as previous comment
+                _sem.consume(_sem.current() - new_rate);
+            }
         }
+
+        if (_rate == _capacity) {
+            _capacity = new_rate;
+        }
+
         _rate = new_rate;
     }
 
@@ -111,8 +137,8 @@ private:
          * underestimated we may need to allow the available tokens to exceed
          * the rate to let a waiter through.
          */
-        if (_sem.current() > _rate && !_sem.waiters()) {
-            _sem.consume(_sem.current() - _rate);
+        if (_sem.current() > _capacity && !_sem.waiters()) {
+            _sem.consume(_sem.current() - _capacity);
         }
     }
 
@@ -128,6 +154,7 @@ private:
     }
 
     size_t _rate;
+    size_t _capacity;
     ssx::semaphore _sem;
     typename clock_type::time_point _last_refresh;
     ss::timer<> _refresh_timer;
