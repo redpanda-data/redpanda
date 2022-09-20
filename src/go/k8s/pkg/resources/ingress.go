@@ -88,7 +88,7 @@ func (r *IngressResource) WithAnnotations(
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
+func (r *IngressResource) WithTLS(clusterIssuer, secretName string, additionalHosts ...string) *IngressResource {
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 
@@ -96,7 +96,7 @@ func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressReso
 		r.TLS = []netv1.IngressTLS{}
 	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
-		Hosts: []string{r.host},
+		Hosts: append([]string{r.host}, additionalHosts...),
 		// Use the Cluster wildcard certificate
 		SecretName: secretName,
 	})

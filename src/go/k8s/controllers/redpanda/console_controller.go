@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -152,7 +153,8 @@ func (r *Reconciling) Do(
 
 	// Ingress with TLS and "/debug" "/admin" paths disabled
 	ingressResource := resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log)
-	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()))
+	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()),
+		strings.TrimPrefix(subdomain, "console.")) // @JB: workaround to put short SAN entry so LE can fill CN of cert.
 	ingressResource = ingressResource.WithAnnotations(map[string]string{
 		"nginx.ingress.kubernetes.io/server-snippet": "if ($request_uri ~* ^/(debug|admin)) {\n\treturn 403;\n\t}",
 	})
