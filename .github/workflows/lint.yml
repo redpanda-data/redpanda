@@ -86,23 +86,15 @@ jobs:
 
   cpp:
     name: Lint files with clang-format
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
 
-    - name: Fetch clang-format
-      run: |
-        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository --yes --update 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main'
-        sudo apt-get install -y git clang-format-14
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Run clang fmt
+    - name: Run clang-format
       run: |
-        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-14 -i -style=file -fallback-style=none
+        find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-14 -i -style=file -fallback-style=none
         git diff --exit-code
 
   sh:
