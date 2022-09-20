@@ -60,6 +60,7 @@ func main() {
 		configuratorTag             string
 		configuratorImagePullPolicy string
 		decommissionWaitInterval    time.Duration
+		restrictToRedpandaVersion   string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -75,6 +76,7 @@ func main() {
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
 	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
 	flag.BoolVar(&redpandav1alpha1.AllowConsoleAnyNamespace, "allow-console-any-ns", false, "Allow to create Console in any namespace. Allowing this copies Redpanda SchemaRegistry TLS Secret to namespace (alpha feature)")
+	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 
 	opts := zap.Options{
 		Development: true,
@@ -106,21 +108,23 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ClusterReconciler{
-		Client:                   mgr.GetClient(),
-		Log:                      ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme:                   mgr.GetScheme(),
-		AdminAPIClientFactory:    adminutils.NewInternalAdminAPI,
-		DecommissionWaitInterval: decommissionWaitInterval,
+		Client:                    mgr.GetClient(),
+		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:                    mgr.GetScheme(),
+		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+		DecommissionWaitInterval:  decommissionWaitInterval,
+		RestrictToRedpandaVersion: restrictToRedpandaVersion,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
 
 	if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
-		Client:                mgr.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
-		Scheme:                mgr.GetScheme(),
-		AdminAPIClientFactory: adminutils.NewInternalAdminAPI,
+		Client:                    mgr.GetClient(),
+		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
+		Scheme:                    mgr.GetScheme(),
+		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+		RestrictToRedpandaVersion: restrictToRedpandaVersion,
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
 		os.Exit(1)

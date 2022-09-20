@@ -40,11 +40,12 @@ const (
 // ClusterConfigurationDriftReconciler detects drifts in the cluster configuration and triggers a reconciliation.
 type ClusterConfigurationDriftReconciler struct {
 	client.Client
-	Log                   logr.Logger
-	clusterDomain         string
-	Scheme                *runtime.Scheme
-	DriftCheckPeriod      *time.Duration
-	AdminAPIClientFactory adminutils.AdminAPIClientFactory
+	Log                       logr.Logger
+	clusterDomain             string
+	Scheme                    *runtime.Scheme
+	DriftCheckPeriod          *time.Duration
+	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
+	RestrictToRedpandaVersion string
 }
 
 // Reconcile detects drift in configuration for clusters and schedules a patch.
@@ -72,6 +73,9 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
+	}
+	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
+		return ctrl.Result{}, nil
 	}
 
 	condition := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType)
