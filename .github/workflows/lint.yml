@@ -52,22 +52,17 @@ jobs:
 
   js:
     name: Lint js files
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
-      uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Set up Node
-      uses: actions/setup-node@v2-beta
-      with:
-        node-version: '12.16.1'
+    - name: Install prettier
+      run: npm install prettier@2.7.1
 
-    - name: Set up prettier
-      run: npm install prettier@2.3.0
-
-    - name: Lint JS files
-      run: npx prettier --list-different src/**/*.{ts,js}
+    - name: Run prettier
+      run: npx prettier --check 'src/**/*.{ts,js}'
 
   py:
     name: Lint python files
