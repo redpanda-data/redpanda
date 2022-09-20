@@ -21,32 +21,34 @@ on:
 jobs:
   go:
     name: Lint go files
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Set up Go
+    - name: Setup go
       uses: actions/setup-go@v3
       with:
-        go-version: 1.17.8
+        go-version: 1.17.13
 
-    - name: lint rpk
+    - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v3
       with:
         version: v1.45.2
         working-directory: src/go/rpk/
 
-    - name: install gofumpt
-      working-directory: src/go/rpk
+    - name: Install gofumpt
+      env:
+        GOFUMPT_VER: 0.3.1
       run: |
-        go install mvdan.cc/gofumpt@v0.3.0
+        mkdir -v -p "$HOME/.local/bin"
+        wget -O "$HOME/.local/bin/gofumpt" "https://github.com/mvdan/gofumpt/releases/download/v${GOFUMPT_VER}/gofumpt_v${GOFUMPT_VER}_linux_amd64"
+        chmod 0700 "$HOME/.local/bin/gofumpt"
 
-    - name: lint go files
-      working-directory: src/go
+    - name: Run gofumpt
       run: |
-        find . -name *.go -type f | xargs -n1 gofumpt -w -lang=1.17
+        find src/go -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.17
         git diff --exit-code
 
   js:
