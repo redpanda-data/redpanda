@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -26,7 +27,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -44,9 +44,6 @@ type ConsoleReconciler struct {
 const (
 	// ClusterNotFoundEvent is a warning event if referenced Cluster not found
 	ClusterNotFoundEvent = "ClusterNotFound"
-
-	// ClusterNotConfiguredEvent is a warning event if referenced Cluster not yet configured
-	ClusterNotConfiguredEvent = "ClusterNotConfigured"
 
 	// NoSubdomainEvent is warning event if subdomain is not found in Cluster ExternalListener
 	NoSubdomainEvent = "NoSubdomain"
@@ -83,31 +80,24 @@ func (r *ConsoleReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	cluster, err := console.GetCluster(ctx, r.Client)
-	if err != nil {
-		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
-		switch {
-		case apierrors.IsNotFound(err):
-			// If deleting and cluster is not found, nothing to do
-			if console.GetDeletionTimestamp() != nil {
-				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleSAFinalizer)
-				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleACLFinalizer)
-				return ctrl.Result{}, r.Update(ctx, console)
-			}
+	cluster := &redpandav1alpha1.Cluster{}
+	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Console will never reconcile if Cluster is not found
+			// Users shouldn't check logs of operator to know this
+			// Adding Conditions in Console status might not be apt, record Event instead
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
-				"Unable to reconcile Console as the referenced Cluster %s is not found", console.GetClusterRef(),
+				"Unable to reconcile Console as the referenced Cluster %s/%s is not found",
+				console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name,
 			)
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured):
-			r.EventRecorder.Eventf(
-				console,
-				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
-				"Unable to reconcile Console as the referenced Cluster %s is not yet configured", console.GetClusterRef(),
-			)
-			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
+	}
+	if cc := cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+		log.Info("Cluster not yet configured, requeueing", "redpandacluster", client.ObjectKeyFromObject(cluster).String())
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	var s state
@@ -163,7 +153,8 @@ func (r *Reconciling) Do(
 
 	// Ingress with TLS and "/debug" "/admin" paths disabled
 	ingressResource := resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log)
-	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()))
+	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()),
+		strings.TrimPrefix(subdomain, "console.")) // @JB: workaround to put short SAN entry so LE can fill CN of cert.
 	ingressResource = ingressResource.WithAnnotations(map[string]string{
 		"nginx.ingress.kubernetes.io/server-snippet": "if ($request_uri ~* ^/(debug|admin)) {\n\treturn 403;\n\t}",
 	})
