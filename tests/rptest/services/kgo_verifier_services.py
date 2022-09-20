@@ -407,7 +407,7 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -436,7 +436,7 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -464,7 +464,7 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -548,7 +548,7 @@ class KgoVerifierProducer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0 --client-name {self.who_am_i()}"
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
