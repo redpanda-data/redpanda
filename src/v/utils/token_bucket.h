@@ -57,6 +57,17 @@ public:
         return _sem.wait(as, size);
     }
 
+    bool try_throttle(size_t size) {
+        _refresh_timer.cancel();
+        refresh();
+
+        /*
+         * when try_wait succeeds it implies that there are no waiters so there
+         * is no risk in returning without arming the refresh timer.
+         */
+        return _sem.try_wait(size);
+    }
+
     void shutdown() {
         _refresh_timer.cancel();
         _sem.broken();
