@@ -1565,7 +1565,6 @@ class redpanda(gdb.Command):
 
 class sstring_printer(gdb.printing.PrettyPrinter):
     'print an sstring'
-
     def __init__(self, val):
         self.val = val
 
@@ -1584,7 +1583,6 @@ class sstring_printer(gdb.printing.PrettyPrinter):
 
 class model_ntp_printer(gdb.printing.PrettyPrinter):
     'print a model::ntp'
-
     def __init__(self, val):
         self.val = val
 
