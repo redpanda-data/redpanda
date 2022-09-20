@@ -131,6 +131,10 @@ std::optional<tm_transaction> tm_stm::do_get_tx(kafka::transactional_id tx_id) {
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_tx(kafka::transactional_id tx_id) {
+    auto r = co_await sync(_sync_timeout);
+    if (!r.has_value()) {
+        co_return r.error();
+    }
     auto tx_it = _mem_txes.find(tx_id);
     if (tx_it != _mem_txes.end()) {
         co_return tx_it->second;
