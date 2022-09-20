@@ -54,6 +54,19 @@ SEASTAR_THREAD_TEST_CASE(test_wait_until_available) {
     }
 }
 
+SEASTAR_THREAD_TEST_CASE(test_burst) {
+    token_bucket<ss::manual_clock> throttler(RATE, "test_burst", RATE * 3);
+    for (size_t i = 0; i < RATE; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    BOOST_REQUIRE(!throttler.try_throttle(1));
+    ss::manual_clock::advance(ss::lowres_clock::duration(4s));
+    for (size_t i = 0; i < RATE * 3; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    BOOST_REQUIRE(!throttler.try_throttle(1));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_update_rate) {
     const size_t RATE_PART = RATE - 10;
     token_bucket<ss::manual_clock> throttler(RATE, "test_update_rate");
@@ -84,4 +97,72 @@ SEASTAR_THREAD_TEST_CASE(test_update_rate) {
         BOOST_REQUIRE(throttler.try_throttle(1));
     }
     BOOST_REQUIRE(!throttler.try_throttle(1));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_update_rate_burst) {
+    const size_t RATE_PART = RATE - 10;
+    token_bucket<ss::manual_clock> throttler(
+      RATE, "test_update_rate_burst", RATE * 3);
+
+    ss::manual_clock::advance(ss::lowres_clock::duration(4s));
+    for (size_t i = 0; i < RATE; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    throttler.update_rate(RATE_PART);
+
+    // Right after update there should be RATE_PART points
+    // because we accumulated 2 x Rate point before update
+    // and downscaled rate to RATE_PART. So accumulated points
+    // should drop to RATE_PART points
+    for (size_t i = 0; i < RATE_PART; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    BOOST_REQUIRE(!throttler.try_throttle(1));
+
+    ss::manual_clock::advance(ss::lowres_clock::duration(4s));
+    for (size_t i = 0; i < RATE; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    throttler.update_rate(RATE);
+    for (size_t i = 0; i < RATE; ++i) {
+        BOOST_REQUIRE(throttler.try_throttle(1));
+    }
+    BOOST_REQUIRE(!throttler.try_throttle(1));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_available_tokens) {
+    token_bucket<ss::manual_clock> throttler(RATE, "test_available_tokens");
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE);
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    BOOST_REQUIRE_EQUAL(throttler.available(), 0);
+
+    ss::manual_clock::advance(ss::lowres_clock::duration(2s));
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE);
+    for (size_t i = 0; i < 10; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE - 10);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_available_tokens_burst) {
+    token_bucket<ss::manual_clock> throttler(
+      RATE, "test_available_tokens_burst", RATE * 3);
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE);
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    BOOST_REQUIRE_EQUAL(throttler.available(), 0);
+
+    ss::manual_clock::advance(ss::lowres_clock::duration(4s));
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 3);
+    for (size_t i = 0; i < 10; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 3 - 10);
 }
