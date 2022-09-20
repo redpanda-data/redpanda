@@ -25,6 +25,7 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_status_rpc_handler.h"
 #include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
@@ -872,6 +873,18 @@ void application::wire_up_redpanda_services() {
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
 
+    construct_service(node_status_table, config::node().node_id()).get();
+
+    construct_single_service_sharded(
+      node_status_backend,
+      config::node().node_id(),
+      std::ref(controller->get_members_table()),
+      std::ref(_feature_table),
+      std::ref(node_status_table),
+      ss::sharded_parameter(
+        [] { return config::shard_local_cfg().node_status_interval.bind(); }))
+      .get();
+
     syschecks::systemd_message("Creating kafka metadata cache").get();
     construct_service(
       metadata_cache,
@@ -1283,6 +1296,10 @@ void application::start_redpanda(::stop_signal& app_signal) {
     // single instance
     storage_node.invoke_on_all(&storage::node_api::start).get0();
 
+    // single instance
+    node_status_backend.invoke_on_all(&cluster::node_status_backend::start)
+      .get();
+
     // Early initialization of disk stats, so that logic for e.g. picking
     // falloc sizes works without having to wait for a local_monitor tick.
     auto tmp_lm = cluster::node::local_monitor(
@@ -1386,6 +1403,11 @@ void application::start_redpanda(::stop_signal& app_signal) {
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_partition_balancer()));
+
+          proto->register_service<cluster::node_status_rpc_handler>(
+            _scheduling_groups.node_status(),
+            smp_service_groups.cluster_smp_sg(),
+            std::ref(node_status_backend));
 
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
