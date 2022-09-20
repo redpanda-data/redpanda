@@ -41,6 +41,8 @@ std::string_view to_string_view(feature f) {
         return "transaction_ga";
     case feature::raftless_node_status:
         return "raftless_node_status";
+    case feature::internal_secrets:
+        return "internal_secrets";
     case feature::test_alpha:
         return "__test_alpha";
     }
