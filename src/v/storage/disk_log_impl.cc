@@ -829,12 +829,29 @@ ss::future<> disk_log_impl::flush() {
 
 size_t disk_log_impl::max_segment_size() const {
     // override for segment size
+    size_t result;
     if (config().has_overrides() && config().get_overrides().segment_size) {
-        return *config().get_overrides().segment_size;
+        result = *config().get_overrides().segment_size;
+    } else {
+        // no overrides use defaults
+        result = config().is_compacted()
+                   ? _manager.config().compacted_segment_size()
+                   : _manager.config().max_segment_size();
     }
-    // no overrides use defaults
-    return config().is_compacted() ? _manager.config().compacted_segment_size()
-                                   : _manager.config().max_segment_size();
+
+    // Clamp to safety limits on segment sizes, in case the
+    // property was set without proper validation (e.g. on
+    // an older version or before limits were set)
+    auto min_limit = config::shard_local_cfg().log_segment_size_min();
+    auto max_limit = config::shard_local_cfg().log_segment_size_max();
+    if (min_limit) {
+        result = std::max(*min_limit, result);
+    }
+    if (max_limit) {
+        result = std::min(*max_limit, result);
+    }
+
+    return result;
 }
 
 size_t disk_log_impl::bytes_left_before_roll() const {

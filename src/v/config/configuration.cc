@@ -28,12 +28,31 @@ configuration::configuration()
   : log_segment_size(
     *this,
     "log_segment_size",
-    "How large in bytes should each log segment be (default 1G)",
+    "Default log segment size in bytes for topics which do not set "
+    "segment.bytes",
     {.needs_restart = needs_restart::no,
      .example = "2147483648",
      .visibility = visibility::tunable},
     1_GiB,
     {.min = 1_MiB})
+  , log_segment_size_min(
+      *this,
+      "log_segment_size_min",
+      "Lower bound on topic segment.bytes: lower values will be clamped to "
+      "this limit",
+      {.needs_restart = needs_restart::no,
+       .example = "16777216",
+       .visibility = visibility::tunable},
+      std::nullopt)
+  , log_segment_size_max(
+      *this,
+      "log_segment_size_max",
+      "Upper bound on topic segment.bytes: higher values will be clamped to "
+      "this limit",
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",

@@ -1177,6 +1177,74 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(size3 - size2, 2);
 }
 
+FIXTURE_TEST(check_max_segment_size_limits, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+
+    // Apply limits to the effective segment size: we may configure
+    // something different per-topic, but at runtime the effective
+    // segment size will be clamped to this range.
+    config::shard_local_cfg().log_segment_size_min.set_value(
+      std::make_optional(50_KiB));
+    config::shard_local_cfg().log_segment_size_max.set_value(
+      std::make_optional(200_KiB));
+
+    std::exception_ptr ex;
+    try {
+        // Initially 100KiB configured segment size, it is within the range
+        auto mock = config::mock_property<size_t>(100_KiB);
+
+        cfg.max_segment_size = mock.bind();
+        cfg.stype = storage::log_config::storage_type::disk;
+
+        ss::abort_source as;
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp("default", "test", 0);
+        storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+        auto log = mgr.manage(std::move(ntp_cfg)).get0();
+        auto disk_log = get_disk_log(log);
+
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 0);
+
+        // Write 100 * 1_KiB batches, should yield 1 full segment
+        auto result = append_exactly(log, 50, 1_KiB).get0(); // 100*1_KiB
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 1);
+        result = append_exactly(log, 100, 1_KiB).get0(); // 100*1_KiB
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 2);
+
+        // A too-low segment size: should be clamped to the lower bound
+        mock.update(1_KiB);
+        disk_log->force_roll(ss::default_priority_class()).get();
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
+
+        // Exceeding the apparent segment size doesn't roll, because it was
+        // clamped
+        result = append_exactly(log, 5, 1_KiB).get0();
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
+        // Exceeding the lower bound segment size does cause a roll
+        result = append_exactly(log, 55, 1_KiB).get0();
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 4);
+
+        // A too-high segment size: should be clamped to the upper bound
+        mock.update(2000_KiB);
+        disk_log->force_roll(ss::default_priority_class()).get();
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 5);
+        // Exceeding the upper bound causes a roll, even if we didn't reach
+        // the user-configured segment size
+        result = append_exactly(log, 201, 1_KiB).get0();
+        BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 6);
+    } catch (...) {
+        ex = std::current_exception();
+    }
+
+    config::shard_local_cfg().log_segment_size_min.reset();
+    config::shard_local_cfg().log_segment_size_max.reset();
+
+    if (ex) {
+        throw ex;
+    }
+}
+
 FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     // make sure segments are small
