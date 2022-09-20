@@ -1,4 +1,3 @@
 function run_timeout(obj) {
-    while (true) {
-    }
+  while (true) {}
 }
