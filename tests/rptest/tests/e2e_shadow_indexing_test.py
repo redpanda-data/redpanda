@@ -159,7 +159,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                                            original_snapshot=original_snapshot)
 
             self.start_consumer()
-            self.run_validation()
+            self.run_validation(consumer_timeout_sec=90)
         ctx.assert_actions_triggered()
 
 
