@@ -19,11 +19,13 @@
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "net/exceptions.h"
 #include "security/exceptions.h"
 #include "units.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
@@ -41,6 +43,22 @@ ss::future<> connection_context::process_one_request() {
       .then([this](std::optional<size_t> sz) mutable {
           if (!sz) {
               return ss::make_ready_future<>();
+          }
+          if (sz > _max_request_size()) {
+              vlog(
+                klog.warn,
+                "request from {} is larger ({} bytes) than configured max "
+                "request size {}",
+                _rs.conn->addr,
+                sz,
+                _max_request_size());
+              return ss::make_exception_future<>(
+                net::invalid_request_error(fmt::format(
+                  "request is larger ({} bytes) than configured max request "
+                  "size "
+                  "{}",
+                  sz,
+                  _max_request_size())));
           }
           /*
            * Intercept the wire protocol when:

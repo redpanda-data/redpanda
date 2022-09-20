@@ -406,7 +406,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
-        // an error occured handling legacy messages (magic 0 or 1)
+        // an error occurred handling legacy messages (magic 0 or 1)
         if (unlikely(part.records->adapter.legacy_error)) {
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
@@ -502,7 +502,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           ctx.respond(request.make_full_disk_response()));
     }
 
-    // determine if the request has transactional / idemponent batches
+    // determine if the request has transactional / idempotent batches
     for (auto& topic : request.data.topics) {
         for (auto& part : topic.partitions) {
             if (part.records) {
@@ -609,7 +609,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                               }
                           }
 
-                          // in the absense of errors, acks = 0 results in the
+                          // in the absence of errors, acks = 0 results in the
                           // response being dropped, as the client does not
                           // expect a response. here we mark the response as
                           // noop, but let it flow back so that it can be
