@@ -1100,10 +1100,13 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         _mem_state.estimated.emplace(bid.pid, _insync_offset);
     }
 
+    auto ack = raft::consistency_level::leader_ack;
+    if (is_transaction_ga()) {
+        ack = raft::consistency_level::quorum_ack;
+    }
+
     auto r = co_await _c->replicate(
-      synced_term,
-      std::move(br),
-      raft::replicate_options(raft::consistency_level::leader_ack));
+      synced_term, std::move(br), raft::replicate_options(ack));
     if (!r) {
         if (_mem_state.estimated.contains(bid.pid)) {
             // an error during replication, preventin tx from progress
