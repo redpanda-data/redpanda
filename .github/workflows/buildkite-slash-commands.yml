@@ -3,6 +3,7 @@ on:
     types: 
       - ci-repeat-command
       - test-codecov-command
+      - test-arm64-command
 
 jobs:
   run-build:
