@@ -713,6 +713,55 @@ var _ = Describe("RedPandaCluster controller", func() {
 		})
 	})
 
+	Context("Calling reconcile with restricted version", func() {
+		const allowedVersion = "v23.1.1"
+		It("Should throw error due to restricted redpanda version", func() {
+			restrictedVersion := "v23.1.2"
+			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-negative", restrictedVersion)
+			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			r := &redpanda.ClusterReconciler{
+				Client:                    fc,
+				Log:                       ctrl.Log,
+				Scheme:                    scheme.Scheme,
+				AdminAPIClientFactory:     testAdminAPIFactory,
+				DecommissionWaitInterval:  100 * time.Millisecond,
+				RestrictToRedpandaVersion: allowedVersion,
+			}
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			Expect(err).To(Succeed())
+			By("Reporting the existence of cluster")
+			var rc v1alpha1.Cluster
+			Eventually(func() bool {
+				err := fc.Get(context.Background(), key, &rc)
+				return err == nil
+			}, time.Second*5, interval).Should(BeTrue())
+			By("Not changing status version to a valid one")
+			Consistently(func() bool {
+				return rc.Status.Version == ""
+			}, time.Second, 100*time.Millisecond).Should(BeTrue())
+		})
+		It("Should not throw error; redpanda version allowed", func() {
+			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-positive", allowedVersion)
+			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			r := &redpanda.ClusterReconciler{
+				Client:                    fc,
+				Log:                       ctrl.Log,
+				Scheme:                    scheme.Scheme,
+				AdminAPIClientFactory:     testAdminAPIFactory,
+				DecommissionWaitInterval:  100 * time.Millisecond,
+				RestrictToRedpandaVersion: allowedVersion,
+			}
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			Expect(err).To(Succeed())
+			By("Reporting the existence of cluster and allowed version status")
+			var rc v1alpha1.Cluster
+			Eventually(func() bool {
+				err := fc.Get(context.Background(), key, &rc)
+				return err == nil && rc.Status.Version == allowedVersion
+			}, time.Second*15, interval).Should(BeTrue())
+		})
+	})
+
 	DescribeTable("Image pull policy tests table", func(imagePullPolicy string, matcher types2.GomegaMatcher) {
 		k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme:             scheme.Scheme,
@@ -738,6 +787,52 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Empty image pull policy", "", Not(Succeed())),
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 })
+
+func getVersionedRedpanda(
+	name string, version string,
+) (key types.NamespacedName, cluster *v1alpha1.Cluster) {
+	key = types.NamespacedName{
+		Name:      name,
+		Namespace: "default",
+	}
+	config := v1alpha1.RedpandaConfig{
+		KafkaAPI: []v1alpha1.KafkaAPI{
+			{
+				Port: 9644,
+			},
+		},
+		AdminAPI: []v1alpha1.AdminAPI{
+			{
+				Port: 9092,
+			},
+		},
+	}
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1"),
+		corev1.ResourceMemory: resource.MustParse("2Gi"),
+	}
+	rpresources := v1alpha1.RedpandaResourceRequirements{
+		ResourceRequirements: corev1.ResourceRequirements{
+			Limits:   resources,
+			Requests: resources,
+		},
+		Redpanda: nil,
+	}
+	redpandaCluster := &v1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Spec: v1alpha1.ClusterSpec{
+			Image:         "vectorized/redpanda",
+			Version:       version,
+			Replicas:      pointer.Int32Ptr(1),
+			Configuration: config,
+			Resources:     rpresources,
+		},
+	}
+	return key, redpandaCluster
+}
 
 func findPort(ports []corev1.ServicePort, name string) int32 {
 	for _, port := range ports {
