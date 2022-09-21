@@ -80,11 +80,11 @@ replicate_stages replicate_batcher::replicate(
                             return item->_promise.get_future();
                         });
                 });
-        return replicate_stages(std::move(enqueued_f), std::move(f));
+        return {std::move(enqueued_f), std::move(f)};
     } catch (...) {
-        return replicate_stages(
+        return {
           ss::current_exception_as_future<>(),
-          ss::make_ready_future<result<replicate_result>>(errc::shutting_down));
+          ss::make_ready_future<result<replicate_result>>(errc::shutting_down)};
     }
 }
 
