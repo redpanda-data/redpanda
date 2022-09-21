@@ -6,13 +6,14 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
+import io
+import json
 import os
 import random
 
+from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
@@ -29,6 +30,8 @@ from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
 )
+from rptest.utils.si_utils import SegmentReader, parse_s3_manifest_path, NTP, \
+    gen_segment_path
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -116,6 +119,104 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         self.start_consumer()
         self.run_validation()
+
+
+class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
+    # Use smaller (1/10th) segment size to account for compaction
+    segment_size = 102400
+
+    topics = (TopicSpec(name=EndToEndShadowIndexingBase.s3_topic_name,
+                        partition_count=1,
+                        replication_factor=3,
+                        cleanup_policy="compact,delete",
+                        segment_bytes=102400), )
+
+    @cluster(num_nodes=5)
+    def test_write(self):
+        segment_count = 10
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=segment_count,
+        )
+
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+
+        for node, node_segments in original_snapshot.items():
+            assert len(
+                node_segments
+            ) >= segment_count, f"Expected at least {segment_count} segments, but got {len(node_segments)} on {node}"
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+
+        self.start_consumer()
+        self.run_validation()
+
+        self.assert_at_least_one_local_segment_compacted()
+        self.assert_all_uploaded_segments_non_compacted()
+
+    def assert_all_uploaded_segments_non_compacted(self):
+        revision = None
+        manifest_key = None
+        for obj in self.redpanda.get_objects_from_si():
+            if obj.Key.endswith(
+                    '/manifest.json') and self.s3_topic_name in obj.Key:
+                manifest_key = obj.Key
+                revision = parse_s3_manifest_path(manifest_key).revision
+                break
+        assert revision is not None and manifest_key is not None, 'Failed to determine revision from partition manifest'
+
+        manifest_data = self.redpanda.s3_client.get_object_data(
+            self.s3_bucket_name, manifest_key)
+
+        manifest_data = json.loads(manifest_data)
+        segment_meta_sorted_by_base_offset = sorted(
+            manifest_data['segments'].items(),
+            key=lambda pair: pair[1]['base_offset'])
+
+        segment_paths = [
+            gen_segment_path(NTP('kafka', self.s3_topic_name, 0), revision,
+                             name, meta.get('archiver_term'))
+            for name, meta in segment_meta_sorted_by_base_offset
+        ]
+
+        # Offset should progress without gaps per batch
+        expected_offset = 0
+        for segment in segment_paths:
+            segment_data = self.redpanda.s3_client.get_object_data(
+                self.s3_bucket_name, segment)
+            for h in SegmentReader(io.BytesIO(segment_data)):
+                assert h.base_offset == expected_offset, f'Expected offset: {expected_offset}, ' \
+                                                         f'actual: {h.base_offset}, ' \
+                                                         f'records in batch: {h.record_count}'
+                expected_offset += h.record_count
+
+    def assert_at_least_one_local_segment_compacted(self):
+        partition = self.redpanda.partitions(self.topic)[0]
+        compacted = 0
+        for node in partition.replicas:
+            for family in self.redpanda.metrics(node):
+                for sample in family.samples:
+                    if sample.name == 'vectorized_storage_log_compacted_segment_total':
+                        labels = sample.labels
+                        if labels['namespace'] == 'kafka' and labels[
+                                'topic'] == self.topic:
+                            compacted += int(sample.value)
+        assert compacted > 0, f"Unexpected compaction of {compacted} segments!"
 
 
 class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
