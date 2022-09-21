@@ -508,6 +508,11 @@ private:
 
     uint8_t active_snapshot_version();
 
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
+
     template<class T>
     void fill_snapshot_wo_seqs(T&);
 
