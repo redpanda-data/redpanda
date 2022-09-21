@@ -391,7 +391,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         }
     }
 
-    if (auto range = find_compaction_range(); range) {
+    if (auto range = find_compaction_range(cfg); range) {
         auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
         vlog(
           stlog.debug,
@@ -405,7 +405,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-disk_log_impl::find_compaction_range() {
+disk_log_impl::find_compaction_range(const compaction_config& cfg) {
     /*
      * adjacent segment compaction.
      *
@@ -461,10 +461,12 @@ disk_log_impl::find_compaction_range() {
         ++range.second;
     }
 
-    // the chosen segments all need to be stable
+    // the chosen segments all need to be stable.
+    // Each participating segment should individually pass the compactible
+    // offset check for the compacted segment to be stable.
     const auto unstable = std::any_of(
-      range.first, range.second, [](ss::lw_shared_ptr<segment>& seg) {
-          return seg->has_appender();
+      range.first, range.second, [&cfg](ss::lw_shared_ptr<segment>& seg) {
+          return seg->has_appender() || !seg->has_compactible_offsets(cfg);
       });
     if (unstable) {
         return std::nullopt;
