@@ -395,10 +395,12 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
         vlog(
           stlog.debug,
-          "adjejcent segments of {}, compaction result: {}",
+          "Adjacent segments of {}, compaction result: {}",
           config().ntp(),
           r);
-        _compaction_ratio.update(r.compaction_ratio());
+        if (r.did_compact()) {
+            _compaction_ratio.update(r.compaction_ratio());
+        }
     }
 }
 
