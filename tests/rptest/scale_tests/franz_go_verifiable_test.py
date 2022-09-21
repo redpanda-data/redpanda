@@ -14,17 +14,18 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.franz_go_verifiable_services import (
-    FranzGoVerifiableProducer,
-    FranzGoVerifiableSeqConsumer,
-    FranzGoVerifiableRandomConsumer,
-    FranzGoVerifiableConsumerGroupConsumer,
+from rptest.services.kgo_verifier_services import (
+    KgoVerifierProducer,
+    KgoVerifierSeqConsumer,
+    KgoVerifierRandomConsumer,
+    KgoVerifierConsumerGroupConsumer,
 )
 from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
-class FranzGoVerifiableBase(PreallocNodesTest):
+class KgoVerifierBase(PreallocNodesTest):
     """
     Base class for the common logic that allocates a shared
     node for several services and instantiates them.
@@ -42,18 +43,19 @@ class FranzGoVerifiableBase(PreallocNodesTest):
                          *args,
                          **kwargs)
 
-        self._producer = FranzGoVerifiableProducer(test_context, self.redpanda,
-                                                   self.topic, self.MSG_SIZE,
-                                                   self.PRODUCE_COUNT,
-                                                   self.preallocated_nodes)
-        self._seq_consumer = FranzGoVerifiableSeqConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.preallocated_nodes)
-        self._rand_consumer = FranzGoVerifiableRandomConsumer(
+        self._producer = KgoVerifierProducer(test_context, self.redpanda,
+                                             self.topic, self.MSG_SIZE,
+                                             self.PRODUCE_COUNT,
+                                             self.preallocated_nodes)
+        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
+                                                    self.redpanda, self.topic,
+                                                    self.MSG_SIZE,
+                                                    self.preallocated_nodes)
+        self._rand_consumer = KgoVerifierRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self.preallocated_nodes)
-        self._cg_consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self._cg_consumer = KgoVerifierConsumerGroupConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
 
@@ -62,7 +64,7 @@ class FranzGoVerifiableBase(PreallocNodesTest):
         ]
 
 
-class FranzGoVerifiableTest(FranzGoVerifiableBase):
+class KgoVerifierTest(KgoVerifierBase):
     MSG_SIZE = 120000
     PRODUCE_COUNT = 100000
     RANDOM_READ_COUNT = 1000
@@ -83,9 +85,7 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
 
         # Don't start consumers until the producer has written out its first
         # checkpoint with valid ranges.
-        wait_until(lambda: self._producer.produce_status.acked > 0,
-                   timeout_sec=30,
-                   backoff_sec=0.1)
+        self._producer.wait_for_offset_map()
         wrote_at_least = self._producer.produce_status.acked
 
         for consumer in self._consumers:
@@ -95,13 +95,11 @@ class FranzGoVerifiableTest(FranzGoVerifiableBase):
         assert self._producer.produce_status.acked == self.PRODUCE_COUNT
 
         for consumer in self._consumers:
-            consumer.shutdown()
-        for consumer in self._consumers:
             consumer.wait()
 
-        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
 
 KGO_LOG_ALLOW_LIST = [
@@ -112,7 +110,7 @@ KGO_LOG_ALLOW_LIST = [
 KGO_RESTART_LOG_ALLOW_LIST = KGO_LOG_ALLOW_LIST + RESTART_LOG_ALLOW_LIST
 
 
-class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
+class KgoVerifierWithSiTest(KgoVerifierBase):
     MSG_SIZE = 1000000
     PRODUCE_COUNT = 20000
     RANDOM_READ_COUNT = 1000
@@ -130,7 +128,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
             self.cloud_storage_cache_size or self.RANDOM_READ_PARALLEL *
             self.segment_size))
 
-        super(FranzGoVerifiableWithSiTest, self).__init__(
+        super(KgoVerifierWithSiTest, self).__init__(
             test_context=ctx,
             num_brokers=3,
             extra_rp_conf={
@@ -158,22 +156,17 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
 
         self._producer.start(clean=False)
 
-        # Don't start consumers until the producer has written out its first
-        # checkpoint with valid ranges.
-        wait_until(lambda: self._producer.produce_status.acked > 0,
-                   timeout_sec=30,
-                   backoff_sec=5.0)
+        # Once we've written a lot of data, check that some of it showed up in S3
+        self._producer.wait_for_acks(10000, timeout_sec=300, backoff_sec=5)
 
-        # nce we've written a lot of data, check that some of it showed up in S3
-        wait_until(lambda: self._producer.produce_status.acked > 10000,
-                   timeout_sec=300,
-                   backoff_sec=5)
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
             self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
 
         wrote_at_least = self._producer.produce_status.acked
+
+        self._producer.wait_for_offset_map()
         for consumer in self._consumers:
             consumer.start(clean=False)
 
@@ -184,31 +177,19 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         # Wait for last iteration of consumers to finish: if they are currently
         # mid-run, they'll run to completion.
         for consumer in self._consumers:
-            consumer.shutdown()
-        for consumer in self._consumers:
             consumer.wait()
 
-        assert self._seq_consumer.consumer_status.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.total_reads == self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.valid_reads >= wrote_at_least
+        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
+        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
 
-    def no_debug(self, f):
-        def inner(*args, **kwargs):
-            if self.debug_mode:
-                self.logger.info(
-                    "Skipping test in debug mode (requires release build)")
-                return
-            return f(*args, **kwargs)
-
-        return inner
-
-    @no_debug
+    @skip_debug_mode
     def without_timeboxed(self):
         configs = {'log_segment_size': self.segment_size}
         self.redpanda.set_cluster_config(configs)
         self._workload(self.segment_size)
 
-    @no_debug
+    @skip_debug_mode
     def with_timeboxed(self):
         # Enabling timeboxed uploads causes a restart
         configs = {
@@ -219,7 +200,7 @@ class FranzGoVerifiableWithSiTest(FranzGoVerifiableBase):
         self._workload(self.segment_size)
 
 
-class FranzGoVerifiableWithSiTestLargeSegments(FranzGoVerifiableWithSiTest):
+class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
     def test_si_without_timeboxed(self):
         self.without_timeboxed()
@@ -229,7 +210,7 @@ class FranzGoVerifiableWithSiTestLargeSegments(FranzGoVerifiableWithSiTest):
         self.with_timeboxed()
 
 
-class FranzGoVerifiableWithSiTestSmallSegments(FranzGoVerifiableWithSiTest):
+class KgoVerifierWithSiTestSmallSegments(KgoVerifierWithSiTest):
     segment_size = 20 * 2**20
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)

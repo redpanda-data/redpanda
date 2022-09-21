@@ -8,11 +8,10 @@
 # by the Apache License, Version 2.0
 
 import random
-import requests
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer, await_minimum_produced_records
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
@@ -40,7 +39,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             **kwargs)
 
     def _start_producer(self, topic_name, msg_cnt, msg_size):
-        self.producer = FranzGoVerifiableProducer(
+        self.producer = KgoVerifierProducer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -55,7 +54,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
 
     def _start_consumer(self, topic_name, msg_size, consumers):
 
-        self.consumer = FranzGoVerifiableConsumerGroupConsumer(
+        self.consumer = KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
             topic_name,
@@ -115,9 +114,9 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             f"{partitions_count} partitions ({((message_size*message_cnt/2) / (2^20)) / partitions_count} MB per partition"
         )
         # wait for the partitions to be filled with data
-        await_minimum_produced_records(self.redpanda,
-                                       self.producer,
-                                       min_acked=message_cnt / 2)
+        self.producer.wait_for_acks(message_cnt // 2,
+                                    timeout_sec=300,
+                                    backoff_sec=5)
 
         # stop one of the nodes to trigger partition balancer
         stopped = random.choice(self.redpanda.nodes)

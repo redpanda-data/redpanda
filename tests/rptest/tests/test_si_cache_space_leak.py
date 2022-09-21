@@ -19,14 +19,14 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SISettings
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProducer, FranzGoVerifiableRandomConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
 
 
 class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
     """
     The test checks that SI cache doesn't exhibit a resource leak.
     In order to do this the test puts pressure to SI cache by settings its
-    size to the minimum value. Then it uses FranzGoVerifiableProducer(Consumer)
+    size to the minimum value. Then it uses KgoVerifierProducer(Consumer)
     to produce and consume data via SI. The retention on the topic has to be
     small enough in order for SI to be involved. The test checks that no segment
     files are opened in the cache directory.
@@ -64,15 +64,16 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         )
 
     def init_producer(self, msg_size, num_messages):
-        self._producer = FranzGoVerifiableProducer(self._ctx, self.redpanda,
-                                                   self.topic, msg_size,
-                                                   num_messages,
-                                                   [self._verifier_node])
+        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
+                                             self.topic, msg_size,
+                                             num_messages,
+                                             [self._verifier_node])
 
     def init_consumer(self, msg_size, num_messages, concurrency):
-        self._consumer = FranzGoVerifiableRandomConsumer(
-            self._ctx, self.redpanda, self.topic, msg_size, num_messages,
-            concurrency, [self._verifier_node])
+        self._consumer = KgoVerifierRandomConsumer(self._ctx, self.redpanda,
+                                                   self.topic, msg_size,
+                                                   num_messages, concurrency,
+                                                   [self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()
@@ -108,11 +109,6 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         self._consumer.start(clean=False)
 
         self._producer.wait()
-        self._consumer.shutdown()
-        self._consumer.wait()
-
-        assert self._producer.produce_status.acked >= num_messages
-        assert self._consumer.consumer_status.total_reads == num_read * concurrency
 
         # Verify that all files in cache are being closed
         def cache_files_closed():
@@ -132,6 +128,17 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                 files = self.redpanda.lsof_node(node)
                 files_count += sum(1 for f in files if is_cache_file(f))
             return files_count == 0
+
+        # Reader should eventually trigger some SI cache reads when
+        # retention settings evict segment from local disk.
+        wait_until(lambda: not cache_files_closed(),
+                   timeout_sec=30,
+                   backoff_sec=5)
+
+        self._consumer.wait()
+
+        assert self._producer.produce_status.acked >= num_messages
+        assert self._consumer.consumer_status.validator.total_reads >= num_read * concurrency
 
         assert cache_files_closed() == False
         # Wait until all files are closed. The SI evicts all unused segments

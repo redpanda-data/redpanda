@@ -77,7 +77,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             **kwargs)
         self._ctx = ctx
 
-    @cluster(num_nodes=3, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3,
+             log_allow_list=PREV_VERSION_LOG_ALLOW_LIST + ["FailureInjector"])
     @matrix(num_to_upgrade=[0, 2])
     def test_moving_not_fully_initialized_partition(self, num_to_upgrade):
         """
@@ -656,7 +657,15 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # check that the status is in progress
 
         def get_status():
-            partition_info = admin.get_partitions(topic, partition)
+            try:
+                partition_info = admin.get_partitions(topic, partition)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    self.logger.info(
+                        f"topic {topic}/{partition} not found, retrying")
+                    return None
+                else:
+                    raise e
             self.logger.info(
                 f"current assignments for {topic}-{partition}: {partition_info}"
             )

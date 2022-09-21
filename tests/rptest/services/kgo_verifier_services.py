@@ -1,0 +1,522 @@
+# Copyright 2022 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+import os
+import json
+import threading
+import requests
+from enum import Enum
+
+from rptest.services.redpanda import RedpandaService
+from ducktape.services.service import Service
+from ducktape.utils.util import wait_until
+from ducktape.cluster.remoteaccount import RemoteCommandError
+
+# Install location, specified by Dockerfile or AMI
+TESTS_DIR = os.path.join("/opt", "kgo-verifier")
+
+# TODO: need to update terraform to open a range of ports
+REMOTE_PORT_BASE = 8080
+
+
+class KgoVerifierService(Service):
+    """
+    KgoVerifierService is kgo-verifier service.
+    To validate produced record user should run consumer and producer in one node.
+    Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
+    """
+    def __init__(self, context, redpanda, topic, msg_size, custom_node):
+        self.use_custom_node = custom_node is not None
+
+        # We should pass num_nodes to allocate for our service in BackgroundThreadService,
+        # but if user allocate node by themself, BackgroundThreadService should not allocate any nodes
+        nodes_for_allocate = 1
+        if self.use_custom_node:
+            nodes_for_allocate = 0
+
+        super(KgoVerifierService, self).__init__(context,
+                                                 num_nodes=nodes_for_allocate)
+
+        # Should check that BackgroundThreadService did not allocate anything
+        # and store allocated nodes by user to self.nodes
+        if self.use_custom_node:
+            assert not self.nodes
+            self.nodes = custom_node
+
+        self._redpanda = redpanda
+        self._topic = topic
+        self._msg_size = msg_size
+        self._pid = None
+        self._remote_port = None
+
+        for node in self.nodes:
+            if not hasattr(node, "kgo_verifier_next_port"):
+                node.kgo_verifier_next_port = REMOTE_PORT_BASE
+
+    @property
+    def log_path(self):
+        return f"/tmp/{self.who_am_i()}.log"
+
+    @property
+    def logs(self):
+        return {
+            "kgo_verifier_output": {
+                "path": self.log_path,
+                "collect_default": True
+            }
+        }
+
+    def spawn(self, cmd, node):
+        assert self._pid is None
+
+        port = node.kgo_verifier_next_port
+        node.kgo_verifier_next_port += 1
+        self._remote_port = port
+
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {port} > {self.log_path} 2>&1 & echo $!"
+        self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
+        pid_str = node.account.ssh_output(wrapped_cmd)
+        self.logger.debug(f"spawned {self.who_am_i()} pid={pid_str}")
+        pid = int(pid_str.strip())
+        self._pid = pid
+
+    def stop_node(self, node, **kwargs):
+        if self._status_thread:
+            self._status_thread.stop()
+            self._status_thread = None
+
+        if self._pid is None:
+            return
+
+        self._redpanda.logger.info(f"{self.__class__.__name__}.stop")
+        self.logger.debug("Killing pid %s" % {self._pid})
+        try:
+            node.account.signal(self._pid, 9, allow_fail=False)
+        except RemoteCommandError as e:
+            if b"No such process" not in e.msg:
+                raise
+
+    def clean_node(self, node):
+        self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
+        node.account.kill_process("kgo-verifier", clean_shutdown=False)
+        node.account.remove("valid_offsets*json", True)
+        node.account.remove(f"/tmp/{self.__class__.__name__}*")
+
+    def wait_node(self, node, timeout_sec=None):
+        """
+        Wait for the remote process to gracefully finish: if it is a one-shot
+        operation this waits for all work to complete, if it is a looping
+        operation then we wait for the current iteration of the loop to finish
+        by triggering the /last_pass endpoint and then waiting for active=false.
+
+        When this returns, the remote process is no longer running, and our
+        _status member is populated with the final status before the remote process
+        process ended.
+        """
+        if not self._status_thread:
+            return True
+
+        self.logger.debug(
+            f"wait_node {self.who_am_i()}: waiting for remote endpoint")
+        self._status_thread.await_ready()
+
+        # If this is a looping worker, tell it to end after the current loop
+        self.logger.debug(f"wait_node {self.who_am_i()}: requesting last_pass")
+        r = requests.get(self._remote_url(node, "last_pass"))
+        r.raise_for_status()
+
+        # Let the worker fall through to the end of its current iteration
+        self.logger.debug(
+            f"wait_node {self.who_am_i()}: waiting for worker to complete")
+        wait_until(lambda: self._status.active is False or self._status_thread.
+                   errored,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=5)
+        self._status_thread.raise_on_error()
+
+        # Read final status
+        self.logger.debug(f"wait_node {self.who_am_i()}: reading final status")
+        self._status_thread.shutdown()
+        self._status_thread = None
+
+        # Permit the subprocess to exit, and wait for it to do so
+        self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
+        r = requests.get(self._remote_url(node, "shutdown"))
+        r.raise_for_status()
+        self.logger.debug(
+            f"wait_node {self.who_am_i()}: waiting for process to terminate")
+        wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
+                   timeout_sec=10,
+                   backoff_sec=0.5)
+
+        return True
+
+    def _remote_url(self, node, path):
+        assert self._remote_port is not None
+        return f"http://{node.account.hostname}:{self._remote_port}/{path}"
+
+    def allocate_nodes(self):
+        if self.use_custom_node:
+            return
+        else:
+            return super(KgoVerifierService, self).allocate_nodes()
+
+    def free(self):
+        if self.use_custom_node:
+            return
+        else:
+            return super(KgoVerifierService, self).free()
+
+
+class StatusThread(threading.Thread):
+    INTERVAL = 5
+
+    def __init__(self, parent: Service, node, status_cls, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._parent = parent
+        self._node = node
+        self._status_cls = status_cls
+        self._ex = None
+        self._ready = False
+
+        self._shutdown_requested = threading.Event()
+        self._stop_requested = threading.Event()
+
+    @property
+    def errored(self):
+        return self._ex is not None
+
+    @property
+    def who_am_i(self):
+        return self._parent.who_am_i()
+
+    @property
+    def logger(self):
+        return self._parent.logger
+
+    def raise_on_error(self):
+        if self._ex is not None:
+            raise self._ex
+
+    def run(self):
+        try:
+            # Don't assume the HTTP port will be open instantly on startup (although it should be open very soon)
+            self.await_ready()
+
+            self.poll_status()
+        except Exception as ex:
+            self._ex = ex
+            self.logger.exception(
+                f"Error reading status from {self.who_am_i} on {self._node.name}"
+            )
+
+    def is_ready(self):
+        try:
+            r = requests.get(self._parent._remote_url(self._node, "status"))
+        except Exception as e:
+            # Broad exception handling for any lower level connection errors etc
+            # that might not be properly classed as `requests` exception.
+            self.logger.debug(
+                f"Status endpoint {self.who_am_i} not ready: {e}")
+            return False
+        else:
+            return r.status_code == 200
+
+    def _ingest_status(self, worker_statuses):
+        reduced = self._status_cls(**worker_statuses[0])
+        for s in worker_statuses[1:]:
+            reduced.merge(self._status_cls(**s))
+
+        if self._status_cls == ProduceStatus:
+            progress = (worker_statuses[0]['sent'] /
+                        float(self._parent._msg_count))
+            self.logger.info(
+                f"Producer {self.who_am_i} progress: {progress*100:.2f}% {self._parent._status}"
+            )
+        else:
+            self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
+
+        self._parent._status = reduced
+
+    def await_ready(self):
+        """
+        Wait for the remote processes http endpoint to come up
+        """
+        if self._ready:
+            return
+
+        wait_until(
+            lambda: self.is_ready() or self._stop_requested.is_set(),
+            timeout_sec=5,
+            backoff_sec=0.5,
+            err_msg=
+            f"Timed out waiting for status endpoint {self.who_am_i} to be available"
+        )
+        self._ready = True
+
+    def poll_status(self):
+        while not self._stop_requested.is_set():
+            drop_out = self._shutdown_requested.is_set()
+
+            r = requests.get(self._parent._remote_url(self._node, "status"),
+                             timeout=5)
+            r.raise_for_status()
+            worker_statuses = r.json()
+            self._ingest_status(worker_statuses)
+
+            if drop_out:
+                # We were asked to clean shutdown and we have done our final
+                # status read
+                return
+            else:
+                self._stop_requested.wait(self.INTERVAL)
+
+    def stop(self):
+        """
+        Drop out of poll loop as soon as possible, and join.
+        """
+        self._stop_requested.set()
+        self.join()
+
+    def shutdown(self):
+        """
+        Read status one more time, then drop out of poll loop and join.
+        """
+        self._shutdown_requested.set()
+        self.join()
+
+
+class ValidatorStatus:
+    """
+    All validating consumers have one of these as part of their status object
+    internally to kgo-verifier.  Other parts of consumer status are allowed to
+    differ per-worker, although at time of writing they don't.
+    """
+    def __init__(self, name, valid_reads, invalid_reads,
+                 out_of_scope_invalid_reads):
+        # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
+        # but we mostly don't care
+        self.name = name
+
+        self.valid_reads = valid_reads
+        self.invalid_reads = invalid_reads
+        self.out_of_scope_invalid_reads = out_of_scope_invalid_reads
+
+    @property
+    def total_reads(self):
+        # At time of writing, invalid reads is never nonzero, because the program
+        # terminates as soon as it sees an invalid read
+        return self.valid_reads + self.out_of_scope_invalid_reads
+
+    def merge(self, rhs):
+        # Clear name if we are merging multiple statuses together, to avoid confusion.
+        self.name = ""
+
+        self.valid_reads += rhs.valid_reads
+        self.invalid_reads += rhs.invalid_reads
+        self.out_of_scope_invalid_reads += rhs.out_of_scope_invalid_reads
+
+    def __str__(self):
+        return f"ValidatorStatus<{self.valid_reads} {self.invalid_reads} {self.out_of_scope_invalid_reads}>"
+
+
+class ConsumerStatus:
+    def __init__(self, validator=None, errors=0, active=True):
+        """
+        `active` defaults to True, because we use it for deciding when to drop out in `wait()` -- the initial
+        state of a worker should be presumed that it is busy, and we must wait to see it go `active=False`
+        before proceeding with `wait()`
+        """
+        if validator is None:
+            validator = {
+                'valid_reads': 0,
+                'invalid_reads': 0,
+                'out_of_scope_invalid_reads': 0,
+                'name': ""
+            }
+
+        self.validator = ValidatorStatus(**validator)
+        self.errors = errors
+        self.active = active
+
+    def merge(self, rhs):
+        self.active = self.active or rhs.active
+        self.errors += rhs.errors
+        self.validator.merge(rhs.validator)
+
+    def __str__(self):
+        return f"ConsumerStatus<{self.active}, {self.errors}, {self.validator}>"
+
+
+class KgoVerifierSeqConsumer(KgoVerifierService):
+    def __init__(self, context, redpanda, topic, msg_size, nodes=None):
+        super(KgoVerifierSeqConsumer, self).__init__(context, redpanda, topic,
+                                                     msg_size, nodes)
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+
+class KgoVerifierRandomConsumer(KgoVerifierService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 rand_read_msgs,
+                 parallel,
+                 nodes=None):
+        super().__init__(context, redpanda, topic, msg_size, nodes)
+        self._rand_read_msgs = rand_read_msgs
+        self._parallel = parallel
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+
+class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 readers,
+                 nodes=None):
+        super().__init__(context, redpanda, topic, msg_size, nodes)
+
+        self._readers = readers
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers}"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+
+class ProduceStatus:
+    def __init__(self,
+                 sent=0,
+                 acked=0,
+                 bad_offsets=0,
+                 restarts=0,
+                 latency=None,
+                 active=False):
+        self.sent = sent
+        self.acked = acked
+        self.bad_offsets = bad_offsets
+        self.restarts = restarts
+        if latency is None:
+            latency = {'p50': 0, 'p90': 0, 'p99': 0}
+        self.latency = latency
+        self.active = active
+
+    def __str__(self):
+        l = self.latency
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {l['p50']}/{l['p90']}/{l['p99']}>"
+
+
+class KgoVerifierProducer(KgoVerifierService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 msg_count,
+                 custom_node=None,
+                 batch_max_bytes=None):
+        super(KgoVerifierProducer, self).__init__(context, redpanda, topic,
+                                                  msg_size, custom_node)
+        self._msg_count = msg_count
+        self._status = ProduceStatus()
+        self._batch_max_bytes = batch_max_bytes
+        self._remote_port = None
+
+    @property
+    def produce_status(self):
+        return self._status
+
+    def wait_node(self, node, timeout_sec=None):
+        if not self._status_thread:
+            return True
+
+        self.logger.debug(f"{self.who_am_i()} wait: awaiting message count")
+        wait_until(lambda: self._status_thread.errored or self._status.acked >=
+                   self._msg_count,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=self._status_thread.INTERVAL)
+        self._status_thread.raise_on_error()
+
+        return super().wait_node(node, timeout_sec=timeout_sec)
+
+    def wait_for_acks(self, count, timeout_sec, backoff_sec):
+        wait_until(
+            lambda: self._status_thread.errored or self._status.acked >= count,
+            timeout_sec=timeout_sec,
+            backoff_sec=backoff_sec)
+        self._status_thread.raise_on_error()
+
+    def wait_for_offset_map(self):
+        # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
+        wait_until(lambda: self._status_thread.errored or all(
+            node.account.exists(f"valid_offsets_{self._topic}.json")
+            for node in self.nodes),
+                   timeout_sec=15,
+                   backoff_sec=1)
+        self._status_thread.raise_on_error()
+
+    def is_complete(self):
+        return self._status.acked >= self._msg_count
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0"
+
+        if self._batch_max_bytes is not None:
+            cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
+
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ProduceStatus)
+        self._status_thread.start()

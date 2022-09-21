@@ -14,7 +14,7 @@ from ducktape.mark import parametrize
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.franz_go_verifiable_services import FranzGoVerifiableConsumerGroupConsumer, FranzGoVerifiableProducer
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kafka import KafkaServiceAdapter
@@ -149,7 +149,7 @@ class TestMirrorMakerService(EndToEndTest):
 
     @cluster(num_nodes=10)
     @parametrize(source_type=kafka_source)
-    #@parametrize(source_type=redpanda_source)
+    @parametrize(source_type=redpanda_source)
     def test_consumer_group_mirroring(self, source_type):
         # start redpanda
         self.start_brokers(source_type=source_type)
@@ -165,27 +165,21 @@ class TestMirrorMakerService(EndToEndTest):
         msg_size = 512
         msg_cnt = 1000000 if self.redpanda.dedicated_nodes else 10000
 
-        producer = FranzGoVerifiableProducer(self.test_context,
-                                             self.source_broker,
-                                             self.topic.name, msg_size,
-                                             msg_cnt)
+        producer = KgoVerifierProducer(self.test_context, self.source_broker,
+                                       self.topic.name, msg_size, msg_cnt)
         producer.start()
-
-        wait_until(lambda: producer.produce_status.acked >= msg_cnt,
-                   timeout_sec=180,
-                   backoff_sec=1)
-        producer.shutdown()
         producer.wait()
 
-        consumer = FranzGoVerifiableConsumerGroupConsumer(self.test_context,
-                                                          self.source_broker,
-                                                          self.topic.name,
-                                                          msg_size,
-                                                          readers=4)
+        consumer = KgoVerifierConsumerGroupConsumer(self.test_context,
+                                                    self.source_broker,
+                                                    self.topic.name,
+                                                    msg_size,
+                                                    readers=4)
         consumer.start()
-        wait_until(lambda: consumer.consumer_status.valid_reads >= msg_cnt,
-                   timeout_sec=180,
-                   backoff_sec=1)
+        wait_until(
+            lambda: consumer.consumer_status.validator.valid_reads >= msg_cnt,
+            timeout_sec=180,
+            backoff_sec=1)
 
         self.logger.info(
             f"source message count: {producer.produce_status.acked}")
