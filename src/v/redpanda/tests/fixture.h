@@ -198,8 +198,9 @@ public:
     YAML::Node proxy_config(uint16_t proxy_port = 8082) {
         pandaproxy::rest::configuration cfg;
         cfg.get("pandaproxy_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", proxy_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{
+            config::rest_authn_endpoint{
+              .address = net::unresolved_address("127.0.0.1", proxy_port)}});
         return to_yaml(cfg, config::redact_secrets::no);
     }
 
@@ -216,8 +217,9 @@ public:
     YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
         pandaproxy::schema_registry::configuration cfg;
         cfg.get("schema_registry_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", listen_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{
+            config::rest_authn_endpoint{
+              .address = net::unresolved_address("127.0.0.1", listen_port)}});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
         return to_yaml(cfg, config::redact_secrets::no);

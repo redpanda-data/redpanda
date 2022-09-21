@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/config_store.h"
+#include "config/rest_authn_endpoint.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
@@ -91,7 +92,7 @@ public:
     void routes(routes_t&& routes);
 
     ss::future<> start(
-      const std::vector<model::broker_endpoint>& endpoints,
+      const std::vector<config::rest_authn_endpoint>& endpoints,
       const std::vector<config::endpoint_tls_config>& endpoints_tls,
       const std::vector<model::broker_endpoint>& advertised);
     ss::future<> stop();
