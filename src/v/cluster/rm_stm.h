@@ -145,6 +145,7 @@ public:
 
     static constexpr int8_t prepare_control_record_version{0};
     static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t tx_seq_constrol_record_version{0};
 
     explicit rm_stm(
       ss::logger&,
@@ -339,6 +340,7 @@ private:
     void apply_prepare(rm_stm::prepare_marker);
     ss::future<>
       apply_control(model::producer_identity, model::control_record_type);
+    void apply_tx_seq(model::record_batch&&);
     void apply_data(model::batch_identity, model::offset);
 
     ss::future<> reduce_aborted_list();
@@ -370,6 +372,9 @@ private:
         // a heap of the first offsets of the ongoing transactions
         absl::btree_set<model::offset> ongoing_set;
         absl::flat_hash_map<model::producer_identity, prepare_marker> prepared;
+        // After transaction GA we do not write prepare marker, so we need to
+        // store tx_seq number for expiring
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
         std::vector<tx_range> aborted;
         std::vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};

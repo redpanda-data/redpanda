@@ -103,6 +103,24 @@ static model::record_batch make_tx_control_batch(
     return std::move(builder).build();
 }
 
+static model::record_batch
+make_tx_seq_batch(model::producer_identity pid, model::tx_seq tx_seq) {
+    iobuf key;
+    reflection::serialize(key, model::record_batch_type::tx_seq_cmd, pid);
+
+    iobuf value;
+    reflection::serialize(
+      value, rm_stm::tx_seq_constrol_record_version, tx_seq);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_seq_cmd, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
 static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
     const auto& hdr = b.header();
     auto bid = model::batch_identity::from(hdr);
@@ -355,6 +373,32 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           pid,
           fence_it->second);
         co_return tx_errc::fenced;
+    }
+
+    if (is_transaction_ga()) {
+        // We need to write tx_seq, because log does not contain prepare marker
+        // with tx_seq. It mean on expire stage we do not know anything about tx
+        // status (ongoin otr prepared). Because of that we need to save tx_seq
+        // for each transaction at the begginig to pass it to frontend.
+        //
+        // We can replicate this batch with leader_ack, because next data
+        // batches will contains quorum_ack, so it will sync(replicate and
+        // flush) this batch between followers
+        auto batch = make_tx_seq_batch(pid, tx_seq);
+        auto reader = model::make_memory_record_batch_reader(std::move(batch));
+        auto r = co_await _c->replicate(
+          synced_term,
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::leader_ack));
+        if (!r) {
+            vlog(
+              clusterlog.error,
+              "Error \"{}\" on replicating pid:{} tx_seq batch",
+              r.error(),
+              pid);
+            co_return tx_errc::unknown_server_error;
+        }
+        _log_state.tx_seqs.emplace(pid, tx_seq);
     }
 
     auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
@@ -1759,6 +1803,49 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     }
 }
 
+void rm_stm::apply_tx_seq(model::record_batch&& b) {
+    const auto& hdr = b.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "model::record_batch_type::tx_seq batch must contain a single record");
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
+    vassert(
+      version == rm_stm::tx_seq_constrol_record_version,
+      "unknown fence record version: {} expected: {}",
+      version,
+      rm_stm::tx_seq_constrol_record_version);
+
+    auto tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
+    vassert(
+      hdr.type == batch_type,
+      "broken model::record_batch_type::tx_seq batch. expected batch type {} "
+      "got: {}",
+      hdr.type,
+      batch_type);
+    auto pid = model::producer_identity(
+      reflection::adl<model::producer_identity>{}.from(key_reader));
+    vassert(
+      pid.id == bid.pid.id,
+      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
+      "{}",
+      bid.pid.id,
+      pid.id);
+
+    _log_state.tx_seqs.emplace(bid.pid, tx_seq);
+}
+
 ss::future<> rm_stm::apply(model::record_batch b) {
     auto last_offset = b.last_offset();
 
@@ -1768,6 +1855,8 @@ ss::future<> rm_stm::apply(model::record_batch b) {
         apply_fence(std::move(b));
     } else if (hdr.type == model::record_batch_type::tx_prepare) {
         apply_prepare(parse_prepare_batch(std::move(b)));
+    } else if (hdr.type == model::record_batch_type::tx_seq_cmd) {
+        apply_tx_seq(std::move(b));
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
