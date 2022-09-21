@@ -15,6 +15,8 @@
 #include "config/rest_authn_endpoint.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/types.h"
+#include "redpanda/request_auth.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -50,6 +52,8 @@ public:
     struct request_t {
         std::unique_ptr<ss::httpd::request> req;
         context_t& ctx;
+        credential_t user;
+        config::rest_authn_method authn_method;
         // will contain other extensions passed to user specific handler.
     };
 

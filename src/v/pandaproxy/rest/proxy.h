@@ -11,9 +11,10 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
+#include "cluster/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
+#include "redpanda/request_auth.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -31,7 +32,8 @@ public:
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
       size_t max_memory,
-      ss::sharded<kafka::client::client>& client);
+      ss::sharded<kafka::client::client>& client,
+      cluster::controller* controller);
 
     ss::future<> start();
     ss::future<> stop();
@@ -39,6 +41,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
+    request_authenticator& authenticator() { return _auth; }
 
 private:
     configuration _config;
@@ -46,6 +49,7 @@ private:
     ss::sharded<kafka::client::client>& _client;
     ctx_server<proxy>::context_t _ctx;
     ctx_server<proxy> _server;
+    request_authenticator _auth;
 };
 
 } // namespace pandaproxy::rest
