@@ -95,7 +95,7 @@ request_auth_result request_authenticator::do_authenticate(
               "Malformed Authorization header");
         }
         username = security::credential_user{decoded_bytes.substr(0, colon)};
-        auto password = ss::sstring(decoded_bytes.substr(colon + 1));
+        security::credential_password password{decoded_bytes.substr(colon + 1)};
 
         const auto cred_opt = cred_store.get<security::scram_credential>(
           username);
@@ -129,7 +129,9 @@ request_auth_result request_authenticator::do_authenticate(
                   superusers.begin(), superusers.end(), username);
                 bool superuser = (found != superusers.end()) || (!require_auth);
                 return request_auth_result(
-                  username, request_auth_result::superuser(superuser));
+                  std::move(username),
+                  std::move(password),
+                  request_auth_result::superuser(superuser));
             }
         }
     } else if (!auth_hdr.empty()) {
