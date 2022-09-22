@@ -82,6 +82,12 @@ serialized_json_stream tx_range_manifest::serialize() const {
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize tx range manifest {}",
+          get_manifest_path()));
+    }
     size_t size_bytes = serialized.size_bytes();
     return {
       .stream = make_iobuf_input_stream(std::move(serialized)),
