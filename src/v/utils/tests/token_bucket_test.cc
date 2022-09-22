@@ -10,7 +10,10 @@
 #include "utils/token_bucket.h"
 
 #include <seastar/core/manual_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/testing/thread_test_case.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 #include <chrono>
 using namespace std::chrono_literals;
@@ -23,6 +26,56 @@ SEASTAR_THREAD_TEST_CASE(test_simple_throttle) {
         ss::abort_source as;
         throttler.throttle(1, as).get();
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_throttle_wait) {
+    token_bucket<> throttler(RATE, "test_throttle_wait");
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    auto start_time = ss::lowres_clock::now();
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    BOOST_REQUIRE(ss::lowres_clock::now() - start_time >= 1s);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_throttle_shutdown) {
+    token_bucket<ss::manual_clock> throttler(RATE, "test_throttle_shutdown");
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    ss::abort_source as;
+    auto result = throttler.throttle(1, as);
+    throttler.shutdown();
+    BOOST_REQUIRE_EXCEPTION(
+      result.get(),
+      ss::broken_named_semaphore,
+      [](ss::broken_named_semaphore ex) { return true; });
+
+    BOOST_REQUIRE_EXCEPTION(
+      throttler.throttle(1, as).get(),
+      ss::broken_named_semaphore,
+      [](ss::broken_named_semaphore ex) { return true; });
+    BOOST_REQUIRE(!throttler.try_throttle(1));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_throttle_abort) {
+    token_bucket<ss::manual_clock> throttler(RATE, "test_throttle_abort");
+    for (size_t i = 0; i < RATE; ++i) {
+        ss::abort_source as;
+        throttler.throttle(1, as).get();
+    }
+    ss::abort_source as;
+    auto result = throttler.throttle(1, as);
+    as.request_abort();
+    BOOST_REQUIRE_EXCEPTION(
+      result.get(),
+      ss::named_semaphore_aborted,
+      [](ss::named_semaphore_aborted ex) { return true; });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_try_throttle) {
@@ -148,9 +201,9 @@ SEASTAR_THREAD_TEST_CASE(test_available_tokens) {
     BOOST_REQUIRE_EQUAL(throttler.available(), RATE - 10);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_available_tokens_burst) {
+SEASTAR_THREAD_TEST_CASE(test_available_tokens_capacity) {
     token_bucket<ss::manual_clock> throttler(
-      RATE, "test_available_tokens_burst", RATE * 3);
+      RATE, "test_available_tokens_capacity", RATE * 3);
     BOOST_REQUIRE_EQUAL(throttler.available(), RATE);
     for (size_t i = 0; i < RATE; ++i) {
         ss::abort_source as;
