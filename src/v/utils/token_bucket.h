@@ -112,7 +112,10 @@ public:
         _rate = new_rate;
     }
 
-    size_t available() { return _sem.current(); }
+    size_t available() {
+        refresh();
+        return _sem.current();
+    }
 
 private:
     void refresh() {
