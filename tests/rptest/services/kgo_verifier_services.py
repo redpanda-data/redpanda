@@ -316,19 +316,35 @@ class StatusThread(threading.Thread):
             else:
                 self._stop_requested.wait(self.INTERVAL)
 
+    def join_with_timeout(self):
+        """
+        Join thread with a modest timeout, and raise an exception if
+        we do not succeed.  We expect to join promptly because all our
+        run() is doing is calling to the remote process status endpoint, and
+        that requests.get() has a timeout on it, so should not block.
+
+        This is important because otherwise a stuck join() would hang
+        the entire ducktape test run.
+        """
+        self.join(timeout=10)
+        if self.is_alive():
+            msg = f"Failed to join thread for {self.who_am_i}"
+            self.logger.error(msg)
+            raise RuntimeError(msg)
+
     def stop(self):
         """
         Drop out of poll loop as soon as possible, and join.
         """
         self._stop_requested.set()
-        self.join()
+        self.join_with_timeout()
 
     def shutdown(self):
         """
         Read status one more time, then drop out of poll loop and join.
         """
         self._shutdown_requested.set()
-        self.join()
+        self.join_with_timeout()
 
 
 class ValidatorStatus:
