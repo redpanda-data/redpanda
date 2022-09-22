@@ -404,7 +404,7 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       snapshot{.segments = std::move(segments)});
 
     vlog(
-      _logger.info,
+      _logger.debug,
       "creating snapshot at offset: {}, remote start_offset: {}, last_offset: "
       "{}",
       _insync_offset,
