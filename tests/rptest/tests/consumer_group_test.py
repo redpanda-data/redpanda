@@ -18,7 +18,6 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
-from ducktape.mark import ok_to_fail
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -326,7 +325,6 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5079
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
