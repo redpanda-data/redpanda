@@ -94,6 +94,13 @@ inline std::vector<topic_result> create_topic_results(
       });
 }
 
+ss::future<> add_one_tcp_client(
+  ss::shard_id owner,
+  ss::sharded<rpc::connection_cache>& clients,
+  model::node_id node,
+  net::unresolved_address addr,
+  config::tls_config tls_config);
+
 ss::future<> update_broker_client(
   model::node_id,
   ss::sharded<rpc::connection_cache>&,
