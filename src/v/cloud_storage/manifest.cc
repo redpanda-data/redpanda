@@ -386,6 +386,12 @@ serialized_json_stream manifest::serialize() const {
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize partition manifest {}",
+          get_manifest_path()));
+    }
     size_t size_bytes = serialized.size_bytes();
     return {
       .stream = make_iobuf_input_stream(std::move(serialized)),
@@ -552,6 +558,12 @@ serialized_json_stream topic_manifest::serialize() const {
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize topic manifest {}",
+          get_manifest_path()));
+    }
     size_t size_bytes = serialized.size_bytes();
     return {
       .stream = make_iobuf_input_stream(std::move(serialized)),
