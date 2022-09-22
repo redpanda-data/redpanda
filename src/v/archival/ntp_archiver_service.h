@@ -114,10 +114,10 @@ public:
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
-    ss::future<cloud_storage::download_result> download_manifest();
-
-    const cloud_storage::partition_manifest& get_remote_manifest() const;
-
+    ss::future<std::pair<
+      cloud_storage::partition_manifest,
+      cloud_storage::download_result>>
+    download_manifest();
     struct batch_result {
         size_t num_succeded;
         size_t num_failed;
@@ -204,6 +204,7 @@ private:
 
     bool upload_loop_can_continue() const;
     bool sync_manifest_loop_can_continue() const;
+    const cloud_storage::partition_manifest& manifest() const;
 
     ntp_level_probe _probe;
     model::ntp _ntp;
@@ -214,16 +215,13 @@ private:
     model::term_id _start_term;
     archival_policy _policy;
     s3::bucket_name _bucket;
-    /// Remote manifest contains representation of the data stored in S3 (it
-    /// gets uploaded to the remote location)
-    cloud_storage::partition_manifest _manifest;
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     ss::lowres_clock::duration _cloud_storage_initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
-    ss::lowres_clock::duration _manifest_upload_timeout;
+    ss::lowres_clock::duration _metadata_sync_timeout;
     ssx::semaphore _mutex{1, "archive/ntp"};
     ss::lowres_clock::duration _upload_loop_initial_backoff;
     ss::lowres_clock::duration _upload_loop_max_backoff;

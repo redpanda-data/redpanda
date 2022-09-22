@@ -59,13 +59,12 @@ ntp_archiver::ntp_archiver(
   , _partition(std::move(part))
   , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
   , _bucket(conf.bucket_name)
-  , _manifest(_ntp, _rev)
   , _gate()
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
   , _cloud_storage_initial_backoff(conf.cloud_storage_initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
-  , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _metadata_sync_timeout(conf.manifest_upload_timeout)
   , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
   , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
   , _sync_manifest_timeout(
@@ -87,6 +86,15 @@ ntp_archiver::ntp_archiver(
       "created ntp_archiver {} in term {}",
       _ntp,
       _start_term);
+}
+
+const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
+    vassert(_partition, "Partition {} is not available", _ntp.path());
+    vassert(
+      _partition->archival_meta_stm(),
+      "Archival STM is not available for {}",
+      _ntp.path());
+    return _partition->archival_meta_stm()->manifest();
 }
 
 void ntp_archiver::run_sync_manifest_loop() {
@@ -169,12 +177,18 @@ ss::future<> ntp_archiver::upload_loop() {
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
         // lot of data next time we upload something.
-        if (_partition->archival_meta_stm()) {
-            auto sync_timeout
-              = config::shard_local_cfg()
-                  .cloud_storage_metadata_sync_timeout_ms.value();
-            co_await _partition->archival_meta_stm()->sync(sync_timeout);
-        }
+        vassert(
+          _partition,
+          "Upload loop: partition is not set for {} archiver",
+          _ntp.path());
+        vassert(
+          _partition->archival_meta_stm(),
+          "Upload loop: archival metadata STM is not created for {} archiver",
+          _ntp.path());
+
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        co_await _partition->archival_meta_stm()->sync(sync_timeout);
 
         auto result = co_await upload_next_candidates();
         if (result.num_failed != 0) {
@@ -236,49 +250,44 @@ ss::future<> ntp_archiver::sync_manifest_loop() {
             vlog(
               _rtclog.error,
               "Failed to download manifest {}",
-              _manifest.get_manifest_path());
+              manifest().get_manifest_path());
         } else {
             vlog(
               _rtclog.debug,
               "Successfuly downloaded manifest {}",
-              _manifest.get_manifest_path());
+              manifest().get_manifest_path());
         }
         co_await ss::sleep_abortable(_sync_manifest_timeout(), _as);
     }
 }
 
 ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
-    cloud_storage::download_result r = co_await download_manifest();
-    if (r == cloud_storage::download_result::success) {
-        vlog(_rtclog.debug, "Downloading manifest in read-replica mode");
-        if (_partition->archival_meta_stm()) {
-            vlog(
-              _rtclog.debug,
-              "Updating the archival_meta_stm in read-replica mode");
-            auto sync_timeout
-              = config::shard_local_cfg()
-                  .cloud_storage_metadata_sync_timeout_ms.value();
-            auto deadline = ss::lowres_clock::now() + sync_timeout;
-            auto error = co_await _partition->archival_meta_stm()->add_segments(
-              _manifest, deadline, _as);
-            if (
-              error != cluster::errc::success
-              && error != cluster::errc::not_leader) {
-                vlog(
-                  _rtclog.warn,
-                  "archival metadata STM update failed: {}",
-                  error);
-            }
-            auto last_offset
-              = _partition->archival_meta_stm()->manifest().get_last_offset();
-            vlog(_rtclog.debug, "manifest last_offset: {}", last_offset);
-        }
-    } else {
+    vlog(_rtclog.debug, "Downloading manifest in read-replica mode");
+    auto [m, res] = co_await download_manifest();
+    if (res != cloud_storage::download_result::success) {
         vlog(
           _rtclog.error,
           "Failed to download partition manifest in read-replica mode");
+        co_return res;
+    } else {
+        vlog(
+          _rtclog.debug, "Updating the archival_meta_stm in read-replica mode");
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        auto deadline = ss::lowres_clock::now() + sync_timeout;
+        auto error = co_await _partition->archival_meta_stm()->add_segments(
+          m, deadline, _as);
+        if (
+          error != cluster::errc::success
+          && error != cluster::errc::not_leader) {
+            vlog(
+              _rtclog.warn, "archival metadata STM update failed: {}", error);
+        }
+        auto last_offset = manifest().get_last_offset();
+        vlog(_rtclog.debug, "manifest last_offset: {}", last_offset);
+        co_return cloud_storage::download_result::success;
     }
-    co_return r;
+    __builtin_unreachable();
 }
 
 bool ntp_archiver::upload_loop_can_continue() const {
@@ -309,21 +318,18 @@ const ss::lowres_clock::time_point ntp_archiver::get_last_upload_time() const {
     return _last_upload_time;
 }
 
-const cloud_storage::partition_manifest&
-ntp_archiver::get_remote_manifest() const {
-    return _manifest;
-}
-
-ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
+ss::future<
+  std::pair<cloud_storage::partition_manifest, cloud_storage::download_result>>
+ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _manifest_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
-    auto path = _manifest.get_manifest_path();
+      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+    cloud_storage::partition_manifest tmp(_ntp, _rev);
+    auto path = tmp.get_manifest_path();
     auto key = cloud_storage::remote_manifest_path(
       std::filesystem::path(std::move(path)));
     vlog(_rtclog.debug, "Downloading manifest");
-    auto result = co_await _remote.download_manifest(
-      _bucket, key, _manifest, fib);
+    auto result = co_await _remote.download_manifest(_bucket, key, tmp, fib);
 
     // It's OK if the manifest is not found for a newly created topic. The
     // condition in if statement is not guaranteed to cover all cases for new
@@ -341,19 +347,19 @@ ss::future<cloud_storage::download_result> ntp_archiver::download_manifest() {
           _partition->term());
     }
 
-    co_return result;
+    co_return std::make_pair(tmp, result);
 }
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _manifest_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(
       ctxlog.debug,
       "Uploading manifest, path: {}",
-      _manifest.get_manifest_path());
-    co_return co_await _remote.upload_manifest(_bucket, _manifest, fib);
+      manifest().get_manifest_path());
+    co_return co_await _remote.upload_manifest(_bucket, manifest(), fib);
 }
 
 // from offset to offset (by record batch boundary)
@@ -463,7 +469,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
           .segment_read_lock = std::nullopt,
         };
     }
-    if (_manifest.contains(upload.exposed_name)) {
+    if (manifest().contains(upload.exposed_name)) {
         // If the manifest already contains the name we have the following
         // cases
         //
@@ -486,7 +492,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         // - B == C:
         //   - Same as previoius. We need to log error and continue with the
         //   largest offset.
-        const auto& meta = _manifest.get(upload.exposed_name);
+        const auto& meta = manifest().get(upload.exposed_name);
         auto dirty_offset = upload.source->offsets().dirty_offset;
         if (meta->committed_offset < dirty_offset) {
             vlog(
@@ -567,9 +573,9 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     // latest uploaded segment but '_policy' requires offset that
     // belongs to the next offset or the gap. No need to do this
     // if there is no segments.
-    auto start_upload_offset = _manifest.size() ? _manifest.get_last_offset()
-                                                    + model::offset(1)
-                                                : model::offset(0);
+    auto start_upload_offset = manifest().size() ? manifest().get_last_offset()
+                                                     + model::offset(1)
+                                                 : model::offset(0);
 
     vlog(
       _rtclog.debug,
@@ -656,6 +662,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
     total.num_failed = results.size()
                        - (total.num_succeded + total.num_cancelled);
 
+    cloud_storage::partition_manifest mdiff(_ntp, _rev);
     for (size_t i = 0; i < results.size(); i++) {
         if (results[i] != cloud_storage::upload_result::success) {
             break;
@@ -665,10 +672,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         _probe.uploaded(*upload.delta);
         _probe.uploaded_bytes(upload.meta->size_bytes);
         model::offset expected_base_offset;
-        if (_manifest.get_last_offset() < model::offset{0}) {
+        if (manifest().get_last_offset() < model::offset{0}) {
             expected_base_offset = model::offset{0};
         } else {
-            expected_base_offset = _manifest.get_last_offset()
+            expected_base_offset = manifest().get_last_offset()
                                    + model::offset{1};
         }
         if (upload.meta->base_offset > expected_base_offset) {
@@ -676,9 +683,26 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
               upload.meta->base_offset - expected_base_offset);
         }
 
-        _manifest.add(segment_name(*upload.name), *upload.meta);
+        mdiff.add(segment_name(*upload.name), *upload.meta);
     }
+
     if (total.num_succeded != 0) {
+        vassert(
+          _partition, "Partition is not set for {} archiver", _ntp.path());
+        vassert(
+          _partition->archival_meta_stm(),
+          "Archival metadata STM is not created for {} archiver",
+          _ntp.path());
+        auto deadline = ss::lowres_clock::now() + _metadata_sync_timeout;
+        auto error = co_await _partition->archival_meta_stm()->add_segments(
+          mdiff, deadline, _as);
+        if (
+          error != cluster::errc::success
+          && error != cluster::errc::not_leader) {
+            vlog(
+              _rtclog.warn, "archival metadata STM update failed: {}", error);
+        }
+
         vlog(
           _rtclog.debug,
           "successfully uploaded {} segments (failed {} uploads), "
@@ -691,21 +715,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
             vlog(
               _rtclog.warn,
               "manifest upload to {} failed",
-              _manifest.get_manifest_path());
-        }
-
-        if (_partition->archival_meta_stm()) {
-            auto deadline = ss::lowres_clock::now() + _manifest_upload_timeout;
-            auto error = co_await _partition->archival_meta_stm()->add_segments(
-              _manifest, deadline, _as);
-            if (
-              error != cluster::errc::success
-              && error != cluster::errc::not_leader) {
-                vlog(
-                  _rtclog.warn,
-                  "archival metadata STM update failed: {}",
-                  error);
-            }
+              manifest().get_manifest_path());
         }
 
         _last_upload_time = ss::lowres_clock::now();
@@ -739,9 +749,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
 }
 
 uint64_t ntp_archiver::estimate_backlog_size() {
-    auto last_offset = _manifest.size() ? _manifest.get_last_offset()
-                                        : model::offset(0);
-    auto opt_log = _partition_manager.log(_manifest.get_ntp());
+    auto last_offset = manifest().size() ? manifest().get_last_offset()
+                                         : model::offset(0);
+    auto opt_log = _partition_manager.log(_ntp);
     if (!opt_log) {
         return 0U;
     }
@@ -769,9 +779,9 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     vlog(ctxlog.info, "archival metadata cleanup started");
     model::offset adjusted_start_offset = model::offset::min();
-    for (const auto& [key, meta] : _manifest) {
+    for (const auto& [key, meta] : manifest()) {
         retry_chain_node fib(
-          _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
+          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_segment_name(
           key.base_offset, key.term);
         auto spath = cloud_storage::generate_remote_segment_path(
@@ -796,18 +806,17 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
           ctxlog.info,
           "archival metadata cleanup, some segments will be removed from the "
           "manifest, start offset before cleanup: {}",
-          _manifest.get_start_offset());
+          manifest().get_start_offset());
         retry_chain_node rc_node(
-          _manifest_upload_timeout, _upload_loop_initial_backoff, &rtc);
+          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto error = co_await _partition->archival_meta_stm()->truncate(
           adjusted_start_offset,
-          ss::lowres_clock::now() + _manifest_upload_timeout,
+          ss::lowres_clock::now() + _metadata_sync_timeout,
           _as);
         if (error != cluster::errc::success) {
             vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
             throw std::system_error(error);
         } else {
-            result = _manifest.truncate(adjusted_start_offset);
             vlog(
               ctxlog.debug,
               "archival metadata STM update passed, re-uploading manifest");
@@ -816,7 +825,7 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
         vlog(
           ctxlog.info,
           "archival metadata cleanup completed, start offset after cleanup: {}",
-          _manifest.get_start_offset());
+          manifest().get_start_offset());
     } else {
         // Nothing to cleanup, return empty manifest
         result = cloud_storage::partition_manifest(_ntp, _rev);
