@@ -273,7 +273,7 @@ struct append_entries_request
     }
 
     ss::future<> serde_async_write(iobuf& out);
-    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 
 private:
     /*

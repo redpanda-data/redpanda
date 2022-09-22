@@ -85,8 +85,7 @@ concept has_serde_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
-concept has_serde_async_read
-  = requires(T t, iobuf_parser& in, const header& h) {
+concept has_serde_async_read = requires(T t, iobuf_parser& in, header h) {
     { t.serde_async_read(in, h) } -> seastar::Future;
 };
 

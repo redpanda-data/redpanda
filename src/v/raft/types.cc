@@ -578,7 +578,7 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
 }
 
 ss::future<> append_entries_request::serde_async_read(
-  iobuf_parser& src, const serde::header& hdr) {
+  iobuf_parser& src, const serde::header hdr) {
     using serde::read_nested;
     auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
     iobuf_parser in(std::move(tmp));
