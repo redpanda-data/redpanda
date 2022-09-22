@@ -1349,7 +1349,18 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     log.compact(c_cfg).get0();
     log.compact(c_cfg).get0();
     log.compact(c_cfg).get0();
+    // Self compactions complete.
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    // Check if it honors max_compactible offset by resetting it to the base
+    // offset of first segment. Nothing should be compacted.
+    const auto first_segment_offsets = disk_log->segments().front()->offsets();
+    c_cfg.max_collectible_offset = first_segment_offsets.base_offset;
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    // reset
+    c_cfg.max_collectible_offset = model::offset::max();
 
     log.compact(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);

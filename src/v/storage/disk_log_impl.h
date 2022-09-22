@@ -124,7 +124,7 @@ private:
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-    find_compaction_range();
+    find_compaction_range(const compaction_config&);
     ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
