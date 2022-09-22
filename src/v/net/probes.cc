@@ -147,14 +147,14 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 
 void client_probe::setup_metrics(
   ss::metrics::metric_groups& mgs,
-  const std::optional<ss::sstring>& service_name,
+  const std::optional<rpc::connection_cache_label>& label,
   const net::unresolved_address& target_addr) {
     namespace sm = ss::metrics;
     auto target = sm::label("target");
     std::vector<sm::label_instance> labels = {
       target(ssx::sformat("{}:{}", target_addr.host(), target_addr.port()))};
-    if (service_name) {
-        labels.push_back(sm::label("service_name")(*service_name));
+    if (label) {
+        labels.push_back(sm::label("connection_cache_label")((*label)()));
     }
     mgs.add_group(
       prometheus_sanitize::metrics_name("rpc_client"),

@@ -40,7 +40,9 @@ public:
       model::node_id node,
       ss::shard_id max_shards = ss::smp::count);
 
-    connection_cache() = default;
+    explicit connection_cache(
+      std::optional<connection_cache_label> label = std::nullopt);
+
     bool contains(model::node_id n) const {
         return _cache.find(n) != _cache.end();
     }
@@ -127,6 +129,7 @@ public:
     }
 
 private:
+    std::optional<connection_cache_label> _label;
     mutex _mutex; // to add/remove nodes
     underlying _cache;
 };
