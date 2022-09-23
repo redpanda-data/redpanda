@@ -31,9 +31,9 @@ public:
     // Determines what the node ID for this node should be. Once called, we can
     // proceed with initializing anything that depends on node ID.
     //
-    // On an seed server with no data on it (i.e. a fresh node), this sends
+    // On a seed server with no data on it (i.e. a fresh node), this sends
     // requests to all other seed servers to determine if there is a valid
-    // assigned of node IDs for the seeds.
+    // assignment of node IDs for the seeds.
     //
     // On a non-seed server with no node ID specified via config, this sends a
     // request to the controllers to register this node's UUID and assign it a
