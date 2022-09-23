@@ -1002,8 +1002,6 @@ rpk:
 					SeedServers: []SeedServer{
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
@@ -1240,8 +1238,6 @@ rpk:
 						{SocketAddress{"192.168.0.1", 33145}},
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
