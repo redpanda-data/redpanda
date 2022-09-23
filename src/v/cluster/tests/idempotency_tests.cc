@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/rm_stm.h"
+#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

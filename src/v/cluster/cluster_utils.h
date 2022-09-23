@@ -214,7 +214,7 @@ ss::future<std::error_code> replicate_and_wait(
   model::timeout_clock::time_point timeout,
   std::optional<model::term_id> term = std::nullopt) {
     const bool use_serde_serialization = feature_table.local().is_active(
-      feature::serde_raft_0);
+      features::feature::serde_raft_0);
     return stm.invoke_on(
       controller_stm_shard,
       [cmd = std::forward<Cmd>(cmd),

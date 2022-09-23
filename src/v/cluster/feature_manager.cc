@@ -17,7 +17,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
-#include "feature_table.h"
+#include "features/feature_table.h"
 #include "model/timeout_clock.h"
 #include "raft/group_manager.h"
 
@@ -184,7 +184,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               interval_override);
         }
     }
-    if (_feature_table.local().is_active(feature::license)) {
+    if (_feature_table.local().is_active(features::feature::license)) {
         const auto& cfg = config::shard_local_cfg();
         if (
           cfg.cloud_storage_enabled
@@ -384,9 +384,9 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
          */
         for (const auto& fs : _feature_table.local().get_feature_state()) {
             if (
-              fs.get_state() == feature_state::state::unavailable
+              fs.get_state() == features::feature_state::state::unavailable
               && fs.spec.available_rule
-                   == feature_spec::available_policy::always
+                   == features::feature_spec::available_policy::always
               && max_version >= fs.spec.require_version) {
                 vlog(
                   clusterlog.info,
@@ -457,7 +457,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
     switch (action.action) {
     case cluster::feature_update_action::action_t::complete_preparing:
         // Look up feature by name
-        if (state.get_state() != feature_state::state::preparing) {
+        if (state.get_state() != features::feature_state::state::preparing) {
             // Drop this silently, we presume that this is some kind of
             // race and the thing we thought was preparing is either
             // now active or administratively deactivated.
@@ -467,18 +467,22 @@ feature_manager::write_action(cluster::feature_update_action action) {
         break;
     case cluster::feature_update_action::action_t::activate:
         if (
-          state.get_state() != feature_state::state::available
-          && state.get_state() != feature_state::state::disabled_clean
-          && state.get_state() != feature_state::state::disabled_active
-          && state.get_state() != feature_state::state::disabled_preparing) {
+          state.get_state() != features::feature_state::state::available
+          && state.get_state() != features::feature_state::state::disabled_clean
+          && state.get_state()
+               != features::feature_state::state::disabled_active
+          && state.get_state()
+               != features::feature_state::state::disabled_preparing) {
             valid = false;
         }
         break;
     case cluster::feature_update_action::action_t::deactivate:
         if (
-          state.get_state() == feature_state::state::disabled_clean
-          || state.get_state() == feature_state::state::disabled_preparing
-          || state.get_state() == feature_state::state::disabled_active) {
+          state.get_state() == features::feature_state::state::disabled_clean
+          || state.get_state()
+               == features::feature_state::state::disabled_preparing
+          || state.get_state()
+               == features::feature_state::state::disabled_active) {
             valid = false;
         }
     }

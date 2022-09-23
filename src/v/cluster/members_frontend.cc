@@ -12,10 +12,10 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -134,7 +134,8 @@ members_frontend::recommission_node(model::node_id id) {
 
 ss::future<std::error_code>
 members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
-    if (!_feature_table.local().is_active(cluster::feature::maintenance_mode)) {
+    if (!_feature_table.local().is_active(
+          features::feature::maintenance_mode)) {
         vlog(
           clusterlog.info,
           "Maintenance mode feature is not active (upgrade in progress?)");

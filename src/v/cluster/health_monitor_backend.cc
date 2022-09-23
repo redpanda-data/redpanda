@@ -12,7 +12,6 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -23,6 +22,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
@@ -227,7 +227,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 
     report.drain_status = it->second.drain_status;
     report.include_drain_status = _feature_table.local().is_active(
-      cluster::feature::maintenance_mode);
+      features::feature::maintenance_mode);
 
     return report;
 }
@@ -629,7 +629,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
 
     ret.drain_status = co_await _drain_manager.local().status();
     ret.include_drain_status = _feature_table.local().is_active(
-      cluster::feature::maintenance_mode);
+      features::feature::maintenance_mode);
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

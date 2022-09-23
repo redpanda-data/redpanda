@@ -11,11 +11,11 @@
 
 #pragma once
 
-#include "cluster/feature_table.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"

@@ -10,9 +10,9 @@
  */
 
 #pragma once
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/shard_table.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -144,7 +144,7 @@ private:
 
     bool use_consumer_offsets_topic() {
         return _feature_table.local().is_active(
-          cluster::feature::consumer_offsets);
+          features::feature::consumer_offsets);
     }
 
     ss::future<std::vector<deletable_group_result>> route_delete_groups(

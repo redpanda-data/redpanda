@@ -3,7 +3,6 @@
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
 #include "cluster/feature_manager.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
 #include "cluster/partition_leaders_table.h"
@@ -11,6 +10,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
+#include "features/feature_table.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/group_router.h"
@@ -571,7 +571,7 @@ ss::abort_source& group_metadata_migration::abort_source() {
 
 ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
     vlog(mlog.info, "activating consumer offsets feature");
-    while (!feature_table().is_active(cluster::feature::consumer_offsets)
+    while (!feature_table().is_active(features::feature::consumer_offsets)
            && !as.abort_requested()) {
         co_await do_activate_feature(as);
     }
@@ -581,14 +581,14 @@ ss::future<>
 group_metadata_migration::do_activate_feature(ss::abort_source& as) {
     if (_controller.is_raft0_leader()) {
         co_await feature_table().await_feature_preparing(
-          cluster::feature::consumer_offsets, as);
+          features::feature::consumer_offsets, as);
 
         auto err = co_await feature_manager().write_action(
           cluster::feature_update_action{
             .feature_name = ss::sstring(
               _controller.get_feature_table()
                 .local()
-                .get_state(cluster::feature::consumer_offsets)
+                .get_state(features::feature::consumer_offsets)
                 .spec.name),
             .action
             = cluster::feature_update_action::action_t::complete_preparing,
@@ -596,7 +596,7 @@ group_metadata_migration::do_activate_feature(ss::abort_source& as) {
 
         if (
           err
-          || !feature_table().is_active(cluster::feature::consumer_offsets)) {
+          || !feature_table().is_active(features::feature::consumer_offsets)) {
             if (err) {
                 vlog(
                   mlog.info,
@@ -617,10 +617,10 @@ ss::future<> group_metadata_migration::do_apply() {
       "state: {}",
       _controller.get_feature_table()
         .local()
-        .get_state(cluster::feature::consumer_offsets)
+        .get_state(features::feature::consumer_offsets)
         .get_state());
     co_await feature_table().await_feature_preparing(
-      cluster::feature::consumer_offsets, abort_source());
+      features::feature::consumer_offsets, abort_source());
     vlog(mlog.info, "disabling partition movement feature and group router");
     co_await _group_router.invoke_on_all(&group_router::disable);
     vlog(mlog.info, "shutting down source group manager");
@@ -641,7 +641,7 @@ ss::future<> group_metadata_migration::do_apply() {
     co_await activate_feature(_controller.get_abort_source().local());
 
     co_await feature_table().await_feature(
-      cluster::feature::consumer_offsets, abort_source());
+      features::feature::consumer_offsets, abort_source());
     co_await _group_router.invoke_on_all([](group_router& router) {
         return router.get_group_manager().local().reload_groups();
     });
@@ -726,7 +726,7 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
       < cluster::cluster_version{2}) {
         co_return;
     }
-    if (feature_table().is_active(cluster::feature::consumer_offsets)) {
+    if (feature_table().is_active(features::feature::consumer_offsets)) {
         feature_manager().exit_barrier(preparing_barrier_tag);
         feature_manager().exit_barrier(active_barrier_tag);
         co_return;
@@ -742,7 +742,7 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
     ssx::background
       = ssx::spawn_with_gate_then(_background_gate, [this]() -> ss::future<> {
             while (
-              !feature_table().is_active(cluster::feature::consumer_offsets)
+              !feature_table().is_active(features::feature::consumer_offsets)
               && !_as.abort_requested()) {
                 if (!_controller.get_topics_state().local().contains(
                       model::kafka_group_nt, model::partition_id{0})) {

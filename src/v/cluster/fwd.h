@@ -11,8 +11,14 @@
 
 #pragma once
 
+// FIXME: refer to feature_table by its proper name in call sites
+namespace features {
+class feature_table;
+}
+
 namespace cluster {
 
+using features::feature_table;
 class controller;
 class controller_backend;
 class controller_stm_shard;
@@ -46,7 +52,6 @@ class health_monitor_backend;
 class metrics_reporter;
 class feature_frontend;
 class feature_manager;
-class feature_table;
 class drain_manager;
 class partition_balancer_backend;
 

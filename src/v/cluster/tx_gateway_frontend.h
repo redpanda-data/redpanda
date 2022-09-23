@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -95,7 +95,8 @@ private:
     bool _transactions_enabled;
 
     bool allow_init_tm_request_with_expected_pid() {
-        return _feature_table.local().is_active(feature::transaction_ga);
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
     }
 
     void start_expire_timer();

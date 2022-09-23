@@ -18,7 +18,17 @@
 #include <array>
 #include <string_view>
 
+using cluster::cluster_version;
+using cluster::feature_update_action;
+using cluster::invalid_version;
+
+// cluster classes that we will make friends of the feature_table
 namespace cluster {
+class feature_backend;
+class feature_manager;
+} // namespace cluster
+
+namespace features {
 
 enum class feature : std::uint64_t {
     central_config = 0x1,
@@ -344,24 +354,24 @@ private:
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.
-    friend class feature_manager;
+    friend class cluster::feature_manager;
 
     // feature_backend is a friend for routine updates when
     // applying raft0 log events.
-    friend class feature_backend;
+    friend class cluster::feature_backend;
 
     // Unit testing hook.
     friend class feature_table_fixture;
 };
 
-} // namespace cluster
+} // namespace features
 
 template<>
-struct fmt::formatter<cluster::feature_state::state> final
+struct fmt::formatter<features::feature_state::state> final
   : fmt::formatter<std::string_view> {
     template<typename FormatContext>
     auto
-    format(const cluster::feature_state::state& s, FormatContext& ctx) const {
-        return formatter<string_view>::format(cluster::to_string_view(s), ctx);
+    format(const features::feature_state::state& s, FormatContext& ctx) const {
+        return formatter<string_view>::format(features::to_string_view(s), ctx);
     }
 };

@@ -14,11 +14,11 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
@@ -109,12 +109,12 @@ void config_manager::start_bootstrap() {
                           // We are the leader.  Proceed to bootstrap cluster
                           // configuration from our local configuration.
                           if (!_feature_table.local().is_active(
-                                feature::central_config)) {
+                                features::feature::central_config)) {
                               vlog(
                                 clusterlog.trace,
                                 "Central config feature not active, waiting");
                               co_await _feature_table.local().await_feature(
-                                feature::central_config, _as.local());
+                                features::feature::central_config, _as.local());
                           }
                           co_await do_bootstrap();
                           vlog(

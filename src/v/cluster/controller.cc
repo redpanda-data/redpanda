@@ -17,7 +17,6 @@
 #include "cluster/data_policy_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
 #include "cluster/health_monitor_frontend.h"
@@ -40,6 +39,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -106,7 +106,8 @@ ss::future<> controller::start() {
     ssx::spawn_with_gate(_gate, [this] {
         return _raft_manager.invoke_on_all([this](raft::group_manager& mgr) {
             return _feature_table.local()
-              .await_feature(feature::raft_improved_configuration, _as.local())
+              .await_feature(
+                features::feature::raft_improved_configuration, _as.local())
               .then([&mgr] {
                   mgr.set_feature_active(
                     raft::raft_feature::improved_config_change);

@@ -12,9 +12,9 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 
 namespace cluster {
 
