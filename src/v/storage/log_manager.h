@@ -20,6 +20,7 @@
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
+#include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
@@ -122,6 +123,9 @@ struct log_config {
     storage_type stype;
     ss::sstring base_dir;
     config::binding<size_t> max_segment_size;
+
+    // Default 5% jitter on segment size thresholds
+    internal::jitter_percents segment_size_jitter{5};
 
     // compacted segment size
     config::binding<size_t> compacted_segment_size;

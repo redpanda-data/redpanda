@@ -172,10 +172,10 @@ private:
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
-    float _segment_size_jitter;
     bool _closed{false};
     ss::gate _compaction_gate;
     log_manager& _manager;
+    float _segment_size_jitter;
     segment_set _segs;
     kvstore& _kvstore;
     model::offset _start_offset;
