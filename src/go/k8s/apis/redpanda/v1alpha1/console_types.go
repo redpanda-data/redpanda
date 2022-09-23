@@ -52,6 +52,9 @@ type ConsoleSpec struct {
 	// This feature requires an Enterprise license
 	// REF https://docs.redpanda.com/docs/console/single-sign-on/identity-providers/google/
 	Login *EnterpriseLogin `json:"login,omitempty"`
+
+	// Ingress contains configuration for the Console ingress.
+	Ingress *IngressConfig `json:"ingress,omitempty"`
 }
 
 // Server is the Console app HTTP server config

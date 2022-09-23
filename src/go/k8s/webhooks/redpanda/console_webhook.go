@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
@@ -16,6 +17,9 @@ import (
 )
 
 // +kubebuilder:webhook:path=/validate-redpanda-vectorized-io-v1alpha1-console,mutating=false,failurePolicy=fail,sideEffects=None,groups="redpanda.vectorized.io",resources=consoles,verbs=create;update,versions=v1alpha1,name=vconsole.kb.io,admissionReviewVersions=v1
+
+// validHostnameSegment matches valid DNS name segments.
+var validHostnameSegment = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])$`)
 
 // ConsoleValidator validates Consoles
 type ConsoleValidator struct {
@@ -64,6 +68,10 @@ func (v *ConsoleValidator) Handle(
 			return admission.Denied(err.Error())
 		}
 		return admission.Errored(http.StatusBadRequest, err)
+	}
+
+	if console.Spec.Ingress != nil && console.Spec.Ingress.Endpoint != "" && !validHostnameSegment.MatchString(console.Spec.Ingress.Endpoint) {
+		return admission.Denied(fmt.Sprintf("ingress endpoint does not match regex %s", validHostnameSegment.String()))
 	}
 
 	return admission.Allowed("")
