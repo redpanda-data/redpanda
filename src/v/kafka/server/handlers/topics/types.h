@@ -47,7 +47,7 @@ static constexpr std::string_view topic_property_retention_bytes
   = "retention.bytes";
 static constexpr std::string_view topic_property_retention_duration
   = "retention.ms";
-static constexpr std::string_view topic_property_batch_max_bytes
+static constexpr std::string_view topic_property_max_message_bytes
   = "max.message.bytes";
 static constexpr std::string_view topic_property_recovery
   = "redpanda.remote.recovery";

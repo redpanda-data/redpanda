@@ -165,6 +165,26 @@ struct remote_read_and_write_are_not_supported_for_read_replica {
     }
 };
 
+struct batch_max_bytes_limits {
+    static constexpr error_code ec = error_code::invalid_config;
+    static constexpr const char* error_message
+      = "Property max.message.bytes value must be positive";
+
+    static bool is_valid(const creatable_topic& c) {
+        auto it = std::find_if(
+          c.configs.begin(),
+          c.configs.end(),
+          [](const createable_topic_config& cfg) {
+              return cfg.name == topic_property_max_message_bytes;
+          });
+        if (it != c.configs.end() && it->value.has_value()) {
+            return boost::lexical_cast<int32_t>(it->value.value()) > 0;
+        }
+
+        return true;
+    }
+};
+
 struct compression_type_validator_details {
     using validated_type = model::compression;
 
