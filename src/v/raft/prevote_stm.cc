@@ -139,7 +139,7 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
           // 5.2.1 mark node as candidate, and update leader id
-          _ptr->_vstate = consensus::vote_state::candidate;
+          _ptr->set_vstate(consensus::vote_state::candidate);
           //  only trigger notification when we had a leader previosly
           if (_ptr->_leader_id) {
               _ptr->_leader_id = std::nullopt;

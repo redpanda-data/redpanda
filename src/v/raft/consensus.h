@@ -178,6 +178,8 @@ public:
      */
     std::optional<uint8_t> get_under_replicated() const;
 
+    void set_vstate(vote_state);
+
     /**
      * Sends a round of heartbeats to followers, when majority of followers
      * replied with success to either this of any following request all reads up
