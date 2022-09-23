@@ -196,7 +196,7 @@ void consensus::do_step_down(std::string_view ctx) {
           _term,
           _log.offsets().dirty_offset);
     }
-    _vstate = vote_state::follower;
+    set_vstate(vote_state::follower);
 }
 
 void consensus::maybe_step_down() {
@@ -1684,7 +1684,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
-    _vstate = vote_state::follower;
+    set_vstate(vote_state::follower);
     if (unlikely(_leader_id != r.node_id)) {
         _leader_id = r.node_id;
         _follower_reply.broadcast();
@@ -3311,5 +3311,7 @@ consensus::timequery(storage::timequery_config cfg) {
           return res;
       });
 }
+
+void consensus::set_vstate(vote_state vs) { _vstate = vs; }
 
 } // namespace raft
