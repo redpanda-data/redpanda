@@ -142,7 +142,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 	}
 	expCfg := &Config{
 		fileLocation: "/etc/redpanda/redpanda.yaml",
-		Redpanda: RedpandaConfig{
+		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
 				Address: "0.0.0.0",
