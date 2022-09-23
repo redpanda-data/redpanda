@@ -369,8 +369,6 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.AdvertisedRPCAPI = internal.AdvertisedRPCAPI
 	rpc.AdvertisedKafkaAPI = internal.AdvertisedKafkaAPI
 	rpc.DeveloperMode = bool(internal.DeveloperMode)
-	rpc.AggregateMetrics = bool(internal.AggregateMetrics)
-	rpc.DisablePublicMetrics = bool(internal.DisablePublicMetrics)
 	rpc.Other = internal.Other
 	return nil
 }
