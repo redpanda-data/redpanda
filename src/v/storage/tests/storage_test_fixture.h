@@ -109,9 +109,6 @@ public:
           ss::default_priority_class(),
           cache);
 
-        // Disable jitter for unit tests
-        cfg.segment_size_jitter = storage::internal::jitter_percents{0};
-
         return cfg;
     }
 

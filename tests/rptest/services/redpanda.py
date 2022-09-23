@@ -448,6 +448,10 @@ class RedpandaService(Service):
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
+        # Disable segment size jitter to make tests more deterministic if they rely on
+        # inspecting storage internals (e.g. number of segments after writing a certain
+        # amount of data).
+        'log_segment_size_jitter_percent': 0,
     }
 
     logs = {

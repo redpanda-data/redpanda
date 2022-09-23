@@ -88,6 +88,7 @@ struct log_config {
       config::binding<size_t> segment_size,
       config::binding<size_t> compacted_segment_size,
       config::binding<size_t> max_compacted_segment_size,
+      int segment_size_jitter,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
       config::binding<std::optional<size_t>> ret_bytes,
@@ -100,6 +101,7 @@ struct log_config {
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(segment_size)
+      , segment_size_jitter(internal::jitter_percents{segment_size_jitter})
       , compacted_segment_size(compacted_segment_size)
       , max_compacted_segment_size(max_compacted_segment_size)
       , sanitize_fileops(should)
@@ -125,7 +127,7 @@ struct log_config {
     config::binding<size_t> max_segment_size;
 
     // Default 5% jitter on segment size thresholds
-    internal::jitter_percents segment_size_jitter{5};
+    internal::jitter_percents segment_size_jitter;
 
     // compacted segment size
     config::binding<size_t> compacted_segment_size;
