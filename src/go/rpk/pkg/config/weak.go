@@ -344,8 +344,6 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api"`
 		AdvertisedKafkaAPI         namedSocketAddresses      `yaml:"advertised_kafka_api"`
 		DeveloperMode              weakBool                  `yaml:"developer_mode"`
-		AggregateMetrics           weakBool                  `yaml:"aggregate_metrics"`
-		DisablePublicMetrics       weakBool                  `yaml:"disable_public_metrics"`
 		Other                      map[string]interface{}    `yaml:",inline"`
 	}
 
