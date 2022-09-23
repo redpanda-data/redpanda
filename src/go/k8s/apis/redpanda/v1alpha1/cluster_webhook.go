@@ -573,7 +573,7 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry"),
 				r.Spec.Configuration.SchemaRegistry.External,
-				"bootstrap loadbalancer not available for schema reigstry"))
+				"bootstrap loadbalancer not available for schema registry"))
 	}
 	if schemaRegistry.External.EndpointTemplate != "" {
 		allErrs = append(allErrs,
