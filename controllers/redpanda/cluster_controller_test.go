@@ -102,9 +102,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 						},
 						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
 							{Port: pandaProxyPort},
-							{External: v1alpha1.ExternalConnectivityConfig{
+							{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 								Enabled: true,
-							}},
+							}}},
 						},
 						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 							Port: schemaRegistryPort,

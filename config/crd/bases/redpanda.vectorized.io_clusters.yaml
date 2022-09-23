@@ -429,6 +429,24 @@ spec:
                                 is limited to hermetic functions because template
                                 application needs to be deterministic."
                               type: string
+                            ingress:
+                              description: Configures a ingress resource
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: Optional annotations for the generated
+                                    ingress.
+                                  type: object
+                                enabled:
+                                  description: Indicates if ingress is enabled (true
+                                    when unspecified).
+                                  type: boolean
+                                endpoint:
+                                  description: If present, it's appended to the subdomain
+                                    to form the ingress hostname.
+                                  type: string
+                              type: object
                             preferredAddressType:
                               description: The preferred address type to be assigned
                                 to the external advertised addresses. The valid types

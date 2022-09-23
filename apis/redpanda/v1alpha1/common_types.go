@@ -58,3 +58,13 @@ type NamespaceNameRef struct {
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
 	Namespace string `json:"namespace"`
 }
+
+// IngressConfig defines ingress specification
+type IngressConfig struct {
+	// Indicates if ingress is enabled (true when unspecified).
+	Enabled *bool `json:"enabled,omitempty"`
+	// Optional annotations for the generated ingress.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// If present, it's appended to the subdomain to form the ingress hostname.
+	Endpoint string `json:"endpoint,omitempty"`
+}
