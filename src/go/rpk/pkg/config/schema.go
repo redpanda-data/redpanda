@@ -48,6 +48,11 @@ func (c *Config) FileLocation() string {
 	return c.fileLocation
 }
 
+// RedpandaConfig is the source of truth for Redpanda node configuration.
+//
+// Cluster properties must NOT be enlisted in this struct. Adding a cluster
+// property here would cause the dependent libraries (e.g. operator) to wrongly
+// consider it a node property.
 type RedpandaConfig struct {
 	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
 	ID                         int                       `yaml:"node_id" json:"node_id"`
