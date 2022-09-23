@@ -56,8 +56,9 @@ namespace storage {
 disk_log_impl::disk_log_impl(
   ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
   : log::impl(std::move(cfg))
-  , _segment_size_jitter(storage::internal::random_jitter())
   , _manager(manager)
+  , _segment_size_jitter(
+      internal::random_jitter(_manager.config().segment_size_jitter))
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())

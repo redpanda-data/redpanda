@@ -1237,8 +1237,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       as);
 
     // Compact 10 times, with a configuration calling for 60kiB max log size.
-    // This results in approximately prefix truncating at offset 50, although
-    // this is nondeterministic due to max_segment_size jitter.
+    // This results in prefix truncating at offset 50.
     for (int i = 0; i < 10; ++i) {
         log.compact(ccfg).get0();
     }
@@ -1248,9 +1247,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto lstats_after = log.offsets();
     BOOST_REQUIRE_EQUAL(
       lstats_after.committed_offset, lstats_before.committed_offset);
-
-    // Cannot assert on lstats_after.start_offset: its value depends on
-    // the jitter applied in disk_log_impl::_max_segment_size
+    BOOST_REQUIRE_EQUAL(lstats_after.start_offset, model::offset{50});
 
     auto batches = read_and_validate_all_batches(log);
     auto total_batch_size = std::accumulate(
@@ -1275,6 +1272,10 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
 FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
+
+    // Switch on jitter: it is off by default in default_log_config because
+    // for most tests randomness is undesirable.
+    cfg.segment_size_jitter = storage::internal::jitter_percents{5};
 
     // defaults
     cfg.max_segment_size = config::mock_binding<size_t>(100_KiB);
