@@ -20,8 +20,10 @@
 #include "s3/client.h"
 #include "s3/client_probe.h"
 #include "seastarx.h"
+#include "storage/directories.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/tmp_dir.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -121,10 +123,11 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
@@ -153,10 +156,11 @@ FIXTURE_TEST(
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
@@ -183,10 +187,11 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
@@ -212,10 +217,11 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
     retry_chain_node fib(100ms, 20ms);
@@ -271,10 +277,11 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
       manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
 
@@ -318,10 +325,11 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = []() -> ss::future<storage::segment_reader_handle> {
+    auto reset_stream =
+      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return storage::segment_reader_handle(
+        co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
     auto upl_res = remote
@@ -330,12 +338,83 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
-    // NOTE: we have to upload something as segment in order for the mock to
-    // work correctly.
+    // NOTE: we have to upload something as segment in order for the
+    // mock to work correctly.
 
     auto expected_success = remote.delete_segment(bucket, path, fib).get();
     BOOST_REQUIRE(expected_success == upload_result::success);
 
     auto expected_notfound = remote.segment_exists(bucket, path, fib).get();
     BOOST_REQUIRE(expected_notfound == download_result::notfound);
+}
+
+FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    disk_log_builder b{log_config{
+      log_config::storage_type::disk,
+      data_path.string(),
+      1024,
+      debug_sanitize_files::yes,
+    }};
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+
+    model::offset start_offset{0};
+    for (auto i = 0; i < 4; ++i) {
+        b | add_segment(start_offset) | add_random_batch(start_offset, 10);
+        auto& segment = b.get_segment(i);
+        start_offset = segment.offsets().dirty_offset + model::offset{1};
+    }
+
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+
+    remote remote(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+
+    auto path = generate_remote_segment_path(
+      manifest_ntp,
+      manifest_revision,
+      segment_name("1-2-v1.log"),
+      model::term_id{123});
+
+    auto reset_stream = [&b]() -> ss::future<std::unique_ptr<stream_provider>> {
+        auto start_pos = 20;
+        auto end_pos = b.get_log_segments().back()->file_size() - 20;
+        co_return std::make_unique<concat_segment_reader_view>(
+          std::vector<ss::lw_shared_ptr<segment>>{
+            b.get_log_segments().begin(), b.get_log_segments().end()},
+          start_pos,
+          end_pos,
+          ss::default_priority_class());
+    };
+
+    retry_chain_node fib(100ms, 20ms);
+    auto upload_size = b.get_disk_log_impl().size_bytes() - 40;
+    auto upl_res
+      = remote
+          .upload_segment(
+            bucket, path, upload_size, reset_stream, fib, always_continue)
+          .get();
+    BOOST_REQUIRE_EQUAL(upl_res, upload_result::success);
+
+    iobuf downloaded;
+    auto try_consume = [&downloaded](
+                         uint64_t len,
+                         ss::input_stream<char> is) -> ss::future<uint64_t> {
+        downloaded.clear();
+        auto rds = make_iobuf_ref_output_stream(downloaded);
+        co_await ss::copy(is, rds);
+        co_return downloaded.size_bytes();
+    };
+    auto dnl_res
+      = remote.download_segment(bucket, path, try_consume, fib).get();
+
+    BOOST_REQUIRE_EQUAL(dnl_res, download_result::success);
+    BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), upload_size);
+
+    b.stop().get();
 }

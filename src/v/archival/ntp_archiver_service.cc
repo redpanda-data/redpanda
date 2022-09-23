@@ -369,9 +369,13 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    auto reset_func = [this, candidate] {
-        return candidate.source->reader().data_stream(
+    auto reset_func =
+      [this,
+       candidate]() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+        auto handle = co_await candidate.source->reader().data_stream(
           candidate.file_offset, candidate.final_file_offset, _io_priority);
+        co_return std::make_unique<storage::segment_reader_handle>(
+          std::move(handle));
     };
 
     auto original_term = _partition->term();

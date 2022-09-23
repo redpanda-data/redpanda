@@ -398,12 +398,12 @@ ss::future<upload_result> remote::upload_segment(
               bucket,
               path,
               content_length,
-              reader_handle.take_stream(),
+              reader_handle->take_stream(),
               tags,
               fib.get_timeout());
             _probe.successful_upload();
             _probe.register_upload_size(content_length);
-            co_await reader_handle.close();
+            co_await reader_handle->close();
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
@@ -411,7 +411,7 @@ ss::future<upload_result> remote::upload_segment(
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
-        co_await reader_handle.close();
+        co_await reader_handle->close();
 
         co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
