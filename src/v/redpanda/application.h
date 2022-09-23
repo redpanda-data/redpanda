@@ -46,6 +46,10 @@
 
 namespace po = boost::program_options; // NOLINT
 
+namespace kafka {
+struct group_metadata_migration;
+} // namespace kafka
+
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::system_clock::now().time_since_epoch())};
@@ -66,11 +70,7 @@ public:
     explicit application(ss::sstring = "redpanda::main");
     ~application();
 
-    void shutdown() {
-        while (!_deferred.empty()) {
-            _deferred.pop_back();
-        }
-    }
+    void shutdown();
 
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
@@ -181,6 +181,9 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
+
+    ss::lw_shared_ptr<kafka::group_metadata_migration> kafka_group_migration;
+
     // run these first on destruction
     deferred_actions _deferred;
 };
