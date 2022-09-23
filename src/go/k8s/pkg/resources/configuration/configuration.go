@@ -158,8 +158,8 @@ func isKnownNodeProperty(prop string) bool {
 func init() {
 	knownNodeProperties = make(map[string]bool)
 
-	// The assumption here is that all explicit fields of RedpandaConfig are node properties
-	cfg := reflect.TypeOf(config.RedpandaConfig{})
+	// The assumption here is that all explicit fields of RedpandaNodeConfig are node properties
+	cfg := reflect.TypeOf(config.RedpandaNodeConfig{})
 	for i := 0; i < cfg.NumField(); i++ {
 		tag := cfg.Field(i).Tag
 		yamlTag := tag.Get("yaml")

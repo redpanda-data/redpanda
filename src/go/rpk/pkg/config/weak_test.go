@@ -971,7 +971,7 @@ rpk:
 				Organization: "my_organization",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "node_uuid",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             1,
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
@@ -1205,7 +1205,7 @@ rpk:
 				Organization: "1",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "124.42",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             1,
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
