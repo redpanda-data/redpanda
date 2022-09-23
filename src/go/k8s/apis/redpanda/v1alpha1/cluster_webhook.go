@@ -12,6 +12,7 @@ package v1alpha1
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -43,6 +44,9 @@ const (
 
 	defaultSchemaRegistryPort = 8081
 )
+
+// validHostnameSegment matches valid DNS name segments.
+var validHostnameSegment = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])$`)
 
 // AllowDownscalingInWebhook controls the downscaling alpha feature in the Cluster custom resource.
 // Downscaling is not stable since nodeIDs are currently not reusable, so adding to a cluster a node
@@ -466,6 +470,13 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 						fmt.Sprintf("template is invalid: %v", err)))
 			}
 		}
+		if proxyExternal.External.Ingress != nil && proxyExternal.External.Ingress.Endpoint != "" && !validHostnameSegment.MatchString(proxyExternal.External.Ingress.Endpoint) {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).
+					Child("external").Child("ingress").Child("endpoint"),
+					proxyExternal.External.Ingress.Endpoint,
+					fmt.Sprintf("ingress endpoint for pandaproxy API does not match regexp %s", validHostnameSegment.String())))
+		}
 	}
 
 	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
@@ -781,7 +792,7 @@ func validateListener(
 func validatePandaproxyTLS(
 	tlsConfig PandaproxyAPITLS,
 	path *field.Path,
-	external *ExternalConnectivityConfig,
+	external *PandaproxyExternalConnectivityConfig,
 	externalPath *field.Path,
 ) field.ErrorList {
 	var allErrs field.ErrorList

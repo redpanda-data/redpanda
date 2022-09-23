@@ -49,13 +49,12 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                       logr.Logger
-	configuratorSettings      resources.ConfiguratorSettings
-	clusterDomain             string
-	Scheme                    *runtime.Scheme
-	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
-	DecommissionWaitInterval  time.Duration
-	RestrictToRedpandaVersion string
+	Log                      logr.Logger
+	configuratorSettings     resources.ConfiguratorSettings
+	clusterDomain            string
+	Scheme                   *runtime.Scheme
+	AdminAPIClientFactory    adminutils.AdminAPIClientFactory
+	DecommissionWaitInterval time.Duration
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -107,9 +106,6 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
-		return ctrl.Result{}, nil
-	}
-	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
 	}
 
@@ -432,7 +428,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) ||
-			externalProxyListener != nil && needExternalIP(externalProxyListener.External) ||
+			externalProxyListener != nil && needExternalIP(externalProxyListener.External.ExternalConnectivityConfig) ||
 			schemaRegistryConf != nil && schemaRegistryConf.External != nil && needExternalIP(*schemaRegistryConf.External) {
 			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
 				return nil, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
@@ -672,19 +668,6 @@ func isRedpandaClusterManaged(
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
 		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
 			redpandaCluster.Name, managedAnnotationKey))
-		return false
-	}
-	return true
-}
-
-func isRedpandaClusterVersionManaged(
-	log logr.Logger,
-	redpandaCluster *redpandav1alpha1.Cluster,
-	restrictToRedpandaVersion string,
-) bool {
-	if restrictToRedpandaVersion != "" && restrictToRedpandaVersion != redpandaCluster.Spec.Version {
-		log.Info(fmt.Sprintf("management of %s is restricted to cluster (spec) version %s; cluster has spec version %s and status version %s",
-			redpandaCluster.Name, restrictToRedpandaVersion, redpandaCluster.Spec.Version, redpandaCluster.Status.Version))
 		return false
 	}
 	return true

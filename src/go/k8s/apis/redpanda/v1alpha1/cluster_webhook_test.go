@@ -351,7 +351,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.AdminAPI = append(updatePort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
@@ -363,7 +363,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 		updatePort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
 			Enabled: true,
 		}
@@ -499,7 +499,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		withSub.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
 			{
 				Port:     145,
-				External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"},
+				External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"}},
 			},
 		}
 		err := withSub.ValidateUpdate(redpandaCluster)
@@ -519,7 +519,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("cannot have external proxy listener without an internal one", func(t *testing.T) {
 		noInternal := redpandaCluster.DeepCopy()
 		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123})
 		err := noInternal.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
@@ -528,7 +528,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("external proxy listener cannot have port specified", func(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123},
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123},
 			v1alpha1.PandaproxyAPI{Port: 321})
 		err := multiPort.ValidateUpdate(redpandaCluster)
 
@@ -674,7 +674,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.AdminAPI = append(newPort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 
 		err := newPort.ValidateCreate()
 		assert.Error(t, err)
@@ -686,7 +686,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.KafkaAPI = append(newPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
 		newPort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
 			Enabled: true,
 		}
@@ -925,7 +925,7 @@ func TestCreation(t *testing.T) {
 		withSub.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
 			{
 				Port:     145,
-				External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"},
+				External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"}},
 			},
 		}
 		err := withSub.ValidateCreate()
@@ -945,7 +945,7 @@ func TestCreation(t *testing.T) {
 	t.Run("cannot have external proxy listener without an internal one", func(t *testing.T) {
 		noInternal := redpandaCluster.DeepCopy()
 		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123})
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123})
 		err := noInternal.ValidateCreate()
 
 		assert.Error(t, err)
@@ -954,7 +954,7 @@ func TestCreation(t *testing.T) {
 	t.Run("external proxy listener cannot have port specified", func(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123},
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123},
 			v1alpha1.PandaproxyAPI{Port: 321})
 		err := multiPort.ValidateCreate()
 
@@ -1008,9 +1008,9 @@ func TestCreation(t *testing.T) {
 	t.Run("bootstrap loadbalancer not allowed for pandaproxy", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
+			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
 				Port: 123,
-			}}})
+			}}}})
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
@@ -1038,7 +1038,6 @@ func TestCreation(t *testing.T) {
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
-	//nolint:dupl // not really a duplicate
 	t.Run("endpoint template not allowed for adminapi", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		const commonDomain = "company.org"
@@ -1071,10 +1070,10 @@ func TestCreation(t *testing.T) {
 		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{
 			Enabled: true,
 		}})
-		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{
+		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			EndpointTemplate: "xxx",
-		}})
+		}}})
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
@@ -1109,11 +1108,11 @@ func TestCreation(t *testing.T) {
 			Enabled:   true,
 			Subdomain: commonDomain,
 		}})
-		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{
+		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			Subdomain:        commonDomain,
 			EndpointTemplate: "{{.Index | nonexistent }}",
-		}})
+		}}})
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
@@ -1126,13 +1125,58 @@ func TestCreation(t *testing.T) {
 			Enabled:   true,
 			Subdomain: commonDomain,
 		}})
-		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{
+		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			Subdomain:        commonDomain,
 			EndpointTemplate: "{{.Index}}-pp",
-		}})
+		}}})
 		err := rp.ValidateCreate()
 		assert.NoError(t, err)
+	})
+	t.Run("valid ingress configuration in pandaproxy API", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+
+		const commonDomain = "mydomain"
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{
+			Enabled:   true,
+			Subdomain: commonDomain,
+		}})
+		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+				Enabled:   true,
+				Subdomain: commonDomain,
+			},
+			Ingress: &v1alpha1.IngressConfig{},
+		}})
+
+		cases := []struct {
+			endpoint string
+			error    bool
+		}{
+			{
+				endpoint: "pproxy",
+			},
+			{
+				endpoint: "",
+			},
+			{
+				endpoint: " 1",
+				error:    true,
+			},
+			{
+				endpoint: "pproxy.subdomain",
+				error:    true,
+			},
+		}
+		for _, c := range cases {
+			rp.Spec.Configuration.PandaproxyAPI[len(rp.Spec.Configuration.PandaproxyAPI)-1].External.Ingress.Endpoint = c.endpoint
+			err := rp.ValidateCreate()
+			if c.error {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		}
 	})
 }
 

@@ -296,6 +296,15 @@ type ExternalConnectivityConfig struct {
 	Bootstrap *LoadBalancerConfig `json:"bootstrapLoadBalancer,omitempty"`
 }
 
+// PandaproxyExternalConnectivityConfig allows to customize pandaproxy specific
+// external connectivity.
+type PandaproxyExternalConnectivityConfig struct {
+	ExternalConnectivityConfig `json:",inline"`
+
+	// Configures a ingress resource
+	Ingress *IngressConfig `json:"ingress,omitempty"`
+}
+
 // LoadBalancerConfig defines the load balancer specification
 type LoadBalancerConfig struct {
 	// If specified, sets the load balancer service annotations.
@@ -518,7 +527,7 @@ type PandaproxyAPI struct {
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
-	External ExternalConnectivityConfig `json:"external,omitempty"`
+	External PandaproxyExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Pandaproxy API
 	TLS PandaproxyAPITLS `json:"tls,omitempty"`
 }
@@ -1009,11 +1018,15 @@ func (s SchemaRegistryAPI) GetExternal() *ExternalConnectivityConfig {
 // PandaProxy API
 
 // GetPort returns API port
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetPort() int {
 	return p.Port
 }
 
 // GetTLS returns API TLSConfig
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetTLS() *TLSConfig {
 	return &TLSConfig{
 		Enabled:           p.TLS.Enabled,
@@ -1024,8 +1037,10 @@ func (p PandaproxyAPI) GetTLS() *TLSConfig {
 }
 
 // GetExternal returns API's ExternalConnectivityConfig
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetExternal() *ExternalConnectivityConfig {
-	return &p.External
+	return &p.External.ExternalConnectivityConfig
 }
 
 func defaultTLSConfig() *TLSConfig {
