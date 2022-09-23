@@ -174,6 +174,11 @@ model::offset persisted_stm::max_collectible_offset() {
     return model::offset::max();
 }
 
+ss::future<std::vector<model::tx_range>>
+persisted_stm::aborted_tx_ranges(model::offset, model::offset) {
+    return ss::make_ready_future<std::vector<model::tx_range>>();
+}
+
 ss::future<> persisted_stm::wait_offset_committed(
   model::timeout_clock::duration timeout,
   model::offset offset,
