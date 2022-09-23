@@ -93,6 +93,20 @@ ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
   vnode n, append_entries_request req) {
     _ptr->update_node_append_timestamp(n);
+
+    auto fs = _ptr->_fstats.find(n);
+    if (fs != _ptr->_fstats.end()) {
+        // In general, replicate_entries_stm and recovery_stm don't send to
+        // the same node at the same time, but there is a small window at
+        // the end of recovery where our follower skip check passes because
+        // their offset is high enough, but recovery_stm is still following
+        // and sending data to the follower.
+        // To avoid flapping the recovery_coordinator state on the follower,
+        // we mark our append_entries_request as is_recovery=true, as if it
+        // had come from the recovery_stm.
+        req.is_recovery = fs->second.is_recovering;
+    }
+
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
     req.target_node_id = n;
