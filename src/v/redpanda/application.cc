@@ -54,7 +54,6 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
 #include "pandaproxy/schema_registry/api.h"
-#include "platform/stop_signal.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"

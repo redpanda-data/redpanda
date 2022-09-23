@@ -26,7 +26,6 @@
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "platform/stop_signal.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -37,6 +36,7 @@
 #include "seastarx.h"
 #include "ssx/metrics.h"
 #include "storage/fwd.h"
+#include "utils/stop_signal.h"
 #include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
