@@ -71,6 +71,7 @@
 #include "syschecks/syschecks.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
+#include "utils/uuid.h"
 #include "v8_engine/data_policy_table.h"
 #include "version.h"
 #include "vlog.h"
@@ -1349,6 +1350,35 @@ void application::start_bootstrap_services() {
       _log.info,
       "Started RPC server listening at {}",
       config::node().rpc_server());
+
+    // Load the local node UUID, or create one if none exists.
+    auto& kvs = storage.local().kvs();
+    static const bytes node_uuid_key = "node_uuid";
+    model::node_uuid node_uuid;
+    auto node_uuid_buf = kvs.get(
+      storage::kvstore::key_space::controller, node_uuid_key);
+    if (node_uuid_buf) {
+        node_uuid = serde::from_iobuf<model::node_uuid>(
+          std::move(*node_uuid_buf));
+        vlog(
+          _log.info,
+          "Loaded existing UUID for node: {}",
+          model::node_uuid(node_uuid));
+    } else {
+        node_uuid = model::node_uuid(uuid_t::create());
+        vlog(_log.info, "Generated new UUID for node: {}", node_uuid);
+        kvs
+          .put(
+            storage::kvstore::key_space::controller,
+            node_uuid_key,
+            serde::to_iobuf(node_uuid))
+          .get();
+    }
+    storage
+      .invoke_on_all([node_uuid](storage::api& storage) mutable {
+          storage.set_node_uuid(node_uuid);
+      })
+      .get();
 }
 
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
