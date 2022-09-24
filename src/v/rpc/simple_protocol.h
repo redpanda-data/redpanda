@@ -23,6 +23,10 @@ public:
         _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
+    void add_services(std::vector<std::unique_ptr<service>> other) {
+        std::move(other.begin(), other.end(), std::back_inserter(_services));
+    }
+
     const char* name() const final {
         return "vectorized internal rpc protocol";
     };

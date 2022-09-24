@@ -13,6 +13,7 @@
 #include "config/tls_config.h"
 #include "net/dns.h"
 #include "net/server.h"
+#include "rpc/rpc_server.h"
 #include "rpc/service.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/transport.h"
@@ -128,9 +129,11 @@ public:
     explicit rpc_sharded_integration_fixture(uint16_t port)
       : rpc_base_integration_fixture(port) {}
 
+    ~rpc_sharded_integration_fixture() override { stop_server(); }
+
     void start_server() override {
         check_server();
-        _server.invoke_on_all(&net::server::start).get();
+        _server.invoke_on_all(&rpc::rpc_server::start).get();
     }
 
     void stop_server() override { _server.stop().get(); }
@@ -153,24 +156,7 @@ public:
         _server.start(std::move(scfg)).get();
     }
 
-    template<typename Service, typename... Args>
-    void register_service(Args&&... args) {
-        check_server();
-        _server
-          .invoke_on_all(
-            [this, args = std::make_tuple(std::forward<Args>(args)...)](
-              net::server& s) mutable {
-                std::apply(
-                  [this, &s](Args&&... args) mutable {
-                      auto proto = std::make_unique<rpc::simple_protocol>();
-                      proto->register_service<Service>(
-                        _sg, _ssg, std::forward<Args>(args)...);
-                      s.set_protocol(std::move(proto));
-                  },
-                  std::move(args));
-            })
-          .get();
-    }
+    ss::sharded<rpc::rpc_server>& server() { return _server; }
 
 private:
     void check_server() override {
@@ -189,5 +175,5 @@ private:
         }
     }
 
-    ss::sharded<net::server> _server;
+    ss::sharded<rpc::rpc_server> _server;
 };
