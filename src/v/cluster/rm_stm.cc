@@ -13,6 +13,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -1699,19 +1700,32 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
 
     _mem_state.expected.erase(pid);
 
+    model::tx_seq transaction_seq;
     std::optional<prepare_marker> marker;
-    auto prepare_it = _mem_state.preparing.find(pid);
-    if (prepare_it != _mem_state.preparing.end()) {
-        marker = prepare_it->second;
-    }
-    prepare_it = _log_state.prepared.find(pid);
-    if (prepare_it != _log_state.prepared.end()) {
-        marker = prepare_it->second;
+
+    if (is_transaction_ga()) {
+        auto tx_seqs_it = _log_state.tx_seqs.find(pid);
+        if (tx_seqs_it == _log_state.tx_seqs.end()) {
+            vlog(clusterlog.error, "Can not find tx_seq for pid {}", pid);
+            co_return;
+        }
+        transaction_seq = tx_seqs_it->second;
+    } else {
+        auto prepare_it = _mem_state.preparing.find(pid);
+        if (prepare_it != _mem_state.preparing.end()) {
+            marker = prepare_it->second;
+            transaction_seq = marker->tx_seq;
+        }
+        prepare_it = _log_state.prepared.find(pid);
+        if (prepare_it != _log_state.prepared.end()) {
+            marker = prepare_it->second;
+            transaction_seq = marker->tx_seq;
+        }
     }
 
-    if (marker) {
+    if (is_transaction_ga() || marker) {
         auto r = co_await _tx_gateway_frontend.local().try_abort(
-          marker->tm_partition, marker->pid, marker->tx_seq, _sync_timeout);
+          model::partition_id(0), pid, transaction_seq, _sync_timeout);
         if (r.ec == tx_errc::none) {
             if (r.commited) {
                 auto batch = make_tx_control_batch(
