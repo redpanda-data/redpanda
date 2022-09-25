@@ -1992,7 +1992,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 
     if (bid.is_transactional) {
-        if (_log_state.prepared.contains(bid.pid)) {
+        if (!is_transaction_ga() && _log_state.prepared.contains(bid.pid)) {
             vlog(
               _ctx_log.error,
               "Adding a record with pid:{} to a tx after it was prepared",
