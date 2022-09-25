@@ -1932,6 +1932,7 @@ ss::future<> rm_stm::apply_control(
 
     if (crt == model::control_record_type::tx_abort) {
         _log_state.prepared.erase(pid);
+        _log_state.tx_seqs.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             // make a list
@@ -1950,6 +1951,7 @@ ss::future<> rm_stm::apply_control(
         }
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
+        _log_state.tx_seqs.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             _log_state.ongoing_set.erase(offset_it->second.first);
