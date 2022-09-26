@@ -288,6 +288,9 @@ requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
 void write(iobuf& out, T t);
 
 template<typename T>
+void write(iobuf& out, std::vector<T> t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -455,6 +458,20 @@ void write(iobuf& out, T t) {
 }
 
 template<typename T>
+void write(iobuf& out, std::vector<T> t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, std::move(el));
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -506,17 +523,6 @@ void write(iobuf& out, T t) {
               std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
             checksum_placeholder.write(
               reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
-        }
-    } else if constexpr (reflection::is_std_vector<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: vector size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
         }
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         write<serde_size_t>(out, t.size_bytes());
