@@ -522,7 +522,7 @@ ss::future<http::client::response_stream_ref> client::get_object(
               if (result != boost::beast::http::status::ok) {
                   // Got error response, consume the response body and produce
                   // rest api error
-                  if (expect_no_such_key) {
+                  if (expect_no_such_key && result == boost::beast::http::status::not_found) {
                       vlog(
                         s3_log.debug,
                         "S3 replied with expected error: {}",
