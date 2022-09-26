@@ -7,16 +7,24 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "storage/log_manager.h"
 #include "storage/segment_utils.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(test_segment_size_jitter_calculation) {
+    storage::log_config cfg(
+      storage::log_config::storage_type::disk,
+      "/tmp",
+      100_MiB,
+      storage::debug_sanitize_files::yes);
+
     std::array<size_t, 5> sizes = {1_GiB, 2_GiB, 100_MiB, 300_MiB, 10_GiB};
     for (auto original_size : sizes) {
         for (int i = 0; i < 100; ++i) {
-            auto new_sz = original_size
-                          * (1 + storage::internal::random_jitter());
+            auto new_sz
+              = original_size
+                * (1 + storage::internal::random_jitter(cfg.segment_size_jitter));
             BOOST_REQUIRE_GE(new_sz, 0.95f * original_size);
             BOOST_REQUIRE_LE(new_sz, 1.05f * original_size);
         }
