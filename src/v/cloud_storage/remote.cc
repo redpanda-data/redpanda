@@ -47,6 +47,23 @@ enum class error_outcome {
     notfound
 };
 
+bool system_error_retryable(const std::system_error& e) {
+    auto v = e.code().value();
+
+    switch (v) {
+    case ECONNREFUSED:
+    case ENETUNREACH:
+    case ETIMEDOUT:
+    case ECONNRESET:
+    case EPIPE:
+        return true;
+    default:
+        return false;
+    }
+
+    __builtin_unreachable();
+}
+
 /// @brief Analyze exception
 /// @return error outcome - retry, fail (with exception), or notfound (can only
 /// be used with download)
@@ -107,17 +124,14 @@ static error_outcome categorize_error(
         // - any filesystem error
         // - broken-pipe
         // - any other network error (no memory, bad socket, etc)
-        if (auto code = cerr.code();
-            code.value() != ECONNREFUSED && code.value() != ENETUNREACH
-            && code.value() != ETIMEDOUT && code.value() != ECONNRESET
-            && code.value() != EPIPE) {
-            vlog(ctxlog.error, "System error {}", cerr);
-            result = error_outcome::fail;
-        } else {
+        if (system_error_retryable(cerr)) {
             vlog(
               ctxlog.warn,
               "System error susceptible for retry {}",
               cerr.what());
+        } else {
+            vlog(ctxlog.error, "System error {}", cerr);
+            result = error_outcome::fail;
         }
     } catch (const ss::timed_out_error& terr) {
         // This should happen when the connection pool was disconnected
