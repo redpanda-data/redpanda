@@ -136,7 +136,14 @@ ss::future<> state_machine::apply() {
                 }
             });
       })
-      .handle_exception_type([](const raft::offset_monitor::wait_timed_out&) {})
+      .handle_exception_type([this](const ss::timed_out_error&) {
+          // This is a safe retry, but if it happens in tests we're interested
+          // in seeing what happened in the debug log
+          vlog(
+            _log.debug,
+            "Timeout in state_machine::apply on ntp {}",
+            _raft->ntp());
+      })
       .handle_exception_type([](const ss::abort_requested_exception&) {})
       .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
