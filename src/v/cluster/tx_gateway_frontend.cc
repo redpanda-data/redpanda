@@ -500,9 +500,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout,
   model::producer_identity expected_pid) {
-    if (
-      expected_pid != model::unknown_pid
-      && !allow_init_tm_request_with_expected_pid()) {
+    if (expected_pid != model::unknown_pid && !is_transaction_ga()) {
         co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
 
