@@ -54,10 +54,12 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
-    BOOST_REQUIRE_EQUAL(result.first, 0);
-    BOOST_REQUIRE_EQUAL(result.second.size(), 2);
-    BOOST_REQUIRE_EQUAL(result.second[0].path, file_path1.native());
-    BOOST_REQUIRE_EQUAL(result.second[1].path, file_path2.native());
+    BOOST_REQUIRE_EQUAL(result.cache_size, 0);
+    BOOST_REQUIRE_EQUAL(result.deletion_candidates.size(), 2);
+    BOOST_REQUIRE_EQUAL(
+      result.deletion_candidates[0].path, file_path1.native());
+    BOOST_REQUIRE_EQUAL(
+      result.deletion_candidates[1].path, file_path2.native());
 }
 
 SEASTAR_THREAD_TEST_CASE(three_levels) {
@@ -92,11 +94,14 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
-    BOOST_REQUIRE_EQUAL(result.first, 0);
-    BOOST_REQUIRE_EQUAL(result.second.size(), 3);
-    BOOST_REQUIRE_EQUAL(result.second[0].path, file_path1.native());
-    BOOST_REQUIRE_EQUAL(result.second[1].path, file_path2.native());
-    BOOST_REQUIRE_EQUAL(result.second[2].path, file_path3.native());
+    BOOST_REQUIRE_EQUAL(result.cache_size, 0);
+    BOOST_REQUIRE_EQUAL(result.deletion_candidates.size(), 3);
+    BOOST_REQUIRE_EQUAL(
+      result.deletion_candidates[0].path, file_path1.native());
+    BOOST_REQUIRE_EQUAL(
+      result.deletion_candidates[1].path, file_path2.native());
+    BOOST_REQUIRE_EQUAL(
+      result.deletion_candidates[2].path, file_path3.native());
 }
 
 SEASTAR_THREAD_TEST_CASE(no_files) {
@@ -112,8 +117,8 @@ SEASTAR_THREAD_TEST_CASE(no_files) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
-    BOOST_REQUIRE_EQUAL(result.first, 0);
-    BOOST_REQUIRE_EQUAL(result.second.size(), 0);
+    BOOST_REQUIRE_EQUAL(result.cache_size, 0);
+    BOOST_REQUIRE_EQUAL(result.deletion_candidates.size(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(empty_dir) {
@@ -124,8 +129,8 @@ SEASTAR_THREAD_TEST_CASE(empty_dir) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
-    BOOST_REQUIRE_EQUAL(result.first, 0);
-    BOOST_REQUIRE_EQUAL(result.second.size(), 0);
+    BOOST_REQUIRE_EQUAL(result.cache_size, 0);
+    BOOST_REQUIRE_EQUAL(result.deletion_candidates.size(), 0);
 }
 
 void write_to_file(auto& target_file, uint64_t size) {
@@ -168,6 +173,6 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
-    BOOST_REQUIRE_EQUAL(result.first, 3412 + 8 + 342);
-    BOOST_REQUIRE_EQUAL(result.second.size(), 3);
+    BOOST_REQUIRE_EQUAL(result.cache_size, 3412 + 8 + 342);
+    BOOST_REQUIRE_EQUAL(result.deletion_candidates.size(), 3);
 }

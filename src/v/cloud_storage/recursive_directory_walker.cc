@@ -29,8 +29,7 @@
 
 namespace cloud_storage {
 
-ss::future<std::pair<uint64_t, std::vector<file_list_item>>>
-recursive_directory_walker::walk(
+ss::future<walk_result> recursive_directory_walker::walk(
   ss::sstring start_dir, const access_time_tracker& tracker) {
     gate_guard guard{_gate};
 
@@ -103,7 +102,8 @@ recursive_directory_walker::walk(
         return a.access_time < b.access_time;
     });
 
-    co_return std::make_pair(current_cache_size, files);
+    co_return walk_result{
+      .cache_size = current_cache_size, .deletion_candidates = files};
 }
 
 ss::future<> recursive_directory_walker::stop() {
