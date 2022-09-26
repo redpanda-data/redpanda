@@ -1480,7 +1480,9 @@ tx_gateway_frontend::do_commit_tm_tx(
               group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
         }
 
-        if (tx.status == tm_transaction::tx_status::ongoing) {
+        if (
+          !is_transaction_ga()
+          && tx.status == tm_transaction::tx_status::ongoing) {
             auto preparing_tx = co_await stm->mark_tx_preparing(
               expected_term, tx.id);
             if (!preparing_tx.has_value()) {
@@ -1528,15 +1530,26 @@ tx_gateway_frontend::do_commit_tm_tx(
         outcome->set_value(tx_errc::unknown_server_error);
         throw;
     }
-    outcome->set_value(tx_errc::none);
 
     auto changed_tx = co_await stm->mark_tx_prepared(expected_term, tx.id);
     if (!changed_tx.has_value()) {
         if (changed_tx.error() == tm_stm::op_status::not_leader) {
+            outcome->set_value(tx_errc::not_coordinator);
             co_return tx_errc::not_coordinator;
         }
+        outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
+
+    // We can reduce the number of disk operation if we will not write
+    // preparing state on disk. But after it we should ans to client when we
+    // sure that tx will be recommited after fail. We can guarantee it only
+    // if we ans after marking tx prepared. Becase after fail tx will be
+    // recommited again and client will see expected bechavior.
+    // Also we do not need to support old bechavior with feature flag, because
+    // now we will ans client later than in old versions. So we do not break
+    // anything
+    outcome->set_value(tx_errc::none);
     tx = changed_tx.value();
 
     std::vector<ss::future<commit_group_tx_reply>> gfs;
