@@ -692,6 +692,9 @@ void application::wire_up_redpanda_services() {
         return storage::internal::chunks().start();
     }).get();
 
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(_feature_table).get();
+
     // cluster
     syschecks::systemd_message("Adding raft client cache").get();
     construct_service(_connection_cache).get();
@@ -778,9 +781,6 @@ void application::wire_up_redpanda_services() {
 
         cloud_configs.stop().get();
     }
-
-    syschecks::systemd_message("Creating feature table").get();
-    construct_service(_feature_table).get();
 
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
