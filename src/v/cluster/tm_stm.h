@@ -276,11 +276,14 @@ private:
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
 
-    use_tx_version_with_last_pid_bool use_new_tx_version() {
+    bool is_transaction_ga() {
         return _feature_table.local().is_active(
-                 features::feature::transaction_ga)
-                 ? use_tx_version_with_last_pid_bool::yes
-                 : use_tx_version_with_last_pid_bool::no;
+          features::feature::transaction_ga);
+    }
+
+    use_tx_version_with_last_pid_bool use_new_tx_version() {
+        return is_transaction_ga() ? use_tx_version_with_last_pid_bool::yes
+                                   : use_tx_version_with_last_pid_bool::no;
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
