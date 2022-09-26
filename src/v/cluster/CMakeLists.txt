@@ -111,6 +111,7 @@ v_cc_library(
     partition_balancer_planner.cc
     partition_balancer_backend.cc
     partition_balancer_rpc_handler.cc
+    node_status_backend.cc
   DEPS
     Seastar::seastar
     controller_rpc
