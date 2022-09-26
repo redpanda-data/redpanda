@@ -41,6 +41,7 @@ enum class feature : std::uint64_t {
     raft_improved_configuration = 0x80,
     transaction_ga = 0x100,
     raftless_node_status = 0x200,
+    rpc_v2_by_default = 0x400,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -153,6 +154,13 @@ constexpr static std::array feature_schema{
     feature::raftless_node_status,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{7},
+    "rpc_v2_by_default",
+    feature::rpc_v2_by_default,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+
   feature_spec{
     cluster_version{2001},
     "__test_alpha",
