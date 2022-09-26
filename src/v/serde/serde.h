@@ -294,6 +294,8 @@ template<typename T>
 requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t);
 
+inline void write(iobuf& out, iobuf t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -522,6 +524,11 @@ void write(iobuf& out, T t) {
     }
 }
 
+inline void write(iobuf& out, iobuf t) {
+    write<serde_size_t>(out, t.size_bytes());
+    out.append(t.share(0, t.size_bytes()));
+}
+
 template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
@@ -532,10 +539,7 @@ void write(iobuf& out, T t) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
-    if constexpr (std::is_same_v<Type, iobuf>) {
-        write<serde_size_t>(out, t.size_bytes());
-        out.append(t.share(0, t.size_bytes()));
-    } else if constexpr (std::is_same_v<Type, uuid_t>) {
+    if constexpr (std::is_same_v<Type, uuid_t>) {
         out.append(t.uuid.data, uuid_t::length);
     }
 }
