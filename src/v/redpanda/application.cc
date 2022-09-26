@@ -1345,6 +1345,30 @@ void application::start_redpanda(::stop_signal& app_signal) {
 
     storage.invoke_on_all(&storage::api::start).get();
 
+    ssx::background = _feature_table.invoke_on_all(
+      [this](features::feature_table& ft) -> ss::future<> {
+          try {
+              co_await ft.await_feature(features::feature::rpc_v2_by_default);
+              if (ss::this_shard_id() == 0) {
+                  vlog(_log.info, "Activating RPC protocol v2");
+              }
+              _connection_cache.local().set_default_transport_version(
+                rpc::transport_version::v2);
+          } catch (ss::abort_requested_exception&) {
+              // Shutting down
+              co_return;
+          } catch (...) {
+              // Should never happen, abort is the only exception that
+              // await_feature can throw, other than perhaps bad_alloc.
+              vlog(
+                _log.error,
+                "Unexpected error awaiting RPCv2 feature: {} {}",
+                std::current_exception(),
+                ss::current_backtrace());
+              co_return;
+          }
+      });
+
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
 
