@@ -291,6 +291,10 @@ template<typename T>
 void write(iobuf& out, std::vector<T> t);
 
 template<typename T>
+requires is_envelope<std::decay_t<T>>
+void write(iobuf& out, T t);
+
+template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
     T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
@@ -472,6 +476,53 @@ void write(iobuf& out, std::vector<T> t) {
 }
 
 template<typename T>
+requires is_envelope<std::decay_t<T>>
+void write(iobuf& out, T t) {
+    using Type = std::decay_t<T>;
+
+    write(out, Type::redpanda_serde_version);
+    write(out, Type::redpanda_serde_compat_version);
+
+    auto size_placeholder = out.reserve(sizeof(serde_size_t));
+
+    auto checksum_placeholder = iobuf::placeholder{};
+    if constexpr (is_checksum_envelope<Type>) {
+        checksum_placeholder = out.reserve(sizeof(checksum_t));
+    }
+
+    auto const size_before = out.size_bytes();
+    if constexpr (has_serde_write<Type>) {
+        t.serde_write(out);
+    } else {
+        envelope_for_each_field(
+          t, [&out](auto& f) { write(out, std::move(f)); });
+    }
+
+    auto const written_size = out.size_bytes() - size_before;
+    if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception("envelope too big");
+    }
+    auto const size = ss::cpu_to_le(static_cast<serde_size_t>(written_size));
+    size_placeholder.write(
+      reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+
+    if constexpr (is_checksum_envelope<Type>) {
+        auto crc = crc::crc32c{};
+        auto in = iobuf_const_parser{out};
+        in.skip(size_before);
+        in.consume(in.bytes_left(), [&crc](char const* src, size_t const n) {
+            crc.extend(src, n);
+            return ss::stop_iteration::no;
+        });
+        auto const checksum = ss::cpu_to_le(crc.value());
+        static_assert(
+          std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
+        checksum_placeholder.write(
+          reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
+    }
+}
+
+template<typename T>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -481,50 +532,7 @@ void write(iobuf& out, T t) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_envelope<Type>) {
-        write(out, Type::redpanda_serde_version);
-        write(out, Type::redpanda_serde_compat_version);
-
-        auto size_placeholder = out.reserve(sizeof(serde_size_t));
-
-        auto checksum_placeholder = iobuf::placeholder{};
-        if constexpr (is_checksum_envelope<Type>) {
-            checksum_placeholder = out.reserve(sizeof(checksum_t));
-        }
-
-        auto const size_before = out.size_bytes();
-        if constexpr (has_serde_write<Type>) {
-            t.serde_write(out);
-        } else {
-            envelope_for_each_field(
-              t, [&out](auto& f) { write(out, std::move(f)); });
-        }
-
-        auto const written_size = out.size_bytes() - size_before;
-        if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception("envelope too big");
-        }
-        auto const size = ss::cpu_to_le(
-          static_cast<serde_size_t>(written_size));
-        size_placeholder.write(
-          reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
-
-        if constexpr (is_checksum_envelope<Type>) {
-            auto crc = crc::crc32c{};
-            auto in = iobuf_const_parser{out};
-            in.skip(size_before);
-            in.consume(
-              in.bytes_left(), [&crc](char const* src, size_t const n) {
-                  crc.extend(src, n);
-                  return ss::stop_iteration::no;
-              });
-            auto const checksum = ss::cpu_to_le(crc.value());
-            static_assert(
-              std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
-            checksum_placeholder.write(
-              reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
-        }
-    } else if constexpr (std::is_same_v<Type, iobuf>) {
+    if constexpr (std::is_same_v<Type, iobuf>) {
         write<serde_size_t>(out, t.size_bytes());
         out.append(t.share(0, t.size_bytes()));
     } else if constexpr (std::is_same_v<Type, uuid_t>) {
