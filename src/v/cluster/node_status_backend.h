@@ -100,6 +100,8 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};
+
+    friend class node_status_rpc_handler;
 };
 
 } // namespace cluster

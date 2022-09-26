@@ -43,7 +43,7 @@ struct node_status_request
 };
 
 struct node_status_reply
-  : serde::envelope<node_status_request, serde::version<0>> {
+  : serde::envelope<node_status_reply, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata replier_metadata;
