@@ -29,6 +29,7 @@ struct file_list_item {
 struct walk_result {
     uint64_t cache_size{0};
     std::vector<file_list_item> deletion_candidates;
+    std::vector<ss::sstring> empty_dirs;
 };
 
 class recursive_directory_walker {

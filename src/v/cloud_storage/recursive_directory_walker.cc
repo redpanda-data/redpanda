@@ -34,6 +34,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
     gate_guard guard{_gate};
 
     std::vector<file_list_item> files;
+    std::vector<ss::sstring> empty_dirs;
     uint64_t current_cache_size(0);
 
     std::deque<ss::sstring> dirlist = {start_dir};
@@ -49,18 +50,20 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
         try {
             ss::file target_dir = co_await open_directory(target);
+            size_t files_in_dir{0};
             auto sub = target_dir.list_directory(
               [&files,
                &current_cache_size,
                &dirlist,
+               &files_in_dir,
                _target{target},
                _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
                   auto target{_target};
                   auto tracker{_tracker};
-                  vlog(cst_log.debug, "Looking at directory {}", target);
 
                   auto entry_path = std::filesystem::path(target)
                                     / std::filesystem::path(entry.name);
+                  files_in_dir++;
                   if (
                     entry.type
                     && entry.type == ss::directory_entry_type::regular) {
@@ -90,6 +93,10 @@ ss::future<walk_result> recursive_directory_walker::walk(
               });
             co_await sub.done().finally(
               [target_dir]() mutable { return target_dir.close(); });
+
+            if (files_in_dir == 0 && target != start_dir) {
+                empty_dirs.push_back(target);
+            }
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
                 // skip this directory, move to the ext one
@@ -103,7 +110,9 @@ ss::future<walk_result> recursive_directory_walker::walk(
     });
 
     co_return walk_result{
-      .cache_size = current_cache_size, .deletion_candidates = files};
+      .cache_size = current_cache_size,
+      .deletion_candidates = files,
+      .empty_dirs = empty_dirs};
 }
 
 ss::future<> recursive_directory_walker::stop() {
