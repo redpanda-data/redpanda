@@ -303,6 +303,7 @@ struct transport_configuration {
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
     ss::shared_ptr<ss::tls::certificate_credentials> credentials;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
+    transport_version version{transport_version::v1};
 };
 
 std::ostream& operator<<(std::ostream&, const status&);

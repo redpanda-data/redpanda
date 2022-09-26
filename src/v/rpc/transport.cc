@@ -57,7 +57,9 @@ transport::transport(
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
   })
-  , _memory(c.max_queued_bytes, "rpc/transport-mem") {
+  , _memory(c.max_queued_bytes, "rpc/transport-mem")
+  , _version(c.version)
+  , _default_version(c.version) {
     if (!c.disable_metrics) {
         setup_metrics(label);
     }
@@ -87,7 +89,7 @@ void transport::reset_state() {
      */
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
-    _version = transport_version::v1;
+    _version = _default_version;
 }
 
 ss::future<>
