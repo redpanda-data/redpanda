@@ -55,7 +55,7 @@ public:
       ss::sharded<cluster::shard_table>& shards,
       ss::sharded<coordinator_ntp_mapper>& coordinators,
       ss::sharded<coordinator_ntp_mapper>& consumer_offsets_coordinators,
-      ss::sharded<cluster::feature_table>& feature_table)
+      ss::sharded<features::feature_table>& feature_table)
       : _sg(sched_group)
       , _ssg(smp_group)
       , _group_manager(gr_manager)
@@ -160,7 +160,7 @@ private:
     ss::sharded<cluster::shard_table>& _shards;
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
     ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
-    ss::sharded<cluster::feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     bool _disabled = false;
 };
 

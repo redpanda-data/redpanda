@@ -26,7 +26,7 @@ namespace cluster {
  */
 class feature_backend {
 public:
-    feature_backend(ss::sharded<feature_table>& table)
+    feature_backend(ss::sharded<features::feature_table>& table)
       : _feature_table(table) {}
 
     ss::future<std::error_code> apply_update(model::record_batch);
@@ -40,6 +40,6 @@ private:
       feature_update_cmd,
       feature_update_license_update_cmd>();
 
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 } // namespace cluster

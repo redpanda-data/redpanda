@@ -21,7 +21,7 @@ config_frontend::config_frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<feature_table>& features,
+  ss::sharded<features::feature_table>& features,
   ss::sharded<ss::abort_source>& as)
   : _stm(stm)
   , _connections(connections)

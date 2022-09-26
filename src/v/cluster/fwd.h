@@ -11,14 +11,8 @@
 
 #pragma once
 
-// FIXME: refer to feature_table by its proper name in call sites
-namespace features {
-class feature_table;
-}
-
 namespace cluster {
 
-using features::feature_table;
 class controller;
 class controller_backend;
 class controller_stm_shard;

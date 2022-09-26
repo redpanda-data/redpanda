@@ -208,7 +208,7 @@ bool are_replica_sets_equal(
 template<typename Cmd>
 ss::future<std::error_code> replicate_and_wait(
   ss::sharded<controller_stm>& stm,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as,
   Cmd&& cmd,
   model::timeout_clock::time_point timeout,

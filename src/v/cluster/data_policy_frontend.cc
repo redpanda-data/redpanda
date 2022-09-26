@@ -22,7 +22,7 @@ namespace cluster {
 
 data_policy_frontend::data_policy_frontend(
   ss::sharded<controller_stm>& stm,
-  ss::sharded<feature_table>& features,
+  ss::sharded<features::feature_table>& features,
   ss::sharded<ss::abort_source>& as) noexcept
   : _stm(stm)
   , _features(features)

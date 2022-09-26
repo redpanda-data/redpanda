@@ -53,7 +53,7 @@ config_manager::config_manager(
   ss::sharded<config_frontend>& cf,
   ss::sharded<rpc::connection_cache>& cc,
   ss::sharded<partition_leaders_table>& pl,
-  ss::sharded<feature_table>& ft,
+  ss::sharded<features::feature_table>& ft,
   ss::sharded<ss::abort_source>& as)
   : _self(config::node().node_id())
   , _frontend(cf)

@@ -57,7 +57,7 @@ topics_frontend::topics_frontend(
   ss::sharded<data_policy_frontend>& dp_frontend,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<feature_table>& features)
+  ss::sharded<features::feature_table>& features)
   : _self(self)
   , _stm(s)
   , _allocator(pal)

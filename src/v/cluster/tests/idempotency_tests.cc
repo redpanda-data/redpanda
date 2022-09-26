@@ -37,7 +37,7 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -93,7 +93,7 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -150,7 +150,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -219,7 +219,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -283,7 +283,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -340,7 +340,7 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -380,7 +380,7 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);

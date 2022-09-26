@@ -43,7 +43,7 @@ public:
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -200,7 +200,7 @@ private:
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::gate _gate;
     bool _block_new_leadership{false};
 

@@ -108,7 +108,7 @@ std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
 tm_stm::tm_stm(
   ss::logger& logger,
   raft::consensus* c,
-  ss::sharded<feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table)
   : persisted_stm("tx.coordinator.snapshot", logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(

@@ -558,7 +558,7 @@ ss::future<> wait_for_stable_group_topic(
 
 } // namespace
 
-cluster::feature_table& group_metadata_migration::feature_table() {
+features::feature_table& group_metadata_migration::feature_table() {
     return _controller.get_feature_table().local();
 }
 

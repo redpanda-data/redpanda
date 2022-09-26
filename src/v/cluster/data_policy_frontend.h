@@ -25,7 +25,7 @@ class data_policy_frontend final {
 public:
     data_policy_frontend(
       ss::sharded<controller_stm>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<ss::abort_source>&) noexcept;
 
     ss::future<std::error_code> create_data_policy(
@@ -38,7 +38,7 @@ public:
 
 private:
     ss::sharded<controller_stm>& _stm;
-    ss::sharded<feature_table>& _features;
+    ss::sharded<features::feature_table>& _features;
     ss::sharded<ss::abort_source>& _as;
 };
 

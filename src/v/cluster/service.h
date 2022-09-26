@@ -13,6 +13,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "rpc/fwd.h"
 #include "rpc/types.h"
 
@@ -35,7 +36,7 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<config_manager>&,
       ss::sharded<feature_manager>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<rpc::connection_cache>&);
 
@@ -147,7 +148,7 @@ private:
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<config_manager>& _config_manager;
     ss::sharded<feature_manager>& _feature_manager;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<rpc::connection_cache>& _conn_cache;
 };

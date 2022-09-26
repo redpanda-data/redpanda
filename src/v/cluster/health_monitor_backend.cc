@@ -58,7 +58,7 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<storage::node_api>& storage_node_api,
   ss::sharded<storage::api>& storage_api,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   config::binding<size_t> storage_min_bytes_alert,
   config::binding<unsigned> storage_min_percent_alert,
   config::binding<size_t> storage_min_bytes)
@@ -219,7 +219,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 
     report.local_state = it->second.local_state;
     report.local_state.logical_version
-      = feature_table::get_latest_logical_version();
+      = features::feature_table::get_latest_logical_version();
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -625,7 +625,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     co_await _local_monitor.update_state();
     ret.local_state = _local_monitor.get_state_cached();
     ret.local_state.logical_version
-      = feature_table::get_latest_logical_version();
+      = features::feature_table::get_latest_logical_version();
 
     ret.drain_status = co_await _drain_manager.local().status();
     ret.include_drain_status = _feature_table.local().is_active(

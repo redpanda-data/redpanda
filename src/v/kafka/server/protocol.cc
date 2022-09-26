@@ -48,7 +48,7 @@ protocol::protocol(
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<cluster::config_frontend>& cf,
-  ss::sharded<cluster::feature_table>& ft,
+  ss::sharded<features::feature_table>& ft,
   ss::sharded<quota_manager>& quota,
   ss::sharded<kafka::group_router>& router,
   ss::sharded<cluster::shard_table>& tbl,

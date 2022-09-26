@@ -32,7 +32,7 @@ feature_manager::feature_manager(
   ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<health_monitor_backend>& hm_backend,
-  ss::sharded<feature_table>& table,
+  ss::sharded<features::feature_table>& table,
   ss::sharded<rpc::connection_cache>& connection_cache,
   raft::group_id raft0_group)
   : _stm(stm)
@@ -118,7 +118,7 @@ ss::future<> feature_manager::start() {
             // version based on its own version alone.
             if (
               _feature_table.local().get_active_version()
-                != feature_table::get_latest_logical_version()
+                != features::feature_table::get_latest_logical_version()
               && _am_controller_leader) {
                 // When I become leader for first time (i.e. when active
                 // version is not known yet, proactively persist it)
@@ -126,10 +126,10 @@ ss::future<> feature_manager::start() {
                   clusterlog.debug,
                   "generating version update for controller leader {} ({})",
                   leader_id.value(),
-                  feature_table::get_latest_logical_version());
+                  features::feature_table::get_latest_logical_version());
                 update_node_version(
                   config::node().node_id,
-                  feature_table::get_latest_logical_version());
+                  features::feature_table::get_latest_logical_version());
             }
         });
 

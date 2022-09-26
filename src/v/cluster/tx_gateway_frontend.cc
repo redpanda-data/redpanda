@@ -100,7 +100,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
-  ss::sharded<feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)

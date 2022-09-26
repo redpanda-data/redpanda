@@ -148,7 +148,8 @@ public:
         partition_not_found
     };
 
-    explicit tm_stm(ss::logger&, raft::consensus*, ss::sharded<feature_table>&);
+    explicit tm_stm(
+      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
@@ -282,7 +283,7 @@ private:
 
     model::record_batch serialize_tx(tm_transaction tx);
 
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 // Version 1 added last_update_ts to tx lod record. And new status tombstone to

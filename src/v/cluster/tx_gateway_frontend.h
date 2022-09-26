@@ -36,7 +36,7 @@ public:
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
     ss::future<try_abort_reply> try_abort(
@@ -87,7 +87,7 @@ private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;

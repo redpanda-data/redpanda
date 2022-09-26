@@ -34,7 +34,7 @@ struct ftable_struct {
 
     ~ftable_struct() { table.stop().get(); }
 
-    ss::sharded<cluster::feature_table> table;
+    ss::sharded<features::feature_table> table;
 };
 
 using op_status = cluster::tm_stm::op_status;

@@ -62,7 +62,7 @@ controller::controller(
   ss::sharded<storage::node_api>& storage_node,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
