@@ -27,6 +27,7 @@
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
 #include <fmt/chrono.h>
+#include <gnutls/gnutls.h>
 
 #include <exception>
 #include <utility>
@@ -47,20 +48,38 @@ enum class error_outcome {
     notfound
 };
 
+/**
+ * Identify error cases that should be quickly retried, e.g.
+ * TCP disconnects, timeouts. Network errors may also show up
+ * indirectly as errors from the TLS layer.
+ */
 bool system_error_retryable(const std::system_error& e) {
     auto v = e.code().value();
 
-    switch (v) {
-    case ECONNREFUSED:
-    case ENETUNREACH:
-    case ETIMEDOUT:
-    case ECONNRESET:
-    case EPIPE:
-        return true;
-    default:
-        return false;
-    }
+    // The name() of seastar's gnutls_error_category class
+    constexpr std::string_view gnutls_cateogry_name{"GnuTLS"};
 
+    if (e.code().category().name() == gnutls_cateogry_name) {
+        switch (v) {
+        case GNUTLS_E_PUSH_ERROR:
+        case GNUTLS_E_PULL_ERROR:
+        case GNUTLS_E_PREMATURE_TERMINATION:
+            return true;
+        default:
+            return false;
+        }
+    } else {
+        switch (v) {
+        case ECONNREFUSED:
+        case ENETUNREACH:
+        case ETIMEDOUT:
+        case ECONNRESET:
+        case EPIPE:
+            return true;
+        default:
+            return false;
+        }
+    }
     __builtin_unreachable();
 }
 
