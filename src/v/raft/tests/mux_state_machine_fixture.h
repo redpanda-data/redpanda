@@ -58,6 +58,12 @@ struct mux_state_machine_fixture {
             ss::sharded_parameter([] { return config::mock_binding(100_MiB); }))
           .get();
 
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         _group_mgr
           .start(
             _self,
@@ -80,7 +86,8 @@ struct mux_state_machine_fixture {
             },
             std::ref(_connections),
             std::ref(_storage),
-            std::ref(_recovery_throttle))
+            std::ref(_recovery_throttle),
+            std::ref(_feature_table))
           .get0();
 
         _group_mgr.invoke_on_all(&raft::group_manager::start).get0();
@@ -106,6 +113,7 @@ struct mux_state_machine_fixture {
             _group_mgr.stop().get0();
             _raft.release();
             _connections.stop().get0();
+            _feature_table.stop().get0();
             _storage.stop().get0();
         }
     }
@@ -158,6 +166,7 @@ struct mux_state_machine_fixture {
     cluster::consensus_ptr _raft;
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::recovery_throttle> _recovery_throttle;
     bool _started = false;

@@ -19,7 +19,6 @@
 #include "raft/kvelldb/kvrsm.h"
 #include "raft/kvelldb/logger.h"
 #include "raft/logger.h"
-#include "raft/raft_feature_table.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/types.h"
@@ -161,12 +160,12 @@ private:
       model::topic("kvelldblog"),
       model::partition_id(ss::this_shard_id())};
     ss::lw_shared_ptr<raft::consensus> _consensus;
-    raft::raft_feature_table _features;
+    features::feature_table _features;
 
     ss::future<>
     init_consensus(raft::group_configuration&& cfg, storage::log log) {
-        _features.set_feature_active(
-          raft::raft_feature::improved_config_change);
+        _features.testing_activate_all();
+
         _consensus = ss::make_lw_shared<raft::consensus>(
           _self,
           raft::group_id(66),

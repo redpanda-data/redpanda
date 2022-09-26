@@ -44,7 +44,6 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
-#include "raft/raft_feature_table.h"
 #include "security/acl.h"
 #include "ssx/future-util.h"
 
@@ -100,21 +99,6 @@ ss::future<> controller::wire_up() {
 }
 
 ss::future<> controller::start() {
-    /**
-     * wire up raft features with feature table
-     */
-    ssx::spawn_with_gate(_gate, [this] {
-        return _raft_manager.invoke_on_all([this](raft::group_manager& mgr) {
-            return _feature_table.local()
-              .await_feature(
-                features::feature::raft_improved_configuration, _as.local())
-              .then([&mgr] {
-                  mgr.set_feature_active(
-                    raft::raft_feature::improved_config_change);
-              });
-        });
-    });
-
     std::vector<model::broker> initial_raft0_brokers;
     if (config::node().seed_servers().empty()) {
         initial_raft0_brokers.push_back(

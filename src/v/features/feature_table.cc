@@ -317,6 +317,14 @@ const std::optional<security::license>& feature_table::get_license() const {
     return _license;
 }
 
+void feature_table::testing_activate_all() {
+    for (auto& s : _feature_state) {
+        if (s.spec.available_rule == feature_spec::available_policy::always) {
+            s.transition_active();
+        }
+    }
+}
+
 } // namespace features
 
 namespace cluster {

@@ -328,6 +328,13 @@ public:
 
     const std::optional<security::license>& get_license() const;
 
+    /**
+     * For use in unit tests: activate all features that would
+     * be auto-activated after a normal cluster startup of the
+     * latest version.
+     */
+    void testing_activate_all();
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster_version);
