@@ -9,7 +9,7 @@
 from enum import Enum, auto, unique
 import json
 import random
-import re
+import itertools
 import string
 from threading import Event, Condition
 import threading
@@ -22,12 +22,41 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 
 
+# Operation context (used to save state between invocation of operations)
+class OperationCtx:
+    def __init__(self, redpanda):
+        self.redpanda = redpanda
+        self.brokers_list = redpanda.brokers_list()
+        self.cur_first_broker = itertools.cycle(self.brokers_list)
+
+    def _get_brokers(self):
+        # This is a bit of an ugly hack to deal with the consequences of
+        # https://github.com/redpanda-data/redpanda/issues/6317
+        # If the first broker in the list is suspended, rpk won't try other
+        # brokers and will fail straight away. This is a problem even if we
+        # shuffle the brokers list (as redpanda.brokers_list() does) and add
+        # retries - there is a small chance that the first broker will be the
+        # bad one in all retries! To mitigate this we deteriministically choose
+        # the first broker so that it is always different from the previous
+        # invocation and shuffle the rest.
+        first = next(self.cur_first_broker)
+        others = [b for b in self.brokers_list if b != first]
+        random.shuffle(others)
+        return ",".join([first] + others)
+
+    def rpk(self):
+        return RpkTool(self.redpanda, get_brokers=self._get_brokers)
+
+    def admin(self):
+        return Admin(self.redpanda)
+
+
 # Base class for operation
 class Operation():
-    def execute(self, redpanda) -> bool:
+    def execute(self, ctx) -> bool:
         return False
 
-    def validate(self, redpanda) -> bool:
+    def validate(self, ctx) -> bool:
         pass
 
 
@@ -55,12 +84,12 @@ def _random_choice(prefix, collection):
     return random.choice(filtered)
 
 
-def _choice_random_topic(redpanda, prefix):
-    return _random_choice(prefix, RpkTool(redpanda).list_topics())
+def _choice_random_topic(ctx, prefix):
+    return _random_choice(prefix, ctx.rpk().list_topics())
 
 
-def _choice_random_user(redpanda, prefix):
-    return _random_choice(prefix, Admin(redpanda).list_users())
+def _choice_random_user(ctx, prefix):
+    return _random_choice(prefix, ctx.admin().list_users())
 
 
 # topic operations
@@ -73,20 +102,18 @@ class CreateTopicOperation(Operation):
         self.rf = random.choice(
             [x for x in range(min_replication, max_replication + 1, 2)])
 
-    def execute(self, redpanda):
-        redpanda.logger.info(
+    def execute(self, ctx):
+        ctx.redpanda.logger.info(
             f"Creating topic with name {self.topic}, replication: {self.rf} partitions: {self.partitions}"
         )
-        rpk = RpkTool(redpanda)
-        rpk.create_topic(self.topic, self.partitions, self.rf)
+        ctx.rpk().create_topic(self.topic, self.partitions, self.rf)
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.topic is None:
             return False
-        redpanda.logger.info(f"Validating topic {self.topic} creation")
-        rpk = RpkTool(redpanda)
-        topics = rpk.list_topics()
+        ctx.redpanda.logger.info(f"Validating topic {self.topic} creation")
+        topics = ctx.rpk().list_topics()
         return self.topic in topics
 
     def describe(self):
@@ -105,22 +132,19 @@ class DeleteTopicOperation(Operation):
         self.prefix = prefix
         self.topic = None
 
-    def execute(self, redpanda):
-        rpk = RpkTool(redpanda)
-
-        self.topic = _choice_random_topic(redpanda, prefix=self.prefix)
+    def execute(self, ctx):
+        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
-        redpanda.logger.info(f"Deleting topic: {self.topic}")
-        rpk.delete_topic(self.topic)
+        ctx.redpanda.logger.info(f"Deleting topic: {self.topic}")
+        ctx.rpk().delete_topic(self.topic)
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.topic is None:
             return False
-        redpanda.logger.info(f"Validating topic {self.topic} deletion")
-        rpk = RpkTool(redpanda)
-        topics = rpk.list_topics()
+        ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
+        topics = ctx.rpk().list_topics()
         return self.topic not in topics
 
     def describe(self):
@@ -153,10 +177,8 @@ class UpdateTopicOperation(Operation):
         self.property = None
         self.value = None
 
-    def execute(self, redpanda):
-        rpk = RpkTool(redpanda)
-
-        self.topic = _choice_random_topic(redpanda, prefix=self.prefix)
+    def execute(self, ctx):
+        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
 
         if self.topic is None:
             return False
@@ -165,20 +187,20 @@ class UpdateTopicOperation(Operation):
             list(UpdateTopicOperation.properties.keys()))
         self.value = UpdateTopicOperation.properties[self.property]()
 
-        redpanda.logger.info(
+        ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} with: {self.property}={self.value}")
-        rpk.alter_topic_config(self.topic, self.property, str(self.value))
+        ctx.rpk().alter_topic_config(self.topic, self.property,
+                                     str(self.value))
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.topic is None:
             return False
-        redpanda.logger.info(
+        ctx.redpanda.logger.info(
             f"Validating topic {self.topic} update, expected: {self.property}={self.value}"
         )
-        rpk = RpkTool(redpanda)
 
-        desc = rpk.describe_topic_configs(self.topic)
+        desc = ctx.rpk().describe_topic_configs(self.topic)
         return desc[self.property][0] == str(self.value)
 
     def describe(self):
@@ -198,28 +220,27 @@ class AddPartitionsOperation(Operation):
         self.topic = None
         self.total = None
 
-    def execute(self, redpanda):
-        rpk = RpkTool(redpanda)
-
-        self.topic = _choice_random_topic(redpanda, prefix=self.prefix)
+    def execute(self, ctx):
+        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
+
+        rpk = ctx.rpk()
         current = len(list(rpk.describe_topic(self.topic)))
         to_add = random.randint(1, 5)
         self.total = current + to_add
-        redpanda.logger.info(
+        ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} partitions count, current: {current} adding: {to_add} partitions"
         )
         rpk.add_topic_partitions(self.topic, to_add)
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.topic is None:
             return False
-        rpk = RpkTool(redpanda)
-        redpanda.logger.info(
+        ctx.redpanda.logger.info(
             f"Validating topic {self.topic} partitions update")
-        current = len(list(rpk.describe_topic(self.topic)))
+        current = len(list(ctx.rpk().describe_topic(self.topic)))
         return current == self.total
 
     def describe(self):
@@ -239,18 +260,16 @@ class CreateUserOperation(Operation):
         self.password = f'{prefix}-user-{random_string(6)}'
         self.algorithm = "SCRAM-SHA-256"
 
-    def execute(self, redpanda):
-        admin = Admin(redpanda)
-        redpanda.logger.info(f"Creating user: {self.user}")
-        admin.create_user(self.user, self.password, self.algorithm)
+    def execute(self, ctx):
+        ctx.redpanda.logger.info(f"Creating user: {self.user}")
+        ctx.admin().create_user(self.user, self.password, self.algorithm)
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.user is None:
             return False
-        admin = Admin(redpanda)
-        redpanda.logger.info(f"Validating user {self.user} is present")
-        users = admin.list_users()
+        ctx.redpanda.logger.info(f"Validating user {self.user} is present")
+        users = ctx.admin().list_users()
         return self.user in users
 
     def describe(self):
@@ -268,21 +287,19 @@ class DeleteUserOperation(Operation):
         self.prefix = prefix
         self.user = None
 
-    def execute(self, redpanda):
-        admin = Admin(redpanda)
-        self.user = _choice_random_user(redpanda, prefix=self.prefix)
+    def execute(self, ctx):
+        self.user = _choice_random_user(ctx, prefix=self.prefix)
         if self.user is None:
             return False
-        redpanda.logger.info(f"Deleting user: {self.user}")
-        admin.delete_user(self.user)
+        ctx.redpanda.logger.info(f"Deleting user: {self.user}")
+        ctx.admin().delete_user(self.user)
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.user is None:
             return False
-        admin = Admin(redpanda)
-        redpanda.logger.info(f"Validating user {self.user} is deleted")
-        users = admin.list_users()
+        ctx.redpanda.logger.info(f"Validating user {self.user} is deleted")
+        users = ctx.admin().list_users()
         return self.user not in users
 
     def describe(self):
@@ -299,25 +316,22 @@ class CreateAclOperation(Operation):
         self.prefix = prefix
         self.user = None
 
-    def execute(self, redpanda):
-        self.user = _choice_random_user(redpanda, prefix=self.prefix)
+    def execute(self, ctx):
+        self.user = _choice_random_user(ctx, prefix=self.prefix)
         if self.user is None:
             return False
 
-        rpk = RpkTool(redpanda)
-
-        redpanda.logger.info(
+        ctx.redpanda.logger.info(
             f"Creating allow cluster describe ACL for user: {self.user}")
-        rpk.acl_create_allow_cluster(self.user, op="describe")
+        ctx.rpk().acl_create_allow_cluster(self.user, op="describe")
 
         return True
 
-    def validate(self, redpanda):
+    def validate(self, ctx):
         if self.user is None:
             return False
-        redpanda.logger.info(f"Validating user {self.user} ACL is present")
-        rpk = RpkTool(redpanda)
-        acls = rpk.acl_list()
+        ctx.redpanda.logger.info(f"Validating user {self.user} ACL is present")
+        acls = ctx.rpk().acl_list()
         lines = acls.splitlines()
         for l in lines:
             if self.user in l and "ALLOW" in l:
@@ -351,19 +365,17 @@ class UpdateConfigOperation(Operation):
         self.property = p[0]
         self.value = p[1]()
 
-    def execute(self, redpanda):
-        rpk = RpkTool(redpanda)
-        redpanda.logger.info(
+    def execute(self, ctx):
+        ctx.redpanda.logger.info(
             f"Updating {self.property} value with {self.value}")
-        rpk.cluster_config_set(self.property, str(self.value))
+        ctx.rpk().cluster_config_set(self.property, str(self.value))
         return True
 
-    def validate(self, redpanda):
-        rpk = RpkTool(redpanda)
-        redpanda.logger.info(
+    def validate(self, ctx):
+        ctx.redpanda.logger.info(
             f"Validating cluster configuration is set {self.property}=={self.value}"
         )
-        return rpk.cluster_config_get(self.property) == str(self.value)
+        return ctx.rpk().cluster_config_get(self.property) == str(self.value)
 
     def describe(self):
         return {
@@ -387,6 +399,7 @@ class AdminOperationsFuzzer():
                  min_replication=1,
                  max_replication=3):
         self.redpanda = redpanda
+        self.operation_ctx = OperationCtx(self.redpanda)
         self.initial_entities = initial_entities
         self.retries = retries
         self.retries_interval = retries_interval
@@ -414,11 +427,11 @@ class AdminOperationsFuzzer():
             tp = CreateTopicOperation(self.prefix, 1, self.min_replication,
                                       self.max_replication)
             self.append_to_history(tp)
-            tp.execute(self.redpanda)
+            tp.execute(self.operation_ctx)
 
             user = CreateUserOperation(self.prefix)
             self.append_to_history(user)
-            user.execute(self.redpanda)
+            user.execute(self.operation_ctx)
 
         self.thread.start()
 
@@ -459,7 +472,7 @@ class AdminOperationsFuzzer():
 
             def validate_result():
                 try:
-                    op.validate(self.redpanda)
+                    op.validate(self.operation_ctx)
                 except Exception as e:
                     self.redpanda.logger.debug(
                         f"Error validating operation {op_type} - {e}")
@@ -489,15 +502,15 @@ class AdminOperationsFuzzer():
         self.redpanda.logger.info(
             f"Executing operation: {op_type} with {self.retries} retries")
         if self.retries == 0:
-            return op.execute(self.redpanda)
+            return op.execute(self.operation_ctx)
         error = None
         for retry in range(0, self.retries):
             try:
                 if retry > 0:
                     # it might happened that operation was already successful
-                    if op.validate(self.redpanda):
+                    if op.validate(self.operation_ctx):
                         return True
-                return op.execute(self.redpanda)
+                return op.execute(self.operation_ctx)
             except Exception as e:
                 error = e
                 self.redpanda.logger.info(

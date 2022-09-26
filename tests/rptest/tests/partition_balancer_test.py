@@ -30,6 +30,15 @@ from ducktape.mark import matrix
 # consumer timeout than the default 30 seconds
 CONSUMER_TIMEOUT = 90
 
+# TODO: remove after https://github.com/redpanda-data/redpanda/issues/5154
+# is fixed
+LOG_ALLOW_LIST = CHAOS_LOG_ALLOW_LIST + [
+    # ERROR 2022-08-05 06:32:44,034 [shard 0]
+    # rpc - Service handler threw an exception:
+    # raft::offset_monitor::wait_aborted (offset monitor wait aborted)
+    "rpc - .* raft::offset_monitor::wait_aborted"
+]
+
 
 class PartitionBalancerTest(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
@@ -181,7 +190,7 @@ class PartitionBalancerTest(EndToEndTest):
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7, log_allow_list=LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
 
@@ -230,7 +239,7 @@ class PartitionBalancerTest(EndToEndTest):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
 
-    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=LOG_ALLOW_LIST)
     def test_movement_cancellations(self):
         self.start_redpanda(num_nodes=4)
 
@@ -275,7 +284,7 @@ class PartitionBalancerTest(EndToEndTest):
 
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=8, log_allow_list=LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
         self.redpanda = RedpandaService(self.test_context,
@@ -316,7 +325,7 @@ class PartitionBalancerTest(EndToEndTest):
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7, log_allow_list=LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
         self.start_redpanda(num_nodes=5)
 
@@ -373,7 +382,7 @@ class PartitionBalancerTest(EndToEndTest):
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=LOG_ALLOW_LIST)
     def test_full_nodes(self):
         """
         Test partition balancer full disk node handling with the following scenario:
@@ -470,7 +479,7 @@ class PartitionBalancerTest(EndToEndTest):
                 f"disk used percentage: {int(100.0 * used_ratio)}")
             assert used_ratio < 0.8
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7, log_allow_list=LOG_ALLOW_LIST)
     @matrix(kill_same_node=[True, False])
     def test_maintenance_mode(self, kill_same_node):
         """
@@ -549,7 +558,7 @@ class PartitionBalancerTest(EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7, log_allow_list=LOG_ALLOW_LIST)
     @matrix(kill_same_node=[True, False], decommission_first=[True, False])
     def test_decommission(self, kill_same_node, decommission_first):
         """
@@ -649,7 +658,7 @@ class PartitionBalancerTest(EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=4, log_allow_list=LOG_ALLOW_LIST)
     def test_transfer_controller_leadership(self):
         """
         Test that unavailability timeout is correctly restarted after controller
