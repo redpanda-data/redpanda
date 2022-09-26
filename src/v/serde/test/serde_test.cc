@@ -377,7 +377,7 @@ struct test_snapshot_header
       test_snapshot_header,
       serde::version<1>,
       serde::compat_version<0>> {
-    ss::future<> serde_async_read(iobuf_parser&, serde::header const&);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
     ss::future<> serde_async_write(iobuf&) const;
 
     model::ns ns_;
@@ -392,7 +392,7 @@ static_assert(serde::has_serde_async_read<test_snapshot_header>);
 static_assert(serde::has_serde_async_write<test_snapshot_header>);
 
 ss::future<> test_snapshot_header::serde_async_read(
-  iobuf_parser& in, serde::header const& h) {
+  iobuf_parser& in, serde::header const h) {
     ns_ = serde::read_nested<decltype(ns_)>(in, h._bytes_left_limit);
     header_crc = serde::read_nested<decltype(header_crc)>(
       in, h._bytes_left_limit);
