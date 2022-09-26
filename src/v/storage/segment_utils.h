@@ -173,8 +173,6 @@ ss::future<> do_swap_data_file_handles(
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
 
-using jitter_percents = named_type<int, struct jitter_percents_tag>;
-
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.
 float random_jitter(jitter_percents);
