@@ -259,7 +259,11 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
         co_return tm_stm::op_status::not_found;
     }
     auto tx = tx_opt.value();
-    if (tx.status != tm_transaction::tx_status::preparing) {
+
+    auto check_status = is_transaction_ga()
+                          ? tm_transaction::tx_status::ongoing
+                          : tm_transaction::tx_status::preparing;
+    if (tx.status != check_status) {
         co_return tm_stm::op_status::conflict;
     }
     tx.status = cluster::tm_transaction::tx_status::prepared;
