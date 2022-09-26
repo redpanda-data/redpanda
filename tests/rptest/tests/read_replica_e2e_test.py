@@ -175,7 +175,6 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
     @cluster(num_nodes=6)
     @matrix(partition_count=[10])
     def test_produce_is_forbidden(self, partition_count: int) -> None:
@@ -188,7 +187,6 @@ class TestReadReplicaService(EndToEndTest):
                 in str(e)):
             second_rpk.produce(self.topic_name, "", "test payload")
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
     @cluster(num_nodes=9)
     @matrix(partition_count=[10], min_records=[10000])
     def test_simple_end_to_end(self, partition_count: int,
