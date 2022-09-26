@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/consensus.h"
@@ -87,6 +88,8 @@ public:
     using consensus_set = boost::container::
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
+    static constexpr int8_t max_disconnects_skipped = 3;
+
     struct follower_request_meta {
         follower_request_meta(
           consensus_ptr, follower_req_seq, model::offset, vnode);
@@ -124,7 +127,8 @@ public:
       config::binding<std::chrono::milliseconds>,
       consensus_client_protocol,
       model::node_id,
-      config::binding<std::chrono::milliseconds>);
+      config::binding<std::chrono::milliseconds>,
+      ss::sharded<cluster::node_status_table>&);
 
     ss::future<> register_group(ss::lw_shared_ptr<consensus>);
     ss::future<> deregister_group(raft::group_id);
@@ -172,5 +176,8 @@ private:
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
     model::node_id _self;
+    ss::sharded<cluster::node_status_table>& _node_status_table;
+
+    absl::flat_hash_map<model::node_id, int8_t> _disconnects_skipped;
 };
 } // namespace raft

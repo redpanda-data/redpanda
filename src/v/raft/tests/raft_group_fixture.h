@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/node_status_table.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "model/fundamental.h"
@@ -153,8 +154,10 @@ struct raft_node {
           }))
           .get();
 
-        // setup consensus
         auto self_id = broker.id();
+        node_status_table.start(self_id).get();
+
+        // setup consensus
         consensus = ss::make_lw_shared<raft::consensus>(
           self_id,
           gr_id,
@@ -217,7 +220,8 @@ struct raft_node {
           raft::make_rpc_client_protocol(broker.id(), cache),
           broker.id(),
           config::mock_binding<std::chrono::milliseconds>(
-            heartbeat_interval * 20));
+            heartbeat_interval * 20),
+          std::ref(node_status_table));
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;
@@ -282,6 +286,10 @@ struct raft_node {
           .then([this] {
               tstlog.info("Stopping cache at node {}", broker.id());
               return cache.stop();
+          })
+          .then([this] {
+              tstlog.info("Stopping node status table at node {}", broker.id());
+              return node_status_table.stop();
           })
           .then([this] {
               tstlog.info("Stopping storage at node {}", broker.id());
@@ -352,6 +360,11 @@ struct raft_node {
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<net::server> server;
     ss::sharded<test_raft_manager> raft_manager;
+
+    ss::sharded<cluster::members_table> members_table;
+    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<cluster::node_status_table> node_status_table;
+
     leader_clb_t leader_callback;
     raft::recovery_memory_quota recovery_mem_quota;
     std::unique_ptr<raft::heartbeat_manager> hbeats;

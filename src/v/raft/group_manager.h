@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
@@ -51,7 +52,8 @@ public:
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
       ss::sharded<recovery_throttle>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::node_status_table>&);
 
     ss::future<> start();
     ss::future<> stop();

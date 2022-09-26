@@ -806,7 +806,8 @@ void application::wire_up_redpanda_services() {
         std::ref(_connection_cache),
         std::ref(storage),
         std::ref(recovery_throttle),
-        std::ref(_feature_table))
+        std::ref(_feature_table),
+        std::ref(node_status_table))
       .get();
 
     // custom handling for recovery_throttle and raft group manager shutdown.

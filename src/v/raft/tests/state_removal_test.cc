@@ -73,6 +73,7 @@ void stop_node(raft_node& node) {
     node.hbeats.reset();
     node.cache.stop().get0();
     node.log.reset();
+    node.node_status_table.stop().get0();
     node.storage.stop().get0();
     node.feature_table.stop().get0();
 

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/node_status_table.h"
 #include "config/property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -64,6 +65,8 @@ struct mux_state_machine_fixture {
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
 
+        _node_status_table.start(_self).get();
+
         _group_mgr
           .start(
             _self,
@@ -87,7 +90,8 @@ struct mux_state_machine_fixture {
             std::ref(_connections),
             std::ref(_storage),
             std::ref(_recovery_throttle),
-            std::ref(_feature_table))
+            std::ref(_feature_table),
+            std::ref(_node_status_table))
           .get0();
 
         _group_mgr.invoke_on_all(&raft::group_manager::start).get0();
@@ -114,6 +118,7 @@ struct mux_state_machine_fixture {
             _raft.release();
             _connections.stop().get0();
             _feature_table.stop().get0();
+            _node_status_table.stop().get();
             _storage.stop().get0();
         }
     }
@@ -167,6 +172,7 @@ struct mux_state_machine_fixture {
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table> _feature_table;
+    ss::sharded<cluster::node_status_table> _node_status_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::recovery_throttle> _recovery_throttle;
     bool _started = false;

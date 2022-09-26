@@ -29,7 +29,8 @@ group_manager::group_manager(
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage,
   ss::sharded<recovery_throttle>& recovery_throttle,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<cluster::node_status_table>& node_status_table)
   : _self(self)
   , _raft_sg(raft_sg)
   , _client(make_rpc_client_protocol(self, clients))
@@ -38,7 +39,8 @@ group_manager::group_manager(
       _configuration.heartbeat_interval,
       _client,
       _self,
-      _configuration.heartbeat_timeout)
+      _configuration.heartbeat_timeout,
+      node_status_table)
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
   , _recovery_mem_quota(std::move(recovery_mem_cfg))

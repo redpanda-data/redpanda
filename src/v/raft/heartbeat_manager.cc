@@ -9,6 +9,7 @@
 
 #include "raft/heartbeat_manager.h"
 
+#include "cluster/node_status_table.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -173,11 +174,13 @@ heartbeat_manager::heartbeat_manager(
   config::binding<std::chrono::milliseconds> interval,
   consensus_client_protocol proto,
   model::node_id self,
-  config::binding<std::chrono::milliseconds> heartbeat_timeout)
+  config::binding<std::chrono::milliseconds> heartbeat_timeout,
+  ss::sharded<cluster::node_status_table>& node_status_table)
   : _heartbeat_interval(std::move(interval))
   , _heartbeat_timeout(std::move(heartbeat_timeout))
   , _client_protocol(std::move(proto))
-  , _self(self) {
+  , _self(self)
+  , _node_status_table(node_status_table) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
 
@@ -188,6 +191,8 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
           std::vector<ss::future<>> futures;
           futures.reserve(reqs.size());
           for (auto& r : reqs) {
+              _disconnects_skipped[r.target] = 0;
+
               // self heartbeat
               if (r.target == _self) {
                   futures.push_back(do_self_heartbeat(std::move(r)));
@@ -204,6 +209,30 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
     auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval());
 
     for (const auto& node_id : reqs.reconnect_nodes) {
+        if (auto it = _disconnects_skipped.find(node_id);
+            it != _disconnects_skipped.end()
+            && it->second < heartbeat_manager::max_disconnects_skipped) {
+            auto node_status = _node_status_table.local().get_node_status(
+              node_id);
+
+            auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
+              rpc::clock_type::now() - node_status->last_seen);
+
+            if (delta < _heartbeat_interval()) {
+                ++it->second;
+
+                vlog(
+                  hbeatlog.info,
+                  "Skipping closing connection to {} as a node_status message "
+                  "was received from the peer {}ms ago. Skips left: {}",
+                  node_id,
+                  delta.count(),
+                  heartbeat_manager::max_disconnects_skipped - it->second);
+
+                continue;
+            }
+        }
+
         if (co_await _client_protocol.ensure_disconnect(node_id)) {
             vlog(
               hbeatlog.info, "Closed unresponsive connection to {}", node_id);

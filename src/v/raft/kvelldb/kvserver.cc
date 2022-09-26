@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/node_status_table.h"
 #include "config/configuration.h"
 #include "config/property.h"
 #include "model/metadata.h"
@@ -116,7 +117,8 @@ public:
           _consensus_client_protocol,
           self,
           config::mock_binding<std::chrono::milliseconds>(
-            raft_heartbeat_interval * 20))
+            raft_heartbeat_interval * 20),
+          std::ref(_node_status_table))
       , _recovery_memory_quota([] {
           return raft::recovery_memory_quota::configuration{
             .max_recovery_memory = config::mock_binding<std::optional<size_t>>(
@@ -140,12 +142,14 @@ public:
                       return this->init_consensus(std::move(cfg), log);
                   });
           })
+          .then([this] { _node_status_table.start(_self).get(); })
           .then([this] { return _hbeats.start(); });
     }
 
     ss::future<> stop() {
         return _consensus->stop()
           .then([this] { return _hbeats.stop(); })
+          .then([this] { return _node_status_table.stop(); })
           .then([this] { return _storage.stop(); });
     }
 
@@ -153,6 +157,7 @@ private:
     model::node_id _self;
     raft::consensus_client_protocol _consensus_client_protocol;
     storage::api _storage;
+    ss::sharded<cluster::node_status_table> _node_status_table;
     raft::heartbeat_manager _hbeats;
     raft::recovery_memory_quota _recovery_memory_quota;
     model::ntp _ntp{
