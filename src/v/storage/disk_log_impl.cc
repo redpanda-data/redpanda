@@ -1024,7 +1024,7 @@ disk_log_impl::timequery(timequery_config cfg) {
 
 ss::future<> disk_log_impl::remove_segment_permanently(
   ss::lw_shared_ptr<segment> s, std::string_view ctx) {
-    vlog(stlog.info, "{} - tombstone & delete segment: {}", ctx, s);
+    vlog(stlog.info, "Removing \"{}\" ({}, {})", s->filename(), ctx, s);
     // stats accounting must happen synchronously
     _probe.delete_segment(*s);
     // background close
