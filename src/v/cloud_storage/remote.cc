@@ -71,7 +71,9 @@ static error_outcome categorize_error(
         std::rethrow_exception(err);
     } catch (const s3::rest_error_response& err) {
         if (err.code() == s3::s3_error_code::no_such_key) {
-            vlog(ctxlog.info, "NoSuchKey response received {}", path);
+            // Unexpected 404s are logged elsewhere by the s3 client at warn
+            // level, so only log at debug level here.
+            vlog(ctxlog.debug, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
         } else if (
           err.code() == s3::s3_error_code::slow_down
