@@ -417,6 +417,20 @@ class PartitionBalancerTest(EndToEndTest):
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
+        self.topic = TopicSpec(partition_count=32)
+        self.client().create_topic(self.topic)
+
+        # produce around 2GB of data, this should be enough to fill node disks
+        # to a bit more than 70% usage on average
+        msg_count = 19_000
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=102_400,
+                                       msg_count=msg_count)
+        producer.start(clean=False)
+        producer.wait_for_acks(msg_count, timeout_sec=120, backoff_sec=5)
+
         def get_disk_usage(node):
             for line in node.account.ssh_capture(
                     "df --block-size 1 /var/lib/redpanda"):
@@ -424,25 +438,6 @@ class PartitionBalancerTest(EndToEndTest):
                 if '/var/lib/redpanda' in line:
                     return int(line.split()[2])
             assert False, "couldn't parse df output"
-
-        def get_total_disk_usage():
-            return sum(get_disk_usage(n) for n in self.redpanda.nodes)
-
-        self.topic = TopicSpec(partition_count=32)
-        self.client().create_topic(self.topic)
-
-        # produce around 2GB of data, this should be enough to fill node disks
-        # to a bit more than 70% usage on average
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=102_400,
-                                       msg_count=19_000)
-        producer.start(clean=False)
-
-        wait_until(lambda: get_total_disk_usage() / 5 / disk_size > 0.7,
-                   timeout_sec=120,
-                   backoff_sec=5)
 
         # a waiter that prints current node disk usage while it waits.
         def create_waiter(target_status):
