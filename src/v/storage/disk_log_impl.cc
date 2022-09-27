@@ -272,7 +272,7 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
 }
 
 ss::future<> disk_log_impl::garbage_collect_segments(
-  model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
+  compaction_config cfg, model::offset max_offset, std::string_view ctx) {
     vlog(
       gclog.debug,
       "[{}] {} requested to remove segments up to {} offset",
@@ -289,8 +289,12 @@ ss::future<> disk_log_impl::garbage_collect_segments(
         _eviction_monitor.reset();
     }
 
-    max_offset = std::min(max_offset, _max_collectible_offset);
-
+    // Max collectible offset can be overriden from multiple places
+    // (unfortunately). We take the min.
+    max_offset = std::min(
+      cfg.max_collectible_offset,
+      std::min(max_offset, _max_collectible_offset));
+    auto* as = cfg.asrc;
     return ss::do_until(
       [this, as, max_offset] {
           return _segs.size() <= 1 || as->abort_requested()
@@ -310,23 +314,25 @@ ss::future<> disk_log_impl::garbage_collect_segments(
       });
 }
 
-ss::future<> disk_log_impl::garbage_collect_max_partition_size(
-  size_t max_bytes, ss::abort_source* as) {
-    model::offset max_offset = size_based_gc_max_offset(max_bytes);
-    return garbage_collect_segments(max_offset, as, "gc[size_based_retention]");
+ss::future<>
+disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
+    model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
+    return garbage_collect_segments(
+      cfg, max_offset, "gc[size_based_retention]");
 }
 
-ss::future<> disk_log_impl::garbage_collect_oldest_segments(
-  model::timestamp time, ss::abort_source* as) {
+ss::future<>
+disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
     vlog(
       gclog.debug,
       "[{}] time retention timestamp: {}, first segment max timestamp: {}",
       config().ntp(),
-      time,
+      cfg.eviction_time,
       _segs.empty() ? model::timestamp::min()
                     : _segs.front()->index().max_timestamp());
-    model::offset max_offset = time_based_gc_max_offset(time);
-    return garbage_collect_segments(max_offset, as, "gc[time_based_retention]");
+    model::offset max_offset = time_based_gc_max_offset(cfg.eviction_time);
+    return garbage_collect_segments(
+      cfg, max_offset, "gc[time_based_retention]");
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
@@ -684,10 +690,10 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           max,
           _probe.partition_size());
         if (!_segs.empty() && _probe.partition_size() > max) {
-            return garbage_collect_max_partition_size(max, cfg.asrc);
+            return garbage_collect_max_partition_size(cfg);
         }
     }
-    return garbage_collect_oldest_segments(cfg.eviction_time, cfg.asrc);
+    return garbage_collect_oldest_segments(cfg);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
