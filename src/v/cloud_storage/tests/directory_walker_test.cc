@@ -27,9 +27,18 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <set>
 
 using namespace cloud_storage;
 using namespace std::chrono_literals;
+
+std::set<std::string> result_paths(cloud_storage::walk_result& r) {
+    std::set<std::string> paths;
+    for (const auto& f : r.regular_files) {
+        paths.insert(f.path);
+    }
+    return paths;
+}
 
 SEASTAR_THREAD_TEST_CASE(one_level) {
     temporary_dir tmpdir("directory-walker");
@@ -54,10 +63,10 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
+    auto expect = std::set<std::string>{
+      file_path1.native(), file_path2.native()};
     BOOST_REQUIRE_EQUAL(result.cache_size, 0);
-    BOOST_REQUIRE_EQUAL(result.regular_files.size(), 2);
-    BOOST_REQUIRE_EQUAL(result.regular_files[0].path, file_path1.native());
-    BOOST_REQUIRE_EQUAL(result.regular_files[1].path, file_path2.native());
+    BOOST_REQUIRE(result_paths(result) == expect);
 }
 
 SEASTAR_THREAD_TEST_CASE(three_levels) {
@@ -76,27 +85,22 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
                  | ss::open_flags::exclusive;
     auto file1 = ss::open_file_dma(file_path1.native(), flags).get();
     file1.close().get();
-    // sleep is needed to ensure stable order of returned files. directory
-    // walker returns files sorted by timestamp of creation, xfs stores
-    // creation time with 1 second precision.
-    ss::sleep(ss::lowres_clock::duration(1s)).get();
 
     auto file2 = ss::open_file_dma(file_path2.native(), flags).get();
     file2.close().get();
-    ss::sleep(ss::lowres_clock::duration(1s)).get();
 
     auto file3 = ss::open_file_dma(file_path3.native(), flags).get();
     file3.close().get();
-    ss::sleep(ss::lowres_clock::duration(1s)).get();
 
     access_time_tracker tracker;
     auto result = _walker.walk(target_dir.native(), tracker).get();
 
     BOOST_REQUIRE_EQUAL(result.cache_size, 0);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 3);
-    BOOST_REQUIRE_EQUAL(result.regular_files[0].path, file_path1.native());
-    BOOST_REQUIRE_EQUAL(result.regular_files[1].path, file_path2.native());
-    BOOST_REQUIRE_EQUAL(result.regular_files[2].path, file_path3.native());
+
+    auto expect = std::set<std::string>{
+      file_path1.native(), file_path2.native(), file_path3.native()};
+    BOOST_REQUIRE(result_paths(result) == expect);
 }
 
 SEASTAR_THREAD_TEST_CASE(no_files) {

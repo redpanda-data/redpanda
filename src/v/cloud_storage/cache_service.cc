@@ -194,6 +194,12 @@ ss::future<> cache::clean_up_cache() {
           = _current_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
 
+        // Sort by atime for the subsequent LRU trimming loop
+        std::sort(
+          candidates_for_deletion.begin(),
+          candidates_for_deletion.end(),
+          [](auto& a, auto& b) { return a.access_time < b.access_time; });
+
         size_t i_to_delete = 0;
         while (i_to_delete < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
