@@ -105,9 +105,6 @@ ss::future<walk_result> recursive_directory_walker::walk(
             }
         }
     }
-    std::sort(files.begin(), files.end(), [](auto& a, auto& b) {
-        return a.access_time < b.access_time;
-    });
 
     co_return walk_result{
       .cache_size = current_cache_size,
