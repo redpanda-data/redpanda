@@ -324,7 +324,20 @@ public:
 
     ss::future<> await_feature(feature f, ss::abort_source& as);
 
+    /**
+     * Variant of await_feature that uses a built-in abort source rather
+     * than requiring one to be passed in.
+     *
+     * You should almost always use an explicit abort_source version above:
+     * using the built-in feature table abort source is only for locations
+     * early in startup that otherwise don't have an abort source
+     * handy.
+     */
+    ss::future<> await_feature(feature f) { return await_feature(f, _as); };
+
     ss::future<> await_feature_preparing(feature f, ss::abort_source& as);
+
+    ss::future<> stop();
 
     static cluster_version get_latest_logical_version();
 
@@ -384,6 +397,9 @@ private:
 
     // Unit testing hook.
     friend class feature_table_fixture;
+
+    ss::gate _gate;
+    ss::abort_source _as;
 };
 
 } // namespace features

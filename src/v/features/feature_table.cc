@@ -88,6 +88,18 @@ feature_table::feature_table() {
     }
 }
 
+ss::future<> feature_table::stop() {
+    _as.request_abort();
+
+    // Don't trust callers to have fired their abort source in the right
+    // order wrt this class's stop(): forcibly abort anyone still waiting,
+    // so that our gate close is guaranteed to proceed.
+    _waiters_active.abort_all();
+    _waiters_preparing.abort_all();
+
+    return _gate.close();
+}
+
 /**
  * The latest version is hardcoded in normal operation.  This getter
  * exists to enable injection of synthetic versions in integration tests.
@@ -255,6 +267,8 @@ void feature_table::apply_action(const feature_update_action& fua) {
  * will be an exceptional future.
  */
 ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
+    ss::gate::holder guard(_gate);
+
     if (is_active(f)) {
         vlog(featureslog.trace, "Feature {} already active", to_string_view(f));
         return ss::now();
@@ -275,6 +289,8 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
  */
 ss::future<>
 feature_table::await_feature_preparing(feature f, ss::abort_source& as) {
+    ss::gate::holder guard(_gate);
+
     if (is_preparing(f)) {
         vlog(
           featureslog.trace, "Feature {} already preparing", to_string_view(f));
