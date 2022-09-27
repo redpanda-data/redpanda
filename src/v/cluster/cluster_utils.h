@@ -208,13 +208,13 @@ bool are_replica_sets_equal(
 template<typename Cmd>
 ss::future<std::error_code> replicate_and_wait(
   ss::sharded<controller_stm>& stm,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as,
   Cmd&& cmd,
   model::timeout_clock::time_point timeout,
   std::optional<model::term_id> term = std::nullopt) {
     const bool use_serde_serialization = feature_table.local().is_active(
-      feature::serde_raft_0);
+      features::feature::serde_raft_0);
     return stm.invoke_on(
       controller_stm_shard,
       [cmd = std::forward<Cmd>(cmd),

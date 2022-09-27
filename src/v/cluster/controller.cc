@@ -17,7 +17,6 @@
 #include "cluster/data_policy_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
 #include "cluster/health_monitor_frontend.h"
@@ -40,11 +39,11 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
-#include "raft/raft_feature_table.h"
 #include "security/acl.h"
 #include "ssx/future-util.h"
 
@@ -62,7 +61,7 @@ controller::controller(
   ss::sharded<storage::node_api>& storage_node,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
@@ -100,20 +99,6 @@ ss::future<> controller::wire_up() {
 }
 
 ss::future<> controller::start() {
-    /**
-     * wire up raft features with feature table
-     */
-    ssx::spawn_with_gate(_gate, [this] {
-        return _raft_manager.invoke_on_all([this](raft::group_manager& mgr) {
-            return _feature_table.local()
-              .await_feature(feature::raft_improved_configuration, _as.local())
-              .then([&mgr] {
-                  mgr.set_feature_active(
-                    raft::raft_feature::improved_config_change);
-              });
-        });
-    });
-
     std::vector<model::broker> initial_raft0_brokers;
     if (config::node().seed_servers().empty()) {
         initial_raft0_brokers.push_back(

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -26,7 +27,6 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
-#include "raft/raft_feature_table.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
@@ -96,7 +96,7 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
-      raft_feature_table&);
+      features::feature_table&);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -639,7 +639,7 @@ private:
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
-    raft_feature_table& _features;
+    features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;

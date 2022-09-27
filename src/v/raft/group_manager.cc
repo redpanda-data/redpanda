@@ -28,7 +28,8 @@ group_manager::group_manager(
   recovery_memory_quota::config_provider_fn recovery_mem_cfg,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage,
-  ss::sharded<recovery_throttle>& recovery_throttle)
+  ss::sharded<recovery_throttle>& recovery_throttle,
+  ss::sharded<features::feature_table>& feature_table)
   : _self(self)
   , _raft_sg(raft_sg)
   , _client(make_rpc_client_protocol(self, clients))
@@ -40,7 +41,8 @@ group_manager::group_manager(
       _configuration.heartbeat_timeout)
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
-  , _recovery_mem_quota(std::move(recovery_mem_cfg)) {
+  , _recovery_mem_quota(std::move(recovery_mem_cfg))
+  , _feature_table(feature_table.local()) {
     setup_metrics();
 }
 
@@ -69,8 +71,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
     auto revision = log.config().get_revision();
     auto raft_cfg = raft::group_configuration(std::move(nodes), revision);
 
-    if (unlikely(!_raft_feature_table.is_feature_active(
-          raft_feature::improved_config_change))) {
+    if (unlikely(!_feature_table.is_active(
+          features::feature::raft_improved_configuration))) {
         raft_cfg.set_version(group_configuration::version_t(3));
     }
 
@@ -90,7 +92,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _storage,
       _recovery_throttle,
       _recovery_mem_quota,
-      _raft_feature_table);
+      _feature_table);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {
@@ -146,10 +148,6 @@ void group_manager::setup_metrics() {
         "group_count",
         [this] { return _groups.size(); },
         sm::description("Number of raft groups"))});
-}
-
-void group_manager::set_feature_active(raft_feature f) {
-    _raft_feature_table.set_feature_active(f);
 }
 
 } // namespace raft

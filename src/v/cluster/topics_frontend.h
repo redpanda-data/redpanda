@@ -46,7 +46,7 @@ public:
       ss::sharded<data_policy_frontend>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -173,7 +173,7 @@ private:
     ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
-    ss::sharded<feature_table>& _features;
+    ss::sharded<features::feature_table>& _features;
     bool _partition_movement_disabled = false;
 };
 

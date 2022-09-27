@@ -98,7 +98,7 @@ public:
         return _conn->server().config_frontend();
     }
 
-    ss::sharded<cluster::feature_table>& feature_table() const {
+    ss::sharded<features::feature_table>& feature_table() const {
         return _conn->server().feature_table();
     }
 

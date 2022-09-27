@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -36,7 +36,7 @@ public:
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
     ss::future<try_abort_reply> try_abort(
@@ -87,7 +87,7 @@ private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
@@ -95,7 +95,8 @@ private:
     bool _transactions_enabled;
 
     bool allow_init_tm_request_with_expected_pid() {
-        return _feature_table.local().is_active(feature::transaction_ga);
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
     }
 
     void start_expire_timer();

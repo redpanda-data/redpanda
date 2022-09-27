@@ -220,7 +220,7 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table)
   : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -1993,7 +1993,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 }
 
 uint8_t rm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(feature::rm_stm_kafka_cache)) {
+    if (_feature_table.local().is_active(
+          features::feature::rm_stm_kafka_cache)) {
         return tx_snapshot::version;
     }
     return tx_snapshot_v1::version;

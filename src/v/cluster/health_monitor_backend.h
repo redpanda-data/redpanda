@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "rpc/fwd.h"
@@ -55,7 +56,7 @@ public:
       ss::sharded<storage::node_api>&,
       ss::sharded<storage::api>&,
       ss::sharded<drain_manager>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       config::binding<size_t> min_bytes_alert,
       config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes);
@@ -149,7 +150,7 @@ private:
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<drain_manager>& _drain_manager;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;

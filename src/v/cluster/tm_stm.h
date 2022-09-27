@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "cluster/feature_table.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -148,7 +148,8 @@ public:
         partition_not_found
     };
 
-    explicit tm_stm(ss::logger&, raft::consensus*, ss::sharded<feature_table>&);
+    explicit tm_stm(
+      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
@@ -274,14 +275,15 @@ private:
     }
 
     use_tx_version_with_last_pid_bool use_new_tx_version() {
-        return _feature_table.local().is_active(feature::transaction_ga)
+        return _feature_table.local().is_active(
+                 features::feature::transaction_ga)
                  ? use_tx_version_with_last_pid_bool::yes
                  : use_tx_version_with_last_pid_bool::no;
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
 
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 // Version 1 added last_update_ts to tx lod record. And new status tombstone to

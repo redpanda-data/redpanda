@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/controller_api.h"
-#include "cluster/feature_table.h"
+#include "features/feature_table.h"
 #include "kafka/client/client.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -50,7 +50,7 @@ struct consumer_offsets_fixture : public redpanda_thread_fixture {
         app.controller->get_feature_table()
           .local()
           .await_feature(
-            cluster::feature::consumer_offsets,
+            features::feature::consumer_offsets,
             app.controller->get_abort_source().local())
           .get();
 

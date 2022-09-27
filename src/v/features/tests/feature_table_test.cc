@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "cluster/feature_table.h"
+#include "features/feature_table.h"
 #include "test_utils/fixture.h"
 #include "vlog.h"
 
@@ -18,6 +18,7 @@
 
 using namespace std::chrono_literals;
 using namespace cluster;
+using namespace features;
 using action_t = feature_update_action::action_t;
 
 class setenv_helper {
@@ -26,7 +27,7 @@ public:
     ~setenv_helper() { unsetenv("__REDPANDA_TEST_FEATURES"); }
 };
 
-namespace cluster {
+namespace features {
 class feature_table_fixture {
 public:
     feature_table_fixture() {}
@@ -51,7 +52,7 @@ public:
           .feature_name = ss::sstring(feature_name), .action = a});
     }
 };
-} // namespace cluster
+} // namespace features
 
 static constexpr std::string_view mock_feature{"__test_alpha"};
 

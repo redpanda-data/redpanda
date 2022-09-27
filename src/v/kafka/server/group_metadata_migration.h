@@ -12,6 +12,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "kafka/server/fwd.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -55,7 +56,7 @@ private:
 
     void dispatch_ntp_migration(model::ntp);
 
-    cluster::feature_table& feature_table();
+    features::feature_table& feature_table();
     cluster::feature_manager& feature_manager();
     ss::abort_source& abort_source();
 

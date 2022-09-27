@@ -14,7 +14,6 @@
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
-#include "raft/raft_feature_table.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
@@ -51,7 +50,8 @@ public:
       recovery_memory_quota::config_provider_fn recovery_mem_cfg,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
-      ss::sharded<recovery_throttle>&);
+      ss::sharded<recovery_throttle>&,
+      ss::sharded<features::feature_table>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -89,8 +89,6 @@ public:
 
     consensus_client_protocol raft_client() const { return _client; }
 
-    void set_feature_active(raft_feature);
-
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
@@ -109,7 +107,7 @@ private:
     storage::api& _storage;
     recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
-    raft_feature_table _raft_feature_table;
+    features::feature_table& _feature_table;
 };
 
 } // namespace raft

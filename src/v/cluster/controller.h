@@ -39,7 +39,7 @@ public:
       ss::sharded<storage::node_api>& storage_node,
       ss::sharded<raft::group_manager>&,
       ss::sharded<v8_engine::data_policy_table>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<cloud_storage::remote>&);
 
     model::node_id self() { return _raft0->self().id(); }
@@ -89,7 +89,9 @@ public:
     ss::sharded<feature_manager>& get_feature_manager() {
         return _feature_manager;
     }
-    ss::sharded<feature_table>& get_feature_table() { return _feature_table; }
+    ss::sharded<features::feature_table>& get_feature_table() {
+        return _feature_table;
+    }
 
     ss::sharded<drain_manager>& get_drain_manager() { return _drain_manager; }
 
@@ -160,9 +162,9 @@ private:
     ss::sharded<health_monitor_backend> _hm_backend;   // single instance
     ss::sharded<health_manager> _health_manager;
     ss::sharded<metrics_reporter> _metrics_reporter;
-    ss::sharded<feature_manager> _feature_manager; // single instance
-    ss::sharded<feature_backend> _feature_backend; // instance per core
-    ss::sharded<feature_table>& _feature_table;    // instance per core
+    ss::sharded<feature_manager> _feature_manager;        // single instance
+    ss::sharded<feature_backend> _feature_backend;        // instance per core
+    ss::sharded<features::feature_table>& _feature_table; // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     ss::sharded<partition_balancer_backend> _partition_balancer;
     ss::gate _gate;

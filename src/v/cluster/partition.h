@@ -13,13 +13,13 @@
 
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
-#include "cluster/feature_table.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
@@ -46,7 +46,7 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       std::optional<s3::bucket_name> read_replica_bucket = std::nullopt);
 
     raft::group_id group() const { return _raft->group(); }
@@ -288,7 +288,7 @@ private:
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;

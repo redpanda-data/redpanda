@@ -23,7 +23,6 @@
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/prevote_stm.h"
-#include "raft/raft_feature_table.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -97,7 +96,7 @@ consensus::consensus(
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
-  raft_feature_table& ft)
+  features::feature_table& ft)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -2145,8 +2144,8 @@ ss::future<std::error_code> consensus::replicate_configuration(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
           if (unlikely(cfg.version() < group_configuration::version_t(4))) {
               if (
-                _features.is_feature_active(
-                  raft_feature::improved_config_change)
+                _features.is_active(
+                  features::feature::raft_improved_configuration)
                 && cfg.get_state() == configuration_state::simple) {
                   vlog(_ctxlog.debug, "Upgrading configuration version");
                   cfg.set_version(group_configuration::current_version);

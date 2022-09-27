@@ -11,10 +11,13 @@
 
 #include "feature_table.h"
 
-#include "cluster/logger.h"
 #include "cluster/types.h"
+#include "features/logger.h"
 
-namespace cluster {
+// The feature table is closely related to cluster and uses many types from it
+using namespace cluster;
+
+namespace features {
 
 std::string_view to_string_view(feature f) {
     switch (f) {
@@ -99,7 +102,7 @@ cluster_version feature_table::get_latest_logical_version() {
                 latest_version_cache = cluster_version{std::stoi(override)};
             } catch (...) {
                 vlog(
-                  clusterlog.error,
+                  featureslog.error,
                   "Invalid logical version override '{}'",
                   override);
             }
@@ -171,11 +174,11 @@ void feature_table::on_update() {
 void feature_table::apply_action(const feature_update_action& fua) {
     auto feature_id_opt = resolve_name(fua.feature_name);
     if (!feature_id_opt.has_value()) {
-        vlog(clusterlog.warn, "Ignoring action {}, unknown feature", fua);
+        vlog(featureslog.warn, "Ignoring action {}, unknown feature", fua);
         return;
     } else {
         if (ss::this_shard_id() == 0) {
-            vlog(clusterlog.debug, "apply_action {}", fua);
+            vlog(featureslog.debug, "apply_action {}", fua);
         }
     }
 
@@ -185,7 +188,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
             fstate.transition_active();
         } else {
             vlog(
-              clusterlog.warn,
+              featureslog.warn,
               "Ignoring action {}, feature is in state {}",
               fua,
               fstate.get_state());
@@ -211,7 +214,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
             fstate.transition_preparing();
         } else {
             vlog(
-              clusterlog.warn,
+              featureslog.warn,
               "Ignoring action {}, feature is in state {}",
               fua,
               current_state);
@@ -223,7 +226,7 @@ void feature_table::apply_action(const feature_update_action& fua) {
           || current_state == feature_state::state::disabled_active
           || current_state == feature_state::state::disabled_clean) {
             vlog(
-              clusterlog.warn,
+              featureslog.warn,
               "Ignoring action {}, feature is in state {}",
               fua,
               current_state);
@@ -249,11 +252,13 @@ void feature_table::apply_action(const feature_update_action& fua) {
  */
 ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
     if (is_active(f)) {
-        vlog(clusterlog.trace, "Feature {} already active", to_string_view(f));
+        vlog(featureslog.trace, "Feature {} already active", to_string_view(f));
         return ss::now();
     } else {
         vlog(
-          clusterlog.trace, "Waiting for feature active {}", to_string_view(f));
+          featureslog.trace,
+          "Waiting for feature active {}",
+          to_string_view(f));
         return _waiters_active.await(f, as);
     }
 }
@@ -268,11 +273,11 @@ ss::future<>
 feature_table::await_feature_preparing(feature f, ss::abort_source& as) {
     if (is_preparing(f)) {
         vlog(
-          clusterlog.trace, "Feature {} already preparing", to_string_view(f));
+          featureslog.trace, "Feature {} already preparing", to_string_view(f));
         return ss::now();
     } else {
         vlog(
-          clusterlog.trace,
+          featureslog.trace,
           "Waiting for feature preparing {}",
           to_string_view(f));
         return _waiters_preparing.await(f, as);
@@ -312,4 +317,32 @@ const std::optional<security::license>& feature_table::get_license() const {
     return _license;
 }
 
+void feature_table::testing_activate_all() {
+    for (auto& s : _feature_state) {
+        if (s.spec.available_rule == feature_spec::available_policy::always) {
+            s.transition_active();
+        }
+    }
+}
+
+} // namespace features
+
+namespace cluster {
+std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
+    std::string_view action_name;
+    switch (fua.action) {
+    case feature_update_action::action_t::complete_preparing:
+        action_name = "complete_preparing";
+        break;
+    case feature_update_action::action_t::activate:
+        action_name = "activate";
+        break;
+    case feature_update_action::action_t::deactivate:
+        action_name = "deactivate";
+        break;
+    }
+
+    fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
+    return o;
+}
 } // namespace cluster

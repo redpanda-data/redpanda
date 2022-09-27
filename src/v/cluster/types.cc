@@ -656,26 +656,8 @@ operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
-    std::string_view action_name;
-    switch (fua.action) {
-    case feature_update_action::action_t::complete_preparing:
-        action_name = "complete_preparing";
-        break;
-    case feature_update_action::action_t::activate:
-        action_name = "activate";
-        break;
-    case feature_update_action::action_t::deactivate:
-        action_name = "deactivate";
-        break;
-    }
-
-    fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
-    return o;
-}
-
 std::ostream& operator<<(std::ostream& o, const feature_action_request& far) {
-    fmt::print(o, "{{feature_update_action: {}}}", far.action);
+    fmt::print(o, "{{feature_update_request: {}}}", far.action);
     return o;
 }
 

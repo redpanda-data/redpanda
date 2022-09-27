@@ -46,7 +46,6 @@ class health_monitor_backend;
 class metrics_reporter;
 class feature_frontend;
 class feature_manager;
-class feature_table;
 class drain_manager;
 class partition_balancer_backend;
 

@@ -11,8 +11,8 @@
 #include "cluster/health_monitor_types.h"
 
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/node/types.h"
+#include "features/feature_table.h"
 #include "model/adl_serde.h"
 #include "utils/to_string.h"
 

@@ -46,7 +46,7 @@ service::service(
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<config_manager>& config_manager,
   ss::sharded<feature_manager>& feature_manager,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<rpc::connection_cache>& conn_cache)
   : controller_service(sg, ssg)
@@ -81,7 +81,7 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
     if (expect_version == invalid_version) {
         // Feature table isn't initialized, fall back to requiring that
         // joining node is as recent as this node.
-        expect_version = feature_table::get_latest_logical_version();
+        expect_version = features::feature_table::get_latest_logical_version();
     }
 
     if (req.logical_version < expect_version) {
