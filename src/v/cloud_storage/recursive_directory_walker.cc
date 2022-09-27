@@ -111,7 +111,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
     co_return walk_result{
       .cache_size = current_cache_size,
-      .deletion_candidates = files,
+      .regular_files = files,
       .empty_dirs = empty_dirs};
 }
 
