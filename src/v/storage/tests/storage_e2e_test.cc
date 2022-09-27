@@ -482,6 +482,19 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
      * [100..110][200..230][231..261]
      */
 
+    // Set max_collectible_offset to min should not gc any segments.
+    storage::compaction_config ccfg_no_compact(
+      model::timestamp(200),
+      std::nullopt,
+      model::offset::min(), // should prevent compaction
+      ss::default_priority_class(),
+      as);
+    log.set_collectible_offset(log.offsets().dirty_offset);
+    auto before = log.offsets();
+    log.compact(ccfg_no_compact).get0();
+    auto after = log.offsets();
+    BOOST_REQUIRE_EQUAL(after.start_offset, before.start_offset);
+
     auto make_compaction_cfg = [&as](int timestamp) {
         return storage::compaction_config(
           model::timestamp(timestamp),
@@ -554,6 +567,19 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       size_t(0),
       [](size_t acc, model::record_batch& b) { return acc + b.size_bytes(); });
 
+    // Set max_collectible_offset to min should not gc any segments.
+    storage::compaction_config ccfg_no_compact(
+      model::timestamp::min(),
+      (total_size - first_size) + 1,
+      model::offset::min(), // should prevent compaction
+      ss::default_priority_class(),
+      as);
+    log.set_collectible_offset(log.offsets().dirty_offset);
+    log.compact(ccfg_no_compact).get0();
+
+    auto new_lstats = log.offsets();
+    BOOST_REQUIRE_EQUAL(new_lstats.start_offset, lstats.start_offset);
+
     storage::compaction_config ccfg(
       model::timestamp::min(),
       (total_size - first_size) + 1,
@@ -563,7 +589,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
     log.set_collectible_offset(log.offsets().dirty_offset);
     log.compact(ccfg).get0();
 
-    auto new_lstats = log.offsets();
+    new_lstats = log.offsets();
     info("Final offsets {}", new_lstats);
     BOOST_REQUIRE_EQUAL(
       new_lstats.start_offset, lstats.dirty_offset + model::offset(1));
