@@ -50,12 +50,12 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
         try {
             ss::file target_dir = co_await open_directory(target);
-            size_t files_in_dir{0};
+            bool dir_empty{true};
             auto sub = target_dir.list_directory(
               [&files,
                &current_cache_size,
                &dirlist,
-               &files_in_dir,
+               &dir_empty,
                _target{target},
                _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
                   auto target{_target};
@@ -63,7 +63,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
                   auto entry_path = std::filesystem::path(target)
                                     / std::filesystem::path(entry.name);
-                  files_in_dir++;
+                  dir_empty = false;
                   if (
                     entry.type
                     && entry.type == ss::directory_entry_type::regular) {
@@ -94,7 +94,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
             co_await sub.done().finally(
               [target_dir]() mutable { return target_dir.close(); });
 
-            if (files_in_dir == 0 && target != start_dir) {
+            if (unlikely(dir_empty) && target != start_dir) {
                 empty_dirs.push_back(target);
             }
         } catch (std::filesystem::filesystem_error& e) {
