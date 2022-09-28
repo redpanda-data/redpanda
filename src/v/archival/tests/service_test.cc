@@ -32,7 +32,7 @@
 #include <type_traits>
 
 inline seastar::logger arch_svc_log("SVC-TEST");
-static const model::ns test_ns = model::ns("test-namespace");
+static const model::ns test_ns = model::ns("kafka");
 using namespace std::chrono_literals;
 
 static ss::future<> launch_remote(ss::sharded<cloud_storage::remote>& r) {
@@ -71,30 +71,16 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
       {.url = urls[1], .body = std::nullopt},
       {.url = urls[2], .body = std::nullopt},
     });
-
     add_topic_with_random_data(pid0, 20);
     add_topic_with_random_data(pid1, 20);
     wait_for_partition_leadership(pid0);
     wait_for_partition_leadership(pid1);
 
-    auto [arch_config, remote_config] = get_configurations();
-    auto& pm = app.partition_manager;
-    auto& topics = app.controller->get_topics_state();
-    ss::sharded<cloud_storage::remote> remote;
-    remote
-      .start_single(
-        remote_config.connection_limit,
-        remote_config.client_config,
-        remote_config.cloud_credentials_source)
-      .get();
-    launch_remote(remote).get();
-    archival::internal::scheduler_service_impl service(
-      arch_config, remote, pm, topics);
+    auto& service = get_scheduler_service();
+
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(pid0));
     BOOST_REQUIRE(service.contains(pid1));
-    service.stop().get();
-    remote.stop().get();
 }
 
 FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
@@ -115,20 +101,7 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
 
     wait_for_partition_leadership(ntp);
 
-    auto [arch_config, remote_config] = get_configurations();
-    auto& pm = app.partition_manager;
-    auto& topics = app.controller->get_topics_state();
-    ss::sharded<cloud_storage::remote> remote;
-    remote
-      .start_single(
-        remote_config.connection_limit,
-        remote_config.client_config,
-        remote_config.cloud_credentials_source)
-      .get();
-    launch_remote(remote).get();
-
-    archival::internal::scheduler_service_impl service(
-      arch_config, remote, pm, topics);
+    auto& service = get_scheduler_service();
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
@@ -140,8 +113,6 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(!service.contains(ntp));
-    service.stop().get();
-    remote.stop().get();
 }
 
 FIXTURE_TEST(test_segment_upload, archiver_fixture) {
@@ -153,7 +124,7 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     model::revision_id partition_rev{get_next_partition_revision_id().get()};
 
     std::string manifest_ntp_path = fmt::format(
-      "test-namespace/topic_3/0_{}", partition_rev);
+      "kafka/topic_3/0_{}", partition_rev);
     uint32_t hash = xxhash_32(
                       manifest_ntp_path.data(), manifest_ntp_path.size())
                     & 0xf0000000;
@@ -182,26 +153,13 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
 
     wait_for_partition_leadership(ntp);
 
-    auto [arch_config, remote_config] = get_configurations();
-    auto& pm = app.partition_manager;
-    auto& topics = app.controller->get_topics_state();
-    ss::sharded<cloud_storage::remote> remote;
-    remote
-      .start_single(
-        remote_config.connection_limit,
-        remote_config.client_config,
-        remote_config.cloud_credentials_source)
-      .get();
-    launch_remote(remote).get();
-
-    archival::internal::scheduler_service_impl service(
-      arch_config, remote, pm, topics);
+    auto& service = get_scheduler_service();
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
 
-    // 2 partition manifests, 1 topic manifest, 2 segments
-    const size_t num_requests_expected = 5;
+    // 1 topic manifest, 1 partition manifest, 2 segments
+    const size_t num_requests_expected = 4;
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
         return get_requests().size() == num_requests_expected;
     }).get();
@@ -211,15 +169,10 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     auto manifest_req = get_targets().equal_range(manifest_path);
     BOOST_REQUIRE(manifest_req.first != manifest_req.second);
     std::exception_ptr ex;
-    for (auto it = manifest_req.first; it != manifest_req.second; it++) {
-        if (it->second._method == "PUT") {
-            BOOST_REQUIRE(it->second._method == "PUT");
-            verify_manifest_content(it->second.content);
-            manifest = load_manifest(it->second.content);
-        } else {
-            BOOST_REQUIRE(it->second._method == "GET");
-        }
-    }
+    auto it = manifest_req.first;
+    BOOST_REQUIRE(it->second._method == "PUT");
+    verify_manifest_content(it->second.content);
+    manifest = load_manifest(it->second.content);
 
     auto seg000_meta = manifest.get(seg000);
     BOOST_REQUIRE(seg000_meta);
@@ -238,6 +191,4 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     auto put_seg100 = get_targets().find(seg100_url);
     BOOST_REQUIRE(put_seg100->second._method == "PUT");
     verify_segment(ntp, seg100, put_seg100->second.content);
-    service.stop().get();
-    remote.stop().get();
 }
