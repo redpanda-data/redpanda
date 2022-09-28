@@ -1215,18 +1215,28 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
 
     // re-entering the gate to keep its open until the spawned fiber
     // is active
-    if (!stm->gate().try_enter()) {
+    if (stm->gate().is_closed()) {
         return ss::make_ready_future<end_tx_reply>(
           end_tx_reply{.error_code = tx_errc::unknown_server_error});
     }
     vlog(txlog.trace, "re-entered tm_stm's gate");
+    auto h = stm->gate().hold();
 
     ssx::spawn_with_gate(
       _gate,
-      [request = std::move(request), this, stm, timeout, outcome]() mutable {
+      [request = std::move(request),
+       this,
+       stm,
+       timeout,
+       outcome,
+       h = std::move(h)]() mutable {
           return stm->read_lock()
-            .then([request = std::move(request), this, stm, timeout, outcome](
-                    ss::basic_rwlock<>::holder unit) mutable {
+            .then([request = std::move(request),
+                   this,
+                   stm,
+                   timeout,
+                   outcome,
+                   h = std::move(h)](ss::basic_rwlock<>::holder unit) mutable {
                 auto tx_id = request.transactional_id;
                 return with(
                          stm,
@@ -1236,15 +1246,15 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
                           this,
                           stm,
                           timeout,
-                          outcome]() mutable {
+                          outcome,
+                          h = std::move(h)]() mutable {
                              return do_end_txn(
                                       std::move(request), stm, timeout, outcome)
-                               .finally([outcome, stm]() {
+                               .finally([outcome, stm, h = std::move(h)]() {
                                    if (!outcome->available()) {
                                        outcome->set_value(
                                          tx_errc::unknown_server_error);
                                    }
-                                   stm->gate().leave();
                                    vlog(txlog.trace, "left tm_stm's gate");
                                });
                          })
