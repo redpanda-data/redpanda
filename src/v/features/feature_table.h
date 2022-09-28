@@ -44,6 +44,7 @@ enum class feature : std::uint64_t {
     rpc_v2_by_default = 0x400,
     cloud_retention = 0x800,
     node_id_assignment = 0x1000,
+    replication_factor_change = 0x2000,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -172,6 +173,12 @@ constexpr static std::array feature_schema{
     cluster_version{7},
     "node_id_assignment",
     feature::node_id_assignment,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{7},
+    "replication_factor_change",
+    feature::replication_factor_change,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
