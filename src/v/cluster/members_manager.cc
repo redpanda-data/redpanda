@@ -97,18 +97,6 @@ ss::future<> members_manager::start() {
     co_return;
 }
 
-/**
- * Sends a join RPC if we aren't already a member, else sends a node
- * configuration update if our local state differs from that stored
- * in the members table.
- *
- * This is separate to start() so that calling it can be delayed until
- * after our internal RPC listener is up: as soon as we send a join message,
- * the controller leader will expect us to be listening for its raft messages,
- * and if we're not ready it'll back off and make joining take several seconds
- * longer than it should.
- * (ref https://github.com/redpanda-data/redpanda/issues/3030)
- */
 ss::future<> members_manager::join_cluster() {
     if (is_already_member()) {
         ssx::spawn_with_gate(

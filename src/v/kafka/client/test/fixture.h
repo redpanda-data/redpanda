@@ -28,9 +28,7 @@ public:
         }).get0();
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
-        app.configure_admin_server();
-        app.wire_up_services();
-        app.start(*app_signal);
+        app.wire_up_and_start(*app_signal);
     }
 
     kc::client make_client() { return kc::client{proxy_client_config()}; }

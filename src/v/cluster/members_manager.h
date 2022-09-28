@@ -26,13 +26,19 @@
 
 namespace cluster {
 
-// Members manager class is responsible for updating information about
-// cluster members, joining the cluster and creating inter cluster
-// connections. This class receives updates from controller STM. It reacts
-// only on raft configuration batch types. All the updates are propagated to
-// core local cluster::members instances. There is only one instance of
-// members manager running on core-0. The member manager is also responsible
-// for validation of node configuration invariants.
+// Implementation of a raft::mux_state_machine that is responsible for
+// updating information about cluster members, joining the cluster, updating
+// member states, and creating intra-cluster connections.
+//
+// This class receives updates from members_frontend by way of a Raft record
+// batch being committed. In addition to various controller command batch
+// types, it reacts to Raft configuration batch types, e.g. when a new node is
+// added to the controller Raft group.
+//
+// All the updates are propagated to core-local cluster::members_table
+// instances. There is only one instance of members_manager running on
+// core-0. The members_manager is also responsible for validation of node
+// configuration invariants.
 class members_manager {
 public:
     static constexpr auto accepted_commands = make_commands_list<
@@ -42,13 +48,28 @@ public:
       maintenance_mode_cmd>{};
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
+
+    // Update types, used for communication between the manager and backend.
+    //
+    // NOTE: maintenance mode doesn't interact with the members_backend,
+    // instead interacting with each core via their respective drain_manager.
     enum class node_update_type : int8_t {
+        // A node has been added to the cluster.
         added,
+
+        // A node has been decommissioned from the cluster.
         decommissioned,
+
+        // A node has been recommissioned after an incomplete decommission.
         recommissioned,
+
+        // All reallocations associated with a given node update have completed
+        // (e.g. it's been fully decommissioned, indicating it can no longer be
+        // recommissioned).
         reallocation_finished,
     };
 
+    // Node update information to be processed by the members_backend.
     struct node_update {
         model::node_id id;
         node_update_type type;
@@ -71,28 +92,53 @@ public:
       ss::sharded<drain_manager>&,
       ss::sharded<ss::abort_source>&);
 
-    ss::future<> start();
-    ss::future<> stop();
+    // Checks invariants. Must be called before calling start().
     ss::future<> validate_configuration_invariants();
+
+    // Initializes connections to all known members.
+    ss::future<> start();
+
+    // Sends a join RPC if we aren't already a member, else sends a node
+    // configuration update if our local state differs from that stored in the
+    // members table.
+    //
+    // This is separate to start() so that calling it can be delayed until
+    // after our internal RPC listener is up: as soon as we send a join
+    // message, the controller leader will expect us to be listening for its
+    // raft messages, and if we're not ready it'll back off and make joining
+    // take several seconds longer than it should.
+    // (ref https://github.com/redpanda-data/redpanda/issues/3030)
+    ss::future<> join_cluster();
+
+    // Stop this manager. Only prevents new update requests; pending updates in
+    // the queue are aborted separately.
+    ss::future<> stop();
+
+    // Adds a node to the controller Raft group, dispatching to the leader if
+    // necessary. If the node already exists, just updates the node config
+    // instead.
     ss::future<result<join_node_reply>>
     handle_join_request(join_node_request const r);
+
+    // Applies a committed record batch, specializing handling based on the
+    // batch type.
     ss::future<std::error_code> apply_update(model::record_batch);
 
+    // Updates the configuration of a node in the existing controller Raft
+    // config, dispatching to the leader if necessary.
     ss::future<result<configuration_update_reply>>
       handle_configuration_update_request(configuration_update_request);
 
+    // Whether the given batch applies to this raft::mux_state_machine.
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::node_management_cmd
                || b.header().type
                     == model::record_batch_type::raft_configuration;
     }
-    /**
-     * This API is backed by the seastar::queue. It can not be called
-     * concurrently from multiple fibers.
-     */
-    ss::future<std::vector<node_update>> get_node_updates();
 
-    ss::future<> join_cluster();
+    // This API is backed by the seastar::queue. It can not be called
+    // concurrently from multiple fibers.
+    ss::future<std::vector<node_update>> get_node_updates();
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
@@ -127,21 +173,45 @@ private:
     ss::future<std::error_code>
       apply_raft_configuration_batch(model::record_batch);
 
-    std::vector<config::seed_server> _seed_servers;
-    model::broker _self;
+    const std::vector<config::seed_server> _seed_servers;
+    const model::broker _self;
     simple_time_jitter<model::timeout_clock> _join_retry_jitter;
-    std::chrono::milliseconds _join_timeout;
-    consensus_ptr _raft0;
+    const std::chrono::milliseconds _join_timeout;
+    const consensus_ptr _raft0;
     ss::sharded<members_table>& _members_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
+
+    // Partition allocator to update when receiving node lifecycle commands.
     ss::sharded<partition_allocator>& _allocator;
+
+    // Storage with which to look at the kv-store to store and verify
+    // configuration invariants.
+    //
+    // TODO: since the members manager is only ever on shard-0, seems like we
+    // should just be passing a single reference to the kv-store.
     ss::sharded<storage::api>& _storage;
+
+    // Per-core management of operations that remove leadership away from a
+    // node. Needs to be per-core since each shard is managed by a different
+    // shard of the sharded partition_manager.
     ss::sharded<drain_manager>& _drain_manager;
+
     ss::sharded<ss::abort_source>& _as;
-    config::tls_config _rpc_tls_config;
+
+    const config::tls_config _rpc_tls_config;
+
+    // Gate with which to guard new work (e.g. if stop() has been called).
     ss::gate _gate;
+
+    // Cluster membership updates that have yet to be released via the call to
+    // get_node_updates().
     ss::queue<node_update> _update_queue;
+
+    // Subscription to _as with which to signal an abort to _update_queue.
     ss::abort_source::subscription _queue_abort_subscription;
+
+    // The last config update controller log offset for which we successfully
+    // updated our broker connections.
     model::offset _last_connection_update_offset;
 };
 

@@ -138,17 +138,6 @@ members_table::apply(model::offset version, recommission_node_cmd cmd) {
     return errc::node_does_not_exists;
 }
 
-std::vector<model::node_id> members_table::get_decommissioned() const {
-    std::vector<model::node_id> ret;
-    for (const auto& [id, broker] : _brokers) {
-        if (
-          broker->get_membership_state() == model::membership_state::draining) {
-            ret.push_back(id);
-        }
-    }
-    return ret;
-}
-
 std::error_code
 members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     _version = model::revision_id(version());
