@@ -536,7 +536,7 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 			schemaRegistry.TLS.IssuerRef,
 			schemaRegistry.TLS.NodeSecretRef,
 			field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("tls"),
-			schemaRegistry.External,
+			schemaRegistry.GetExternal(),
 			field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external"),
 		)
 		allErrs = append(allErrs, tlsErrs...)
@@ -580,6 +580,12 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("endpointTemplate"),
 				r.Spec.Configuration.SchemaRegistry.External.EndpointTemplate,
 				"cannot provide an endpoint template for schema registry"))
+	}
+	if schemaRegistry.External.StaticNodePort && (schemaRegistry.Port < 30000 || schemaRegistry.Port > 32768) {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("port"),
+				r.Spec.Configuration.SchemaRegistry,
+				"port must be in the range [30000-32768] when using a static node port"))
 	}
 
 	return allErrs
@@ -989,12 +995,17 @@ func (r *Cluster) getAllPorts() []listenersPorts {
 	}
 
 	if r.Spec.Configuration.SchemaRegistry != nil {
+		var externalConnectivity bool
+		var externalPort *int
+		if ext := r.Spec.Configuration.SchemaRegistry.External; ext != nil && ext.Enabled && ext.StaticNodePort {
+			externalConnectivity = true
+			externalPort = &r.Spec.Configuration.SchemaRegistry.Port
+		}
 		ports = append(ports, listenersPorts{
-			name: "schemaRegistryApi",
-			port: r.Spec.Configuration.SchemaRegistry.Port,
-			// Schema registry does not have problem with external port being hidden next port of the
-			// internal one.
-			externalConnectivity: false,
+			name:                 "schemaRegistryApi",
+			port:                 r.Spec.Configuration.SchemaRegistry.Port,
+			externalConnectivity: externalConnectivity,
+			externalPort:         externalPort,
 		})
 	}
 	return ports
