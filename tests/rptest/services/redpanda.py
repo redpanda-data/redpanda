@@ -562,9 +562,10 @@ class RedpandaService(Service):
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
         if si_settings is not None:
-            self._extra_rp_conf = si_settings.update_rp_conf(
-                self._extra_rp_conf)
-        self._si_settings = si_settings
+            self.set_si_settings(si_settings)
+        else:
+            self._si_settings = None
+
         self.s3_client: Optional[S3Client] = None
 
         if environment is None:
@@ -592,6 +593,14 @@ class RedpandaService(Service):
 
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
+        if self._si_settings is not None:
+            self._extra_rp_conf = self._si_settings.update_rp_conf(
+                self._extra_rp_conf)
+
+    def set_si_settings(self, si_settings: SISettings):
+        self._si_settings = si_settings
+        self._extra_rp_conf = self._si_settings.update_rp_conf(
+            self._extra_rp_conf)
 
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
