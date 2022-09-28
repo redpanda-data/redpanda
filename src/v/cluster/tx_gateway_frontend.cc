@@ -93,8 +93,10 @@ auto tx_gateway_frontend::with_stm(Func&& func) {
         return func(tx_errc::unknown_server_error);
     }
 
-    return with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
-        return func(stm);
+    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
+        vlog(txlog.trace, "entered tm_stm's gate");
+        return func(stm).finally(
+          [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
     });
 }
 
@@ -1211,6 +1213,14 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
     // cleaning up and before returing the actual control flow
     auto decided = outcome->get_future();
 
+    // re-entering the gate to keep its open until the spawned fiber
+    // is active
+    if (!stm->gate().try_enter()) {
+        return ss::make_ready_future<end_tx_reply>(
+          end_tx_reply{.error_code = tx_errc::unknown_server_error});
+    }
+    vlog(txlog.trace, "re-entered tm_stm's gate");
+
     ssx::spawn_with_gate(
       _gate,
       [request = std::move(request), this, stm, timeout, outcome]() mutable {
@@ -1229,11 +1239,13 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
                           outcome]() mutable {
                              return do_end_txn(
                                       std::move(request), stm, timeout, outcome)
-                               .finally([outcome]() {
+                               .finally([outcome, stm]() {
                                    if (!outcome->available()) {
                                        outcome->set_value(
                                          tx_errc::unknown_server_error);
                                    }
+                                   stm->gate().leave();
+                                   vlog(txlog.trace, "left tm_stm's gate");
                                });
                          })
                   .finally([u = std::move(unit)] {});
