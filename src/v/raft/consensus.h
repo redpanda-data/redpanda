@@ -164,7 +164,7 @@ public:
         return _became_leader_at;
     };
 
-    clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
+    clock_type::time_point last_sent_append_entries_req_timestamp(vnode);
     /**
      * \brief Persist snapshot with given data and start offset
      *

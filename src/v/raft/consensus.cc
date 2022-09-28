@@ -2360,8 +2360,8 @@ model::term_id consensus::get_term(model::offset o) const {
 }
 
 clock_type::time_point
-consensus::last_sent_append_entries_req_timesptamp(vnode id) {
-    return _fstats.get(id).last_sent_append_entries_req_timesptamp;
+consensus::last_sent_append_entries_req_timestamp(vnode id) {
+    return _fstats.get(id).last_sent_append_entries_req_timestamp;
 }
 
 protocol_metadata consensus::meta() const {
@@ -2380,7 +2380,7 @@ protocol_metadata consensus::meta() const {
 
 void consensus::update_node_append_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        it->second.last_sent_append_entries_req_timesptamp = clock_type::now();
+        it->second.last_sent_append_entries_req_timestamp = clock_type::now();
     }
 }
 
