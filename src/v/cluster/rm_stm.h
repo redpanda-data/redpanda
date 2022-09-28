@@ -27,6 +27,7 @@
 #include "utils/available_promise.h"
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
+#include "utils/prefix_logger.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
@@ -535,6 +536,7 @@ private:
     storage::snapshot_manager _abort_snapshot_mgr;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
+    prefix_logger _ctx_log;
 };
 
 } // namespace cluster
