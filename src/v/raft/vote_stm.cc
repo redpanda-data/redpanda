@@ -101,7 +101,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           }
           // 5.2.1 mark node as candidate, and update leader id
           _ptr->_vstate = consensus::vote_state::candidate;
-          //  only trigger notification when we had a leader previosly
+          //  only trigger notification when we had a leader previously
           if (_ptr->_leader_id) {
               _ptr->_leader_id = std::nullopt;
               _ptr->trigger_leadership_notification();
@@ -155,7 +155,7 @@ ss::future<> vote_stm::do_vote() {
 ss::future<> vote_stm::process_replies() {
     return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = _config->majority([this](vnode id) {
+        auto majority_granted = _config->majority([this](vnode id) {
             return _replies.find(id)->second.get_state()
                    == vmeta::state::vote_granted;
         });
@@ -166,8 +166,8 @@ ss::future<> vote_stm::process_replies() {
               ss::stop_iteration::yes);
         }
 
-        // majority votes not granted, election not successfull
-        bool majority_failed = _config->majority([this](vnode id) {
+        // majority votes not granted, election not successful
+        auto majority_failed = _config->majority([this](vnode id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
@@ -302,10 +302,9 @@ ss::future<> vote_stm::self_vote() {
 
     vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
     _ptr->_voted_for = _ptr->_self;
-    return _ptr->write_voted_for({_ptr->_self, model::term_id(_req.term)})
-      .then([this, reply] {
-          auto m = _replies.find(_ptr->self());
-          m->second.set_value(reply);
-      });
+    return _ptr->write_voted_for({_ptr->_self, _req.term}).then([this, reply] {
+        auto m = _replies.find(_ptr->self());
+        m->second.set_value(reply);
+    });
 }
 } // namespace raft
