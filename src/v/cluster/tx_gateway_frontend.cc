@@ -89,7 +89,13 @@ auto tx_gateway_frontend::with_stm(Func&& func) {
         return func(tx_errc::stm_not_found);
     }
 
-    return func(stm);
+    if (stm->gate().is_closed()) {
+        return func(tx_errc::unknown_server_error);
+    }
+
+    return with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
+        return func(stm);
+    });
 }
 
 static add_paritions_tx_reply make_add_partitions_error_response(
