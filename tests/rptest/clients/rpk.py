@@ -13,6 +13,7 @@ import typing
 import time
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
+from rptest.util import wait_until_result
 from rptest.services import tls
 
 DEFAULT_TIMEOUT = 30
@@ -124,17 +125,28 @@ class RpkTool:
         self._get_brokers = get_brokers
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
-        cmd = ["create", topic]
-        cmd += ["--partitions", str(partitions)]
-        if replicas is not None:
-            cmd += ["--replicas", str(replicas)]
-        if config is not None:
-            cfg = [f"{k}:{v}" for k, v in config.items()]
-            for it in cfg:
-                cmd += ["--topic-config", it]
-        output = self._run_topic(cmd)
-        self._check_stdout_success(output)
-        return output
+        def create_topic():
+            try:
+                cmd = ["create", topic]
+                cmd += ["--partitions", str(partitions)]
+                if replicas is not None:
+                    cmd += ["--replicas", str(replicas)]
+                if config is not None:
+                    cfg = [f"{k}:{v}" for k, v in config.items()]
+                    for it in cfg:
+                        cmd += ["--topic-config", it]
+                output = self._run_topic(cmd)
+                self._check_stdout_success(output)
+                return (True, output)
+            except RpkException as e:
+                if "Kafka replied that the controller broker is -1" in str(e):
+                    return False
+                raise e
+
+        wait_until_result(create_topic,
+                          10,
+                          0.1,
+                          err_msg="Can't create a topic within 10s")
 
     def add_partitions(self, topic, partitions):
         cmd = ["add-partitions", topic, "-n", str(partitions)]
