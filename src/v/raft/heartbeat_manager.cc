@@ -118,10 +118,10 @@ static heartbeat_requests requests_for_range(
                   ptr->group());
                 return;
             }
-            auto last_sent_append_entries_req_timesptamp
-              = ptr->last_sent_append_entries_req_timesptamp(rni);
+            auto last_sent_append_entries_req_timestamp
+              = ptr->last_sent_append_entries_req_timestamp(rni);
 
-            if (last_sent_append_entries_req_timesptamp > last_heartbeat) {
+            if (last_sent_append_entries_req_timestamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
                   "Heartbeat skipped - target: {}, ntp: {}, group_id: {}",
