@@ -28,10 +28,12 @@ func TestRedpandaPorts(t *testing.T) {
 		{"all with both internal and external", &redpandav1alpha1.Cluster{
 			Spec: redpandav1alpha1.ClusterSpec{
 				Configuration: redpandav1alpha1.RedpandaConfig{
-					AdminAPI:       []redpandav1alpha1.AdminAPI{{Port: 345}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					KafkaAPI:       []redpandav1alpha1.KafkaAPI{{Port: 123}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					PandaproxyAPI:  []redpandav1alpha1.PandaproxyAPI{{Port: 333}, {External: redpandav1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}}},
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444, External: &redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}},
+					AdminAPI:      []redpandav1alpha1.AdminAPI{{Port: 345}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					KafkaAPI:      []redpandav1alpha1.KafkaAPI{{Port: 123}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					PandaproxyAPI: []redpandav1alpha1.PandaproxyAPI{{Port: 333}, {External: redpandav1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}}},
+					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444, External: &redpandav1alpha1.SchemaRegistryExternalConnectivityConfig{
+						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+					}},
 				},
 			},
 		}, &networking.RedpandaPorts{

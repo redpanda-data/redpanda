@@ -167,7 +167,9 @@ func TestDefault(t *testing.T) {
 				Replicas: pointer.Int32Ptr(1),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
-						External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
+						External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+							ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+						},
 					},
 				},
 				Resources: v1alpha1.RedpandaResourceRequirements{
@@ -364,8 +366,8 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
-		updatePort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
-			Enabled: true,
+		updatePort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 		}
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -687,8 +689,8 @@ func TestCreation(t *testing.T) {
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
 			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}})
-		newPort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
-			Enabled: true,
+		newPort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
 		}
 
 		err := newPort.ValidateCreate()
@@ -1016,9 +1018,13 @@ func TestCreation(t *testing.T) {
 	})
 	t.Run("bootstrap loadbalancer not allowed for schemaregistry", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
-		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
-			Port: 123,
-		}}}
+		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+				Enabled: true, Bootstrap: &v1alpha1.LoadBalancerConfig{
+					Port: 123,
+				},
+			},
+		}}
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
@@ -1030,10 +1036,12 @@ func TestCreation(t *testing.T) {
 			Enabled:   true,
 			Subdomain: commonDomain,
 		}})
-		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.ExternalConnectivityConfig{
-			Enabled:          true,
-			Subdomain:        commonDomain,
-			EndpointTemplate: "xxx",
+		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+				Enabled:          true,
+				Subdomain:        commonDomain,
+				EndpointTemplate: "xxx",
+			},
 		}}
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
@@ -1186,7 +1194,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 	t.Run("if schema registry externally available, kafka external listener is required", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
-			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
+			External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+			},
 		}
 		schemaReg.Spec.Configuration.KafkaAPI[0].External.Enabled = false
 
@@ -1197,7 +1207,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 	t.Run("schema registry externally available is valid when it has the same subdomain as kafka external listener", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
-			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			},
 		}
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"}})
@@ -1209,7 +1221,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 	t.Run("if schema registry externally available, it should have same subdomain as kafka external listener", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
-			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			},
 		}
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "other.com"}})
@@ -1220,7 +1234,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 	t.Run("if schema registry externally available, kafka external listener should not be empty", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
-			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+			},
 		}
 		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: ""}})

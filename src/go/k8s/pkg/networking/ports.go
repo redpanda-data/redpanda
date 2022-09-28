@@ -131,7 +131,7 @@ func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
 		}
 		if rpCluster.IsSchemaRegistryExternallyAvailable() {
 			result.SchemaRegistry.External = schemaRegistryPort
-			result.SchemaRegistry.ExternalPortIsGenerated = true
+			result.SchemaRegistry.ExternalPortIsGenerated = !rpCluster.Spec.Configuration.SchemaRegistry.External.StaticNodePort
 		} else {
 			result.SchemaRegistry.Internal = schemaRegistryPort
 		}
