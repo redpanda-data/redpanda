@@ -20,6 +20,7 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <algorithm>
 #include <optional>
 
 namespace cluster {
@@ -378,6 +379,63 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
                       : delta::op_type::cancel_update,
       std::move(replicas),
       revisions_it->second);
+
+    notify_waiters();
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        co_return errc::topic_not_exists;
+    }
+    if (!tp->second.is_topic_replicable()) {
+        co_return errc::topic_operation_error;
+    }
+
+    // We should check partition before create updates
+
+    if (std::any_of(
+          cmd.value.begin(),
+          cmd.value.end(),
+          [&tp](const auto& partition_and_replicas) {
+              return !tp->second.get_assignments().contains(
+                partition_and_replicas.partition);
+          })) {
+        vlog(
+          clusterlog.warn,
+          "topic: {}: Can not move replicas, becasue can not find "
+          "partitions",
+          cmd.key);
+        co_return errc::partition_not_exists;
+    }
+
+    if (std::any_of(
+          cmd.value.begin(),
+          cmd.value.end(),
+          [this, key = cmd.key](const auto& partition_and_replicas) {
+              return _updates_in_progress.contains(
+                model::ntp(key.ns, key.tp, partition_and_replicas.partition));
+          })) {
+        vlog(
+          clusterlog.warn,
+          "topic: {}: Can not move replicas for topic, some updates in "
+          "progress",
+          cmd.key);
+        co_return errc::update_in_progress;
+    }
+
+    for (const auto& [partition_id, new_replicas] : cmd.value) {
+        auto assignment = tp->second.get_assignments().find(partition_id);
+        change_partition_replicas(
+          model::ntp(cmd.key.ns, cmd.key.tp, partition_id),
+          new_replicas,
+          tp->second,
+          *assignment,
+          o);
+    }
 
     notify_waiters();
 

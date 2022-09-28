@@ -220,6 +220,7 @@ public:
       apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
