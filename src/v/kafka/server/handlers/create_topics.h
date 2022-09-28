@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using create_topics_handler = single_stage_handler<create_topics_api, 0, 5>;
+using create_topics_handler = single_stage_handler<create_topics_api, 0, 6>;
 
 }

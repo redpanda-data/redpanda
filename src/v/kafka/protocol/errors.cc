@@ -187,6 +187,8 @@ std::string_view error_code_to_str(error_code error) {
         return "invalid_record";
     case error_code::unstable_offset_commit:
         return "unstable_offset_commit";
+    case error_code::throttling_quota_exceeded:
+        return "throttling_quota_exceeded";
     default:
         std::terminate(); // make gcc happy
     }

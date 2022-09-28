@@ -103,6 +103,8 @@ public:
     static constexpr auto length = 16;
     using underlying_t = std::array<uint8_t, length>;
 
+    uuid() = default;
+
     static uuid from_string(std::string_view encoded) {
         if (encoded.size() > 24) {
             details::throw_out_of_range(
@@ -129,6 +131,8 @@ public:
     bytes_view view() const { return {_uuid.data(), _uuid.size()}; }
 
     ss::sstring to_string() const { return bytes_to_base64(view()); }
+
+    friend bool operator==(const uuid&, const uuid&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const uuid& u) {
         return os << u.to_string();

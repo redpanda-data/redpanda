@@ -250,6 +250,13 @@ configuration::configuration()
        .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
+  , kafka_admin_topic_api_rate(
+      *this,
+      "kafka_admin_topic_api_rate",
+      "Target quota rate (partition mutations per default_window_sec)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
   , cluster_id(
       *this,
       "cluster_id",
