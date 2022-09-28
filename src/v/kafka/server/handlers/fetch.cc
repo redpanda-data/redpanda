@@ -696,7 +696,6 @@ ss::future<response_ptr> op_context::send_response() && {
     fetch_response final_response;
     final_response.data.error_code = response.data.error_code;
     final_response.data.session_id = response.data.session_id;
-    final_response.data.throttle_time_ms = response.data.throttle_time_ms;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {

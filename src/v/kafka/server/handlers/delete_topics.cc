@@ -88,9 +88,6 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     }
 
     auto resp = create_response(std::move(res));
-    resp.data.throttle_time_ms = std::chrono::milliseconds(
-      ctx.throttle_delay_ms());
-
     for (auto& topic : unauthorized) {
         resp.data.responses.push_back(deletable_topic_result{
           .name = std::move(topic),
