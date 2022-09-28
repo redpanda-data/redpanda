@@ -222,16 +222,21 @@ ss::future<std::error_code> replicate_and_wait(
        &as = as,
        timeout,
        use_serde_serialization](controller_stm& stm) mutable {
-          if (likely(use_serde_serialization)) {
-              auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
-              return stm.replicate_and_wait(
-                std::move(b), timeout, as.local(), term);
+          if constexpr (Cmd::serde_opts == serde_opts::adl_and_serde) {
+              if (unlikely(!use_serde_serialization)) {
+                  return serialize_cmd(std::forward<Cmd>(cmd))
+                    .then([&stm, timeout, term, &as](model::record_batch b) {
+                        return stm.replicate_and_wait(
+                          std::move(b), timeout, as.local(), term);
+                    });
+              }
           }
-          return serialize_cmd(std::forward<Cmd>(cmd))
-            .then([&stm, timeout, term, &as](model::record_batch b) {
-                return stm.replicate_and_wait(
-                  std::move(b), timeout, as.local(), term);
-            });
+          vassert(
+            use_serde_serialization,
+            "Requested to ADL serialize a serde-only type");
+          auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
+          return stm.replicate_and_wait(
+            std::move(b), timeout, as.local(), term);
       });
 }
 
