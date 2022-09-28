@@ -6,13 +6,11 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RedpandaService, SISettings
 
 from rptest.services.admin import Admin
-from rptest.archival.s3_client import S3Client
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -21,16 +19,6 @@ from rptest.util import (
     wait_for_segments_removal,
 )
 from ducktape.utils.util import wait_until
-
-import xxhash
-from collections import namedtuple, defaultdict
-import time
-import os
-import json
-import traceback
-import uuid
-import sys
-import re
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
