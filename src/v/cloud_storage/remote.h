@@ -104,8 +104,8 @@ class remote : public ss::peering_sharded_service<remote> {
 public:
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
-    using reset_input_stream
-      = ss::noncopyable_function<ss::future<storage::segment_reader_handle>()>;
+    using reset_input_stream = ss::noncopyable_function<
+      ss::future<std::unique_ptr<storage::stream_provider>>()>;
 
     /// Functor that attempts to consume the input stream. If the connection
     /// is broken during the download the functor is responsible for he cleanup.
