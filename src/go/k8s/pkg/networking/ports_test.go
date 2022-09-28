@@ -113,10 +113,18 @@ func TestRedpandaPorts(t *testing.T) {
 				},
 			},
 		}},
-		{"kafka api has nodeport explicitly specifies", &redpandav1alpha1.Cluster{
+		{"apis have nodeport explicitly specified", &redpandav1alpha1.Cluster{
 			Spec: redpandav1alpha1.ClusterSpec{
 				Configuration: redpandav1alpha1.RedpandaConfig{
 					KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}, {Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 234}, {Port: 30002, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					PandaproxyAPI: []redpandav1alpha1.PandaproxyAPI{{Port: 345}, {Port: 30003, External: redpandav1alpha1.PandaproxyExternalConnectivityConfig{
+						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+					}}},
+					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 30004, External: &redpandav1alpha1.SchemaRegistryExternalConnectivityConfig{
+						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+						StaticNodePort:             true,
+					}},
 				},
 			},
 		}, &networking.RedpandaPorts{
@@ -128,6 +136,32 @@ func TestRedpandaPorts(t *testing.T) {
 				External: &resources.NamedServicePort{
 					Name: resources.ExternalListenerName,
 					Port: 30001,
+				},
+			},
+			AdminAPI: networking.PortsDefinition{
+				Internal: &resources.NamedServicePort{
+					Name: resources.AdminPortName,
+					Port: 234,
+				},
+				External: &resources.NamedServicePort{
+					Name: resources.AdminPortExternalName,
+					Port: 30002,
+				},
+			},
+			PandaProxy: networking.PortsDefinition{
+				Internal: &resources.NamedServicePort{
+					Name: resources.PandaproxyPortInternalName,
+					Port: 345,
+				},
+				External: &resources.NamedServicePort{
+					Name: resources.PandaproxyPortExternalName,
+					Port: 30003,
+				},
+			},
+			SchemaRegistry: networking.PortsDefinition{
+				External: &resources.NamedServicePort{
+					Name: resources.SchemaRegistryPortName,
+					Port: 30004,
 				},
 			},
 		}},

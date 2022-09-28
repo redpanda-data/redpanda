@@ -1369,37 +1369,152 @@ func TestPodDisruptionBudget(t *testing.T) {
 	})
 }
 
-func TestExternalKafkaPortSpecified(t *testing.T) {
-	rpCluster := validRedpandaCluster()
+func TestRangesAndCollisions(t *testing.T) {
+	cases := []struct {
+		name                   string
+		kafkaInternal          int
+		kafkaExternal          int
+		adminAPIInternal       int
+		adminAPIExternal       int
+		pandaproxyAPIInternal  int
+		pandaproxyAPIExternal  int
+		schemaRegistryPort     int
+		schemaRegistryExternal bool
+		schemaRegistryStatic   bool
+		error                  bool
+	}{
+		{
+			name:                  "working",
+			kafkaInternal:         9092,
+			kafkaExternal:         30092,
+			adminAPIInternal:      9644,
+			adminAPIExternal:      30644,
+			pandaproxyAPIInternal: 8081,
+			pandaproxyAPIExternal: 30081,
+			schemaRegistryPort:    8082,
+		},
+		{
+			name:             "collision kafka and admin",
+			kafkaInternal:    9092,
+			kafkaExternal:    30092,
+			adminAPIInternal: 9644,
+			adminAPIExternal: 30092,
+			error:            true,
+		},
+		{
+			name:                  "collision admin and panda",
+			kafkaInternal:         9092,
+			kafkaExternal:         30092,
+			adminAPIInternal:      9644,
+			adminAPIExternal:      30644,
+			pandaproxyAPIInternal: 8081,
+			pandaproxyAPIExternal: 30644,
+			error:                 true,
+		},
+		{
+			name:                   "collision panda and schema",
+			kafkaInternal:          9092,
+			kafkaExternal:          30092,
+			adminAPIInternal:       9644,
+			adminAPIExternal:       30644,
+			pandaproxyAPIInternal:  8081,
+			pandaproxyAPIExternal:  30644,
+			schemaRegistryPort:     30644,
+			schemaRegistryExternal: true,
+			schemaRegistryStatic:   true,
+			error:                  true,
+		},
+		{
+			name:             "kafka outside range",
+			kafkaInternal:    9092,
+			kafkaExternal:    29999,
+			adminAPIInternal: 9644,
+			error:            true,
+		},
+		{
+			name:             "admin outside range",
+			kafkaInternal:    9092,
+			kafkaExternal:    30092,
+			adminAPIInternal: 9644,
+			adminAPIExternal: 29999,
+			error:            true,
+		},
+		{
+			name:                  "pandaproxy outside range",
+			kafkaInternal:         9092,
+			kafkaExternal:         30092,
+			adminAPIInternal:      9644,
+			pandaproxyAPIInternal: 8081,
+			pandaproxyAPIExternal: 29999,
+			error:                 true,
+		},
+		{
+			name:                   "schema registry outside range",
+			kafkaInternal:          9092,
+			kafkaExternal:          30092,
+			adminAPIInternal:       9644,
+			schemaRegistryPort:     29999,
+			schemaRegistryExternal: true,
+			schemaRegistryStatic:   true,
+			error:                  true,
+		},
+		{
+			name:                   "schema registry allowed when auto generated",
+			kafkaInternal:          9092,
+			kafkaExternal:          30092,
+			adminAPIInternal:       9644,
+			schemaRegistryPort:     29999,
+			schemaRegistryExternal: true,
+		},
+	}
 
-	t.Run("collision in the port when kafka api external port is defined", func(t *testing.T) {
-		updatePort := rpCluster.DeepCopy()
-		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30001}}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rpCluster := validRedpandaCluster()
+			c := rpCluster.DeepCopy()
 
-		err := updatePort.ValidateUpdate(updatePort)
-		assert.Error(t, err)
-	})
+			c.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPI{}
+			c.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
+			c.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{}
+			c.Spec.Configuration.SchemaRegistry = nil
 
-	t.Run("no collision in the port when kafka api external port is defined", func(t *testing.T) {
-		updatePort := rpCluster.DeepCopy()
-		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30002}}
+			if tc.kafkaInternal != 0 {
+				c.Spec.Configuration.KafkaAPI = append(c.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{Port: tc.kafkaInternal})
+			}
+			if tc.kafkaExternal != 0 {
+				c.Spec.Configuration.KafkaAPI = append(c.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{Port: tc.kafkaExternal, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			}
+			if tc.adminAPIInternal != 0 {
+				c.Spec.Configuration.AdminAPI = append(c.Spec.Configuration.AdminAPI, v1alpha1.AdminAPI{Port: tc.adminAPIInternal})
+			}
+			if tc.adminAPIExternal != 0 {
+				c.Spec.Configuration.AdminAPI = append(c.Spec.Configuration.AdminAPI, v1alpha1.AdminAPI{Port: tc.adminAPIExternal, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			}
+			if tc.pandaproxyAPIInternal != 0 {
+				c.Spec.Configuration.PandaproxyAPI = append(c.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{Port: tc.pandaproxyAPIInternal})
+			}
+			if tc.pandaproxyAPIExternal != 0 {
+				c.Spec.Configuration.PandaproxyAPI = append(c.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{Port: tc.pandaproxyAPIExternal, External: v1alpha1.PandaproxyExternalConnectivityConfig{
+					ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+				}})
+			}
+			if tc.schemaRegistryPort != 0 && !tc.schemaRegistryExternal {
+				c.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{Port: tc.schemaRegistryPort}
+			} else if tc.schemaRegistryPort != 0 && tc.schemaRegistryExternal {
+				c.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{Port: tc.schemaRegistryPort, External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+					ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+					StaticNodePort:             tc.schemaRegistryStatic,
+				}}
+			}
 
-		err := updatePort.ValidateUpdate(updatePort)
-		assert.NoError(t, err)
-	})
-
-	t.Run("error when kafkaAPI external port is outside of supported range", func(t *testing.T) {
-		updatePort := rpCluster.DeepCopy()
-		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPI{Port: 29999, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-
-		err := updatePort.ValidateUpdate(updatePort)
-		assert.Error(t, err)
-	})
+			err := c.ValidateUpdate(rpCluster)
+			if tc.error {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestKafkaTLSRules(t *testing.T) {
