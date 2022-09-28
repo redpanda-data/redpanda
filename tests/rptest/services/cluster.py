@@ -34,7 +34,13 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             try:
                 r = f(self, *args, **kwargs)
             except:
-                self.redpanda.decode_backtraces()
+                self.redpanda.logger.exception(
+                    "Test failed, doing failure checks...")
+
+                # Disabled to avoid addr2line hangs
+                # (https://github.com/redpanda-data/redpanda/issues/5004)
+                # self.redpanda.decode_backtraces()
+
                 self.redpanda.raise_on_crash()
                 raise
             else:
