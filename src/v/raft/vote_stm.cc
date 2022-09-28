@@ -212,20 +212,20 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
                 _ptr->_vstate = consensus::vote_state::follower;
-                return ss::now();
+                co_return;
             }
         }
     }
 
     if (_ptr->_vstate != consensus::vote_state::candidate) {
         vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
-        return ss::now();
+        co_return;
     }
 
     if (!_success) {
         vlog(_ctxlog.info, "Vote failed");
         _ptr->_vstate = consensus::vote_state::follower;
-        return ss::now();
+        co_return;
     }
 
     if (_ptr->_node_priority_override == zero_voter_priority) {
@@ -234,7 +234,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           "Ignoring successful vote. Node priority too low: {}",
           _ptr->_node_priority_override.value());
         _ptr->_vstate = consensus::vote_state::follower;
-        return ss::now();
+        co_return;
     }
 
     std::vector<vnode> acks;
@@ -257,28 +257,27 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     _ptr->_last_quorum_replicated_index = _ptr->_flushed_offset;
     _ptr->trigger_leadership_notification();
 
-    return replicate_config_as_new_leader(std::move(u))
-      .then([this, term](std::error_code ec) {
-          // if we didn't replicated configuration, step down
-          if (ec) {
-              vlog(
-                _ctxlog.info,
-                "unable to replicate configuration as a leader - error code: "
-                "{} - {} ",
-                ec.value(),
-                ec.message());
-          } else {
-              vlog(_ctxlog.info, "became the leader term:{}", term);
-              if (term == _ptr->_term) {
-                  vassert(
-                    _ptr->_confirmed_term == _ptr->_term,
-                    "successfully replicated configuration should update "
-                    "_confirmed_term={} to be equal to _term={}",
-                    _ptr->_confirmed_term,
-                    _ptr->_term);
-              }
-          }
-      });
+    auto ec = co_await replicate_config_as_new_leader(std::move(u));
+
+    // if we didn't replicated configuration, step down
+    if (ec) {
+        vlog(
+          _ctxlog.info,
+          "unable to replicate configuration as a leader - error code: "
+          "{} - {} ",
+          ec.value(),
+          ec.message());
+    } else {
+        vlog(_ctxlog.info, "became the leader term: {}", term);
+        if (term == _ptr->_term) {
+            vassert(
+              _ptr->_confirmed_term == _ptr->_term,
+              "successfully replicated configuration should update "
+              "_confirmed_term={} to be equal to _term={}",
+              _ptr->_confirmed_term,
+              _ptr->_term);
+        }
+    }
 }
 
 ss::future<std::error_code>
