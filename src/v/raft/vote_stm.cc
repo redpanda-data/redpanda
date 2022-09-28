@@ -216,8 +216,15 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
             }
         }
     }
-
-    if (_ptr->_vstate != consensus::vote_state::candidate) {
+    /**
+     * Use cached term value stored while the vote_stm owned an oplock in first
+     * voting phase. (the term might have changed if a node received request
+     * from other leader)
+     */
+    auto term = _req.term;
+    if (
+      _ptr->_vstate != consensus::vote_state::candidate
+      || _ptr->_term != term) {
         vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
         co_return;
     }
@@ -243,7 +250,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
             acks.emplace_back(id);
         }
     }
-    auto term = _ptr->term();
+
     vlog(_ctxlog.trace, "vote acks in term {} from: {}", term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
@@ -268,8 +275,8 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           ec.value(),
           ec.message());
     } else {
-        vlog(_ctxlog.info, "became the leader term: {}", term);
         if (term == _ptr->_term) {
+            vlog(_ctxlog.info, "became the leader term: {}", term);
             vassert(
               _ptr->_confirmed_term == _ptr->_term,
               "successfully replicated configuration should update "
