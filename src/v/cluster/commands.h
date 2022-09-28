@@ -274,7 +274,7 @@ using feature_update_license_update_cmd = controller_command<
   int8_t, // unused
   feature_update_license_update_cmd_type,
   model::record_batch_type::feature_update,
-  serde_opts::adl_and_serde>;
+  serde_opts::serde_only>;
 
 // typelist utils
 template<typename T>

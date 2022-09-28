@@ -1683,22 +1683,6 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     return {.logical_version = logical_version, .actions = std::move(actions)};
 }
 
-void adl<cluster::feature_update_license_update_cmd_data>::to(
-  iobuf&, cluster::feature_update_license_update_cmd_data&&) {
-    vassert(
-      false,
-      "cluster::feature_update_license_update_cmd_data should always use "
-      "serde, never adl");
-}
-
-cluster::feature_update_license_update_cmd_data
-adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser&) {
-    vassert(
-      false,
-      "cluster::feature_update_license_update_cmd_data should always use "
-      "serde, never adl");
-}
-
 void adl<cluster::feature_barrier_request>::to(
   iobuf& out, cluster::feature_barrier_request&& r) {
     reflection::serialize(out, r.current_version, r.tag, r.peer, r.entered);
