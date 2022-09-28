@@ -537,6 +537,10 @@ spec:
                               The default preferred address type is ExternalIP. This
                               option only applies when Subdomain is empty.
                             type: string
+                          staticNodePort:
+                            description: Indicates that the node port for the service
+                              needs not to be generated.
+                            type: boolean
                           subdomain:
                             description: Subdomain can be used to change the behavior
                               of an advertised KafkaAPI. Each broker advertises Kafka

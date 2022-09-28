@@ -108,8 +108,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 						},
 						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 							Port: schemaRegistryPort,
-							External: &v1alpha1.ExternalConnectivityConfig{
-								Enabled: true,
+							External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+								ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+									Enabled: true,
+								},
 							},
 						},
 					},

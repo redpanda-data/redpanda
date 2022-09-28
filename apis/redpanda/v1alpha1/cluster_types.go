@@ -541,9 +541,17 @@ type SchemaRegistryAPI struct {
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
-	External *ExternalConnectivityConfig `json:"external,omitempty"`
+	External *SchemaRegistryExternalConnectivityConfig `json:"external,omitempty"`
 	// TLS is the configuration for schema registry
 	TLS *SchemaRegistryAPITLS `json:"tls,omitempty"`
+}
+
+// SchemaRegistryExternalConnectivityConfig defines the external connectivity
+// options for schema registry.
+type SchemaRegistryExternalConnectivityConfig struct {
+	ExternalConnectivityConfig `json:",inline"`
+	// Indicates that the node port for the service needs not to be generated.
+	StaticNodePort bool `json:"staticNodePort,omitempty"`
 }
 
 // SchemaRegistryStatus reports addresses where schema registry
@@ -1012,7 +1020,10 @@ func (s SchemaRegistryAPI) GetTLS() *TLSConfig {
 
 // GetExternal returns API's ExternalConnectivityConfig
 func (s SchemaRegistryAPI) GetExternal() *ExternalConnectivityConfig {
-	return s.External
+	if s.External != nil {
+		return &s.External.ExternalConnectivityConfig
+	}
+	return nil
 }
 
 // PandaProxy API
