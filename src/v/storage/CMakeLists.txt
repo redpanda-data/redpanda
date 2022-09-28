@@ -44,6 +44,7 @@ v_cc_library(
     v::syschecks
     v::compression
     v::rprandom
+    v::resource_mgmt
     absl::flat_hash_map
     absl::btree
     Roaring::roaring
