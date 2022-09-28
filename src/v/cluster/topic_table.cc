@@ -190,98 +190,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(errc::update_in_progress);
     }
 
-    // assignment is already up to date, this operation is NOP do not propagate
-    // delta
-
-    if (are_replica_sets_equal(current_assignment_it->replicas, cmd.value)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
-    }
-    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
-    vassert(
-      revisions_it != tp->second.replica_revisions.end(),
-      "partition {}, replica revisions map must exists as partition is present",
-      cmd.key);
-
-    _updates_in_progress.emplace(
-      cmd.key,
-      in_progress_update(
-        current_assignment_it->replicas,
-        cmd.value,
-        in_progress_state::update_requested,
-        model::revision_id(o),
-        // snapshot replicas revisions
-        revisions_it->second,
-        _probe));
-    auto previous_assignment = *current_assignment_it;
-    // replace partition replica set
-    current_assignment_it->replicas = cmd.value;
-    /**
-     * Update partition replica revisions. Assign new revision to added replicas
-     * and erase replicas which are removed from replica set
-     */
-    auto added_replicas = subtract_replica_sets_by_node_id(
-      current_assignment_it->replicas, previous_assignment.replicas);
-
-    for (auto& r : added_replicas) {
-        revisions_it->second[r.node_id] = model::revision_id(o);
-    }
-
-    auto removed_replicas = subtract_replica_sets_by_node_id(
-      previous_assignment.replicas, current_assignment_it->replicas);
-
-    for (auto& removed : removed_replicas) {
-        revisions_it->second.erase(removed.node_id);
-    }
-
-    /// Update all non_replicable topics to have the same 'in-progress' state
-    auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
-    if (found != _topics_hierarchy.end()) {
-        for (const auto& cs : found->second) {
-            /// Insert non-replicable topic into the 'updates_in_progress' set
-            auto [_, success] = _updates_in_progress.emplace(
-              model::ntp(cs.ns, cs.tp, current_assignment_it->id),
-              in_progress_update(
-                current_assignment_it->replicas,
-                cmd.value,
-                in_progress_state::update_requested,
-                model::revision_id(o),
-                // empty replicas revisions
-                {},
-                _probe));
-            vassert(
-              success,
-              "non_replicable topic {}-{} already in _updates_in_progress set",
-              cs.tp,
-              current_assignment_it->id);
-            /// For each child topic of the to-be-moved source, update its new
-            /// replica assignment to reflect the change
-            auto sfound = _topics.find(cs);
-            vassert(
-              sfound != _topics.end(),
-              "Non replicable topic must exist: {}",
-              cs);
-            auto assignment_it = sfound->second.get_assignments().find(
-              current_assignment_it->id);
-            vassert(
-              assignment_it != sfound->second.get_assignments().end(),
-              "Non replicable partition doesn't exist: {}-{}",
-              cs,
-              current_assignment_it->id);
-            /// The new assignments of the non_replicable topic/partition must
-            /// match the source topic
-            assignment_it->replicas = cmd.value;
-        }
-    }
-
-    // calculate deleta for backend
-    model::ntp ntp(tp->first.ns, tp->first.tp, current_assignment_it->id);
-    _pending_deltas.emplace_back(
-      std::move(ntp),
-      *current_assignment_it,
-      o,
-      delta::op_type::update,
-      std::move(previous_assignment.replicas),
-      revisions_it->second);
+    change_partition_replicas(
+      cmd.key, cmd.value, tp->second, *current_assignment_it, o);
 
     notify_waiters();
 
@@ -882,6 +792,102 @@ std::vector<model::ntp> topic_table::all_updates_in_progress() const {
     }
 
     return ret;
+}
+
+void topic_table::change_partition_replicas(
+  model::ntp ntp,
+  const std::vector<model::broker_shard>& new_assignment,
+  topic_metadata_item& metadata,
+  partition_assignment& current_assignment,
+  model::offset o) {
+    if (are_replica_sets_equal(current_assignment.replicas, new_assignment)) {
+        return;
+    }
+    auto revisions_it = metadata.replica_revisions.find(ntp.tp.partition);
+    vassert(
+      revisions_it != metadata.replica_revisions.end(),
+      "partition {}, replica revisions map must exists as partition is present",
+      ntp);
+
+    _updates_in_progress.emplace(
+      ntp,
+      in_progress_update(
+        current_assignment.replicas,
+        new_assignment,
+        in_progress_state::update_requested,
+        model::revision_id(o),
+        // snapshot replicas revisions
+        revisions_it->second,
+        _probe));
+    auto previous_assignment = current_assignment.replicas;
+    // replace partition replica set
+    current_assignment.replicas = new_assignment;
+    /**
+     * Update partition replica revisions. Assign new revision to added replicas
+     * and erase replicas which are removed from replica set
+     */
+    auto added_replicas = subtract_replica_sets_by_node_id(
+      current_assignment.replicas, previous_assignment);
+
+    for (auto& r : added_replicas) {
+        revisions_it->second[r.node_id] = model::revision_id(o);
+    }
+
+    auto removed_replicas = subtract_replica_sets_by_node_id(
+      previous_assignment, current_assignment.replicas);
+
+    for (auto& removed : removed_replicas) {
+        revisions_it->second.erase(removed.node_id);
+    }
+
+    /// Update all non_replicable topics to have the same 'in-progress' state
+    auto found = _topics_hierarchy.find(model::topic_namespace_view(ntp));
+    if (found != _topics_hierarchy.end()) {
+        for (const auto& cs : found->second) {
+            /// Insert non-replicable topic into the 'updates_in_progress' set
+            auto [_, success] = _updates_in_progress.emplace(
+              model::ntp(cs.ns, cs.tp, ntp.tp.partition),
+              in_progress_update(
+                current_assignment.replicas,
+                new_assignment,
+                in_progress_state::update_requested,
+                model::revision_id(o),
+                // empty replicas revisions
+                {},
+                _probe));
+            vassert(
+              success,
+              "non_replicable topic {}-{} already in _updates_in_progress set",
+              cs.tp,
+              ntp.tp.partition);
+            /// For each child topic of the to-be-moved source, update its new
+            /// replica assignment to reflect the change
+            auto sfound = _topics.find(cs);
+            vassert(
+              sfound != _topics.end(),
+              "Non replicable topic must exist: {}",
+              cs);
+            auto assignment_it = sfound->second.get_assignments().find(
+              ntp.tp.partition);
+            vassert(
+              assignment_it != sfound->second.get_assignments().end(),
+              "Non replicable partition doesn't exist: {}-{}",
+              cs,
+              ntp.tp.partition);
+            /// The new assignments of the non_replicable topic/partition must
+            /// match the source topic
+            assignment_it->replicas = new_assignment;
+        }
+    }
+
+    // calculate deleta for backend
+    _pending_deltas.emplace_back(
+      std::move(ntp),
+      current_assignment,
+      o,
+      delta::op_type::update,
+      std::move(previous_assignment),
+      revisions_it->second);
 }
 
 std::ostream&

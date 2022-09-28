@@ -365,6 +365,13 @@ private:
     std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
     transform_topics(Func&&) const;
 
+    void change_partition_replicas(
+      model::ntp ntp,
+      const std::vector<model::broker_shard>& new_assignment,
+      topic_metadata_item& metadata,
+      partition_assignment& current_assignment,
+      model::offset o);
+
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
 
