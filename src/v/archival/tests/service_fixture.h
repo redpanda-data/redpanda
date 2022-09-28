@@ -11,6 +11,7 @@
 #pragma once
 
 #include "archival/ntp_archiver_service.h"
+#include "archival/service.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
@@ -161,6 +162,10 @@ class archiver_fixture
   , public redpanda_thread_fixture
   , public segment_matcher<archiver_fixture> {
 public:
+    archiver_fixture()
+      : redpanda_thread_fixture(
+        redpanda_thread_fixture::init_cloud_storage_tag{}) {}
+
     std::unique_ptr<storage::disk_log_builder> get_started_log_builder(
       model::ntp ntp, model::revision_id rev = model::revision_id(0));
     /// Wait unill all information will be replicated and the local node
@@ -171,6 +176,12 @@ public:
     void add_topic_with_random_data(const model::ntp& ntp, int num_batches);
     /// Provides access point for segment_matcher CRTP template
     storage::api& get_local_storage_api();
+    /// Get archival scheduler service
+    archival::internal::scheduler_service_impl& get_scheduler_service() {
+        auto p = reinterpret_cast<archival::internal::scheduler_service_impl*>(
+          &app.archival_scheduler.local());
+        return *p;
+    }
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
     void init_storage_api_local(const std::vector<segment_desc>& segm);
@@ -187,6 +198,10 @@ public:
 
     ss::future<> add_topic_with_archival_enabled(
       model::topic_namespace_view tp_ns, int partitions = 1);
+
+    ss::future<> create_archival_snapshot(
+      const storage::ntp_config& cfg,
+      cloud_storage::partition_manifest manifest);
 
 private:
     void
