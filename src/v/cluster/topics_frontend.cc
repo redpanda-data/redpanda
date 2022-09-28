@@ -257,6 +257,11 @@ ss::future<std::error_code> topics_frontend::do_update_replication_factor(
   topic_properties_update& update, model::timeout_clock::time_point timeout) {
     switch (update.custom_properties.replication_factor.op) {
     case incremental_update_operation::set: {
+        if (!_features.local().is_active(
+              features::feature::replication_factor_change)) {
+            co_return cluster::errc::feature_disabled;
+        }
+
         auto value = update.custom_properties.replication_factor.value;
         if (
           !value.has_value()
