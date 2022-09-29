@@ -121,7 +121,7 @@ public:
     };
 
     // request_t restores the type of the context passed in.
-    struct request_t final : server::request_t {
+    struct request_t : server::request_t {
         // Implicit constructor from type-erased server::request_t.
         request_t(server::request_t&& impl) // NOLINT
           : server::request_t(std::move(impl)) {}
@@ -131,6 +131,54 @@ public:
         };
         // The service
         service_t& service() const { return context().service; };
+    };
+};
+
+template<typename service_t>
+class auth_ctx_server : public ctx_server<service_t> {
+    using base = ctx_server<service_t>;
+
+public:
+    struct context_t : base::context_t {
+        request_authenticator authenticator;
+        std::vector<config::rest_authn_endpoint> listeners;
+    };
+
+    using base::ctx_server;
+
+    // request_t restores the type of the context passed in.
+    struct request_t : base::request_t {
+        // Implicit constructor from type-erased server::request_t.
+        request_t(server::request_t&& impl) // NOLINT
+          : base::request_t(std::move(impl)) {
+            // This will throw if authentication fails
+            authenticate();
+        }
+        // Type-restored context
+        context_t& context() const {
+            return static_cast<context_t&>(base::request_t::ctx);
+        };
+        // The service
+        service_t& service() const { return context().service; };
+
+        void authenticate() {
+            authn_method = config::get_authn_method(
+              context().listeners, base::request_t::req->get_listener_idx());
+
+            if (authn_method == config::rest_authn_method::http_basic) {
+                // Will throw 400 & 401 if auth fails
+                auto auth_result = context().authenticator.authenticate(
+                  *base::request_t::req);
+                // Will throw 403 if user enabled HTTP Basic Auth but
+                // did not give the authorization header.
+                auth_result.require_authenticated();
+                user = credential_t{
+                  auth_result.get_username(), auth_result.get_password()};
+            }
+        }
+
+        credential_t user;
+        config::rest_authn_method authn_method;
     };
 };
 
