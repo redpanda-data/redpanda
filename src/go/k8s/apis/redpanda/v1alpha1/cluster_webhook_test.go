@@ -1203,7 +1203,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
-
+	//nolint:dupl // the tests are not duplicates
 	t.Run("schema registry externally available is valid when it has the same subdomain as kafka external listener", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
@@ -1217,7 +1217,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		err := schemaReg.ValidateCreate()
 		assert.NoError(t, err)
 	})
-
+	//nolint:dupl // the tests are not duplicates
 	t.Run("if schema registry externally available, it should have same subdomain as kafka external listener", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
@@ -1231,6 +1231,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
+	//nolint:dupl // the tests are not duplicates
 	t.Run("if schema registry externally available, kafka external listener should not be empty", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
 		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
@@ -1369,6 +1370,7 @@ func TestPodDisruptionBudget(t *testing.T) {
 	})
 }
 
+//nolint:funlen // matrix test has many cases
 func TestRangesAndCollisions(t *testing.T) {
 	cases := []struct {
 		name                   string

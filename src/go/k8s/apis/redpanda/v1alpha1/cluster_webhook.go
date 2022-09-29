@@ -427,13 +427,13 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 					r.Spec.Configuration.PandaproxyAPI[i].External.PreferredAddressType,
 					"cannot have a pandaproxy external preferred address type"))
 		}
-		if proxyExternal != nil && proxyExternal.External.Bootstrap != nil {
+		if proxyExternal.External.Bootstrap != nil {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i),
 					r.Spec.Configuration.PandaproxyAPI[i],
 					"bootstrap loadbalancer not available for pandaproxy"))
 		}
-		if (kafkaExternal == nil || !kafkaExternal.External.Enabled) && (proxyExternal != nil && proxyExternal.External.Enabled) {
+		if (kafkaExternal == nil || !kafkaExternal.External.Enabled) && proxyExternal.External.Enabled {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i),
 					r.Spec.Configuration.PandaproxyAPI[i],
