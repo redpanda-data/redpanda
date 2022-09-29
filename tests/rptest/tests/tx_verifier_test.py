@@ -18,8 +18,8 @@ import subprocess
 # Expected log errors in tests that test misbehaving
 # transactional clients.
 TX_ERROR_LOGS = [
-    # e.g. cluster - rm_stm.cc:370 - Can't prepare pid:{producer_identity: id=1, epoch=27} - unknown session
-    "cluster - rm_stm.*unknown session"
+    # e.g. tx - [{kafka/topic1/0}] - rm_stm.cc:461 - Can't prepare pid:{producer_identity: id=1, epoch=27} - unknown session
+    "tx -.*rm_stm.*unknown session"
 ]
 
 
