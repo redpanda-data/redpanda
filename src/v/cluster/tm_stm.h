@@ -151,6 +151,8 @@ public:
     explicit tm_stm(
       ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
 
+    ss::gate& gate() { return _gate; }
+
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
       mark_tx_ongoing(kafka::transactional_id);

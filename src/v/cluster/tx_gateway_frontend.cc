@@ -70,6 +70,36 @@ static auto with(
       });
 }
 
+template<typename Func>
+auto tx_gateway_frontend::with_stm(Func&& func) {
+    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        return func(tx_errc::partition_not_found);
+    }
+
+    auto stm = partition->tm_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tm stm of the {}' partition",
+          model::tx_manager_ntp);
+        return func(tx_errc::stm_not_found);
+    }
+
+    if (stm->gate().is_closed()) {
+        return func(tx_errc::unknown_server_error);
+    }
+
+    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
+        vlog(txlog.trace, "entered tm_stm's gate");
+        return func(stm).finally(
+          [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
+    });
+}
+
 static add_paritions_tx_reply make_add_partitions_error_response(
   add_paritions_tx_request request, tx_errc ec) {
     add_paritions_tx_reply response;
@@ -274,11 +304,18 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
     }
 
     auto reply = co_await container().invoke_on(
-      shard.value(),
-      _ssg,
-      [tm, pid, tx_seq, timeout](tx_gateway_frontend& self) {
-          return ss::with_gate(self._gate, [tm, pid, tx_seq, timeout, &self] {
-              return self.do_try_abort(tm, pid, tx_seq, timeout);
+      shard.value(), _ssg, [pid, tx_seq, timeout](tx_gateway_frontend& self) {
+          return ss::with_gate(self._gate, [pid, tx_seq, timeout, &self] {
+              return self.with_stm(
+                [pid, tx_seq, timeout, &self](
+                  checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                    if (r) {
+                        return self.do_try_abort(
+                          r.value(), pid, tx_seq, timeout);
+                    }
+                    return ss::make_ready_future<try_abort_reply>(
+                      try_abort_reply{r.error()});
+                });
           });
       });
 
@@ -323,29 +360,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
-  model::partition_id,
+  ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
-        return ss::make_ready_future<try_abort_reply>(
-          try_abort_reply{tx_errc::partition_not_found});
-    }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        return ss::make_ready_future<try_abort_reply>(
-          try_abort_reply{tx_errc::stm_not_found});
-    }
-
     return stm->read_lock().then(
       [this, stm, pid, tx_seq, timeout](ss::basic_rwlock<>::holder unit) {
           return stm->barrier()
@@ -598,8 +616,42 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
           return ss::with_gate(
             self._gate,
             [tx_id, transaction_timeout_ms, timeout, expected_pid, &self] {
-                return self.do_init_tm_tx(
-                  tx_id, transaction_timeout_ms, timeout, expected_pid);
+                return self.with_stm(
+                  [tx_id, transaction_timeout_ms, timeout, expected_pid, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                      if (!r) {
+                          return ss::make_ready_future<
+                            cluster::init_tm_tx_reply>(
+                            cluster::init_tm_tx_reply{r.error()});
+                      }
+                      auto stm = r.value();
+                      return stm->read_lock().then(
+                        [&self,
+                         stm,
+                         tx_id,
+                         transaction_timeout_ms,
+                         expected_pid,
+                         timeout](ss::basic_rwlock<>::holder unit) {
+                            return with(
+                                     stm,
+                                     tx_id,
+                                     "init_tm_tx",
+                                     [&self,
+                                      stm,
+                                      tx_id,
+                                      transaction_timeout_ms,
+                                      expected_pid,
+                                      timeout]() {
+                                         return self.do_init_tm_tx(
+                                           stm,
+                                           tx_id,
+                                           transaction_timeout_ms,
+                                           timeout,
+                                           expected_pid);
+                                     })
+                              .finally([u = std::move(unit)] {});
+                        });
+                  });
             });
       });
 
@@ -638,54 +690,6 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
           }
 
           return r.value();
-      });
-}
-
-ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
-  kafka::transactional_id tx_id,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout,
-  model::producer_identity expected_pid) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
-        return ss::make_ready_future<init_tm_tx_reply>(
-          init_tm_tx_reply{tx_errc::partition_not_found});
-    }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        return ss::make_ready_future<init_tm_tx_reply>(
-          init_tm_tx_reply{tx_errc::stm_not_found});
-    }
-
-    return stm->read_lock().then(
-      [this, stm, tx_id, transaction_timeout_ms, timeout, expected_pid](
-        ss::basic_rwlock<>::holder unit) {
-          return with(
-                   stm,
-                   tx_id,
-                   "init_tm_tx",
-                   [this,
-                    stm,
-                    tx_id,
-                    transaction_timeout_ms,
-                    timeout,
-                    expected_pid]() {
-                       return do_init_tm_tx(
-                         stm,
-                         tx_id,
-                         transaction_timeout_ms,
-                         timeout,
-                         expected_pid);
-                   })
-            .finally([u = std::move(unit)] {});
       });
 }
 
@@ -928,50 +932,35 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
        timeout](tx_gateway_frontend& self) mutable {
           return ss::with_gate(
             self._gate, [request = std::move(request), timeout, &self] {
-                return self.do_add_partition_to_tx(request, timeout);
+                return self.with_stm(
+                  [request = std::move(request), timeout, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                      if (!r) {
+                          return ss::make_ready_future<add_paritions_tx_reply>(
+                            make_add_partitions_error_response(
+                              request, r.error()));
+                      }
+                      auto stm = r.value();
+                      return stm->read_lock().then(
+                        [&self, stm, request = std::move(request), timeout](
+                          ss::basic_rwlock<>::holder unit) mutable {
+                            auto tx_id = request.transactional_id;
+                            return with(
+                                     stm,
+                                     tx_id,
+                                     "add_partition_to_tx",
+                                     [&self,
+                                      stm,
+                                      request = std::move(request),
+                                      timeout]() mutable {
+                                         return self.do_add_partition_to_tx(
+                                           stm, std::move(request), timeout);
+                                     })
+                              .finally([u = std::move(unit)] {});
+                        });
+                  });
             });
       });
-}
-
-ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
-  add_paritions_tx_request request, model::timeout_clock::duration timeout) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
-        return ss::make_ready_future<add_paritions_tx_reply>(
-          make_add_partitions_error_response(
-            request, tx_errc::invalid_txn_state));
-    }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        return ss::make_ready_future<add_paritions_tx_reply>(
-          make_add_partitions_error_response(
-            request, tx_errc::invalid_txn_state));
-    }
-
-    return stm->read_lock().then([this,
-                                  stm,
-                                  request = std::move(request),
-                                  timeout](
-                                   ss::basic_rwlock<>::holder unit) mutable {
-        auto tx_id = request.transactional_id;
-        return with(
-                 stm,
-                 tx_id,
-                 "add_partition_to_tx",
-                 [this, stm, request = std::move(request), timeout]() mutable {
-                     return do_add_partition_to_tx(
-                       stm, std::move(request), timeout);
-                 })
-          .finally([u = std::move(unit)] {});
-    });
 }
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
@@ -1104,48 +1093,34 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
        timeout](tx_gateway_frontend& self) mutable {
           return ss::with_gate(
             self._gate, [request = std::move(request), timeout, &self] {
-                return self.do_add_offsets_to_tx(request, timeout);
+                return self.with_stm(
+                  [request = std::move(request), timeout, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                      if (!r) {
+                          return ss::make_ready_future<add_offsets_tx_reply>(
+                            add_offsets_tx_reply{.error_code = r.error()});
+                      }
+                      auto stm = r.value();
+                      return stm->read_lock().then(
+                        [&self, stm, request = std::move(request), timeout](
+                          ss::basic_rwlock<>::holder unit) mutable {
+                            auto tx_id = request.transactional_id;
+                            return with(
+                                     stm,
+                                     tx_id,
+                                     "add_offsets_to_tx",
+                                     [&self,
+                                      stm,
+                                      request = std::move(request),
+                                      timeout]() mutable {
+                                         return self.do_add_offsets_to_tx(
+                                           stm, std::move(request), timeout);
+                                     })
+                              .finally([u = std::move(unit)] {});
+                        });
+                  });
             });
       });
-}
-
-ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
-  add_offsets_tx_request request, model::timeout_clock::duration timeout) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
-        return ss::make_ready_future<add_offsets_tx_reply>(
-          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
-    }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        return ss::make_ready_future<add_offsets_tx_reply>(
-          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
-    }
-
-    return stm->read_lock().then([this,
-                                  stm,
-                                  request = std::move(request),
-                                  timeout](
-                                   ss::basic_rwlock<>::holder unit) mutable {
-        auto tx_id = request.transactional_id;
-        return with(
-                 stm,
-                 tx_id,
-                 "add_offsets_to_tx",
-                 [this, stm, request = std::move(request), timeout]() mutable {
-                     return do_add_offsets_to_tx(
-                       stm, std::move(request), timeout);
-                 })
-          .finally([u = std::move(unit)] {});
-    });
 }
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
@@ -1212,32 +1187,24 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
        timeout](tx_gateway_frontend& self) mutable {
           return ss::with_gate(
             self._gate, [request = std::move(request), timeout, &self] {
-                return self.do_end_txn(std::move(request), timeout);
+                return self.with_stm(
+                  [request = std::move(request), timeout, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                      return self.do_end_txn(r, std::move(request), timeout);
+                  });
             });
       });
 }
 
 ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
-  end_tx_request request, model::timeout_clock::duration timeout) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+  checked<ss::shared_ptr<tm_stm>, tx_errc> r,
+  end_tx_request request,
+  model::timeout_clock::duration timeout) {
+    if (!r) {
         return ss::make_ready_future<end_tx_reply>(
-          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
+          end_tx_reply{.error_code = r.error()});
     }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        return ss::make_ready_future<end_tx_reply>(
-          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
-    }
-
+    auto stm = r.value();
     auto outcome = ss::make_lw_shared<available_promise<tx_errc>>();
     // commit_tm_tx and abort_tm_tx remove transient data during its
     // execution. however the outcome of the commit/abort operation
@@ -1246,12 +1213,30 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
     // cleaning up and before returing the actual control flow
     auto decided = outcome->get_future();
 
+    // re-entering the gate to keep its open until the spawned fiber
+    // is active
+    if (stm->gate().is_closed()) {
+        return ss::make_ready_future<end_tx_reply>(
+          end_tx_reply{.error_code = tx_errc::unknown_server_error});
+    }
+    vlog(txlog.trace, "re-entered tm_stm's gate");
+    auto h = stm->gate().hold();
+
     ssx::spawn_with_gate(
       _gate,
-      [request = std::move(request), this, stm, timeout, outcome]() mutable {
+      [request = std::move(request),
+       this,
+       stm,
+       timeout,
+       outcome,
+       h = std::move(h)]() mutable {
           return stm->read_lock()
-            .then([request = std::move(request), this, stm, timeout, outcome](
-                    ss::basic_rwlock<>::holder unit) mutable {
+            .then([request = std::move(request),
+                   this,
+                   stm,
+                   timeout,
+                   outcome,
+                   h = std::move(h)](ss::basic_rwlock<>::holder unit) mutable {
                 auto tx_id = request.transactional_id;
                 return with(
                          stm,
@@ -1261,14 +1246,16 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
                           this,
                           stm,
                           timeout,
-                          outcome]() mutable {
+                          outcome,
+                          h = std::move(h)]() mutable {
                              return do_end_txn(
                                       std::move(request), stm, timeout, outcome)
-                               .finally([outcome]() {
+                               .finally([outcome, stm, h = std::move(h)]() {
                                    if (!outcome->available()) {
                                        outcome->set_value(
                                          tx_errc::unknown_server_error);
                                    }
+                                   vlog(txlog.trace, "left tm_stm's gate");
                                });
                          })
                   .finally([u = std::move(unit)] {});
@@ -1783,27 +1770,23 @@ void tx_gateway_frontend::expire_old_txs() {
           .invoke_on(
             *shard,
             _ssg,
-            [](tx_gateway_frontend& self) { return self.do_expire_old_txs(); })
+            [](tx_gateway_frontend& self) {
+                return ss::with_gate(self._gate, [&self] {
+                    return self.with_stm(
+                      [&self](checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                          if (!r) {
+                              return ss::now();
+                          }
+                          auto stm = r.value();
+                          return stm->read_lock().then(
+                            [&self, stm](ss::basic_rwlock<>::holder unit) {
+                                return self.expire_old_txs(stm).finally(
+                                  [u = std::move(unit)] {});
+                            });
+                      });
+                });
+            })
           .finally([this] { rearm_expire_timer(); });
-    });
-}
-
-ss::future<> tx_gateway_frontend::do_expire_old_txs() {
-    return ss::with_gate(_gate, [this] {
-        auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-        if (!partition) {
-            vlog(
-              txlog.warn,
-              "can't get partition by {} ntp",
-              model::tx_manager_ntp);
-            return ss::now();
-        }
-
-        auto stm = partition->tm_stm();
-        return stm->read_lock().then(
-          [this, stm](ss::basic_rwlock<>::holder unit) {
-              return expire_old_txs(stm).finally([u = std::move(unit)] {});
-          });
     });
 }
 

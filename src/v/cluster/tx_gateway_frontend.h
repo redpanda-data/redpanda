@@ -128,7 +128,7 @@ private:
       model::tx_seq,
       model::timeout_clock::duration);
     ss::future<try_abort_reply> do_try_abort(
-      model::partition_id,
+      ss::shared_ptr<tm_stm>,
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
@@ -146,19 +146,16 @@ private:
       std::chrono::milliseconds,
       model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
-      kafka::transactional_id,
-      std::chrono::milliseconds,
-      model::timeout_clock::duration,
-      model::producer_identity);
-    ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration,
       model::producer_identity);
 
-    ss::future<end_tx_reply>
-      do_end_txn(end_tx_request, model::timeout_clock::duration);
+    ss::future<end_tx_reply> do_end_txn(
+      checked<ss::shared_ptr<tm_stm>, tx_errc>,
+      end_tx_request,
+      model::timeout_clock::duration);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
       end_tx_request,
       ss::shared_ptr<cluster::tm_stm>,
@@ -186,14 +183,13 @@ private:
     ss::future<tx_errc>
       reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
 
-    ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
-      add_paritions_tx_request, model::timeout_clock::duration);
+    template<typename Func>
+    auto with_stm(Func&& func);
+
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
       ss::shared_ptr<tm_stm>,
       add_paritions_tx_request,
       model::timeout_clock::duration);
-    ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
-      add_offsets_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
       ss::shared_ptr<tm_stm>,
       add_offsets_tx_request,
@@ -205,7 +201,6 @@ private:
       tm_transaction::tx_partition);
 
     void expire_old_txs();
-    ss::future<> do_expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
     ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<> do_expire_old_tx(
