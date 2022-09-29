@@ -59,6 +59,8 @@ class KgoVerifierService(Service):
             if not hasattr(node, "kgo_verifier_next_port"):
                 node.kgo_verifier_next_port = REMOTE_PORT_BASE
 
+        self._status_thread = None
+
     @property
     def log_path(self):
         return f"/tmp/{self.who_am_i()}.log"
