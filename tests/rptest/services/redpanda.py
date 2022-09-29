@@ -1594,6 +1594,11 @@ class RedpandaService(Service):
 
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
+
+        if self._installer.installed_version != RedpandaInstaller.HEAD:
+            # If we're running an older version, exclude some newer configs
+            del conf['log_segment_size_jitter_percent']
+
         if self._extra_rp_conf:
             self.logger.debug(
                 "Setting custom cluster configuration options: {}".format(
