@@ -26,6 +26,7 @@
 #include "random/generators.h"
 #include "redpanda/application.h"
 #include "reflection/adl.h"
+#include "seastarx.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
@@ -61,7 +62,8 @@ members_manager::members_manager(
   , _drain_manager(drain_manager)
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
-  , _update_queue(max_updates_queue_size) {
+  , _update_queue(max_updates_queue_size)
+  , _next_assigned_id(model::node_id(1)) {
     auto sub = _as.local().subscribe([this]() noexcept {
         _update_queue.abort(
           std::make_exception_ptr(ss::abort_requested_exception{}));
@@ -202,7 +204,9 @@ ss::future<> members_manager::handle_raft0_cfg_update(
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
+    vlog(clusterlog.info, "Applying update to members_manager");
     if (b.header().type == model::record_batch_type::raft_configuration) {
+        vlog(clusterlog.info, "Raft config update");
         co_return co_await apply_raft_configuration_batch(std::move(b));
     }
 
@@ -270,6 +274,39 @@ members_manager::apply_update(model::record_batch b) {
                 }
                 return f.then([error] { return error; });
             });
+      },
+      [this](register_node_uuid_cmd cmd) {
+          const auto& node_uuid = cmd.key;
+          const auto& requested_node_id = cmd.value;
+          const auto node_id_str = requested_node_id == std::nullopt
+                                     ? "no node ID"
+                                     : fmt::to_string(*requested_node_id);
+          vlog(
+            clusterlog.info,
+            "Applying registration of UUID {} with {}",
+            node_uuid,
+            node_id_str);
+          if (requested_node_id) {
+              if (likely(try_register_node_id(*requested_node_id, node_uuid))) {
+                  return ss::make_ready_future<std::error_code>(errc::success);
+              }
+              vlog(
+                clusterlog.warn,
+                "Couldn't register UUID {}, node ID {} already taken",
+                node_uuid,
+                requested_node_id);
+              return ss::make_ready_future<std::error_code>(
+                errc::join_request_dispatch_error);
+          }
+          auto node_id = get_or_assign_node_id(node_uuid);
+          if (node_id == std::nullopt) {
+              vlog(clusterlog.error, "No more node IDs to assign");
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          vlog(
+            clusterlog.info, "Node UUID {} has node ID {}", node_uuid, node_id);
+          return ss::make_ready_future<std::error_code>(errc::success);
       });
 }
 ss::future<std::error_code>
@@ -421,6 +458,54 @@ void members_manager::join_raft0() {
               return ss::now();
           });
     });
+}
+
+bool members_manager::try_register_node_id(
+  const model::node_id& requested_node_id,
+  const model::node_uuid& requested_node_uuid) {
+    vassert(requested_node_id != model::node_id(-1), "invalid node ID");
+    vlog(
+      clusterlog.info,
+      "Registering node ID {} as node UUID {}",
+      requested_node_id,
+      requested_node_uuid);
+    const auto it = _id_by_uuid.find(requested_node_uuid);
+    if (it == _id_by_uuid.end()) {
+        if (_members_table.local().contains(requested_node_id)) {
+            // The cluster was likely just upgraded from a version that didn't
+            // have node UUIDs. If the node ID is already a part of the
+            // member's table, accept the requested UUID.
+            clusterlog.info(
+              "registering node ID that is already a member of the cluster");
+        }
+        // This is a brand new node with node ID assignment support that's
+        // requesting the given node ID.
+        _id_by_uuid.emplace(requested_node_uuid, requested_node_id);
+        return true;
+    }
+    const auto& node_id = it->second;
+    return node_id == requested_node_id;
+}
+
+std::optional<model::node_id>
+members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
+    const auto it = _id_by_uuid.find(node_uuid);
+    if (it == _id_by_uuid.end()) {
+        while (_members_table.local().contains(_next_assigned_id)) {
+            if (_next_assigned_id == INT_MAX) {
+                return std::nullopt;
+            }
+            ++_next_assigned_id;
+        }
+        _id_by_uuid.emplace(node_uuid, _next_assigned_id);
+        vlog(
+          clusterlog.info,
+          "Assigned node UUID {} a node ID {}",
+          node_uuid,
+          _next_assigned_id);
+        return _next_assigned_id++;
+    }
+    return it->second;
 }
 
 ss::future<result<join_node_reply>>

@@ -141,12 +141,24 @@ public:
     ss::future<std::vector<node_update>> get_node_updates();
 
 private:
+    using uuid_map_t = absl::flat_hash_map<model::node_uuid, model::node_id>;
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     // Cluster join
     void join_raft0();
     bool is_already_member() const;
 
     ss::future<> initialize_broker_connection(const model::broker&);
+
+    // Returns the node ID for a given node UUID, assigning one if one does not
+    // already exist. Returns nullopt when there are no more node IDs left.
+    std::optional<model::node_id>
+    get_or_assign_node_id(const model::node_uuid&);
+
+    // Attempts to register the given node ID with the given node UUID. If a
+    // different node ID exists for the given node UUID, returns false.
+    //
+    // Does not check for duplicate node IDs.
+    bool try_register_node_id(const model::node_id&, const model::node_uuid&);
 
     ss::future<result<join_node_reply>> dispatch_join_to_seed_server(
       seed_iterator it, join_node_request const& req);
@@ -206,6 +218,10 @@ private:
     // Cluster membership updates that have yet to be released via the call to
     // get_node_updates().
     ss::queue<node_update> _update_queue;
+
+    uuid_map_t _id_by_uuid;
+
+    model::node_id _next_assigned_id;
 
     // Subscription to _as with which to signal an abort to _update_queue.
     ss::abort_source::subscription _queue_abort_subscription;

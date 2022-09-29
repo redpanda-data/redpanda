@@ -107,6 +107,7 @@ static constexpr int8_t decommission_node_cmd_type = 0;
 static constexpr int8_t recommission_node_cmd_type = 1;
 static constexpr int8_t finish_reallocations_cmd_type = 2;
 static constexpr int8_t maintenance_mode_cmd_type = 3;
+static constexpr int8_t register_node_uuid_cmd_type = 4;
 
 // cluster config commands
 static constexpr int8_t cluster_config_delta_cmd_type = 0;
@@ -239,6 +240,11 @@ using finish_reallocations_cmd = controller_command<
   finish_reallocations_cmd_type,
   model::record_batch_type::node_management_cmd,
   serde_opts::adl_and_serde>;
+using register_node_uuid_cmd = controller_command<
+  model::node_uuid,
+  std::optional<model::node_id>,
+  register_node_uuid_cmd_type,
+  model::record_batch_type::node_management_cmd>;
 
 using maintenance_mode_cmd = controller_command<
   model::node_id,
