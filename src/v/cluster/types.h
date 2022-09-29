@@ -1926,6 +1926,8 @@ struct cancel_moving_partition_replicas_cmd_data
 
 struct feature_update_license_update_cmd_data
   : serde::envelope<feature_update_license_update_cmd_data, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     // Struct encoding version
     static constexpr int8_t current_version = 1;
 
@@ -2695,12 +2697,6 @@ template<>
 struct adl<cluster::feature_update_cmd_data> {
     void to(iobuf&, cluster::feature_update_cmd_data&&);
     cluster::feature_update_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::feature_update_license_update_cmd_data> {
-    void to(iobuf& out, cluster::feature_update_license_update_cmd_data&&);
-    cluster::feature_update_license_update_cmd_data from(iobuf_parser&);
 };
 
 template<>
