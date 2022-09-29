@@ -16,6 +16,7 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,16 +43,17 @@ var _ Resource = &IngressResource{}
 // focusing on the internal connectivity management of redpanda cluster
 type IngressResource struct {
 	k8sclient.Client
-	scheme          *runtime.Scheme
-	object          metav1.Object
-	subdomain       string
-	svcName         string
-	svcPortName     string
-	annotations     map[string]string
-	TLS             []netv1.IngressTLS
-	userConfig      *redpandav1alpha1.IngressConfig
-	defaultEndpoint string
-	logger          logr.Logger
+	scheme           *runtime.Scheme
+	object           metav1.Object
+	subdomain        string
+	svcName          string
+	svcPortName      string
+	annotations      map[string]string
+	TLS              []netv1.IngressTLS
+	userConfig       *redpandav1alpha1.IngressConfig
+	defaultEndpoint  string
+	syncRemoteSecret *corev1.Secret
+	logger           logr.Logger
 }
 
 // NewIngress creates IngressResource
@@ -75,6 +77,7 @@ func NewIngress(
 		nil,
 		nil,
 		"",
+		nil,
 		logger.WithValues(
 			"Kind", ingressKind(),
 		),
@@ -94,11 +97,7 @@ func (r *IngressResource) WithAnnotations(
 // WithTLS sets Ingress TLS with specified issuer
 func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
-	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
-
-	if r.TLS == nil {
-		r.TLS = []netv1.IngressTLS{}
-	}
+	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true" //nolint:goconst // not needed
 
 	host := r.host()
 	allHosts := []string{host}
@@ -108,7 +107,42 @@ func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressReso
 		allHosts = append(allHosts, r.subdomain)
 	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
-		Hosts: allHosts,
+		Hosts:      allHosts,
+		SecretName: secretName,
+	})
+
+	return r
+}
+
+// WithClusterTLS sets Ingress TLS to use cluster wildcard certificate
+func (r *IngressResource) WithClusterTLS(
+	redpandaNodeSecret *corev1.Secret,
+) *IngressResource {
+	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
+
+	var secretName string
+	if redpandaNodeSecret.Namespace != r.object.GetNamespace() {
+		// We need to mirror the cluster certificate
+		secretName = fmt.Sprintf("%s-mirrored-redpanda", r.object.GetName())
+		r.syncRemoteSecret = &corev1.Secret{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Secret",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: r.object.GetNamespace(),
+				Name:      secretName,
+			},
+			Data: redpandaNodeSecret.Data,
+			Type: redpandaNodeSecret.Type,
+		}
+	} else {
+		// Referencing the cluster certificate directly
+		secretName = redpandaNodeSecret.Name
+	}
+
+	r.TLS = append(r.TLS, netv1.IngressTLS{
+		Hosts: []string{r.host()},
 		// Use the Cluster wildcard certificate
 		SecretName: secretName,
 	})
@@ -186,16 +220,54 @@ func (r *IngressResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
-	if err != nil || created {
+	if err != nil {
 		return err
 	}
-	var ingress netv1.Ingress
-	err = r.Get(ctx, r.Key(), &ingress)
-	if err != nil {
-		return fmt.Errorf("error while fetching Ingress resource: %w", err)
+	if !created {
+		var ingress netv1.Ingress
+		err = r.Get(ctx, r.Key(), &ingress)
+		if err != nil {
+			return fmt.Errorf("error while fetching Ingress resource: %w", err)
+		}
+		if _, err = Update(ctx, &ingress, obj, r.Client, r.logger); err != nil {
+			return err
+		}
 	}
-	_, err = Update(ctx, &ingress, obj, r.Client, r.logger)
-	return err
+
+	// Ensure secret is synced when running in different namespaces
+	return r.ensureRedpandaNodeSecretSynced(ctx)
+}
+
+func (r *IngressResource) ensureRedpandaNodeSecretSynced(ctx context.Context) error {
+	if r.syncRemoteSecret == nil {
+		return nil
+	}
+
+	objLabels, err := objectLabels(r.object)
+	if err != nil {
+		return fmt.Errorf("cannot get object labels: %w", err)
+	}
+	r.syncRemoteSecret.Labels = objLabels
+
+	if err = controllerutil.SetControllerReference(r.object, r.syncRemoteSecret, r.scheme); err != nil {
+		return err
+	}
+
+	created, err := CreateIfNotExists(ctx, r, r.syncRemoteSecret, r.logger)
+	if err != nil {
+		return err
+	}
+	if !created {
+		var existingSecret corev1.Secret
+		err = r.Get(ctx, types.NamespacedName{Namespace: r.syncRemoteSecret.Namespace, Name: r.syncRemoteSecret.Name}, &existingSecret)
+		if err != nil {
+			return fmt.Errorf("error while fetching Secret resource: %w", err)
+		}
+		if _, err = Update(ctx, &existingSecret, r.syncRemoteSecret, r.Client, r.logger); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *IngressResource) obj() (k8sclient.Object, error) {

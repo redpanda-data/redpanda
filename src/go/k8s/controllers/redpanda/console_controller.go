@@ -165,10 +165,23 @@ func (r *Reconciling) Do(
 	ingressResource := resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log)
 	ingressResource = ingressResource.WithDefaultEndpoint("console")
 	ingressResource = ingressResource.WithUserConfig(console.Spec.Ingress)
-	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()))
 	ingressResource = ingressResource.WithAnnotations(map[string]string{
 		"nginx.ingress.kubernetes.io/server-snippet": "if ($request_uri ~* ^/(debug|admin)) {\n\treturn 403;\n\t}",
 	})
+	if ext := cluster.ExternalListener(); ext != nil && ext.TLS.Enabled {
+		// Default to using Cluster wildcard certificate
+		log.Info("Using shared cluster certificate for console")
+		redpandaNodeCertSecret, present := r.Store.GetRedpandaNodeCert(cluster)
+		if !present {
+			log.Info("Waiting for cluster certificate to be created")
+			return ctrl.Result{Requeue: true}, nil
+		}
+		ingressResource = ingressResource.WithClusterTLS(redpandaNodeCertSecret)
+	} else {
+		// Issue a new certificate for the console
+		log.Info("Using owned certificate for console")
+		ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()))
+	}
 
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),

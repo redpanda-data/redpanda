@@ -36,9 +36,16 @@ func NewStore(cl client.Client) *Store {
 
 // Sync synchronizes watched resources to the store
 func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
+	if err := s.syncSchemaRegistry(cluster); err != nil {
+		return err
+	}
+	return s.syncRedpandaNodeCertificate(cluster)
+}
+
+func (s *Store) syncSchemaRegistry(cluster *redpandav1alpha1.Cluster) error {
 	if cluster.IsSchemaRegistryTLSEnabled() { //nolint:nestif // sync is complex
 		if cluster.IsSchemaRegistryMutualTLSEnabled() {
-			schemaRegistryClientCert, err := syncSchemaRegistryCert(
+			schemaRegistryClientCert, err := getCertSecretFromCluster(
 				s.context,
 				s.client,
 				client.ObjectKeyFromObject(cluster),
@@ -55,7 +62,7 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 		ca := &SchemaRegistryTLSCa{cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef}
 		if ca.useCaCert() {
 			nodeSecretRef := cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef
-			schemaRegistryNodeCert, err := syncSchemaRegistryCert(
+			schemaRegistryNodeCert, err := getCertSecretFromCluster(
 				s.context,
 				s.client,
 				types.NamespacedName{Namespace: nodeSecretRef.Namespace, Name: nodeSecretRef.Name},
@@ -71,7 +78,24 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 	return nil
 }
 
-func syncSchemaRegistryCert(
+func (s *Store) syncRedpandaNodeCertificate(cluster *redpandav1alpha1.Cluster) error {
+	if kafkaExternal := cluster.ExternalListener(); kafkaExternal != nil && kafkaExternal.TLS.Enabled {
+		redpandaNodeCert, err := getCertSecretFromCluster(
+			s.context,
+			s.client,
+			client.ObjectKeyFromObject(cluster),
+			fmt.Sprintf("%s-%s", cluster.GetName(), redpandaNodeCertSuffix),
+		)
+		if err != nil {
+			return fmt.Errorf("sync redpanda node certificate: %w", err)
+		}
+		s.Add(s.getRedpandaNodeCertKey(cluster), redpandaNodeCert)
+	}
+
+	return nil
+}
+
+func getCertSecretFromCluster(
 	ctx context.Context, cl client.Client, nsn client.ObjectKey, name string,
 ) (client.Object, error) {
 	secret := corev1.Secret{}
@@ -97,21 +121,38 @@ func (s *Store) getSchemaRegistryNodeCertKey(
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "schema-registry-node")
 }
 
+func (s *Store) getRedpandaNodeCertKey(
+	cluster *redpandav1alpha1.Cluster,
+) string {
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), redpandaNodeCertSuffix)
+}
+
 // GetSchemaRegistryClientCert gets the Schema Registry client cert and returns Secret object
 func (s *Store) GetSchemaRegistryClientCert(
 	cluster *redpandav1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
-	if secret, exists := s.Get(s.getSchemaRegistryClientCertKey(cluster)); exists {
-		return secret.(*corev1.Secret), true
-	}
-	return nil, false
+	return s.getCertSecret(s.getSchemaRegistryClientCertKey(cluster))
 }
 
 // GetSchemaRegistryNodeCert gets the Schema Registry node cert and returns Secret object
 func (s *Store) GetSchemaRegistryNodeCert(
 	cluster *redpandav1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
-	if secret, exists := s.Get(s.getSchemaRegistryNodeCertKey(cluster)); exists {
+	return s.getCertSecret(s.getSchemaRegistryNodeCertKey(cluster))
+}
+
+// GetRedpandaNodeCert gets the Redpanda node cert and returns Secret object
+func (s *Store) GetRedpandaNodeCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
+	return s.getCertSecret(s.getRedpandaNodeCertKey(cluster))
+}
+
+// getCertSecret gets the cert corresponding to the key and returns Secret object
+func (s *Store) getCertSecret(
+	key string,
+) (*corev1.Secret, bool) {
+	if secret, exists := s.Get(key); exists {
 		return secret.(*corev1.Secret), true
 	}
 	return nil, false

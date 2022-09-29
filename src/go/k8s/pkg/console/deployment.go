@@ -262,6 +262,7 @@ const (
 	tlsConnectMountName        = "tls-connect-%s"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
+	redpandaNodeCertSuffix         = "redpanda"
 
 	enterpriseRBACMountName     = "enterprise-rbac"
 	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
