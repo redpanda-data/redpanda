@@ -482,17 +482,9 @@ class PartitionBalancerTest(EndToEndTest):
         producer.start(clean=False)
         producer.wait_for_acks(msg_count, timeout_sec=120, backoff_sec=5)
 
-        def get_disk_usage(node):
-            for line in node.account.ssh_capture(
-                    "df --block-size 1 /var/lib/redpanda"):
-                self.logger.debug(line.strip())
-                if '/var/lib/redpanda' in line:
-                    return int(line.split()[2])
-            assert False, "couldn't parse df output"
-
         def print_disk_usage_per_node():
             for n in self.redpanda.nodes:
-                disk_usage = get_disk_usage(n)
+                disk_usage = self.redpanda.get_node_disk_usage(n)
                 self.logger.info(
                     f"node {self.redpanda.idx(n)}: "
                     f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
@@ -535,7 +527,7 @@ class PartitionBalancerTest(EndToEndTest):
         self.wait_until_status(is_ready_and_stable)
 
         for n in self.redpanda.nodes:
-            disk_usage = get_disk_usage(n)
+            disk_usage = self.redpanda.get_node_disk_usage(n)
             used_ratio = disk_usage / disk_size
             self.logger.info(
                 f"node {self.redpanda.idx(n)}: "
