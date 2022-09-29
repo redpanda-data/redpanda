@@ -669,3 +669,69 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{20});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
 }
+
+SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
+    cloud_storage::partition_manifest m;
+    m.update(make_manifest_stream(manifest)).get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // For this test we need batches with single records, so that the seek
+    // inside the segments aligns with manifest, because seek adjusts offsets to
+    // batch boundaries.
+    auto spec = log_spec{
+      .segment_starts = {5, 15, 25, 35, 50, 60},
+      .compacted_segment_indices = {0, 1, 2, 3},
+      .last_segment_num_records = 20};
+
+    auto first = spec.segment_starts.begin();
+    auto second = std::next(first);
+    for (; second != spec.segment_starts.end(); ++first, ++second) {
+        b | storage::add_segment(*first);
+        for (auto curr_offset = *first; curr_offset < *second; ++curr_offset) {
+            b | storage::add_random_batch(curr_offset, 1);
+        }
+    }
+
+    b | storage::add_segment(*first)
+      | storage::add_random_batch(*first, spec.last_segment_num_records);
+
+    for (auto i : spec.compacted_segment_indices) {
+        b.get_segment(i).mark_as_finished_self_compaction();
+    }
+
+    size_t max_size = b.get_segment(0).size_bytes()
+                      + b.get_segment(1).size_bytes()
+                      + b.get_segment(2).size_bytes();
+    archival::segment_collector collector{
+      model::offset{5}, &m, &b.get_disk_log_impl(), max_size};
+
+    collector.collect_segments();
+    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+
+    archival::upload_candidate upload_candidate
+      = collector.make_upload_candidate(ss::default_priority_class()).get();
+
+    BOOST_REQUIRE(!upload_candidate.sources.empty());
+    BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
+    BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{29});
+
+    // Start with all the segments collected
+    auto expected_content_length = collector.collected_size();
+    // Deduct the starting shift
+    expected_content_length -= upload_candidate.file_offset;
+    // Deduct the entire last segment
+    expected_content_length -= upload_candidate.sources.back()->size_bytes();
+    // Add back the portion of the last segment we included
+    expected_content_length += upload_candidate.final_file_offset;
+
+    BOOST_REQUIRE_EQUAL(
+      expected_content_length, upload_candidate.content_length);
+}

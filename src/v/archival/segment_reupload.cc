@@ -24,7 +24,8 @@ segment_collector::segment_collector(
   : _begin_inclusive(begin_inclusive)
   , _manifest(manifest)
   , _log(log)
-  , _max_uploaded_segment_size(max_uploaded_segment_size) {}
+  , _max_uploaded_segment_size(max_uploaded_segment_size)
+  , _collected_size(0) {}
 
 void segment_collector::collect_segments() {
     if (_manifest->size() == 0) {
@@ -58,7 +59,6 @@ void segment_collector::do_collect() {
     auto replace_boundary = find_replacement_boundary();
     auto start = _begin_inclusive;
     model::offset current_segment_end{0};
-    size_t collected_size = 0;
     while (current_segment_end < _manifest->get_last_offset()) {
         auto result = find_next_compacted_segment(start);
         if (result.segment.get() == nullptr) {
@@ -70,16 +70,16 @@ void segment_collector::do_collect() {
         }
 
         auto segment_size = result.segment->size_bytes();
-        if (collected_size + segment_size > _max_uploaded_segment_size) {
+        if (_collected_size + segment_size > _max_uploaded_segment_size) {
             vlog(
               archival_log.debug,
               "Compacted segment collect for ntp {} stopping collection, total "
               "size: {} will overflow max allowed upload size: {}, current "
               "collected size: {}",
               _manifest->get_ntp(),
-              collected_size + segment_size,
+              _collected_size + segment_size,
               _max_uploaded_segment_size,
-              collected_size);
+              _collected_size);
             break;
         }
 
@@ -92,7 +92,7 @@ void segment_collector::do_collect() {
         _segments.push_back(result.segment);
         current_segment_end = result.segment->offsets().committed_offset;
         start = current_segment_end + model::offset{1};
-        collected_size += segment_size;
+        _collected_size += segment_size;
     }
 
     if (current_segment_end >= replace_boundary) {
@@ -306,5 +306,43 @@ void segment_collector::align_begin_offset_to_manifest() {
           _begin_inclusive);
     }
 }
+
+ss::future<upload_candidate> segment_collector::make_upload_candidate(
+  ss::io_priority_class io_priority_class) {
+    if (_segments.empty()) {
+        co_return upload_candidate{};
+    }
+
+    auto first = _segments.front();
+    auto head_seek_result = co_await convert_begin_offset_to_file_pos(
+      _begin_inclusive,
+      first,
+      first->index().base_timestamp(),
+      io_priority_class);
+
+    auto last = _segments.back();
+    auto tail_seek_result = co_await convert_end_offset_to_file_pos(
+      _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
+
+    size_t content_length = _collected_size
+                            - (head_seek_result.bytes + last->size_bytes());
+    content_length += tail_seek_result.bytes;
+
+    co_return upload_candidate{
+      .source = first,
+      .exposed_name = adjust_segment_name(),
+      .starting_offset = head_seek_result.offset,
+      .file_offset = head_seek_result.bytes,
+      .content_length = content_length,
+      .final_offset = tail_seek_result.offset,
+      .final_file_offset = tail_seek_result.bytes,
+      .base_timestamp = head_seek_result.ts,
+      .max_timestamp = tail_seek_result.ts,
+      .sources = _segments,
+      .upload_kind = upload_kind::multiple,
+    };
+}
+
+size_t segment_collector::collected_size() const { return _collected_size; }
 
 } // namespace archival

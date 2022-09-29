@@ -10,8 +10,11 @@
 
 #pragma once
 
+#include "archival/archival_policy.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/io_priority_class.hh>
 
 namespace cloud_storage {
 class partition_manifest;
@@ -56,6 +59,13 @@ public:
 
     cloud_storage::segment_name adjust_segment_name() const;
 
+    /// Creates upload candidate by computing file offsets and timestamps from
+    /// the collected segments.
+    ss::future<upload_candidate>
+    make_upload_candidate(ss::io_priority_class io_priority_class);
+
+    size_t collected_size() const;
+
 private:
     struct lookup_result {
         segment_seq::value_type segment;
@@ -95,7 +105,9 @@ private:
     const storage::ntp_config* _ntp_cfg{};
     segment_seq _segments;
     bool _can_replace_manifest_segment{false};
+
     size_t _max_uploaded_segment_size;
+    size_t _collected_size;
 };
 
 } // namespace archival

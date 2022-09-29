@@ -12,6 +12,7 @@
 
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/partition_manifest.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log_manager.h"
@@ -21,6 +22,13 @@
 #include <seastar/core/io_priority_class.hh>
 
 namespace archival {
+
+enum class upload_kind {
+    single,
+    multiple,
+};
+
+std::ostream& operator<<(std::ostream& os, upload_kind k);
 
 struct upload_candidate {
     ss::lw_shared_ptr<storage::segment> source;
@@ -32,9 +40,29 @@ struct upload_candidate {
     size_t final_file_offset;
     model::timestamp base_timestamp;
     model::timestamp max_timestamp;
+    std::vector<ss::lw_shared_ptr<storage::segment>> sources;
+    upload_kind upload_kind;
 
     friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 };
+
+struct offset_to_file_pos_result {
+    model::offset offset;
+    size_t bytes;
+    model::timestamp ts;
+};
+
+ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
+  model::offset begin_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp base_timestamp,
+  ss::io_priority_class io_priority);
+
+ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
+  model::offset end_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp max_timestamp,
+  ss::io_priority_class io_priority);
 
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.
@@ -59,6 +87,11 @@ public:
       model::offset end_exclusive,
       storage::log,
       const storage::offset_translator_state&);
+
+    ss::future<upload_candidate> get_next_compacted_segment(
+      model::offset begin_inclusive,
+      storage::log log,
+      const cloud_storage::partition_manifest* manifest);
 
 private:
     /// Check if the upload have to be forced due to timeout
