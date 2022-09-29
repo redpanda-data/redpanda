@@ -370,7 +370,9 @@ ss::future<> controller::start() {
 }
 
 ss::future<> controller::shutdown_input() {
-    _raft0->shutdown_input();
+    if (_raft0) {
+        _raft0->shutdown_input();
+    }
     return _as.invoke_on_all(&ss::abort_source::request_abort);
 }
 
