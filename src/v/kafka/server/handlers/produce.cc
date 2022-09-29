@@ -251,16 +251,23 @@ static partition_produce_stages produce_topic_partition(
     // steal the batch from the adapter
     auto batch = std::move(part.records->adapter.batch.value());
 
+    auto topic_cfg = octx.rctx.metadata_cache().get_topic_cfg(
+      model::topic_namespace_view(model::kafka_namespace, topic.name));
+
+    if (!topic_cfg) {
+        return make_ready_stage(produce_response::partition{
+          .partition_index = ntp.tp.partition,
+          .error_code = error_code::unknown_topic_or_partition});
+    }
     /*
      * grab timestamp type topic configuration option out of the
      * metadata cache. For append time setting we have to recalculate
      * the CRC.
      */
-    auto timestamp_type
-      = octx.rctx.metadata_cache()
-          .get_topic_timestamp_type(
-            model::topic_namespace_view(model::kafka_namespace, topic.name))
-          .value_or(octx.rctx.metadata_cache().get_default_timestamp_type());
+    const auto timestamp_type = topic_cfg->properties.timestamp_type.value_or(
+      octx.rctx.metadata_cache().get_default_timestamp_type());
+    const auto batch_max_bytes = topic_cfg->properties.batch_max_bytes.value_or(
+      octx.rctx.metadata_cache().get_default_batch_max_bytes());
 
     if (timestamp_type == model::timestamp_type::append_time) {
         batch.set_max_timestamp(
@@ -289,12 +296,21 @@ static partition_produce_stages produce_topic_partition(
              batch_size,
              bid,
              acks = octx.request.data.acks,
+             batch_max_bytes,
              source_shard = ss::this_shard_id()](
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
                 if (!partition) {
                     return finalize_request_with_error_code(
                       error_code::unknown_topic_or_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
+                }
+                if (unlikely(
+                      static_cast<uint32_t>(batch_size) > batch_max_bytes)) {
+                    return finalize_request_with_error_code(
+                      error_code::message_too_large,
                       std::move(dispatch),
                       ntp,
                       source_shard);

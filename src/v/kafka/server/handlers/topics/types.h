@@ -47,6 +47,8 @@ static constexpr std::string_view topic_property_retention_bytes
   = "retention.bytes";
 static constexpr std::string_view topic_property_retention_duration
   = "retention.ms";
+static constexpr std::string_view topic_property_max_message_bytes
+  = "max.message.bytes";
 static constexpr std::string_view topic_property_recovery
   = "redpanda.remote.recovery";
 static constexpr std::string_view topic_property_remote_write
@@ -64,7 +66,7 @@ static constexpr std::string_view topic_property_data_policy_script_name
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
-static constexpr std::array<std::string_view, 21> allowlist_topic_noop_confs = {
+static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
   // Invalid name from describe
   "redpanda.datapolicy",
 
@@ -79,7 +81,6 @@ static constexpr std::array<std::string_view, 21> allowlist_topic_noop_confs = {
   "min.cleanable.dirty.ratio",
   "message.timestamp.difference.max.ms",
   "message.format.version",
-  "max.message.bytes",
   "max.compaction.lag.ms",
   "leader.replication.throttled.replicas",
   "index.interval.bytes",

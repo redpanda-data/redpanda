@@ -242,6 +242,10 @@ metadata_cache::get_default_retention_duration() const {
     return config::shard_local_cfg().delete_retention_ms();
 }
 
+uint32_t metadata_cache::get_default_batch_max_bytes() const {
+    return config::shard_local_cfg().kafka_batch_max_bytes();
+}
+
 model::shadow_indexing_mode
 metadata_cache::get_default_shadow_indexing_mode() const {
     model::shadow_indexing_mode m = model::shadow_indexing_mode::disabled;
@@ -267,6 +271,7 @@ topic_properties metadata_cache::get_default_properties() const {
       {get_default_retention_duration()});
     tp.recovery = {false};
     tp.shadow_indexing = {get_default_shadow_indexing_mode()};
+    tp.batch_max_bytes = get_default_batch_max_bytes();
     return tp;
 }
 

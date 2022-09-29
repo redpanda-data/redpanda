@@ -682,7 +682,10 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional([] { return tests::random_bool(); }),
           tests::random_optional(
             [] { return tests::random_named_string<ss::sstring>(); }),
-          instance_generator<cluster::remote_topic_properties>::random()};
+          instance_generator<cluster::remote_topic_properties>::random(),
+          tests::random_optional(
+            [] { return random_generators::get_int<uint32_t>(1024 * 1024); }),
+        };
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

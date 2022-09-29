@@ -525,6 +525,16 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<model::timestamp_type>);
 
+            add_topic_config_if_requested(
+              resource,
+              result,
+              config::shard_local_cfg().kafka_batch_max_bytes.name(),
+              ctx.metadata_cache().get_default_batch_max_bytes(),
+              topic_property_max_message_bytes,
+              topic_config->properties.batch_max_bytes,
+              request.data.include_synonyms,
+              &describe_as_string<uint32_t>);
+
             // Shadow indexing properties
             add_topic_config_if_requested(
               resource,
