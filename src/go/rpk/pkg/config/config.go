@@ -30,7 +30,7 @@ const (
 func Default() *Config {
 	return &Config{
 		fileLocation: DefaultPath,
-		Redpanda: RedpandaConfig{
+		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
 				Address: "0.0.0.0",

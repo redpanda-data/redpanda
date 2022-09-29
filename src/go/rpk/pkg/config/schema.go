@@ -21,16 +21,16 @@ type Config struct {
 	file         *Config
 	fileLocation string
 
-	NodeUUID             string          `yaml:"node_uuid,omitempty" json:"node_uuid"`
-	Organization         string          `yaml:"organization,omitempty" json:"organization"`
-	LicenseKey           string          `yaml:"license_key,omitempty" json:"license_key"`
-	ClusterID            string          `yaml:"cluster_id,omitempty" json:"cluster_id"`
-	Redpanda             RedpandaConfig  `yaml:"redpanda,omitempty" json:"redpanda"`
-	Rpk                  RpkConfig       `yaml:"rpk,omitempty" json:"rpk"`
-	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
-	SchemaRegistry       *SchemaRegistry `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
-	SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
+	NodeUUID             string             `yaml:"node_uuid,omitempty" json:"node_uuid"`
+	Organization         string             `yaml:"organization,omitempty" json:"organization"`
+	LicenseKey           string             `yaml:"license_key,omitempty" json:"license_key"`
+	ClusterID            string             `yaml:"cluster_id,omitempty" json:"cluster_id"`
+	Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
+	Rpk                  RpkConfig          `yaml:"rpk,omitempty" json:"rpk"`
+	Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
+	SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
+	SchemaRegistryClient *KafkaClient       `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
 
 	Other map[string]interface{} `yaml:",inline"`
 }
@@ -48,7 +48,12 @@ func (c *Config) FileLocation() string {
 	return c.fileLocation
 }
 
-type RedpandaConfig struct {
+// RedpandaNodeConfig is the source of truth for Redpanda node configuration.
+//
+// Cluster properties must NOT be enlisted in this struct. Adding a cluster
+// property here would cause the dependent libraries (e.g. operator) to wrongly
+// consider it a node property.
+type RedpandaNodeConfig struct {
 	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
 	ID                         int                       `yaml:"node_id" json:"node_id"`
 	Rack                       string                    `yaml:"rack,omitempty" json:"rack"`
@@ -66,8 +71,6 @@ type RedpandaConfig struct {
 	AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
 	AdvertisedKafkaAPI         []NamedSocketAddress      `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
 	DeveloperMode              bool                      `yaml:"developer_mode,omitempty" json:"developer_mode"`
-	AggregateMetrics           bool                      `yaml:"aggregate_metrics,omitempty" json:"aggregate_metrics,omitempty"`
-	DisablePublicMetrics       bool                      `yaml:"disable_public_metrics,omitempty" json:"disable_public_metrics,omitempty"`
 	Other                      map[string]interface{}    `yaml:",inline"`
 }
 

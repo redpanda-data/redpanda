@@ -271,7 +271,7 @@ ss::future<> offset_translator::prefix_truncate(model::offset offset) {
     ++_map_version;
 
     vlog(
-      _logger.info,
+      _logger.debug,
       "prefix_truncate at offset: {}, new state: {}",
       offset,
       _state);

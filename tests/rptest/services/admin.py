@@ -59,7 +59,8 @@ class Admin:
                  redpanda,
                  default_node=None,
                  retry_codes=None,
-                 auth=None):
+                 auth=None,
+                 retries_amount=5):
         self.redpanda = redpanda
 
         self._session = AuthPreservingSession()
@@ -78,7 +79,7 @@ class Admin:
         if retry_codes is None:
             retry_codes = [503]
 
-        retries = Retry(status=5,
+        retries = Retry(status=retries_amount,
                         connect=0,
                         read=0,
                         backoff_factor=1,

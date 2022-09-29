@@ -26,7 +26,6 @@
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "platform/stop_signal.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -37,6 +36,7 @@
 #include "seastarx.h"
 #include "ssx/metrics.h"
 #include "storage/fwd.h"
+#include "utils/stop_signal.h"
 #include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
@@ -45,6 +45,10 @@
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
+
+namespace kafka {
+struct group_metadata_migration;
+} // namespace kafka
 
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -61,21 +65,12 @@ public:
       std::optional<YAML::Node> schema_reg_client_cfg = std::nullopt,
       std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
-    void configure_admin_server();
-    void wire_up_services();
-    void wire_up_redpanda_services();
-    void start(::stop_signal&);
-    void start_redpanda(::stop_signal&);
-    void start_kafka(::stop_signal&);
+    void wire_up_and_start(::stop_signal&);
 
     explicit application(ss::sstring = "redpanda::main");
     ~application();
 
-    void shutdown() {
-        while (!_deferred.empty()) {
-            _deferred.pop_back();
-        }
-    }
+    void shutdown();
 
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
@@ -112,6 +107,12 @@ public:
 private:
     using deferred_actions
       = std::vector<ss::deferred_action<std::function<void()>>>;
+
+    void configure_admin_server();
+    void wire_up_services();
+    void wire_up_redpanda_services();
+    void start_redpanda(::stop_signal&);
+    void start_kafka(::stop_signal&);
 
     // All methods are calleds from Seastar thread
     ss::app_template::config setup_app_config();
@@ -164,7 +165,7 @@ private:
     ss::logger _log;
 
     ss::sharded<rpc::connection_cache> _connection_cache;
-    ss::sharded<cluster::feature_table> _feature_table;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<kafka::group_manager> _co_group_manager;
     ss::sharded<net::server> _rpc;
@@ -180,6 +181,9 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
+
+    ss::lw_shared_ptr<kafka::group_metadata_migration> kafka_group_migration;
+
     // run these first on destruction
     deferred_actions _deferred;
 };

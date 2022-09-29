@@ -48,6 +48,9 @@ public:
       std::optional<segment_time_limit> limit = std::nullopt,
       ss::io_priority_class io_priority = ss::default_priority_class());
 
+    using search_for_compacted_segments
+      = ss::bool_class<struct search_for_compacted_segments_tag>;
+
     /// \brief regurn next upload candidate
     ///
     /// \param begin_inclusive is an inclusive begining of the range
@@ -58,7 +61,8 @@ public:
       model::offset begin_inclusive,
       model::offset end_exclusive,
       storage::log,
-      const storage::offset_translator_state&);
+      const storage::offset_translator_state&,
+      search_for_compacted_segments = search_for_compacted_segments::no);
 
 private:
     /// Check if the upload have to be forced due to timeout
@@ -79,6 +83,9 @@ private:
       model::offset adjusted_lso,
       storage::log,
       const storage::offset_translator_state&);
+
+    lookup_result
+    find_compacted_segment(model::offset start_offset, storage::log log);
 
     model::ntp _ntp;
     std::optional<segment_time_limit> _upload_limit;

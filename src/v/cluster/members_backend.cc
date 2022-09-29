@@ -621,7 +621,9 @@ void members_backend::reassign_replicas(
       });
 
     auto res = _allocator.local().reallocate_partition(
-      reallocation.constraints.value(), current_assignment);
+      reallocation.constraints.value(),
+      current_assignment,
+      get_allocation_domain(reallocation.ntp));
     if (res.has_value()) {
         reallocation.set_new_replicas(std::move(res.value()));
     }

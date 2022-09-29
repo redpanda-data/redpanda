@@ -56,8 +56,9 @@ namespace storage {
 disk_log_impl::disk_log_impl(
   ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
   : log::impl(std::move(cfg))
-  , _segment_size_jitter(storage::internal::random_jitter())
   , _manager(manager)
+  , _segment_size_jitter(
+      internal::random_jitter(_manager.config().segment_size_jitter))
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
@@ -391,19 +392,21 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         }
     }
 
-    if (auto range = find_compaction_range(); range) {
+    if (auto range = find_compaction_range(cfg); range) {
         auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
         vlog(
           stlog.debug,
-          "adjejcent segments of {}, compaction result: {}",
+          "Adjacent segments of {}, compaction result: {}",
           config().ntp(),
           r);
-        _compaction_ratio.update(r.compaction_ratio());
+        if (r.did_compact()) {
+            _compaction_ratio.update(r.compaction_ratio());
+        }
     }
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-disk_log_impl::find_compaction_range() {
+disk_log_impl::find_compaction_range(const compaction_config& cfg) {
     /*
      * adjacent segment compaction.
      *
@@ -459,10 +462,12 @@ disk_log_impl::find_compaction_range() {
         ++range.second;
     }
 
-    // the chosen segments all need to be stable
+    // the chosen segments all need to be stable.
+    // Each participating segment should individually pass the compactible
+    // offset check for the compacted segment to be stable.
     const auto unstable = std::any_of(
-      range.first, range.second, [](ss::lw_shared_ptr<segment>& seg) {
-          return seg->has_appender();
+      range.first, range.second, [&cfg](ss::lw_shared_ptr<segment>& seg) {
+          return seg->has_appender() || !seg->has_compactible_offsets(cfg);
       });
     if (unstable) {
         return std::nullopt;
@@ -828,12 +833,29 @@ ss::future<> disk_log_impl::flush() {
 
 size_t disk_log_impl::max_segment_size() const {
     // override for segment size
+    size_t result;
     if (config().has_overrides() && config().get_overrides().segment_size) {
-        return *config().get_overrides().segment_size;
+        result = *config().get_overrides().segment_size;
+    } else {
+        // no overrides use defaults
+        result = config().is_compacted()
+                   ? _manager.config().compacted_segment_size()
+                   : _manager.config().max_segment_size();
     }
-    // no overrides use defaults
-    return config().is_compacted() ? _manager.config().compacted_segment_size()
-                                   : _manager.config().max_segment_size();
+
+    // Clamp to safety limits on segment sizes, in case the
+    // property was set without proper validation (e.g. on
+    // an older version or before limits were set)
+    auto min_limit = config::shard_local_cfg().log_segment_size_min();
+    auto max_limit = config::shard_local_cfg().log_segment_size_max();
+    if (min_limit) {
+        result = std::max(*min_limit, result);
+    }
+    if (max_limit) {
+        result = std::min(*max_limit, result);
+    }
+
+    return result;
 }
 
 size_t disk_log_impl::bytes_left_before_roll() const {
@@ -1020,7 +1042,7 @@ disk_log_impl::timequery(timequery_config cfg) {
 
 ss::future<> disk_log_impl::remove_segment_permanently(
   ss::lw_shared_ptr<segment> s, std::string_view ctx) {
-    vlog(stlog.info, "{} - tombstone & delete segment: {}", ctx, s);
+    vlog(stlog.info, "Removing \"{}\" ({}, {})", s->filename(), ctx, s);
     // stats accounting must happen synchronously
     _probe.delete_segment(*s);
     // background close

@@ -23,19 +23,20 @@ feature_backend::apply_update(model::record_batch b) {
       cmd,
       [this](feature_update_cmd update) -> ss::future<> {
           co_await _feature_table.invoke_on_all(
-            [v = update.key.logical_version](feature_table& t) mutable {
-                t.set_active_version(v);
-            });
+            [v = update.key.logical_version](
+              features::feature_table& t) mutable { t.set_active_version(v); });
 
           for (const auto& a : update.key.actions) {
               co_await _feature_table.invoke_on_all(
-                [a](feature_table& t) mutable { t.apply_action(a); });
+                [a](features::feature_table& t) mutable { t.apply_action(a); });
           }
       },
       [this](feature_update_license_update_cmd update) {
           return _feature_table.invoke_on_all(
             [license = std::move(update.key.redpanda_license)](
-              feature_table& t) mutable { t.set_license(std::move(license)); });
+              features::feature_table& t) mutable {
+                t.set_license(std::move(license));
+            });
       });
 
     co_return errc::success;

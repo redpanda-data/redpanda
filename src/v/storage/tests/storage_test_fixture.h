@@ -101,13 +101,18 @@ public:
 
         auto cache = i > 50 ? storage::with_cache::yes
                             : storage::with_cache::no;
-        return storage::log_config(
+        auto cfg = storage::log_config(
           stype,
           std::move(test_dir),
           200_MiB,
           storage::debug_sanitize_files::yes,
           ss::default_priority_class(),
           cache);
+
+        // Disable jitter for unit tests
+        cfg.segment_size_jitter = storage::internal::jitter_percents{0};
+
+        return cfg;
     }
 
     void

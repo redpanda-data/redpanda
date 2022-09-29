@@ -83,7 +83,8 @@ struct topic_table_fixture {
         cluster::topic_configuration cfg(
           test_ns, model::topic(topic), partitions, replication_factor);
 
-        cluster::allocation_request req;
+        cluster::allocation_request req(
+          cluster::partition_allocation_domains::common);
         req.partitions.reserve(partitions);
         for (auto p = 0; p < partitions; ++p) {
             req.partitions.emplace_back(

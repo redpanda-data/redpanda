@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/feature_table.h"
 #include "cluster/tm_stm.h"
+#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -34,7 +34,7 @@ struct ftable_struct {
 
     ~ftable_struct() { table.stop().get(); }
 
-    ss::sharded<cluster::feature_table> table;
+    ss::sharded<features::feature_table> table;
 };
 
 using op_status = cluster::tm_stm::op_status;

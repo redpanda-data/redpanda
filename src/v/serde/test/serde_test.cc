@@ -15,6 +15,7 @@
 #include "serde/serde.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
+#include "utils/uuid.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
@@ -22,6 +23,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
+#include <boost/uuid/uuid_generators.hpp>
 
 #include <chrono>
 #include <limits>
@@ -222,6 +224,79 @@ SEASTAR_THREAD_TEST_CASE(vector_test) {
     BOOST_CHECK((m == std::vector{1, 2, 3}));
 }
 
+SEASTAR_THREAD_TEST_CASE(uuid_test) {
+    auto b = iobuf();
+    boost::uuids::random_generator uuid_gen;
+    uuid_t u(uuid_gen());
+    serde::write(b, u);
+
+    auto parser = iobuf_parser{std::move(b)};
+    const auto r = serde::read<uuid_t>(parser);
+    BOOST_REQUIRE_EQUAL(u, r);
+}
+
+struct uuid_struct : serde::envelope<uuid_struct, serde::version<0>> {
+    uuid_t single;
+    std::optional<uuid_t> opt1;
+    std::optional<uuid_t> opt2;
+    std::vector<uuid_t> vec;
+    std::vector<std::optional<uuid_t>> opt_vec;
+};
+
+template<typename map_t>
+void verify_uuid_map(boost::uuids::random_generator& uuid_gen) {
+    map_t m = {
+      {uuid_t(uuid_gen()), 0},
+      {uuid_t(uuid_gen()), 1},
+      {uuid_t(uuid_gen()), 2},
+    };
+    auto b = iobuf();
+    serde::write(b, m);
+    auto parser = iobuf_parser{std::move(b)};
+    const auto r = serde::read<map_t>(parser);
+    BOOST_CHECK_EQUAL(m.size(), r.size());
+    for (const auto& [k, v] : m) {
+        const auto r_it = r.find(k);
+        BOOST_CHECK(m.end() != r_it);
+        BOOST_CHECK_EQUAL(v, r_it->second);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
+    boost::uuids::random_generator uuid_gen;
+    uuid_struct us;
+    us.single = uuid_t(uuid_gen());
+    us.opt1 = std::make_optional<uuid_t>(uuid_gen());
+    us.opt2 = std::nullopt;
+    us.vec = {
+      uuid_t(uuid_gen()),
+      uuid_t(uuid_gen()),
+      uuid_t(uuid_gen()),
+    };
+    us.opt_vec = {
+      std::make_optional<uuid_t>(uuid_gen()),
+      std::nullopt,
+      std::make_optional<uuid_t>(uuid_gen()),
+      std::nullopt,
+    };
+    auto b = iobuf();
+    serde::write(b, us);
+    auto parser = iobuf_parser{std::move(b)};
+    const auto r = serde::read<uuid_struct>(parser);
+    BOOST_CHECK_EQUAL(us.single, r.single);
+    BOOST_CHECK(us.opt1 == r.opt1);
+    BOOST_CHECK(us.opt2 == r.opt2);
+    BOOST_CHECK_EQUAL(us.vec, r.vec);
+    BOOST_CHECK_EQUAL(us.opt_vec.size(), r.opt_vec.size());
+    for (int i = 0; i < us.opt_vec.size(); ++i) {
+        BOOST_CHECK(us.opt_vec[i] == r.opt_vec[i]);
+    }
+
+    // Map types.
+    verify_uuid_map<std::unordered_map<uuid_t, int>>(uuid_gen);
+    verify_uuid_map<absl::flat_hash_map<uuid_t, int>>(uuid_gen);
+}
+
 // struct with differing sizes:
 // vector length may take different size (vint)
 // vector data may have different size (_ints.size() * sizeof(int))
@@ -377,7 +452,7 @@ struct test_snapshot_header
       test_snapshot_header,
       serde::version<1>,
       serde::compat_version<0>> {
-    ss::future<> serde_async_read(iobuf_parser&, serde::header const&);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
     ss::future<> serde_async_write(iobuf&) const;
 
     model::ns ns_;
@@ -392,7 +467,7 @@ static_assert(serde::has_serde_async_read<test_snapshot_header>);
 static_assert(serde::has_serde_async_write<test_snapshot_header>);
 
 ss::future<> test_snapshot_header::serde_async_read(
-  iobuf_parser& in, serde::header const& h) {
+  iobuf_parser& in, serde::header const h) {
     ns_ = serde::read_nested<decltype(ns_)>(in, h._bytes_left_limit);
     header_crc = serde::read_nested<decltype(header_crc)>(
       in, h._bytes_left_limit);

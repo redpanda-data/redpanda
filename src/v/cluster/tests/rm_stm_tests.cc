@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/rm_stm.h"
+#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -66,7 +66,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -143,7 +143,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -222,7 +222,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -305,7 +305,7 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -346,7 +346,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);
@@ -407,7 +407,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
       logger, _raft.get(), tx_gateway_frontend, feature_table);

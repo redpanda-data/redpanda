@@ -23,7 +23,6 @@
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/prevote_stm.h"
-#include "raft/raft_feature_table.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -97,7 +96,7 @@ consensus::consensus(
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
-  raft_feature_table& ft)
+  features::feature_table& ft)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -2145,8 +2144,8 @@ ss::future<std::error_code> consensus::replicate_configuration(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
           if (unlikely(cfg.version() < group_configuration::version_t(4))) {
               if (
-                _features.is_feature_active(
-                  raft_feature::improved_config_change)
+                _features.is_active(
+                  features::feature::raft_improved_configuration)
                 && cfg.get_state() == configuration_state::simple) {
                   vlog(_ctxlog.debug, "Upgrading configuration version");
                   cfg.set_version(group_configuration::current_version);
@@ -2360,8 +2359,8 @@ model::term_id consensus::get_term(model::offset o) const {
 }
 
 clock_type::time_point
-consensus::last_sent_append_entries_req_timesptamp(vnode id) {
-    return _fstats.get(id).last_sent_append_entries_req_timesptamp;
+consensus::last_sent_append_entries_req_timestamp(vnode id) {
+    return _fstats.get(id).last_sent_append_entries_req_timestamp;
 }
 
 protocol_metadata consensus::meta() const {
@@ -2380,7 +2379,7 @@ protocol_metadata consensus::meta() const {
 
 void consensus::update_node_append_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        it->second.last_sent_append_entries_req_timesptamp = clock_type::now();
+        it->second.last_sent_append_entries_req_timestamp = clock_type::now();
     }
 }
 

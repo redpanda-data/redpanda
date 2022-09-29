@@ -889,8 +889,6 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
-  aggregate_metrics: true
-  disable_public_metrics: true
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -971,7 +969,7 @@ rpk:
 				Organization: "my_organization",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "node_uuid",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             1,
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
@@ -1002,8 +1000,6 @@ rpk:
 					SeedServers: []SeedServer{
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
@@ -1126,8 +1122,6 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
-  aggregate_metrics: "true"
-  disable_public_metrics: "true"
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -1207,7 +1201,7 @@ rpk:
 				Organization: "1",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "124.42",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             1,
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
@@ -1240,8 +1234,6 @@ rpk:
 						{SocketAddress{"192.168.0.1", 33145}},
 						{SocketAddress{"192.168.0.1", 33145}},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},

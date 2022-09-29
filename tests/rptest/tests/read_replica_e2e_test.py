@@ -40,27 +40,28 @@ class BucketUsage(NamedTuple):
 class TestReadReplicaService(EndToEndTest):
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
-    si_settings = SISettings(
-        cloud_storage_reconciliation_interval_ms=500,
-        cloud_storage_max_connections=5,
-        log_segment_size=log_segment_size,
-        cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-        cloud_storage_segment_max_upload_interval_sec=5)
-
-    # Read reaplica shouldn't have it's own bucket.
-    # We're adding 'none' as a bucket name without creating
-    # an actual bucket with such name.
-    rr_settings = SISettings(
-        cloud_storage_bucket='none',
-        bypass_bucket_creation=True,
-        cloud_storage_reconciliation_interval_ms=500,
-        cloud_storage_max_connections=5,
-        log_segment_size=log_segment_size,
-        cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-        cloud_storage_segment_max_upload_interval_sec=5)
 
     def __init__(self, test_context: TestContext):
-        super(TestReadReplicaService, self).__init__(test_context=test_context)
+        super(TestReadReplicaService, self).__init__(
+            test_context=test_context,
+            si_settings=SISettings(
+                cloud_storage_reconciliation_interval_ms=500,
+                cloud_storage_max_connections=5,
+                log_segment_size=TestReadReplicaService.log_segment_size,
+                cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+                cloud_storage_segment_max_upload_interval_sec=5))
+
+        # Read reaplica shouldn't have it's own bucket.
+        # We're adding 'none' as a bucket name without creating
+        # an actual bucket with such name.
+        self.rr_settings = SISettings(
+            cloud_storage_bucket='none',
+            bypass_bucket_creation=True,
+            cloud_storage_reconciliation_interval_ms=500,
+            cloud_storage_max_connections=5,
+            log_segment_size=TestReadReplicaService.log_segment_size,
+            cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+            cloud_storage_segment_max_upload_interval_sec=5)
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
@@ -174,7 +175,6 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
     @cluster(num_nodes=6)
     @matrix(partition_count=[10])
     def test_produce_is_forbidden(self, partition_count: int) -> None:
@@ -187,7 +187,6 @@ class TestReadReplicaService(EndToEndTest):
                 in str(e)):
             second_rpk.produce(self.topic_name, "", "test payload")
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
     @cluster(num_nodes=9)
     @matrix(partition_count=[10], min_records=[10000])
     def test_simple_end_to_end(self, partition_count: int,

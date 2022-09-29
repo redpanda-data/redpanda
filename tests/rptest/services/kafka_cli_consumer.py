@@ -26,7 +26,8 @@ class KafkaCliConsumer(BackgroundThreadService):
                  isolation_level=None,
                  from_beginning=False,
                  consumer_properties={},
-                 formatter_properties={}):
+                 formatter_properties={},
+                 instance_name=None):
         super(KafkaCliConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -38,6 +39,8 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._consumer_properties = consumer_properties
         self._formatter_properties = formatter_properties
         self._stopping = threading.Event()
+        self._instance_name = "cli-consumer" if instance_name is None else instance_name
+        self._done = None
         assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
         self._cli = KafkaCliTools(self._redpanda)
@@ -47,6 +50,7 @@ class KafkaCliConsumer(BackgroundThreadService):
         return self._cli._script("kafka-console-consumer.sh")
 
     def _worker(self, _, node):
+        self._done = False
         self._stopping.clear()
         try:
 
@@ -71,7 +75,9 @@ class KafkaCliConsumer(BackgroundThreadService):
 
             for line in node.account.ssh_capture(' '.join(cmd)):
                 line.strip()
-                self.logger.debug(f"consumed: '{line}'")
+                line = line.replace("\n", "")
+                self.logger.debug(
+                    f"[{self._instance_name}] consumed: '{line}'")
                 self._messages.append(line)
         except:
             if self._stopping.is_set():
@@ -80,7 +86,7 @@ class KafkaCliConsumer(BackgroundThreadService):
             else:
                 raise
         finally:
-            self.done = True
+            self._done = True
 
     def wait_for_messages(self, messages, timeout=30):
         wait_until(lambda: len(self._messages) >= messages,
@@ -99,3 +105,18 @@ class KafkaCliConsumer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("java", clean_shutdown=True)
+
+        try:
+            wait_until(lambda: self._done is None or self._done == True,
+                       timeout_sec=10)
+        except:
+            self.logger.warn(
+                f"{self._instance_name} running on {node.name} failed to stop gracefully"
+            )
+            node.account.kill_process("java", clean_shutdown=False)
+            wait_until(
+                lambda: self._done is None or self._done == True,
+                timeout_sec=5,
+                err_msg=
+                f"{self._instance_name} running on {node.name} failed to stop after SIGKILL"
+            )

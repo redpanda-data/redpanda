@@ -293,12 +293,15 @@ storage::api& archiver_fixture::get_local_storage_api() {
 }
 
 void archiver_fixture::init_storage_api_local(
-  const std::vector<segment_desc>& segm) {
-    initialize_shard(get_local_storage_api(), segm);
+  const std::vector<segment_desc>& segm,
+  std::optional<storage::ntp_config::default_overrides> overrides) {
+    initialize_shard(get_local_storage_api(), segm, overrides);
 }
 
 void archiver_fixture::initialize_shard(
-  storage::api& api, const std::vector<segment_desc>& segm) {
+  storage::api& api,
+  const std::vector<segment_desc>& segm,
+  std::optional<storage::ntp_config::default_overrides> overrides) {
     absl::flat_hash_map<model::ntp, size_t> all_ntp;
     for (const auto& d : segm) {
         storage::ntp_config ntpc(d.ntp, data_dir.string());
@@ -330,12 +333,21 @@ void archiver_fixture::initialize_shard(
           "manage {}, data-dir {}",
           ntp.first,
           data_dir.string());
-        auto defaults
-          = std::make_unique<storage::ntp_config::default_overrides>();
-        defaults->shadow_indexing_mode = model::shadow_indexing_mode::archival;
+
+        std::unique_ptr<storage::ntp_config::default_overrides> defaults;
+        if (overrides) {
+            defaults = std::make_unique<storage::ntp_config::default_overrides>(
+              overrides.value());
+        } else {
+            defaults
+              = std::make_unique<storage::ntp_config::default_overrides>();
+            defaults->shadow_indexing_mode
+              = model::shadow_indexing_mode::archival;
+        }
         app.partition_manager.local()
           .manage(
-            storage::ntp_config(ntp.first, data_dir.string()),
+            storage::ntp_config(
+              ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
             {*broker.value()})
           .get();

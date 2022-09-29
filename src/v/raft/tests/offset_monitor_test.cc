@@ -148,7 +148,7 @@ SEASTAR_THREAD_TEST_CASE(wait_timeout) {
     BOOST_REQUIRE(!f0.available());
     BOOST_REQUIRE(!mon.empty());
 
-    BOOST_CHECK_THROW(f0.get(), raft::offset_monitor::wait_timed_out);
+    BOOST_CHECK_THROW(f0.get(), ss::timed_out_error);
 
     BOOST_REQUIRE(mon.empty());
 }
@@ -191,7 +191,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source_with_timeout_first) {
 
     // there is an abort source, but only wait on timeout
 
-    BOOST_CHECK_THROW(f0.get(), raft::offset_monitor::wait_timed_out);
+    BOOST_CHECK_THROW(f0.get(), ss::timed_out_error);
 
     BOOST_REQUIRE(mon.empty());
 }

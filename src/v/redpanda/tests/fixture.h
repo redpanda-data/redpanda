@@ -20,6 +20,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/broker_authn_endpoint.h"
+#include "config/mock_property.h"
 #include "config/node_config.h"
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
@@ -81,9 +82,7 @@ public:
           proxy_client_config(kafka_port),
           sch_groups);
         app.check_environment();
-        app.configure_admin_server();
-        app.wire_up_services();
-        app.start(*app_signal);
+        app.wire_up_and_start(*app_signal);
 
         // used by request context builder
         proto = std::make_unique<kafka::protocol>(
@@ -414,7 +413,8 @@ public:
           net::server::resources(nullptr, nullptr),
           std::move(sasl),
           false,
-          std::nullopt);
+          std::nullopt,
+          config::mock_property<uint32_t>(100_MiB).bind());
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(

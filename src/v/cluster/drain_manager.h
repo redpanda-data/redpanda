@@ -35,7 +35,7 @@ class drain_manager : public ss::peering_sharded_service<drain_manager> {
 
 public:
     /*
-     * finsihed:     draining has completed
+     * finished:     draining has completed
      * errors:       draining finished with errors
      * partitions:   total partitions
      * eligible:     total drain-eligible partitions

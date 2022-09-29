@@ -118,10 +118,10 @@ static heartbeat_requests requests_for_range(
                   ptr->group());
                 return;
             }
-            auto last_sent_append_entries_req_timesptamp
-              = ptr->last_sent_append_entries_req_timesptamp(rni);
+            auto last_sent_append_entries_req_timestamp
+              = ptr->last_sent_append_entries_req_timestamp(rni);
 
-            if (last_sent_append_entries_req_timesptamp > last_heartbeat) {
+            if (last_sent_append_entries_req_timestamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
                   "Heartbeat skipped - target: {}, ntp: {}, group_id: {}",
@@ -314,6 +314,15 @@ void heartbeat_manager::process_reply(
         }
         auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
+
+        if (unlikely(m.result == append_entries_reply::status::timeout)) {
+            vlog(
+              hbeatlog.debug,
+              "Heartbeat request for group {} timed out on the node {}",
+              m.group,
+              n);
+            continue;
+        }
 
         if (unlikely(m.target_node_id != consensus->self())) {
             vlog(

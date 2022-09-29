@@ -316,19 +316,35 @@ class StatusThread(threading.Thread):
             else:
                 self._stop_requested.wait(self.INTERVAL)
 
+    def join_with_timeout(self):
+        """
+        Join thread with a modest timeout, and raise an exception if
+        we do not succeed.  We expect to join promptly because all our
+        run() is doing is calling to the remote process status endpoint, and
+        that requests.get() has a timeout on it, so should not block.
+
+        This is important because otherwise a stuck join() would hang
+        the entire ducktape test run.
+        """
+        self.join(timeout=10)
+        if self.is_alive():
+            msg = f"Failed to join thread for {self.who_am_i}"
+            self.logger.error(msg)
+            raise RuntimeError(msg)
+
     def stop(self):
         """
         Drop out of poll loop as soon as possible, and join.
         """
         self._stop_requested.set()
-        self.join()
+        self.join_with_timeout()
 
     def shutdown(self):
         """
         Read status one more time, then drop out of poll loop and join.
         """
         self._shutdown_requested.set()
-        self.join()
+        self.join_with_timeout()
 
 
 class ValidatorStatus:
@@ -407,7 +423,7 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -436,7 +452,7 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -464,7 +480,7 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -548,7 +564,7 @@ class KgoVerifierProducer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0"
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0 --client-name {self.who_am_i()}"
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'

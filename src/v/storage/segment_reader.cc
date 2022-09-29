@@ -244,4 +244,87 @@ void segment_reader_handle::operator=(segment_reader_handle&& rhs) noexcept {
     _hook.swap_nodes(rhs._hook);
 }
 
+concat_segment_data_source_impl::concat_segment_data_source_impl(
+  std::vector<ss::lw_shared_ptr<segment>> segments,
+  size_t start_pos,
+  size_t end_pos,
+  ss::io_priority_class priority_class)
+  : _segments{std::move(segments)}
+  , _current_pos{_segments.begin()}
+  , _start_pos{start_pos}
+  , _end_pos{end_pos}
+  , _priority_class{priority_class} {}
+
+ss::future<ss::temporary_buffer<char>> concat_segment_data_source_impl::get() {
+    if (!_current_stream) {
+        _current_stream = co_await next_stream();
+    }
+
+    ss::temporary_buffer<char> buf = co_await _current_stream->read();
+    while (buf.empty() && _current_pos != _segments.end()) {
+        _current_stream = co_await next_stream();
+        buf = co_await _current_stream->read();
+    }
+
+    co_return buf;
+}
+
+ss::future<ss::input_stream<char>>
+concat_segment_data_source_impl::next_stream() {
+    if (_current_handle) {
+        co_await _current_handle->close();
+    }
+
+    vlog(
+      stlog.trace,
+      "opening stream for segment index {}, total segments: {}",
+      std::distance(_segments.begin(), _current_pos),
+      _segments.size());
+    auto segment = *_current_pos;
+    size_t start = 0;
+    size_t end = segment->file_size();
+
+    if (_current_pos == _segments.begin()) {
+        start = _start_pos;
+    }
+
+    if (_current_pos == std::prev(_segments.end())) {
+        end = _end_pos;
+    }
+
+    _current_handle = co_await segment->reader().data_stream(
+      start, end, _priority_class);
+    auto stream = _current_handle->take_stream();
+
+    _current_pos++;
+    co_return stream;
+}
+
+ss::future<> concat_segment_data_source_impl::close() {
+    if (_current_handle) {
+        co_return co_await _current_handle->close();
+    }
+}
+
+concat_segment_reader_view::concat_segment_reader_view(
+  std::vector<ss::lw_shared_ptr<segment>> segments,
+  size_t start_pos,
+  size_t end_pos,
+  ss::io_priority_class priority_class)
+  : _stream(ss::data_source{std::make_unique<concat_segment_data_source_impl>(
+    std::move(segments), start_pos, end_pos, priority_class)}) {}
+
+ss::input_stream<char> concat_segment_reader_view::take_stream() {
+    auto r = std::move(_stream.value());
+    _stream.reset();
+    return r;
+}
+
+ss::future<> concat_segment_reader_view::close() {
+    if (_stream) {
+        co_return co_await _stream->close();
+    }
+    co_return;
+}
+
 } // namespace storage

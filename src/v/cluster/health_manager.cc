@@ -10,6 +10,7 @@
  */
 #include "cluster/health_manager.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
@@ -82,7 +83,7 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
       ntp.tp.partition, _target_replication_factor);
 
     auto allocation = _allocator.local().reallocate_partition(
-      constraints, *assignment);
+      constraints, *assignment, get_allocation_domain(ntp));
     if (!allocation) {
         vlog(
           clusterlog.warn,

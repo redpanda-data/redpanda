@@ -1012,7 +1012,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<1>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<2>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1026,7 +1026,8 @@ struct topic_properties
       std::optional<model::shadow_indexing_mode> shadow_indexing,
       std::optional<bool> read_replica,
       std::optional<ss::sstring> read_replica_bucket,
-      std::optional<remote_topic_properties> remote_topic_properties)
+      std::optional<remote_topic_properties> remote_topic_properties,
+      std::optional<uint32_t> batch_max_bytes)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1037,8 +1038,9 @@ struct topic_properties
       , recovery(recovery)
       , shadow_indexing(shadow_indexing)
       , read_replica(read_replica)
-      , read_replica_bucket(read_replica_bucket)
-      , remote_topic_properties(remote_topic_properties) {}
+      , read_replica_bucket(std::move(read_replica_bucket))
+      , remote_topic_properties(remote_topic_properties)
+      , batch_max_bytes(batch_max_bytes) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1052,6 +1054,7 @@ struct topic_properties
     std::optional<bool> read_replica;
     std::optional<ss::sstring> read_replica_bucket;
     std::optional<remote_topic_properties> remote_topic_properties;
+    std::optional<uint32_t> batch_max_bytes;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1072,7 +1075,8 @@ struct topic_properties
           shadow_indexing,
           read_replica,
           read_replica_bucket,
-          remote_topic_properties);
+          remote_topic_properties,
+          batch_max_bytes);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1152,7 +1156,10 @@ struct property_update<tristate<T>>
 };
 
 struct incremental_topic_updates
-  : serde::envelope<incremental_topic_updates, serde::version<0>> {
+  : serde::envelope<
+      incremental_topic_updates,
+      serde::version<1>,
+      serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
     // negative version indicating different format:
@@ -1170,6 +1177,7 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
+    property_update<std::optional<uint32_t>> batch_max_bytes;
 
     auto serde_fields() {
         return std::tie(
@@ -1180,7 +1188,8 @@ struct incremental_topic_updates
           segment_size,
           retention_bytes,
           retention_duration,
-          shadow_indexing);
+          shadow_indexing,
+          batch_max_bytes);
     }
 
     friend std::ostream&
@@ -1917,6 +1926,8 @@ struct cancel_moving_partition_replicas_cmd_data
 
 struct feature_update_license_update_cmd_data
   : serde::envelope<feature_update_license_update_cmd_data, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     // Struct encoding version
     static constexpr int8_t current_version = 1;
 
@@ -2471,6 +2482,24 @@ struct cancel_partition_movements_reply
     std::vector<move_cancellation_result> partition_results;
 };
 
+/*
+ * Partition Allocation Domains is the way to make certain partition replicas
+ * distributed evenly across the nodes of the cluster. When partition allocation
+ * is done within any domain but `common`, all existing allocations outside
+ * of that domain will be ignored while assigning partition a node.
+ * The `common` domain will consider allocations in all domains.
+ * Negative values are used for hardcoded domains, positive values are reserved
+ * for future use as user assigned domains, and may be used for a feature that
+ * would allow users to designate certain topics to have their partition
+ * replicas and leaders evenly distrbuted regardless of other topics.
+ */
+using partition_allocation_domain
+  = named_type<int32_t, struct partition_allocation_domain_tag>;
+namespace partition_allocation_domains {
+constexpr auto common = partition_allocation_domain(0);
+constexpr auto consumer_offsets = partition_allocation_domain(-1);
+} // namespace partition_allocation_domains
+
 } // namespace cluster
 namespace std {
 template<>
@@ -2668,12 +2697,6 @@ template<>
 struct adl<cluster::feature_update_cmd_data> {
     void to(iobuf&, cluster::feature_update_cmd_data&&);
     cluster::feature_update_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::feature_update_license_update_cmd_data> {
-    void to(iobuf& out, cluster::feature_update_license_update_cmd_data&&);
-    cluster::feature_update_license_update_cmd_data from(iobuf_parser&);
 };
 
 template<>
@@ -3399,4 +3422,5 @@ struct adl<cluster::cancel_partition_movements_reply> {
         };
     }
 };
+
 } // namespace reflection

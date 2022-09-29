@@ -154,6 +154,8 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.shadow_indexing = get_shadow_indexing_mode(config_entries);
     cfg.properties.read_replica_bucket = get_string_value(
       config_entries, topic_property_read_replica);
+    cfg.properties.batch_max_bytes = get_config_value<uint32_t>(
+      config_entries, topic_property_max_message_bytes);
     if (cfg.properties.read_replica_bucket.has_value()) {
         cfg.properties.read_replica = true;
     }
@@ -227,6 +229,10 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
     if (properties.recovery) {
         config_entries[topic_property_recovery] = from_config_type(
           *properties.recovery);
+    }
+    if (properties.batch_max_bytes) {
+        config_entries[topic_property_max_message_bytes] = from_config_type(
+          *properties.batch_max_bytes);
     }
     if (properties.shadow_indexing) {
         config_entries[topic_property_remote_write] = "false";

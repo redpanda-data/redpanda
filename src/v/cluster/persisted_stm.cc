@@ -230,7 +230,7 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (const ss::condition_variable_timed_out&) {
             co_return false;
-        } catch (const raft::offset_monitor::wait_timed_out&) {
+        } catch (const ss::timed_out_error&) {
             vlog(
               clusterlog.warn,
               "sync timeout: waiting for offset={}; committed "
@@ -316,7 +316,7 @@ ss::future<bool> persisted_stm::wait_no_throw(
           return false;
       })
       .handle_exception_type(
-        [offset, ntp = _c->ntp()](const raft::offset_monitor::wait_timed_out&) {
+        [offset, ntp = _c->ntp()](const ss::timed_out_error&) {
             vlog(
               clusterlog.warn,
               "timed out while waiting for offset: {}, ntp: {}",

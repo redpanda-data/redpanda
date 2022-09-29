@@ -98,7 +98,7 @@ struct follower_index_metadata {
     model::offset next_index;
     model::offset last_sent_offset;
     // timestamp of last append_entries_rpc call
-    clock_type::time_point last_sent_append_entries_req_timesptamp;
+    clock_type::time_point last_sent_append_entries_req_timestamp;
     clock_type::time_point last_received_append_entries_reply_timestamp;
     uint32_t heartbeats_failed{0};
     // The pair of sequences used to track append entries requests sent and
@@ -273,7 +273,7 @@ struct append_entries_request
     }
 
     ss::future<> serde_async_write(iobuf& out);
-    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 
 private:
     /*

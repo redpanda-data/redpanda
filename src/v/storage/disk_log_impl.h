@@ -124,7 +124,7 @@ private:
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-    find_compaction_range();
+    find_compaction_range(const compaction_config&);
     ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
@@ -171,10 +171,10 @@ private:
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
-    float _segment_size_jitter;
     bool _closed{false};
     ss::gate _compaction_gate;
     log_manager& _manager;
+    float _segment_size_jitter;
     segment_set _segs;
     kvstore& _kvstore;
     model::offset _start_offset;

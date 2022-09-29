@@ -19,7 +19,6 @@
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
@@ -37,6 +36,7 @@
 #include "cluster_config_schema_util.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "json/document.h"
 #include "json/schema.h"
@@ -1101,7 +1101,7 @@ void admin_server::register_cluster_config_routes() {
         request_auth_result const& auth_state)
         -> ss::future<ss::json::json_return_type> {
           if (!_controller->get_feature_table().local().is_active(
-                cluster::feature::central_config)) {
+                features::feature::central_config)) {
               throw ss::httpd::bad_request_exception(
                 "Central config feature not active (upgrade in progress?)");
           }
@@ -1671,35 +1671,35 @@ void admin_server::register_features_routes() {
               item.name = ss::sstring(fs.spec.name);
 
               switch (fs.get_state()) {
-              case cluster::feature_state::state::active:
+              case features::feature_state::state::active:
                   item.state = ss::httpd::features_json::feature_state::
                     feature_state_state::active;
                   break;
-              case cluster::feature_state::state::unavailable:
+              case features::feature_state::state::unavailable:
                   item.state = ss::httpd::features_json::feature_state::
                     feature_state_state::unavailable;
                   break;
-              case cluster::feature_state::state::available:
+              case features::feature_state::state::available:
                   item.state = ss::httpd::features_json::feature_state::
                     feature_state_state::available;
                   break;
-              case cluster::feature_state::state::preparing:
+              case features::feature_state::state::preparing:
                   item.state = ss::httpd::features_json::feature_state::
                     feature_state_state::preparing;
                   break;
-              case cluster::feature_state::state::disabled_clean:
-              case cluster::feature_state::state::disabled_active:
-              case cluster::feature_state::state::disabled_preparing:
+              case features::feature_state::state::disabled_clean:
+              case features::feature_state::state::disabled_active:
+              case features::feature_state::state::disabled_preparing:
                   item.state = ss::httpd::features_json::feature_state::
                     feature_state_state::disabled;
                   break;
               }
 
               switch (fs.get_state()) {
-              case cluster::feature_state::state::active:
-              case cluster::feature_state::state::preparing:
-              case cluster::feature_state::state::disabled_active:
-              case cluster::feature_state::state::disabled_preparing:
+              case features::feature_state::state::active:
+              case features::feature_state::state::preparing:
+              case features::feature_state::state::disabled_active:
+              case features::feature_state::state::disabled_preparing:
                   item.was_active = true;
                   break;
               default:
@@ -1762,7 +1762,7 @@ void admin_server::register_features_routes() {
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           if (!_controller->get_feature_table().local().is_active(
-                cluster::feature::license)) {
+                features::feature::license)) {
               throw ss::httpd::bad_request_exception(
                 "Feature manager reports the cluster is not fully upgraded to "
                 "accept license get requests");
@@ -1793,7 +1793,7 @@ void admin_server::register_features_routes() {
                 "Missing redpanda license from request body");
           }
           if (!_controller->get_feature_table().local().is_active(
-                cluster::feature::license)) {
+                features::feature::license)) {
               throw ss::httpd::bad_request_exception(
                 "Feature manager reports the cluster is not fully upgraded to "
                 "accept license put requests");
@@ -1917,7 +1917,7 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           if (!_controller->get_feature_table().local().is_active(
-                cluster::feature::maintenance_mode)) {
+                features::feature::maintenance_mode)) {
               throw ss::httpd::bad_request_exception(
                 "Maintenance mode feature not active (upgrade in progress?)");
           }
@@ -1941,7 +1941,7 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           if (!_controller->get_feature_table().local().is_active(
-                cluster::feature::maintenance_mode)) {
+                features::feature::maintenance_mode)) {
               throw ss::httpd::bad_request_exception(
                 "Maintenance mode feature not active (upgrade in progress?)");
           }

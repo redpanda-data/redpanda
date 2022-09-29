@@ -108,7 +108,7 @@ std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
 tm_stm::tm_stm(
   ss::logger& logger,
   raft::consensus* c,
-  ss::sharded<feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table)
   : persisted_stm("tx.coordinator.snapshot", logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
@@ -159,7 +159,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
                 return term;
             } catch (...) {
                 vlog(
-                  clusterlog.error,
+                  txlog.error,
                   "Error during writing a barrier batch: {}",
                   std::current_exception());
                 return tm_stm::op_status::unknown;
@@ -346,8 +346,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid,
   model::producer_identity last_pid) {
-    vlog(
-      clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
+    vlog(txlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
     auto tx_opt = get_tx(tx_id);
     if (!tx_opt.has_value()) {
@@ -391,7 +390,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid) {
-    vlog(clusterlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
+    vlog(txlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
     auto tx_opt = get_tx(tx_id);
     if (tx_opt.has_value()) {

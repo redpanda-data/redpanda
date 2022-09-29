@@ -48,7 +48,7 @@ protocol::protocol(
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<cluster::config_frontend>& cf,
-  ss::sharded<cluster::feature_table>& ft,
+  ss::sharded<features::feature_table>& ft,
   ss::sharded<quota_manager>& quota,
   ss::sharded<kafka::group_router>& router,
   ss::sharded<cluster::shard_table>& tbl,
@@ -180,7 +180,12 @@ ss::future<> protocol::apply(net::server::resources rs) {
     }
 
     auto ctx = ss::make_lw_shared<connection_context>(
-      *this, std::move(rs), std::move(sasl), authz_enabled, mtls_state);
+      *this,
+      std::move(rs),
+      std::move(sasl),
+      authz_enabled,
+      mtls_state,
+      config::shard_local_cfg().kafka_request_max_bytes.bind());
 
     co_return co_await ss::do_until(
       [ctx] { return ctx->is_finished_parsing(); },

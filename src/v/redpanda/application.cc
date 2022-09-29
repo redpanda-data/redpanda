@@ -54,7 +54,6 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
 #include "pandaproxy/schema_registry/api.h"
-#include "platform/stop_signal.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
@@ -131,6 +130,65 @@ application::application(ss::sstring logger_name)
   : _log(std::move(logger_name)){};
 
 application::~application() = default;
+
+void application::shutdown() {
+    // Stop accepting new requests.
+    if (_kafka_server.local_is_initialized()) {
+        _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
+    }
+    if (_rpc.local_is_initialized()) {
+        _rpc.invoke_on_all(&net::server::shutdown_input).get();
+    }
+
+    // We schedule shutting down controller input and aborting its operation as
+    // one of the first shutdown steps. This way we terminate all long running
+    // operations before shutting down the RPC server, preventing it from
+    // waiting on background dispatch gate `close` call.
+    if (controller) {
+        controller->shutdown_input().get();
+    }
+    if (kafka_group_migration) {
+        kafka_group_migration->await().get();
+    }
+
+    // Stop processing heartbeats before stopping the partition manager (and
+    // the underlying Raft consensus instances). Otherwise we'd process
+    // heartbeats for consensus objects that no longer exist.
+    if (raft_group_manager.local_is_initialized()) {
+        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    }
+    // Stop all partitions before destructing the subsystems (transaction
+    // coordinator, etc). This interrupts ongoing replication requests,
+    // allowing higher level state machines to shutdown cleanly.
+    if (partition_manager.local_is_initialized()) {
+        partition_manager
+          .invoke_on_all(&cluster::partition_manager::stop_partitions)
+          .get();
+    }
+    if (cp_partition_manager.local_is_initialized()) {
+        cp_partition_manager
+          .invoke_on_all(&coproc::partition_manager::stop_partitions)
+          .get();
+    }
+
+    // Wait for all requests to finish before destructing services that may be
+    // used by pending requests.
+    if (_kafka_server.local_is_initialized()) {
+        _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
+        _kafka_server.stop().get();
+        _kafka_conn_quotas.stop().get();
+    }
+    if (_rpc.local_is_initialized()) {
+        _rpc.invoke_on_all(&net::server::wait_for_shutdown).get();
+        _rpc.stop().get();
+    }
+
+    // Shut down services in reverse order to which they were registered.
+    while (!_deferred.empty()) {
+        _deferred.pop_back();
+    }
+}
 
 static void log_system_resources(
   ss::logger& log, const boost::program_options::variables_map& cfg) {
@@ -234,11 +292,7 @@ int application::run(int ac, char** av) {
             try {
                 ::stop_signal app_signal;
                 auto deferred = ss::defer([this] {
-                    auto deferred = std::move(_deferred);
-                    // stop services in reverse order
-                    while (!deferred.empty()) {
-                        deferred.pop_back();
-                    }
+                    shutdown();
                     vlog(_log.info, "Shutdown complete.");
                 });
                 // must initialize configuration before services
@@ -246,9 +300,7 @@ int application::run(int ac, char** av) {
                 initialize();
                 check_environment();
                 setup_metrics();
-                wire_up_services();
-                configure_admin_server();
-                start(app_signal);
+                wire_up_and_start(app_signal);
                 app_signal.wait().get();
                 vlog(_log.info, "Stopping...");
             } catch (...) {
@@ -686,12 +738,16 @@ void application::wire_up_services() {
           *_schema_reg_config,
           std::reference_wrapper(controller));
     }
+    configure_admin_server();
 }
 
 void application::wire_up_redpanda_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
+
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(_feature_table).get();
 
     // cluster
     syschecks::systemd_message("Adding raft client cache").get();
@@ -745,7 +801,8 @@ void application::wire_up_redpanda_services() {
         },
         std::ref(_connection_cache),
         std::ref(storage),
-        std::ref(recovery_throttle))
+        std::ref(recovery_throttle),
+        std::ref(_feature_table))
       .get();
 
     // custom handling for recovery_throttle and raft group manager shutdown.
@@ -780,9 +837,6 @@ void application::wire_up_redpanda_services() {
         cloud_configs.stop().get();
     }
 
-    syschecks::systemd_message("Creating feature table").get();
-    construct_service(_feature_table).get();
-
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -816,8 +870,8 @@ void application::wire_up_redpanda_services() {
       data_policies,
       std::ref(_feature_table),
       std::ref(cloud_storage_api));
-
     controller->wire_up().get0();
+
     syschecks::systemd_message("Creating kafka metadata cache").get();
     construct_service(
       metadata_cache,
@@ -826,28 +880,10 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_health_monitor()))
       .get();
-    /**
-     * Wait for all requests to finish before removing critical redpanda
-     * services, that may be used by
-     */
-    _deferred.emplace_back([this] {
-        if (_rpc.local_is_initialized()) {
-            _rpc.invoke_on_all(&net::server::wait_for_shutdown).get();
-            _rpc.stop().get();
-        }
-    });
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager").get();
     construct_service(quota_mgr).get();
-
-    _deferred.emplace_back([this] {
-        if (_kafka_server.local_is_initialized()) {
-            _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
-            _kafka_server.stop().get();
-            _kafka_conn_quotas.stop().get();
-        }
-    });
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
@@ -909,7 +945,7 @@ void application::wire_up_redpanda_services() {
     }
 
     // group membership
-    syschecks::systemd_message("Creating partition manager").get();
+    syschecks::systemd_message("Creating kafka group managers").get();
     construct_service(
       _group_manager,
       model::kafka_group_nt,
@@ -1078,28 +1114,6 @@ void application::wire_up_redpanda_services() {
       std::ref(rm_partition_frontend),
       std::ref(_feature_table))
       .get();
-    /**
-     * Schedule partition stop before the transaction coordinator is asked to be
-     * stopped. This will interrupt all ongoing replication requests allowing
-     * all high level components to shutdown cleanly.
-     */
-    _deferred.emplace_back([this] {
-        partition_manager
-          .invoke_on_all(&cluster::partition_manager::stop_partitions)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        // Prior to shutting down partition manager (which clears out all the
-        // raft `consensus` instances), stop processing heartbeats.  Otherwise
-        // we are receiving heartbeats that we can't match up to raft groups.
-        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
-          .get();
-    });
-    _deferred.emplace_back([this] {
-        cp_partition_manager
-          .invoke_on_all(&coproc::partition_manager::stop_partitions)
-          .get();
-    });
     _kafka_conn_quotas
       .start([]() {
           return net::conn_quota_config{
@@ -1235,7 +1249,8 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
       });
 }
 
-void application::start(::stop_signal& app_signal) {
+void application::wire_up_and_start(::stop_signal& app_signal) {
+    wire_up_services();
     start_redpanda(app_signal);
 
     if (_proxy_config) {
@@ -1313,22 +1328,9 @@ void application::start_redpanda(::stop_signal& app_signal) {
 
     syschecks::systemd_message("Starting controller").get();
     controller->start().get0();
-    /**
-     * We schedule shutting down controller input and aborting its operation
-     * as a first shutdown step. (other services are stopeed in
-     * an order reverse to the startup sequence.) This way we terminate all long
-     * running opertions before shutting down the RPC server, preventing it to
-     * wait on background dispatch gate `close` call.
-     *
-     * NOTE controller has to be stopped only after it was started
-     */
-    auto group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
+    kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
       *controller, group_router);
 
-    _deferred.emplace_back(
-      [group_migration] { group_migration->await().get(); });
-
-    _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
     syschecks::systemd_message("Starting metadata dissination service").get();
@@ -1393,9 +1395,6 @@ void application::start_redpanda(::stop_signal& app_signal) {
       })
       .get();
     _rpc.invoke_on_all(&net::server::start).get();
-    // shutdown input on RPC server
-    _deferred.emplace_back(
-      [this] { _rpc.invoke_on_all(&net::server::shutdown_input).get(); });
     vlog(
       _log.info,
       "Started RPC server listening at {}",
@@ -1429,7 +1428,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
       .invoke_on_all(&archival::upload_controller::start)
       .get();
 
-    group_migration->start(app_signal.abort_source()).get();
+    kafka_group_migration->start(app_signal.abort_source()).get();
 }
 
 /**
@@ -1490,10 +1489,6 @@ void application::start_kafka(::stop_signal& app_signal) {
       .await_membership(config::node().node_id(), app_signal.abort_source())
       .get();
     _kafka_server.invoke_on_all(&net::server::start).get();
-    // shutdown Kafka server input
-    _deferred.emplace_back([this] {
-        _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
-    });
     vlog(
       _log.info,
       "Started Kafka API server listening at {}",

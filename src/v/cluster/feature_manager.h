@@ -62,7 +62,7 @@ public:
       ss::sharded<raft::group_manager>& group_manager,
       ss::sharded<health_monitor_frontend>& hm_frontend,
       ss::sharded<health_monitor_backend>& hm_backend,
-      ss::sharded<feature_table>& table,
+      ss::sharded<features::feature_table>& table,
       ss::sharded<rpc::connection_cache>& connection_cache,
       raft::group_id raft0_group);
 
@@ -106,7 +106,7 @@ private:
     ss::sharded<raft::group_manager>& _group_manager;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<health_monitor_backend>& _hm_backend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     raft::group_id _raft0_group;
 

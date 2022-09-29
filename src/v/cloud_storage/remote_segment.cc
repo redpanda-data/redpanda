@@ -318,7 +318,7 @@ ss::future<> remote_segment::do_hydrate_txrange() {
 
     tx_range_manifest manifest(_path);
 
-    auto res = co_await _api.download_manifest(
+    auto res = co_await _api.maybe_download_manifest(
       _bucket, manifest.get_manifest_path(), manifest, local_rtc);
 
     vlog(
@@ -375,7 +375,7 @@ ss::future<bool> remote_segment::do_materialize_segment() {
 ss::future<bool> remote_segment::do_materialize_txrange() {
     if (_tx_range) {
         vlog(
-          _ctxlog.info,
+          _ctxlog.debug,
           "materialize tx_range, {} transactions available",
           _tx_range->size());
         co_return true;
@@ -399,7 +399,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
             co_await manifest.update(std::move(inp_stream));
             _tx_range = std::move(manifest).get_tx_range();
             vlog(
-              _ctxlog.info,
+              _ctxlog.debug,
               "materialize tx_range, {} transactions materialized",
               _tx_range->size());
         } catch (...) {
@@ -412,7 +412,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
         co_await cache_item->body.close();
     } else {
         vlog(
-          _ctxlog.info,
+          _ctxlog.debug,
           "tx_range '{}' is not available in cache, retrying",
           path);
         co_return false;

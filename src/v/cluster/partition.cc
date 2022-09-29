@@ -34,7 +34,7 @@ partition::partition(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   std::optional<s3::bucket_name> read_replica_bucket)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))

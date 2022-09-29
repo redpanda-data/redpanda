@@ -176,6 +176,11 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.retention_duration, cfg.value);
                 continue;
             }
+            if (cfg.name == topic_property_max_message_bytes) {
+                parse_and_set_optional(
+                  update.properties.batch_max_bytes, cfg.value);
+                continue;
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),

@@ -49,12 +49,13 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log                      logr.Logger
-	configuratorSettings     resources.ConfiguratorSettings
-	clusterDomain            string
-	Scheme                   *runtime.Scheme
-	AdminAPIClientFactory    adminutils.AdminAPIClientFactory
-	DecommissionWaitInterval time.Duration
+	Log                       logr.Logger
+	configuratorSettings      resources.ConfiguratorSettings
+	clusterDomain             string
+	Scheme                    *runtime.Scheme
+	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
+	DecommissionWaitInterval  time.Duration
+	RestrictToRedpandaVersion string
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -108,6 +109,9 @@ func (r *ClusterReconciler) Reconcile(
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
+	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
+		return ctrl.Result{}, nil
+	}
 
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
 	nodeports := collectNodePorts(redpandaPorts)
@@ -121,9 +125,11 @@ func (r *ClusterReconciler) Reconcile(
 
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
+	var ppIngressConfig *redpandav1alpha1.IngressConfig
 	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
 	if proxyAPIExternal != nil {
 		subdomain = proxyAPIExternal.External.Subdomain
+		ppIngressConfig = proxyAPIExternal.External.Ingress
 	}
 	ingress := resources.NewIngress(r.Client,
 		&redpandaCluster,
@@ -131,7 +137,9 @@ func (r *ClusterReconciler) Reconcile(
 		subdomain,
 		clusterSvc.Key().Name,
 		resources.PandaproxyPortExternalName,
-		log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"})
+		log).
+		WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).
+		WithUserConfig(ppIngressConfig)
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
@@ -428,8 +436,8 @@ func (r *ClusterReconciler) createExternalNodesList(
 
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) ||
-			externalProxyListener != nil && needExternalIP(externalProxyListener.External) ||
-			schemaRegistryConf != nil && schemaRegistryConf.External != nil && needExternalIP(*schemaRegistryConf.External) {
+			externalProxyListener != nil && needExternalIP(externalProxyListener.External.ExternalConnectivityConfig) ||
+			schemaRegistryConf != nil && schemaRegistryConf.External != nil && needExternalIP(*schemaRegistryConf.GetExternal()) {
 			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
 				return nil, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
 			}
@@ -477,7 +485,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 				))
 		}
 
-		if schemaRegistryConf != nil && schemaRegistryConf.External != nil && needExternalIP(*schemaRegistryConf.External) {
+		if schemaRegistryConf != nil && schemaRegistryConf.External != nil && needExternalIP(*schemaRegistryConf.GetExternal()) {
 			result.SchemaRegistry.ExternalNodeIPs = append(result.SchemaRegistry.ExternalNodeIPs,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
@@ -668,6 +676,19 @@ func isRedpandaClusterManaged(
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
 		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
 			redpandaCluster.Name, managedAnnotationKey))
+		return false
+	}
+	return true
+}
+
+func isRedpandaClusterVersionManaged(
+	log logr.Logger,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	restrictToRedpandaVersion string,
+) bool {
+	if restrictToRedpandaVersion != "" && restrictToRedpandaVersion != redpandaCluster.Spec.Version {
+		log.Info(fmt.Sprintf("management of %s is restricted to cluster (spec) version %s; cluster has spec version %s and status version %s",
+			redpandaCluster.Name, restrictToRedpandaVersion, redpandaCluster.Spec.Version, redpandaCluster.Status.Version))
 		return false
 	}
 	return true

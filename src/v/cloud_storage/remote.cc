@@ -27,6 +27,7 @@
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
 #include <fmt/chrono.h>
+#include <gnutls/gnutls.h>
 
 #include <exception>
 #include <utility>
@@ -46,6 +47,41 @@ enum class error_outcome {
     /// NotFound API error (only suitable for downloads)
     notfound
 };
+
+/**
+ * Identify error cases that should be quickly retried, e.g.
+ * TCP disconnects, timeouts. Network errors may also show up
+ * indirectly as errors from the TLS layer.
+ */
+bool system_error_retryable(const std::system_error& e) {
+    auto v = e.code().value();
+
+    // The name() of seastar's gnutls_error_category class
+    constexpr std::string_view gnutls_cateogry_name{"GnuTLS"};
+
+    if (e.code().category().name() == gnutls_cateogry_name) {
+        switch (v) {
+        case GNUTLS_E_PUSH_ERROR:
+        case GNUTLS_E_PULL_ERROR:
+        case GNUTLS_E_PREMATURE_TERMINATION:
+            return true;
+        default:
+            return false;
+        }
+    } else {
+        switch (v) {
+        case ECONNREFUSED:
+        case ENETUNREACH:
+        case ETIMEDOUT:
+        case ECONNRESET:
+        case EPIPE:
+            return true;
+        default:
+            return false;
+        }
+    }
+    __builtin_unreachable();
+}
 
 /// @brief Analyze exception
 /// @return error outcome - retry, fail (with exception), or notfound (can only
@@ -71,7 +107,9 @@ static error_outcome categorize_error(
         std::rethrow_exception(err);
     } catch (const s3::rest_error_response& err) {
         if (err.code() == s3::s3_error_code::no_such_key) {
-            vlog(ctxlog.info, "NoSuchKey response received {}", path);
+            // Unexpected 404s are logged elsewhere by the s3 client at warn
+            // level, so only log at debug level here.
+            vlog(ctxlog.debug, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
         } else if (
           err.code() == s3::s3_error_code::slow_down
@@ -107,17 +145,14 @@ static error_outcome categorize_error(
         // - any filesystem error
         // - broken-pipe
         // - any other network error (no memory, bad socket, etc)
-        if (auto code = cerr.code();
-            code.value() != ECONNREFUSED && code.value() != ENETUNREACH
-            && code.value() != ETIMEDOUT && code.value() != ECONNRESET
-            && code.value() != EPIPE) {
-            vlog(ctxlog.error, "System error {}", cerr);
-            result = error_outcome::fail;
-        } else {
+        if (system_error_retryable(cerr)) {
             vlog(
               ctxlog.warn,
               "System error susceptible for retry {}",
               cerr.what());
+        } else {
+            vlog(ctxlog.error, "System error {}", cerr);
+            result = error_outcome::fail;
         }
     } catch (const ss::timed_out_error& terr) {
         // This should happen when the connection pool was disconnected
@@ -193,6 +228,23 @@ ss::future<download_result> remote::download_manifest(
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
+    return do_download_manifest(bucket, key, manifest, parent);
+}
+
+ss::future<download_result> remote::maybe_download_manifest(
+  const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, key, manifest, parent, true);
+}
+
+ss::future<download_result> remote::do_download_manifest(
+  const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent,
+  bool expect_missing) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -206,7 +258,7 @@ ss::future<download_result> remote::download_manifest(
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
-              bucket, path, fib.get_timeout());
+              bucket, path, fib.get_timeout(), expect_missing);
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             co_await manifest.update(resp->as_input_stream());
             switch (manifest.get_manifest_type()) {
@@ -398,12 +450,12 @@ ss::future<upload_result> remote::upload_segment(
               bucket,
               path,
               content_length,
-              reader_handle.take_stream(),
+              reader_handle->take_stream(),
               tags,
               fib.get_timeout());
             _probe.successful_upload();
             _probe.register_upload_size(content_length);
-            co_await reader_handle.close();
+            co_await reader_handle->close();
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
@@ -411,7 +463,7 @@ ss::future<upload_result> remote::upload_segment(
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
-        co_await reader_handle.close();
+        co_await reader_handle->close();
 
         co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);

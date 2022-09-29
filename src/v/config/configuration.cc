@@ -28,12 +28,31 @@ configuration::configuration()
   : log_segment_size(
     *this,
     "log_segment_size",
-    "How large in bytes should each log segment be (default 1G)",
+    "Default log segment size in bytes for topics which do not set "
+    "segment.bytes",
     {.needs_restart = needs_restart::no,
      .example = "2147483648",
      .visibility = visibility::tunable},
     1_GiB,
     {.min = 1_MiB})
+  , log_segment_size_min(
+      *this,
+      "log_segment_size_min",
+      "Lower bound on topic segment.bytes: lower values will be clamped to "
+      "this limit",
+      {.needs_restart = needs_restart::no,
+       .example = "16777216",
+       .visibility = visibility::tunable},
+      std::nullopt)
+  , log_segment_size_max(
+      *this,
+      "log_segment_size_max",
+      "Upper bound on topic segment.bytes: higher values will be clamped to "
+      "this limit",
+      {.needs_restart = needs_restart::no,
+       .example = "268435456",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",
@@ -231,6 +250,13 @@ configuration::configuration()
        .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
+  , kafka_admin_topic_api_rate(
+      *this,
+      "kafka_admin_topic_api_rate",
+      "Target quota rate (partition mutations per default_window_sec)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
   , cluster_id(
       *this,
       "cluster_id",
@@ -816,6 +842,19 @@ configuration::configuration()
       "Timeout for executing node management operations",
       {.visibility = visibility::tunable},
       5s)
+  , kafka_request_max_bytes(
+      *this,
+      "kafka_request_max_bytes",
+      "Maximum size of a single request processed via Kafka API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100_MiB)
+  , kafka_batch_max_bytes(
+      *this,
+      "kafka_batch_max_bytes",
+      "Maximum size of a batch processed by server. If batch is compressed the "
+      "limit applies to compressed batch size",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_MiB)
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",

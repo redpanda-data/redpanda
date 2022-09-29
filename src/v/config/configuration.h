@@ -42,6 +42,8 @@ namespace config {
 struct configuration final : public config_store {
     // WAL
     bounded_property<uint64_t> log_segment_size;
+    property<std::optional<uint64_t>> log_segment_size_min;
+    property<std::optional<uint64_t>> log_segment_size_max;
     bounded_property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     // Network
@@ -80,6 +82,7 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     bounded_property<uint32_t> target_quota_byte_rate;
+    bounded_property<std::optional<uint32_t>> kafka_admin_topic_api_rate;
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
     property<bool> disable_public_metrics;
@@ -178,6 +181,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
+    property<uint32_t> kafka_request_max_bytes;
+    property<uint32_t> kafka_batch_max_bytes;
     // Compaction controller
     property<std::chrono::milliseconds> compaction_ctrl_update_interval_ms;
     property<double> compaction_ctrl_p_coeff;

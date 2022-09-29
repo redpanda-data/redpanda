@@ -173,7 +173,10 @@ public:
     storage::api& get_local_storage_api();
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
-    void init_storage_api_local(const std::vector<segment_desc>& segm);
+    void init_storage_api_local(
+      const std::vector<segment_desc>& segm,
+      std::optional<storage::ntp_config::default_overrides> overrides
+      = std::nullopt);
 
     std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
         return layouts.find(ntp)->second;
@@ -189,8 +192,10 @@ public:
       model::topic_namespace_view tp_ns, int partitions = 1);
 
 private:
-    void
-    initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
+    void initialize_shard(
+      storage::api& api,
+      const std::vector<segment_desc>& segm,
+      std::optional<storage::ntp_config::default_overrides> overrides);
 
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };

@@ -19,6 +19,7 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "raft/errc.h"
 #include "raft/types.h"
@@ -96,18 +97,6 @@ ss::future<> members_manager::start() {
     co_return;
 }
 
-/**
- * Sends a join RPC if we aren't already a member, else sends a node
- * configuration update if our local state differs from that stored
- * in the members table.
- *
- * This is separate to start() so that calling it can be delayed until
- * after our internal RPC listener is up: as soon as we send a join message,
- * the controller leader will expect us to be listening for its raft messages,
- * and if we're not ready it'll back off and make joining take several seconds
- * longer than it should.
- * (ref https://github.com/redpanda-data/redpanda/issues/3030)
- */
 ss::future<> members_manager::join_cluster() {
     if (is_already_member()) {
         ssx::spawn_with_gate(
@@ -404,7 +393,8 @@ void members_manager::join_raft0() {
                    return dispatch_join_to_seed_server(
                             std::cbegin(_seed_servers),
                             std::move(join_node_request{
-                              feature_table::get_latest_logical_version(),
+                              features::feature_table::
+                                get_latest_logical_version(),
                               _self}))
                      .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;

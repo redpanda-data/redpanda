@@ -447,7 +447,7 @@ func TestDefault(t *testing.T) {
 		fileLocation:   DefaultPath,
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
-		Redpanda: RedpandaConfig{
+		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
 			KafkaAPI: []NamedAuthNSocketAddress{{

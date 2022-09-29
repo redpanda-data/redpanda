@@ -21,7 +21,7 @@
 namespace cluster {
 
 /// Class containing information about cluster members. The members class is
-/// instantiated on each core. Cluster members updates are comming directly from
+/// instantiated on each core. Cluster members updates are coming directly from
 /// cluster::members_manager
 class members_table {
 public:
@@ -35,8 +35,6 @@ public:
 
     /// Returns single broker if exists in cache
     std::optional<broker_ptr> get_broker(model::node_id) const;
-
-    std::vector<model::node_id> get_decommissioned() const;
 
     bool contains(model::node_id) const;
 

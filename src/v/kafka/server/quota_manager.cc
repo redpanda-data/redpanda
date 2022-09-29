@@ -17,6 +17,8 @@
 
 #include <chrono>
 
+using namespace std::chrono_literals;
+
 namespace kafka {
 using clock = quota_manager::clock;
 using throttle_delay = quota_manager::throttle_delay;
@@ -33,11 +35,10 @@ ss::future<> quota_manager::start() {
     return ss::make_ready_future<>();
 }
 
-// record a new observation and return <previous delay, new delay>
-throttle_delay quota_manager::record_tp_and_throttle(
-  std::optional<std::string_view> client_id,
-  uint64_t bytes,
-  clock::time_point now) {
+quota_manager::underlying_t::iterator
+quota_manager::maybe_add_and_retrieve_quota(
+  const std::optional<std::string_view>& client_id,
+  const clock::time_point& now) {
     // requests without a client id are grouped into an anonymous group that
     // shares a default quota. the anonymous group is keyed on empty string.
     auto cid = client_id ? *client_id : "";
@@ -54,13 +55,81 @@ throttle_delay quota_manager::record_tp_and_throttle(
       quota{
         now,
         clock::duration(0),
-        {static_cast<size_t>(_default_num_windows()),
-         _default_window_width()}});
+        {static_cast<size_t>(_default_num_windows()), _default_window_width()},
+        /// pm_rate is only non-nullopt on the qm home shard
+        (ss::this_shard_id() == quota_manager_shard)
+          ? std::optional<token_bucket_rate_tracker>(
+            {*_target_partition_mutation_quota(),
+             static_cast<uint32_t>(_default_num_windows()),
+             _default_window_width()})
+          : std::optional<token_bucket_rate_tracker>()});
 
     // bump to prevent gc
     if (!inserted) {
         it->second.last_seen = now;
     }
+
+    return it;
+}
+
+ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
+  std::optional<std::string_view> client_id,
+  uint32_t mutations,
+  clock::time_point now) {
+    /// KIP-599 throttles create_topics / delete_topics / create_partitions
+    /// request. This delay should only be applied to these requests if the
+    /// quota has been exceeded
+    if (!_target_partition_mutation_quota()) {
+        co_return 0ms;
+    }
+    co_return co_await container().invoke_on(
+      quota_manager_shard, [client_id, mutations, now](quota_manager& qm) {
+          return qm.do_record_partition_mutations(client_id, mutations, now);
+      });
+}
+
+std::chrono::milliseconds quota_manager::do_record_partition_mutations(
+  std::optional<std::string_view> client_id,
+  uint32_t mutations,
+  clock::time_point now) {
+    vassert(
+      ss::this_shard_id() == quota_manager_shard,
+      "This method can only be executed from quota manager home shard");
+    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    const auto units = it->second.pm_rate->record_and_measure(mutations, now);
+    auto delay_ms = 0ms;
+    if (units < 0) {
+        /// Throttle time is defined as -K * R, where K is the number of
+        /// tokens in the bucket and R is the avg rate. This only works when
+        /// the number of tokens are negative which is the case when the
+        /// rate limiter recommends throttling
+        const auto rate = (units * -1)
+                          * std::chrono::seconds(
+                            *_target_partition_mutation_quota());
+        delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(rate);
+        std::chrono::milliseconds max_delay_ms(_max_delay());
+        if (delay_ms > max_delay_ms) {
+            vlog(
+              klog.info,
+              "Found partition mutation rate for window of: {}. Client:{}, "
+              "Estimated backpressure delay of {}. Limiting to {} backpressure "
+              "delay",
+              rate,
+              it->first,
+              delay_ms,
+              max_delay_ms);
+            delay_ms = max_delay_ms;
+        }
+    }
+    return delay_ms;
+}
+
+// record a new observation and return <previous delay, new delay>
+throttle_delay quota_manager::record_tp_and_throttle(
+  std::optional<std::string_view> client_id,
+  uint64_t bytes,
+  clock::time_point now) {
+    auto it = maybe_add_and_retrieve_quota(client_id, now);
 
     auto rate = it->second.tp_rate.record_and_measure(bytes, now);
 
@@ -81,7 +150,7 @@ throttle_delay quota_manager::record_tp_and_throttle(
           "Found data rate for window of: {} bytes. Client:{}, Estimated "
           "backpressure delay of {}. Limiting to {} backpressure delay",
           rate,
-          cid,
+          it->first,
           delay_ms,
           max_delay_ms);
         delay_ms = max_delay_ms;

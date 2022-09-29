@@ -9,6 +9,7 @@
 
 #include "raft/offset_monitor.h"
 
+#include "raft/logger.h"
 #include "vassert.h"
 
 #include <seastar/core/future-util.hh>
@@ -89,7 +90,7 @@ offset_monitor::waiter::waiter(
  */
 void offset_monitor::waiter::handle_abort(bool is_timeout) {
     if (is_timeout) {
-        done.set_exception(wait_timed_out());
+        done.set_exception(ss::timed_out_error());
     } else {
         // Use the generic seastar abort_requested_exception, because
         // in many locations we handle this gracefully and do not log

@@ -172,6 +172,7 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::coordinator_load_in_progress:
         case kec::request_timed_out:
         case kec::rebalance_in_progress:
+        case kec::throttling_quota_exceeded:
         case kec::reassignment_in_progress:
             return rec::kafka_retriable_error;
         case kec::unknown_topic_or_partition:

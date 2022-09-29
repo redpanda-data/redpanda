@@ -23,6 +23,7 @@
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
+#include "utils/uuid.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -40,6 +41,8 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+
+struct uuid_t;
 
 namespace serde {
 
@@ -85,8 +88,7 @@ concept has_serde_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
-concept has_serde_async_read
-  = requires(T t, iobuf_parser& in, const header& h) {
+concept has_serde_async_read = requires(T t, iobuf_parser& in, header h) {
     { t.serde_async_read(in, h) } -> seastar::Future;
 };
 
@@ -174,6 +176,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || std::is_same_v<T, uuid_t>
     || is_absl_btree_set<T>
     || is_absl_flat_hash_map<T>
     || is_absl_node_hash_set<T>
@@ -348,6 +351,8 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_same_v<Type, bytes>) {
         write<serde_size_t>(out, t.size());
         out.append(t.data(), t.size());
+    } else if constexpr (std::is_same_v<Type, uuid_t>) {
+        out.append(t.uuid.data, uuid_t::length);
     } else if constexpr (reflection::is_std_optional<Type>) {
         if (t) {
             write(out, true);
@@ -635,6 +640,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
+    } else if constexpr (std::is_same_v<Type, uuid_t>) {
+        in.consume_to(uuid_t::length, t.uuid.begin());
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(

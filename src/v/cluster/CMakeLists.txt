@@ -99,7 +99,6 @@ v_cc_library(
     feature_backend.cc
     feature_manager.cc
     feature_barrier.cc
-    feature_table.cc
     drain_manager.cc
     remote_topic_configuration_source.cc
     partition_balancer_planner.cc
@@ -118,5 +117,6 @@ v_cc_library(
     v::model
     v::v8_engine
     v::cloud_storage
+    v::features
   )
 add_subdirectory(tests)

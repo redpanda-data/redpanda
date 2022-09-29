@@ -4,14 +4,16 @@ import pprint
 import random
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence
+from typing import Sequence, Optional
 
-import confluent_kafka
+import confluent_kafka as ck
 import xxhash
 
 from rptest.archival.s3_client import S3ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+
+from ducktape.utils.util import wait_until
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -214,12 +216,14 @@ def gen_manifest_path(ntp, rev):
     return f"{hash}/meta/{path}/manifest.json"
 
 
-def _gen_segment_path(ntp, rev, name):
+def gen_segment_path(ntp: NTP, revision: int, name: str,
+                     archiver_term: Optional[int]) -> str:
     x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}/{name}"
+    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{revision}/{name}"
     x.update(path.encode('ascii'))
-    hash = x.hexdigest()
-    return f"{hash}/{path}"
+    if archiver_term is not None:
+        return f'{x.intdigest():08x}/{path}.{archiver_term}'
+    return f'{x.intdigest():08x}/{path}'
 
 
 def get_on_disk_size_per_ntp(chk):
@@ -288,15 +292,22 @@ class Producer:
         self.reconnect()
 
     def reconnect(self):
-        self.producer = confluent_kafka.Producer({
-            'bootstrap.servers':
-            self.brokers,
-            'transactional.id':
-            self.name,
-            'transaction.timeout.ms':
-            5000,
-        })
-        self.producer.init_transactions(self.timeout_sec)
+        def init():
+            try:
+                self.producer = ck.Producer({
+                    'bootstrap.servers': self.brokers,
+                    'transactional.id': self.name,
+                    'transaction.timeout.ms': 5000,
+                })
+                self.producer.init_transactions(self.timeout_sec)
+                return True
+            except ck.cimpl.KafkaException as e:
+                kafka_error = e.args[0]
+                if kafka_error.code() == ck.cimpl.KafkaError.NOT_COORDINATOR:
+                    return False
+                raise
+
+        wait_until(init, timeout_sec=10, backoff_sec=1)
 
     def produce(self, topic):
         """produce some messages inside a transaction with increasing keys

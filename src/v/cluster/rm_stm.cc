@@ -220,7 +220,7 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table)
   : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -240,7 +240,8 @@ rm_stm::rm_stm(
       "abort.idx",
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
-  , _feature_table(feature_table) {
+  , _feature_table(feature_table)
+  , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp())) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
@@ -254,7 +255,7 @@ bool rm_stm::check_tx_permitted() {
     // TODO support compaction
     if (_c->log_config().is_compacted()) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Can't process a transactional request to {}. Compacted topic "
           "doesn't support transactional processing.",
           _c->ntp());
@@ -337,7 +338,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (!r) {
             vlog(
-              clusterlog.error,
+              _ctx_log.error,
               "Error \"{}\" on replicating pid:{} fencing batch",
               r.error(),
               pid);
@@ -349,7 +350,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         }
     } else if (pid.get_epoch() < fence_it->second) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "pid {} fenced out by epoch {}",
           pid,
           fence_it->second);
@@ -364,7 +365,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         // it's ok we fail this request, a client will abort a
         // tx bumping its producer id's epoch
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "there is already an ongoing transaction within {} session",
           pid);
         co_return tx_errc::unknown_server_error;
@@ -432,7 +433,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
     }
     if (pid.get_epoch() != fence_it->second) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Can't prepare pid:{} - fenced out by epoch {}",
           pid,
           fence_it->second);
@@ -441,7 +442,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
 
     if (synced_term != etag) {
         vlog(
-          clusterlog.warn,
+          _ctx_log.warn,
           "Can't prepare pid:{} - partition lost leadership current term: {} "
           "expected term: {}",
           pid,
@@ -457,7 +458,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
     if (expected_it == _mem_state.expected.end()) {
         // impossible situation, a transaction coordinator tries
         // to prepare a transaction which wasn't started
-        vlog(clusterlog.error, "Can't prepare pid:{} - unknown session", pid);
+        vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
         co_return tx_errc::request_rejected;
     }
 
@@ -471,7 +472,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
     auto [_, inserted] = _mem_state.preparing.try_emplace(pid, marker);
     if (!inserted) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Can't prepare pid:{} - concurrent operation on the same session",
           pid);
         co_return tx_errc::conflict;
@@ -486,7 +487,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
 
     if (!r) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Error \"{}\" on replicating pid:{} prepare batch",
           r.error(),
           pid);
@@ -563,7 +564,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
 
         if (_recovery_policy == best_effort) {
-            vlog(clusterlog.error, "{}", msg);
+            vlog(_ctx_log.error, "{}", msg);
             co_return tx_errc::request_rejected;
         }
         vassert(false, "{}", msg);
@@ -573,7 +574,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
     if (prepare_it == _log_state.prepared.end()) {
         vlog(
-          clusterlog.trace,
+          _ctx_log.trace,
           "Can't find prepare for pid:{} => replaying already comitted commit",
           pid);
         co_return tx_errc::none;
@@ -586,7 +587,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         //   * during recovery tm_stm recommits (tx_seq)
         // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
         vlog(
-          clusterlog.trace,
+          _ctx_log.trace,
           "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
           "already comitted commit",
           pid,
@@ -600,7 +601,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           tx_seq,
           prepare_it->second.tx_seq);
         if (_recovery_policy == best_effort) {
-            vlog(clusterlog.error, "{}", msg);
+            vlog(_ctx_log.error, "{}", msg);
             co_return tx_errc::request_rejected;
         }
         vassert(false, "{}", msg);
@@ -617,7 +618,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
     if (!r) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Error \"{}\" on replicating pid:{} commit batch",
           r.error(),
           pid);
@@ -751,7 +752,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             // abort of the current transaction it should begin it and abort all
             // previous transactions with the same pid
             vlog(
-              clusterlog.error,
+              _ctx_log.error,
               "Rejecting abort (pid:{}, tx_seq: {}) because it isn't "
               "consistent "
               "with the current ongoing transaction",
@@ -775,7 +776,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
 
     if (!r) {
         vlog(
-          clusterlog.error,
+          _ctx_log.error,
           "Error \"{}\" on replicating pid:{} abort batch",
           r.error(),
           pid);
@@ -1042,7 +1043,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         // or it's a client bug and it keeps producing after commit / abort
         // or a replication of the first batch in a transaction has failed
         vlog(
-          clusterlog.warn,
+          _ctx_log.warn,
           "Partition doesn't expect record with pid:{}",
           bid.pid);
         co_return errc::invalid_producer_epoch;
@@ -1050,7 +1051,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     if (_mem_state.preparing.contains(bid.pid)) {
         vlog(
-          clusterlog.warn,
+          _ctx_log.warn,
           "Client keeps producing after initiating a prepare for pid:{}",
           bid.pid);
         co_return errc::generic_tx_error;
@@ -1060,7 +1061,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         // we received second produce request while the first is still
         // being processed. this is highly unlikely situation because
         // we replicate with ack=1 and it should be fast
-        vlog(clusterlog.warn, "Too frequent produce with same pid:{}", bid.pid);
+        vlog(_ctx_log.warn, "Too frequent produce with same pid:{}", bid.pid);
         co_return errc::generic_tx_error;
     }
 
@@ -1070,7 +1071,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         if (cached_offset) {
             if (cached_offset.value() < kafka::offset{0}) {
                 vlog(
-                  clusterlog.warn,
+                  _ctx_log.warn,
                   "Status of the original attempt is unknown (still is "
                   "in-flight "
                   "or failed). Failing a retried batch with the same pid:{} & "
@@ -1149,7 +1150,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
 
     if (bid.first_seq > bid.last_seq) {
         vlog(
-          clusterlog.warn,
+          _ctx_log.warn,
           "first_seq={} of the batch should be less or equal to last_seq={}",
           bid.first_seq,
           bid.last_seq);
@@ -1257,7 +1258,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         co_await std::move(ss->request_enqueued);
     } catch (...) {
         vlog(
-          clusterlog.warn,
+          _ctx_log.warn,
           "replication failed with {}",
           std::current_exception());
         has_failed = true;
@@ -1282,7 +1283,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
             r = co_await std::move(ss->replicate_finished);
         } catch (...) {
             vlog(
-              clusterlog.warn,
+              _ctx_log.warn,
               "replication failed with {}",
               std::current_exception());
             r = errc::replication_error;
@@ -1647,7 +1648,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      clusterlog.error,
+                      _ctx_log.error,
                       "Error \"{}\" on replicating pid:{} autoabort/commit "
                       "batch",
                       cr.error(),
@@ -1668,7 +1669,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      clusterlog.error,
+                      _ctx_log.error,
                       "Error \"{}\" on replicating pid:{} autoabort/abort "
                       "batch",
                       cr.error(),
@@ -1690,7 +1691,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (!cr) {
             vlog(
-              clusterlog.error,
+              _ctx_log.error,
               "Error \"{}\" on replicating pid:{} autoabort/abort batch",
               cr.error(),
               pid);
@@ -1856,7 +1857,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     if (bid.is_transactional) {
         if (_log_state.prepared.contains(bid.pid)) {
             vlog(
-              clusterlog.error,
+              _ctx_log.error,
               "Adding a record with pid:{} to a tx after it was prepared",
               bid.pid);
             if (_recovery_policy != best_effort) {
@@ -1993,7 +1994,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 }
 
 uint8_t rm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(feature::rm_stm_kafka_cache)) {
+    if (_feature_table.local().is_active(
+          features::feature::rm_stm_kafka_cache)) {
         return tx_snapshot::version;
     }
     return tx_snapshot_v1::version;

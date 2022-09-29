@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -36,7 +36,7 @@ public:
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
     ss::future<try_abort_reply> try_abort(
@@ -87,7 +87,7 @@ private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
@@ -95,7 +95,8 @@ private:
     bool _transactions_enabled;
 
     bool allow_init_tm_request_with_expected_pid() {
-        return _feature_table.local().is_active(feature::transaction_ga);
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
     }
 
     void start_expire_timer();
@@ -127,7 +128,7 @@ private:
       model::tx_seq,
       model::timeout_clock::duration);
     ss::future<try_abort_reply> do_try_abort(
-      model::partition_id,
+      ss::shared_ptr<tm_stm>,
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
@@ -145,19 +146,16 @@ private:
       std::chrono::milliseconds,
       model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
-      kafka::transactional_id,
-      std::chrono::milliseconds,
-      model::timeout_clock::duration,
-      model::producer_identity);
-    ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration,
       model::producer_identity);
 
-    ss::future<end_tx_reply>
-      do_end_txn(end_tx_request, model::timeout_clock::duration);
+    ss::future<end_tx_reply> do_end_txn(
+      checked<ss::shared_ptr<tm_stm>, tx_errc>,
+      end_tx_request,
+      model::timeout_clock::duration);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
       end_tx_request,
       ss::shared_ptr<cluster::tm_stm>,
@@ -185,14 +183,13 @@ private:
     ss::future<tx_errc>
       reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
 
-    ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
-      add_paritions_tx_request, model::timeout_clock::duration);
+    template<typename Func>
+    auto with_stm(Func&& func);
+
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
       ss::shared_ptr<tm_stm>,
       add_paritions_tx_request,
       model::timeout_clock::duration);
-    ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
-      add_offsets_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply> do_add_offsets_to_tx(
       ss::shared_ptr<tm_stm>,
       add_offsets_tx_request,
@@ -204,7 +201,6 @@ private:
       tm_transaction::tx_partition);
 
     void expire_old_txs();
-    ss::future<> do_expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
     ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<> do_expire_old_tx(

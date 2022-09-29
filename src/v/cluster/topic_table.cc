@@ -564,6 +564,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
 
     incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
+    incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
