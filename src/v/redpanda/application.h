@@ -157,6 +157,17 @@ private:
 
     bool archival_storage_enabled();
 
+    /**
+     * @brief Construct service boilerplate.
+     *
+     * Construct the given service s, calling start with the given arguments
+     * and set up a shutdown callback to stop it.
+     *
+     * Returns the future from start(), typically you'll call get() on it
+     * immediately to wait for creation to complete.
+     *
+     * @return the future returned by start()
+     */
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
