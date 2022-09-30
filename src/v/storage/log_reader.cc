@@ -62,9 +62,9 @@ batch_consumer::consume_result skipping_consumer::accept_batch_start(
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return batch_consumer::consume_result::skip_batch;
     }
-    if (_reader._config.first_timestamp > header.first_timestamp) {
-        // kakfa needs to guarantee that the returned record is >=
-        // first_timestamp
+    if (_reader._config.first_timestamp > header.max_timestamp) {
+        // kakfa requires that we return messages >= the timestamp, it is
+        // permitted to include a few earlier
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return batch_consumer::consume_result::skip_batch;
     }
