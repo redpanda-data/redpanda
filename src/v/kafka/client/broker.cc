@@ -25,10 +25,12 @@ ss::future<shared_broker_t> make_broker(
   const configuration& config) {
     return cluster::maybe_build_reloadable_certificate_credentials(
              config.broker_tls())
-      .then([addr](ss::shared_ptr<ss::tls::certificate_credentials> creds) {
+      .then([addr, client_id = config.client_identifier()](
+              ss::shared_ptr<ss::tls::certificate_credentials> creds) mutable {
           return ss::make_lw_shared<transport>(
             net::base_transport::configuration{
-              .server_addr = addr, .credentials = std::move(creds)});
+              .server_addr = addr, .credentials = std::move(creds)},
+            std::move(client_id));
       })
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
           return client->connect().then(

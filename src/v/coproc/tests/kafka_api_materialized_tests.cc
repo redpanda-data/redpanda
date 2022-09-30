@@ -24,9 +24,11 @@
 #include <boost/test/unit_test_log.hpp>
 
 static kafka::client::transport make_kafka_client() {
-    return kafka::client::transport(net::base_transport::configuration{
-      .server_addr = config::node().kafka_api()[0].address,
-    });
+    return kafka::client::transport(
+      net::base_transport::configuration{
+        .server_addr = config::node().kafka_api()[0].address,
+      },
+      "test_client");
 }
 
 class push_some_data_fixture : public coproc_test_fixture {
