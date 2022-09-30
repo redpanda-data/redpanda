@@ -353,13 +353,16 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
     auto data_path = tmp_dir.get_path();
     using namespace storage;
 
+    model::ntp test_ntp{"test_ns", "test_tpc", 0};
     disk_log_builder b{log_config{
       log_config::storage_type::disk,
       data_path.string(),
       1024,
       debug_sanitize_files::yes,
     }};
-    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    b | start(ntp_config{test_ntp, {data_path}});
+
+    auto defer = ss::defer([&b]() { b.stop().get(); });
 
     model::offset start_offset{0};
     for (auto i = 0; i < 4; ++i) {
@@ -368,22 +371,20 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
         start_offset = segment.offsets().dirty_offset + model::offset{1};
     }
 
-    set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
 
-    remote remote(s3_connection_limit(10), conf, config_file);
-    auto action = ss::defer([&remote] { remote.stop().get(); });
-
     auto path = generate_remote_segment_path(
-      manifest_ntp,
+      test_ntp,
       manifest_revision,
       segment_name("1-2-v1.log"),
       model::term_id{123});
 
-    auto reset_stream = [&b]() -> ss::future<std::unique_ptr<stream_provider>> {
-        auto start_pos = 20;
-        auto end_pos = b.get_log_segments().back()->file_size() - 20;
+    auto start_pos = 20;
+    auto end_pos = b.get_log_segments().back()->file_size() - 20;
+
+    auto reset_stream = [&b, start_pos, end_pos]()
+      -> ss::future<std::unique_ptr<stream_provider>> {
         co_return std::make_unique<concat_segment_reader_view>(
           std::vector<ss::lw_shared_ptr<segment>>{
             b.get_log_segments().begin(), b.get_log_segments().end()},
@@ -394,27 +395,15 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
 
     retry_chain_node fib(100ms, 20ms);
     auto upload_size = b.get_disk_log_impl().size_bytes() - 40;
+
+    remote remote(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+
+    set_expectations_and_listen({});
     auto upl_res
       = remote
           .upload_segment(
             bucket, path, upload_size, reset_stream, fib, always_continue)
           .get();
     BOOST_REQUIRE_EQUAL(upl_res, upload_result::success);
-
-    iobuf downloaded;
-    auto try_consume = [&downloaded](
-                         uint64_t len,
-                         ss::input_stream<char> is) -> ss::future<uint64_t> {
-        downloaded.clear();
-        auto rds = make_iobuf_ref_output_stream(downloaded);
-        co_await ss::copy(is, rds);
-        co_return downloaded.size_bytes();
-    };
-    auto dnl_res
-      = remote.download_segment(bucket, path, try_consume, fib).get();
-
-    BOOST_REQUIRE_EQUAL(dnl_res, download_result::success);
-    BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), upload_size);
-
-    b.stop().get();
 }

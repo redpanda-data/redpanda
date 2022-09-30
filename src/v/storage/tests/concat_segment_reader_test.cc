@@ -53,6 +53,7 @@ SEASTAR_THREAD_TEST_CASE(
     }};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
     size_t start_offset = 0;
 
     // Set up the first segment and start_pos
@@ -130,7 +131,6 @@ SEASTAR_THREAD_TEST_CASE(
       result.value(),
       b.get_disk_log_impl().size_bytes()
         - (start_pos + final_segment->file_size() - end_pos));
-    b.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
@@ -148,6 +148,7 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
+    auto defer = ss::defer([&b] { b.stop().get(); });
 
     const auto& log_segments = b.get_log_segments();
     auto segments = std::vector<ss::lw_shared_ptr<segment>>{
@@ -160,7 +161,6 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
       segments, start_pos, end_pos, ss::default_priority_class()};
     BOOST_REQUIRE_EQUAL(
       b.get_disk_log_impl().size_bytes() - 40, copy_stream(cv));
-    b.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
@@ -177,6 +177,7 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
+    auto defer = ss::defer([&b] { b.stop().get(); });
 
     const auto& log_segments = b.get_log_segments();
     auto segments = std::vector<ss::lw_shared_ptr<segment>>{
@@ -187,7 +188,6 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
     concat_segment_reader_view cv{
       segments, start_pos, end_pos, ss::default_priority_class()};
     BOOST_REQUIRE_EQUAL(b.get_disk_log_impl().size_bytes(), copy_stream(cv));
-    b.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
@@ -203,6 +203,8 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     }};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
     size_t start_offset = 0;
     for (auto i = 0; i < 5; ++i) {
         b | add_segment(start_offset) | add_random_batch(start_offset, 10);
@@ -219,5 +221,4 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     concat_segment_reader_view cv{
       segments, start_pos, end_pos, ss::default_priority_class()};
     BOOST_REQUIRE_EQUAL(b.get_disk_log_impl().size_bytes(), copy_stream(cv));
-    b.stop().get();
 }
