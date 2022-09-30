@@ -837,6 +837,28 @@ bool partition_manifest::delete_permanently(
     return false;
 }
 
+partition_manifest::const_iterator
+partition_manifest::segment_containing(model::offset o) const {
+    if (o > _last_offset || _segments.empty()) {
+        return end();
+    }
+
+    // Make sure to only compare based on the offset and not the term.
+    auto it = _segments.upper_bound(
+      key{.base_offset = o, .term = model::term_id::max()});
+    if (it == _segments.begin()) {
+        return end();
+    }
+
+    it = std::prev(it);
+    if (it->first.base_offset <= o && it->second.committed_offset >= o) {
+        return it;
+    }
+
+    // o lies in a gap in manifest
+    return end();
+}
+
 std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
     o << generate_segment_name(k.base_offset, k.term);
     return o;
