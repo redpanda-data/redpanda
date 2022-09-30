@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import threading
 from time import sleep
 import requests
@@ -101,8 +102,16 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
         self.move_worker.join()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5868
-    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # Allow unsupported version error log entry for older redpanda versions
+    #
+    # This log entry may be logged by version up to v22.1.x
+    unsupported_api_version_log_entry = re.compile(
+        "kafka rpc protocol - Error\[applying protocol\] .*Unsupported version \d+ for .*"
+    )
+
+    @cluster(num_nodes=6,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             [unsupported_api_version_log_entry])
     def test_basic_upgrade(self):
         topic = TopicSpec(partition_count=16, replication_factor=3)
         self.client().create_topic(topic)
