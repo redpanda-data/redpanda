@@ -122,6 +122,7 @@ v_cc_library(
     node_status_rpc_handler.cc
     internal_secret.cc
     internal_secret_frontend.cc
+    internal_secret_service.cc
   DEPS
     Seastar::seastar
     controller_rpc
