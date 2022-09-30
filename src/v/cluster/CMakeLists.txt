@@ -42,6 +42,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET internal_secret_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/internal_secret_service_impl.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/internal_secret_service_impl.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -122,6 +129,7 @@ v_cc_library(
     tx_gateway_rpc
     partition_balancer_rpc
     node_status_rpc
+    internal_secret_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map
