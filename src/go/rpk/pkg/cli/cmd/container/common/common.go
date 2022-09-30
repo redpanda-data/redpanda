@@ -47,6 +47,8 @@ type NodeState struct {
 	ConfigFile    string
 	HostRPCPort   uint
 	HostKafkaPort uint
+	HostAdminPort uint
+	HostProxyPort uint
 	ID            uint
 	ContainerIP   string
 	ContainerID   string
@@ -148,6 +150,20 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostAdminPort, err := getHostPort(
+		config.DefaultAdminPort,
+		containerJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	hostProxyPort, err := getHostPort(
+		config.DefaultProxyPort,
+		containerJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeState{
 		Running:       containerJSON.State.Running,
 		Status:        containerJSON.State.Status,
@@ -155,6 +171,8 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 		ContainerIP:   ipAddress,
 		HostKafkaPort: hostKafkaPort,
 		HostRPCPort:   hostRPCPort,
+		HostAdminPort: hostAdminPort,
+		HostProxyPort: hostProxyPort,
 		ID:            nodeID,
 	}, nil
 }
