@@ -13,8 +13,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
+	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
@@ -23,10 +26,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -269,7 +276,63 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Watches(&source.Kind{Type: &cmapiv1.Certificate{}},
+			handler.EnqueueRequestsFromMapFunc(func(a client.Object) []reconcile.Request {
+				if c, ok := a.(*cmapiv1.Certificate); ok {
+					cons, err := r.getAffectedConsolesByClusterResource(types.NamespacedName{Namespace: c.Namespace, Name: c.Name})
+					if err != nil {
+						r.Log.Error(err, "could not determine the list of consoles affected by certificate change")
+						return []reconcile.Request{}
+					}
+					return cons
+				}
+				return []reconcile.Request{}
+			})).
+		Watches(&source.Kind{Type: &redpandav1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(func(a client.Object) []reconcile.Request {
+				if c, ok := a.(*redpandav1alpha1.Cluster); ok {
+					cons, err := r.getAffectedConsolesByClusterResource(types.NamespacedName{Namespace: c.Namespace, Name: c.Name})
+					if err != nil {
+						r.Log.Error(err, "could not determine the list of consoles affected by cluster change")
+						return []reconcile.Request{}
+					}
+					return cons
+				}
+				return []reconcile.Request{}
+			})).
 		Complete(r)
+}
+
+// getAffectedConsolesByClusterResource returns Consoles that might be
+// affected by change in a cluster resource. Cluster resources (e.g. clusters or
+// certificates associated to them) share a common prefix that is the cluster
+// name itself. We use it to retrieve consoles that might be affected.
+//
+// Being based on name prefix, it might trigger more reconciliation
+// requests than needed.
+func (r *ConsoleReconciler) getAffectedConsolesByClusterResource(res types.NamespacedName) ([]reconcile.Request, error) {
+	// Unfortunately handler does not have context injected
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	consoles := redpandav1alpha1.ConsoleList{}
+	if err := r.List(ctx, &consoles); err != nil {
+		return nil, fmt.Errorf("could not list consoles for propagating event: %w", err)
+	}
+
+	var reqs []reconcile.Request
+	for i := range consoles.Items {
+		c := &consoles.Items[i]
+		if c.Spec.ClusterRef.Namespace == res.Namespace && strings.HasPrefix(res.Name, c.Spec.ClusterRef.Name) {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: c.Namespace,
+					Name:      c.Name,
+				},
+			})
+		}
+	}
+	return reqs, nil
 }
 
 // WithClusterDomain sets the clusterDomain
