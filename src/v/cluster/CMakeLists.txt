@@ -113,6 +113,7 @@ v_cc_library(
     partition_balancer_rpc_handler.cc
     node_status_backend.cc
     node_status_rpc_handler.cc
+    internal_secret.cc
   DEPS
     Seastar::seastar
     controller_rpc
