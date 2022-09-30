@@ -127,6 +127,8 @@ func CreateIfNotExists(
 // Update ensures resource is updated if necessary. The method calculates patch
 // and applies it if something changed
 // returns true if resource was updated
+//
+//nolint:nestif // No need to refactor
 func Update(
 	ctx context.Context,
 	current client.Object,
@@ -147,14 +149,20 @@ func Update(
 		return false, err
 	}
 	if !patchResult.IsEmpty() {
-		// need to set current version first otherwise the request would get rejected
-		logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
-			modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
+		if _, ok := modified.(*corev1.Secret); ok {
+			// Secrets contain sensitive information, we should not print diffs in the logs
+			logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: [suppressed]",
+				modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind))
+		} else {
+			logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
+				modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
+		}
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
 			return false, err
 		}
 
 		metaAccessor := meta.NewAccessor()
+		// need to set current version first otherwise the request would get rejected
 		currentVersion, err := metaAccessor.ResourceVersion(current)
 		if err != nil {
 			return false, err
