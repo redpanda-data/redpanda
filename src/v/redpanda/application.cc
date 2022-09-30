@@ -21,6 +21,7 @@
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/internal_secret_service.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
@@ -1411,6 +1412,11 @@ void application::start_redpanda(::stop_signal& app_signal) {
             _scheduling_groups.node_status(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(node_status_backend));
+
+          proto->register_service<cluster::internal_secret_service>(
+            _scheduling_groups.cluster_sg(),
+            smp_service_groups.cluster_smp_sg(),
+            std::ref(controller->get_internal_secret_frontend()));
 
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
