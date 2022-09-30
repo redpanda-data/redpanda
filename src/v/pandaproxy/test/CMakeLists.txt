@@ -7,3 +7,15 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::pandaproxy_common v::kafka_protocol
   LABELS pandaproxy
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME pandaproxy_single_thread
+  SOURCES
+    sharded_client_cache.cc
+    kafka_client_cache.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::rphashing v::http v::pandaproxy_common v::kafka_protocol
+  ARGS "-- -c 1"
+  LABELS pandaproxy
+)
