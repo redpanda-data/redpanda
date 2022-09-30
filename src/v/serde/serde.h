@@ -42,8 +42,6 @@
 #include <string_view>
 #include <type_traits>
 
-struct uuid_t;
-
 namespace serde {
 
 template<typename T>
@@ -243,6 +241,8 @@ int64_t checked_duration_cast_to_nanoseconds(
       .count();
 }
 
+inline void write(iobuf& out, uuid_t t);
+
 template<typename T>
 requires(
   std::is_scalar_v<std::decay_t<
@@ -295,6 +295,10 @@ requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t);
 
 inline void write(iobuf& out, iobuf t);
+
+inline void write(iobuf& out, uuid_t t) {
+    out.append(t.uuid.data, uuid_t::length);
+}
 
 template<typename T>
 requires(
@@ -538,10 +542,6 @@ void write(iobuf& out, T t) {
       "consequences. Check with Redpanda team before fixing this.");
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
-
-    if constexpr (std::is_same_v<Type, uuid_t>) {
-        out.append(t.uuid.data, uuid_t::length);
-    }
 }
 
 template<typename T>
