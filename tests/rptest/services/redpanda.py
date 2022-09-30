@@ -684,6 +684,18 @@ class RedpandaService(Service):
 
         return avail_kb * 1024
 
+    def get_node_disk_usage(self, node):
+        """
+        get disk usage for the redpanda volume on a particular node
+        """
+
+        for line in node.account.ssh_capture(
+                f"df --block-size 1 {self.PERSISTENT_ROOT}"):
+            self.logger.debug(line.strip())
+            if self.PERSISTENT_ROOT in line:
+                return int(line.split()[2])
+        assert False, "couldn't parse df output"
+
     def _for_nodes(self, nodes, cb: callable, *, parallel: bool):
         if not parallel:
             # Trivial case: just loop and call
