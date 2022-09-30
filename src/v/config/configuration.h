@@ -297,6 +297,23 @@ struct configuration final : public config_store {
     // enables rack aware replica assignment
     property<bool> enable_rack_awareness;
 
+    // controller log limitng
+    property<bool> enable_contoller_log_rate_limiting;
+    bounded_property<size_t> rps_limit_topic_operations;
+    property<size_t> controller_log_accummulation_rps_capacity_topic_operations;
+    bounded_property<size_t> rps_limit_acls_and_users_operations;
+    property<size_t>
+      controller_log_accummulation_rps_capacity_acls_and_users_operations;
+    bounded_property<size_t> rps_limit_node_management_operations;
+    property<size_t>
+      controller_log_accummulation_rps_capacity_node_management_operations;
+    bounded_property<size_t> rps_limit_move_operations;
+    property<size_t> controller_log_accummulation_rps_capacity_move_operations;
+    bounded_property<size_t> rps_limit_configuration_operations;
+    property<size_t>
+      controller_log_accummulation_rps_capacity_configuration_operations;
+    bounded_property<size_t> rps_limit_internal_controller_operations;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

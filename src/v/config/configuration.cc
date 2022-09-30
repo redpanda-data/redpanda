@@ -1396,7 +1396,90 @@ configuration::configuration()
       "enable_rack_awareness",
       "Enables rack-aware replica assignment",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false) {}
+      false)
+  , enable_contoller_log_rate_limiting(
+      *this,
+      "enable_controller_log_rate_limiting",
+      "Enables limiting of controller log write rate",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , rps_limit_topic_operations(
+      *this,
+      "rps_limit_topic_operations",
+      "Rate limit for controller topic operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25})
+  , controller_log_accummulation_rps_capacity_topic_operations(
+      *this,
+      "controller_log_accummulation_rps_capacity_topic_operations",
+      "Maximum capacity of rate limit accumulation"
+      "in controller topic operations limit",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
+  , rps_limit_acls_and_users_operations(
+      *this,
+      "rps_limit_acls_and_users_operations",
+      "Rate limit for controller acls and users operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25})
+  , controller_log_accummulation_rps_capacity_acls_and_users_operations(
+      *this,
+      "controller_log_accummulation_rps_capacity_acls_and_users_operations",
+      "Maximum capacity of rate limit accumulation"
+      "in controller acls and users operations limit",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
+  , rps_limit_node_management_operations(
+      *this,
+      "rps_limit_node_management_operations",
+      "Rate limit for controller node management operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25})
+  , controller_log_accummulation_rps_capacity_node_management_operations(
+      *this,
+      "controller_log_accummulation_rps_capacity_node_management_operations",
+      "Maximum capacity of rate limit accumulation"
+      "in controller node management operations limit",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
+  , rps_limit_move_operations(
+      *this,
+      "rps_limit_move_operations",
+      "Rate limit for controller move operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25})
+  , controller_log_accummulation_rps_capacity_move_operations(
+      *this,
+      "controller_log_accummulation_rps_capacity_move_operations",
+      "Maximum capacity of rate limit accumulation"
+      "in controller move operations limit",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
+  , rps_limit_configuration_operations(
+      *this,
+      "rps_limit_configuration_operations",
+      "Rate limit for controller configuration operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25})
+  , controller_log_accummulation_rps_capacity_configuration_operations(
+      *this,
+      "controller_log_accummulation_rps_capacity_configuration_operations",
+      "Maximum capacity of rate limit accumulation"
+      "in controller configuration operations limit",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
+  , rps_limit_internal_controller_operations(
+      *this,
+      "rps_limit_internal_controller_operations",
+      "Rate limit for controller internal operations",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1000,
+      {.min = 25}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
