@@ -20,6 +20,8 @@
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/internal_secret_frontend.h"
+#include "cluster/internal_secret_store.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
 #include "cluster/members_frontend.h"
@@ -366,6 +368,19 @@ ss::future<> controller::start() {
           return _partition_balancer.invoke_on(
             partition_balancer_backend::shard,
             &partition_balancer_backend::start);
+      })
+      .then([this] { return _internal_secret_store.start(); })
+      .then([this] {
+          return _internal_secret_frontend.start(
+            _raft0->self().id(),
+            std::ref(_internal_secret_store),
+            std::ref(_feature_table),
+            std::ref(_connections),
+            std::ref(_partition_leaders));
+      })
+      .then([this] {
+          return _internal_secret_frontend.invoke_on_all(
+            &internal_secret_frontend::start);
       });
 }
 
@@ -391,6 +406,8 @@ ss::future<> controller::stop() {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
         return stop_leader_balancer
+          .then([this] { return _internal_secret_frontend.stop(); })
+          .then([this] { return _internal_secret_store.stop(); })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })

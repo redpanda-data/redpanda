@@ -105,6 +105,10 @@ public:
         return _partition_balancer;
     }
 
+    ss::sharded<internal_secret_frontend>& get_internal_secret_frontend() {
+        return _internal_secret_frontend;
+    }
+
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
     bool is_raft0_leader() const {
@@ -167,6 +171,8 @@ private:
     ss::sharded<features::feature_table>& _feature_table; // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     ss::sharded<partition_balancer_backend> _partition_balancer;
+    ss::sharded<internal_secret_store> _internal_secret_store;
+    ss::sharded<internal_secret_frontend> _internal_secret_frontend;
     ss::gate _gate;
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
