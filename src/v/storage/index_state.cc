@@ -35,7 +35,8 @@ bool index_state::maybe_index(
   model::offset batch_base_offset,
   model::offset batch_max_offset,
   model::timestamp first_timestamp,
-  model::timestamp last_timestamp) {
+  model::timestamp last_timestamp,
+  bool user_data) {
     vassert(
       batch_base_offset >= base_offset,
       "cannot track offsets that are lower than our base, o:{}, "
@@ -45,22 +46,48 @@ bool index_state::maybe_index(
       *this);
 
     bool retval = false;
+
+    // The first non-config batch in the segment, use its timestamp
+    // to override the timestamps of any config batch that was indexed
+    // by virtue of being the first in the segment.
+    if (user_data && non_data_timestamps) {
+        vassert(relative_time_index.size() == 1, "");
+        relative_time_index[0] = uint32_t(first_timestamp());
+        base_timestamp = first_timestamp;
+        max_timestamp = first_timestamp;
+        non_data_timestamps = false;
+    }
+
     // index_state
     if (empty()) {
+        // Ordinarily, we do not allow configuration batches to contribute to
+        // the segment's timestamp bounds (because config batches use walltime
+        // but user data timestamps may be anything).  However, for the first
+        // batch we set the timestamps, and then set a `non_data_timestamps`
+        // flag so that the next time we see user data we will overwrite
+        // the walltime timestamps with the user data timestamps.
+        non_data_timestamps = !user_data;
+
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
         retval = true;
     }
+
     // NOTE: we don't need the 'max()' trick below because we controll the
     // offsets ourselves and it would be a bug otherwise - see assert above
     max_offset = batch_max_offset;
-    // some clients leave max timestamp uninitialized in cases there is a
-    // single record in a batch in this case we use first timestamp as a
-    // last one
-    last_timestamp = std::max(first_timestamp, last_timestamp);
-    max_timestamp = std::max(max_timestamp, last_timestamp);
+
+    // Do not allow config batches to contribute to segment timestamp bounds,
+    // because their timestamps may differ wildly from user-provided timestamps
+    if (user_data) {
+        // some clients leave max timestamp uninitialized in cases there is a
+        // single record in a batch in this case we use first timestamp as a
+        // last one
+        last_timestamp = std::max(first_timestamp, last_timestamp);
+        max_timestamp = std::max(max_timestamp, last_timestamp);
+    }
     // always saving the first batch simplifies a lot of book keeping
-    if (accumulator >= step || retval) {
+    if ((accumulator >= step && user_data) || retval) {
         // We know that a segment cannot be > 4GB
         add_entry(
           batch_base_offset() - base_offset(),
