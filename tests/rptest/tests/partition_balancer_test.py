@@ -417,45 +417,27 @@ class PartitionBalancerTest(EndToEndTest):
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
-        def get_disk_usage(node):
-            for line in node.account.ssh_capture(
-                    "df --block-size 1 /var/lib/redpanda"):
-                self.logger.debug(line.strip())
-                if '/var/lib/redpanda' in line:
-                    return int(line.split()[2])
-            assert False, "couldn't parse df output"
-
-        def get_total_disk_usage():
-            return sum(get_disk_usage(n) for n in self.redpanda.nodes)
-
         self.topic = TopicSpec(partition_count=32)
         self.client().create_topic(self.topic)
 
         # produce around 2GB of data, this should be enough to fill node disks
         # to a bit more than 70% usage on average
+        msg_count = 19_000
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic,
                                        msg_size=102_400,
-                                       msg_count=19_000)
+                                       msg_count=msg_count)
         producer.start(clean=False)
+        producer.wait_for_acks(msg_count, timeout_sec=120, backoff_sec=5)
 
-        wait_until(lambda: get_total_disk_usage() / 5 / disk_size > 0.7,
-                   timeout_sec=120,
-                   backoff_sec=5)
-
-        # a waiter that prints current node disk usage while it waits.
-        def create_waiter(target_status):
-            def func(s):
-                for n in self.redpanda.nodes:
-                    disk_usage = get_disk_usage(n)
-                    self.logger.info(
-                        f"node {self.redpanda.idx(n)}: "
-                        f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
-                    )
-                return s["status"] == target_status
-
-            return func
+        def print_disk_usage_per_node():
+            for n in self.redpanda.nodes:
+                disk_usage = self.redpanda.get_node_disk_usage(n)
+                self.logger.info(
+                    f"node {self.redpanda.idx(n)}: "
+                    f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
+                )
 
         with self.NodeStopper(self) as ns:
             ns.make_unavailable(random.choice(self.redpanda.nodes),
@@ -464,15 +446,37 @@ class PartitionBalancerTest(EndToEndTest):
             # Wait until the balancer manages to move partitions from the killed node.
             # This will make other 4 nodes go over the disk usage limit and the balancer
             # will stall because there won't be any other node to move partitions to.
-            self.wait_until_status(create_waiter("stalled"))
+
+            # waiter that prints current node disk usage while it waits.
+            def is_stalled(s):
+                print_disk_usage_per_node()
+                return s["status"] == "stalled"
+
+            self.wait_until_status(is_stalled)
             self.check_no_replicas_on_node(ns.cur_failure.node)
 
             # bring failed node up
             ns.make_available()
 
-        self.wait_until_status(create_waiter("ready"))
+        # Wait until the balancer is done and stable for a few ticks in a row
+        ready_appeared_at = None
+
+        def is_ready_and_stable(s):
+            print_disk_usage_per_node()
+            nonlocal ready_appeared_at
+            if s["status"] == "ready":
+                if ready_appeared_at is None:
+                    ready_appeared_at = time.time()
+                else:
+                    # ready status is stable for 11 seconds, should be enough for 3 ticks to pass
+                    return time.time() - ready_appeared_at > 11.0
+            else:
+                ready_appeared_at = None
+
+        self.wait_until_status(is_ready_and_stable)
+
         for n in self.redpanda.nodes:
-            disk_usage = get_disk_usage(n)
+            disk_usage = self.redpanda.get_node_disk_usage(n)
             used_ratio = disk_usage / disk_size
             self.logger.info(
                 f"node {self.redpanda.idx(n)}: "
