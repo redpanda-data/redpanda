@@ -355,7 +355,7 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
          model::offset(19),
          model::timestamp(123456),
          model::timestamp(123456789),
-         model::offset(12313),
+         model::offset_delta(12313),
          model::initial_revision_id(3),
          model::term_id(3)}}};
 
@@ -397,7 +397,7 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
          .committed_offset = model::offset(19),
          .base_timestamp = model::timestamp(123456),
          .max_timestamp = model::timestamp(123456789),
-         .delta_offset = model::offset(12313),
+         .delta_offset = model::offset_delta(12313),
          .ntp_revision = model::initial_revision_id(3),
          .archiver_term = model::term_id(3)}},
       {"20-1-v1.log",
@@ -578,7 +578,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .committed_offset = model::offset{34},
       .base_timestamp = timestamp,
       .max_timestamp = timestamp,
-      .delta_offset = model::offset{7},
+      .delta_offset = model::offset_delta{7},
       .ntp_revision = model::initial_revision_id{42},
       .archiver_term = model::term_id{123},
     };
@@ -595,7 +595,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .committed_offset = meta_new.committed_offset,
       .base_timestamp = meta_new.base_timestamp,
       .max_timestamp = meta_new.max_timestamp,
-      .delta_offset = meta_new.delta_offset,
+      .delta_offset = model::offset_cast(meta_new.delta_offset),
     };
 
     BOOST_CHECK(

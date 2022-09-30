@@ -204,8 +204,8 @@ replicated_partition::aborted_transactions(
     auto base_rp = ot_state->to_log_offset(base);
     auto last_rp = ot_state->to_log_offset(last);
     cloud_storage::offset_range offsets = {
-      .begin = base,
-      .end = last,
+      .begin = model::offset_cast(base),
+      .end = model::offset_cast(last),
       .begin_rp = base_rp,
       .end_rp = last_rp,
     };

@@ -488,7 +488,7 @@ struct partition_manifest_handler
             } else if ("max_timestamp" == _segment_meta_key) {
                 _max_timestamp = model::timestamp(u);
             } else if ("delta_offset" == _segment_meta_key) {
-                _delta_offset = model::offset(u);
+                _delta_offset = model::offset_delta(u);
             } else if ("ntp_revision" == _segment_meta_key) {
                 _ntp_revision = model::initial_revision_id(u);
             } else if ("archiver_term" == _segment_meta_key) {
@@ -527,7 +527,8 @@ struct partition_manifest_handler
                 model::timestamp::missing()),
               .max_timestamp = _max_timestamp.value_or(
                 model::timestamp::missing()),
-              .delta_offset = _delta_offset.value_or(model::offset::min()),
+              .delta_offset = _delta_offset.value_or(
+                model::offset_delta::min()),
               .ntp_revision = _ntp_revision.value_or(
                 _revision_id.value_or(model::initial_revision_id())),
               .archiver_term = _archiver_term.value_or(model::term_id{})};
@@ -629,7 +630,7 @@ struct partition_manifest_handler
     // optional segment meta fields
     std::optional<model::timestamp> _base_timestamp;
     std::optional<model::timestamp> _max_timestamp;
-    std::optional<model::offset> _delta_offset;
+    std::optional<model::offset_delta> _delta_offset;
     std::optional<model::initial_revision_id> _ntp_revision;
     std::optional<model::term_id> _archiver_term;
 
@@ -803,7 +804,7 @@ void partition_manifest::serialize(std::ostream& out) const {
                 w.Key("max_timestamp");
                 w.Int64(meta.max_timestamp.value());
             }
-            if (meta.delta_offset != model::offset::min()) {
+            if (meta.delta_offset != model::offset_delta::min()) {
                 w.Key("delta_offset");
                 w.Int64(meta.delta_offset());
             }

@@ -76,7 +76,7 @@ public:
         model::offset committed_offset;
         model::timestamp base_timestamp;
         model::timestamp max_timestamp;
-        model::offset delta_offset;
+        model::offset_delta delta_offset;
 
         model::initial_revision_id ntp_revision;
         model::term_id archiver_term;

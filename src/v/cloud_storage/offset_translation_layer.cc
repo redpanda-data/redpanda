@@ -29,7 +29,7 @@ ss::future<offset_translator::stream_stats> offset_translator::copy_stream(
     retry_chain_logger ctxlog(cst_log, fib);
     auto removed = _initial_delta;
     vassert(
-      removed != model::offset::min(),
+      removed != model::offset_delta::min(),
       "Can't copy segment with initial delta {}",
       removed);
     model::offset min_offset = model::offset::max();
@@ -44,7 +44,7 @@ ss::future<offset_translator::stream_stats> offset_translator::copy_stream(
             return storage::batch_consumer::consume_result::skip_batch;
         }
         auto old_offset = hdr.base_offset;
-        hdr.base_offset = hdr.base_offset - removed;
+        hdr.base_offset = kafka::offset_cast(hdr.base_offset - removed);
 
         min_offset = std::min(min_offset, hdr.base_offset);
         max_offset = std::max(max_offset, hdr.last_offset());

@@ -140,7 +140,8 @@ model::offset partition::start_cloud_offset() const {
       cloud_data_available(),
       "Method can only be called if cloud data is available, ntp: {}",
       _raft->ntp());
-    return _cloud_storage_partition->first_uploaded_offset();
+    return kafka::offset_cast(
+      _cloud_storage_partition->first_uploaded_offset());
 }
 
 model::offset partition::last_cloud_offset() const {
@@ -348,7 +349,7 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     }
     // Kafka defines leader epoch last offset as a first offset of next leader
     // epoch
-    return model::next_offset(*o);
+    return model::next_offset(kafka::offset_cast(*o));
 }
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;

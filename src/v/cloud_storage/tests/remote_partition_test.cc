@@ -210,7 +210,7 @@ make_imposter_expectations(
           .committed_offset = s.max_offset,
           .base_timestamp = {},
           .max_timestamp = {},
-          .delta_offset = model::offset(delta),
+          .delta_offset = model::offset_delta(delta),
           .ntp_revision = m.get_revision_id(),
         };
         m.add(s.sname, meta);

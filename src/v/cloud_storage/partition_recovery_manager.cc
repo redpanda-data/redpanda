@@ -355,7 +355,7 @@ partition_downloader::download_log_with_capped_size(
     size_t total_size = 0;
     std::deque<segment> staged_downloads;
     model::offset start_offset{0};
-    model::offset start_delta{0};
+    model::offset_delta start_delta{0};
     for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
         const auto& meta = it->second.meta;
         if (total_size > max_size) {
@@ -375,8 +375,9 @@ partition_downloader::download_log_with_capped_size(
         staged_downloads.push_front(it->second);
         total_size += meta.size_bytes;
         start_offset = meta.base_offset;
-        start_delta = meta.delta_offset == model::offset() ? start_delta
-                                                           : meta.delta_offset;
+        start_delta = meta.delta_offset == model::offset_delta()
+                        ? start_delta
+                        : meta.delta_offset;
     }
     vlog(
       _ctxlog.info,
@@ -447,7 +448,7 @@ partition_downloader::download_log_with_capped_time(
 
     std::deque<segment> staged_downloads;
     model::offset start_offset{0};
-    model::offset start_delta{0};
+    model::offset_delta start_delta{0};
     for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
         const auto& meta = it->second.meta;
         if (
@@ -470,8 +471,9 @@ partition_downloader::download_log_with_capped_time(
         }
         staged_downloads.push_front(it->second);
         start_offset = meta.base_offset;
-        start_delta = meta.delta_offset == model::offset() ? start_delta
-                                                           : meta.delta_offset;
+        start_delta = meta.delta_offset == model::offset_delta()
+                        ? start_delta
+                        : meta.delta_offset;
     }
     vlog(
       _ctxlog.info,

@@ -121,7 +121,7 @@ remote_segment::remote_segment(
     _base_rp_offset = meta->base_offset;
     _max_rp_offset = meta->committed_offset;
     _base_offset_delta = std::clamp(
-      meta->delta_offset, model::offset(0), model::offset::max());
+      meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
 
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
@@ -156,7 +156,7 @@ const model::offset remote_segment::get_max_rp_offset() const {
     return _max_rp_offset;
 }
 
-const model::offset remote_segment::get_base_offset_delta() const {
+const model::offset_delta remote_segment::get_base_offset_delta() const {
     return _base_offset_delta;
 }
 
@@ -164,7 +164,7 @@ const model::offset remote_segment::get_base_rp_offset() const {
     return _base_rp_offset;
 }
 
-const model::offset remote_segment::get_base_kafka_offset() const {
+const kafka::offset remote_segment::get_base_kafka_offset() const {
     return _base_rp_offset - _base_offset_delta;
 }
 
@@ -200,7 +200,7 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
-  model::offset kafka_offset, ss::io_priority_class io_priority) {
+  kafka::offset kafka_offset, ss::io_priority_class io_priority) {
     vlog(
       _ctxlog.debug,
       "remote segment file input stream at offset {}",
@@ -228,7 +228,7 @@ remote_segment::offset_data_stream(
 }
 
 std::optional<offset_index::find_result>
-remote_segment::maybe_get_offsets(model::offset kafka_offset) {
+remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     if (!_index) {
         return {};
     }
@@ -708,9 +708,9 @@ public:
     /// Translate redpanda offset to kafka offset
     ///
     /// \note this can only be applied to current record batch
-    model::offset rp_to_kafka(model::offset k) const noexcept {
+    kafka::offset rp_to_kafka(model::offset k) const noexcept {
         vassert(
-          k >= _parent._cur_delta,
+          k() >= _parent._cur_delta(),
           "Redpanda offset {} is smaller than the delta {}",
           k,
           _parent._cur_delta);
@@ -720,7 +720,7 @@ public:
     /// Translate kafka offset to redpanda offset
     ///
     /// \note this can only be applied to current record batch
-    model::offset kafka_to_rp(model::offset k) const noexcept {
+    model::offset kafka_to_rp(kafka::offset k) const noexcept {
         return k + _parent._cur_delta;
     }
 
@@ -735,7 +735,7 @@ public:
         if (header.type == model::record_batch_type::raft_data) {
             auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
             if (next > _config.start_offset) {
-                _config.start_offset = next;
+                _config.start_offset = kafka::offset_cast(next);
             }
         }
     }
@@ -863,7 +863,8 @@ public:
         // NOTE: we need to translate offset of the batch after we updated
         // start offset of the config since it assumes that the header has
         // redpanda offset.
-        batch.header().base_offset = rp_to_kafka(batch.base_offset());
+        batch.header().base_offset = kafka::offset_cast(
+          rp_to_kafka(batch.base_offset()));
 
         size_t sz = _parent.produce(std::move(batch));
 
@@ -958,7 +959,7 @@ remote_segment_batch_reader::init_parser() {
       "remote_segment_batch_reader::init_parser, start_offset: {}",
       _config.start_offset);
     auto stream_off = co_await _seg->offset_data_stream(
-      _config.start_offset,
+      model::offset_cast(_config.start_offset),
       priority_manager::local().shadow_indexing_priority());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(

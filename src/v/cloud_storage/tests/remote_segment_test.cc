@@ -96,7 +96,7 @@ FIXTURE_TEST(
       .committed_offset = model::offset(20),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = segment_ntp_revision};
     auto path = m.generate_segment_path(key, meta);
     auto upl_res = remote
@@ -137,7 +137,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
         .committed_offset = model::offset(123),
         .base_timestamp = {},
         .max_timestamp = {},
-        .delta_offset = model::offset(0),
+        .delta_offset = model::offset_delta(0),
         .ntp_revision = manifest_revision});
 
     retry_chain_node fib(100ms, 20ms);
@@ -166,7 +166,7 @@ FIXTURE_TEST(
       .committed_offset = model::offset(100),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
     auto path = m.generate_segment_path(key, meta);
     uint64_t clen = segment_bytes.size_bytes();
@@ -254,7 +254,7 @@ void test_remote_segment_batch_reader(
       .committed_offset = headers.back().last_offset(),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
     auto path = m.generate_segment_path(key, meta);
     auto reset_stream = make_reset_fn(segment_bytes);
@@ -366,7 +366,7 @@ FIXTURE_TEST(
       .committed_offset = headers.back().last_offset(),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
     auto path = m.generate_segment_path(key, meta);
     auto reset_stream = make_reset_fn(segment_bytes);

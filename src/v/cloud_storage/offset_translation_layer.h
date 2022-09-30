@@ -28,7 +28,7 @@ namespace cloud_storage {
 class offset_translator final {
 public:
     offset_translator(
-      model::offset initial_delta,
+      model::offset_delta initial_delta,
       storage::opt_abort_source_t as = std::nullopt)
       : _initial_delta(initial_delta)
       , _as(as) {}
@@ -55,7 +55,7 @@ public:
       const partition_manifest::key& s, retry_chain_node& fib) const;
 
 private:
-    model::offset _initial_delta;
+    model::offset_delta _initial_delta;
     storage::opt_abort_source_t _as;
 };
 

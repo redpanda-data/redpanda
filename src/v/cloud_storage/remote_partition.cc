@@ -41,25 +41,27 @@ using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
 /// This function returns segment base offset as kafka offset
-static model::offset
+static kafka::offset
 get_kafka_base_offset(const partition_manifest::segment_meta& m) {
     // Manifests created with the old version of redpanda won't have the
     // delta_offset field. In this case the value will be initialized to
     // model::offset::min(). In this case offset translation couldn't be
     // performed.
-    auto delta = m.delta_offset == model::offset::min() ? model::offset(0)
-                                                        : m.delta_offset;
+    auto delta = m.delta_offset == model::offset_delta::min()
+                   ? model::offset_delta(0)
+                   : m.delta_offset;
     return m.base_offset - delta;
 }
 /// This function returns segment max offset as kafka offset
-static model::offset
+static kafka::offset
 get_kafka_max_offset(const partition_manifest::segment_meta& m) {
     // Manifests created with the old version of redpanda won't have the
     // delta_offset field. In this case the value will be initialized to
     // model::offset::min(). In this case offset translation couldn't be
     // performed.
-    auto delta = m.delta_offset == model::offset::min() ? model::offset(0)
-                                                        : m.delta_offset;
+    auto delta = m.delta_offset == model::offset_delta::min()
+                   ? model::offset_delta(0)
+                   : m.delta_offset;
     return m.committed_offset - delta;
 }
 
@@ -253,7 +255,8 @@ private:
         if (!_partition || _partition->_segments.empty()) {
             return std::nullopt;
         }
-        auto it = _partition->upper_bound(config.start_offset);
+        auto it = _partition->upper_bound(
+          model::offset_cast(config.start_offset));
         if (it != _partition->begin()) {
             it = std::prev(it);
         }
@@ -415,7 +418,7 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
     auto now = ss::lowres_clock::now();
     auto max_idle = force_collection ? 0ms : stm_max_idle_time;
 
-    std::vector<model::offset> offsets;
+    std::vector<kafka::offset> offsets;
     for (auto& st : _materialized) {
         auto deadline = st.atime + max_idle;
         if (now >= deadline && !st.segment->download_in_progress()) {
@@ -459,7 +462,7 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
     }
 }
 
-model::offset remote_partition::first_uploaded_offset() {
+kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
@@ -496,7 +499,7 @@ bool remote_partition::is_data_available() const {
 }
 
 // returns term last kafka offset
-std::optional<model::offset>
+std::optional<kafka::offset>
 remote_partition::get_term_last_offset(model::term_id term) const {
     vassert(
       _manifest.size() > 0,
@@ -507,7 +510,7 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     // and term
     for (auto const& p : _manifest) {
         if (p.first.term > term) {
-            return get_kafka_base_offset(p.second) - model::offset(1);
+            return get_kafka_base_offset(p.second) - kafka::offset(1);
         }
     }
     // if last segment term is equal to the one we look for return it
@@ -644,7 +647,7 @@ void remote_partition::update_segments_incrementally() {
 
 /// Materialize segment if needed and create a reader
 std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
-  storage::log_reader_config config, model::offset key, segment_state& st) {
+  storage::log_reader_config config, kafka::offset key, segment_state& st) {
     if (std::holds_alternative<offloaded_segment_state>(st)) {
         gc_stale_materialized_segments(true);
     }
@@ -701,7 +704,7 @@ remote_partition::offloaded_segment_state::offloaded_segment_state(
 
 std::unique_ptr<remote_partition::materialized_segment_state>
 remote_partition::offloaded_segment_state::materialize(
-  remote_partition& p, model::offset offset_key) {
+  remote_partition& p, kafka::offset offset_key) {
     auto st = std::make_unique<materialized_segment_state>(
       base_rp_offset, offset_key, p);
     p._probe.segment_materialized();
@@ -718,7 +721,7 @@ remote_partition::offloaded_segment_state::offload(remote_partition*) {
 }
 
 remote_partition::materialized_segment_state::materialized_segment_state(
-  model::offset base_offset, model::offset off_key, remote_partition& p)
+  model::offset base_offset, kafka::offset off_key, remote_partition& p)
   : base_rp_offset(base_offset)
   , offset_key(off_key)
   , segment(ss::make_lw_shared<remote_segment>(
@@ -789,7 +792,7 @@ remote_partition::iterator remote_partition::end() {
     return iterator(_segments);
 }
 
-remote_partition::iterator remote_partition::upper_bound(model::offset o) {
+remote_partition::iterator remote_partition::upper_bound(kafka::offset o) {
     auto it = _segments.upper_bound(o);
     if (it != _segments.end()) {
         return iterator(_segments, it->first);
