@@ -208,9 +208,6 @@ private:
     bool is_done();
     ss::future<> find_next_valid_iterator();
 
-    using reader_available = ss::bool_class<struct create_reader_tag>;
-    reader_available maybe_create_segment_reader();
-
 private:
     struct iterator_pair {
         iterator_pair(segment_set::iterator i)
