@@ -413,7 +413,7 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
       _segments.size());
 
     auto now = ss::lowres_clock::now();
-    auto max_idle = force_collection ? stm_max_idle_time : 0ms;
+    auto max_idle = force_collection ? 0ms : stm_max_idle_time;
 
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
