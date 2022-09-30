@@ -50,5 +50,7 @@ class drain_manager;
 class partition_balancer_backend;
 class node_status_backend;
 class node_status_table;
+class internal_secret_frontend;
+class internal_secret_store;
 
 } // namespace cluster
