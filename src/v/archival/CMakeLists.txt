@@ -8,6 +8,7 @@ v_cc_library(
     probe.cc
     types.cc
     upload_controller.cc
+    segment_reupload.cc
   DEPS
     Seastar::seastar
     v::bytes
