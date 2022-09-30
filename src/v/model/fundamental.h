@@ -124,6 +124,57 @@ using ns = named_type<ss::sstring, struct model_ns_type>;
 
 using offset = named_type<int64_t, struct model_offset_type>;
 
+/// Delta between redpanda and kafka offsets. It supposed to be used
+/// by offset translation facilities.
+using offset_delta = named_type<int64_t, struct model_offset_delta_type>;
+
+/// \brief conversion from kafka offset to redpanda offset
+inline constexpr model::offset
+operator+(kafka::offset o, model::offset_delta d) {
+    return model::offset{o() + d()};
+}
+
+/// \brief conversion from redpanda offset to kafka offset
+inline constexpr kafka::offset
+operator-(model::offset o, model::offset_delta d) {
+    return kafka::offset{o() - d()};
+}
+
+/// \brief get offset delta from pair of offsets
+inline constexpr model::offset_delta
+operator-(model::offset r, kafka::offset k) {
+    return model::offset_delta{r() - k()};
+}
+
+/// \brief cast to model::offset
+///
+/// The purpose of this function is to mark every place where we converting
+/// from offset-delta to model::offset. This is done in places where the delta
+/// is represetnted as an instance of the model::offset. Once we convert every
+/// delta offset to model::delta_offset we will be able to depricate and remove
+/// this function.
+inline constexpr model::offset offset_cast(model::offset_delta d) {
+    return model::offset{d()};
+}
+
+/// \brief cast to kafka::offset
+///
+/// This function is used when we have a field which is incorrectly represented
+/// as model::offset instead of kafka::offset and we need to convert it to
+/// proper type.
+inline constexpr kafka::offset offset_cast(model::offset r) {
+    return kafka::offset{r()};
+}
+
+/// \brief cast to model::offset_delta
+///
+/// This function is used when we have a field which is incorrectly represented
+/// as model::offset instead of model::offset_delta and we need to convert it to
+/// proper type.
+inline constexpr model::offset_delta offset_delta_cast(model::offset r) {
+    return model::offset_delta{r()};
+}
+
 inline constexpr model::offset next_offset(model::offset o) {
     if (o < model::offset{0}) {
         return model::offset{0};
@@ -350,6 +401,21 @@ static_assert(
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
 } // namespace model
+
+namespace kafka {
+
+/// \brief cast to model::offset
+///
+/// The purpose of this function is to mark every place where we converting
+/// from kafka offset to model::offset. This is done in places where the kafka
+/// offset is represetnted as an instance of the model::offset. Once we convert
+/// every such field to kafka::delta_offset we will be able to depricate and
+/// remove this function.
+inline constexpr model::offset offset_cast(kafka::offset k) {
+    return model::offset{k()};
+}
+
+} // namespace kafka
 
 namespace std {
 template<>
