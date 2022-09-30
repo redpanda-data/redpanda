@@ -177,6 +177,8 @@ public:
         return manifest_type::partition;
     };
 
+    const_iterator segment_containing(model::offset o) const;
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
