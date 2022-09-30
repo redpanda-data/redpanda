@@ -81,6 +81,12 @@ public:
         return frag.at(index % elems_per_frag);
     }
 
+    T& operator[](size_t index) {
+        vassert(index < _size, "Index out of range {}/{}", index, _size);
+        auto& frag = _frags.at(index / elems_per_frag);
+        return frag.at(index % elems_per_frag);
+    }
+
     const T& back() const { return _frags.back().back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
