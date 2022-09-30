@@ -250,7 +250,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			Address: cr.AdminAPI[0].Address,
-			Port:    cr.AdminAPI[0].Port + 1,
+			Port:    calculateExternalPort(cr.AdminAPI[0].Port, r.pandaCluster.AdminAPIExternal().Port),
 			Name:    AdminPortExternalName,
 		}
 		cr.AdminAPI = append(cr.AdminAPI, externalAdminAPI)
@@ -372,15 +372,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 	return cfg, nil
 }
 
-// calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
-func calculateExternalPort(kafkaInternalPort, specifiedExternalPort int) int {
-	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
+// calculateExternalPort can calculate external port based on the internal port
+// for any listener
+func calculateExternalPort(internalPort, specifiedExternalPort int) int {
+	if internalPort < 0 || internalPort > 65535 {
 		return 0
 	}
 	if specifiedExternalPort != 0 {
 		return specifiedExternalPort
 	}
-	return kafkaInternalPort + 1
+	return internalPort + 1
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(
@@ -442,7 +443,7 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
 			config.NamedSocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(internal.Port, 0),
+				Port:    calculateExternalPort(internal.Port, r.pandaCluster.PandaproxyAPIExternal().Port),
 				Name:    PandaproxyPortExternalName,
 			})
 	}
