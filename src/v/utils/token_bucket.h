@@ -80,6 +80,18 @@ public:
         _sem.broken();
     }
 
+    void update_capacity(size_t new_capacity) {
+        if (_capacity == new_capacity) {
+            return;
+        }
+
+        if (new_capacity < _capacity && _sem.current() > new_capacity) {
+            _sem.consume(_sem.current() - new_capacity);
+        }
+
+        _capacity = new_capacity;
+    }
+
     void update_rate(size_t new_rate) {
         if (_rate == new_rate) {
             return;
