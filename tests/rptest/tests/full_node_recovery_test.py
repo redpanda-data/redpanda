@@ -107,13 +107,13 @@ class FullNodeRecoveryTest(EndToEndTest):
                 f"under replicated partitions: {list(under_replicated)}")
             return len(under_replicated) == 0
 
-        # wait for prepopulated topic to recover
-        wait_until(all_topics_recovered, 60, 1)
-
         self.run_validation(min_records=20000,
                             enable_idempotence=False,
                             producer_timeout_sec=60,
                             consumer_timeout_sec=180)
+
+        # wait for prepopulated topic to recover
+        wait_until(all_topics_recovered, 60, 1)
 
         # validate prepopulated topic offsets
         assert offsets == list_offsets()
