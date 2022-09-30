@@ -1775,6 +1775,10 @@ class RedpandaService(Service):
         for ns in listdir(store.data_dir, True):
             if ns == '.coprocessor_offset_checkpoints':
                 continue
+            if ns == 'cloud_storage_cache':
+                # Default cache dir is sub-path of data dir
+                continue
+
             ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
             for topic in listdir(ns.path):
                 topic = ns.add_topic(topic, os.path.join(ns.path, topic))
