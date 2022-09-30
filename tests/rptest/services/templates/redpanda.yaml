@@ -53,6 +53,9 @@ pandaproxy:
   pandaproxy_api:
     address: "0.0.0.0"
     port: 8082
+    {% if pp_authn_method %}
+    authentication_method: {{ pp_authn_method }}
+    {% endif %}
 
   advertised_pandaproxy_api:
     address: "{{node.account.hostname}}"
