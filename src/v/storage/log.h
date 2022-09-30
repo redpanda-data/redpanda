@@ -70,6 +70,7 @@ public:
 
         virtual size_t segment_count() const = 0;
         virtual storage::offset_stats offsets() const = 0;
+        virtual model::timestamp start_timestamp() const = 0;
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
         virtual std::optional<model::offset>
@@ -146,6 +147,10 @@ public:
     const ntp_config& config() const { return _impl->config(); }
 
     size_t segment_count() const { return _impl->segment_count(); }
+
+    model::timestamp start_timestamp() const {
+        return _impl->start_timestamp();
+    }
 
     storage::offset_stats offsets() const { return _impl->offsets(); }
 
