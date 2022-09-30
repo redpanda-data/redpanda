@@ -734,6 +734,15 @@ offset_stats disk_log_impl::offsets() const {
     };
 }
 
+model::timestamp disk_log_impl::start_timestamp() const {
+    if (_segs.empty()) {
+        return model::timestamp{};
+    }
+
+    auto& s = _segs.front();
+    return s->index().base_timestamp();
+}
+
 ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
