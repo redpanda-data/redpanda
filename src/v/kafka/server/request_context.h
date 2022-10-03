@@ -159,11 +159,12 @@ public:
     ss::future<response_ptr> respond(ResponseType r) {
         vlog(
           klog.trace,
-          "[{}:{}] sending {}:{} response {}",
+          "[{}:{}] sending {}:{} for {}, response {}",
           _conn->client_host(),
           _conn->client_port(),
           ResponseType::api_type::key,
           ResponseType::api_type::name,
+          _header.client_id,
           r);
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
