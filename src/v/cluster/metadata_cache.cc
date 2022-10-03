@@ -241,6 +241,14 @@ std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_retention_duration() const {
     return config::shard_local_cfg().delete_retention_ms();
 }
+std::optional<size_t>
+metadata_cache::get_default_retention_local_target_bytes() const {
+    return config::shard_local_cfg().retention_local_target_bytes_default();
+}
+std::chrono::milliseconds
+metadata_cache::get_default_retention_local_target_ms() const {
+    return config::shard_local_cfg().retention_local_target_ms_default();
+}
 
 uint32_t metadata_cache::get_default_batch_max_bytes() const {
     return config::shard_local_cfg().kafka_batch_max_bytes();
@@ -272,6 +280,11 @@ topic_properties metadata_cache::get_default_properties() const {
     tp.recovery = {false};
     tp.shadow_indexing = {get_default_shadow_indexing_mode()};
     tp.batch_max_bytes = get_default_batch_max_bytes();
+    tp.retention_local_target_bytes = tristate{
+      get_default_retention_local_target_bytes()};
+    tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
+      get_default_retention_local_target_ms()};
+
     return tp;
 }
 
