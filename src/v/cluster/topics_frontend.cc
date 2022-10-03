@@ -163,6 +163,18 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         co_return create_topic_results(updates, errc::no_leader_controller);
     }
 
+    if (!_features.local().is_active(features::feature::cloud_retention)) {
+        // The ADL encoding for cluster::incremental_topic_updates has evolved
+        // in v22.3. ADL is not forwards compatible, so we need to safe-guard
+        // against sending a message from the future to older nodes.
+
+        vlog(
+          clusterlog.info,
+          "Refusing to update topics as not all cluster nodes are running "
+          "v22.3");
+        co_return create_topic_results(updates, errc::feature_disabled);
+    }
+
     // current node is a leader, just replicate
     if (cluster_leader == _self) {
         // replicate empty batch to make sure leader local state is up to date.

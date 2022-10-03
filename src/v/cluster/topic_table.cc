@@ -566,6 +566,13 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
     incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
 
+    incremental_update(
+      properties.retention_local_target_bytes,
+      overrides.retention_local_target_bytes);
+    incremental_update(
+      properties.retention_local_target_ms,
+      overrides.retention_local_target_ms);
+
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
     deltas.reserve(tp->second.get_assignments().size());

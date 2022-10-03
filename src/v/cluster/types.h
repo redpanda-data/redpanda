@@ -1166,15 +1166,19 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
+    static constexpr int8_t version_with_batch_max_bytes_and_local_retention
+      = -4;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
     // -3 - topic_updates with shadow_indexing
-    static constexpr int8_t version = -3;
+    // -4 - topic update with batch_max_bytes and retention.local.target
+    static constexpr int8_t version
+      = version_with_batch_max_bytes_and_local_retention;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -1186,6 +1190,9 @@ struct incremental_topic_updates
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
     property_update<std::optional<model::shadow_indexing_mode>> shadow_indexing;
     property_update<std::optional<uint32_t>> batch_max_bytes;
+    property_update<tristate<size_t>> retention_local_target_bytes;
+    property_update<tristate<std::chrono::milliseconds>>
+      retention_local_target_ms;
 
     auto serde_fields() {
         return std::tie(
@@ -1197,7 +1204,9 @@ struct incremental_topic_updates
           retention_bytes,
           retention_duration,
           shadow_indexing,
-          batch_max_bytes);
+          batch_max_bytes,
+          retention_local_target_bytes,
+          retention_local_target_ms);
     }
 
     friend std::ostream&
