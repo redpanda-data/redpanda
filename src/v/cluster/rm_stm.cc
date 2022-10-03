@@ -251,19 +251,6 @@ rm_stm::rm_stm(
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
 }
 
-bool rm_stm::check_tx_permitted() {
-    // TODO support compaction
-    if (_c->log_config().is_compacted()) {
-        vlog(
-          _ctx_log.error,
-          "Can't process a transactional request to {}. Compacted topic "
-          "doesn't support transactional processing.",
-          _c->ntp());
-        return false;
-    }
-    return true;
-}
-
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
