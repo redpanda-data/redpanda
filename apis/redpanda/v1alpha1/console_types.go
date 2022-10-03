@@ -10,9 +10,23 @@
 package v1alpha1
 
 import (
+	"context"
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var (
+	// AllowConsoleAnyNamespace operator flag to control creating Console in any namespace aside from Redpanda namespace
+	// Console needs SchemaRegistry TLS certs Secret, if enabled this flag copies Secrets from Redpanda namespace to Console local namespace
+	// Secret syncing across namespaces might not be ideal especially for multi-tenant K8s clusters
+	AllowConsoleAnyNamespace = false
+
+	// ErrClusterNotConfigured is error returned if referenced Cluster is not yet configured
+	ErrClusterNotConfigured = fmt.Errorf("cluster not configured")
 )
 
 // ConsoleSpec defines the desired state of Console
@@ -212,11 +226,6 @@ func (c *Console) GenerationMatchesObserved() bool {
 	return c.GetGeneration() == c.Status.ObservedGeneration
 }
 
-// AllowConsoleAnyNamespace operator flag to control creating Console in any namespace aside from Redpanda namespace
-// Console needs SchemaRegistry TLS certs Secret, if enabled this flag copies Secrets from Redpanda namespace to Console local namespace
-// Secret syncing across namespaces might not be ideal especially for multi-tenant K8s clusters
-var AllowConsoleAnyNamespace bool
-
 // IsAllowedNamespace returns true if Console is valid to be created in current namespace
 func (c *Console) IsAllowedNamespace() bool {
 	return AllowConsoleAnyNamespace || c.GetNamespace() == c.Spec.ClusterRef.Namespace
@@ -225,6 +234,18 @@ func (c *Console) IsAllowedNamespace() bool {
 // GetClusterRef returns the NamespacedName of referenced Cluster object
 func (c *Console) GetClusterRef() types.NamespacedName {
 	return types.NamespacedName{Name: c.Spec.ClusterRef.Name, Namespace: c.Spec.ClusterRef.Namespace}
+}
+
+// GetCluster returns the referenced Cluster object
+func (c *Console) GetCluster(ctx context.Context, cl client.Client) (*Cluster, error) {
+	cluster := &Cluster{}
+	if err := cl.Get(ctx, c.GetClusterRef(), cluster); err != nil {
+		return nil, err
+	}
+	if cc := cluster.Status.GetCondition(ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+		return nil, ErrClusterNotConfigured
+	}
+	return cluster, nil
 }
 
 //+kubebuilder:object:root=true
