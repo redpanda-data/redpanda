@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
 #include "json/istreamwrapper.h"
@@ -32,6 +33,29 @@
 #include <memory>
 #include <optional>
 #include <utility>
+
+namespace fmt {
+template<>
+struct fmt::formatter<cloud_storage::partition_manifest::segment_meta> {
+    using segment_meta = cloud_storage::partition_manifest::segment_meta;
+
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(segment_meta const& m, FormatContext& ctx) {
+        return fmt::format_to(
+          ctx.out(),
+          "{{o={}-{} t={}-{}}}",
+          m.base_offset,
+          m.committed_offset,
+          m.base_timestamp,
+          m.max_timestamp);
+    }
+};
+} // namespace fmt
 
 namespace cloud_storage {
 std::ostream&
@@ -858,6 +882,123 @@ partition_manifest::segment_containing(model::offset o) const {
 
     // o lies in a gap in manifest
     return end();
+}
+
+/**
+ * Look up the first segment containing timestamps >= the query timestamp.
+ *
+ * We do not keep a direct index of timestamp to segment, because
+ * it is relatively rarely used, and would have a high memory cost.
+ * In the absence of a random-access container of timestamps,
+ * we may use offset as an indirect way of sampling the segments
+ * for a bisection search, and use the total partition min+max
+ * timestamps to establish a good initial guess: for a partition
+ * with evenly spaced messages over time, this will result in very
+ * fast lookup.
+ * The procedure is:
+ * 1. Make an initial guess by interpolating the timestamp between
+ *    the partitions min+max timestamp and mapping that to an offset
+ * 2. Convert offset guess into segment guess.  This is not a strictly
+ *    correct offset lookup, we just want something close.
+ * 3. Do linear search backward or forward from the location
+ *    we probed, to find the right segment.
+ */
+std::optional<std::reference_wrapper<const partition_manifest::segment_meta>>
+partition_manifest::timequery(model::timestamp t) const {
+    if (_segments.empty()) {
+        return std::nullopt;
+    }
+
+    auto base_t = _segments.begin()->second.base_timestamp;
+    auto max_t = _segments.rbegin()->second.max_timestamp;
+    auto base_offset = _segments.begin()->second.base_offset;
+    auto max_offset = _segments.rbegin()->second.committed_offset;
+
+    // Fast handling of bounds/edge cases to simplify subsequent
+    // arithmetic steps
+    if (t < base_t) {
+        return _segments.begin()->second;
+    } else if (t > max_t) {
+        return std::nullopt;
+    } else if (max_t == base_t) {
+        // This is plausible in the case of a single segment with
+        // a single batch using LogAppendTime.
+        return _segments.begin()->second;
+    }
+
+    // Single-offset case should have hit max_t==base_t above
+    vassert(
+      max_offset > base_offset,
+      "Unexpected offsets {} {} (times {} {})",
+      base_offset,
+      max_offset,
+      base_t,
+      max_t);
+
+    // From this point on, we have finite positive differences between
+    // base and max for both offset and time.
+    model::offset interpolated_offset
+      = base_offset
+        + model::offset{
+          (float(t() - base_t()) / float(max_t() - base_t()))
+          * float(max_offset() - base_offset())};
+
+    vlog(
+      cst_log.debug, "timequery t={} offset guess {}", t, interpolated_offset);
+
+    // 2. Convert offset guess into segment guess.  This is not a strictly
+    // correct offset lookup, we just want something close.
+    auto segment_iter = _segments.lower_bound(
+      key{interpolated_offset, model::term_id{-1}});
+    if (segment_iter == _segments.end()) {
+        segment_iter = --_segments.end();
+    }
+    vlog(
+      cst_log.debug,
+      "timequery t={} segment initial guess {}",
+      t,
+      segment_iter->second);
+
+    // 3. Do linear search backward or forward from the location
+    //    we probed, to find the right segment.
+    if (segment_iter->second.base_timestamp < t) {
+        // Our guess's base_timestamp is before the search point, so our
+        // result must be this segment or a later one: search forward
+        for (; segment_iter != _segments.end(); ++segment_iter) {
+            auto base_timestamp = segment_iter->second.base_timestamp;
+            auto max_timestamp = segment_iter->second.max_timestamp;
+            if (max_timestamp >= t) {
+                // We found a segment bounding the search point
+                break;
+            } else if (base_timestamp > t) {
+                // We found the first segment after the search point
+                break;
+            }
+        }
+
+        return segment_iter->second;
+    } else {
+        // Search backwards: we must peek at each preceding segment
+        // to see if its max_timestamp is >= the query t, before
+        // deciding whether to walk back to it.
+        vlog(
+          cst_log.debug, "timequery t={} reverse {}", t, segment_iter->second);
+
+        while (segment_iter != _segments.begin()) {
+            vlog(
+              cst_log.debug,
+              "timequery t={} reverse {}",
+              t,
+              segment_iter->second);
+            auto prev = std::prev(segment_iter);
+            if (prev->second.max_timestamp >= t) {
+                segment_iter = prev;
+            } else {
+                break;
+            }
+        }
+        return segment_iter->second;
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
