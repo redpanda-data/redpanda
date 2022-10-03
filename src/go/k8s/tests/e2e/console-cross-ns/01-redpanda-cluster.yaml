@@ -1,0 +1,33 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster
+  namespace: clust
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    - external:
+        enabled: true
+        subdomain: cluster.com
+      tls:
+        enabled: true
+    adminApi:
+    - port: 9644
+    schemaRegistry:
+      port: 8081
+    pandaproxyApi:
+     - port: 8082
+    developerMode: true

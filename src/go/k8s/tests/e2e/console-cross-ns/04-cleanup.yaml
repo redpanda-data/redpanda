@@ -1,0 +1,17 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Console
+  name: console
+  namespace: cons
+- apiVersion: v1
+  kind: Namespace
+  name: cons
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Cluster
+  name: cluster
+  namespace: clust
+- apiVersion: v1
+  kind: Namespace
+  name: clust

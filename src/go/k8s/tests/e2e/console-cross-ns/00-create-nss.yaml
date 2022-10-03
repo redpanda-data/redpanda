@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cons
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clust
