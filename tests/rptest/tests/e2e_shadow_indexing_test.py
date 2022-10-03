@@ -107,7 +107,8 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
             },
         )
 
@@ -153,7 +154,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
             },
         )
 
@@ -249,7 +251,10 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
 
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size},
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size
+            },
         )
 
         assert self.redpanda
