@@ -286,6 +286,9 @@ ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
                 if (bool(footer.flags & flags::self_compaction)) {
                     return compacted_index::recovery_state::already_compacted;
                 }
+                if (bool(footer.flags & flags::incomplete)) {
+                    return compacted_index::recovery_state::index_needs_rebuild;
+                }
                 // if we deal with old version of index that is not yet
                 // compacted request a rebuild
                 if (
