@@ -51,48 +51,50 @@ ss::future<walk_result> recursive_directory_walker::walk(
         try {
             ss::file target_dir = co_await open_directory(target);
             bool dir_empty{true};
-            auto sub = target_dir.list_directory(
-              [&files,
-               &current_cache_size,
-               &dirlist,
-               &dir_empty,
-               _target{target},
-               _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
-                  auto target{_target};
-                  auto tracker{_tracker};
+            co_await target_dir
+              .list_directory(ss::coroutine::lambda(
+                [&files,
+                 &current_cache_size,
+                 &dirlist,
+                 &dir_empty,
+                 _target{target},
+                 _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
+                    auto target{_target};
+                    auto tracker{_tracker};
 
-                  auto entry_path = std::filesystem::path(target)
-                                    / std::filesystem::path(entry.name);
-                  dir_empty = false;
-                  if (
-                    entry.type
-                    && entry.type == ss::directory_entry_type::regular) {
-                      vlog(cst_log.debug, "Regular file found {}", entry_path);
+                    auto entry_path = std::filesystem::path(target)
+                                      / std::filesystem::path(entry.name);
+                    dir_empty = false;
+                    if (
+                      entry.type
+                      && entry.type == ss::directory_entry_type::regular) {
+                        vlog(
+                          cst_log.debug, "Regular file found {}", entry_path);
 
-                      auto file_stats = co_await ss::file_stat(
-                        entry_path.string());
+                        auto file_stats = co_await ss::file_stat(
+                          entry_path.string());
 
-                      auto last_access_timepoint
-                        = tracker.estimate_timestamp(entry_path.native())
-                            .value_or(file_stats.time_accessed);
+                        auto last_access_timepoint
+                          = tracker.estimate_timestamp(entry_path.native())
+                              .value_or(file_stats.time_accessed);
 
-                      current_cache_size += static_cast<uint64_t>(
-                        file_stats.size);
-                      files.push_back(
-                        {last_access_timepoint,
-                         (std::filesystem::path(target) / entry.name.data())
-                           .native(),
-                         static_cast<uint64_t>(file_stats.size)});
-                  } else if (
-                    entry.type
-                    && entry.type == ss::directory_entry_type::directory) {
-                      vlog(cst_log.debug, "Dir found {}", entry_path);
-                      dirlist.push_front(entry_path.string());
-                  }
-                  co_return;
-              });
-            co_await sub.done().finally(
-              [target_dir]() mutable { return target_dir.close(); });
+                        current_cache_size += static_cast<uint64_t>(
+                          file_stats.size);
+                        files.push_back(
+                          {last_access_timepoint,
+                           (std::filesystem::path(target) / entry.name.data())
+                             .native(),
+                           static_cast<uint64_t>(file_stats.size)});
+                    } else if (
+                      entry.type
+                      && entry.type == ss::directory_entry_type::directory) {
+                        vlog(cst_log.debug, "Dir found {}", entry_path);
+                        dirlist.push_front(entry_path.string());
+                    }
+                    co_return;
+                }))
+              .done()
+              .finally([target_dir]() mutable { return target_dir.close(); });
 
             if (unlikely(dir_empty) && target != start_dir) {
                 empty_dirs.push_back(target);
