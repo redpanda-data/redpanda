@@ -354,4 +354,5 @@ struct compaction_result {
     size_t size_after;
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
+
 } // namespace storage
