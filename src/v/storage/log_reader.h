@@ -236,4 +236,16 @@ private:
     ss::abort_source::subscription _as_sub;
 };
 
+/**
+ * Assuming caller has already determined that this batch contains
+ * the record that should be the result to the timequery, traverse
+ * the batch to find which record matches.
+ *
+ * This is used by both storage's disk_log_impl and by cloud_storage's
+ * remote_partition, to seek to their final result after finding
+ * the batch.
+ */
+timequery_result
+batch_timequery(const model::record_batch& b, model::timestamp t);
+
 } // namespace storage
