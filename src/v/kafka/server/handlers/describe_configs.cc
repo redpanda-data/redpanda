@@ -564,6 +564,25 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<bool>);
 
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_retention_local_target_bytes,
+              ctx.metadata_cache().get_default_retention_local_target_bytes(),
+              topic_property_retention_local_target_bytes,
+              topic_config->properties.retention_local_target_bytes,
+              request.data.include_synonyms);
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_retention_local_target_ms,
+              std::make_optional(
+                ctx.metadata_cache().get_default_retention_local_target_ms()),
+              topic_property_retention_local_target_ms,
+              topic_config->properties.retention_local_target_ms,
+              request.data.include_synonyms);
+
             // Data-policy property
             ss::sstring property_name = "redpanda.datapolicy";
             add_topic_config_if_requested(
