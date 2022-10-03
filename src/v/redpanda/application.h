@@ -67,7 +67,7 @@ public:
       std::optional<YAML::Node> schema_reg_client_cfg = std::nullopt,
       std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
-    void wire_up_and_start(::stop_signal&);
+    void wire_up_and_start(::stop_signal&, bool test_mode = false);
 
     explicit application(ss::sstring = "redpanda::main");
     ~application();

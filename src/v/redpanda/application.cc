@@ -1265,8 +1265,20 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
       });
 }
 
-void application::wire_up_and_start(::stop_signal& app_signal) {
+void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     wire_up_services();
+
+    if (test_mode) {
+        // When running inside a unit test fixture, we may fast-forward
+        // some of initialization that would usually wait for the controller
+        // to commit some state to its log.
+        vlog(_log.warn, "Running in unit test mode");
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& ft) { ft.testing_activate_all(); })
+          .get();
+    }
+
     start_redpanda(app_signal);
 
     if (_proxy_config) {
