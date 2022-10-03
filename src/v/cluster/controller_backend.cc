@@ -780,7 +780,7 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "delta: {}",
           delta);
         vassert(
-          delta.previous_replica_set,
+          delta.replica_revisions,
           "replica revisions map must be present in reconfiguration type "
           "delta: {}",
           delta);
