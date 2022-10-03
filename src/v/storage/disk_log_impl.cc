@@ -595,12 +595,73 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     co_return ret;
 }
+
+compaction_config
+disk_log_impl::override_retention_config(compaction_config cfg) const {
+    auto cloud_storage_enabled
+      = config::shard_local_cfg().cloud_storage_enabled();
+    auto cluster_remote_write_enabled
+      = config::shard_local_cfg().cloud_storage_enable_remote_write();
+
+    tristate<std::size_t> local_retention_bytes;
+    tristate<std::chrono::milliseconds> local_retention_ms;
+
+    // Apply the topic level overrides for local retention.
+    if (config().has_overrides()) {
+        local_retention_bytes
+          = config().get_overrides().retention_local_target_bytes;
+        local_retention_ms = config().get_overrides().retention_local_target_ms;
+    }
+
+    // If local retention was not explicitly disabled or enabled, then use the
+    // defaults.
+    if (
+      !local_retention_bytes.is_disabled()
+      && !local_retention_bytes.has_value()) {
+        local_retention_bytes = tristate<size_t>{
+          config::shard_local_cfg().retention_local_target_bytes_default()};
+    }
+
+    if (!local_retention_ms.is_disabled() && !local_retention_ms.has_value()) {
+        local_retention_ms = tristate<std::chrono::milliseconds>{
+          config::shard_local_cfg().retention_local_target_ms_default()};
+    }
+
+    if (
+      cloud_storage_enabled
+      && (config().is_archival_enabled() || cluster_remote_write_enabled)) {
+        if (local_retention_bytes.is_disabled()) {
+            cfg.max_bytes = std::nullopt;
+        } else if (local_retention_bytes.has_value()) {
+            cfg.max_bytes = local_retention_bytes.value();
+        }
+
+        if (local_retention_ms.is_disabled()) {
+            cfg.eviction_time = model::timestamp::min();
+        } else if (local_retention_ms.has_value()) {
+            cfg.eviction_time = model::timestamp(
+              model::timestamp::now().value()
+              - local_retention_ms.value().count());
+        }
+
+        vlog(
+          gclog.trace,
+          "[{}] Overrode retention for topic with remote write enabled: {}",
+          config().ntp(),
+          cfg);
+    }
+
+    return cfg;
+}
+
 compaction_config
 disk_log_impl::apply_overrides(compaction_config defaults) const {
     if (!config().has_overrides()) {
-        return defaults;
+        return override_retention_config(defaults);
     }
+
     compaction_config ret = defaults;
+
     /**
      * Override retention bytes
      */
@@ -611,6 +672,7 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
     if (retention_bytes.has_value()) {
         ret.max_bytes = retention_bytes.value();
     }
+
     /**
      * Override retention time
      */
@@ -622,7 +684,8 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
         ret.eviction_time = model::timestamp(
           model::timestamp::now().value() - retention_time.value().count());
     }
-    return ret;
+
+    return override_retention_config(ret);
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {

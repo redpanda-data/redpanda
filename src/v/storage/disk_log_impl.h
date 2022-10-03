@@ -160,6 +160,8 @@ private:
 
     void wrote_stm_bytes(size_t);
 
+    compaction_config override_retention_config(compaction_config cfg) const;
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
