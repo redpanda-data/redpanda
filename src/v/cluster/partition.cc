@@ -276,7 +276,56 @@ ss::future<> partition::stop() {
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
-    return _raft->timequery(cfg);
+    std::optional<storage::timequery_result> result;
+    if (
+      _cloud_storage_partition && _raft->log().start_timestamp() >= cfg.time
+      && _cloud_storage_partition->is_data_available()) {
+        // We have data in the remote partition, and all the data in the raft
+        // log is ahead of the query timestamp, so proceed to query the
+        // remote partition to try and find the earliest data that has timestamp
+        // >= the query time.
+        vlog(
+          clusterlog.debug,
+          "timequery (cloud) {} t={} max_offset(k)={}",
+          _raft->ntp(),
+          cfg.time,
+          cfg.max_offset);
+
+        // remote_partition pre-translates offsets for us, so no call into
+        // the offset translator here
+        auto cloud_result = co_await _cloud_storage_partition->timequery(cfg);
+        if (cloud_result) {
+            co_return cloud_result;
+        }
+
+        // Fall-through: if cfg.time is ahead of the end of the remote_partition
+        // data, search for it in the local data.
+    }
+
+    vlog(
+      clusterlog.debug,
+      "timequery (raft) {} t={} max_offset(k)={}",
+      _raft->ntp(),
+      cfg.time,
+      cfg.max_offset);
+
+    // Translate input (kafka) offset into raft offset
+    cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
+      cfg.max_offset);
+    result = co_await _raft->timequery(cfg);
+    if (result) {
+        vlog(
+          clusterlog.debug,
+          "timequery (raft) {} t={} max_offset(r)={} result(r)={}",
+          _raft->ntp(),
+          cfg.time,
+          cfg.max_offset,
+          result->offset);
+        result->offset = _raft->get_offset_translator_state()->from_log_offset(
+          result->offset);
+    }
+
+    co_return result;
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
