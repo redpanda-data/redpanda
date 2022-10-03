@@ -187,7 +187,7 @@ std::error_code check_configuration_update(
           change_revision);
         return errc::partition_configuration_revision_not_updated;
     }
-    bool includes_self = contains_node(self, bs);
+    const bool includes_self = contains_node(self, bs);
 
     /*
      * if configuration includes current node, we expect configuration to be
@@ -744,7 +744,7 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
      * as a source of revision_id
      */
     vlog(clusterlog.trace, "executing ntp: {} operation: {}", delta.ntp, delta);
-    model::revision_id rev(delta.offset());
+    const model::revision_id rev(delta.offset());
     // new partitions
 
     // only create partitions for this backend
