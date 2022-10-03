@@ -587,6 +587,12 @@ func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
 				r.Spec.Configuration.SchemaRegistry,
 				"port must be in the range [30000-32768] when using a static node port"))
 	}
+	if schemaRegistry.External.Endpoint != "" && !validHostnameSegment.MatchString(schemaRegistry.External.Endpoint) {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("endpoint"),
+				r.Spec.Configuration.SchemaRegistry.External.Endpoint,
+				fmt.Sprintf("endpoint for schema registry does not match regexp %s", validHostnameSegment.String())))
+	}
 
 	return allErrs
 }

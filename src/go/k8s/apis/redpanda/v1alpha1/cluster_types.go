@@ -552,6 +552,9 @@ type SchemaRegistryExternalConnectivityConfig struct {
 	ExternalConnectivityConfig `json:",inline"`
 	// Indicates that the node port for the service needs not to be generated.
 	StaticNodePort bool `json:"staticNodePort,omitempty"`
+	// Indicates the global endpoint that (together with subdomain), should be
+	// advertised for schema registry.
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // SchemaRegistryStatus reports addresses where schema registry
