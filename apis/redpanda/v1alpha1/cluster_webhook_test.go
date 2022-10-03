@@ -1028,6 +1028,7 @@ func TestCreation(t *testing.T) {
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
 	})
+	//nolint:dupl // not really a duplicate
 	t.Run("endpoint template not allowed for schemaregistry", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		const commonDomain = "company.org"
@@ -1042,6 +1043,44 @@ func TestCreation(t *testing.T) {
 				Subdomain:        commonDomain,
 				EndpointTemplate: "xxx",
 			},
+		}}
+		err := rp.ValidateCreate()
+		assert.Error(t, err)
+	})
+	//nolint:dupl // not really a duplicate
+	t.Run("endpoint allowed for schemaregistry", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		const commonDomain = "company.org"
+
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{
+			Enabled:   true,
+			Subdomain: commonDomain,
+		}})
+		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+				Enabled:   true,
+				Subdomain: commonDomain,
+			},
+			Endpoint: "xxx",
+		}}
+		err := rp.ValidateCreate()
+		assert.NoError(t, err)
+	})
+	//nolint:dupl // not really a duplicate
+	t.Run("invalid endpoint not allowed for schemaregistry", func(t *testing.T) {
+		rp := redpandaCluster.DeepCopy()
+		const commonDomain = "company.org"
+
+		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{
+			Enabled:   true,
+			Subdomain: commonDomain,
+		}})
+		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+				Enabled:   true,
+				Subdomain: commonDomain,
+			},
+			Endpoint: "xx.xx",
 		}}
 		err := rp.ValidateCreate()
 		assert.Error(t, err)

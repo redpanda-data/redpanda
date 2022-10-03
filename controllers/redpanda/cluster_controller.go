@@ -495,7 +495,12 @@ func (r *ClusterReconciler) createExternalNodesList(
 	}
 
 	if schemaRegistryConf != nil && schemaRegistryConf.External != nil && len(schemaRegistryConf.External.Subdomain) > 0 {
-		result.SchemaRegistry.External = fmt.Sprintf("%s:%d",
+		prefix := ""
+		if schemaRegistryConf.External.Endpoint != "" {
+			prefix = fmt.Sprintf("%s.", schemaRegistryConf.External.Endpoint)
+		}
+		result.SchemaRegistry.External = fmt.Sprintf("%s%s:%d",
+			prefix,
 			schemaRegistryConf.External.Subdomain,
 			getNodePort(&nodePortSvc, resources.SchemaRegistryPortName),
 		)

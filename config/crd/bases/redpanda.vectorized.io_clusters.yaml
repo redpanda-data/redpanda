@@ -513,6 +513,10 @@ spec:
                             description: Enabled enables the external connectivity
                               feature
                             type: boolean
+                          endpoint:
+                            description: Indicates the global endpoint that (together
+                              with subdomain), should be advertised for schema registry.
+                            type: string
                           endpointTemplate:
                             description: "EndpointTemplate is a Golang template string
                               that allows customizing each broker advertised address.
