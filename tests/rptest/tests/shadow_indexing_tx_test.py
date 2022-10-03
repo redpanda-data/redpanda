@@ -96,7 +96,8 @@ class ShadowIndexingTxTest(RedpandaTest):
         kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 3 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                3 * self.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,

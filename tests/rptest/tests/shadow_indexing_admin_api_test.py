@@ -86,7 +86,7 @@ class SIAdminApiTest(RedpandaTest):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 1024,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 1024,
             },
         )
 

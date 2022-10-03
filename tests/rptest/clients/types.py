@@ -29,6 +29,8 @@ class TopicSpec:
     PROPERTY_RETENTION_TIME = "retention.ms"
     PROPERTY_DATA_POLICY_FUNCTION_NAME = "redpanda.datapolicy.function.name"
     PROPERTY_DATA_POLICY_SCRIPT_NAME = "redpanda.datapolicy.script.name"
+    PROPERTY_RETENTION_LOCAL_TARGET_BYTES = "retention.local-target.bytes"
+    PROPERTY_RETENTION_LOCAL_TARGET_MS = "retention.local-target.ms"
 
     # compression types
     COMPRESSION_NONE = "none"
