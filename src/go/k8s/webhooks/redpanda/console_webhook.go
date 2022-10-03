@@ -42,8 +42,10 @@ func (v *ConsoleValidator) Handle(
 		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 	}
 
+	// Admit console even if cluster is not yet configured, controller will do backoff retries
+	// No checks on referenced cluster if console is deleting so controller can remove finalizers
 	cluster := &redpandav1alpha1.Cluster{}
-	if err := v.Client.Get(ctx, console.GetClusterRef(), cluster); err != nil {
+	if err := v.Client.Get(ctx, console.GetClusterRef(), cluster); err != nil && console.GetDeletionTimestamp() == nil {
 		if apierrors.IsNotFound(err) {
 			return admission.Denied(fmt.Sprintf("cluster %s/%s not found", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 		}
