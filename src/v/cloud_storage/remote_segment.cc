@@ -188,19 +188,34 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
-  model::offset kafka_offset, ss::io_priority_class io_priority) {
+  model::offset kafka_offset, std::optional<model::timestamp> first_timestamp, ss::io_priority_class io_priority) {
     vlog(
       _ctxlog.debug,
       "remote segment file input stream at offset {}",
       kafka_offset);
     ss::gate::holder g(_gate);
     co_await hydrate();
-    auto pos = maybe_get_offsets(kafka_offset)
-                 .value_or(offset_index::find_result{
-                   .rp_offset = _base_rp_offset,
-                   .kaf_offset = _base_rp_offset - _base_offset_delta,
-                   .file_pos = 0,
-                 });
+    offset_index::find_result pos;
+    if (first_timestamp) {
+        // Time queries are linear search from front of the segment.  The
+        // dominant cost of a time query on a remote partition is promoting
+        // the segment into our local cache: once it's here, the cost of
+        // a scan is comparatively small.  For workloads that do many time
+        // queries in close proximity on the same partition, an additional
+        // index could be added here, for hydrated segments.
+        pos = {
+          .rp_offset = _base_rp_offset,
+          .kaf_offset = _base_rp_offset - _base_offset_delta,
+          .file_pos = 0,
+        };
+    } else {
+        pos = maybe_get_offsets(kafka_offset)
+                .value_or(offset_index::find_result{
+                  .rp_offset = _base_rp_offset,
+                  .kaf_offset = _base_rp_offset - _base_offset_delta,
+                  .file_pos = 0,
+                });
+    }
     ss::file_input_stream_options options{};
     options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
     options.read_ahead
@@ -770,9 +785,7 @@ public:
             return batch_consumer::consume_result::stop_parser;
         }
 
-        if (_config.first_timestamp > header.first_timestamp) {
-            // kakfa needs to guarantee that the returned record is >=
-            // first_timestamp
+        if (_config.first_timestamp > header.max_timestamp) {
             vlog(
               _ctxlog.debug,
               "accept_batch_start skip because header timestamp is {}",
@@ -936,9 +949,12 @@ remote_segment_batch_reader::init_parser() {
       _ctxlog.debug,
       "remote_segment_batch_reader::init_parser, start_offset: {}",
       _config.start_offset);
+
     auto stream_off = co_await _seg->offset_data_stream(
       _config.start_offset,
+      _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority());
+
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
         _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
