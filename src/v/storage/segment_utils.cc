@@ -500,6 +500,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
 ss::future<> rebuild_compaction_index(
   model::record_batch_reader rdr,
+  ss::lw_shared_ptr<storage::stm_manager>,
+  std::vector<model::tx_range>&&,
   std::filesystem::path p,
   compaction_config cfg,
   storage_resources& resources) {
@@ -523,6 +525,7 @@ ss::future<> rebuild_compaction_index(
 
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
@@ -568,8 +571,13 @@ ss::future<compaction_result> self_compact_segment(
         pb.corrupted_compaction_index();
         auto h = co_await s->read_lock();
 
+        // TODO: memory usage implications
+        auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
+          s->offsets().base_offset, s->offsets().stable_offset);
         co_await rebuild_compaction_index(
           create_segment_full_reader(s, cfg, pb, std::move(h)),
+          stm_manager,
+          std::move(aborted_txs),
           idx_path,
           cfg,
           resources);
@@ -579,7 +587,7 @@ ss::future<compaction_result> self_compact_segment(
           "rebuilt index: {}, attempting compaction again",
           idx_path);
         co_return co_await self_compact_segment(
-          s, cfg, pb, readers_cache, resources);
+          s, stm_manager, cfg, pb, readers_cache, resources);
     }
     }
     __builtin_unreachable();

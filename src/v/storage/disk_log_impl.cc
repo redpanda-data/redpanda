@@ -384,7 +384,12 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
 
         auto segment = *seg_it;
         auto result = co_await storage::internal::self_compact_segment(
-          segment, cfg, _probe, *_readers_cache, _manager.resources());
+          segment,
+          _stm_manager,
+          cfg,
+          _probe,
+          *_readers_cache,
+          _manager.resources());
 
         vlog(
           gclog.debug,
@@ -523,7 +528,12 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     replacement->mark_as_compacted_segment();
     _probe.add_initial_segment(*replacement.get());
     auto ret = co_await storage::internal::self_compact_segment(
-      replacement, cfg, _probe, *_readers_cache, _manager.resources());
+      replacement,
+      _stm_manager,
+      cfg,
+      _probe,
+      *_readers_cache,
+      _manager.resources());
     _probe.delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
