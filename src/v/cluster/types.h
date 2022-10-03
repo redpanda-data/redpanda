@@ -1974,6 +1974,23 @@ struct cancel_moving_partition_replicas_cmd_data
     auto serde_fields() { return std::tie(force); }
 };
 
+struct move_topic_replicas_data
+  : serde::envelope<move_topic_replicas_data, serde::version<0>> {
+    move_topic_replicas_data() noexcept = default;
+    explicit move_topic_replicas_data(
+      model::partition_id partition, std::vector<model::broker_shard> replicas)
+      : partition(partition)
+      , replicas(std::move(replicas)) {}
+
+    model::partition_id partition;
+    std::vector<model::broker_shard> replicas;
+
+    auto serde_fields() { return std::tie(partition, replicas); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const move_topic_replicas_data&);
+};
+
 struct feature_update_license_update_cmd_data
   : serde::envelope<feature_update_license_update_cmd_data, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;

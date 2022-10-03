@@ -91,6 +91,7 @@ static constexpr int8_t update_topic_properties_cmd_type = 4;
 static constexpr int8_t create_partition_cmd_type = 5;
 static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
 static constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
+static constexpr int8_t move_topic_replicas_cmd_type = 8;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -137,6 +138,12 @@ using move_partition_replicas_cmd = controller_command<
   move_partition_replicas_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::adl_and_serde>;
+
+using move_topic_replicas_cmd = controller_command<
+  model::topic_namespace,
+  std::vector<move_topic_replicas_data>,
+  move_topic_replicas_cmd_type,
+  model::record_batch_type::topic_management_cmd>;
 
 using finish_moving_partition_replicas_cmd = controller_command<
   model::ntp,

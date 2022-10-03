@@ -744,6 +744,11 @@ operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
+    fmt::print(o, "{{partition: {}, replicas: {}}}", r.partition, r.replicas);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
