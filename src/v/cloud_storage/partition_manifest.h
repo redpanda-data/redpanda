@@ -110,6 +110,10 @@ public:
     /// Get revision
     model::initial_revision_id get_revision_id() const;
 
+    /// Find the earliest segment that has max timestamp >= t
+    std::optional<std::reference_wrapper<const segment_meta>>
+    timequery(model::timestamp t) const;
+
     remote_segment_path
     generate_segment_path(const key&, const segment_meta&) const;
 

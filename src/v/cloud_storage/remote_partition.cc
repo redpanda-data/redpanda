@@ -14,6 +14,7 @@
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
+#include "storage/log_reader.h"
 #include "storage/parser_errc.h"
 #include "storage/types.h"
 #include "utils/gate_guard.h"
@@ -248,15 +249,29 @@ private:
         remote_partition::iterator iter;
     };
 
+    /// Find the starting segment for a reader
+    remote_partition::iterator
+    seek_segment(const storage::log_reader_config& config) {
+        if (config.first_timestamp) {
+            // Seek by timestamp
+            return _partition->seek_by_timestamp(*config.first_timestamp);
+        } else {
+            // Seek by offset
+            auto it = _partition->upper_bound(config.start_offset);
+            if (it != _partition->begin()) {
+                it = std::prev(it);
+            }
+            return it;
+        }
+    }
+
     std::optional<cache_reader_lookup_result>
     find_cached_reader(const storage::log_reader_config& config) {
         if (!_partition || _partition->_segments.empty()) {
             return std::nullopt;
         }
-        auto it = _partition->upper_bound(config.start_offset);
-        if (it != _partition->begin()) {
-            it = std::prev(it);
-        }
+
+        auto it = seek_segment(config);
         auto reader = _partition->borrow_reader(config, it->first, it->second);
         // Here we know the exact type of the reader_state because of
         // the invariant of the borrow_reader
@@ -695,6 +710,50 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};
 }
 
+ss::future<std::optional<storage::timequery_result>>
+remote_partition::timequery(storage::timequery_config cfg) {
+    if (static_cast<size_t>(_segments.size()) < _manifest.size()) {
+        update_segments_incrementally();
+    }
+
+    if (_segments.empty()) {
+        vlog(_ctxlog.debug, "timequery: no segments");
+        co_return std::nullopt;
+    }
+
+    auto start_offset = _segments.begin()->first;
+
+    // Synthesize a log_reader_config from our timequery_config
+    storage::log_reader_config config(
+      start_offset,
+      cfg.max_offset,
+      0,
+      2048, // We just need one record batch
+      cfg.prio,
+      cfg.type_filter,
+      cfg.time,
+      cfg.abort_source);
+
+    // Construct a reader that will skip to the requested timestamp
+    // by virtue of log_reader_config::start_timestamp
+    auto translating_reader = co_await make_reader(config);
+    auto ot_state = std::move(translating_reader.ot_state);
+
+    // Read one batch from the reader to learn the offset
+    model::record_batch_reader::storage_t data
+      = co_await model::consume_reader_to_memory(
+        std::move(translating_reader.reader), model::no_timeout);
+
+    auto& batches = std::get<model::record_batch_reader::data_t>(data);
+    vlog(_ctxlog.debug, "timequery: {} batches", batches.size());
+
+    if (batches.size()) {
+        co_return storage::batch_timequery(*(batches.begin()), cfg.time);
+    } else {
+        co_return std::nullopt;
+    }
+}
+
 remote_partition::offloaded_segment_state::offloaded_segment_state(
   model::offset base_offset)
   : base_rp_offset(base_offset) {}
@@ -795,6 +854,27 @@ remote_partition::iterator remote_partition::upper_bound(model::offset o) {
         return iterator(_segments, it->first);
     }
     return end();
+}
+
+remote_partition::iterator
+remote_partition::seek_by_timestamp(model::timestamp t) {
+    auto segment_meta = _manifest.timequery(t);
+
+    if (segment_meta) {
+        model::offset o = get_kafka_base_offset(*segment_meta);
+        auto found = _segments.find(o);
+
+        // Cannot happen because timequery() calls
+        // update_segments_incrementally first.
+        vassert(
+          found != _segments.end(),
+          "Timequery t={} found offset {} in manifest, but no segment "
+          "state found for that offset");
+        return iterator(_segments, found->first);
+    } else {
+        // They queried a time that is later than all our data
+        return end();
+    }
 }
 
 } // namespace cloud_storage
