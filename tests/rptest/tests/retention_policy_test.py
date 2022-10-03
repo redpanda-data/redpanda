@@ -25,14 +25,7 @@ def bytes_for_segments(want_segments, segment_size):
     just this number of segments (assuming all segments are written
     to their size limit).
     """
-
-    # When predicting segment sizes, we must account for segment_size_jitter
-    # which adjusts segment sizes up or down by 5%.  We must handle the case
-    # where segments are the smallest they can be.
-    # (see `jitter_segment_size` in segment_utils.cc)
-    segment_size_jitter_factor = 0.95
-
-    return int((want_segments * segment_size) * segment_size_jitter_factor)
+    return int(want_segments * segment_size)
 
 
 class RetentionPolicyTest(RedpandaTest):

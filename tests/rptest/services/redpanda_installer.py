@@ -142,6 +142,12 @@ class RedpandaInstaller:
         # (i.e. root_for_version(), etc).
         self._install_lock_fd = None
 
+        self._installed_version = self.HEAD
+
+    @property
+    def installed_version(self):
+        return self._installed_version
+
     def _acquire_install_lock(self, timeout_sec=600):
         """
         Attempt to take the install lock, preventing other test processes from
@@ -313,6 +319,7 @@ class RedpandaInstaller:
         try:
             self._acquire_install_lock()
             self._install_unlocked(nodes, version)
+            self._installed_version = version
         finally:
             self._release_install_lock()
 

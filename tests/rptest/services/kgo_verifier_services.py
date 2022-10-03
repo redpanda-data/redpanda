@@ -61,6 +61,8 @@ class KgoVerifierService(Service):
             if not hasattr(node, "kgo_verifier_ports"):
                 node.kgo_verifier_ports = {}
 
+        self._status_thread = None
+
     def __del__(self):
         self._release_port()
 

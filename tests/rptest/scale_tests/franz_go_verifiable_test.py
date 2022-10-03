@@ -73,6 +73,16 @@ class KgoVerifierTest(KgoVerifierBase):
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args,
+            **kwargs,
+            extra_rp_conf={
+                # Enable segment size jitter as this is a stress test and does not
+                # rely on exact segment counts.
+                'log_segment_size_jitter_percent': 5,
+            })
+
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads(self):
         self.logger.info(f"Environment: {os.environ}")
@@ -144,6 +154,10 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
                 # intervals
                 'election_timeout_ms': 5000,
                 'raft_heartbeat_interval_ms': 500,
+
+                # Enable segment size jitter as this is a stress test and does not
+                # rely on exact segment counts.
+                'log_segment_size_jitter_percent': 5,
             },
             si_settings=si_settings)
 

@@ -1343,7 +1343,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
 
     // Switch on jitter: it is off by default in default_log_config because
     // for most tests randomness is undesirable.
-    cfg.segment_size_jitter = storage::internal::jitter_percents{5};
+    cfg.segment_size_jitter = storage::jitter_percents{5};
 
     // defaults
     cfg.max_segment_size = config::mock_binding<size_t>(100_KiB);
