@@ -168,7 +168,7 @@ std::error_code check_configuration_update(
     auto group_cfg = partition->group_configuration();
     vlog(
       clusterlog.trace,
-      "checking if partition {} configuration {} is up to date with {}",
+      "[{}] checking if configuration {} is up to date with {}",
       partition->ntp(),
       group_cfg,
       bs);
@@ -180,14 +180,14 @@ std::error_code check_configuration_update(
     if (group_cfg.revision_id() < change_revision) {
         vlog(
           clusterlog.trace,
-          "partition {} configuration revision '{}' is smaller than requested "
+          "[{}] configuration revision '{}' is smaller than requested "
           "update revision '{}'",
           partition->ntp(),
           group_cfg.revision_id(),
           change_revision);
         return errc::partition_configuration_revision_not_updated;
     }
-    bool includes_self = contains_node(self, bs);
+    const bool includes_self = contains_node(self, bs);
 
     /*
      * if configuration includes current node, we expect configuration to be
@@ -208,8 +208,8 @@ std::error_code check_configuration_update(
       && group_cfg.get_state() != raft::configuration_state::simple) {
         vlog(
           clusterlog.trace,
-          "partition {} contains current node and its consensus configuration "
-          "is still in joint state",
+          "[{}] contains current node and consensus configuration is still "
+          "in joint state",
           partition->ntp());
         return errc::partition_configuration_in_joint_mode;
     }
@@ -220,8 +220,8 @@ std::error_code check_configuration_update(
     if (partition->is_elected_leader() && !configuration_committed) {
         vlog(
           clusterlog.trace,
-          "current node is partition {} leader, waiting for configuration to "
-          "be committed",
+          "[{}] current node is a leader, waiting for configuration to be "
+          "committed",
           partition->ntp());
         return errc::partition_configuration_leader_config_not_committed;
     }
@@ -233,7 +233,9 @@ std::error_code check_configuration_update(
     if (!are_configuration_replicas_up_to_date(group_cfg, bs)) {
         vlog(
           clusterlog.trace,
-          "requested replica set {} differs from partition replica set: {}",
+          "[{}] requested replica set {} differs from partition replica set: "
+          "{}",
+          partition->ntp(),
           bs,
           group_cfg.brokers());
         return errc::partition_configuration_differs;
@@ -370,7 +372,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
     vlog(
       clusterlog.trace,
-      "bootstrapping {} with deltas {}",
+      "[{}] bootstrapping with deltas {}",
       ntp,
       bootstrap_deltas);
 
@@ -382,7 +384,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     auto& first_delta = bootstrap_deltas.front();
     vlog(
       clusterlog.info,
-      "Bootstrapping deltas for ntp {}: first - {}, last - {}",
+      "[{}] Bootstrapping deltas: first - {}, last - {}",
       ntp,
       first_delta,
       bootstrap_deltas.back());
@@ -392,7 +394,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     if (is_cross_core_update(_self, first_delta)) {
         vlog(
           clusterlog.trace,
-          "first bootstrap delta of {}, is a x-core update, looking for "
+          "[{}] first bootstrap delta is a cross core update, looking for "
           "initial revision",
           ntp);
         // find operation that created current partition on this node
@@ -416,7 +418,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
         // created partition on current node
         vlog(
           clusterlog.trace,
-          "first {} operation that doesn't contain current node - {}",
+          "[{}] first operation that doesn't contain current node - {}",
           ntp,
           *it);
         /**
@@ -442,10 +444,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
             it = std::prev(it);
         }
         vlog(
-          clusterlog.trace,
-          "initial revision source delta - {} - {}",
-          ntp,
-          *it);
+          clusterlog.trace, "[{}] initial revision source delta: {}", ntp, *it);
         // persist revision in order to create partition with correct revision
         _bootstrap_revisions[ntp] = model::revision_id(it->offset());
     }
@@ -567,8 +566,8 @@ ss::future<std::error_code> revert_configuration_update(
     auto brokers = create_brokers_set(replicas, replica_revisions, members);
     vlog(
       clusterlog.debug,
-      "reverting already finished reconfiguration of {}, revision: {}. Replica "
-      "set: {} ",
+      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
+      "set: {}",
       ntp,
       rev,
       replicas);
@@ -595,7 +594,8 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
         if (interrupt_it != deltas.end()) {
             vlog(
               clusterlog.trace,
-              "cancelling current: {} operation with: {}",
+              "[{}] cancelling current: {} operation with: {}",
+              it->ntp,
               *it,
               *interrupt_it);
             while (it != interrupt_it) {
@@ -644,7 +644,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                         while (++it != fit) {
                             vlog(
                               clusterlog.trace,
-                              "executing (during update) ntp: {} operation: {}",
+                              "[{}] executing (during update) operation: {}",
                               it->ntp,
                               *it);
                             if (
@@ -673,17 +673,32 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                 }
                 vlog(
                   clusterlog.info,
-                  "partition operation {} result: {}",
-                  *it,
-                  ec.message());
+                  "[{}] result: {} operation: {{type: {}, revision: {}, "
+                  "assignment: {}, previous assignment: {}}}",
+                  it->ntp,
+                  ec.message(),
+                  it->type,
+                  it->offset,
+                  it->new_assignment,
+                  it->previous_replica_set);
                 stop = true;
                 continue;
             }
-            vlog(clusterlog.debug, "partition operation {} finished", *it);
+            vlog(
+              clusterlog.debug,
+              "[{}] finished operation: {{type: {}, revision: {}, assignment: "
+              "{}, previous assignment: {}}}",
+              it->ntp,
+              it->type,
+              it->offset,
+              it->new_assignment,
+              it->previous_replica_set);
         } catch (ss::gate_closed_exception const&) {
             vlog(
               clusterlog.debug,
-              "gate_closed-exception while executing partition operation: {}",
+              "[{}] gate_closed-exception while executing partition operation: "
+              "{}",
+              it->ntp,
               *it);
             stop = true;
             continue;
@@ -696,7 +711,8 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
         } catch (...) {
             vlog(
               clusterlog.error,
-              "exception while executing partition operation: {} - {}",
+              "[{}] exception while executing partition operation: {} - {}",
+              it->ntp,
               *it,
               std::current_exception());
             stop = true;
@@ -743,8 +759,16 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
      * increasing together with cluster state evolution hence it is perfect
      * as a source of revision_id
      */
-    vlog(clusterlog.trace, "executing ntp: {} operation: {}", delta.ntp, delta);
-    model::revision_id rev(delta.offset());
+    vlog(
+      clusterlog.trace,
+      "[{}] executing operation: {{type: {}, revision: {}, assignment: {}, "
+      "previous assignment: {}}}",
+      delta.ntp,
+      delta.type,
+      delta.offset,
+      delta.new_assignment,
+      delta.previous_replica_set);
+    const model::revision_id rev(delta.offset());
     // new partitions
 
     // only create partitions for this backend
@@ -780,7 +804,7 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "delta: {}",
           delta);
         vassert(
-          delta.previous_replica_set,
+          delta.replica_revisions,
           "replica revisions map must be present in reconfiguration type "
           "delta: {}",
           delta);
@@ -840,8 +864,8 @@ controller_backend::process_partition_reconfiguration(
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
-      "processing partition {} reconfiguration {} command with target "
-      "replicas: {}, previous replica set: {}, revision: {}",
+      "[{}] processing reconfiguration {} command with target replicas: {}, "
+      "previous replica set: {}, revision: {}",
       ntp,
       type,
       target_assignment.replicas,
@@ -858,7 +882,7 @@ controller_backend::process_partition_reconfiguration(
     if (partition && partition->group_configuration().revision_id() > rev) {
         vlog(
           clusterlog.trace,
-          "found newer revision for {}, finishing reconfiguration to: {}",
+          "[{}] found newer revision, finishing reconfiguration to: {}",
           ntp,
           target_assignment.replicas);
         co_return std::error_code(errc::success);
@@ -1019,10 +1043,10 @@ controller_backend::create_partition_from_remote_shard(
     } else {
         vlog(
           clusterlog.trace,
-          "waiting for cross core move information from "
-          "shard {}, for {}",
-          previous_shard,
-          ntp);
+          "[{}] waiting for cross core move information from "
+          "shard {}",
+          ntp,
+          previous_shard);
         // ask previous controller for partition initial
         // revision
         x_shard_req = co_await acquire_cross_shard_move_request(
@@ -1064,7 +1088,7 @@ controller_backend::create_partition_from_remote_shard(
     try {
         vlog(
           clusterlog.trace,
-          "creating partition {} from shard {}",
+          "[{}] creating partition from shard {}",
           ntp,
           previous_shard);
         if (previous_shard != ss::this_shard_id()) {
@@ -1097,7 +1121,7 @@ controller_backend::create_partition_from_remote_shard(
         has_error = true;
         vlog(
           clusterlog.warn,
-          "failed to create partition {} from shard {}",
+          "[{}] failed to create partition from shard {}",
           ntp,
           previous_shard);
     }
@@ -1158,7 +1182,7 @@ ss::future<> controller_backend::process_partition_properties_update(
     }
     vlog(
       clusterlog.trace,
-      "updating {} configuration with properties: {}",
+      "[{}] updating configuration with properties: {}",
       ntp,
       cfg->properties);
     co_await partition->update_configuration(cfg->properties);
@@ -1171,7 +1195,7 @@ ss::future<> controller_backend::process_partition_properties_update(
  */
 ss::future<std::error_code> controller_backend::dispatch_update_finished(
   model::ntp ntp, partition_assignment assignment) {
-    vlog(clusterlog.trace, "dispatching update finished event for {}", ntp);
+    vlog(clusterlog.trace, "[{}] dispatching update finished event for", ntp);
     return ss::with_gate(
       _gate,
       [this,
@@ -1187,8 +1211,7 @@ ss::future<std::error_code> controller_backend::dispatch_update_finished(
 
 ss::future<> controller_backend::finish_partition_update(
   model::ntp ntp, const partition_assignment& current, model::revision_id rev) {
-    vlog(
-      clusterlog.trace, "processing partition {} finished update command", ntp);
+    vlog(clusterlog.trace, "[{}] processing finished update command", ntp);
     // if there is no local replica in replica set but,
     // partition with requested ntp exists on this broker core
     // it has to be removed after new configuration is stable
@@ -1203,7 +1226,7 @@ ss::future<> controller_backend::finish_partition_update(
     if (!partition) {
         return ss::make_ready_future<>();
     }
-    vlog(clusterlog.trace, "removing partition {} replica", ntp);
+    vlog(clusterlog.trace, "[{}] removing partition replica", ntp);
     return delete_partition(std::move(ntp), rev);
 }
 
@@ -1285,10 +1308,7 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
                 std::move(p),
                 _members_table.local());
           } else {
-              vlog(
-                clusterlog.debug,
-                "cancelling partition {} reconfiguration",
-                ntp);
+              vlog(clusterlog.debug, "[{}] cancelling reconfiguration", ntp);
               return p->cancel_replica_set_update(rev);
           }
       });
@@ -1385,7 +1405,7 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
             replicas, replica_revisions, _members_table.local());
           vlog(
             clusterlog.debug,
-            "updating partition {} replica set with {}",
+            "[{}] updating replica set with {}",
             ntp,
             replicas);
 
@@ -1401,7 +1421,7 @@ ss::future<> controller_backend::add_to_shard_table(
     // update shard_table: broadcast
     vlog(
       clusterlog.trace,
-      "adding {} to shard table at shard {} with revision {}",
+      "[{}] adding to shard table at shard {} with revision {}",
       ntp,
       shard,
       revision);
@@ -1487,7 +1507,7 @@ controller_backend::cross_shard_move_request::cross_shard_move_request(
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
   model::ntp ntp, model::revision_id rev) {
-    vlog(clusterlog.trace, "cross core move, shutting down partition: {}", ntp);
+    vlog(clusterlog.trace, "[{}] cross core move, shutting down", ntp);
     auto partition = _partition_manager.local().get(ntp);
     // partition doesn't exists it was deleted
     if (!partition) {
@@ -1505,7 +1525,7 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
         auto [it, success] = _cross_shard_requests.emplace(
           ntp,
           cross_shard_move_request(init_rev, partition->group_configuration()));
-        vlog(clusterlog.trace, "cross core move, partition {} stopped", ntp);
+        vlog(clusterlog.trace, "[{}] cross core move, stopped", ntp);
         vassert(
           success,
           "only one cross shard request is allowed to be pending for "
