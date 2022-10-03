@@ -57,6 +57,7 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_leaders_table>& l,
   ss::sharded<topic_table>& topics,
   ss::sharded<data_policy_frontend>& dp_frontend,
+  ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<features::feature_table>& features)
@@ -67,6 +68,7 @@ topics_frontend::topics_frontend(
   , _leaders(l)
   , _topics(topics)
   , _dp_frontend(dp_frontend)
+  , _hm_frontend(hm_frontend)
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
   , _features(features) {}

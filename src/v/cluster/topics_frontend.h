@@ -44,6 +44,7 @@ public:
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<data_policy_frontend>&,
+      ss::sharded<health_monitor_frontend>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<features::feature_table>&);
@@ -188,6 +189,7 @@ private:
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<topic_table>& _topics;
     ss::sharded<data_policy_frontend>& _dp_frontend;
+    ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
