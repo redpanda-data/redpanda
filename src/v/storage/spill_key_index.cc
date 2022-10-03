@@ -65,8 +65,9 @@ spill_key_index::spill_key_index(
 spill_key_index::~spill_key_index() {
     vassert(
       _midx.empty(),
-      "must drain all keys before destroy spill_key_index, keys left:{}",
-      _midx.size());
+      "must drain all keys before destroy spill_key_index, keys left:{} {}",
+      _midx.size(),
+      filename());
 }
 
 ss::future<> spill_key_index::index(

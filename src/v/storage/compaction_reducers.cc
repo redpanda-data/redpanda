@@ -295,4 +295,97 @@ ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
           });
     });
 }
+
+void tx_reducer::consume_aborted_txs(model::offset upto) {
+    while (!_aborted_txs.empty() && _aborted_txs.top().first <= upto) {
+        const auto& top = _aborted_txs.top();
+        _ongoing_aborted_txs[top.pid] = top;
+        _aborted_txs.pop();
+    }
+}
+
+bool tx_reducer::handle_tx_control_batch(const model::record_batch& b) {
+    auto batch_type = _stm_mgr->parse_tx_control_batch(b);
+    auto pid = model::producer_identity(
+      b.header().producer_id, b.header().producer_epoch);
+    switch (batch_type) {
+    case model::control_record_type::unknown: // unlikely
+    case model::control_record_type::tx_commit: {
+        break;
+    }
+    case model::control_record_type::tx_abort: {
+        _ongoing_aborted_txs.erase(pid);
+        break;
+    }
+    }
+    auto discard = batch_type == model::control_record_type::tx_commit
+                   || batch_type == model::control_record_type::tx_abort;
+    if (discard) {
+        _stats._tx_control_batches_discarded++;
+    }
+    return discard;
+}
+
+bool tx_reducer::handle_tx_data_batch(const model::record_batch& b) {
+    auto pid = model::producer_identity(
+      b.header().producer_id, b.header().producer_epoch);
+    auto discard = _ongoing_aborted_txs.contains(pid);
+    if (discard) {
+        _stats._tx_data_batches_discarded++;
+    }
+    return discard;
+}
+
+bool tx_reducer::handle_non_tx_control_batch(const model::record_batch& b) {
+    auto type = b.header().type;
+    vassert(
+      type == model::record_batch_type::tx_prepare
+        || type == model::record_batch_type::tx_fence,
+      "{} unknown type encountered",
+      type);
+    // Fence batches cannot be discarded because they contain epoch information
+    // from pids that are tracked in the state machine. We key the records with
+    // pid, so the combination of batch_type + pid should always retain the
+    // latest epoch in the indexer_reducer. OTOH prepare batches can be
+    // discarded.
+    bool discard = type == model::record_batch_type::tx_prepare;
+    if (discard) {
+        _stats._non_tx_control_batches_discarded++;
+    }
+    return discard;
+}
+
+ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
+    _stats._all_batches++;
+    consume_aborted_txs(b.last_offset());
+
+    auto is_tx = b.header().attrs.is_transactional();
+    auto is_control = b.header().attrs.is_control();
+    auto is_data = b.header().type == model::record_batch_type::raft_data;
+
+    bool discard_batch = false;
+    if (is_tx) {
+        if (is_control) {
+            // tx_commit / tx_abort / unknown
+            discard_batch = handle_tx_control_batch(b);
+        } else if (is_data) {
+            // User produced data batches in tx scope..
+            discard_batch = handle_tx_data_batch(b);
+        }
+    } else {
+        if (is_control && !is_data) {
+            // tx_prepare / tx_fence
+            discard_batch = handle_non_tx_control_batch(b);
+        }
+        // else includes data batches from non tx producers which
+        // cannot be discarded.
+    }
+
+    if (discard_batch) {
+        _stats._all_batches_discarded++;
+        co_return ss::stop_iteration::no;
+    }
+    co_return co_await _delegate(std::move(b));
+}
+
 } // namespace storage::internal
