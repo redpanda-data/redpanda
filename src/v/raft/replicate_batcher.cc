@@ -16,6 +16,8 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <optional>
+
 namespace raft {
 using namespace std::chrono_literals; // NOLINT
 replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
@@ -62,7 +64,7 @@ replicate_stages replicate_batcher::replicate(
                             _ptr->_probe.replicate_done();
                             // we wait for the future outside of the batcher
                             // gate since we do not access any resources
-                            return item->_promise.get_future();
+                            return item->get_future();
                         });
                 });
         return {std::move(enqueued_f), std::move(f)};
@@ -79,7 +81,8 @@ ss::future<> replicate_batcher::stop() {
         // finished already
         return _lock.with([this] {
             for (auto& i : _item_cache) {
-                i->_promise.set_exception(ss::gate_closed_exception());
+                i->set_exception(
+                  std::make_exception_ptr(ss::gate_closed_exception()));
             }
             _item_cache.clear();
         });
@@ -130,19 +133,23 @@ replicate_batcher::do_cache_with_backpressure(
         [this, expected_term, batches = std::move(batches), consistency_lvl](
           ssx::semaphore_units u) mutable {
             size_t record_count = 0;
-            auto i = ss::make_lw_shared<item>();
+            std::vector<model::record_batch> data;
+            data.reserve(batches.size());
             for (auto& b : batches) {
                 record_count += b.record_count();
                 if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                    i->data.push_back(std::move(b));
+                    data.push_back(std::move(b));
                 } else {
-                    i->data.push_back(b.copy());
+                    data.push_back(b.copy());
                 }
             }
-            i->expected_term = expected_term;
-            i->record_count = record_count;
-            i->units = std::move(u);
-            i->consistency_lvl = consistency_lvl;
+            auto i = ss::make_lw_shared<item>(
+              record_count,
+              std::move(data),
+              std::move(u),
+              expected_term,
+              consistency_lvl,
+              std::nullopt);
 
             _item_cache.emplace_back(i);
             return i;
@@ -163,7 +170,7 @@ ss::future<> replicate_batcher::flush(
         if (!transfer_flush && _ptr->_transferring_leadership) {
             vlog(_ptr->_ctxlog.warn, "Dropping flush, leadership transferring");
             for (auto& n : item_cache) {
-                n->_promise.set_value(errc::not_leader);
+                n->set_value(errc::not_leader);
             }
             co_return;
         }
@@ -178,7 +185,7 @@ ss::future<> replicate_batcher::flush(
 
         if (!_ptr->is_elected_leader()) {
             for (auto& n : item_cache) {
-                n->_promise.set_value(errc::not_leader);
+                n->set_value(errc::not_leader);
             }
             co_return;
         }
@@ -192,20 +199,22 @@ ss::future<> replicate_batcher::flush(
 
         for (auto& n : item_cache) {
             if (
-              !n->expected_term.has_value()
-              || n->expected_term.value() == term) {
-                item_memory_units.adopt(std::move(n->units));
-                if (n->consistency_lvl == consistency_level::quorum_ack) {
+              !n->get_expected_term().has_value()
+              || n->get_expected_term().value() == term) {
+                auto [batches, units] = n->release_data();
+                item_memory_units.adopt(std::move(units));
+                if (
+                  n->get_consistency_level() == consistency_level::quorum_ack) {
                     needs_flush
                       = append_entries_request::flush_after_append::yes;
                 }
-                for (auto& b : n->data) {
+                for (auto& b : batches) {
                     b.set_term(term);
                     data.push_back(std::move(b));
                 }
                 notifications.push_back(std::move(n));
             } else {
-                n->_promise.set_value(errc::not_leader);
+                n->set_value(errc::not_leader);
             }
         }
 
@@ -233,7 +242,7 @@ ss::future<> replicate_batcher::flush(
           std::move(seqs));
     } catch (...) {
         for (auto& i : item_cache) {
-            i->_promise.set_exception(std::current_exception());
+            i->set_exception(std::current_exception());
         }
         co_return;
     }
@@ -247,7 +256,7 @@ static void propagate_result(
     if (r.has_error()) {
         // propagate an error
         for (auto& n : notifications) {
-            n->_promise.set_value(r.error());
+            n->set_value(r.error());
         }
         return;
     }
@@ -256,9 +265,9 @@ static void propagate_result(
     auto last_offset = r.value().last_offset;
     for (auto it = notifications.rbegin(); it != notifications.rend(); ++it) {
         if (pred(*it)) {
-            (*it)->_promise.set_value(replicate_result{last_offset});
+            (*it)->set_value(replicate_result{last_offset});
         }
-        last_offset = last_offset - model::offset((*it)->record_count);
+        last_offset = last_offset - model::offset((*it)->get_record_count());
     }
 }
 
@@ -267,7 +276,7 @@ static void propagate_current_exception(
     // iterate backward to calculate last offsets
     auto e = std::current_exception();
     for (auto& n : notifications) {
-        n->_promise.set_exception(e);
+        n->set_exception(e);
     }
 }
 
@@ -290,8 +299,10 @@ ss::future<> replicate_batcher::do_flush(
          */
         propagate_result(
           leader_result, notifications, [](const item_ptr& item) {
-              return item->consistency_lvl == consistency_level::leader_ack
-                     || item->consistency_lvl == consistency_level::no_ack;
+              return item->get_consistency_level()
+                       == consistency_level::leader_ack
+                     || item->get_consistency_level()
+                          == consistency_level::no_ack;
           });
         /**
          * Second phase, wait for majority to replicate if leader result has
@@ -308,7 +319,7 @@ ss::future<> replicate_batcher::do_flush(
                       result<replicate_result> quorum_result) mutable {
                   propagate_result(
                     quorum_result, notifications, [](const item_ptr& item) {
-                        return item->consistency_lvl
+                        return item->get_consistency_level()
                                == consistency_level::quorum_ack;
                     });
               })
