@@ -451,6 +451,14 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    if (is_transaction_ga()) {
+        vlog(
+          _ctx_log.error,
+          "Redpanda should skip prepared rpc to rm_stm. Smth wrong. pid:({})",
+          pid);
+        co_return tx_errc::unknown_server_error;
+    }
+
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
