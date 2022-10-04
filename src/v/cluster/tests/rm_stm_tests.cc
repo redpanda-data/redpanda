@@ -464,3 +464,237 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
     feature_table.stop().get0();
 }
+
+// Tests aborted transaction semantics with single and multi segment
+// transactions. Multiple subsystems that interact with transactions rely on
+// aborted transactions for correctness. These serve as regression tests so that
+// we do not break the semantics.
+FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
+    start_raft();
+
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ss::sharded<features::feature_table> feature_table;
+    feature_table.start().get0();
+    cluster::rm_stm stm(
+      logger, _raft.get(), tx_gateway_frontend, feature_table);
+    stm.testing_only_disable_auto_abort();
+    stm.testing_only_enable_transactions();
+
+    stm.start().get0();
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+
+    auto log = _storage.local().log_mgr().get(_raft->ntp());
+    BOOST_REQUIRE(log);
+    auto* disk_log = dynamic_cast<storage::disk_log_impl*>(
+      log.value().get_impl());
+
+    static int64_t pid_counter = 0;
+    const auto tx_seq = model::tx_seq(0);
+    const auto timeout = std::chrono::milliseconds(
+      std::numeric_limits<int32_t>::max());
+    const auto opts = raft::replicate_options(
+      raft::consistency_level::quorum_ack);
+    const auto term = _raft->term();
+    const auto partition = model::partition_id(0);
+    size_t segment_count = 1;
+
+    auto& segments = disk_log->segments();
+
+    // Few helpers to avoid repeated boiler plate code.
+
+    auto aborted_txs = [&](auto begin, auto end) {
+        return stm.aborted_transactions(begin, end).get0();
+    };
+
+    // Aborted transactions in a given segment index.
+    auto aborted_txes_seg = [&](auto segment_index) {
+        BOOST_REQUIRE_GE(segment_index, 0);
+        BOOST_REQUIRE_LT(segment_index, segments.size());
+        auto offsets = segments[segment_index]->offsets();
+        vlog(
+          logger.info,
+          "Seg index {}, begin {}, end {}",
+          segment_index,
+          offsets.base_offset,
+          offsets.dirty_offset);
+        return aborted_txs(offsets.base_offset, offsets.dirty_offset);
+    };
+
+    BOOST_REQUIRE_EQUAL(
+      aborted_txs(model::offset::min(), model::offset::max()).size(), 0);
+
+    // Begins a tx with random pid and writes a data batch.
+    // Returns the associated pid.
+    auto start_tx = [&]() {
+        auto pid = model::producer_identity{pid_counter++, 0};
+        BOOST_REQUIRE(stm.begin_tx(pid, tx_seq, timeout).get0());
+        auto rreader = make_rreader(pid, 0, 5, true);
+        BOOST_REQUIRE(
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+        return pid;
+    };
+
+    auto commit_tx = [&](auto pid) {
+        BOOST_REQUIRE_EQUAL(
+          stm.prepare_tx(term, partition, pid, tx_seq, timeout).get0(),
+          cluster::tx_errc::none);
+        BOOST_REQUIRE_EQUAL(
+          stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
+    };
+
+    auto abort_tx = [&](auto pid) {
+        auto rreader = make_rreader(pid, 5, 5, true);
+        BOOST_REQUIRE(
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+        BOOST_REQUIRE_EQUAL(
+          stm.abort_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
+    };
+
+    auto roll_log = [&]() {
+        disk_log->force_roll(ss::default_priority_class()).get0();
+        segment_count++;
+        BOOST_REQUIRE_EQUAL(disk_log->segment_count(), segment_count);
+    };
+
+    // Single segment transactions
+    {
+        // case 1: begin commit in the same segment
+        auto pid = start_tx();
+        auto idx = segment_count - 1;
+        commit_tx(pid);
+        BOOST_REQUIRE_EQUAL(aborted_txes_seg(idx).size(), 0);
+        roll_log();
+    }
+
+    {
+        // case 2: begin abort in the same segment
+        auto pid = start_tx();
+        auto idx = segment_count - 1;
+        abort_tx(pid);
+        BOOST_REQUIRE_EQUAL(aborted_txes_seg(idx).size(), 1);
+        roll_log();
+    }
+
+    {
+        // case 3: interleaved commit abort in the same segment
+        // begin pid
+        //   begin pid2
+        //   abort pid2
+        // commit pid
+        auto pid = start_tx();
+        auto pid2 = start_tx();
+        auto idx = segment_count - 1;
+        abort_tx(pid2);
+        commit_tx(pid);
+
+        auto txes = aborted_txes_seg(idx);
+        BOOST_REQUIRE_EQUAL(txes.size(), 1);
+        BOOST_REQUIRE_EQUAL(txes[0].pid, pid2);
+        roll_log();
+    }
+
+    {
+        // case 4: interleaved in a different way.
+        // begin pid
+        //   begin pid2
+        // commit pid
+        //   abort pid2
+        auto pid = start_tx();
+        auto pid2 = start_tx();
+        auto idx = segment_count - 1;
+        commit_tx(pid);
+        abort_tx(pid2);
+
+        auto txes = aborted_txes_seg(idx);
+        BOOST_REQUIRE_EQUAL(txes.size(), 1);
+        BOOST_REQUIRE_EQUAL(txes[0].pid, pid2);
+        roll_log();
+    }
+
+    // Multi segment transactions
+
+    {
+        // case 1: begin in one segment and abort in next.
+        // begin
+        //  roll
+        // abort
+        auto pid = start_tx();
+        auto idx = segment_count - 1;
+        roll_log();
+        abort_tx(pid);
+
+        // Aborted tx should show in both the segment ranges.
+        for (auto s_idx : {idx, idx + 1}) {
+            auto txes = aborted_txes_seg(s_idx);
+            BOOST_REQUIRE_EQUAL(txes.size(), 1);
+            BOOST_REQUIRE_EQUAL(txes[0].pid, pid);
+        }
+        roll_log();
+    }
+
+    {
+        // case 2:
+        // begin -- segment 0
+        //   roll
+        // batches -- segment 1
+        //   roll
+        // abort -- segment 2
+        //
+        // We have a segment in the middle without control/txn batches but
+        // should still report aborted transaction in it's range.
+        auto idx = segment_count - 1;
+        auto pid = start_tx();
+        roll_log();
+        // replicate some non transactional data batches.
+        auto rreader = make_rreader(
+          model::producer_identity{-1, -1}, 0, 5, false);
+        BOOST_REQUIRE(
+          stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());
+
+        // roll and abort.
+        roll_log();
+        abort_tx(pid);
+
+        for (auto s_idx : {idx, idx + 1, idx + 2}) {
+            auto txes = aborted_txes_seg(s_idx);
+            BOOST_REQUIRE_EQUAL(txes.size(), 1);
+            BOOST_REQUIRE_EQUAL(txes[0].pid, pid);
+        }
+        roll_log();
+    }
+
+    {
+        // case 3:
+        // begin pid -- segment 0
+        // begin pid2 -- segment 0
+        // roll
+        // commit pid -- segment 1
+        // commit pid2 -- segment 1
+        auto idx = segment_count - 1;
+        auto pid = start_tx();
+        auto pid2 = start_tx();
+
+        roll_log();
+
+        commit_tx(pid);
+
+        // At this point, there are no aborted txs
+        for (auto s_idx : {idx, idx + 1}) {
+            auto txes = aborted_txes_seg(s_idx);
+            BOOST_REQUIRE_EQUAL(txes.size(), 0);
+        }
+
+        abort_tx(pid2);
+
+        // Now the aborted tx should show up in both segment ranges.
+        for (auto s_idx : {idx, idx + 1}) {
+            auto txes = aborted_txes_seg(s_idx);
+            BOOST_REQUIRE_EQUAL(txes.size(), 1);
+            BOOST_REQUIRE_EQUAL(txes[0].pid, pid2);
+        }
+    }
+    feature_table.stop().get0();
+}
