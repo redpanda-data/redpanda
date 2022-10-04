@@ -48,39 +48,33 @@ replicate_batcher::cache_and_wait_for_result(
   std::optional<model::term_id> expected_term,
   model::record_batch_reader r,
   consistency_level consistency_lvl) {
-    auto guard = gate_guard(_bg);
-    return do_cache(expected_term, std::move(r), consistency_lvl)
-      .then_wrapped([this,
-                     enqueued = std::move(enqueued),
-                     guard = std::move(guard)](ss::future<item_ptr> f) mutable {
-          if (f.failed()) {
-              enqueued.set_exception(f.get_exception());
-              return ss::make_ready_future<result<replicate_result>>(
-                errc::replicate_batcher_cache_error);
-          }
+    try {
+        auto holder = _bg.hold();
+        auto item = co_await do_cache(
+          expected_term, std::move(r), consistency_lvl);
+        // now request is already enqueued, we can release first
+        // stage future
+        enqueued.set_value();
+        try {
+            auto u = co_await _lock.get_units();
+            co_await flush(std::move(u), false);
+            _ptr->_probe.replicate_done();
+            // release holder before waiting for the future
+            holder.release();
+            co_return co_await item->get_future();
+        } catch(...){
+            vlog(
+              _ptr->_ctxlog.warn,
+              "replicate flush failed - {}",
+              std::current_exception());
+            std::rethrow_exception(std::current_exception());
+        }
 
-          enqueued.set_value();
-          auto item = f.get();
-          return _lock.get_units()
-            .then([this](ssx::semaphore_units u) {
-                return flush(std::move(u), false);
-            })
-            .then_wrapped(
-              [this, item, guard = std::move(guard)](ss::future<> f) {
-                  if (f.failed()) {
-                      vlog(
-                        _ptr->_ctxlog.warn,
-                        "replicate flush failed - {}",
-                        f.get_exception());
-                  } else {
-                      f.ignore_ready_future();
-                  }
-                  _ptr->_probe.replicate_done();
-                  // we wait for the future outside of the batcher
-                  // gate since we do not access any resources
-                  return item->get_future();
-              });
-      });
+    } catch (...) {
+        // exception in caching phase
+        enqueued.set_to_current_exception();
+        co_return errc::replicate_batcher_cache_error;
+    }
 }
 
 ss::future<> replicate_batcher::stop() {
