@@ -25,12 +25,15 @@
 #include <chrono>
 #include <filesystem>
 
-using namespace cloud_storage;
 using namespace std::chrono_literals;
 
 static inline std::filesystem::path get_cache_dir(std::filesystem::path p) {
     return p / "test_cache_dir";
 }
+
+// In cloud_storage namespace so we can befriend this fixture from
+// the class under test.
+namespace cloud_storage {
 
 class cache_test_fixture {
 public:
@@ -72,4 +75,10 @@ public:
         auto input = make_iobuf_input_stream(std::move(buf));
         sharded_cache.local().put(key, input).get();
     }
+
+    ss::future<> clean_up_at_start() {
+        return sharded_cache.local().clean_up_at_start();
+    }
 };
+
+} // namespace cloud_storage
