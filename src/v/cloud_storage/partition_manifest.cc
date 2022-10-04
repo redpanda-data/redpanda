@@ -320,8 +320,13 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         }
         it = std::prev(it);
         if (it->second.committed_offset < new_start_offset) {
-            // The whole offset range is supposed to be truncated
-            _start_offset = new_start_offset;
+            auto n = std::next(it);
+            if (n == _segments.end()) {
+                // The whole offset range is supposed to be truncated
+                _start_offset = new_start_offset;
+            } else {
+                _start_offset = n->second.base_offset;
+            }
         } else {
             _start_offset = it->second.base_offset;
         }
@@ -391,7 +396,7 @@ partition_manifest::truncate(model::offset starting_rp_offset) {
     if (!advance_start_offset(starting_rp_offset)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
-          "can't truncate manifest up ot {} due to misalignment",
+          "can't truncate manifest up to {} due to misalignment",
           starting_rp_offset));
     }
     return truncate();

@@ -922,6 +922,153 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
     }
 }
 
+SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_offset_advance) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+    m.add(
+      segment_name("0-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{0},
+        .committed_offset = model::offset{100},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    m.add(
+      segment_name("101-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{101},
+        .committed_offset = model::offset{200},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    m.add(
+      segment_name("201-2-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{201},
+        .committed_offset = model::offset{300},
+      });
+    m.add(
+      segment_name("301-3-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{301},
+        .committed_offset = model::offset{400},
+      });
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(101)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(101));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(200)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(101));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(201)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(201));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(300)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(201));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(301)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(301));
+    auto m2 = m.truncate();
+    BOOST_REQUIRE(m2.size() == 3);
+    BOOST_REQUIRE(m.size() == 1);
+
+    auto m3 = m.truncate(model::offset(401));
+    BOOST_REQUIRE(m3.size() == 1);
+    BOOST_REQUIRE(m.size() == 0);
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_partition_manifest_start_offset_advance_with_gap) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+    m.add(
+      segment_name("10-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{100},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(10));
+    m.add(
+      segment_name("200-2-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{200},
+        .committed_offset = model::offset{300},
+      });
+    BOOST_REQUIRE(!m.advance_start_offset(model::offset(0)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(10));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(10));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(150)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(200));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_complete_manifest_serialization_roundtrip_with_start_offset) {
+    std::map<ss::sstring, partition_manifest::segment_meta> expected_segments
+      = {
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 1024,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(99),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"100-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 2048,
+           .base_offset = model::offset(100),
+           .committed_offset = model::offset(199),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"200-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(200),
+           .committed_offset = model::offset(299),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(1),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+        {"300-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(300),
+           .committed_offset = model::offset(399),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+      };
+
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    for (const auto& segment : expected_segments) {
+        m.add(segment_name(segment.first), segment.second);
+    }
+    m.advance_start_offset(model::offset(100));
+
+    auto [is, size] = m.serialize();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    partition_manifest restored;
+    restored.update(std::move(rstr)).get0();
+
+    BOOST_REQUIRE(restored == m);
+
+    for (const auto& expected : expected_segments) {
+        auto actual = restored.find(expected.second.base_offset);
+        require_equal_segment_meta(expected.second, actual->second);
+    }
+
+    BOOST_REQUIRE(restored.get_start_offset() == model::offset(100));
+}
+
 // modeled after cluster::archival_metadata_stm::segment
 struct metadata_stm_segment
   : public serde::envelope<

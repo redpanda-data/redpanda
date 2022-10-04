@@ -287,7 +287,7 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
       "{}, last_offset: {}",
       start_rp_offset,
       get_start_offset(),
-      _last_offset);
+      get_last_offset());
 
     co_return errc::success;
 }
@@ -295,7 +295,7 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
 ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    vlog(_logger.trace, "do_cleanup_metadata called");
+    vlog(_logger.debug, "do_cleanup_metadata called");
     {
         auto now = ss::lowres_clock::now();
         auto timeout = now < deadline ? deadline - now : 0ms;
@@ -327,7 +327,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
         co_return ec;
     }
 
-    vlog(_logger.info, "cleanup_metadata command replicated");
+    vlog(_logger.debug, "cleanup_metadata command replicated");
 
     co_return errc::success;
 }
@@ -389,7 +389,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
           segment.meta.base_offset,
           segment.meta.committed_offset,
           get_start_offset(),
-          _last_offset);
+          get_last_offset());
     }
 
     co_return errc::success;
@@ -462,12 +462,11 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     }
 
     *_manifest = std::move(manifest);
-    _last_offset = _manifest->get_last_offset();
     auto start_offset = get_start_offset();
 
-    // We can skip all offsets up to the _last_offset because we can be sure
+    // We can skip all offsets up to the last_offset because we can be sure
     // that in the skipped batches there won't be any new remote segments.
-    _insync_offset = _last_offset;
+    _insync_offset = get_last_offset();
     auto next_offset = std::max(
       _raft->start_offset(), model::next_offset(_insync_offset));
     set_next(next_offset);
@@ -478,7 +477,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
       "last_offset: {}",
       next_offset,
       start_offset,
-      _last_offset);
+      get_last_offset());
 }
 
 ss::future<> archival_metadata_stm::apply_snapshot(
@@ -522,7 +521,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       "{}",
       header.offset,
       get_start_offset(),
-      _last_offset);
+      get_last_offset());
 
     _last_snapshot_offset = header.offset;
     _insync_offset = header.offset;
@@ -544,7 +543,7 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       "{}",
       _insync_offset,
       get_start_offset(),
-      _last_offset);
+      get_last_offset());
     co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
 }
 
@@ -556,7 +555,7 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         // shouldn't stop eviction from happening.
         return model::offset::max();
     }
-    return _last_offset;
+    return get_last_offset();
 }
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
@@ -568,8 +567,8 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     }
     _manifest->add(segment.name, segment.meta);
 
-    if (meta.committed_offset > _last_offset) {
-        if (meta.base_offset > model::next_offset(_last_offset)) {
+    if (meta.committed_offset > get_last_offset()) {
+        if (meta.base_offset > model::next_offset(get_last_offset())) {
             // To ensure forward progress, we print a warning and skip over the
             // hole.
 
@@ -577,11 +576,9 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
               _logger.warn,
               "hole in the remote offset range detected! previous last offset: "
               "{}, new segment base offset: {}",
-              _last_offset,
+              get_last_offset(),
               meta.base_offset);
         }
-
-        _last_offset = meta.committed_offset;
     }
 }
 
@@ -589,11 +586,9 @@ void archival_metadata_stm::apply_truncate(const start_offset& so) {
     auto removed = _manifest->truncate(so.start_offset);
     vlog(
       _logger.debug,
-      "Truncate command applied, new start offset: {}",
-      _manifest->get_start_offset());
-    if (_manifest->size() == 0) {
-        _last_offset = model::offset{};
-    }
+      "Truncate command applied, new start offset: {}, new last offset: {}",
+      get_start_offset(),
+      get_last_offset());
 }
 
 void archival_metadata_stm::apply_cleanup_metadata() {
@@ -655,6 +650,10 @@ model::offset archival_metadata_stm::get_start_offset() const {
         return p.value();
     }
     return {};
+}
+
+model::offset archival_metadata_stm::get_last_offset() const {
+    return _manifest->get_last_offset();
 }
 
 } // namespace cluster

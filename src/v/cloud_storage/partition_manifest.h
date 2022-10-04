@@ -110,23 +110,23 @@ public:
       , _rev(rev)
       , _last_offset(lo)
       , _start_offset(so) {
-        for (const auto& nm : replaced) {
+        for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
               key.has_value(),
               "can't parse name of the replaced segment in the manifest '{}'",
               nm.name);
+            nm.meta.segment_term = key->term;
             _replaced.insert(std::make_pair(key.value(), nm.meta));
         }
-        for (const auto& nm : segments) {
+        for (auto nm : segments) {
             auto maybe_key = parse_segment_name(nm.name);
-            if (!maybe_key) {
-                throw std::runtime_error(fmt_with_ctx(
-                  fmt::format, "can't parse segment name \"{}\"", nm.name));
-            }
-            key key = {
-              .base_offset = maybe_key->base_offset, .term = maybe_key->term};
-            _segments.insert(std::make_pair(key, nm.meta));
+            vassert(
+              maybe_key.has_value(),
+              "can't parse name of the segment in the manifest '{}'",
+              nm.name);
+            nm.meta.segment_term = maybe_key->term;
+            _segments.insert(std::make_pair(*maybe_key, nm.meta));
         }
     }
 
