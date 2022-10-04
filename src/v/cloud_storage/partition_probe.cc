@@ -12,6 +12,7 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -64,7 +65,21 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           [this] { return _cur_segment_readers; },
           sm::description("Current number of remote segment readers"),
           labels),
+        sm::make_histogram(
+          "segment_reader_wait",
+          sm::description("Time reader spends wating for segment hydrations"),
+          labels,
+          [this] {
+              return ssx::metrics::report_default_histogram(
+                _reader_segment_wait);
+          })
+          .aggregate({sm::shard_label}),
       });
+}
+
+std::unique_ptr<hdr_hist::measurement>
+partition_probe::auto_segment_wait_measurement() {
+    return _reader_segment_wait.auto_measure();
 }
 
 } // namespace cloud_storage

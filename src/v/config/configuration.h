@@ -244,6 +244,11 @@ struct configuration final : public config_store {
     property<size_t> cloud_storage_cache_size;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
 
+    // SI prefetch control
+    property<bool> cloud_storage_prefetch_enable;
+    property<size_t> cloud_storage_prefetch_size_trigger;
+    property<size_t> cloud_storage_prefetch_threshold;
+
     one_or_many_property<ss::sstring> superusers;
 
     // kakfa queue depth control: latency ewma

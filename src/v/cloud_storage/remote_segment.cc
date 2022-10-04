@@ -198,6 +198,8 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     co_return storage::segment_reader_handle(std::move(data_stream));
 }
 
+size_t remote_segment::get_segment_size_bytes() const { return _segment_size; }
+
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
   model::offset kafka_offset, ss::io_priority_class io_priority) {
@@ -291,6 +293,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
             co_await _cache.put(_path().native() + ".index", index_stream);
             _index = std::move(tmpidx);
         }
+        _segment_size = size_bytes;
         co_return size_bytes;
     };
 
@@ -945,6 +948,10 @@ remote_segment_batch_reader::read_some(
               _cur_rp_offset,
               _bytes_consumed));
         }
+        if (new_bytes_consumed.value() > _bytes_consumed) {
+            _prefetch.on_bytes_consumed(
+              new_bytes_consumed.value() - _bytes_consumed);
+        }
         _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
@@ -966,6 +973,7 @@ remote_segment_batch_reader::init_parser() {
       storage::segment_reader_handle(std::move(stream_off.stream)));
     _cur_rp_offset = stream_off.rp_offset;
     _cur_delta = stream_off.rp_offset - stream_off.kafka_offset;
+    _prefetch.set_segment_size(_seg->get_segment_size_bytes());
     co_return parser;
 }
 

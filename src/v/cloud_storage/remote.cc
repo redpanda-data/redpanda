@@ -523,6 +523,7 @@ ss::future<download_result> remote::download_segment(
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
+    auto latency_probe = _probe.auto_hydration_measurement();
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         std::exception_ptr eptr = nullptr;
         try {

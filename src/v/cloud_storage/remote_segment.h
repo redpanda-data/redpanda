@@ -14,6 +14,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_probe.h"
+#include "cloud_storage/prefetch_tracker.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
@@ -125,6 +126,9 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
+    /// Size of the segment in bytes
+    size_t get_segment_size_bytes() const;
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -180,6 +184,8 @@ private:
 
     using tx_range_vec = fragmented_vector<model::tx_range>;
     std::optional<tx_range_vec> _tx_range;
+
+    size_t _segment_size{0};
 };
 
 class remote_segment_batch_consumer;
@@ -239,6 +245,20 @@ public:
         _cur_rp_offset = _seg->get_max_rp_offset() + model::offset{1};
     }
 
+    /// Get prefetcher state that can be passed to another
+    /// instance of remote_segment_batch_reader
+    prefetch_tracker reset(prefetch_tracker tnew) {
+        std::swap(tnew, _prefetch);
+        _prefetch.on_new_segment();
+        return tnew;
+    }
+
+    size_t get_segment_size_bytes() const {
+        return _seg->get_segment_size_bytes();
+    }
+
+    bool ready_to_prefetch() { return _prefetch(); }
+
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
@@ -261,6 +281,7 @@ private:
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};
+    prefetch_tracker _prefetch;
 };
 
 } // namespace cloud_storage

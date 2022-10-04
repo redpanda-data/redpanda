@@ -13,9 +13,11 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
+#include <chrono>
 #include <cstdint>
 
 namespace cloud_storage {
@@ -149,6 +151,8 @@ public:
 
     void register_download_size(size_t n) { _cnt_bytes_received += n; }
 
+    std::unique_ptr<hdr_hist::measurement> auto_hydration_measurement();
+
 private:
     /// Number of topic manifest uploads
     uint64_t _cnt_topic_manifest_uploads{0};
@@ -186,6 +190,8 @@ private:
     uint64_t _cnt_tx_manifest_uploads{0};
     /// Number of tx-range manifest downloads
     uint64_t _cnt_tx_manifest_downloads{0};
+    /// Hydration latency
+    hdr_hist _segment_hydration;
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
