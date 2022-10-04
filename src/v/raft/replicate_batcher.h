@@ -124,7 +124,8 @@ public:
     replicate_stages replicate(
       std::optional<model::term_id>,
       model::record_batch_reader,
-      consistency_level);
+      consistency_level,
+      std::optional<std::chrono::milliseconds> = std::nullopt);
 
     ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
 
@@ -140,19 +141,22 @@ private:
     ss::future<item_ptr> do_cache(
       std::optional<model::term_id>,
       model::record_batch_reader,
-      consistency_level);
-
-    ss::future<result<replicate_result>> cache_and_wait_for_result(
-      ss::promise<> enqueued,
-      std::optional<model::term_id> expected_term,
-      model::record_batch_reader r,
-      consistency_level consistency_lvl);
+      consistency_level,
+      std::optional<std::chrono::milliseconds>);
 
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
       ss::circular_buffer<model::record_batch>,
       size_t,
-      consistency_level);
+      consistency_level,
+      std::optional<std::chrono::milliseconds>);
+
+    ss::future<result<replicate_result>> cache_and_wait_for_result(
+      ss::promise<> enqueued,
+      std::optional<model::term_id> expected_term,
+      model::record_batch_reader r,
+      consistency_level consistency_lvl,
+      std::optional<std::chrono::milliseconds> timeout);
 
     consensus* _ptr;
     ssx::semaphore _max_batch_size_sem;
