@@ -637,6 +637,9 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
         transaction_tx_seq = prepare_it->second.tx_seq;
     } else {
+        _mem_state.expected.erase(pid);
+        _mem_state.preparing.erase(pid);
+
         // checking fencing from prepared phase
         auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
         if (fence_it == _log_state.fence_pid_epoch.end()) {
