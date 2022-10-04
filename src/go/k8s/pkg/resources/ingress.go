@@ -100,15 +100,8 @@ func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressReso
 		r.TLS = []netv1.IngressTLS{}
 	}
 
-	host := r.host()
-	allHosts := []string{host}
-	if r.subdomain != host {
-		// Workaround to put short SAN entry so LE can fill CN of cert.
-		// See: https://github.com/redpanda-data/redpanda/pull/6471
-		allHosts = append(allHosts, r.subdomain)
-	}
 	r.TLS = append(r.TLS, netv1.IngressTLS{
-		Hosts: allHosts,
+		Hosts: []string{r.subdomain, fmt.Sprintf("*.%s", r.subdomain)},
 		// Use the Cluster wildcard certificate
 		SecretName: secretName,
 	})
