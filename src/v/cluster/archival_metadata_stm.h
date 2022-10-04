@@ -81,6 +81,7 @@ public:
     using persisted_stm::sync;
 
     model::offset get_start_offset() const;
+    model::offset get_last_offset() const;
 
     // Return list of all segments that has to be
     // removed from S3.
@@ -138,7 +139,6 @@ private:
     mutex _lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
-    model::offset _last_offset;
 
     cloud_storage::remote& _cloud_storage_api;
     ss::abort_source _download_as;

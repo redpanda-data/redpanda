@@ -199,15 +199,24 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .archiver_term = model::term_id(1),
       });
     m.add(
-      segment_name("0-1-v1.log"),
+      segment_name("200-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(200),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+      });
+    m.add(
+      segment_name("100-1-v1.log"),
       segment_meta{
         .is_compacted = true,
-        .base_offset = model::offset(0),
+        .base_offset = model::offset(100),
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
         .sname_format = cloud_storage::segment_name_format::v2,
       });
 
+    BOOST_REQUIRE(m.advance_start_offset(model::offset{100}));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(100));
     cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{0})
       .get();
 
@@ -217,8 +226,17 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     archival_stm.start().get();
     wait_for_confirmed_leader();
 
+    {
+        std::stringstream s1, s2;
+        m.serialize(s1);
+        archival_stm.manifest().serialize(s2);
+        vlog(logger.info, "original manifest: {}", s1.str());
+        vlog(logger.info, "restored manifest: {}", s2.str());
+    }
+
+    BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{100});
     BOOST_REQUIRE(archival_stm.manifest() == m);
-    BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{10});
+    archival_stm.stop().get();
 }
 
 FIXTURE_TEST(
@@ -260,7 +278,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(archival_stm->manifest() == m);
 
     // Truncate the STM, first segment should be added to the backlog
-    archival_stm->truncate(model::offset(100), ss::lowres_clock::now() + 10s)
+    archival_stm->truncate(model::offset(101), ss::lowres_clock::now() + 10s)
       .get();
 
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(100));
@@ -404,4 +422,6 @@ FIXTURE_TEST(
     wait_for_confirmed_leader();
 
     BOOST_REQUIRE(archival_stm.manifest() == m);
+
+    archival_stm.stop().get();
 }
