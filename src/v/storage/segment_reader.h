@@ -101,11 +101,6 @@ public:
 
     ss::future<> close() override;
 
-    void detach() {
-        _parent = nullptr;
-        _hook.unlink();
-    }
-
     ~segment_reader_handle() override;
 };
 
