@@ -176,13 +176,13 @@ segment_name generate_local_segment_name(model::offset o, model::term_id t) {
 partition_manifest::partition_manifest()
   : _ntp()
   , _rev()
-  , _last_offset(0) {}
+  , _last_offset() {}
 
 partition_manifest::partition_manifest(
   model::ntp ntp, model::initial_revision_id rev)
   : _ntp(std::move(ntp))
   , _rev(rev)
-  , _last_offset(0) {}
+  , _last_offset() {}
 
 // NOTE: the methods that generate remote paths use the xxhash function
 // to randomize the prefix. S3 groups the objects into chunks based on
@@ -220,10 +220,10 @@ const model::offset partition_manifest::get_last_offset() const {
 }
 
 std::optional<model::offset> partition_manifest::get_start_offset() const {
-    if (_segments.empty()) {
+    if (_start_offset == model::offset{}) {
         return std::nullopt;
     }
-    return _segments.begin()->second.base_offset;
+    return _start_offset;
 }
 
 model::initial_revision_id partition_manifest::get_revision_id() const {
@@ -308,6 +308,28 @@ bool partition_manifest::contains(const segment_name& name) const {
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
+bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
+    if (new_start_offset > _start_offset && !_segments.empty()) {
+        key k = {
+          .base_offset = new_start_offset,
+          .term = model::term_id::max(),
+        };
+        auto it = _segments.upper_bound(k);
+        if (it == _segments.begin()) {
+            return false;
+        }
+        it = std::prev(it);
+        if (it->second.committed_offset < new_start_offset) {
+            // The whole offset range is supposed to be truncated
+            _start_offset = new_start_offset;
+        } else {
+            _start_offset = it->second.base_offset;
+        }
+        return true;
+    }
+    return false;
+}
+
 std::vector<segment_meta> partition_manifest::replaced_segments() const {
     std::vector<segment_meta> segments;
     segments.reserve(_replaced.size());
@@ -336,6 +358,11 @@ void partition_manifest::move_aligned_offset_range(
 
 bool partition_manifest::add(
   const partition_manifest::key& key, const segment_meta& meta) {
+    if (_start_offset == model::offset{} && _segments.empty()) {
+        // This can happen if this is the first time we add something
+        // to the manifest or if all data was removed previously.
+        _start_offset = meta.base_offset;
+    }
     move_aligned_offset_range(meta.base_offset, meta.committed_offset);
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
@@ -361,14 +388,29 @@ bool partition_manifest::add(
 
 partition_manifest
 partition_manifest::truncate(model::offset starting_rp_offset) {
+    if (!advance_start_offset(starting_rp_offset)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "can't truncate manifest up ot {} due to misalignment",
+          starting_rp_offset));
+    }
+    return truncate();
+}
+
+partition_manifest partition_manifest::truncate() {
     partition_manifest removed(_ntp, _rev);
     for (auto it : _segments) {
-        if (it.second.committed_offset < starting_rp_offset) {
+        if (it.second.committed_offset < _start_offset) {
             removed.add(it.first, it.second);
         }
     }
     for (auto s : removed._segments) {
         _segments.erase(s.first);
+    }
+    if (_segments.empty()) {
+        // start offset only makes sense if we have segments
+        _start_offset = model::offset{};
+        // NOTE: _last_offset should not be reset
     }
     return removed;
 }
@@ -585,6 +627,8 @@ struct partition_manifest_handler
                 _revision_id = model::initial_revision_id(u);
             } else if ("last_offset" == _manifest_key) {
                 _last_offset = model::offset(u);
+            } else if ("start_offset" == _manifest_key) {
+                _start_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -792,6 +836,7 @@ struct partition_manifest_handler
     std::optional<int32_t> _partition_id;
     std::optional<model::initial_revision_id> _revision_id;
     std::optional<model::offset> _last_offset;
+    std::optional<model::offset> _start_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -921,8 +966,19 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
       handler._partition_id.value());
     _last_offset = handler._last_offset.value();
 
+    if (handler._start_offset) {
+        _start_offset = handler._start_offset.value();
+    } else {
+        _start_offset = {};
+    }
+
     if (handler._segments) {
         _segments = std::move(*handler._segments);
+        if (handler._start_offset == std::nullopt && !_segments.empty()) {
+            // Backward compatibility. Old manifest format doesn't have
+            // start_offset field. In this case we need to set it implicitly.
+            _start_offset = _segments.begin()->first.base_offset;
+        }
     }
     if (handler._replaced) {
         _replaced = std::move(*handler._replaced);
@@ -962,6 +1018,10 @@ void partition_manifest::serialize(std::ostream& out) const {
     w.Int64(_rev());
     w.Key("last_offset");
     w.Int64(_last_offset());
+    if (_start_offset != model::offset{}) {
+        w.Key("start_offset");
+        w.Int64(_start_offset());
+    }
     auto serialize_meta = [this, &w](const key& key, const segment_meta& meta) {
         auto sn = generate_local_segment_name(key.base_offset, key.term);
         w.Key(sn());
