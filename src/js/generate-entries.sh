@@ -30,17 +30,24 @@ fi
 echo "Using ${py}"
 
 root=$(git rev-parse --show-toplevel)
+output_dir=$1
+
+if [ ! -d "${output_dir}" ]; then
+  echo "Script expects one parameter, root directory of nodejs project"
+  exit 1
+fi
+
 cd "$root"/tools/ts-generator/types &&
   $py types_gen_js.py \
     --entities-define-file "$root"/src/js/modules/domain/generatedRpc/entitiesDefinition.json \
-    --output-file "$root"/src/js/modules/domain/generatedRpc/generatedClasses.ts
+    --output-file "$output_dir"/modules/domain/generatedRpc/generatedClasses.ts
 
 cd "$root"/tools/ts-generator/types &&
   $py types_gen_js.py \
     --entities-define-file "$root"/src/js/modules/domain/generatedRpc/enableDisableCoproc.json \
-    --output-file "$root"/src/js/modules/domain/generatedRpc/enableDisableCoprocClasses.ts
+    --output-file "$output_dir"/modules/domain/generatedRpc/enableDisableCoprocClasses.ts
 
 cd "$root"/tools/ts-generator/rpc &&
   $py rpc_gen_js.py \
     --server-define-file "$root"/src/v/coproc/gen.json \
-    --output-file "$root"/src/js/modules/rpc/serverAndClients/rpcServer.ts
+    --output-file "$output_dir"/modules/rpc/serverAndClients/rpcServer.ts

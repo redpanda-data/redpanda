@@ -12,7 +12,7 @@
     "prettier:check": "npx prettier --list-different \".\"",
     "eslint:check": "eslint . --ext .ts",
     "code:ckeck": "npm run prettier:check && npm run eslint:check",
-    "generate:serialization": "./generate-entries.sh && npm run prettier:format",
+    "generate:serialization": "./generate-entries.sh $(pwd) && npm run prettier:format",
     "postinstall": "npm run generate:serialization",
     "publish:wasm-api": "./publish-wasm-dependecy.js",
     "start:dev": "sudo npx ts-node ./modules/rpc/service.ts",
