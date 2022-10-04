@@ -1556,15 +1556,6 @@ tx_gateway_frontend::do_commit_tm_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    if (is_transaction_ga()) {
-        // We can reduce the number of disk operation if we will not write
-        // preparing state on disk. But after it we should ans to client when we
-        // sure that tx will be recommited after fail. We can guarantee it only
-        // if we ans after marking tx prepared. Becase after fail tx will be
-        // recommited again and client will see expected bechavior.
-        outcome->set_value(tx_errc::none);
-    }
-
     tx = changed_tx.value();
 
     std::vector<ss::future<commit_group_tx_reply>> gfs;
@@ -1577,6 +1568,7 @@ tx_gateway_frontend::do_commit_tm_tx(
         cfs.push_back(_rm_partition_frontend.local().commit_tx(
           rm.ntp, tx.pid, tx.tx_seq, timeout));
     }
+
     auto ok = true;
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
     for (const auto& r : grs) {
@@ -1587,8 +1579,20 @@ tx_gateway_frontend::do_commit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
+        if (is_transaction_ga()) {
+            outcome->set_value(tx_errc::unknown_server_error);
+        }
         co_return tx_errc::unknown_server_error;
     }
+
+    if (is_transaction_ga()) {
+        // Now redpanda do not do rpc for prepare to rm_stm, so we can not ask
+        // client right after prepare phase. Becasue commit can fail due to
+        // fence. So now we hould be sure that commit is done before ans to
+        // client
+        outcome->set_value(tx_errc::none);
+    }
+
     co_return tx;
 }
 

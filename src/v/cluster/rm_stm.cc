@@ -637,6 +637,21 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
         transaction_tx_seq = prepare_it->second.tx_seq;
     } else {
+        // checking fencing from prepared phase
+        auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
+        if (fence_it == _log_state.fence_pid_epoch.end()) {
+            // begin_tx should have set a fence
+            co_return tx_errc::request_rejected;
+        }
+        if (pid.get_epoch() != fence_it->second) {
+            vlog(
+              _ctx_log.error,
+              "Can't commit pid:{} - fenced out by epoch {}",
+              pid,
+              fence_it->second);
+            co_return tx_errc::fenced;
+        }
+
         auto tx_seqs_it = _log_state.tx_seqs.find(pid);
         if (tx_seqs_it == _log_state.tx_seqs.end()) {
             vlog(clusterlog.trace, "Can't find tx_seqs for pid:{}", pid);
