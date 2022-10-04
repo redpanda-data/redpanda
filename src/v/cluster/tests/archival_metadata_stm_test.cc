@@ -208,8 +208,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .sname_format = cloud_storage::segment_name_format::v2,
       });
 
-    cluster::archival_metadata_stm::make_snapshot(
-      ntp_cfg, m, model::offset{0}, model::offset{10})
+    cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{0})
       .get();
 
     cluster::archival_metadata_stm archival_stm(

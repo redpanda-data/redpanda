@@ -98,6 +98,38 @@ public:
     /// Create manifest for specific ntp
     explicit partition_manifest(model::ntp ntp, model::initial_revision_id rev);
 
+    template<class segment_t>
+    partition_manifest(
+      model::ntp ntp,
+      model::initial_revision_id rev,
+      model::offset so,
+      model::offset lo,
+      const std::vector<segment_t>& segments,
+      const std::vector<segment_t>& replaced)
+      : _ntp(std::move(ntp))
+      , _rev(rev)
+      , _last_offset(lo)
+      , _start_offset(so) {
+        for (const auto& nm : replaced) {
+            auto key = parse_segment_name(nm.name);
+            vassert(
+              key.has_value(),
+              "can't parse name of the replaced segment in the manifest '{}'",
+              nm.name);
+            _replaced.insert(std::make_pair(key.value(), nm.meta));
+        }
+        for (const auto& nm : segments) {
+            auto maybe_key = parse_segment_name(nm.name);
+            if (!maybe_key) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format, "can't parse segment name \"{}\"", nm.name));
+            }
+            key key = {
+              .base_offset = maybe_key->base_offset, .term = maybe_key->term};
+            _segments.insert(std::make_pair(key, nm.meta));
+        }
+    }
+
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
 
@@ -135,10 +167,23 @@ public:
     bool add(const key& key, const segment_meta& meta);
     bool add(const segment_name& name, const segment_meta& meta);
 
-    /// \brief Truncate the manifest
+    /// \brief Truncate the manifest (remove entries from the manifest)
+    ///
+    /// \note version with parameter advances start offset before truncating
     /// \param starting_rp_offset is a new starting offset of the manifest
     /// \return manifest that contains only removed segments
     partition_manifest truncate(model::offset starting_rp_offset);
+    partition_manifest truncate();
+
+    /// \brief Set start offset without removing any data from the
+    /// manifest.
+    ///
+    /// Only allows start_offset to move forward
+    /// and can only be placed on a segment boundary (should
+    /// be equal to base_offset of one of the segments).
+    /// Empty manfest has start_offset set to model::offset::min()
+    /// \returns true if start offset was moved
+    bool advance_start_offset(model::offset start_offset);
 
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
@@ -202,6 +247,7 @@ private:
     /// Collection of replaced but not yet removed segments
     segment_multimap _replaced;
     model::offset _last_offset;
+    model::offset _start_offset;
 };
 
 } // namespace cloud_storage

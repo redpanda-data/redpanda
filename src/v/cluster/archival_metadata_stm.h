@@ -50,8 +50,18 @@ public:
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
     /// Truncate local snapshot
+    ///
+    /// This method doesn't actually delete the entries from the snapshot
+    /// but advances the start offset stored inside it. After that the segments
+    /// which are referenced by the entries below 'start_rp_offset' can be
+    /// safely removed from the remote storage.
     ss::future<std::error_code> truncate(
       model::offset start_rp_offset,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    /// Removes replaced and truncated segments from the snapshot
+    ss::future<std::error_code> cleanup_metadata(
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
@@ -66,8 +76,7 @@ public:
     static ss::future<> make_snapshot(
       const storage::ntp_config& ntp_cfg,
       const cloud_storage::partition_manifest& m,
-      model::offset insync_offset,
-      model::offset start_ofset);
+      model::offset insync_offset);
 
     using persisted_stm::sync;
 
@@ -85,6 +94,10 @@ private:
 
     ss::future<std::error_code> do_truncate(
       model::offset,
+      ss::lowres_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>>);
+
+    ss::future<std::error_code> do_cleanup_metadata(
       ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
@@ -111,6 +124,9 @@ private:
     static std::vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
+    static std::vector<segment> replaced_segments_from_manifest(
+      const cloud_storage::partition_manifest& manifest);
+
     void apply_add_segment(const segment& segment);
     void apply_truncate(const start_offset& so);
     void apply_cleanup_metadata();
@@ -122,7 +138,6 @@ private:
     mutex _lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
-    model::offset _start_offset;
     model::offset _last_offset;
 
     cloud_storage::remote& _cloud_storage_api;
