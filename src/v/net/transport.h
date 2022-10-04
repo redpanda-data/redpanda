@@ -28,6 +28,13 @@
 namespace net {
 
 /*
+ * Wrapper around a network socket that encapsulates setting up an initial
+ * connection with some credentials.
+ *
+ * This class only provides an interface with which to establish a connection
+ * with the socket. As such, superclasses must provide interfaces with which to
+ * send and receive bytes using the socket.
+ *
  * TODO:
  *  - client_probe needs to be split apart from simple_protocol
  *  - allow subclasses to provide logger

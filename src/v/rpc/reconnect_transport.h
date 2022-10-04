@@ -24,6 +24,11 @@
 #include <seastar/net/socket_defs.hh>
 
 namespace rpc {
+
+/**
+ * Provides an interface to get a connected rpc::transport, transparently
+ * reconnecting if the underlying transport has become invalid.
+ */
 class reconnect_transport {
 public:
     explicit reconnect_transport(
