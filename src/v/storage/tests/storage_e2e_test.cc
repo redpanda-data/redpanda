@@ -2795,6 +2795,58 @@ FIXTURE_TEST(test_max_compact_offset, storage_test_fixture) {
     BOOST_REQUIRE_LE(post_compact_gaps.last_gap_end, max_compact_offset);
 };
 
+FIXTURE_TEST(test_self_compaction_while_reader_is_open, storage_test_fixture) {
+    // Test setup.
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    // (1) append some random data, with limited number of distinct keys, so
+    // compaction can make progress.
+    auto headers = append_random_batches<key_limited_random_batch_generator>(
+      log, 20);
+
+    // (2) remember log offset, roll log, and produce more messages
+    log.flush().get0();
+
+    disk_log->force_roll(ss::default_priority_class()).get();
+    headers = append_random_batches<key_limited_random_batch_generator>(
+      log, 20);
+
+    // (3) roll log and trigger compaction, analyzing offset gaps before and
+    // after, to observe compaction behavior.
+    log.flush().get0();
+
+    disk_log->force_roll(ss::default_priority_class()).get();
+    storage::compaction_config ccfg(
+      model::timestamp::max(), // no time-based deletion
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
+    auto& segment = *(disk_log->segments().begin());
+    auto stream = segment
+                    ->offset_data_stream(
+                      model::offset(0), ss::default_priority_class())
+                    .get();
+    log.compact(std::move(ccfg)).get();
+    stream.close().get();
+};
+
 struct compact_test_args {
     model::offset max_compact_offs;
     long num_compactable_msg;
