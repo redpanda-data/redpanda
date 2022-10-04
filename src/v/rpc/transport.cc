@@ -52,7 +52,9 @@ struct client_context_impl final : streaming_context {
 };
 
 transport::transport(
-  transport_configuration c, std::optional<connection_cache_label> label)
+  transport_configuration c,
+  std::optional<connection_cache_label> label,
+  std::optional<model::node_id> node_id)
   : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
@@ -61,7 +63,7 @@ transport::transport(
   , _version(c.version)
   , _default_version(c.version) {
     if (!c.disable_metrics) {
-        setup_metrics(label);
+        setup_metrics(label, node_id);
     }
 }
 
@@ -289,8 +291,9 @@ ss::future<> transport::dispatch(header h) {
 }
 
 void transport::setup_metrics(
-  const std::optional<connection_cache_label>& label) {
-    _probe.setup_metrics(_metrics, label, server_address());
+  const std::optional<connection_cache_label>& label,
+  const std::optional<model::node_id>& node_id) {
+    _probe.setup_metrics(_metrics, label, node_id, server_address());
 }
 
 transport::~transport() {
