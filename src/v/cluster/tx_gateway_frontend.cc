@@ -1464,14 +1464,19 @@ tx_gateway_frontend::do_commit_tm_tx(
         }
 
         std::vector<ss::future<prepare_tx_reply>> pfs;
-        for (auto rm : tx.partitions) {
-            pfs.push_back(_rm_partition_frontend.local().prepare_tx(
-              rm.ntp,
-              rm.etag,
-              model::tx_manager_ntp.tp.partition,
-              tx.pid,
-              tx.tx_seq,
-              timeout));
+        // We can ignore prepare phase for rm_stm. Becasue we decided use
+        // quorum_ack for all data records on rm_stm. And we do not need marker
+        // to sync replicas
+        if (!is_transaction_ga()) {
+            for (auto rm : tx.partitions) {
+                pfs.push_back(_rm_partition_frontend.local().prepare_tx(
+                  rm.ntp,
+                  rm.etag,
+                  model::tx_manager_ntp.tp.partition,
+                  tx.pid,
+                  tx.tx_seq,
+                  timeout));
+            }
         }
 
         std::vector<ss::future<prepare_group_tx_reply>> pgfs;
@@ -1498,10 +1503,12 @@ tx_gateway_frontend::do_commit_tm_tx(
 
         auto ok = true;
         auto rejected = false;
-        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-        for (const auto& r : prs) {
-            ok = ok && (r.ec == tx_errc::none);
-            rejected = rejected || (r.ec == tx_errc::request_rejected);
+        if (!is_transaction_ga()) {
+            auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+            for (const auto& r : prs) {
+                ok = ok && (r.ec == tx_errc::none);
+                rejected = rejected || (r.ec == tx_errc::request_rejected);
+            }
         }
         auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
         for (const auto& r : pgrs) {
