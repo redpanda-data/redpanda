@@ -141,6 +141,13 @@ private:
       std::optional<model::term_id>,
       model::record_batch_reader,
       consistency_level);
+
+    ss::future<result<replicate_result>> cache_and_wait_for_result(
+      ss::promise<> enqueued,
+      std::optional<model::term_id> expected_term,
+      model::record_batch_reader r,
+      consistency_level consistency_lvl);
+
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
       ss::circular_buffer<model::record_batch>,
