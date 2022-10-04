@@ -21,6 +21,7 @@
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
+#include "storage/types.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 
@@ -109,6 +110,7 @@ public:
           ss::default_priority_class(),
           cache);
 
+        cfg.segment_size_jitter = storage::jitter_percents(0);
         return cfg;
     }
 
