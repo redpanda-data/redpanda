@@ -126,32 +126,30 @@ replicate_batcher::do_cache_with_backpressure(
      * them to be able to continue.
      */
 
-    return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
-      .then(
-        [this, expected_term, batches = std::move(batches), consistency_lvl](
-          ssx::semaphore_units u) mutable {
-            size_t record_count = 0;
-            std::vector<model::record_batch> data;
-            data.reserve(batches.size());
-            for (auto& b : batches) {
-                record_count += b.record_count();
-                if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                    data.push_back(std::move(b));
-                } else {
-                    data.push_back(b.copy());
-                }
-            }
-            auto i = ss::make_lw_shared<item>(
-              record_count,
-              std::move(data),
-              std::move(u),
-              expected_term,
-              consistency_lvl,
-              std::nullopt);
+    auto u = co_await ss::get_units(
+      _max_batch_size_sem, std::min(bytes, _max_batch_size));
 
-            _item_cache.emplace_back(i);
-            return i;
-        });
+    size_t record_count = 0;
+    std::vector<model::record_batch> data;
+    data.reserve(batches.size());
+    for (auto& b : batches) {
+        record_count += b.record_count();
+        if (b.header().ctx.owner_shard == ss::this_shard_id()) {
+            data.push_back(std::move(b));
+        } else {
+            data.push_back(b.copy());
+        }
+    }
+    auto i = ss::make_lw_shared<item>(
+      record_count,
+      std::move(data),
+      std::move(u),
+      expected_term,
+      consistency_lvl,
+      std::nullopt);
+
+    _item_cache.emplace_back(i);
+    co_return i;
 }
 
 ss::future<> replicate_batcher::flush(
