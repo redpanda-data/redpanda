@@ -62,6 +62,21 @@ segment_reader::segment_reader(segment_reader&& rhs) noexcept
     }
 }
 
+segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
+    _filename = std::move(rhs._filename);
+    _data_file = std::move(rhs._data_file);
+    _data_file_refcount = rhs._data_file_refcount;
+    _file_size = rhs._file_size;
+    _buffer_size = rhs._buffer_size;
+    _read_ahead = rhs._read_ahead;
+    _sanitize = rhs._sanitize;
+    _streams = std::move(rhs._streams);
+    for (auto& i : _streams) {
+        i._parent = this;
+    }
+    return *this;
+}
+
 ss::future<> segment_reader::load_size() {
     auto s = co_await stat();
     set_file_size(s.st_size);

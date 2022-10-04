@@ -107,7 +107,7 @@ public:
       debug_sanitize_files) noexcept;
     ~segment_reader() noexcept;
     segment_reader(segment_reader&&) noexcept;
-    segment_reader& operator=(segment_reader&&) noexcept = default;
+    segment_reader& operator=(segment_reader&&) noexcept;
     segment_reader(const segment_reader&) = delete;
     segment_reader& operator=(const segment_reader&) = delete;
 
