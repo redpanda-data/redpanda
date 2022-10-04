@@ -142,6 +142,8 @@ public:
     void set_protocol(std::unique_ptr<protocol> proto) {
         _proto = std::move(proto);
     }
+    protocol* get_protocol() { return _proto.get(); }
+
     void start();
 
     /**

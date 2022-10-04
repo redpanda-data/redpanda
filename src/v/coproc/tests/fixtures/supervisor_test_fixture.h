@@ -30,8 +30,17 @@ public:
           .get();
         _coprocessors.start().get();
         try {
-            register_service<coproc::supervisor>(
-              std::ref(_coprocessors), std::ref(_delay_heartbeat));
+            server()
+              .invoke_on_all([&](rpc::rpc_server& s) {
+                  std::vector<std::unique_ptr<rpc::service>> service;
+                  service.emplace_back(std::make_unique<coproc::supervisor>(
+                    _sg,
+                    _ssg,
+                    std::ref(_coprocessors),
+                    std::ref(_delay_heartbeat)));
+                  s.add_services(std::move(service));
+              })
+              .get();
             start_server();
         } catch (const std::exception& ex) {
             vassert(
