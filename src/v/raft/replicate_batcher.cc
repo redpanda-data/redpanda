@@ -27,7 +27,7 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
 
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader&& r,
+  model::record_batch_reader r,
   consistency_level consistency_lvl) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
@@ -91,22 +91,20 @@ ss::future<> replicate_batcher::stop() {
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader&& r,
+  model::record_batch_reader r,
   consistency_level consistency_lvl) {
-    return model::consume_reader_to_memory(std::move(r), model::no_timeout)
-      .then([this, expected_term, consistency_lvl](
-              ss::circular_buffer<model::record_batch> batches) {
-          ss::circular_buffer<model::record_batch> data;
-          size_t bytes = std::accumulate(
-            batches.cbegin(),
-            batches.cend(),
-            size_t{0},
-            [](size_t sum, const model::record_batch& b) {
-                return sum + b.size_bytes();
-            });
-          return do_cache_with_backpressure(
-            expected_term, std::move(batches), bytes, consistency_lvl);
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(r), model::no_timeout);
+
+    size_t bytes = std::accumulate(
+      batches.cbegin(),
+      batches.cend(),
+      size_t{0},
+      [](size_t sum, const model::record_batch& b) {
+          return sum + b.size_bytes();
       });
+    co_return co_await do_cache_with_backpressure(
+      expected_term, std::move(batches), bytes, consistency_lvl);
 }
 
 ss::future<replicate_batcher::item_ptr>

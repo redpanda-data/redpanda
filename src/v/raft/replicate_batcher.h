@@ -123,7 +123,7 @@ public:
 
     replicate_stages replicate(
       std::optional<model::term_id>,
-      model::record_batch_reader&&,
+      model::record_batch_reader,
       consistency_level);
 
     ss::future<> flush(ssx::semaphore_units u, bool const transfer_flush);
@@ -139,7 +139,7 @@ private:
 
     ss::future<item_ptr> do_cache(
       std::optional<model::term_id>,
-      model::record_batch_reader&&,
+      model::record_batch_reader,
       consistency_level);
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
