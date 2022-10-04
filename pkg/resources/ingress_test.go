@@ -24,14 +24,14 @@ func TestIngressWithTLS(t *testing.T) {
 			tlsSecret:   "rp-abc123-redpanda",
 			tlsIssuer:   resources.LEClusterIssuer,
 			annotations: map[string]string{"foo.vectorized.io": "bar"},
-			tlsHosts:    []string{"test.example.local"},
+			tlsHosts:    []string{"test.example.local", "*.test.example.local"},
 		},
 		{
 			defaultEndpoint: "console",
 			host:            "test.example.local",
 			tlsSecret:       "rp-abc123-redpanda",
 			tlsIssuer:       resources.LEClusterIssuer,
-			tlsHosts:        []string{"console.test.example.local", "test.example.local"},
+			tlsHosts:        []string{"test.example.local", "*.test.example.local"},
 		},
 	}
 	for i, tt := range table {
