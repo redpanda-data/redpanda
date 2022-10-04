@@ -36,15 +36,16 @@ from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
 
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.services import tls
+from rptest.util import wait_until_result
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -747,7 +748,8 @@ class RedpandaService(Service):
               clean_nodes=True,
               start_si=True,
               parallel: bool = True,
-              expect_fail: bool = False):
+              expect_fail: bool = False,
+              auto_assign_node_id: bool = False):
         """
         Start the service on all nodes.
 
@@ -802,7 +804,8 @@ class RedpandaService(Service):
             self.logger.debug("%s: starting node" % self.who_am_i(node))
             self.start_node(node,
                             first_start=first_start,
-                            expect_fail=expect_fail)
+                            expect_fail=expect_fail,
+                            auto_assign_node_id=auto_assign_node_id)
 
         self._for_nodes(to_start, start_one, parallel=parallel)
 
@@ -1006,7 +1009,8 @@ class RedpandaService(Service):
                    timeout=None,
                    write_config=True,
                    first_start=False,
-                   expect_fail: bool = False):
+                   expect_fail: bool = False,
+                   auto_assign_node_id: bool = False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -1017,7 +1021,9 @@ class RedpandaService(Service):
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
         if write_config:
-            self.write_node_conf_file(node, override_cfg_params)
+            self.write_node_conf_file(node,
+                                      override_cfg_params,
+                                      auto_assign_node_id=auto_assign_node_id)
 
         if timeout is None:
             timeout = self.node_ready_timeout_s
@@ -1568,13 +1574,22 @@ class RedpandaService(Service):
     def started_nodes(self):
         return self._started
 
-    def write_node_conf_file(self, node, override_cfg_params=None):
+    def write_node_conf_file(self,
+                             node,
+                             override_cfg_params=None,
+                             auto_assign_node_id=False):
         """
         Write the node config file for a redpanda node: this is the YAML representation
         of Redpanda's `node_config` class.  Distinct from Redpanda's _cluster_ configuration
         which is written separately.
         """
         node_info = {self.idx(n): n for n in self.nodes}
+
+        node_id = self.idx(node)
+        include_seed_servers = node_id > 1
+        if auto_assign_node_id:
+            # Supply None so it's omitted from the config.
+            node_id = None
 
         # Grab the IP to use it as an alternative listener address, to
         # exercise code paths that deal with multiple listeners
@@ -1584,7 +1599,8 @@ class RedpandaService(Service):
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
                            nodes=node_info,
-                           node_id=self.idx(node),
+                           node_id=node_id,
+                           include_seed_servers=include_seed_servers,
                            node_ip=node_ip,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
@@ -1668,7 +1684,8 @@ class RedpandaService(Service):
                       nodes,
                       override_cfg_params=None,
                       start_timeout=None,
-                      stop_timeout=None):
+                      stop_timeout=None,
+                      auto_assign_node_id=False):
 
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         with concurrent.futures.ThreadPoolExecutor(
@@ -1680,8 +1697,11 @@ class RedpandaService(Service):
                              nodes))
             list(
                 executor.map(
-                    lambda n: self.start_node(
-                        n, override_cfg_params, timeout=start_timeout), nodes))
+                    lambda n: self.start_node(n,
+                                              override_cfg_params,
+                                              timeout=start_timeout,
+                                              auto_assign_node_id=
+                                              auto_assign_node_id), nodes))
 
     def rolling_restart_nodes(self,
                               nodes,
@@ -1705,9 +1725,9 @@ class RedpandaService(Service):
         We first check the admin API to do a kafka-independent check, and then verify
         that kafka clients see the same thing.
         """
-        idx = self.idx(node)
+        node_id = self.node_id(node)
         self.logger.debug(
-            f"registered: checking if broker {idx} ({node.name} is registered..."
+            f"registered: checking if broker {node_id} ({node.name}) is registered..."
         )
 
         # Query all nodes' admin APIs, so that we don't advance during setup until
@@ -1727,7 +1747,7 @@ class RedpandaService(Service):
                 return False
             found = None
             for b in admin_brokers:
-                if b['node_id'] == idx:
+                if b['node_id'] == node_id:
                     found = b
                     break
 
@@ -1757,7 +1777,7 @@ class RedpandaService(Service):
         client = PythonLibrdkafka(self, tls_cert=self._tls_cert, **auth_args)
 
         brokers = client.brokers()
-        broker = brokers.get(idx, None)
+        broker = brokers.get(node_id, None)
         if broker is None:
             # This should never happen, because we already checked via the admin API
             # that the node of interest had become visible to all peers.
@@ -2030,6 +2050,21 @@ class RedpandaService(Service):
             assert num_shards > 0
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
+
+    def node_id(self, node):
+        def _try_get_node_id():
+            try:
+                node_cfg = self._admin.get_node_config(node)
+            except:
+                return (False, -1)
+            return (True, node_cfg["node_id"])
+
+        node_id = wait_until_result(
+            _try_get_node_id,
+            timeout_sec=30,
+            err_msg=f"couldn't reach admin endpoing for {node.account.hostname}"
+        )
+        return node_id
 
     def healthy(self):
         """
