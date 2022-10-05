@@ -9,6 +9,7 @@
 
 #include "handlers.h"
 
+#include "config/rest_authn_endpoint.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/client/exceptions.h"
@@ -32,9 +33,11 @@
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/requests/subscribe_consumer.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/kafka_client_cache.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/sharded_client_cache.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -81,10 +84,19 @@ get_brokers(server::request_t rq, server::reply_t rp) {
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
+    // Servicing the request must be handled on the
+    // same core where the client is held. So we capture
+    // everything in a handler and pass that to the cache.
+    auto handler = [user{rq.user},
+                    authn_method{rq.authn_method},
+                    make_metadata_req](kafka_client_cache& cache) mutable {
+        client_ptr client = cache.fetch_or_insert(user, authn_method);
+        return client->dispatch(make_metadata_req).finally([client] {});
+    };
+
     return rq.service()
-      .client()
-      .local()
-      .dispatch(make_metadata_req)
+      .client_cache()
+      .invoke_on_cache(rq.user, handler)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           json::get_brokers_res brokers;

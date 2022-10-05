@@ -370,6 +370,7 @@ class SecurityConfig:
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
+        self.pp_authn_method: Optional[str] = None
 
         # The rules to extract principal from mtls
         self.principal_mapping_rules = self.__DEFAULT_PRINCIPAL_MAPPING_RULES
@@ -624,6 +625,9 @@ class RedpandaService(Service):
 
     def endpoint_authn_method(self):
         return self._security.endpoint_authn_method
+
+    def pp_authn_method(self):
+        return self._security.pp_authn_method
 
     def require_client_auth(self):
         return self._security.require_client_auth
@@ -1565,7 +1569,8 @@ class RedpandaService(Service):
                            enable_sr=self._enable_sr,
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
-                           endpoint_authn_method=self.endpoint_authn_method())
+                           endpoint_authn_method=self.endpoint_authn_method(),
+                           pp_authn_method=self.pp_authn_method())
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)

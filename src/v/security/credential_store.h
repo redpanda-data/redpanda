@@ -25,6 +25,8 @@ namespace security {
  * consistent for the duration of that process.
  */
 using credential_user = named_type<ss::sstring, struct credential_user_type>;
+using credential_password
+  = named_type<ss::sstring, struct credential_password_type>;
 
 class credential_store {
 public:

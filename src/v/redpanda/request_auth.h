@@ -41,8 +41,11 @@ public:
      * @param is_superuser
      */
     request_auth_result(
-      security::credential_user username, superuser is_superuser)
-      : _username(username)
+      security::credential_user username,
+      security::credential_password password,
+      superuser is_superuser)
+      : _username(std::move(username))
+      , _password(std::move(password))
       , _authenticated(true)
       , _superuser(is_superuser){};
 
@@ -73,9 +76,11 @@ public:
     void pass();
 
     ss::sstring const& get_username() const { return _username; }
+    ss::sstring const& get_password() const { return _password; }
 
 private:
     security::credential_user _username;
+    security::credential_password _password;
     bool _authenticated{false};
     bool _superuser{false};
     bool _checked{false};

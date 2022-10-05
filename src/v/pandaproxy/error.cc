@@ -15,6 +15,8 @@
 #include "pandaproxy/json/error.h"
 #include "pandaproxy/parsing/error.h"
 
+#include <seastar/http/reply.hh>
+
 namespace pandaproxy {
 
 namespace {
@@ -218,6 +220,25 @@ std::error_condition make_error_condition(std::error_code ec) {
 
 std::error_condition make_error_condition(reply_error_code ec) {
     return {static_cast<int>(ec), reply_error_category};
+}
+
+std::error_condition make_error_condition(ss::httpd::reply::status_type st) {
+    using rec = reply_error_code;
+    using sec = ss::httpd::reply::status_type;
+
+    rec ec{};
+
+    switch (st) {
+    case sec::forbidden:
+        ec = reply_error_code::kafka_authorization_error;
+        break;
+    case sec::unauthorized:
+        ec = reply_error_code::kafka_authentication_error;
+        break;
+    default:
+        ec = reply_error_code::kafka_bad_request;
+    }
+    return ec;
 }
 
 const std::error_category& reply_category() noexcept {

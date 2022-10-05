@@ -14,6 +14,8 @@
 #include "kafka/protocol/errors.h"
 #include "seastarx.h"
 
+#include <seastar/http/reply.hh>
+
 #include <cstdint>
 #include <system_error>
 
@@ -55,6 +57,7 @@ enum class reply_error_code : uint16_t {
 
 std::error_condition make_error_condition(reply_error_code);
 std::error_condition make_error_condition(std::error_code ec);
+std::error_condition make_error_condition(ss::httpd::reply::status_type ec);
 const std::error_category& reply_category() noexcept;
 
 } // namespace pandaproxy

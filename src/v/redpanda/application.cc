@@ -55,6 +55,7 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/sharded_client_cache.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
@@ -720,6 +721,17 @@ void application::wire_up_services() {
           _proxy_client,
           to_yaml(*_proxy_client_config, config::redact_secrets::no))
           .get();
+
+        construct_single_service(_proxy_client_cache);
+
+        _proxy_client_cache
+          ->start(
+            smp_service_groups.proxy_smp_sg(),
+            to_yaml(*_proxy_client_config, config::redact_secrets::no),
+            _proxy_config->client_cache_max_size.value(),
+            _proxy_config->client_keep_alive.value())
+          .get();
+
         construct_service(
           _proxy,
           to_yaml(*_proxy_config, config::redact_secrets::no),
@@ -727,7 +739,9 @@ void application::wire_up_services() {
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_proxy_client))
+          std::reference_wrapper(_proxy_client),
+          std::reference_wrapper(*_proxy_client_cache),
+          controller.get())
           .get();
     }
     if (_schema_reg_config) {
