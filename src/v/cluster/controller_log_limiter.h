@@ -16,6 +16,8 @@
 #include "ssx/metrics.h"
 #include "ssx/sformat.h"
 #include "utils/token_bucket.h"
+#include "vlog.h"
+
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -24,6 +26,9 @@
 #include <utility>
 
 namespace cluster {
+
+inline ss::logger controller_limiter_log("controller_limiter_log");
+
 
 struct limiter_configuration {
     config::binding<bool> enable;
@@ -56,10 +61,20 @@ public:
     }
 
     ss::future<bool> try_throttle() {
+        vlog(
+        controller_limiter_log.debug,
+        "Try throttle {}, token available: {}",
+        _group_name,
+        _throttler.available());
         return ss::make_ready_future<bool>(_throttler.try_throttle(1));
     }
 
     ss::future<bool> throttle(ss::sharded<ss::abort_source>& as) {
+        vlog(
+        controller_limiter_log.debug,
+        "Throttle {}, token available: {}",
+        _group_name,
+        _throttler.available());
         bool error = false;
         _throttler.throttle(1, as.local())
           .handle_exception_type(
@@ -159,7 +174,7 @@ public:
             case update_topic_properties_cmd_type:
             case create_partition_cmd_type:
             case create_non_replicable_topic_cmd_type:
-                return _acls_and_users_operations_limiter.try_throttle();
+                return _topic_operations_limiter.try_throttle();
             case move_partition_replicas_cmd_type:
             case cancel_moving_partition_replicas_cmd_type:
                 return _move_operations_limiter.try_throttle();
@@ -173,7 +188,7 @@ public:
             case create_user_cmd_type:
             case delete_user_cmd_type:
             case update_user_cmd_type:
-                return _topic_operations_limiter.try_throttle();
+                return _acls_and_users_operations_limiter.try_throttle();
             default:
                 return ss::make_ready_future<bool>(true);
             }
@@ -181,7 +196,7 @@ public:
             switch (cmd.type) {
             case create_acls_cmd_type:
             case delete_acls_cmd_type:
-                return _topic_operations_limiter.try_throttle();
+                return _acls_and_users_operations_limiter.try_throttle();
             default:
                 return ss::make_ready_future<bool>(true);
             }

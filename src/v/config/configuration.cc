@@ -1416,7 +1416,7 @@ configuration::configuration()
       "Rate limit for controller topic operations",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1000,
-      {.min = 25})
+      {.min = 0})
   , controller_log_accummulation_rps_capacity_topic_operations(
       *this,
       "controller_log_accummulation_rps_capacity_topic_operations",

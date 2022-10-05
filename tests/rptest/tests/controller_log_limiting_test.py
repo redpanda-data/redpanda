@@ -22,6 +22,7 @@ from rptest.services.mirror_maker2 import MirrorMaker2
 
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from kafkatest.services.kafka import KafkaService
@@ -31,23 +32,19 @@ from kafkatest.version import V_3_0_0
 
 
 
-class CreatePartitionsTest(RedpandaTest):
+class LimitPartitionsTest(RedpandaTest):
     def __init__(self, test_context):
         super().__init__(test_context=test_context,
                          extra_rp_conf={
-                            "enable_contoller_log_rate_limiting": True,
-                            "rps_limit_topic_operations": 10
+                            "enable_controller_log_rate_limiting": True,
+                            "rps_limit_topic_operations": 1
                          })
 
     def _partition_count(self, topic):
         meta = self.client().describe_topic(topic)
         return len(meta.partitions)
 
-    def _create_add_verify(self, topic, new_parts):
-        self.logger.info(
-            f"Testing topic {topic.name} with partitions {topic.partition_count} replicas {topic.replication_factor} expected partitions {new_parts}"
-        )
-
+    def _create_add_verify(self, topic):
         self.client().create_topic(topic)
 
         wait_until(
@@ -59,25 +56,23 @@ class CreatePartitionsTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3)
-    def test_create_partitions(self):
+    def test_limit_partitions(self):
 
-        partition_count = 10
-        topic = TopicSpec(partition_count=partition_count,
-                            replication_factor=random.choice((1, 3)))
-        self._create_add_verify(topic)
+        topics_amount = 30
+        topics = []
+        for i in range(topics_amount):
+            topic = TopicSpec(partition_count=100,
+                                replication_factor=random.choice((1, 3)))
+            self.client().create_topic(topic)
+            topics.append(topic)
 
-        self.client().alter_topic_partition_count(topic.name, 15)
-
-        expected_parts = 15
-        wait_until(
-            lambda: self._partition_count(topic.name) == expected_parts,
+        for topic in topics:
+            wait_until(
+            lambda: self._partition_count(topic.name) == topic.partition_count,
             timeout_sec=20,
-            backoff_sec=2,
-            err_msg=
-            f"Error waiting for partitions to be created, expected {expected_parts} partitions, found {self._partition_count(topic.name)}"
-        )
+            backoff_sec=2)
+            self.client().delete_topic(topic.name)
 
-        self.client().delete_topic(topic.name)
 
 
 # class TestControllerLogRateLimiterMirrorMaker(EndToEndTest):
