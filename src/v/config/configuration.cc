@@ -1396,7 +1396,14 @@ configuration::configuration()
       "enable_rack_awareness",
       "Enables rack-aware replica assignment",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false) {}
+      false)
+  , node_status_interval(
+      *this,
+      "node_status_interval",
+      "Time interval between two node status messages. Node status messages "
+      "establish liveness status outside of the Raft protocol.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      100ms) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

@@ -52,15 +52,14 @@ struct client_context_impl final : streaming_context {
 };
 
 transport::transport(
-  transport_configuration c,
-  [[maybe_unused]] std::optional<ss::sstring> service_name)
+  transport_configuration c, std::optional<connection_cache_label> label)
   : base_transport(base_transport::configuration{
     .server_addr = std::move(c.server_addr),
     .credentials = std::move(c.credentials),
   })
   , _memory(c.max_queued_bytes, "rpc/transport-mem") {
     if (!c.disable_metrics) {
-        setup_metrics(service_name);
+        setup_metrics(label);
     }
 }
 
@@ -283,8 +282,9 @@ ss::future<> transport::dispatch(header h) {
     return fut;
 }
 
-void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
-    _probe.setup_metrics(_metrics, service_name, server_address());
+void transport::setup_metrics(
+  const std::optional<connection_cache_label>& label) {
+    _probe.setup_metrics(_metrics, label, server_address());
 }
 
 transport::~transport() {

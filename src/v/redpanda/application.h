@@ -15,6 +15,8 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "cluster/node_status_backend.h"
+#include "cluster/node_status_table.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
@@ -103,6 +105,8 @@ public:
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
     ss::sharded<v8_engine::data_policy_table> data_policies;
     ss::sharded<cloud_storage::cache> shadow_index_cache;
+    ss::sharded<cluster::node_status_backend> node_status_backend;
+    ss::sharded<cluster::node_status_table> node_status_table;
 
 private:
     using deferred_actions

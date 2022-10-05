@@ -96,6 +96,8 @@ void members_table::update_brokers(
             br->set_membership_state(model::membership_state::removed);
         }
     }
+
+    notify_members_updated();
 }
 std::error_code
 members_table::apply(model::offset version, decommission_node_cmd cmd) {
@@ -219,26 +221,51 @@ bool members_table::contains(model::node_id id) const {
 notification_id_type
 members_table::register_maintenance_state_change_notification(
   maintenance_state_cb_t cb) {
-    auto id = _notification_id++;
-    _notifications.emplace_back(id, std::move(cb));
+    auto id = _maintenance_state_change_notification_id++;
+    _maintenance_state_change_notifications.emplace_back(id, std::move(cb));
     return id;
 }
 
 void members_table::unregister_maintenance_state_change_notification(
   notification_id_type id) {
     auto it = std::find_if(
-      _notifications.begin(), _notifications.end(), [id](const auto& n) {
-          return n.first == id;
-      });
-    if (it != _notifications.end()) {
-        _notifications.erase(it);
+      _maintenance_state_change_notifications.begin(),
+      _maintenance_state_change_notifications.end(),
+      [id](const auto& n) { return n.first == id; });
+    if (it != _maintenance_state_change_notifications.end()) {
+        _maintenance_state_change_notifications.erase(it);
     }
 }
 
 void members_table::notify_maintenance_state_change(
   model::node_id node_id, model::maintenance_state ms) {
-    for (const auto& [id, cb] : _notifications) {
+    for (const auto& [id, cb] : _maintenance_state_change_notifications) {
         cb(node_id, ms);
+    }
+}
+
+notification_id_type
+members_table::register_members_updated_notification(members_updated_cb_t cb) {
+    auto id = _members_updated_notification_id++;
+    _members_updated_notifications.emplace_back(id, std::move(cb));
+
+    return id;
+}
+
+void members_table::unregister_members_updated_notification(
+  notification_id_type id) {
+    auto it = std::find_if(
+      _members_updated_notifications.begin(),
+      _members_updated_notifications.end(),
+      [id](const auto& n) { return n.first == id; });
+    if (it != _members_updated_notifications.end()) {
+        _members_updated_notifications.erase(it);
+    }
+}
+
+void members_table::notify_members_updated() {
+    for (const auto& [id, cb] : _members_updated_notifications) {
+        cb(all_broker_ids());
     }
 }
 

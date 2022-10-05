@@ -47,7 +47,7 @@ class transport final : public net::base_transport {
 public:
     explicit transport(
       transport_configuration c,
-      std::optional<ss::sstring> service_name = std::nullopt);
+      std::optional<connection_cache_label> label = std::nullopt);
     ~transport() override;
     transport(transport&&) noexcept = default;
     // semaphore is not move assignable
@@ -84,7 +84,7 @@ private:
     ss::future<> do_reads();
     ss::future<> dispatch(header);
     void fail_outstanding_futures() noexcept final;
-    void setup_metrics(const std::optional<ss::sstring>&);
+    void setup_metrics(const std::optional<connection_cache_label>&);
 
     ss::future<result<std::unique_ptr<streaming_context>>>
       do_send(sequence_t, netbuf, rpc::client_opts);

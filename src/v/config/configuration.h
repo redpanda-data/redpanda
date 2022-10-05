@@ -297,6 +297,8 @@ struct configuration final : public config_store {
     // enables rack aware replica assignment
     property<bool> enable_rack_awareness;
 
+    property<std::chrono::milliseconds> node_status_interval;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

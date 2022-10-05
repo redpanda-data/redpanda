@@ -49,6 +49,9 @@ using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
+using connection_cache_label
+  = named_type<ss::sstring, struct connection_cache_label_tag>;
+
 enum class compression_type : uint8_t {
     none = 0,
     zstd,

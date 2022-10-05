@@ -35,6 +35,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET node_status_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/node_status_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/node_status_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -104,6 +111,8 @@ v_cc_library(
     partition_balancer_planner.cc
     partition_balancer_backend.cc
     partition_balancer_rpc_handler.cc
+    node_status_backend.cc
+    node_status_rpc_handler.cc
   DEPS
     Seastar::seastar
     controller_rpc
@@ -111,6 +120,7 @@ v_cc_library(
     id_allocator_rpc
     tx_gateway_rpc
     partition_balancer_rpc
+    node_status_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map
