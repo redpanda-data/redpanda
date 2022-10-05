@@ -51,11 +51,17 @@ public:
 private:
     void update_rate();
     void update_capacity();
+    void setup_public_metrics();
+
+    void account_dropped() { _dropped_requests_amount += 1; }
 
     ss::sstring _group_name;
     config::binding<size_t> _rate_binding;
     config::binding<std::optional<size_t>> _capacity_binding;
     token_bucket<> _throttler;
+    int64_t _dropped_requests_amount{};
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 class controller_log_limiter {

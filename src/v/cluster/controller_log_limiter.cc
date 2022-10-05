@@ -30,15 +30,20 @@ group_limiter::group_limiter(
     update_capacity();
     _rate_binding.watch([this]() { update_rate(); });
     _capacity_binding.watch([this]() { update_capacity(); });
+    setup_public_metrics();
 }
 
 bool group_limiter::try_throttle() {
     vlog(
-      controller_rate_limiter_log.debug,
+      controller_rate_limiter_log.trace,
       "Controller log request try throttle {}, token available: {}",
       _group_name,
       _throttler.available());
-    return _throttler.try_throttle(1);
+    bool throttle_success = _throttler.try_throttle(1);
+    if (!throttle_success) {
+        account_dropped();
+    }
+    return throttle_success;
 }
 
 void group_limiter::update_rate() { _throttler.update_rate(_rate_binding()); }
@@ -49,6 +54,33 @@ void group_limiter::update_capacity() {
     } else {
         _throttler.update_capacity(_capacity_binding().value());
     }
+}
+
+void group_limiter::setup_public_metrics() {
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    auto group_label = ssx::metrics::make_namespaced_label("cmd_group");
+    const std::vector<sm::label_instance> labels = {group_label(_group_name)};
+    _public_metrics.add_group(
+      "cluster_controller_log_limit",
+      {sm::make_counter(
+         "requests_dropped",
+         [this] { return _dropped_requests_amount; },
+         sm::description("Controller log rate limiting. "
+                         "Amount of requests that are dropped "
+                         "due to exceeding limit in group"),
+         labels)
+         .aggregate({sm::shard_label}),
+       sm::make_gauge(
+         "requests_available_rps",
+         [this] { return _throttler.available(); },
+         sm::description("Controller log rate limiting."
+                         " Available rps for group"),
+         labels)
+         .aggregate({sm::shard_label})});
 }
 
 controller_log_limiter::controller_log_limiter(
