@@ -39,7 +39,7 @@ enum class errc : int16_t {
     replicate_batcher_cache_error,
     group_not_exists,
     replicate_first_stage_exception,
-    too_many_requests,
+    throttling_quota_exceeded,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -94,8 +94,8 @@ struct errc_category final : public std::error_category {
         case errc::replicate_first_stage_exception:
             return "unable to finish replicate since exception was thrown in "
                    "first phase";
-        case errc::too_many_requests:
-            return "Too many requests for controller log write";
+        case errc::throttling_quota_exceeded:
+            return "request declined due to exceeded requests quotas";
         }
         return "cluster::errc::unknown";
     }

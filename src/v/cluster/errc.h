@@ -61,7 +61,8 @@ enum class errc : int16_t {
     feature_disabled,
     invalid_request,
     no_update_in_progress,
-    unknown_update_interruption_error
+    unknown_update_interruption_error,
+    throttling_quota_exceeded
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -176,6 +177,8 @@ struct errc_category final : public std::error_category {
             return "Partition configuration is not being updated";
         case errc::unknown_update_interruption_error:
             return "Error while cancelling partition reconfiguration";
+        case errc::throttling_quota_exceeded:
+            return "Request declined due to exceeded requests quotas";
         }
         return "cluster::errc::unknown";
     }

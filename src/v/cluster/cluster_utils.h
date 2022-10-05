@@ -232,7 +232,7 @@ ss::future<std::error_code> replicate_and_wait(
           auto throttle_success = stm.throttle(cmd, as).get();
           if (!throttle_success) {
               return ss::make_ready_future<std::error_code>(
-                raft::errc::too_many_requests);
+                raft::errc::throttling_quota_exceeded);
           }
           if constexpr (Cmd::serde_opts == serde_opts::adl_and_serde) {
               if (unlikely(!use_serde_serialization)) {

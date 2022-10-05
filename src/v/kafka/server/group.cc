@@ -2028,7 +2028,7 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
             return error_code::request_timed_out;
         case raft::errc::not_leader:
             return error_code::not_coordinator;
-        case raft::errc::too_many_requests:
+        case raft::errc::throttling_quota_exceeded:
             return error_code::throttling_quota_exceeded;
         case raft::errc::disconnected_endpoint:
         case raft::errc::exponential_backoff:
