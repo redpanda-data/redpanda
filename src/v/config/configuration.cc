@@ -1397,7 +1397,6 @@ configuration::configuration()
       "Enables rack-aware replica assignment",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
-<<<<<<< HEAD
   , node_status_interval(
       *this,
       "node_status_interval",
@@ -1405,7 +1404,6 @@ configuration::configuration()
       "establish liveness status outside of the Raft protocol.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms) {}
-=======
   , enable_contoller_log_rate_limiting(
       *this,
       "enable_controller_log_rate_limiting",
@@ -1489,7 +1487,6 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1000,
       {.min = 25}) {}
->>>>>>> tmp
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

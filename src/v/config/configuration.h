@@ -297,9 +297,7 @@ struct configuration final : public config_store {
     // enables rack aware replica assignment
     property<bool> enable_rack_awareness;
 
-<<<<<<< HEAD
     property<std::chrono::milliseconds> node_status_interval;
-=======
     // controller log limitng
     property<bool> enable_contoller_log_rate_limiting;
     bounded_property<size_t> rps_limit_topic_operations;
@@ -316,7 +314,6 @@ struct configuration final : public config_store {
     property<size_t>
       controller_log_accummulation_rps_capacity_configuration_operations;
     bounded_property<size_t> rps_limit_internal_controller_operations;
->>>>>>> tmp
 
     configuration();
 
