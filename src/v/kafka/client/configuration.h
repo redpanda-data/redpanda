@@ -43,6 +43,8 @@ struct configuration final : public config::config_store {
     config::property<ss::sstring> scram_username;
     config::property<ss::sstring> scram_password;
 
+    config::property<std::optional<ss::sstring>> client_identifier;
+
     configuration();
     explicit configuration(const YAML::Node& cfg);
 };

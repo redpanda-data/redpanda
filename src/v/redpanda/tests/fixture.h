@@ -262,11 +262,13 @@ public:
           });
     }
 
-    ss::future<kafka::client::transport> make_kafka_client() {
+    ss::future<kafka::client::transport>
+    make_kafka_client(std::optional<ss::sstring> client_id = "test_client") {
         return ss::make_ready_future<kafka::client::transport>(
           net::base_transport::configuration{
             .server_addr = config::node().kafka_api()[0].address,
-          });
+          },
+          std::move(client_id));
     }
 
     model::ntp
