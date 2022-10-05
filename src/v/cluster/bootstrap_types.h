@@ -34,8 +34,6 @@ struct cluster_bootstrap_info_reply
   : serde::envelope<cluster_bootstrap_info_reply, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    // TODO: add fields!
-
     auto serde_fields() { return std::tie(); }
 
     friend std::ostream&

@@ -88,7 +88,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
     for (const auto& s : seed_servers) {
         vlog(
           clusterlog.info,
-          "Requesting node ID for UUID {} from {}",
+          "Requesting node ID for node UUID {} from {}",
           _node_uuid,
           s.addr);
         result<join_node_reply> r(join_node_reply{});
@@ -110,7 +110,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
         } catch (...) {
             vlog(
               clusterlog.debug,
-              "Error registering UUID {}, retrying: {}",
+              "Error registering node UUID {}, retrying: {}",
               _node_uuid,
               std::current_exception());
             continue;
@@ -126,7 +126,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
         if (!r.has_value() || !r.value().success) {
             vlog(
               clusterlog.debug,
-              "Error registering UUID {}, retrying",
+              "Error registering node UUID {}, retrying",
               _node_uuid);
             continue;
         }
