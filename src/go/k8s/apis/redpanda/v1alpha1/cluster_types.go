@@ -665,7 +665,22 @@ type AdminAPITLS struct {
 // and PKCS#12 certificate. Both stores are protected with the password that
 // is the same as the name of the Cluster custom resource.
 type PandaproxyAPITLS struct {
-	Enabled           bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
+	// References cert-manager Issuer or ClusterIssuer. When provided, this
+	// issuer will be used to issue node certificates.
+	// Typically you want to provide the issuer when a generated self-signed one
+	// is not enough and you need to have a verifiable chain with a proper CA
+	// certificate.
+	IssuerRef *cmmeta.ObjectReference `json:"issuerRef,omitempty"`
+	// If provided, operator uses certificate in this secret instead of
+	// issuing its own node certificate. The secret is expected to provide
+	// the following keys: 'ca.crt', 'tls.key' and 'tls.crt'
+	// If NodeSecretRef points to secret in different namespace, operator will
+	// duplicate the secret to the same namespace as redpanda CRD to be able to
+	// mount it to the nodes
+	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+	// Enables two-way verification on the server side. If enabled, all
+	// Pandaproxy API clients are required to have a valid client certificate.
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
 }
 
@@ -1045,8 +1060,8 @@ func (p PandaproxyAPI) GetTLS() *TLSConfig {
 	return &TLSConfig{
 		Enabled:           p.TLS.Enabled,
 		RequireClientAuth: p.TLS.RequireClientAuth,
-		IssuerRef:         nil,
-		NodeSecretRef:     nil,
+		IssuerRef:         p.TLS.IssuerRef,
+		NodeSecretRef:     p.TLS.NodeSecretRef,
 	}
 }
 
