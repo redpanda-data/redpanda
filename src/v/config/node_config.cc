@@ -53,6 +53,14 @@ node_config::node_config() noexcept
       "form a new cluster",
       {.visibility = visibility::user},
       {})
+  , empty_seed_starts_cluster(
+      *this,
+      "empty_seed_starts_cluster",
+      "If enabled, requires exactly one node in a cluster-to-be to have its "
+      "seed_servers list empty. Otherwise, seed_servers list cannot be empty, "
+      "and must be the same in each node from that list",
+      {.visibility = visibility::user},
+      true)
   , rpc_server(
       *this,
       "rpc_server",
