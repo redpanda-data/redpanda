@@ -129,6 +129,8 @@ public:
         return _sem.current();
     }
 
+    size_t waiters() { return _sem.waiters(); }
+
 private:
     void refresh() {
         auto now = clock_type::now();

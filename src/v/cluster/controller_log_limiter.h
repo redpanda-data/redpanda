@@ -13,6 +13,8 @@
 
 #include "cluster/commands.h"
 #include "config/configuration.h"
+#include "ssx/metrics.h"
+#include "ssx/sformat.h"
 #include "utils/token_bucket.h"
 
 #include <seastar/core/future.hh>
@@ -50,6 +52,7 @@ public:
       , _throttler(rate_binding(), group_name, capacity()) {
         _rate_binding.watch([this]() { update_rate(); });
         _capacity.watch([this]() { update_capacity(); });
+        setup_public_metrics();
     }
 
     ss::future<bool> try_throttle() {
@@ -73,10 +76,45 @@ private:
 
     void update_capacity() { _throttler.update_capacity(_capacity()); }
 
+    void account_dropped() { _dropped_requests_amount += 1; }
+
+    void setup_public_metrics() {
+        if (config::shard_local_cfg().disable_public_metrics()) {
+            return;
+        }
+
+        namespace sm = ss::metrics;
+        _public_metrics.add_group(
+          "cluster:controller_limit",
+          {sm::make_gauge(
+             ssx::sformat("{}_requests_dropped", _group_name),
+             [this] {
+                 auto dropped = _dropped_requests_amount;
+                 _dropped_requests_amount = 0;
+                 return dropped;
+             },
+             sm::description(ssx::sformat(
+               "Amount of dropped requests since last metric in {} group",
+               _group_name))),
+           sm::make_gauge(
+             ssx::sformat("{}_requests_available_rps", _group_name),
+             [this] { return _throttler.available(); },
+             sm::description(
+               ssx::sformat("Available rps for {} group", _group_name))),
+           sm::make_gauge(
+             ssx::sformat("{}_requests_queue_size", _group_name),
+             [this] { return _throttler.waiters(); },
+             sm::description(ssx::sformat(
+               "Size of queue with requests for {} group", _group_name)))});
+    }
+
     ss::sstring _group_name;
     config::binding<size_t> _rate_binding;
     config::binding<size_t> _capacity;
     token_bucket<> _throttler;
+    size_t _dropped_requests_amount{};
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 class controller_log_limiter {
