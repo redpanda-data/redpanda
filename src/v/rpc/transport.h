@@ -43,6 +43,15 @@ class rpc_integration_fixture_oc_ns_adl_only_no_upgrade;
 namespace rpc {
 struct client_context_impl;
 
+/**
+ * Transport implementation used for internal RPC traffic.
+ *
+ * As callers send buffers over the wire, the transport associates each with an
+ * an appropriate response handler to use upon getting a response.
+ *
+ * Once connected, the transport repeatedly reads from the wire until an
+ * invalid response is received, or until shut down.
+ */
 class transport final : public net::base_transport {
 public:
     explicit transport(
@@ -94,14 +103,21 @@ private:
     make_response_handler(netbuf&, const rpc::client_opts&);
 
     ssx::semaphore _memory;
+    /**
+     * Map of response handlers to use when processing a buffer read from the
+     * wire.
+     *
+     * NOTE: _correlation_idx is unrelated to the sequence type used to define
+     * on-wire ordering below.
+     */
     absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
       _correlations;
     uint32_t _correlation_idx{0};
     ss::metrics::metric_groups _metrics;
     /**
-     * ordered map containing in-flight requests. The map preserves order of
-     * calling send_typed function. It is fine to use btree_map in here as it
-     * ususally contains only few elements.
+     * Ordered map containing requests to be sent over the wire. The map
+     * preserves order of calling send_typed function. It is fine to use
+     * btree_map in here as it ususally contains only few elements.
      */
     requests_queue_t _requests_queue;
     sequence_t _seq;
