@@ -41,7 +41,11 @@ public:
       , _capacity(capacity)
       , _sem{rate, std::move(name)}
       , _last_refresh(clock_type::now())
-      , _refresh_timer([this] { handle_refresh(); }) {}
+      , _refresh_timer([this] { handle_refresh(); }) {
+        if (capacity == 0) {
+            _capacity = _rate;
+        }
+      }
 
     ss::future<> throttle(size_t size, ss::abort_source& as) {
         _refresh_timer.cancel();
@@ -81,6 +85,10 @@ public:
     }
 
     void update_capacity(size_t new_capacity) {
+        if (new_capacity == 0) {
+            new_capacity = _rate;
+        }
+
         if (_capacity == new_capacity) {
             return;
         }
