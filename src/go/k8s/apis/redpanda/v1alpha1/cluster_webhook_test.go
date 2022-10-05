@@ -544,6 +544,40 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("pandaproxy tls issuerref with secretref is not allowed", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.KafkaAPI = append(tls.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{
+			External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "cluster.com"},
+			Port:     30092,
+		})
+		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{
+			External: v1alpha1.PandaproxyExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "cluster.com"},
+			},
+			TLS: v1alpha1.PandaproxyAPITLS{Enabled: true, IssuerRef: &cmmeta.ObjectReference{}, NodeSecretRef: &corev1.ObjectReference{}},
+		})
+
+		err := tls.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("pandaproxy tls can specify issuerref", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.KafkaAPI = append(tls.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{
+			External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "cluster.com"},
+			Port:     30092,
+		})
+		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{
+			External: v1alpha1.PandaproxyExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "cluster.com"},
+			},
+			TLS: v1alpha1.PandaproxyAPITLS{Enabled: true, IssuerRef: &cmmeta.ObjectReference{}},
+		})
+
+		err := tls.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
+
 	t.Run("resource limits/requests on redpanda resources", func(t *testing.T) {
 		c := redpandaCluster.DeepCopy()
 		c.Spec.Resources.Limits = corev1.ResourceList{
