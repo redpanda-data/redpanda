@@ -527,20 +527,18 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("external proxy listener cannot have port specified", func(t *testing.T) {
-		multiPort := redpandaCluster.DeepCopy()
-		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true}}, Port: 123},
-			v1alpha1.PandaproxyAPI{Port: 321})
-		err := multiPort.ValidateUpdate(redpandaCluster)
-
-		assert.Error(t, err)
-	})
-
 	t.Run("pandaproxy tls disabled with client auth enabled", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI,
-			v1alpha1.PandaproxyAPI{TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true}})
+		tls.Spec.Configuration.KafkaAPI = append(tls.Spec.Configuration.KafkaAPI, v1alpha1.KafkaAPI{
+			External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+			Port:     30092,
+		})
+		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{
+			External: v1alpha1.PandaproxyExternalConnectivityConfig{
+				ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+			},
+			TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true},
+		})
 
 		err := tls.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
