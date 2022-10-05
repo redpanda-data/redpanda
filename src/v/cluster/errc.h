@@ -62,7 +62,8 @@ enum class errc : int16_t {
     invalid_request,
     no_update_in_progress,
     unknown_update_interruption_error,
-    invalid_retention_configuration
+    invalid_retention_configuration,
+    throttling_quota_exceeded
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -181,6 +182,8 @@ struct errc_category final : public std::error_category {
             return "retention.bytes and retention.ms must be greater or equal "
                    "than retention.local.target.bytes and "
                    "retention.local.target.ms respectively";
+        case errc::throttling_quota_exceeded:
+            return "Request declined due to exceeded requests quotas";
         }
         return "cluster::errc::unknown";
     }

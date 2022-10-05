@@ -749,6 +749,10 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::bad_request_exception(
               "Cannot cancel partition move operation as there is no move "
               "in progress");
+        case cluster::errc::throttling_quota_exceeded:
+            throw ss::httpd::base_exception(
+              fmt::format("Too many requests: {}", ec.message()),
+              ss::httpd::reply::status_type::too_many_requests);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
