@@ -148,7 +148,7 @@ constexpr static std::array feature_schema{
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{6},
+    cluster_version{7},
     "raftless_node_status",
     feature::raftless_node_status,
     feature_spec::available_policy::always,

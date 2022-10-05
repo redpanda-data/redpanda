@@ -69,7 +69,7 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{6};
+static constexpr cluster_version latest_version = cluster_version{7};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
