@@ -187,9 +187,6 @@ template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
   std::is_same_v<T, ss::sstring> && std::is_same_v<T, bytes>);
 
-template<typename T>
-void write(iobuf&, T);
-
 template<class R, class P>
 int64_t checked_duration_cast_to_nanoseconds(
   const std::chrono::duration<R, P>& duration) {
@@ -533,15 +530,12 @@ inline void write(iobuf& out, iobuf t) {
     out.append(t.share(0, t.size_bytes()));
 }
 
-template<typename T>
-void write(iobuf& out, T t) {
-    using Type = std::decay_t<T>;
+template<typename Clock, typename Duration>
+void write(iobuf&, std::chrono::time_point<Clock, Duration> t) {
     static_assert(
-      !is_chrono_time_point<Type>,
+      !is_chrono_time_point<decltype(t)>,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
-    static_assert(are_bytes_and_string_different<Type>);
-    static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 }
 
 template<typename T>
