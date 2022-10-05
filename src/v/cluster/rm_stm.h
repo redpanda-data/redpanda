@@ -173,6 +173,10 @@ public:
         return last_stable_offset();
     }
 
+    storage::stm_type type() override {
+        return storage::stm_type::transactional;
+    }
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader,

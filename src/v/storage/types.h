@@ -53,9 +53,15 @@ struct disk : serde::envelope<disk, serde::version<0>> {
 
 std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
 
+// Helps to identify transactional stms in the registered list of stms.
+// Avoids an ugly dynamic cast to the base class.
+enum class stm_type : int8_t { transactional = 0, non_transactional = 1 };
+
 class snapshotable_stm {
 public:
     virtual ~snapshotable_stm() = default;
+
+    virtual stm_type type() { return stm_type::non_transactional; }
 
     // create a snapshot at given offset unless a snapshot with given or newer
     // offset already exists
@@ -95,7 +101,13 @@ public:
  */
 class stm_manager {
 public:
-    void add_stm(ss::shared_ptr<snapshotable_stm> stm) { _stms.push_back(stm); }
+    void add_stm(ss::shared_ptr<snapshotable_stm> stm) {
+        if (stm->type() == stm_type::transactional) {
+            vassert(!_tx_stm, "Multiple transactional stms not allowed.");
+            _tx_stm = stm;
+        }
+        _stms.push_back(stm);
+    }
 
     ss::future<> ensure_snapshot_exists(model::offset offset) {
         auto f = ss::now();
@@ -121,6 +133,7 @@ public:
     }
 
 private:
+    ss::shared_ptr<snapshotable_stm> _tx_stm;
     std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
 };
 
