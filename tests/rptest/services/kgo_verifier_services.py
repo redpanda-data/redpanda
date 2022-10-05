@@ -11,6 +11,7 @@ import os
 import json
 import threading
 import requests
+from requests.adapters import HTTPAdapter, Retry
 from enum import Enum
 
 from rptest.services.redpanda import RedpandaService
@@ -264,16 +265,23 @@ class StatusThread(threading.Thread):
             raise self._ex
 
     def run(self):
+        self.logger.info(f"StatusThread.run >> {self.who_am_i}")
         try:
             # Don't assume the HTTP port will be open instantly on startup (although it should be open very soon)
+            self.logger.info(
+                f"StatusThread.run await_ready entering {self.who_am_i}")
             self.await_ready()
 
+            self.logger.info(
+                f"StatusThread.run poll_status entering {self.who_am_i}")
             self.poll_status()
         except Exception as ex:
-            self._ex = ex
             self.logger.exception(
                 f"Error reading status from {self.who_am_i} on {self._node.name}"
             )
+            self._ex = ex
+        finally:
+            self.logger.info(f"StatusThread.run << {self.who_am_i}")
 
     def is_ready(self):
         try:
@@ -281,8 +289,7 @@ class StatusThread(threading.Thread):
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
-            self.logger.debug(
-                f"Status endpoint {self.who_am_i} not ready: {e}")
+            self.logger.info(f"Status endpoint {self.who_am_i} not ready: {e}")
             return False
         else:
             return r.status_code == 200
@@ -310,22 +317,42 @@ class StatusThread(threading.Thread):
         if self._ready:
             return
 
-        wait_until(
-            lambda: self.is_ready() or self._stop_requested.is_set(),
-            timeout_sec=5,
-            backoff_sec=0.5,
-            err_msg=
-            f"Timed out waiting for status endpoint {self.who_am_i} to be available"
-        )
+        try:
+            wait_until(
+                lambda: self.is_ready() or self._stop_requested.is_set(),
+                timeout_sec=20,
+                backoff_sec=0.5,
+                err_msg=
+                f"Timed out waiting for status endpoint {self.who_am_i} to be available"
+            )
+        except:
+            self.logger.error(
+                f"Status thread {self.who_am_i} await_ready timeout, stop_requested={self._stop_requested.is_set()}"
+            )
+            raise
+
         self._ready = True
 
     def poll_status(self):
         while not self._stop_requested.is_set():
+            self.logger.info(
+                f"Status thread {self.who_am_i} poll_status stop_requested={self._stop_requested.is_set()}"
+            )
             drop_out = self._shutdown_requested.is_set()
 
-            r = requests.get(self._parent._remote_url(self._node, "status"),
-                             timeout=5)
-            r.raise_for_status()
+            try:
+                s = requests.Session()
+                retries = Retry(total=5, backoff_factor=1)
+                s.mount(prefix='http://',
+                        adapter=HTTPAdapter(max_retries=retries))
+                r = s.get(self._parent._remote_url(self._node, "status"),
+                          timeout=30)
+                r.raise_for_status()
+            except Exception as e:
+                self.logger.info(
+                    f"Status thread {self.who_am_i} poll_status error {e} stop_requested={self._stop_requested.is_set()}"
+                )
+                raise
             worker_statuses = r.json()
             self._ingest_status(worker_statuses)
 
@@ -346,7 +373,9 @@ class StatusThread(threading.Thread):
         This is important because otherwise a stuck join() would hang
         the entire ducktape test run.
         """
+        self.logger.info(f"Joining status thread for {self.who_am_i}")
         self.join(timeout=10)
+        self.logger.info(f"Joined status thread for {self.who_am_i}")
         if self.is_alive():
             msg = f"Failed to join thread for {self.who_am_i}"
             self.logger.error(msg)
