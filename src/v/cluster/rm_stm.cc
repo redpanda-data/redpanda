@@ -151,7 +151,8 @@ static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
     };
 }
 
-static model::control_record_type parse_control_batch(model::record_batch& b) {
+static model::control_record_type
+parse_control_batch(const model::record_batch& b) {
     const auto& hdr = b.header();
 
     vassert(
@@ -171,6 +172,11 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
       version == model::current_control_record_version,
       "unknown control record version");
     return model::control_record_type(key_reader.read_int16());
+}
+
+model::control_record_type
+rm_stm::parse_tx_control_batch(const model::record_batch& b) {
+    return parse_control_batch(b);
 }
 
 struct seq_entry_v0 {

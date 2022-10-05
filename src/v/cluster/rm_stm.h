@@ -182,6 +182,9 @@ public:
         return aborted_transactions(from, to);
     }
 
+    model::control_record_type
+    parse_tx_control_batch(const model::record_batch&) override;
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader,

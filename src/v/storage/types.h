@@ -76,6 +76,11 @@ public:
     // Returns aborted transactions in range [from, to] offsets.
     virtual ss::future<std::vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) = 0;
+
+    virtual model::control_record_type
+    parse_tx_control_batch(const model::record_batch&) {
+        return model::control_record_type::unknown;
+    }
 };
 
 /**
@@ -144,6 +149,14 @@ public:
             r = co_await _tx_stm->aborted_tx_ranges(to, from);
         }
         co_return r;
+    }
+
+    model::control_record_type
+    parse_tx_control_batch(const model::record_batch& b) {
+        if (!_tx_stm) {
+            return model::control_record_type::unknown;
+        }
+        return _tx_stm->parse_tx_control_batch(b);
     }
 
 private:
