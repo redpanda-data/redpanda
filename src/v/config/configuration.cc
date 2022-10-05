@@ -1403,7 +1403,7 @@ configuration::configuration()
       "Time interval between two node status messages. Node status messages "
       "establish liveness status outside of the Raft protocol.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      100ms) {}
+      100ms)
   , enable_contoller_log_rate_limiting(
       *this,
       "enable_controller_log_rate_limiting",
