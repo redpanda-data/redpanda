@@ -1036,10 +1036,8 @@ disk_log_impl::timequery(timequery_config cfg) {
                   st);
                 if (
                   !batches.empty()
-                  && batches.front().header().first_timestamp >= cfg.time) {
-                    return ret_t(timequery_result(
-                      batches.front().base_offset(),
-                      batches.front().header().first_timestamp));
+                  && batches.front().header().max_timestamp >= cfg.time) {
+                    return ret_t(batch_timequery(batches.front(), cfg.time));
                 }
                 return ret_t();
             });

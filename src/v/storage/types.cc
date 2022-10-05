@@ -186,4 +186,5 @@ operator<<(std::ostream& o, compacted_index::recovery_state state) {
     }
     __builtin_unreachable();
 }
+
 } // namespace storage

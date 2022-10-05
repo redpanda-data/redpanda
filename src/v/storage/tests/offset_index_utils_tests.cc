@@ -35,6 +35,7 @@ public:
 
     const model::record_batch_header
     modify_get(model::offset o, int32_t batch_size) {
+        _base_hdr.type = model::record_batch_type::raft_data;
         _base_hdr.base_offset = o;
         _base_hdr.size_bytes = batch_size;
         return _base_hdr;

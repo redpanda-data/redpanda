@@ -62,9 +62,9 @@ batch_consumer::consume_result skipping_consumer::accept_batch_start(
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return batch_consumer::consume_result::skip_batch;
     }
-    if (_reader._config.first_timestamp > header.first_timestamp) {
-        // kakfa needs to guarantee that the returned record is >=
-        // first_timestamp
+    if (_reader._config.first_timestamp > header.max_timestamp) {
+        // kakfa requires that we return messages >= the timestamp, it is
+        // permitted to include a few earlier
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return batch_consumer::consume_result::skip_batch;
     }
@@ -343,6 +343,34 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
 bool log_reader::is_done() {
     return is_end_of_stream()
            || is_finished_offset(_lease->range, _config.start_offset);
+}
+
+timequery_result
+batch_timequery(const model::record_batch& b, model::timestamp t) {
+    // If the timestamp matches something mid-batch, then
+    // parse into the batch far enough to find it: this
+    // happens when we had CreateTime input, such that
+    // records in the batch have different timestamps.
+    model::offset result_o = b.base_offset();
+    model::timestamp result_t = b.header().first_timestamp;
+    if (b.header().first_timestamp < t) {
+        b.for_each_record(
+          [&result_o, &result_t, t, &b](
+            const model::record& r) -> ss::stop_iteration {
+              auto record_t = model::timestamp(
+                b.header().first_timestamp() + r.timestamp_delta());
+              if (record_t >= t) {
+                  auto record_o = model::offset{r.offset_delta()}
+                                  + b.base_offset();
+                  result_o = record_o;
+                  result_t = record_t;
+                  return ss::stop_iteration::yes;
+              } else {
+                  return ss::stop_iteration::no;
+              }
+          });
+    }
+    return {result_o, result_t};
 }
 
 } // namespace storage

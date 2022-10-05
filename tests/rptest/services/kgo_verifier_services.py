@@ -531,13 +531,15 @@ class KgoVerifierProducer(KgoVerifierService):
                  msg_count,
                  custom_node=None,
                  batch_max_bytes=None,
-                 debug_logs=False):
+                 debug_logs=False,
+                 fake_timestamp_ms=None):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
                              debug_logs)
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
+        self._fake_timestamp_ms = fake_timestamp_ms
 
     @property
     def produce_status(self):
@@ -583,6 +585,9 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
+
+        if self._fake_timestamp_ms is not None:
+            cmd = cmd + f' --fake-timestamp-ms {self._fake_timestamp_ms}'
 
         self.spawn(cmd, node)
 

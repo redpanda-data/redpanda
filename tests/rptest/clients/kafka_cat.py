@@ -10,6 +10,7 @@
 import subprocess
 import time
 import json
+from typing import Optional
 
 from rptest.util import wait_until_result
 
@@ -26,10 +27,23 @@ class KafkaCat:
     def metadata(self):
         return self._cmd(["-L"])
 
-    def consume_one(self, topic, partition, offset):
+    def consume_one(self,
+                    topic,
+                    partition,
+                    offset=None,
+                    *,
+                    first_timestamp: Optional[int] = None):
+        if offset is not None:
+            # <value>  (absolute offset)
+            query = offset
+        else:
+            assert first_timestamp is not None
+            # s@<value> (timestamp in ms to start at)
+            query = f"s@{first_timestamp}"
+
         return self._cmd([
             "-C", "-e", "-t", f"{topic}", "-p", f"{partition}", "-o",
-            f"{offset}", "-c1"
+            f"{query}", "-c1"
         ])
 
     def produce_one(self, topic, msg, tx_id=None):

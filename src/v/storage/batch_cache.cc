@@ -308,7 +308,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto batch = it->second.batch();
 
         auto take = !type_filter || type_filter == batch.header().type;
-        take &= !first_ts || batch.header().first_timestamp >= *first_ts;
+        take &= !first_ts || batch.header().max_timestamp >= *first_ts;
         offset = batch.last_offset() + model::offset(1);
         if (take) {
             batch_cache::range::lock_guard g(*it->second.range());

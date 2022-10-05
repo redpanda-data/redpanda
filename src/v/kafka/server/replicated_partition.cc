@@ -238,6 +238,8 @@ replicated_partition::aborted_transactions(
 
 ss::future<std::optional<storage::timequery_result>>
 replicated_partition::timequery(storage::timequery_config cfg) {
+    cfg.max_offset = _translator->to_log_offset(cfg.max_offset);
+
     return _partition->timequery(cfg).then(
       [this](std::optional<storage::timequery_result> r) {
           if (r) {
