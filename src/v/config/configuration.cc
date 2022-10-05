@@ -1409,7 +1409,7 @@ configuration::configuration()
       "enable_controller_log_rate_limiting",
       "Enables limiting of controller log write rate",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false)
+      true)
   , rps_limit_topic_operations(
       *this,
       "rps_limit_topic_operations",
