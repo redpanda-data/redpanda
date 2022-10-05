@@ -110,24 +110,24 @@ class KgoVerifierService(Service):
         self._pid = pid
 
     def stop_node(self, node, **kwargs):
-        self.logger.info(f"stop_node {node.name} {self.who_am_i()}")
+        self.logger.warning(f"stop_node {node.name} {self.who_am_i()}")
         if self._status_thread:
-            self.logger.info(
+            self.logger.warning(
                 f"stop_node {node.name} {self.who_am_i()}: stopping status thread"
             )
             self._status_thread.stop()
-            self.logger.info(
+            self.logger.warning(
                 f"stop_node {node.name} {self.who_am_i()}: stopped status thread"
             )
             self._status_thread = None
 
         if self._pid is None:
-            self.logger.info(
+            self.logger.warning(
                 f"stop_node {node.name} {self.who_am_i()}: no pid, returning")
             return
 
-        self._redpanda.logger.info(f"{self.__class__.__name__}.stop")
-        self.logger.info(
+        self._redpanda.logger.warning(f"{self.__class__.__name__}.stop")
+        self.logger.warning(
             f"stop_node {node.name} {self.who_am_i()} Killing pid {self._pid}")
         try:
             node.account.signal(self._pid, 9, allow_fail=False)
@@ -135,20 +135,21 @@ class KgoVerifierService(Service):
             if b"No such process" not in e.msg:
                 raise
 
-        self.logger.info(
+        self.logger.warning(
             f"stop_node {node.name} {self.who_am_i()} releasing port")
         self._release_port()
-        self.logger.info(f"stop_node {node.name} {self.who_am_i()} complete")
+        self.logger.warning(
+            f"stop_node {node.name} {self.who_am_i()} complete")
 
     def clean_node(self, node):
-        self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
+        self._redpanda.logger.warning(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
         node.account.remove(f"/tmp/{self.__class__.__name__}*")
 
     def _remote(self, node, action):
         url = self._remote_url(node, action)
-        self._redpanda.logger.info(f"{self.who_am_i()} remote call: {url}")
+        self._redpanda.logger.warning(f"{self.who_am_i()} remote call: {url}")
         r = requests.get(url)
         r.raise_for_status()
 
@@ -166,16 +167,17 @@ class KgoVerifierService(Service):
         if not self._status_thread:
             return True
 
-        self.logger.info(
+        self.logger.warning(
             f"wait_node {self.who_am_i()}: waiting for remote endpoint")
         self._status_thread.await_ready()
 
         # If this is a looping worker, tell it to end after the current loop
-        self.logger.info(f"wait_node {self.who_am_i()}: requesting last_pass")
+        self.logger.warning(
+            f"wait_node {self.who_am_i()}: requesting last_pass")
         self._remote(node, "last_pass")
 
         # Let the worker fall through to the end of its current iteration
-        self.logger.info(
+        self.logger.warning(
             f"wait_node {self.who_am_i()}: waiting for worker to complete")
         wait_until(lambda: self._status.active is False or self._status_thread.
                    errored,
@@ -184,12 +186,14 @@ class KgoVerifierService(Service):
         self._status_thread.raise_on_error()
 
         # Read final status
-        self.logger.info(f"wait_node {self.who_am_i()}: reading final status")
+        self.logger.warning(
+            f"wait_node {self.who_am_i()}: reading final status")
         self._status_thread.shutdown()
         self._status_thread = None
 
         # Permit the subprocess to exit, and wait for it to do so
-        self.logger.info(f"wait_node {self.who_am_i()}: requesting shutdown")
+        self.logger.warning(
+            f"wait_node {self.who_am_i()}: requesting shutdown")
         try:
             self._remote(node, "shutdown")
         except requests.exceptions.ConnectionError:
@@ -198,20 +202,20 @@ class KgoVerifierService(Service):
             # before shutting down.
             pass
 
-        self.logger.info(
+        self.logger.warning(
             f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
         )
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
 
-        self.logger.info(
+        self.logger.warning(
             f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"
         )
 
         self._release_port()
 
-        self.logger.info(
+        self.logger.warning(
             f"wait_node {self.who_am_i()}: node={node.name} complete")
 
         return True
@@ -265,14 +269,14 @@ class StatusThread(threading.Thread):
             raise self._ex
 
     def run(self):
-        self.logger.info(f"StatusThread.run >> {self.who_am_i}")
+        self.logger.warning(f"StatusThread.run >> {self.who_am_i}")
         try:
             # Don't assume the HTTP port will be open instantly on startup (although it should be open very soon)
-            self.logger.info(
+            self.logger.warning(
                 f"StatusThread.run await_ready entering {self.who_am_i}")
             self.await_ready()
 
-            self.logger.info(
+            self.logger.warning(
                 f"StatusThread.run poll_status entering {self.who_am_i}")
             self.poll_status()
         except Exception as ex:
@@ -281,7 +285,7 @@ class StatusThread(threading.Thread):
             )
             self._ex = ex
         finally:
-            self.logger.info(f"StatusThread.run << {self.who_am_i}")
+            self.logger.warning(f"StatusThread.run << {self.who_am_i}")
 
     def is_ready(self):
         try:
@@ -289,7 +293,8 @@ class StatusThread(threading.Thread):
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
-            self.logger.info(f"Status endpoint {self.who_am_i} not ready: {e}")
+            self.logger.warning(
+                f"Status endpoint {self.who_am_i} not ready: {e}")
             return False
         else:
             return r.status_code == 200
@@ -302,11 +307,11 @@ class StatusThread(threading.Thread):
         if self._status_cls == ProduceStatus:
             progress = (worker_statuses[0]['sent'] /
                         float(self._parent._msg_count))
-            self.logger.info(
+            self.logger.warning(
                 f"Producer {self.who_am_i} progress: {progress*100:.2f}% {reduced}"
             )
         else:
-            self.logger.info(f"Worker {self.who_am_i} status: {reduced}")
+            self.logger.warning(f"Worker {self.who_am_i} status: {reduced}")
 
         self._parent._status = reduced
 
@@ -335,7 +340,7 @@ class StatusThread(threading.Thread):
 
     def poll_status(self):
         while not self._stop_requested.is_set():
-            self.logger.info(
+            self.logger.warning(
                 f"Status thread {self.who_am_i} poll_status stop_requested={self._stop_requested.is_set()}"
             )
             drop_out = self._shutdown_requested.is_set()
@@ -349,7 +354,7 @@ class StatusThread(threading.Thread):
                           timeout=30)
                 r.raise_for_status()
             except Exception as e:
-                self.logger.info(
+                self.logger.warning(
                     f"Status thread {self.who_am_i} poll_status error {e} stop_requested={self._stop_requested.is_set()}"
                 )
                 raise
@@ -373,9 +378,9 @@ class StatusThread(threading.Thread):
         This is important because otherwise a stuck join() would hang
         the entire ducktape test run.
         """
-        self.logger.info(f"Joining status thread for {self.who_am_i}")
+        self.logger.warning(f"Joining status thread for {self.who_am_i}")
         self.join(timeout=10)
-        self.logger.info(f"Joined status thread for {self.who_am_i}")
+        self.logger.warning(f"Joined status thread for {self.who_am_i}")
         if self.is_alive():
             msg = f"Failed to join thread for {self.who_am_i}"
             self.logger.error(msg)
