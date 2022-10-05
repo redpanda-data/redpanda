@@ -180,7 +180,7 @@ public:
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
     /// Return first uploaded kafka offset
-    model::offset first_uploaded_offset();
+    kafka::offset first_uploaded_offset();
 
     /// Return last uploaded kafka offset
     model::offset last_uploaded_offset();
@@ -192,7 +192,7 @@ public:
     bool is_data_available() const;
 
     // returns term last kafka offset
-    std::optional<model::offset> get_term_last_offset(model::term_id) const;
+    std::optional<kafka::offset> get_term_last_offset(model::term_id) const;
 
     // Get list of aborted transactions that overlap with the offset range
     ss::future<std::vector<model::tx_range>>
@@ -216,7 +216,7 @@ private:
         explicit offloaded_segment_state(model::offset bo);
 
         std::unique_ptr<materialized_segment_state>
-        materialize(remote_partition& p, model::offset offset_key);
+        materialize(remote_partition& p, kafka::offset offset_key);
 
         ss::future<> stop();
 
@@ -236,7 +236,7 @@ private:
     /// remote segment.
     struct materialized_segment_state {
         materialized_segment_state(
-          model::offset bo, model::offset offk, remote_partition& p);
+          model::offset bo, kafka::offset offk, remote_partition& p);
 
         void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 
@@ -254,7 +254,7 @@ private:
         /// Base offsetof the segment
         model::offset base_rp_offset;
         /// Key of the segment in _segments collection of the remote_partition
-        model::offset offset_key;
+        kafka::offset offset_key;
         ss::lw_shared_ptr<remote_segment> segment;
         /// Batch readers that can be used to scan the segment
         std::list<std::unique_ptr<remote_segment_batch_reader>> readers;
@@ -274,7 +274,7 @@ private:
       "segment_state has unexpected size");
 
     using iterator
-      = details::btree_map_stable_iterator<model::offset, segment_state>;
+      = details::btree_map_stable_iterator<kafka::offset, segment_state>;
 
     /// Materialize segment if needed and create a reader
     ///
@@ -283,7 +283,7 @@ private:
     /// \param st is a segment state referenced by offset_key
     std::unique_ptr<remote_segment_batch_reader> borrow_reader(
       storage::log_reader_config config,
-      model::offset offset_key,
+      kafka::offset offset_key,
       segment_state& st);
 
     /// Return reader back to segment_state
@@ -304,9 +304,9 @@ private:
     /// Iterators used by the partition_record_batch_reader_impl class
     iterator begin();
     iterator end();
-    iterator upper_bound(model::offset);
+    iterator upper_bound(kafka::offset);
 
-    using segment_map_t = absl::btree_map<model::offset, segment_state>;
+    using segment_map_t = absl::btree_map<kafka::offset, segment_state>;
 
     using evicted_resource_t = std::variant<
       std::unique_ptr<remote_segment_batch_reader>,

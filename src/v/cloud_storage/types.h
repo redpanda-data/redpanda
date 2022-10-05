@@ -95,8 +95,8 @@ struct configuration {
 };
 
 struct offset_range {
-    model::offset begin;
-    model::offset end;
+    kafka::offset begin;
+    kafka::offset end;
     model::offset begin_rp;
     model::offset end_rp;
 };

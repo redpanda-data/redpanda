@@ -86,13 +86,13 @@ public:
 
     /// Number of non-data batches in all previous
     /// segments
-    const model::offset get_base_offset_delta() const;
+    const model::offset_delta get_base_offset_delta() const;
 
     /// Get base offset of the segment (redpanda offset)
     const model::offset get_base_rp_offset() const;
 
     /// Get base offset of the segment (kafka offset)
-    const model::offset get_base_kafka_offset() const;
+    const kafka::offset get_base_kafka_offset() const;
 
     ss::future<> stop();
 
@@ -104,12 +104,12 @@ public:
     struct input_stream_with_offsets {
         ss::input_stream<char> stream;
         model::offset rp_offset;
-        model::offset kafka_offset;
+        kafka::offset kafka_offset;
     };
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::future<input_stream_with_offsets>
-    offset_data_stream(model::offset kafka_offset, ss::io_priority_class);
+    offset_data_stream(kafka::offset kafka_offset, ss::io_priority_class);
 
     /// Hydrate the segment
     ss::future<> hydrate();
@@ -129,7 +129,7 @@ private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
     std::optional<offset_index::find_result>
-    maybe_get_offsets(model::offset kafka_offset);
+    maybe_get_offsets(kafka::offset kafka_offset);
 
     /// Run hydration loop. The method is supposed to be constantly running
     /// in the background. The background loop is triggered by the condition
@@ -162,7 +162,7 @@ private:
 
     model::term_id _term;
     model::offset _base_rp_offset;
-    model::offset _base_offset_delta;
+    model::offset_delta _base_offset_delta;
     model::offset _max_rp_offset;
 
     retry_chain_node _rtc;
@@ -257,7 +257,7 @@ private:
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     model::term_id _term;
     model::offset _cur_rp_offset;
-    model::offset _cur_delta;
+    model::offset_delta _cur_delta;
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};

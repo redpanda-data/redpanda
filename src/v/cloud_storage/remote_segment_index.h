@@ -48,17 +48,17 @@ class offset_index {
 public:
     offset_index(
       model::offset initial_rp,
-      model::offset initial_kaf,
+      kafka::offset initial_kaf,
       int64_t initial_file_pos,
       int64_t file_pos_step);
 
     /// Add new tuple to the index.
     void
-    add(model::offset rp_offset, model::offset kaf_offset, int64_t file_offset);
+    add(model::offset rp_offset, kafka::offset kaf_offset, int64_t file_offset);
 
     struct find_result {
         model::offset rp_offset;
-        model::offset kaf_offset;
+        kafka::offset kaf_offset;
         int64_t file_pos;
     };
 
@@ -76,7 +76,7 @@ public:
     /// If all elements are larger than 'upper_bound' nullopt is returned.
     /// If all elements are smaller than 'upper_bound' the last value is
     /// returned.
-    std::optional<find_result> find_kaf_offset(model::offset upper_bound);
+    std::optional<find_result> find_kaf_offset(kafka::offset upper_bound);
 
     /// Serialize offset_index
     iobuf to_iobuf();
@@ -98,7 +98,7 @@ private:
     /// encoder; find_result if the value is found in the write buffer (in
     /// this case no further search is needed).
     std::variant<std::monostate, index_value, find_result> maybe_find_offset(
-      model::offset upper_bound,
+      int64_t upper_bound,
       deltafor_encoder<int64_t>& encoder,
       const std::array<int64_t, buffer_depth>& write_buffer);
 
@@ -133,7 +133,7 @@ private:
     std::array<int64_t, buffer_depth> _file_offsets;
     uint64_t _pos;
     model::offset _initial_rp;
-    model::offset _initial_kaf;
+    kafka::offset _initial_kaf;
     int64_t _initial_file_pos;
 
     using encoder_t = deltafor_encoder<int64_t>;
@@ -154,7 +154,9 @@ public:
     using stop_parser = storage::batch_consumer::stop_parser;
 
     remote_segment_index_builder(
-      offset_index& ix, model::offset initial_delta, size_t sampling_step);
+      offset_index& ix,
+      model::offset_delta initial_delta,
+      size_t sampling_step);
 
     virtual consume_result
     accept_batch_start(const model::record_batch_header&) const;
@@ -175,7 +177,7 @@ public:
 
 private:
     offset_index& _ix;
-    model::offset _running_delta;
+    model::offset_delta _running_delta;
     size_t _window{0};
     size_t _sampling_step;
 };
@@ -184,7 +186,7 @@ inline ss::lw_shared_ptr<storage::continuous_batch_parser>
 make_remote_segment_index_builder(
   ss::input_stream<char> stream,
   offset_index& ix,
-  model::offset initial_delta,
+  model::offset_delta initial_delta,
   size_t sampling_step) {
     auto parser = ss::make_lw_shared<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_index_builder>(

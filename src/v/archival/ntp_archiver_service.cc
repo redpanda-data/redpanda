@@ -523,8 +523,10 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     start_upload_offset = offset + model::offset(1);
-    auto delta
-      = base - _partition->get_offset_translator_state()->from_log_offset(base);
+    auto delta = base
+                 - model::offset_cast(
+                   _partition->get_offset_translator_state()->from_log_offset(
+                     base));
 
     auto segment_lock_deadline = std::chrono::steady_clock::now()
                                  + _segment_upload_timeout;
