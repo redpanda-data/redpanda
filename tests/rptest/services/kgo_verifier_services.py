@@ -109,22 +109,35 @@ class KgoVerifierService(Service):
         self._pid = pid
 
     def stop_node(self, node, **kwargs):
+        self.logger.info(f"stop_node {node.name} {self.who_am_i()}")
         if self._status_thread:
+            self.logger.info(
+                f"stop_node {node.name} {self.who_am_i()}: stopping status thread"
+            )
             self._status_thread.stop()
+            self.logger.info(
+                f"stop_node {node.name} {self.who_am_i()}: stopped status thread"
+            )
             self._status_thread = None
 
         if self._pid is None:
+            self.logger.info(
+                f"stop_node {node.name} {self.who_am_i()}: no pid, returning")
             return
 
         self._redpanda.logger.info(f"{self.__class__.__name__}.stop")
-        self.logger.debug("Killing pid %s" % {self._pid})
+        self.logger.info(
+            f"stop_node {node.name} {self.who_am_i()} Killing pid {self._pid}")
         try:
             node.account.signal(self._pid, 9, allow_fail=False)
         except RemoteCommandError as e:
             if b"No such process" not in e.msg:
                 raise
 
+        self.logger.info(
+            f"stop_node {node.name} {self.who_am_i()} releasing port")
         self._release_port()
+        self.logger.info(f"stop_node {node.name} {self.who_am_i()} complete")
 
     def clean_node(self, node):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
@@ -152,16 +165,16 @@ class KgoVerifierService(Service):
         if not self._status_thread:
             return True
 
-        self.logger.debug(
+        self.logger.info(
             f"wait_node {self.who_am_i()}: waiting for remote endpoint")
         self._status_thread.await_ready()
 
         # If this is a looping worker, tell it to end after the current loop
-        self.logger.debug(f"wait_node {self.who_am_i()}: requesting last_pass")
+        self.logger.info(f"wait_node {self.who_am_i()}: requesting last_pass")
         self._remote(node, "last_pass")
 
         # Let the worker fall through to the end of its current iteration
-        self.logger.debug(
+        self.logger.info(
             f"wait_node {self.who_am_i()}: waiting for worker to complete")
         wait_until(lambda: self._status.active is False or self._status_thread.
                    errored,
@@ -170,12 +183,12 @@ class KgoVerifierService(Service):
         self._status_thread.raise_on_error()
 
         # Read final status
-        self.logger.debug(f"wait_node {self.who_am_i()}: reading final status")
+        self.logger.info(f"wait_node {self.who_am_i()}: reading final status")
         self._status_thread.shutdown()
         self._status_thread = None
 
         # Permit the subprocess to exit, and wait for it to do so
-        self.logger.debug(f"wait_node {self.who_am_i()}: requesting shutdown")
+        self.logger.info(f"wait_node {self.who_am_i()}: requesting shutdown")
         try:
             self._remote(node, "shutdown")
         except requests.exceptions.ConnectionError:
@@ -184,18 +197,21 @@ class KgoVerifierService(Service):
             # before shutting down.
             pass
 
-        self.logger.debug(
+        self.logger.info(
             f"wait_node {self.who_am_i()}: waiting node={node.name} pid={self._pid} to terminate"
         )
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
 
-        self.logger.debug(
+        self.logger.info(
             f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"
         )
 
         self._release_port()
+
+        self.logger.info(
+            f"wait_node {self.who_am_i()}: node={node.name} complete")
 
         return True
 
