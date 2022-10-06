@@ -73,7 +73,9 @@ public:
       int16_t schema_reg_port,
       int16_t coproc_supervisor_port,
       std::vector<config::seed_server> seeds,
-      configure_node_id use_node_id = configure_node_id::yes) {
+      configure_node_id use_node_id = configure_node_id::yes,
+      empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes) {
         _instances.emplace(
           node_id,
           std::make_unique<redpanda_thread_fixture>(
@@ -90,7 +92,8 @@ public:
             std::nullopt,
             std::nullopt,
             std::nullopt,
-            use_node_id));
+            use_node_id,
+            empty_seed_starts_cluster_val));
     }
 
     application* get_node_application(model::node_id id) {
@@ -117,9 +120,11 @@ public:
       int proxy_port_base = 8082,
       int schema_reg_port_base = 8081,
       int coproc_supervisor_port_base = 43189,
-      configure_node_id use_node_id = configure_node_id::yes) {
+      configure_node_id use_node_id = configure_node_id::yes,
+      empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes) {
         std::vector<config::seed_server> seeds = {};
-        if (node_id != 0) {
+        if (!empty_seed_starts_cluster_val || node_id != 0) {
             seeds.push_back(
               {.addr = net::unresolved_address("127.0.0.1", 11000)});
         }
@@ -131,14 +136,25 @@ public:
           schema_reg_port_base + node_id(),
           coproc_supervisor_port_base + node_id(),
           std::move(seeds),
-          use_node_id);
+          use_node_id,
+          empty_seed_starts_cluster_val);
         return get_node_application(node_id);
     }
 
     application* create_node_application(
-      model::node_id node_id, configure_node_id use_node_id) {
+      model::node_id node_id,
+      configure_node_id use_node_id,
+      empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes) {
         return create_node_application(
-          node_id, 9092, 11000, 8082, 8081, 43189, use_node_id);
+          node_id,
+          9092,
+          11000,
+          8082,
+          8081,
+          43189,
+          use_node_id,
+          empty_seed_starts_cluster_val);
     }
 
     void remove_node_application(model::node_id node_id) {
