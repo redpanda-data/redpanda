@@ -316,6 +316,7 @@ const (
 	tlsSchemaRegistryMountName = "tls-schema-registry"
 	tlsConnectMountName        = "tls-connect-%s"
 	tlsKafkaMountName          = "tls-kafka"
+	tlsAdminAPIMountName       = "tls-admin-api"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
 	kafkaClientCertSuffix          = "operator-client"
@@ -406,6 +407,17 @@ func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
 		})
 	}
 
+	if secretName, ok := ss[adminAPISyncedSecretKey]; ok && d.clusterobj.AdminAPIListener().TLS.Enabled {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsAdminAPIMountName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secretName,
+				},
+			},
+		})
+	}
+
 	return volumes
 }
 
@@ -461,6 +473,14 @@ func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
 			Name:      tlsKafkaMountName,
 			ReadOnly:  true,
 			MountPath: KafkaTLSDir,
+		})
+	}
+
+	if _, ok := ss[adminAPISyncedSecretKey]; ok && d.clusterobj.AdminAPIListener().TLS.Enabled {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      tlsAdminAPIMountName,
+			ReadOnly:  true,
+			MountPath: AdminAPITLSDir,
 		})
 	}
 
