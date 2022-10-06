@@ -177,6 +177,10 @@ public:
         return manifest_type::partition;
     };
 
+    /// Returns an iterator to the segment containing offset o, such that o >=
+    /// segment.base_offset and o <= segment.committed_offset.
+    const_iterator segment_containing(model::offset o) const;
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file

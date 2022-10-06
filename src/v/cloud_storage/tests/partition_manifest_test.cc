@@ -188,6 +188,65 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
     return make_iobuf_input_stream(std::move(i));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_segment_contains) {
+    constexpr std::string_view manifest_with_gaps = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 59,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "max_timestamp": 1234567890
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "max_timestamp": 1234567890
+        },
+        "50-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 50,
+            "committed_offset": 59,
+            "max_timestamp": 1234567890
+        }
+    }
+    })json";
+    partition_manifest m;
+    m.update(make_manifest_stream(manifest_with_gaps)).get0();
+    BOOST_REQUIRE(m.segment_containing(model::offset{9}) == m.end());
+    BOOST_REQUIRE(m.segment_containing(model::offset{90}) == m.end());
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{39}) == std::next(m.begin(), 2));
+    BOOST_REQUIRE(m.segment_containing(model::offset{10}) == m.begin());
+    BOOST_REQUIRE(m.segment_containing(model::offset{15}) == m.begin());
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{22}) == std::next(m.begin()));
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{38}) == std::next(m.begin(), 2));
+    BOOST_REQUIRE(m.segment_containing(model::offset{42}) == m.end());
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{50}) == std::prev(m.end()));
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{52}) == std::prev(m.end()));
+    BOOST_REQUIRE(
+      m.segment_containing(model::offset{59}) == std::prev(m.end()));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
     partition_manifest m;
     BOOST_REQUIRE(m.get_manifest_type() == manifest_type::partition);
