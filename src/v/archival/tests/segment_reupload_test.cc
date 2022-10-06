@@ -233,9 +233,10 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });
 
-    // segment [12-14] lies inside manifest segment [10-19]. start offset 12 is
-    // adjusted to 19+1 = 20 to avoid overlap with manifest segment. no
-    // collection will be done after adjustment.
+    // segment [12-14] lies inside manifest segment [10-19]. start offset 1 is
+    // adjusted to start of manifest 10. one segment is collected, then start
+    // offset is readjusted to 20 to avoid overlap with manifest segment. The
+    // begin offset is > end offset, so replacement query is false.
     populate_log(
       b,
       {.segment_starts = {12},
@@ -243,12 +244,12 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
        .last_segment_num_records = 2});
 
     archival::segment_collector collector{
-      model::offset{12}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
     BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
-    BOOST_REQUIRE(collector.segments().empty());
+    BOOST_REQUIRE_EQUAL(collector.segments().size(), 1);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
@@ -271,7 +272,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
        .last_segment_num_records = 10});
 
     archival::segment_collector collector{
-      model::offset{10}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -307,7 +308,7 @@ SEASTAR_THREAD_TEST_CASE(
        .last_segment_num_records = 5});
 
     archival::segment_collector collector{
-      model::offset{10}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -343,7 +344,7 @@ SEASTAR_THREAD_TEST_CASE(
        .last_segment_num_records = 3});
 
     archival::segment_collector collector{
-      model::offset{10}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -376,7 +377,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{8}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{2}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -415,7 +416,7 @@ SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
                       + b.get_segment(1).file_size()
                       + b.get_segment(2).file_size();
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_size};
+      model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
 
     collector.collect_segments();
 
@@ -547,7 +548,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
                           + b.get_segment(1).file_size()
                           + b.get_segment(2).file_size();
         archival::segment_collector collector{
-          model::offset{5}, &m, &b.get_disk_log_impl(), max_size};
+          model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
 
         collector.collect_segments();
 
@@ -591,7 +592,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
                           + b.get_segment(1).file_size()
                           + b.get_segment(2).file_size();
         archival::segment_collector collector{
-          model::offset{5}, &m, &b.get_disk_log_impl(), max_size};
+          model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
 
         collector.collect_segments();
 
@@ -639,7 +640,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_starts_in_gap) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{2}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
@@ -671,7 +672,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_ends_in_gap) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
@@ -694,7 +695,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });
 
-    // manifest start: 10, compacted segment start: 15, search start: 5
+    // manifest start: 10, compacted segment start: 15, search start: 0
     // begin offset will be realigned to end of segment 10-19 to avoid overlap.
     populate_log(
       b,
@@ -703,7 +704,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
