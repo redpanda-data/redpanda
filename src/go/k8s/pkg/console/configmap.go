@@ -128,6 +128,7 @@ func (cm *ConfigMap) generateConsoleConfig(
 		Server:           cm.genServer(),
 		Kafka:            cm.genKafka(username, password),
 		Enterprise:       cm.genEnterprise(),
+		Redpanda:         cm.genRedpanda(),
 	}
 
 	consoleConfig.Connect, err = cm.genConnect(ctx)
@@ -153,6 +154,39 @@ func (cm *ConfigMap) generateConsoleConfig(
 		return "", err
 	}
 	return string(config), nil
+}
+
+func (cm *ConfigMap) genRedpanda() (r Redpanda) {
+	if rp := cm.consoleobj.Spec.Redpanda; rp != nil {
+		if aa := rp.AdminAPI; aa != nil && aa.Enabled {
+			r.AdminAPI = cm.buildRedpandaAdmin(aa)
+		}
+	}
+	return r
+}
+
+func (cm *ConfigMap) buildRedpandaAdmin(aa *redpandav1alpha1.RedpandaAdmin) RedpandaAdmin {
+	r := RedpandaAdmin{
+		Enabled: aa.Enabled,
+		URLs:    cm.clusterobj.AdminAPIURLs(),
+	}
+	if l := cm.clusterobj.AdminAPIListener(); l != nil && l.TLS.Enabled {
+		nodeSecretRef := &corev1.ObjectReference{
+			Namespace: cm.clusterobj.GetNamespace(),
+			Name:      fmt.Sprintf("%s-%s", cm.clusterobj.GetName(), adminAPINodeCertSuffix),
+		}
+		ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+		tls := RedpandaAdminTLS{
+			Enabled:    aa.Enabled,
+			CaFilepath: ca.FilePath(AdminAPITLSCaFilePath),
+		}
+		if l.IsMutualTLSEnabled() {
+			tls.CertFilepath = AdminAPITLSCertFilePath
+			tls.KeyFilepath = AdminAPITLSKeyFilePath
+		}
+		r.TLS = tls
+	}
+	return r
 }
 
 func (cm *ConfigMap) genEnterprise() (e Enterprise) {
@@ -343,6 +377,11 @@ var (
 	KafkaTLSCaFilePath   = fmt.Sprintf("%s/%s", KafkaTLSDir, "ca.crt")
 	KafkaTLSCertFilePath = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSCertKey)
 	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSPrivateKeyKey)
+
+	AdminAPITLSDir          = "/redpanda/admin-api"
+	AdminAPITLSCaFilePath   = fmt.Sprintf("%s/%s", AdminAPITLSDir, "ca.crt")
+	AdminAPITLSCertFilePath = fmt.Sprintf("%s/%s", AdminAPITLSDir, corev1.TLSCertKey)
+	AdminAPITLSKeyFilePath  = fmt.Sprintf("%s/%s", AdminAPITLSDir, corev1.TLSPrivateKeyKey)
 )
 
 // SecretTLSCa handles mounting CA cert
