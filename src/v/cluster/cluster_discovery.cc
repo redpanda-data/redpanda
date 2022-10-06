@@ -28,7 +28,7 @@ cluster_discovery::cluster_discovery(const model::node_uuid& node_uuid)
   : _node_uuid(node_uuid) {}
 
 ss::future<node_id> cluster_discovery::determine_node_id() {
-    co_return config::node().node_id();
+    co_return *config::node().node_id();
 }
 
 vector<broker> cluster_discovery::initial_raft0_brokers() const {

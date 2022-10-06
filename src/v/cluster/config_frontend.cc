@@ -28,7 +28,7 @@ config_frontend::config_frontend(
   , _leaders(leaders)
   , _features(features)
   , _as(as)
-  , _self(config::node().node_id()) {}
+  , _self(*config::node().node_id()) {}
 
 /**
  * RPC wrapper on do_patch, to dispatch to the controller leader

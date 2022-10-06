@@ -45,7 +45,7 @@ feature_manager::feature_manager(
   , _connection_cache(connection_cache)
   , _raft0_group(raft0_group)
   , _barrier_state(
-      config::node().node_id(),
+      *config::node().node_id(),
       members.local(),
       as.local(),
       _gate,
@@ -109,7 +109,7 @@ ss::future<> feature_manager::start() {
 
             vlog(
               clusterlog.debug, "Controller leader notification term {}", term);
-            _am_controller_leader = leader_id == config::node().node_id();
+            _am_controller_leader = leader_id == *config::node().node_id();
 
             // This hook avoids the need for the controller leader to receive
             // its own health report to generate a call to update_node_version.
@@ -128,7 +128,7 @@ ss::future<> feature_manager::start() {
                   leader_id.value(),
                   features::feature_table::get_latest_logical_version());
                 update_node_version(
-                  config::node().node_id,
+                  *config::node().node_id(),
                   features::feature_table::get_latest_logical_version());
             }
         });

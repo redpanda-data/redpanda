@@ -260,7 +260,7 @@ controller_backend::controller_backend(
   , _partition_leaders_table(leaders)
   , _topics_frontend(frontend)
   , _storage(storage)
-  , _self(model::node_id(config::node().node_id))
+  , _self(*config::node().node_id())
   , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_timer_interval(
       config::shard_local_cfg().controller_backend_housekeeping_interval_ms())

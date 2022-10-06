@@ -55,7 +55,7 @@ config_manager::config_manager(
   ss::sharded<partition_leaders_table>& pl,
   ss::sharded<features::feature_table>& ft,
   ss::sharded<ss::abort_source>& as)
-  : _self(config::node().node_id())
+  : _self(*config::node().node_id())
   , _frontend(cf)
   , _connection_cache(cc)
   , _leaders(pl)

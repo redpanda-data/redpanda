@@ -79,7 +79,7 @@ reconciliation_backend::reconciliation_backend(
   ss::sharded<partition_manager>& coproc_pm,
   ss::sharded<pacemaker>& pacemaker,
   ss::sharded<wasm::script_database>& sdb) noexcept
-  : _self(model::node_id(config::node().node_id))
+  : _self(model::node_id(*config::node().node_id()))
   , _data_directory(config::node().data_directory().as_sstring())
   , _topics(topics)
   , _shard_table(shard_table)
