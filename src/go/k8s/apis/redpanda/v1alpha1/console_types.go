@@ -73,6 +73,9 @@ type ConsoleSpec struct {
 	// Cloud contains configurations for Redpanda cloud. If you're running a
 	// self-hosted installation, you can ignore this
 	Cloud *CloudConfig `json:"cloud,omitempty"`
+
+	// Redpanda contains configurations that are Redpanda specific
+	Redpanda *Redpanda `json:"redpanda,omitempty"`
 }
 
 // Server is the Console app HTTP server config
@@ -193,6 +196,16 @@ type ConnectClusterTLS struct {
 	SecretKeyRef *corev1.ObjectReference `json:"secretKeyRef,omitempty"`
 
 	InsecureSkipTLSVerify bool `json:"insecureSkipTlsVerify,omitempty"`
+}
+
+// Redpanda defines configurable fields that are Redpanda specific
+type Redpanda struct {
+	AdminAPI *RedpandaAdmin `json:"adminApi,omitempty"`
+}
+
+// RedpandaAdmin defines API configuration that enables additional features that are Redpanda specific
+type RedpandaAdmin struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ConsoleStatus defines the observed state of Console
