@@ -143,6 +143,9 @@ public:
     /// Wait until all background operations complete
     ss::future<> stop();
 
+    /// Stop all underlying connection in the pool
+    void shutdown_connections();
+
     /// Return max number of concurrent requests that the object
     /// can perform.
     size_t concurrency() const;

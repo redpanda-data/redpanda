@@ -972,6 +972,17 @@ void application::wire_up_redpanda_services() {
           std::ref(archival_scheduler),
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
+
+        // In order to stop segment uploads and downloads we need
+        // to close conneciton so active uploads and downloads will be
+        // stopped.
+        _deferred.emplace_back([this] {
+            if (cloud_storage_api.local_is_initialized()) {
+                cloud_storage_api
+                  .invoke_on_all(&cloud_storage::remote::shutdown_connections)
+                  .get();
+            }
+        });
     }
 
     // group membership
