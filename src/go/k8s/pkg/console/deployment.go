@@ -321,7 +321,9 @@ const (
 	kafkaClientCertSuffix          = "operator-client"
 	adminAPIClientCertSuffix       = "admin-api-client"
 
-	adminAPINodeCertSuffix = "admin-api-node"
+	schemaRegistryNodeCertSuffix = "schema-registry-node"
+	kafkaNodeCertSuffix          = "kafka-node"
+	adminAPINodeCertSuffix       = "admin-api-node"
 
 	enterpriseRBACMountName     = "enterprise-rbac"
 	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
