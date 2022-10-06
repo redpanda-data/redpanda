@@ -132,7 +132,14 @@ public:
 private:
     friend controller_probe;
 
-    ss::future<> cluster_creation_hook();
+    /**
+     * Create a \c bootstrap_cluster_cmd, replicate-and-wait it to the current
+     * quorum, retry infinitely if replicate-and-wait fails.
+     */
+    ss::future<> create_cluster();
+
+    ss::future<> cluster_creation_hook(bool local_node_is_seed_server);
+
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core
