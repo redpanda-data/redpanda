@@ -118,7 +118,13 @@ public:
 
     ss::future<> wire_up();
 
-    ss::future<> start(std::vector<model::broker>);
+    /**
+     * Create raft0, and start the services that the \c controller owns.
+     * \param initial_raft0_brokers Brokers to start raft0 with. Empty for
+     *      non-seeds.
+     */
+    ss::future<> start(std::vector<model::broker> initial_raft0_brokers);
+
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
     ss::future<> stop();

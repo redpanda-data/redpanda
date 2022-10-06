@@ -1487,7 +1487,7 @@ void application::start_runtime_services(
     _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller").get();
-    controller->start(cluster_discovery.initial_raft0_brokers()).get0();
+    controller->start(cluster_discovery.initial_seed_brokers()).get0();
     kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
       *controller, group_router);
 
