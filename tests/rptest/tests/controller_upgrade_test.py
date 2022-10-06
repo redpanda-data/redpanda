@@ -46,11 +46,11 @@ class ControllerUpgradeTest(EndToEndTest):
         Validates that cluster is operational when upgrading controller log
         '''
 
-        # set redpanda version to v22.1 - last version without serde encoding
+        # set redpanda version to v22.2.5 - the latest previous major version
         self.redpanda = RedpandaService(self.test_context, 5)
 
         installer = self.redpanda._installer
-        installer.install(self.redpanda.nodes, (22, 1, 4))
+        installer.install(self.redpanda.nodes, (22, 2, 5))
 
         self.redpanda.start()
         admin_fuzz = AdminOperationsFuzzer(self.redpanda)
