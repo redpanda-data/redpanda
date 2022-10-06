@@ -133,6 +133,12 @@ ss::future<std::unique_ptr<continuous_batch_parser>>
 log_segment_batch_reader::initialize(
   model::timeout_clock::time_point timeout,
   std::optional<model::offset> next_cached_batch) {
+    vlog(
+      stlog.info,
+      ">> initializing reader {} - start_offset: {} next_cached: {}",
+      _seg.filename(),
+      _config.start_offset,
+      next_cached_batch);
     auto input = co_await _seg.offset_data_stream(
       _config.start_offset, _config.prio);
     co_return std::make_unique<continuous_batch_parser>(
@@ -177,7 +183,11 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     // handles cases where the type filter skipped batches. see
     // batch_cache_index::read for more details.
     _config.start_offset = cache_read.next_batch;
-
+    vlog(
+      stlog.info,
+      ">> reader {} - batches from cache: {}",
+      _seg.filename(),
+      cache_read.batches.size());
     if (
       !cache_read.batches.empty()
       || _config.start_offset > _config.max_offset) {
@@ -204,9 +214,15 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     auto ptr = _iterator.get();
     co_return co_await ptr->consume().then(
       [this](result<size_t> bytes_consumed) -> result<records_t> {
+          
           if (!bytes_consumed) {
               return bytes_consumed.error();
           }
+          vlog(
+            stlog.info,
+            ">> reader {} - consumed: {}",
+            _seg.filename(),
+            bytes_consumed.value());
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
       });
@@ -290,12 +306,25 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         return ss::make_ready_future<storage_t>();
     }
     _last_base = _config.start_offset;
+    vlog(
+      stlog.info,
+      ">> find next valid iterator - [{},{}]",
+      _config.start_offset,
+      _config.max_offset);
     ss::future<> fut = find_next_valid_iterator();
     if (is_end_of_stream()) {
         return fut.then([] { return ss::make_ready_future<storage_t>(); });
     }
     return fut
-      .then([this, timeout] { return _iterator.reader->read_some(timeout); })
+      .then([this, timeout] {
+          vlog(
+            stlog.info,
+            ">> found next valid iterator {} - [{},{}]",
+            _iterator.current_reader_seg->get()->filename(),
+            _config.start_offset,
+            _config.max_offset);
+          return _iterator.reader->read_some(timeout);
+      })
       .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
           if (!recs) {
               set_end_of_stream();

@@ -10,7 +10,9 @@
 #include "raft/recovery_stm.h"
 
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -19,12 +21,15 @@
 #include "raft/raftgen_service.h"
 #include "ssx/sformat.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_scheduling_group.hh>
+#include <seastar/core/with_timeout.hh>
 
 #include <chrono>
 #include <optional>
@@ -221,8 +226,16 @@ recovery_stm::read_range_for_recovery(
 
     // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
-    auto batches = co_await model::consume_reader_to_memory(
-      std::move(reader), model::no_timeout);
+
+    auto batches = co_await ss::with_timeout(
+                     model::timeout_clock::now() + 90s,
+                     model::consume_reader_to_memory(
+                       std::move(reader), model::no_timeout))
+                     .handle_exception_type(
+                       [this](const ss::timed_out_error& e) {
+                           vlog(_ctxlog.error, "Timeout reading batches for recovery - {}", e);
+                           return ss::circular_buffer<model::record_batch>{};
+                       });
 
     if (batches.empty()) {
         vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
