@@ -353,7 +353,7 @@ batch_timequery(const model::record_batch& b, model::timestamp t) {
     // records in the batch have different timestamps.
     model::offset result_o = b.base_offset();
     model::timestamp result_t = b.header().first_timestamp;
-    if (b.header().first_timestamp < t) {
+    if (b.header().first_timestamp < t && !b.compressed()) {
         b.for_each_record(
           [&result_o, &result_t, t, &b](
             const model::record& r) -> ss::stop_iteration {
