@@ -46,18 +46,16 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
     static const bytes invariants_key("configuration_invariants");
     auto invariants_buf = _kvstore.get(
       storage::kvstore::key_space::controller, invariants_key);
-
     if (invariants_buf) {
         auto invariants = reflection::from_iobuf<configuration_invariants>(
           std::move(*invariants_buf));
         co_return invariants.node_id;
     }
-    // TODO: once is_cluster_founder() refers to all seeds, verify that all the
-    // seeds' seed_servers lists match and assign node IDs based on the
-    // ordering.
-    if (is_cluster_founder()) {
-        // If this is the root node, assign node 0.
-        co_return model::node_id(0);
+
+    if (auto cf_node_id = get_cluster_founder_node_id(); cf_node_id) {
+        // TODO: verify that all the seeds' seed_servers lists match
+        clusterlog.info("Using index based node ID {}", *cf_node_id);
+        co_return *cf_node_id;
     }
     model::node_id assigned_node_id;
     while (!_as.abort_requested()) {
@@ -71,13 +69,55 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
     co_return assigned_node_id;
 }
 
-vector<broker> cluster_discovery::initial_raft0_brokers() const {
+namespace {
+
+/**
+ * Search for the current node's advertised RPC address in the seed_servers.
+ * Precondition: emtpy_seed_starts_cluster=false
+ * \return Index of this node in seed_servers list if found, or empty if
+ * not.
+ * \throw runtime_error if seed_servers is empty
+ */
+std::optional<model::node_id::type> get_node_index_in_seed_servers() {
+    const std::vector<config::seed_server>& seed_servers
+      = config::node().seed_servers();
+    if (seed_servers.empty()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Configuration error: seed_servers cannot be empty when "
+          "empty_seed_starts_cluster is false"));
+    }
+    const auto it = std::find_if(
+      seed_servers.cbegin(),
+      seed_servers.cend(),
+      [rpc_addr = config::node().advertised_rpc_api()](
+        const config::seed_server& seed_server) {
+          return rpc_addr == seed_server.addr;
+      });
+    if (it == seed_servers.cend()) {
+        return {};
+    }
+    return {boost::numeric_cast<model::node_id::type>(
+      std::distance(seed_servers.cbegin(), it))};
+}
+
+} // namespace
+
+std::vector<model::broker> cluster_discovery::initial_seed_brokers() const {
     // If configured as the root node, we'll want to start the cluster with
     // just this node as the initial seed.
-    if (is_cluster_founder()) {
-        // TODO: we should only return non-empty seed list if our log is empty.
+    if (config::node().empty_seed_starts_cluster()) {
+        if (config::node().seed_servers().empty()) {
+            return {make_self_broker(config::node())};
+        }
+        // Not a root
+        return {};
+    }
+    if (get_node_index_in_seed_servers()) {
+        // TODO: return the discovered nodes plus this node
         return {make_self_broker(config::node())};
     }
+    // Non-seed server
     return {};
 }
 
@@ -142,8 +182,18 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
     co_return false;
 }
 
-bool cluster_discovery::is_cluster_founder() const {
-    return config::node().seed_servers().empty();
+/*static*/ std::optional<node_id>
+cluster_discovery::get_cluster_founder_node_id() {
+    if (config::node().empty_seed_starts_cluster()) {
+        if (config::node().seed_servers().empty()) {
+            return node_id{0};
+        }
+    } else {
+        if (auto idx = get_node_index_in_seed_servers(); idx) {
+            return node_id{*idx};
+        }
+    }
+    return {};
 }
 
 } // namespace cluster
