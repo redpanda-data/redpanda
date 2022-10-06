@@ -217,7 +217,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	ctx context.Context,
 ) (*configuration.GlobalConfiguration, error) {
 	cfg := configuration.For(r.pandaCluster.Spec.Version)
-	cfg.NodeConfiguration = *config.ProdDefault()
+	cfg.NodeConfiguration = *config.Default()
 	mountPoints := resourcetypes.GetTLSMountPoints()
 
 	c := r.pandaCluster.Spec.Configuration
