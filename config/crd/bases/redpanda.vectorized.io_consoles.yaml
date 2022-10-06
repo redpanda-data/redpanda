@@ -489,6 +489,19 @@ spec:
                 default: console
                 description: Prefix for all exported prometheus metrics
                 type: string
+              redpanda:
+                description: Redpanda contains configurations that are Redpanda specific
+                properties:
+                  adminApi:
+                    description: RedpandaAdmin defines API configuration that enables
+                      additional features that are Redpanda specific
+                    properties:
+                      enabled:
+                        type: boolean
+                    required:
+                    - enabled
+                    type: object
+                type: object
               schema:
                 description: Schema defines configurable fields for Schema Registry
                 properties:
