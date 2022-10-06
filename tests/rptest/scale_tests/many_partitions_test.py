@@ -663,12 +663,25 @@ class ManyPartitionsTest(PreallocNodesTest):
         bench_node = self.preallocated_nodes[0]
         worker_nodes = self.preallocated_nodes[1:]
 
+        # TODO: remove these overrides once the cause of latency
+        # spikes in OMB is found and mitigated. For now these
+        # numbers are dervived from the outliers found in the
+        # cloud benchmarking effort.
+        # Tracking issue: https://github.com/redpanda-data/redpanda/issues/6334
+        validator_overrides = {
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(51)],
+            OMBSampleConfigurations.E2E_LATENCY_AVG:
+            [OMBSampleConfigurations.lte(145)],
+        }
+
         # TODO: use PROD_ENV_VALIDATOR?
         benchmark = OpenMessagingBenchmark(
             self._ctx,
             self.redpanda,
             "SIMPLE_DRIVER",
-            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR),
+            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
+             | validator_overrides),
             node=bench_node,
             worker_nodes=worker_nodes)
         benchmark.start()
