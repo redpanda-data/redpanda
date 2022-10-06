@@ -2869,6 +2869,65 @@ FIXTURE_TEST(test_self_compaction_while_reader_is_open, storage_test_fixture) {
     stream.close().get();
 };
 
+FIXTURE_TEST(test_simple_compaction_rebuild_index, storage_test_fixture) {
+    // Test setup.
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = config::mock_binding<size_t>(10_MiB);
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    // Append some linear kv ints
+    int num_appends = 5;
+    append_random_batches<linear_int_kv_batch_generator>(log, num_appends);
+    log.flush().get0();
+    disk_log->force_roll(ss::default_priority_class()).get();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+
+    // Remove compacted indexes to trigger a full index rebuild.
+    auto seg_path = disk_log->segments()[0]->filename();
+    auto index_path = storage::internal::compacted_index_path(
+      std::filesystem::path(seg_path));
+
+    BOOST_REQUIRE(std::filesystem::remove(index_path));
+
+    auto batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(
+      batches.size(),
+      num_appends * linear_int_kv_batch_generator::batches_per_call);
+    BOOST_REQUIRE(std::all_of(batches.begin(), batches.end(), [](auto& b) {
+        return b.record_count()
+               == linear_int_kv_batch_generator::records_per_batch;
+    }));
+
+    storage::compaction_config ccfg(
+      model::timestamp::min(),
+      std::nullopt,
+      model::offset::max(),
+      ss::default_priority_class(),
+      as);
+
+    log.compact(ccfg).get();
+
+    batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(
+      batches.size(),
+      num_appends * linear_int_kv_batch_generator::batches_per_call);
+    linear_int_kv_batch_generator::validate_post_compaction(std::move(batches));
+};
+
 struct compact_test_args {
     model::offset max_compact_offs;
     long num_compactable_msg;
