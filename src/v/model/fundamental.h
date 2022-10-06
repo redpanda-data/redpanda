@@ -45,6 +45,7 @@ using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 namespace model {
 
 using node_uuid = named_type<uuid_t, struct node_uuid_type>;
+using cluster_uuid = named_type<uuid_t, struct cluster_uuid_type>;
 
 // Named after Kafka cleanup.policy topic property
 enum class cleanup_policy_bitflags : uint8_t {

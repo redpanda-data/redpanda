@@ -9,6 +9,7 @@
 
 #include "cluster/controller.h"
 
+#include "cluster/bootstrap_backend.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
@@ -129,6 +130,8 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
       .then([this] {
           return _feature_backend.start_single(std::ref(_feature_table));
       })
+      .then(
+        [this] { return _bootstrap_backend.start_single(std::ref(_storage)); })
       .then([this] {
           return _config_frontend.start(
             std::ref(_stm),
@@ -182,7 +185,8 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
             std::ref(_members_manager),
             std::ref(_data_policy_manager),
             std::ref(_config_manager),
-            std::ref(_feature_backend));
+            std::ref(_feature_backend),
+            std::ref(_bootstrap_backend));
       })
       .then([this] {
           return _members_frontend.start(
@@ -438,6 +442,7 @@ ss::future<> controller::stop() {
           .then([this] { return _config_frontend.stop(); })
           .then([this] { return _feature_backend.stop(); })
           .then([this] { return _stm.stop(); })
+          .then([this] { return _bootstrap_backend.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })

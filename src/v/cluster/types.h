@@ -2040,6 +2040,19 @@ struct feature_update_license_update_cmd_data
     operator<<(std::ostream&, const feature_update_license_update_cmd_data&);
 };
 
+struct bootstrap_cluster_cmd_data
+  : serde::envelope<bootstrap_cluster_cmd_data, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    friend bool operator==(
+      const bootstrap_cluster_cmd_data&, const bootstrap_cluster_cmd_data&)
+      = default;
+
+    auto serde_fields() { return std::tie(uuid); }
+
+    model::cluster_uuid uuid;
+};
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
