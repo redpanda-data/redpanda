@@ -34,6 +34,7 @@ type Store struct {
 var (
 	schemaRegistrySyncedSecretKey = "schema-registry"
 	kafkaSyncedSecretKey          = "kafka"
+	adminAPISyncedSecretKey       = "admin-api"
 )
 
 // NewStore creates a new store
@@ -257,6 +258,26 @@ func (s *Store) GetKafkaNodeCert(
 	cluster *redpandav1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
 	if secret, exists := s.Get(s.getKafkaNodeCertKey(cluster)); exists {
+		return secret.(*corev1.Secret), true
+	}
+	return nil, false
+}
+
+// GetAdminAPIClientCert gets the RedpandaAdmin client cert and returns Secret object
+func (s *Store) GetAdminAPIClientCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
+	if secret, exists := s.Get(s.getAdminAPIClientCertKey(cluster)); exists {
+		return secret.(*corev1.Secret), true
+	}
+	return nil, false
+}
+
+// GetAdminAPINodeCert gets the RedpandaAdmin node cert and returns Secret object
+func (s *Store) GetAdminAPINodeCert(
+	cluster *redpandav1alpha1.Cluster,
+) (*corev1.Secret, bool) {
+	if secret, exists := s.Get(s.getAdminAPINodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
 	return nil, false
