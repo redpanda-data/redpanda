@@ -212,11 +212,11 @@ func (s *Store) getAdminAPIClientCertKey(
 func (s *Store) getSchemaRegistryNodeCertKey(
 	cluster *redpandav1alpha1.Cluster,
 ) string {
-	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "schema-registry-node")
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), schemaRegistryNodeCertSuffix)
 }
 
 func (s *Store) getKafkaNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
-	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "kafka-node")
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), kafkaNodeCertSuffix)
 }
 
 func (s *Store) getAdminAPINodeCertKey(cluster *redpandav1alpha1.Cluster) string {
