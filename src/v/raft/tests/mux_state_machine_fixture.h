@@ -38,7 +38,7 @@ struct mux_state_machine_fixture {
       : _self{0}
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
-    void start_raft() {
+    void start_raft(storage::ntp_config::default_overrides overrides = {}) {
         // configure and start kvstore
         storage::kvstore_config kv_conf(
           8192,
@@ -94,7 +94,11 @@ struct mux_state_machine_fixture {
 
         _raft = _storage.local()
                   .log_mgr()
-                  .manage(storage::ntp_config(_ntp, _data_dir))
+                  .manage(storage::ntp_config(
+                    _ntp,
+                    _data_dir,
+                    std::make_unique<storage::ntp_config::default_overrides>(
+                      overrides)))
                   .then([this](storage::log&& log) mutable {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
