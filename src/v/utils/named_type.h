@@ -132,10 +132,11 @@ public:
       = std::is_nothrow_move_constructible<T>::value;
 
     base_named_type() = default;
-    explicit base_named_type(const type& v)
-      : _value(v) {}
-    explicit base_named_type(type&& v)
-      : _value(std::move(v)) {}
+
+    template<typename... Args>
+    requires std::constructible_from<T, Args...>
+    explicit base_named_type(Args&&... args)
+      : _value(std::forward<Args>(args)...) {}
 
     base_named_type(base_named_type&& o) noexcept(move_noexcept) = default;
 
