@@ -22,7 +22,9 @@
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "security/acl.h"
+#include "security/credential_store.h"
 #include "security/license.h"
+#include "security/scram_credential.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "storage/ntp_config.h"
@@ -2040,6 +2042,26 @@ struct feature_update_license_update_cmd_data
     operator<<(std::ostream&, const feature_update_license_update_cmd_data&);
 };
 
+struct user_and_credential
+  : serde::envelope<user_and_credential, serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    static constexpr int8_t current_version = 0;
+
+    user_and_credential() = default;
+    user_and_credential(
+      security::credential_user&& username_,
+      security::scram_credential&& credential_)
+      : username(std::move(username_))
+      , credential(std::move(credential_)) {}
+    friend bool
+    operator==(const user_and_credential&, const user_and_credential&)
+      = default;
+    auto serde_fields() { return std::tie(username, credential); }
+
+    security::credential_user username;
+    security::scram_credential credential;
+};
+
 struct bootstrap_cluster_cmd_data
   : serde::envelope<bootstrap_cluster_cmd_data, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
@@ -2048,9 +2070,10 @@ struct bootstrap_cluster_cmd_data
       const bootstrap_cluster_cmd_data&, const bootstrap_cluster_cmd_data&)
       = default;
 
-    auto serde_fields() { return std::tie(uuid); }
+    auto serde_fields() { return std::tie(uuid, bootstrap_user_cred); }
 
     model::cluster_uuid uuid;
+    std::optional<user_and_credential> bootstrap_user_cred;
 };
 
 enum class reconciliation_status : int8_t {

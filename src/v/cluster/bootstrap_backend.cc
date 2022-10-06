@@ -15,11 +15,52 @@
 #include "cluster/commands.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
+#include "security/credential_store.h"
 
 namespace cluster {
 
-bootstrap_backend::bootstrap_backend(ss::sharded<storage::api>& storage)
-  : _storage(storage) {}
+bootstrap_backend::bootstrap_backend(
+  ss::sharded<security::credential_store>& credentials,
+  ss::sharded<storage::api>& storage)
+  : _credentials(credentials)
+  , _storage(storage) {}
+
+namespace {
+
+std::error_code
+do_apply(user_and_credential cred, security::credential_store& store) {
+    if (store.contains(cred.username)) {
+        return errc::user_exists;
+    }
+    store.put(cred.username, std::move(cred.credential));
+    return errc::success;
+}
+
+template<typename Cmd>
+ss::future<std::error_code> dispatch_updates_to_cores(
+  Cmd cmd, ss::sharded<security::credential_store>& sharded_service) {
+    auto res = co_await sharded_service.map_reduce0(
+      [cmd](security::credential_store& service) {
+          return do_apply(std::move(cmd), service);
+      },
+      std::optional<std::error_code>{},
+      [](std::optional<std::error_code> result, std::error_code error_code) {
+          if (!result.has_value()) {
+              result = error_code;
+          } else {
+              vassert(
+                result.value() == error_code,
+                "State inconsistency across shards detected, "
+                "expected result: {}, have: {}",
+                result->value(),
+                error_code);
+          }
+          return result.value();
+      });
+    co_return res.value();
+}
+
+} // namespace
 
 ss::future<std::error_code>
 bootstrap_backend::apply_update(model::record_batch b) {
@@ -39,6 +80,23 @@ bootstrap_backend::apply_update(model::record_batch b) {
                 cmd.value.uuid,
                 *_storage.local().get_cluster_uuid());
               co_return errc::cluster_already_exists;
+          }
+
+          if (cmd.value.bootstrap_user_cred) {
+              const std::error_code res
+                = co_await dispatch_updates_to_cores<user_and_credential>(
+                  *cmd.value.bootstrap_user_cred, _credentials);
+              if (!res) {
+                  vlog(
+                    clusterlog.warn,
+                    "Failed to dispatch bootstrap user: {}",
+                    res);
+                  co_return res;
+              }
+              vlog(
+                clusterlog.info,
+                "Bootstrap user {} created",
+                cmd.value.bootstrap_user_cred->username);
           }
 
           co_await _storage.invoke_on_all(

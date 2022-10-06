@@ -36,7 +36,8 @@ namespace cluster {
  */
 class bootstrap_backend final {
 public:
-    bootstrap_backend(ss::sharded<storage::api>&);
+    bootstrap_backend(
+      ss::sharded<security::credential_store>&, ss::sharded<storage::api>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -46,6 +47,7 @@ public:
     }
 
 private:
+    ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
 };
 
