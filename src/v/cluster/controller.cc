@@ -102,6 +102,7 @@ ss::future<> controller::wire_up() {
 
 ss::future<>
 controller::start(std::vector<model::broker> initial_raft0_brokers) {
+    const bool local_node_is_seed_server = !initial_raft0_brokers.empty();
     return create_raft0(
              _partition_manager,
              _shard_table,
@@ -271,7 +272,9 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
               return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
           });
       })
-      .then([this] { return cluster_creation_hook(); })
+      .then([this, local_node_is_seed_server] {
+          return cluster_creation_hook(local_node_is_seed_server);
+      })
       .then(
         [this] { return _backend.invoke_on_all(&controller_backend::start); })
       .then([this] {
@@ -456,39 +459,113 @@ ss::future<> controller::stop() {
     });
 }
 
+ss::future<> controller::create_cluster() {
+    vassert(
+      ss::this_shard_id() == controller_stm_shard,
+      "Cluster can only be created from controller_stm_shard");
+    bootstrap_cluster_cmd_data cmd_data;
+    cmd_data.uuid = model::cluster_uuid(uuid_t::create());
+    vlog(clusterlog.info, "Creating cluster {}", cmd_data.uuid);
+
+    for (simple_time_jitter<model::timeout_clock> retry_jitter(1s);;) {
+        model::record_batch b = serde_serialize_cmd(
+          bootstrap_cluster_cmd{0, cmd_data});
+        // cluster::replicate_and_wait() cannot be used here because it checks
+        // for serde_raft_0 feature to be enabled. Before a cluster is here,
+        // no feature is active, however the bootstrap_cluster_cmd is serde-only
+        const std::error_code errc = co_await _stm.local().replicate_and_wait(
+          std::move(b),
+          model::timeout_clock::now() + 30s,
+          _as.local(),
+          std::nullopt);
+        if (errc == errc::success) {
+            co_return;
+        }
+        vlog(
+          clusterlog.warn,
+          "Failed to replicate and wait the cluster bootstrap cmd, {}",
+          errc);
+        if (errc == errc::cluster_already_exists) {
+            co_return;
+        }
+
+        co_await ss::sleep_abortable(retry_jitter.next_duration(), _as.local());
+        vlog(clusterlog.trace, "Retrying to create cluster {}", cmd_data.uuid);
+    }
+}
+
 /**
  * This function provides for writing the controller log immediately
  * after it has been created, before anything else has been written
  * to it, and before we have started communicating with peers.
  */
-ss::future<> controller::cluster_creation_hook() {
-    if (!config::node().seed_servers().empty()) {
-        // We are not on the root node
-        co_return;
-    } else if (
-      _raft0->last_visible_index() > model::offset{}
-      || _raft0->config().brokers().size() > 1) {
-        // The controller log has already been written to
+ss::future<>
+controller::cluster_creation_hook(const bool local_node_is_seed_server) {
+    if (_storage.local().get_cluster_uuid()) {
+        // Cluster already exists
         co_return;
     }
 
-    // Internal RPC does not start until after controller startup
-    // is complete (we are called during controller startup), so
-    // it is guaranteed that if we were single node/empty controller
-    // log at start of this function, we will still be in that state
-    // here.  The wait for leadership is really just a wait for the
-    // consensus object to finish writing its last_voted_for from
-    // its self-vote.
-    while (!_raft0->is_leader()) {
+    if (!local_node_is_seed_server) {
+        // We are not on a seed server / root node
+        co_return;
+    }
+
+    if (config::node().empty_seed_starts_cluster()) {
+        // This is the legacy empty-seed-starts-cluster mode
+        vassert(
+          config::node().seed_servers().empty(), "We are not on the root node");
+
+        if (
+          _raft0->last_visible_index() > model::offset{}
+          || _raft0->config().brokers().size() > 1) {
+            // The controller log has already been written to
+            co_return;
+        }
+
+        // Internal RPC does not start until after controller startup
+        // is complete (we are called during controller startup), so
+        // it is guaranteed that if we were single node/empty controller
+        // log at start of this function, we will still be in that state
+        // here.  The wait for leadership is really just a wait for the
+        // consensus object to finish writing its last_voted_for from
+        // its self-vote.
+        while (!_raft0->is_leader()) {
+            co_await ss::sleep(100ms);
+        }
+
+        auto err
+          = co_await _security_frontend.local().maybe_create_bootstrap_user();
+        vassert(
+          err == errc::success,
+          "Controller write should always succeed in single replica state "
+          "during creation");
+
+        co_return co_await create_cluster();
+    }
+
+    // The new cluster creation is done by the leader of raft0 consisting of
+    // seed servers, once elected
+    while (!_storage.local().get_cluster_uuid() && !_raft0->is_leader()) {
         co_await ss::sleep(100ms);
     }
 
-    auto err
-      = co_await _security_frontend.local().maybe_create_bootstrap_user();
-    vassert(
-      err == errc::success,
-      "Controller write should always succeed in single replica state during "
-      "creation");
+    if (_storage.local().get_cluster_uuid()) {
+        vlog(
+          clusterlog.info,
+          "Cluster is {}",
+          *_storage.local().get_cluster_uuid());
+        co_return;
+    }
+
+    if (
+      _raft0->last_visible_index() > model::offset{}
+      || _raft0->config().brokers().size() > 1) {
+        // The controller log has already been written to
+        // TODO: create_cluster() but use the metrics' cluster_id
+    }
+
+    co_return co_await create_cluster();
 }
 
 /**
