@@ -230,6 +230,36 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (map[string]string
 		syncedSecrets[kafkaSyncedSecretKey] = data
 	}
 
+	if l := d.clusterobj.AdminAPIListener(); l.TLS.Enabled { //nolint:nestif // secret syncing is complex
+		data := map[string][]byte{}
+		if l.IsMutualTLSEnabled() {
+			clientCert, exists := d.store.GetAdminAPIClientCert(d.clusterobj)
+			if !exists {
+				return nil, fmt.Errorf("get admin api client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			}
+			certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+			keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+			data[corev1.TLSCertKey] = []byte(certfile)
+			data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+		}
+
+		// Only write CA cert if not using DefaultCaFilePath
+		nodeSecretRef := &corev1.ObjectReference{
+			Namespace: d.clusterobj.GetNamespace(),
+			Name:      fmt.Sprintf("%s-%s", d.clusterobj.GetName(), adminAPINodeCertSuffix),
+		}
+		ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+		if ca.useCaCert() {
+			caCert, exists := d.store.GetAdminAPINodeCert(d.clusterobj)
+			if !exists {
+				return nil, fmt.Errorf("get admin api node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			}
+			cafile := getOrEmpty("ca.crt", caCert.Data)
+			data["ca.crt"] = []byte(cafile)
+		}
+		syncedSecrets[adminAPISyncedSecretKey] = data
+	}
+
 	secretNames := map[string]string{}
 	for key, ss := range syncedSecrets {
 		name, err := d.store.CreateSyncedSecret(ctx, d.consoleobj, ss, key, d.log)
