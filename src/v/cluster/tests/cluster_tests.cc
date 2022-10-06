@@ -88,3 +88,18 @@ FIXTURE_TEST(test_auto_assign_with_explicit_node_id, cluster_test_fixture) {
 
     wait_for_all_members(3s).get();
 }
+
+FIXTURE_TEST(
+  test_seed_driven_cluster_bootstrap_single_node, cluster_test_fixture) {
+    const model::node_id id0{0};
+    create_node_application(
+      id0, configure_node_id::no, empty_seed_starts_cluster::no);
+    BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
+    wait_for_controller_leadership(id0).get();
+    wait_for_all_members(3s).get();
+    auto brokers = get_local_cache(id0).all_brokers();
+
+    // single broker
+    BOOST_REQUIRE_EQUAL(brokers.size(), 1);
+    BOOST_REQUIRE_EQUAL(brokers[0]->id(), id0);
+}
