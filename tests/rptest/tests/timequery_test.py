@@ -45,6 +45,10 @@ class BaseTimeQuery:
         self.client().alter_topic_config(topic.name, 'message.timestamp.type',
                                          "CreateTime")
 
+        # Disable time based retention because we will use synthetic timestamps
+        # that may well fall outside of the default 1 week relative to walltime
+        self.client().alter_topic_config(topic.name, 'retention.ms', "-1")
+
         # Use small segments
         self.client().alter_topic_config(topic.name, 'segment.bytes',
                                          self.log_segment_size)
