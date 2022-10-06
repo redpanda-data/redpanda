@@ -177,6 +177,7 @@ private:
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     controller_probe _probe;
+    ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
 };
 
 } // namespace cluster

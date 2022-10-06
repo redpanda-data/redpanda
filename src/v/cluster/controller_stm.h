@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/bootstrap_backend.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_log_limiter.h"
 #include "cluster/data_policy_manager.h"
@@ -33,7 +34,8 @@ class controller_stm final
       members_manager,
       data_policy_manager,
       config_manager,
-      feature_backend> {
+      feature_backend,
+      bootstrap_backend> {
 public:
     template<typename... Args>
     controller_stm(limiter_configuration limiter_conf, Args&&... stm_args)

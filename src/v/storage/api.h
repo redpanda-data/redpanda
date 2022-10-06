@@ -82,6 +82,13 @@ public:
 
     model::node_uuid node_uuid() const { return _node_uuid; }
 
+    void set_cluster_uuid(const model::cluster_uuid& cluster_uuid) {
+        _cluster_uuid = cluster_uuid;
+    }
+    const std::optional<model::cluster_uuid>& get_cluster_uuid() const {
+        return _cluster_uuid;
+    }
+
     kvstore& kvs() { return *_kvstore; }
     log_manager& log_mgr() { return *_log_mgr; }
     storage_resources& resources() { return _resources; }
@@ -99,6 +106,8 @@ private:
     // directory. Should be generated once upon first starting up and
     // immediately persisted into `_kvstore`.
     model::node_uuid _node_uuid;
+
+    std::optional<model::cluster_uuid> _cluster_uuid;
 };
 
 } // namespace storage

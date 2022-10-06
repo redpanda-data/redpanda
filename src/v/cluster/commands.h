@@ -117,6 +117,9 @@ static constexpr int8_t cluster_config_status_cmd_type = 1;
 static constexpr int8_t feature_update_cmd_type = 0;
 static constexpr int8_t feature_update_license_update_cmd_type = 1;
 
+// cluster bootstrap commands
+static constexpr int8_t bootstrap_cluster_cmd_type = 0;
+
 using create_topic_cmd = controller_command<
   model::topic_namespace,
   topic_configuration_assignment,
@@ -281,6 +284,13 @@ using feature_update_license_update_cmd = controller_command<
   feature_update_license_update_cmd_type,
   model::record_batch_type::feature_update,
   serde_opts::serde_only>;
+
+// Cluster bootstrap
+using bootstrap_cluster_cmd = controller_command<
+  int8_t, // unused, always 0
+  bootstrap_cluster_cmd_data,
+  bootstrap_cluster_cmd_type,
+  model::record_batch_type::cluster_bootstrap_cmd>;
 
 // typelist utils
 template<typename T>
