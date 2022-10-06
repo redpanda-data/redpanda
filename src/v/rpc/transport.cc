@@ -221,14 +221,18 @@ void transport::dispatch_send() {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
                   auto buffer = std::move(it->second->buffer).get();
+                  // These units are released once we are out of scope here
+                  // and that is intentional because the underlying write call
+                  // to the batched output stream guarantees us the in-order
+                  // delivery of the dispatched write calls, which is the intent
+                  // of holding on to the units up until this point.
                   auto units = std::move(it->second->resource_units);
                   auto v = std::move(*buffer).as_scattered();
                   auto msg_size = v.size();
                   _requests_queue.erase(it->first);
-                  return _out.write(std::move(v))
-                    .finally([this, msg_size, units = std::move(units)] {
-                        _probe.add_bytes_sent(msg_size);
-                    });
+                  auto f = _out.write(std::move(v));
+                  return std::move(f).finally(
+                    [this, msg_size] { _probe.add_bytes_sent(msg_size); });
               });
         }).handle_exception([this](std::exception_ptr e) {
             vlog(rpclog.info, "Error dispatching socket write:{}", e);
