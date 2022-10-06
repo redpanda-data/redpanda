@@ -114,6 +114,41 @@ func (s *Store) Sync(cluster *redpandav1alpha1.Cluster) error {
 		}
 	}
 
+	if l := cluster.AdminAPIListener(); l.TLS.Enabled { //nolint:nestif // sync is complex
+		if l.IsMutualTLSEnabled() {
+			adminAPIClientCert, err := syncCert(
+				s.context,
+				s.client,
+				client.ObjectKeyFromObject(cluster),
+				fmt.Sprintf("%s-%s", cluster.GetName(), adminAPIClientCertSuffix),
+			)
+			if err != nil {
+				return fmt.Errorf("sync admin api client certificate: %w", err)
+			}
+			// same as Update()
+			s.Add(s.getAdminAPIClientCertKey(cluster), adminAPIClientCert)
+		}
+
+		// Only sync CA cert if not using DefaultCaFilePath
+		nodeSecretRef := &corev1.ObjectReference{
+			Namespace: cluster.GetNamespace(),
+			Name:      fmt.Sprintf("%s-%s", cluster.GetName(), adminAPINodeCertSuffix),
+		}
+		ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+		if ca.useCaCert() {
+			adminAPINodeCert, err := syncCert(
+				s.context,
+				s.client,
+				types.NamespacedName{Namespace: nodeSecretRef.Namespace, Name: nodeSecretRef.Name},
+				nodeSecretRef.Name,
+			)
+			if err != nil {
+				return fmt.Errorf("sync admin api node certificate: %w", err)
+			}
+			s.Add(s.getAdminAPINodeCertKey(cluster), adminAPINodeCert)
+		}
+	}
+
 	return nil
 }
 
@@ -143,6 +178,12 @@ func (s *Store) getKafkaClientCertKey(
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), kafkaClientCertSuffix)
 }
 
+func (s *Store) getAdminAPIClientCertKey(
+	cluster *redpandav1alpha1.Cluster,
+) string {
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), adminAPIClientCertSuffix)
+}
+
 func (s *Store) getSchemaRegistryNodeCertKey(
 	cluster *redpandav1alpha1.Cluster,
 ) string {
@@ -151,6 +192,10 @@ func (s *Store) getSchemaRegistryNodeCertKey(
 
 func (s *Store) getKafkaNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), "kafka-node")
+}
+
+func (s *Store) getAdminAPINodeCertKey(cluster *redpandav1alpha1.Cluster) string {
+	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), adminAPINodeCertSuffix)
 }
 
 // GetSchemaRegistryClientCert gets the Schema Registry client cert and returns Secret object
