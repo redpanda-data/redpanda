@@ -82,7 +82,7 @@ public:
           proxy_client_config(kafka_port),
           sch_groups);
         app.check_environment();
-        app.wire_up_and_start(*app_signal);
+        app.wire_up_and_start(*app_signal, true);
 
         // used by request context builder
         proto = std::make_unique<kafka::protocol>(

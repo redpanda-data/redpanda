@@ -41,6 +41,7 @@ enum class feature : std::uint64_t {
     raft_improved_configuration = 0x80,
     transaction_ga = 0x100,
     raftless_node_status = 0x200,
+    rpc_v2_by_default = 0x400,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -148,11 +149,18 @@ constexpr static std::array feature_schema{
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{6},
+    cluster_version{7},
     "raftless_node_status",
     feature::raftless_node_status,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster_version{7},
+    "rpc_v2_by_default",
+    feature::rpc_v2_by_default,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+
   feature_spec{
     cluster_version{2001},
     "__test_alpha",
@@ -316,7 +324,20 @@ public:
 
     ss::future<> await_feature(feature f, ss::abort_source& as);
 
+    /**
+     * Variant of await_feature that uses a built-in abort source rather
+     * than requiring one to be passed in.
+     *
+     * You should almost always use an explicit abort_source version above:
+     * using the built-in feature table abort source is only for locations
+     * early in startup that otherwise don't have an abort source
+     * handy.
+     */
+    ss::future<> await_feature(feature f) { return await_feature(f, _as); };
+
     ss::future<> await_feature_preparing(feature f, ss::abort_source& as);
+
+    ss::future<> stop();
 
     static cluster_version get_latest_logical_version();
 
@@ -376,6 +397,9 @@ private:
 
     // Unit testing hook.
     friend class feature_table_fixture;
+
+    ss::gate _gate;
+    ss::abort_source _as;
 };
 
 } // namespace features

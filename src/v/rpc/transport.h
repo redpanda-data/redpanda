@@ -127,10 +127,15 @@ private:
      * version level used when dispatching requests. this value may change
      * during the lifetime of the transport. for example the version may be
      * upgraded if it is discovered that a server supports a newer version.
-     *
-     * reset to v1 in reset_state() to support reconnect_transport.
      */
-    transport_version _version{transport_version::v1};
+    transport_version _version;
+
+    /*
+     * The initial version for new connections.  If we upgrade to a newer
+     * version from negotiation with a peer, _version will be incremented
+     * but will reset to _default_version when reset_state() is called.
+     */
+    transport_version _default_version;
 
     friend class ::rpc_integration_fixture_oc_ns_adl_serde_no_upgrade;
     friend class ::rpc_integration_fixture_oc_ns_adl_only_no_upgrade;

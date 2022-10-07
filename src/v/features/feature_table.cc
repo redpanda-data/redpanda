@@ -41,6 +41,8 @@ std::string_view to_string_view(feature f) {
         return "transaction_ga";
     case feature::raftless_node_status:
         return "raftless_node_status";
+    case feature::rpc_v2_by_default:
+        return "rpc_v2_by_default";
     case feature::test_alpha:
         return "__test_alpha";
     }
@@ -69,7 +71,7 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
-static constexpr cluster_version latest_version = cluster_version{6};
+static constexpr cluster_version latest_version = cluster_version{7};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
@@ -84,6 +86,18 @@ feature_table::feature_table() {
         }
         _feature_state.emplace_back(feature_state{spec});
     }
+}
+
+ss::future<> feature_table::stop() {
+    _as.request_abort();
+
+    // Don't trust callers to have fired their abort source in the right
+    // order wrt this class's stop(): forcibly abort anyone still waiting,
+    // so that our gate close is guaranteed to proceed.
+    _waiters_active.abort_all();
+    _waiters_preparing.abort_all();
+
+    return _gate.close();
 }
 
 /**
@@ -253,6 +267,8 @@ void feature_table::apply_action(const feature_update_action& fua) {
  * will be an exceptional future.
  */
 ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
+    ss::gate::holder guard(_gate);
+
     if (is_active(f)) {
         vlog(featureslog.trace, "Feature {} already active", to_string_view(f));
         return ss::now();
@@ -273,6 +289,8 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
  */
 ss::future<>
 feature_table::await_feature_preparing(feature f, ss::abort_source& as) {
+    ss::gate::holder guard(_gate);
+
     if (is_preparing(f)) {
         vlog(
           featureslog.trace, "Feature {} already preparing", to_string_view(f));

@@ -129,7 +129,8 @@ ss::future<> maybe_create_tcp_client(
                     .server_addr = std::move(rpc_address),
                     .credentials = cert,
                     .disable_metrics = net::metrics_disabled(
-                      config::shard_local_cfg().disable_metrics)},
+                      config::shard_local_cfg().disable_metrics),
+                    .version = cache.get_default_transport_version()},
                   rpc::make_exponential_backoff_policy<rpc::clock_type>(
                     std::chrono::seconds(1), std::chrono::seconds(15)));
             });
