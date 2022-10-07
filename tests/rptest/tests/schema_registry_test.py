@@ -1456,4 +1456,61 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                                 super_password))
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
-        assert result_raw.json() == [1]
+
+    @cluster(num_nodes=3)
+    def test_delete_subject_version(self):
+        """
+        Verify delete subject version
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key",
+            data=schema_1_data,
+            auth=(super_username, super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "NONE"}),
+            auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete version 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  auth=(self.username,
+                                                        self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  auth=(super_username,
+                                                        super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Permanently delete version 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  permanent=True,
+                                                  auth=(self.username,
+                                                        self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1,
+                                                  permanent=True,
+                                                  auth=(super_username,
+                                                        super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
