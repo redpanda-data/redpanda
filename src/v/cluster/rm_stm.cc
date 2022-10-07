@@ -568,49 +568,58 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
     }
 
-    auto preparing_it = _mem_state.preparing.find(pid);
+    std::optional<model::tx_seq> tx_seq_for_pid;
+    if (!is_transaction_ga()) {
+        auto preparing_it = _mem_state.preparing.find(pid);
 
-    if (preparing_it != _mem_state.preparing.end()) {
-        if (preparing_it->second.tx_seq > tx_seq) {
-            // - tm_stm & rm_stm failed during prepare
-            // - during recovery tm_stm recommits its previous tx
-            // - that commit (we're here) collides with "next" failed prepare
-            // it may happen only if the commit passed => acking
-            co_return tx_errc::none;
-        }
+        if (preparing_it != _mem_state.preparing.end()) {
+            if (preparing_it->second.tx_seq > tx_seq) {
+                // - tm_stm & rm_stm failed during prepare
+                // - during recovery tm_stm recommits its previous tx
+                // - that commit (we're here) collides with "next" failed
+                // prepare it may happen only if the commit passed => acking
+                co_return tx_errc::none;
+            }
 
-        ss::sstring msg;
-        if (preparing_it->second.tx_seq == tx_seq) {
-            msg = ssx::sformat(
-              "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
-              pid,
-              tx_seq);
-        } else {
-            msg = ssx::sformat(
-              "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
-              pid,
-              tx_seq,
-              preparing_it->second.tx_seq);
-        }
+            ss::sstring msg;
+            if (preparing_it->second.tx_seq == tx_seq) {
+                msg = ssx::sformat(
+                  "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
+                  pid,
+                  tx_seq);
+            } else {
+                msg = ssx::sformat(
+                  "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
+                  pid,
+                  tx_seq,
+                  preparing_it->second.tx_seq);
+            }
 
-        if (_recovery_policy == best_effort) {
             vlog(_ctx_log.error, "{}", msg);
             co_return tx_errc::request_rejected;
         }
-        vassert(false, "{}", msg);
+
+        auto prepare_it = _log_state.prepared.find(pid);
+
+        if (prepare_it != _log_state.prepared.end()) {
+            tx_seq_for_pid = prepare_it->second.tx_seq;
+        }
     }
 
-    auto prepare_it = _log_state.prepared.find(pid);
+    if (!tx_seq_for_pid) {
+        tx_seq_for_pid = get_tx_seq(pid);
+    }
 
-    if (prepare_it == _log_state.prepared.end()) {
+    if (!tx_seq_for_pid) {
         vlog(
           _ctx_log.trace,
-          "Can't find prepare for pid:{} => replaying already comitted commit",
+          "Can't find tx_seq for pid:{} => replaying already comitted "
+          "commit",
           pid);
         co_return tx_errc::none;
     }
 
-    if (prepare_it->second.tx_seq > tx_seq) {
+    if (*tx_seq_for_pid > tx_seq) {
         // rare situation:
         //   * tm_stm prepares (tx_seq+1)
         //   * prepare on this rm passes but tm_stm failed to write to disk
@@ -621,15 +630,15 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
           "already comitted commit",
           pid,
-          prepare_it->second.tx_seq,
+          *tx_seq_for_pid,
           tx_seq);
         co_return tx_errc::none;
-    } else if (prepare_it->second.tx_seq < tx_seq) {
+    } else if (*tx_seq_for_pid < tx_seq) {
         std::string msg = fmt::format(
           "Rejecting commit with tx_seq:{} since prepare with lesser tx_seq:{} "
           "exists",
           tx_seq,
-          prepare_it->second.tx_seq);
+          *tx_seq_for_pid);
         if (_recovery_policy == best_effort) {
             vlog(_ctx_log.error, "{}", msg);
             co_return tx_errc::request_rejected;
