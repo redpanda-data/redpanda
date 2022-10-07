@@ -1411,3 +1411,49 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
             auth=(super_username, super_password))
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["is_compatible"] == True
+
+    @cluster(num_nodes=3)
+    def test_delete_subject(self):
+        """
+        Verify delete subject
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key",
+            data=schema_1_data,
+            auth=(super_username, super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete subject")
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          auth=(super_username,
+                                                super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1]
+
+        self.logger.debug("Permanently delete subject")
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          permanent=True,
+                                          auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          permanent=True,
+                                          auth=(super_username,
+                                                super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1]
