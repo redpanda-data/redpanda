@@ -1251,3 +1251,44 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                               auth=(super_username,
                                                     super_password))
         assert result_raw.status_code == requests.codes.ok
+
+    @cluster(num_nodes=3)
+    def test_post_subjects_subject(self):
+        """
+        Verify posting a schema
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.info("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=subject,
+            data=json.dumps({"schema": schema1_def}),
+            auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        result_raw = self._post_subjects_subject(
+            subject=subject,
+            data=json.dumps({"schema": schema1_def}),
+            auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        self.logger.info("Posting existing schema should be success")
+        result_raw = self._post_subjects_subject(
+            subject=subject,
+            data=json.dumps({"schema": schema1_def}),
+            auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["subject"] == subject
+        assert result["id"] == 1
+        assert result["version"] == 1
+        assert result["schema"]
