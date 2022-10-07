@@ -952,6 +952,10 @@ ss::future<> rm_stm::start() {
 
 rm_stm::transaction_info::status_t
 rm_stm::get_tx_status(model::producer_identity pid) const {
+    if (is_transaction_ga()) {
+        return transaction_info::status_t::ongoing;
+    }
+
     if (_mem_state.preparing.contains(pid)) {
         return transaction_info::status_t::preparing;
     }
