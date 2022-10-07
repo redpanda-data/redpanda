@@ -84,19 +84,18 @@ get_brokers(server::request_t rq, server::reply_t rp) {
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
-    // Servicing the request must be handled on the
-    // same core where the client is held. So we capture
-    // everything in a handler and pass that to the cache.
-    auto handler = [user{rq.user},
-                    authn_method{rq.authn_method},
-                    make_metadata_req](kafka_client_cache& cache) mutable {
-        client_ptr client = cache.fetch_or_insert(user, authn_method);
-        return client->dispatch(make_metadata_req).finally([client] {});
-    };
 
     return rq.service()
       .client_cache()
-      .invoke_on_cache(rq.user, handler)
+      .invoke_on_cache(
+        rq.user,
+        [user{rq.user}, authn_method{rq.authn_method}, make_metadata_req](
+          kafka_client_cache& cache) mutable {
+            // Servicing the request must be handled on the same core where the
+            // client is held. So we dispatch the request in this handler.
+            client_ptr client = cache.fetch_or_insert(user, authn_method);
+            return client->dispatch(make_metadata_req).finally([client] {});
+        })
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           json::get_brokers_res brokers;
