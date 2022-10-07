@@ -104,7 +104,7 @@ inline constexpr auto add_random_batch = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batches = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 5>();
+    arg_3_way_assert<sizeof...(args), 1, 6>();
     return std::make_tuple(
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -244,6 +244,23 @@ public:
                   std::get<3>(args),
                   std::get<4>(args))
                   .get();
+            } else if constexpr (size == 6) {
+                add_random_batches(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args))
+                  .get();
+            } else if constexpr (size == 7) {
+                add_random_batches(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args),
+                  std::get<6>(args))
+                  .get();
             }
         }
         return *this;
@@ -255,13 +272,15 @@ public:
       maybe_compress_batches comp = maybe_compress_batches::yes,
       model::record_batch_type bt = model::record_batch_type::raft_data, // data
       log_append_config config = append_config(),
-      should_flush_after flush = should_flush_after::yes);
+      should_flush_after flush = should_flush_after::yes,
+      std::optional<model::timestamp> base_ts = std::nullopt);
     ss::future<> add_random_batches(
       model::offset offset,
       int count,
       maybe_compress_batches comp = maybe_compress_batches::yes,
       log_append_config config = append_config(),
-      should_flush_after flush = should_flush_after::yes);
+      should_flush_after flush = should_flush_after::yes,
+      std::optional<model::timestamp> base_ts = std::nullopt);
     ss::future<> add_random_batches(
       model::offset offset,
       log_append_config config = append_config(),
@@ -325,6 +344,8 @@ public:
 
     storage::api& storage() { return _storage; }
 
+    void set_time(model::timestamp t) { _ts_cursor = t; }
+
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
@@ -332,6 +353,20 @@ private:
           [c = std::move(c)](model::record_batch_reader reader) mutable {
               return std::move(reader).consume(std::move(c), model::no_timeout);
           });
+    }
+
+    std::optional<model::timestamp> now(std::optional<model::timestamp> input) {
+        if (input) {
+            return input;
+        } else if (_ts_cursor) {
+            return _ts_cursor;
+        } else {
+            return model::timestamp::now();
+        }
+    }
+
+    void advance_time(const model::record_batch& b) {
+        _ts_cursor = model::timestamp{b.header().max_timestamp() + 1};
     }
 
     ss::future<> write(
@@ -345,6 +380,7 @@ private:
     size_t _bytes_written{0};
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;
+    std::optional<model::timestamp> _ts_cursor;
 };
 
 } // namespace storage
