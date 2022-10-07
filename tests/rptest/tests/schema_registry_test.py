@@ -1112,3 +1112,38 @@ class SchemaRegistryTest(SchemaRegistryEndpoints):
                 assert schema.json().get("schemaType") is None
             else:
                 assert schema.json()["schemaType"] == protocols[i].name
+
+
+class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
+    """
+    Test schema registry against a redpanda cluster with HTTP Basic Auth enabled.
+    """
+    username = 'red'
+    password = 'panda'
+
+    def __init__(self, context):
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.sr_authn_method = 'http_basic'
+
+        super(SchemaRegistryBasicAuthTest, self).__init__(context,
+                                                          security=security)
+
+    @cluster(num_nodes=3)
+    def test_schemas_types(self):
+        """
+        Verify the schema registry returns the supported types
+        """
+        result_raw = self._get_schemas_types(auth=(self.username,
+                                                   self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug(f"Request schema types with default accept header")
+        result_raw = self._get_schemas_types(auth=(super_username,
+                                                   super_password))
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert set(result) == {"PROTOBUF", "AVRO"}

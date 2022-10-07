@@ -85,8 +85,27 @@ schema_registry:
   schema_registry_api:
     address: "{{node.account.hostname}}"
     port: 8081
+    {% if sr_authn_method %}
+    authentication_method: {{ sr_authn_method }}
+    {% endif %}
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+schema_registry_client:
+  # kafka-api compatible brokers
+  brokers:
+  {% for node in nodes.values() %}
+    - address: "{{node.account.hostname}}"
+      port: 9092
+  {% endfor %}
+
+  retries: 10
+  retry_base_backoff_ms: 10
+  {% if sasl_enabled %}
+  sasl_mechanism: {{superuser[2]}}
+  scram_username: {{superuser[0]}}
+  scram_password: {{superuser[1]}}
+  {% endif %}
 {% endif %}
 
 rpk:
