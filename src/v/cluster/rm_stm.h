@@ -380,6 +380,8 @@ private:
         // by spec should be ready for thier commands being rejected so it's
         // ok by design to have false rejects
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
+
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
     };
 
     struct mem_state {

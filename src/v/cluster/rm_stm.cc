@@ -378,8 +378,17 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::fenced;
     }
 
-    auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
-    if (!inserted) {
+    bool insert = true;
+    if (!is_transaction_ga()) {
+        // We do not need it after transaction_ga. Because we do not have
+        // prepare state anymore
+        auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
+        insert &= inserted;
+    }
+
+    auto [_, insert_tx_seq] = _log_state.tx_seqs.emplace(pid, tx_seq);
+    insert &= insert_tx_seq;
+    if (!insert) {
         // TODO: https://app.clubhouse.io/vectorized/story/2194
         // tm_stm forgot that it had already begun a transaction
         // (it may happen when it crashes)
@@ -1753,7 +1762,8 @@ void rm_stm::apply_fence(model::record_batch&& b) {
       rm_stm::fence_control_record_version);
 
     if (version == rm_stm::fence_control_record_version) {
-        reflection::adl<model::tx_seq>{}.from(val_reader);
+        auto tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        _log_state.tx_seqs.try_emplace(bid.pid, tx_seq);
     }
 
     auto key_buf = record.release_key();
