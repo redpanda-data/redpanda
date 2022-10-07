@@ -178,3 +178,16 @@ SEASTAR_THREAD_TEST_CASE(test_available_tokens_capacity) {
     consume(throttler, 10);
     BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 3 - 10);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_available_tokens_change_capacity) {
+    token_bucket<ss::manual_clock> throttler(
+      RATE, "test_available_tokens_change_capacity", RATE * 3);
+    ss::manual_clock::advance(ss::lowres_clock::duration(4s));
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 3);
+    throttler.update_capacity(RATE * 2);
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 2);
+    throttler.update_capacity(RATE * 3);
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 2);
+    ss::manual_clock::advance(ss::lowres_clock::duration(2s));
+    BOOST_REQUIRE_EQUAL(throttler.available(), RATE * 3);
+}
