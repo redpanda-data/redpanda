@@ -89,13 +89,32 @@ get_bool_value(const config_map_t& config, std::string_view key) {
 
 static std::optional<model::shadow_indexing_mode>
 get_shadow_indexing_mode(const config_map_t& config) {
-    std::optional<model::shadow_indexing_mode> mode;
     auto arch_enabled = get_bool_value(config, topic_property_remote_write);
-    if (arch_enabled && *arch_enabled) {
+    auto si_enabled = get_bool_value(config, topic_property_remote_read);
+
+    // If the topic creation does not explicitly specify a shadow indexing mode
+    // we should use the default shadow indexing mode.
+    if (!arch_enabled && !si_enabled) {
+        return std::nullopt;
+    }
+
+    // If one of the topic properties is missing, patch it with the cluster
+    // config.
+    if (!arch_enabled) {
+        arch_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_write();
+    }
+
+    if (!si_enabled) {
+        si_enabled
+          = config::shard_local_cfg().cloud_storage_enable_remote_read();
+    }
+
+    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+    if (*arch_enabled) {
         mode = model::shadow_indexing_mode::archival;
     }
-    auto si_enabled = get_bool_value(config, topic_property_remote_read);
-    if (si_enabled && *si_enabled) {
+    if (*si_enabled) {
         mode = mode == model::shadow_indexing_mode::archival
                  ? model::shadow_indexing_mode::full
                  : model::shadow_indexing_mode::fetch;
