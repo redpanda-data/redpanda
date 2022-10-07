@@ -63,7 +63,19 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
-    BOOST_CHECK(resp.data.topics[0].partitions[0].timestamp >= query_ts);
+    // The random batch generator starts timestamps from _before_ the walltime
+    // when the first record in the batch is written.  This means that the
+    // timequery may hit the first batch, and get the batch's start_timestamp
+    // because the batch is compressed, and thereby get a timestamp result
+    // earlier than the walltime when we started producing.
+    // At the same time, the walltime in batch generation may be arbitrarily
+    // far after the walltime when query_ts was initialized, so we can say
+    // nothing authoritative about the relationship between the query time
+    // and the result time: they may be equal, greater, or less then.
+    // FIXME: revise random batch generation to avoid this apparent time
+    // travel in the test data, and reinstate this check
+    // BOOST_CHECK(query_ts <= resp.data.topics[0].partitions[0].timestamp);
+
     BOOST_CHECK(resp.data.topics[0].partitions[0].offset >= model::offset(0));
 }
 
