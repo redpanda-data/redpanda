@@ -216,10 +216,12 @@ class PandaProxyEndpoints(RedpandaTest):
                      offset=0,
                      max_bytes=1024,
                      timeout_ms=1000,
-                     headers=HTTP_FETCH_TOPIC_HEADERS):
+                     headers=HTTP_FETCH_TOPIC_HEADERS,
+                     **kwargs):
         return requests.get(
             f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
-            headers=headers)
+            headers=headers,
+            **kwargs)
 
     def _create_consumer(self, group_id, headers=HTTP_CREATE_CONSUMER_HEADERS):
         res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
@@ -999,3 +1001,54 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         produce_result = result_raw.json()
         for o in produce_result["offsets"]:
             assert o["offset"] == 0, f'error_code {o["error_code"]}'
+
+    @cluster(num_nodes=3)
+    def test_fetch_topic(self):
+        """
+        Create a topic, publish to it, and verify that pandaproxy can fetch
+        from it.
+        """
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+
+        # Regular user without authz priviledges
+        # should fail
+        result = self._fetch_topic(self.topic, data,
+                                   auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.info(f"Producing to topic: {self.topic}")
+        produce_result_raw = self._produce_topic(self.topic,
+                                                 data,
+                                                 auth=(super_username,
+                                                       super_password))
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 0, f'error_code {o["error_code"]}'
+
+        self.logger.info(f"Consuming from topic: {self.topic}")
+        fetch_raw_result_0 = self._fetch_topic(self.topic,
+                                               0,
+                                               auth=(super_username,
+                                                     super_password))
+        assert fetch_raw_result_0.status_code == requests.codes.ok
+        fetch_result_0 = fetch_raw_result_0.json()
+        expected = json.loads(data)
+        assert len(fetch_result_0) == 1
+        assert fetch_result_0[0]["topic"] == self.topic
+        assert fetch_result_0[0]["key"] is None
+        assert fetch_result_0[0]["value"] == expected["records"][0]["value"]
+        assert fetch_result_0[0]["partition"] == expected["records"][0][
+            "partition"]
+        assert fetch_result_0[0]["offset"] == 0
