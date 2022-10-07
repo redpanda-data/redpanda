@@ -731,13 +731,14 @@ ss::future<> admin_server::throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Timeout: {}", ec.message()),
               ss::httpd::reply::status_type::gateway_timeout);
+        case cluster::errc::replication_error:
         case cluster::errc::update_in_progress:
         case cluster::errc::leadership_changed:
         case cluster::errc::waiting_for_recovery:
         case cluster::errc::no_leader_controller:
         case cluster::errc::shutting_down:
             throw ss::httpd::base_exception(
-              fmt::format("Not ready ({})", ec.message()),
+              fmt::format("Service unavailable ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
         case cluster::errc::not_leader:
             throw co_await redirect_to_leader(req, ntp);
@@ -745,7 +746,7 @@ ss::future<> admin_server::throw_on_error(
             throw co_await redirect_to_leader(req, model::controller_ntp);
         case cluster::errc::no_update_in_progress:
             throw ss::httpd::bad_request_exception(
-              "can not cancel partition move operation as there is no move "
+              "Cannot cancel partition move operation as there is no move "
               "in progress");
         default:
             throw ss::httpd::server_error_exception(
