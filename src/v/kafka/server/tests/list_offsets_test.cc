@@ -25,8 +25,11 @@ using namespace std::chrono_literals;
 
 FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     wait_for_controller_leadership().get0();
-    auto query_ts = model::timestamp::now();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+
+    // Synthetic default timestamp for produced data
+    auto base_ts = model::timestamp{10000};
+
+    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -54,7 +57,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
       .name = ntp.tp.topic,
       .partitions = {{
         .partition_index = ntp.tp.partition,
-        .timestamp = query_ts,
+        .timestamp = base_ts,
       }},
     }};
 
@@ -63,20 +66,8 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
-    // The random batch generator starts timestamps from _before_ the walltime
-    // when the first record in the batch is written.  This means that the
-    // timequery may hit the first batch, and get the batch's start_timestamp
-    // because the batch is compressed, and thereby get a timestamp result
-    // earlier than the walltime when we started producing.
-    // At the same time, the walltime in batch generation may be arbitrarily
-    // far after the walltime when query_ts was initialized, so we can say
-    // nothing authoritative about the relationship between the query time
-    // and the result time: they may be equal, greater, or less then.
-    // FIXME: revise random batch generation to avoid this apparent time
-    // travel in the test data, and reinstate this check
-    // BOOST_CHECK(query_ts <= resp.data.topics[0].partitions[0].timestamp);
-
-    BOOST_CHECK(resp.data.topics[0].partitions[0].offset >= model::offset(0));
+    BOOST_CHECK(resp.data.topics[0].partitions[0].offset == model::offset(0));
+    BOOST_CHECK(resp.data.topics[0].partitions[0].timestamp == base_ts);
 }
 
 FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
@@ -151,7 +142,11 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
 
 FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
     wait_for_controller_leadership().get();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+
+    auto base_ts = model::timestamp{100000};
+    auto future_ts = model::timestamp{9999999};
+
+    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -170,15 +165,15 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
       .name = ntp.tp.topic,
       .partitions = {{
         .partition_index = ntp.tp.partition,
-        .timestamp = model::timestamp::now(),
+        .timestamp = future_ts,
       }},
     }};
 
     auto resp = client.dispatch(req, kafka::api_version(4)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    // request is asking for messages with timestamp => timestamp::now(),
-    // doesn't find it and returns an empty response
+    // request is asking for messages with timestamp far ahead of the produced
+    // records: doesn't find it and returns an empty response
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
     BOOST_CHECK(
@@ -222,9 +217,14 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     const size_t record_count = 2;
     std::vector<model::record_batch> batches;
     batches.reserve(batch_count);
+
+    // Arbitrary synthetic timestamp for start of produce
+    auto base_timestamp = 100000;
+
     for (long i = 0; i < batch_count; ++i) {
         batches.push_back(make_random_batch(model::test::record_batch_spec{
-          .count = record_count, .timestamp{i}}));
+          .count = record_count,
+          .timestamp{base_timestamp + i * record_count}}));
         auto req = make_produce_request(ntp.tp, batches.back().share());
         auto res = client.dispatch(std::move(req), kafka::api_version(7)).get();
         const auto& topics = res.data.responses;
@@ -241,7 +241,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
           .name = ntp.tp.topic,
           .partitions = {{
             .partition_index = ntp.tp.partition,
-            .timestamp = model::timestamp(i),
+            .timestamp = model::timestamp(base_timestamp + i * record_count),
           }},
         }};
 
@@ -250,9 +250,11 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
         BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
         BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
         BOOST_CHECK(
-          resp.data.topics[0].partitions[0].timestamp == model::timestamp(i));
+          resp.data.topics[0].partitions[0].timestamp
+          == model::timestamp(base_timestamp + i * record_count));
         BOOST_CHECK(
-          resp.data.topics[0].partitions[0].offset == model::offset(i * 2));
+          resp.data.topics[0].partitions[0].offset
+          == model::offset(i * record_count));
     }
 
     client.stop().then([&client] { client.shutdown(); }).get();
