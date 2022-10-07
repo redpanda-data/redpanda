@@ -121,7 +121,7 @@ public:
     using duration_type = clock_type::duration;
     using time_point_type = clock_type::time_point;
 
-    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{0};
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};

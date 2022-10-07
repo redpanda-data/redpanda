@@ -1749,7 +1749,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         // to prevent being GCed by the compaction
         auto batch = make_tx_batch(
           model::record_batch_type::tx_fence,
-          fence_control_record_version,
+          fence_control_record_v0_version,
           r.pid,
           std::move(fence));
         auto reader = model::make_memory_record_batch_reader(std::move(batch));

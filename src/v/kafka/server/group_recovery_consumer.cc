@@ -110,7 +110,7 @@ group_recovery_consumer::operator()(model::record_batch batch) {
         co_return ss::stop_iteration::no;
     } else if (batch.header().type == model::record_batch_type::tx_fence) {
         auto cmd = parse_tx_batch<group_log_fencing>(
-          batch, group::fence_control_record_version);
+          batch, group::fence_control_record_v0_version);
 
         auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
