@@ -1119,33 +1119,37 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::invalid_producer_epoch;
     }
 
-    if (!_mem_state.expected.contains(bid.pid)) {
-        // there is an inflight abort
-        // or this partition lost leadership => can't continue tx since there is
-        //  risk that ack=1 writes are lost
-        // or it's a client bug and it keeps producing after commit / abort
-        // or a replication of the first batch in a transaction has failed
-        vlog(
-          _ctx_log.warn,
-          "Partition doesn't expect record with pid:{}",
-          bid.pid);
-        co_return errc::invalid_producer_epoch;
-    }
+    if (!is_transaction_ga()) {
+        if (!_mem_state.expected.contains(bid.pid)) {
+            // there is an inflight abort
+            // or this partition lost leadership => can't continue tx since
+            // there is
+            //  risk that ack=1 writes are lost
+            // or it's a client bug and it keeps producing after commit / abort
+            // or a replication of the first batch in a transaction has failed
+            vlog(
+              _ctx_log.warn,
+              "Partition doesn't expect record with pid:{}",
+              bid.pid);
+            co_return errc::invalid_producer_epoch;
+        }
 
-    if (_mem_state.preparing.contains(bid.pid)) {
-        vlog(
-          _ctx_log.warn,
-          "Client keeps producing after initiating a prepare for pid:{}",
-          bid.pid);
-        co_return errc::generic_tx_error;
-    }
+        if (_mem_state.preparing.contains(bid.pid)) {
+            vlog(
+              _ctx_log.warn,
+              "Client keeps producing after initiating a prepare for pid:{}",
+              bid.pid);
+            co_return errc::generic_tx_error;
+        }
 
-    if (_mem_state.estimated.contains(bid.pid)) {
-        // we received second produce request while the first is still
-        // being processed. this is highly unlikely situation because
-        // we replicate with ack=1 and it should be fast
-        vlog(_ctx_log.warn, "Too frequent produce with same pid:{}", bid.pid);
-        co_return errc::generic_tx_error;
+        if (_mem_state.estimated.contains(bid.pid)) {
+            // we received second produce request while the first is still
+            // being processed. this is highly unlikely situation because
+            // we replicate with ack=1 and it should be fast
+            vlog(
+              _ctx_log.warn, "Too frequent produce with same pid:{}", bid.pid);
+            co_return errc::generic_tx_error;
+        }
     }
 
     if (_mem_state.inflight[bid.pid] > 0) {
