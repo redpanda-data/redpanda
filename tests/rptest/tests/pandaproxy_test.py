@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import base64
 import http.client
 import json
 import uuid
@@ -177,8 +176,10 @@ class PandaProxyEndpoints(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
 
-    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
-        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
+    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS, **kwargs):
+        return requests.get(f"{self._base_uri()}/brokers",
+                            headers=headers,
+                            **kwargs)
 
     def _create_topics(self,
                        names=create_topic_names(1),
@@ -902,9 +903,6 @@ class PandaProxySASLTest(PandaProxyEndpoints):
 
 
 class PandaProxyBasicAuthTest(PandaProxyEndpoints):
-    password = 'simple'
-    algorithm = 'SCRAM-SHA-256'
-
     def __init__(self, context):
 
         security = SecurityConfig()
@@ -915,26 +913,18 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         super(PandaProxyBasicAuthTest, self).__init__(context,
                                                       security=security)
 
-    def encode_base64(self, username: str, password: str):
-        msg = f'{username}:{password}'
-        # The decode at the end removes bytes type
-        return base64.b64encode(msg.encode('ascii')).decode()
-
     @cluster(num_nodes=3)
-    def test_basic_auth(self):
-        # Regular user has no access to Kafka API
-        headers = {
-            "authorization":
-            "Basic " + self.encode_base64("panda", self.password)
-        }
-        brokers = self._get_brokers(headers=headers).json()
-        assert brokers['error_code'] == 40101
+    def test_get_brokers(self):
+        # Regular user without authz priviledges
+        # should fail
+        res = self._get_brokers(auth=('red', 'panda')).json()
+        assert res['error_code'] == 40101
 
-        # Super user has full access to Kafka API
-        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
-        headers = {
-            "authorization": "Basic " + self.encode_base64(username, password)
-        }
-        brokers = self._get_brokers(headers=headers).json()
-        brokers['brokers'].sort()
-        assert brokers['brokers'] == [1, 2, 3]
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        brokers_raw = self._get_brokers(auth=(super_username, super_password))
+        brokers = brokers_raw.json()['brokers']
+
+        nodes = enumerate(self.redpanda.nodes, 1)
+        node_idxs = [node[0] for node in nodes]
+
+        assert sorted(brokers) == sorted(node_idxs)
