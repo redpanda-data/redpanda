@@ -1,4 +1,7 @@
 #!/bin/bash
-if [[ $ENABLE_STEP_CDT == '1' && -x bin/task ]]; then
-  bin/task ci:cdt-cleanup
+if [[ -x bin/task ]]; then
+  if [[ $ENABLE_STEP_CDT == '1' ]]; then
+    bin/task ci:cdt-cleanup
+  fi
+  bin/task rp:stop-compose-cluster
 fi
