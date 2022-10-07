@@ -44,21 +44,25 @@ static constexpr std::string_view complete_manifest_json = R"json({
             "is_compacted": false,
             "size_bytes": 1024,
             "base_offset": 10,
-            "committed_offset": 19
+            "committed_offset": 19,
+            "base_timestamp": 123000,
+            "max_timestamp": 123009
         },
         "20-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 2048,
             "base_offset": 20,
             "committed_offset": 29,
-            "max_timestamp": 1234567890
+            "base_timestamp": 123010,
+            "max_timestamp": 123019
         },
         "30-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 4096,
             "base_offset": 30,
             "committed_offset": 39,
-            "max_timestamp": 1234567890
+            "base_timestamp": 123020,
+            "max_timestamp": 123029
         }
     }
 })json";
@@ -95,6 +99,23 @@ static constexpr std::string_view no_size_bytes_segment_meta = R"json({
     "segments": {
         "10-1-v1.log": {
             "is_compacted": false,
+            "base_offset": 10,
+            "committed_offset": 19
+        }
+    }
+})json";
+
+static constexpr std::string_view no_timestamps_segment_meta = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
             "base_offset": 10,
             "committed_offset": 19
         }
@@ -178,6 +199,52 @@ static constexpr std::string_view missing_last_offset_manifest_json = R"json({
         }
     }
 })json";
+
+/**
+ * This manifest has gaps in both its offsets and timestamps.
+ */
+constexpr std::string_view manifest_with_gaps = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 59,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp": 123001,
+            "max_timestamp": 123020
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "base_timestamp": 123021,
+            "max_timestamp": 123030
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "base_timestamp": 123031,
+            "max_timestamp": 123040
+        },
+        "50-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 50,
+            "committed_offset": 59,
+            "base_timestamp": 123051,
+            "max_timestamp": 123060
+        }
+    }
+    })json";
 
 static const model::ntp manifest_ntp(
   model::ns("test-ns"), model::topic("test-topic"), model::partition_id(42));
@@ -306,6 +373,8 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .size_bytes = 1024,
          .base_offset = model::offset(10),
          .committed_offset = model::offset(19),
+         .base_timestamp = model::timestamp(123000),
+         .max_timestamp = model::timestamp(123009),
          .ntp_revision = model::initial_revision_id(
            1) // revision is propagated from manifest
        }},
@@ -315,7 +384,8 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .size_bytes = 2048,
          .base_offset = model::offset(20),
          .committed_offset = model::offset(29),
-         .max_timestamp = model::timestamp(1234567890),
+         .base_timestamp = model::timestamp(123010),
+         .max_timestamp = model::timestamp(123019),
          .ntp_revision = model::initial_revision_id(
            1) // revision is propagated from manifest
        }},
@@ -325,7 +395,8 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .size_bytes = 4096,
          .base_offset = model::offset(30),
          .committed_offset = model::offset(39),
-         .max_timestamp = model::timestamp(1234567890),
+         .base_timestamp = model::timestamp(123020),
+         .max_timestamp = model::timestamp(123029),
          .ntp_revision = model::initial_revision_id(
            1) // revision is propagated from manifest
        }},
@@ -378,6 +449,24 @@ SEASTAR_THREAD_TEST_CASE(test_no_size_bytes_segment_meta) {
                    "Missing size_bytes value in {10-1-v1.log} segment meta")
                  != std::string::npos;
       });
+}
+
+/**
+ * Segment metadata with missing timestamps are default initialized
+ */
+SEASTAR_THREAD_TEST_CASE(test_timestamps_segment_meta) {
+    partition_manifest m;
+    m.update(make_manifest_stream(no_timestamps_segment_meta)).get0();
+    std::map<ss::sstring, partition_manifest::segment_meta> expected = {
+      {"10-1-v1.log",
+       partition_manifest::segment_meta{
+         .is_compacted = false,
+         .size_bytes = 1024,
+         .base_offset = model::offset(10),
+         .committed_offset = model::offset(19),
+         .ntp_revision = model::initial_revision_id(
+           1) // revision is propagated from manifest
+       }}};
 }
 
 SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
@@ -629,4 +718,320 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
     BOOST_CHECK(
       serde::from_iobuf<old::metadata_stm_segment>(serde::to_iobuf(segment_new))
       == segment_old);
+}
+
+/**
+ * Reference implementation of partition_manifest::timequery
+ */
+std::optional<partition_manifest::segment_meta>
+reference_timequery(const partition_manifest& m, model::timestamp t) {
+    auto segment_iter = m.begin();
+    while (segment_iter != m.end()) {
+        auto base_timestamp = segment_iter->second.base_timestamp;
+        auto max_timestamp = segment_iter->second.max_timestamp;
+        if (base_timestamp > t || max_timestamp >= t) {
+            break;
+        } else {
+            ++segment_iter;
+        }
+    }
+
+    if (segment_iter == m.end()) {
+        return std::nullopt;
+    } else {
+        return segment_iter->second;
+    }
+}
+
+/**
+ * Assert equality of results from actual implementation
+ * and reference implementation at a particualr timestamp.
+ */
+void reference_check_timequery(
+  const partition_manifest& m, model::timestamp t) {
+    auto result = m.timequery(t);
+    auto reference_result = reference_timequery(m, t);
+    BOOST_REQUIRE(result == reference_result);
+}
+
+/**
+ * Generalized variation of scan_ts_segments that doesn't
+ * make assumptions about the overlapping-ness of segments: this
+ * does its own linear scan of segments, as a reference implementation
+ * of timequery.
+ */
+void scan_ts_segments_general(partition_manifest const& m) {
+    // Before range: should get first segment
+    reference_check_timequery(
+      m, model::timestamp{m.begin()->second.base_timestamp() - 100});
+
+    for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
+        auto& s = i->second;
+
+        // Time queries on times within the segment's range should return
+        // this segment.
+        reference_check_timequery(m, s.base_timestamp);
+        reference_check_timequery(m, s.max_timestamp);
+    }
+
+    // After range: should get null
+    reference_check_timequery(
+      m, model::timestamp{m.rbegin()->second.max_timestamp() + 1});
+}
+/**
+ * For a timequery() result, assert it is non-null and equal to the expected
+ * offset
+ */
+void expect_ts_segment(
+  std::optional<partition_manifest::segment_meta> const& s, int base_offset) {
+    BOOST_REQUIRE(s);
+    BOOST_REQUIRE_EQUAL(s->base_offset, model::offset{base_offset});
+}
+
+/**
+ * For non-overlapping time ranges on segments, verify that each timestamp
+ * maps to the expected segment.
+ */
+void scan_ts_segments(partition_manifest const& m) {
+    // Before range: should get first segment
+    expect_ts_segment(
+      m.timequery(model::timestamp{m.begin()->second.base_timestamp() - 100}),
+      m.begin()->second.base_offset);
+
+    partition_manifest::const_iterator previous;
+    for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
+        auto& s = i->second;
+
+        // Time queries on times within the segment's range should return
+        // this segment.
+        expect_ts_segment(m.timequery(s.base_timestamp), s.base_offset);
+        expect_ts_segment(m.timequery(s.max_timestamp), s.base_offset);
+
+        previous = i;
+    }
+
+    // After range: should get null
+    BOOST_REQUIRE(
+      m.timequery(model::timestamp{m.rbegin()->second.max_timestamp() + 1})
+      == std::nullopt);
+
+    // Also compare all results with reference implementation.
+    scan_ts_segments_general(m);
+}
+
+/**
+ * Test time queries on a manifest with contiguous non-overlapping time ranges.
+ */
+SEASTAR_THREAD_TEST_CASE(test_timequery_complete) {
+    partition_manifest m;
+    m.update(make_manifest_stream(complete_manifest_json)).get0();
+
+    scan_ts_segments(m);
+}
+
+/**
+ * Test time query when there is only one segment in the manifest
+ */
+SEASTAR_THREAD_TEST_CASE(test_timequery_single_segment) {
+    partition_manifest m;
+    m.update(make_manifest_stream(max_segment_meta_manifest_json)).get0();
+
+    scan_ts_segments(m);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_timequery_gaps) {
+    partition_manifest m;
+    m.update(make_manifest_stream(manifest_with_gaps)).get0();
+
+    // Timestamps within the segments and off the ends
+    scan_ts_segments(m);
+
+    // Timestamp in the gap
+    expect_ts_segment(m.timequery(model::timestamp{123045}), 50);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_timequery_wide_range) {
+    // Intentionaly ruin the initial interpolation guess by setting
+    // a minimum timestamp bound very far away from other timestamps: this
+    // makes sure we aren't just getting lucky in other tests when their guesses
+    // happen to hit the right segment in one shot.
+
+    static constexpr std::string_view wide_timestamps = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp": 123000,
+            "max_timestamp": 123009
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "base_timestamp": 923010,
+            "max_timestamp": 923019
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "base_timestamp": 923020,
+            "max_timestamp": 923029
+        },
+        "40-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 40,
+            "committed_offset": 49,
+            "base_timestamp": 923030,
+            "max_timestamp": 923039
+        }
+    }
+})json";
+
+    partition_manifest m;
+    m.update(make_manifest_stream(wide_timestamps)).get0();
+
+    scan_ts_segments(m);
+}
+
+/**
+ * Nothing internally to redpanda guarantees anything about the relationship
+ * between timestamps on different segments.  In CreateTime, the timestamps
+ * are totally arbitrary and don't even have to be in any kind of order:
+ * one segment's base_timestamp might be before a previous segment's
+ * base_timestamp.
+ *
+ * There are no particular rules about how redpanda has to handle totally
+ * janky out of order timestamps, but simple overlaps should work fine.
+ */
+SEASTAR_THREAD_TEST_CASE(test_timequery_overlaps) {
+    static constexpr std::string_view overlapping_timestamps = R"json({
+        "version": 1,
+        "namespace": "test-ns",
+        "topic": "test-topic",
+        "partition": 42,
+        "revision": 1,
+        "last_offset": 39,
+        "segments": {
+            "10-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 1024,
+                "base_offset": 10,
+                "committed_offset": 19,
+                "base_timestamp": 123000,
+                "max_timestamp": 123010
+            },
+            "20-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 2048,
+                "base_offset": 20,
+                "committed_offset": 29,
+                "base_timestamp": 123010,
+                "max_timestamp": 123020
+            },
+            "30-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 4096,
+                "base_offset": 30,
+                "committed_offset": 39,
+                "base_timestamp": 923020,
+                "max_timestamp": 923030
+            },
+            "40-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 4096,
+                "base_offset": 40,
+                "committed_offset": 49,
+                "base_timestamp": 923030,
+                "max_timestamp": 923040
+            }
+        }
+    })json";
+
+    partition_manifest m;
+    m.update(make_manifest_stream(overlapping_timestamps)).get0();
+
+    scan_ts_segments_general(m);
+}
+
+/**
+ * With entirely out of order timestamps, all bets are off, other than that
+ * we should not e.g. crash under these circumstances, and that queries
+ * outside the outer begin/end timestamps should return the first segment
+ * and null respectively.
+ */
+SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
+    static constexpr std::string_view raw = R"json({
+        "version": 1,
+        "namespace": "test-ns",
+        "topic": "test-topic",
+        "partition": 42,
+        "revision": 1,
+        "last_offset": 39,
+        "segments": {
+            "10-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 1024,
+                "base_offset": 10,
+                "committed_offset": 19,
+                "base_timestamp": 123000,
+                "max_timestamp": 123010
+            },
+            "20-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 2048,
+                "base_offset": 20,
+                "committed_offset": 29,
+                "base_timestamp": 113000,
+                "max_timestamp": 113020
+            },
+            "30-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 4096,
+                "base_offset": 30,
+                "committed_offset": 39,
+                "base_timestamp": 112000,
+                "max_timestamp": 114000
+            },
+            "40-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 4096,
+                "base_offset": 40,
+                "committed_offset": 49,
+                "base_timestamp": 150000,
+                "max_timestamp": 150333
+            }
+        }
+    })json";
+
+    partition_manifest m;
+    m.update(make_manifest_stream(raw)).get0();
+
+    // Before range: should get first segment
+    expect_ts_segment(
+      m.timequery(model::timestamp{m.begin()->second.base_timestamp() - 100}),
+      m.begin()->second.base_offset);
+
+    for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
+        auto& s = i->second;
+        // Not checking results: undefined for out of order data.
+        m.timequery(s.base_timestamp);
+        m.timequery(s.max_timestamp);
+    }
+
+    // After range: should get null
+    BOOST_REQUIRE(
+      m.timequery(model::timestamp{m.rbegin()->second.max_timestamp() + 1})
+      == std::nullopt);
 }
