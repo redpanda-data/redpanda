@@ -1180,3 +1180,74 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                                              super_password))
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [{"subject": subject, "version": 1}]
+
+    @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions(self):
+        """
+        Verify posting a schema
+        """
+
+        topic = create_topic_names(1)[0]
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key",
+            data=schema_1_data,
+            auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key",
+            data=schema_1_data,
+            auth=(super_username, super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Get subjects")
+        result_raw = self._get_subjects(auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_subjects(auth=(super_username, super_password))
+        assert result_raw.json() == [f"{topic}-key"]
+
+        self.logger.debug("Get schema versions for subject key")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1]
+
+        self.logger.debug("Get latest schema version for subject key")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key",
+            version="latest",
+            auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key",
+            version="latest",
+            auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["subject"] == f"{topic}-key"
+        assert result["version"] == 1
+
+        self.logger.debug("Get schema version 1")
+        result_raw = self._get_schemas_ids_id(id=1,
+                                              auth=(self.username,
+                                                    self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_schemas_ids_id(id=1,
+                                              auth=(super_username,
+                                                    super_password))
+        assert result_raw.status_code == requests.codes.ok
