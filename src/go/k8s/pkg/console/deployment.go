@@ -177,88 +177,23 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (map[string]string, error) {
 	syncedSecrets := map[string]map[string][]byte{}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() { //nolint:nestif // secret syncing is complex
-		data := map[string][]byte{}
-		if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
-			clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
-			if !exists {
-				return nil, fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-			}
-			certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
-			keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
-			data[corev1.TLSCertKey] = []byte(certfile)
-			data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
-		}
-
-		// Only write CA cert if not using DefaultCaFilePath
-		ca := &SecretTLSCa{
-			NodeSecretRef:  d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-			UsePublicCerts: UsePublicCerts,
-		}
-		if ca.useCaCert() {
-			caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
-			if !exists {
-				return nil, fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-			}
-			cafile := getOrEmpty("ca.crt", caCert.Data)
-			data["ca.crt"] = []byte(cafile)
-		}
-		syncedSecrets[schemaRegistrySyncedSecretKey] = data
+	schemaRegistrySecret, err := d.syncSchemaRegistrySecret()
+	if err != nil {
+		return nil, err
 	}
+	syncedSecrets[schemaRegistrySyncedSecretKey] = schemaRegistrySecret
 
-	if l := d.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
-		data := map[string][]byte{}
-		clientCert, exists := d.store.GetKafkaClientCert(d.clusterobj)
-		if !exists {
-			return nil, fmt.Errorf("get kafka client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-		}
-		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
-		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
-		data[corev1.TLSCertKey] = []byte(certfile)
-		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
-
-		// Only write CA cert if not using DefaultCaFilePath
-		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
-		if ca.useCaCert() {
-			caCert, exists := d.store.GetKafkaNodeCert(d.clusterobj)
-			if !exists {
-				return nil, fmt.Errorf("get kafka node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-			}
-			cafile := getOrEmpty("ca.crt", caCert.Data)
-			data["ca.crt"] = []byte(cafile)
-		}
-		syncedSecrets[kafkaSyncedSecretKey] = data
+	kafkaSecret, err := d.syncKafkaSecret()
+	if err != nil {
+		return nil, err
 	}
+	syncedSecrets[kafkaSyncedSecretKey] = kafkaSecret
 
-	if l := d.clusterobj.AdminAPIListener(); l.TLS.Enabled { //nolint:nestif // secret syncing is complex
-		data := map[string][]byte{}
-		if l.IsMutualTLSEnabled() {
-			clientCert, exists := d.store.GetAdminAPIClientCert(d.clusterobj)
-			if !exists {
-				return nil, fmt.Errorf("get admin api client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-			}
-			certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
-			keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
-			data[corev1.TLSCertKey] = []byte(certfile)
-			data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
-		}
-
-		// Only write CA cert if not using DefaultCaFilePath
-		nodeSecretRef := &corev1.ObjectReference{
-			Namespace: d.clusterobj.GetNamespace(),
-			Name:      fmt.Sprintf("%s-%s", d.clusterobj.GetName(), adminAPINodeCertSuffix),
-		}
-		ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
-		if ca.useCaCert() {
-			caCert, exists := d.store.GetAdminAPINodeCert(d.clusterobj)
-			if !exists {
-				return nil, fmt.Errorf("get admin api node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
-			}
-			cafile := getOrEmpty("ca.crt", caCert.Data)
-			data["ca.crt"] = []byte(cafile)
-		}
-		syncedSecrets[adminAPISyncedSecretKey] = data
+	adminAPISecret, err := d.syncAdminAPISecret()
+	if err != nil {
+		return nil, err
 	}
+	syncedSecrets[adminAPISyncedSecretKey] = adminAPISecret
 
 	secretNames := map[string]string{}
 	for key, ss := range syncedSecrets {
@@ -270,6 +205,103 @@ func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (map[string]string
 	}
 
 	return secretNames, nil
+}
+
+func (d *Deployment) syncSchemaRegistrySecret() (map[string][]byte, error) {
+	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		return nil, nil
+	}
+
+	data := map[string][]byte{}
+	if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
+		clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+		data[corev1.TLSCertKey] = []byte(certfile)
+		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+	}
+
+	// Only write CA cert if not using DefaultCaFilePath
+	ca := &SecretTLSCa{
+		NodeSecretRef:  d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+		UsePublicCerts: UsePublicCerts,
+	}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+	return data, nil
+}
+
+func (d *Deployment) syncKafkaSecret() (map[string][]byte, error) {
+	listener := d.clusterobj.KafkaListener()
+	if !listener.IsMutualTLSEnabled() {
+		return nil, nil
+	}
+
+	data := map[string][]byte{}
+	clientCert, exists := d.store.GetKafkaClientCert(d.clusterobj)
+	if !exists {
+		return nil, fmt.Errorf("get kafka client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+	}
+	certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+	keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+	data[corev1.TLSCertKey] = []byte(certfile)
+	data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+
+	// Only write CA cert if not using DefaultCaFilePath
+	ca := &SecretTLSCa{NodeSecretRef: listener.TLS.NodeSecretRef}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetKafkaNodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get kafka node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+	return data, nil
+}
+
+func (d *Deployment) syncAdminAPISecret() (map[string][]byte, error) {
+	listener := d.clusterobj.AdminAPIListener()
+	if !listener.TLS.Enabled {
+		return nil, nil
+	}
+
+	data := map[string][]byte{}
+	if listener.IsMutualTLSEnabled() {
+		clientCert, exists := d.store.GetAdminAPIClientCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get admin api client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+		data[corev1.TLSCertKey] = []byte(certfile)
+		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+	}
+
+	// Only write CA cert if not using DefaultCaFilePath
+	nodeSecretRef := &corev1.ObjectReference{
+		Namespace: d.clusterobj.GetNamespace(),
+		Name:      fmt.Sprintf("%s-%s", d.clusterobj.GetName(), adminAPINodeCertSuffix),
+	}
+	ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetAdminAPINodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get admin api node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+	return data, nil
 }
 
 func getGracePeriod(period time.Duration) *int64 {
