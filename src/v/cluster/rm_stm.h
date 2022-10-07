@@ -144,7 +144,8 @@ public:
     };
 
     static constexpr int8_t prepare_control_record_version{0};
-    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{0};
+    static constexpr int8_t fence_control_record_version{1};
 
     explicit rm_stm(
       ss::logger&,
