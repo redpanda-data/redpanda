@@ -34,7 +34,8 @@ auto wrap(Handler h) {
     return [h{std::move(h)}](
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
-        rq.authn_method = rq.service().config().authn_method(
+        rq.authn_method = config::get_authn_method(
+          rq.service().config().pandaproxy_api.value(),
           rq.req->get_listener_idx());
 
         if (rq.authn_method == config::rest_authn_method::http_basic) {

@@ -44,6 +44,15 @@ std::ostream& operator<<(std::ostream& os, const rest_authn_endpoint& ep) {
     return os;
 }
 
+rest_authn_method get_authn_method(
+  const std::vector<rest_authn_endpoint>& endpoints, size_t listener_idx) {
+    if (listener_idx >= endpoints.size()) {
+        return rest_authn_method::none;
+    }
+
+    return endpoints[listener_idx].authn_method.value_or(
+      rest_authn_method::none);
+}
 } // namespace config
 
 namespace YAML {
