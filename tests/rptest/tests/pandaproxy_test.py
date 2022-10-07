@@ -159,16 +159,17 @@ class PandaProxyBrokersTest(RedpandaTest):
                    backoff_sec=1)
 
 
-class PandaProxyTest(RedpandaTest):
+class PandaProxyEndpoints(RedpandaTest):
     """
-    Test pandaproxy against a redpanda cluster.
+    All the Pandaproxy endpoints
     """
-    def __init__(self, context):
-        super(PandaProxyTest, self).__init__(
+    def __init__(self, context, **kwargs):
+        super(PandaProxyEndpoints, self).__init__(
             context,
             num_brokers=3,
             enable_pp=True,
-            extra_rp_conf={"auto_create_topics_enabled": False})
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
@@ -243,6 +244,14 @@ class PandaProxyTest(RedpandaTest):
                             }),
                             headers=headers)
         return res
+
+
+class PandaProxyTest(PandaProxyEndpoints):
+    """
+    Test pandaproxy against a redpanda cluster.
+    """
+    def __init__(self, context):
+        super(PandaProxyTest, self).__init__(context)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -857,34 +866,19 @@ class PandaProxyTest(RedpandaTest):
         assert rc_res.status_code == requests.codes.no_content
 
 
-class PandaProxySASLTest(RedpandaTest):
+class PandaProxySASLTest(PandaProxyEndpoints):
     """
     Test pandaproxy can connect using SASL.
     """
     def __init__(self, context):
-        extra_rp_conf = dict(auto_create_topics_enabled=False, )
-
         security = SecurityConfig()
         security.enable_sasl = True
 
-        super(PandaProxySASLTest, self).__init__(context,
-                                                 num_brokers=3,
-                                                 enable_pp=True,
-                                                 security=security,
-                                                 extra_rp_conf=extra_rp_conf)
-
-        http.client.HTTPConnection.debuglevel = 1
-        http.client.print = lambda *args: self.logger.debug(" ".join(args))
+        super(PandaProxySASLTest, self).__init__(context, security=security)
 
     def _get_super_client(self):
         user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
         return KafkaCliTools(self.redpanda, user=user, passwd=password)
-
-    def _base_uri(self):
-        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
-
-    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
-        return requests.get(f"{self._base_uri()}/topics", headers=headers)
 
     @cluster(num_nodes=3)
     def test_list_topics(self):
@@ -907,35 +901,19 @@ class PandaProxySASLTest(RedpandaTest):
                    err_msg="Timeout waiting for topics to appear.")
 
 
-class PandaProxyBasicAuthTest(RedpandaTest):
+class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     password = 'simple'
     algorithm = 'SCRAM-SHA-256'
 
     def __init__(self, context):
-        extra_rp_conf = dict(auto_create_topics_enabled=False, )
 
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
         security.pp_authn_method = 'http_basic'
 
-        super(PandaProxyBasicAuthTest,
-              self).__init__(context,
-                             num_brokers=3,
-                             enable_pp=True,
-                             security=security,
-                             extra_rp_conf=extra_rp_conf)
-
-        self.admin = Admin(self.redpanda)
-
-        http.client.HTTPConnection.debuglevel = 1
-        http.client.print = lambda *args: self.logger.debug(" ".join(args))
-
-    def _base_uri(self):
-        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
-
-    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
-        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
+        super(PandaProxyBasicAuthTest, self).__init__(context,
+                                                      security=security)
 
     def encode_base64(self, username: str, password: str):
         msg = f'{username}:{password}'
