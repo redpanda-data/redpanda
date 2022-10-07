@@ -203,10 +203,12 @@ class PandaProxyEndpoints(RedpandaTest):
     def _produce_topic(self,
                        topic,
                        data,
-                       headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS):
+                       headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS,
+                       **kwargs):
         return requests.post(f"{self._base_uri()}/topics/{topic}",
                              data,
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
     def _fetch_topic(self,
                      topic,
@@ -952,3 +954,48 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         result_raw = self._get_topics(auth=(super_username, super_password))
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()[0] == self.topic
+
+    @cluster(num_nodes=3)
+    def test_produce_topic(self):
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+
+        # Regular user without authz priviledges
+        # should fail
+        result = self._produce_topic(self.topic, data,
+                                     auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        dne_topic = TopicSpec()
+        self.logger.info(f"Producing to non-existant topic: {dne_topic.name}")
+        result_raw = self._produce_topic(dne_topic.name,
+                                         data,
+                                         auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        produce_result = result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["error_code"] == 3
+            assert o["offset"] == -1
+
+        self.logger.info(f'Producing to topic: {self.topic}')
+        result_raw = self._produce_topic(self.topic,
+                                         data,
+                                         auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            'Content-Type'] == 'application/vnd.kafka.v2+json'
+
+        produce_result = result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 0, f'error_code {o["error_code"]}'
