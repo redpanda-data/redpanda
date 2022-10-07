@@ -1353,3 +1353,17 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                               auth=(super_username,
                                                     super_password))
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
+
+    @cluster(num_nodes=3)
+    def test_mode(self):
+        """
+        Smoketest get_mode endpoint
+        """
+        result_raw = self._get_mode(auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug("Get initial global mode")
+        result_raw = self._get_mode(auth=(super_username, super_password))
+        assert result_raw.json()["mode"] == "READWRITE"
