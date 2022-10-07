@@ -1147,3 +1147,36 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         assert set(result) == {"PROTOBUF", "AVRO"}
+
+    @cluster(num_nodes=3)
+    def test_get_schema_id_versions(self):
+        """
+        Verify schema versions
+        """
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=subject,
+            data=schema_1_data,
+            auth=(super_username, super_password))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Checking schema 1 versions")
+        result_raw = self._get_schemas_ids_id_versions(id=1,
+                                                       auth=(self.username,
+                                                             self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_schemas_ids_id_versions(id=1,
+                                                       auth=(super_username,
+                                                             super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [{"subject": subject, "version": 1}]
