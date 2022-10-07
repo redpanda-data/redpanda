@@ -46,18 +46,24 @@ model::record_batch make_random_batch(
   int num_records,
   bool allow_compression,
   model::record_batch_type bt,
-  std::optional<std::vector<size_t>> record_sizes = std::nullopt);
+  std::optional<std::vector<size_t>> record_sizes = std::nullopt,
+  std::optional<model::timestamp> ts = std::nullopt);
 
 model::record_batch
 make_random_batch(model::offset o, int num_records, bool allow_compression);
 
 model::record_batch make_random_batch(record_batch_spec);
 
-model::record_batch
-make_random_batch(model::offset o, bool allow_compression = true);
+model::record_batch make_random_batch(
+  model::offset o,
+  bool allow_compression = true,
+  std::optional<model::timestamp> ts = std::nullopt);
 
-ss::circular_buffer<model::record_batch>
-make_random_batches(model::offset o, int count, bool allow_compression = true);
+ss::circular_buffer<model::record_batch> make_random_batches(
+  model::offset o,
+  int count,
+  bool allow_compression = true,
+  std::optional<model::timestamp> ts = std::nullopt);
 
 ss::circular_buffer<model::record_batch>
 make_random_batches(model::offset o = model::offset(0));
