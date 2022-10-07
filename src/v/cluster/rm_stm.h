@@ -501,6 +501,11 @@ private:
         return model::offset(new_offset());
     }
 
+    bool is_transaction_ga() {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
+
     transaction_info::status_t
     get_tx_status(model::producer_identity pid) const;
     std::optional<expiration_info>
