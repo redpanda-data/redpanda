@@ -342,6 +342,15 @@ private:
       apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
 
+    std::optional<model::tx_seq> get_tx_seq(model::producer_identity pid) {
+        auto log_it = _log_state.tx_seqs.find(pid);
+        if (log_it == _log_state.tx_seqs.end()) {
+            return log_it->second;
+        }
+
+        return std::nullopt;
+    }
+
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
 
