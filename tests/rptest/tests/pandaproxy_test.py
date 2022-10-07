@@ -195,8 +195,10 @@ class PandaProxyEndpoints(RedpandaTest):
         assert set(names).issubset(self._get_topics().json())
         return names
 
-    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
-        return requests.get(f"{self._base_uri()}/topics", headers=headers)
+    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS, **kwargs):
+        return requests.get(f"{self._base_uri()}/topics",
+                            headers=headers,
+                            **kwargs)
 
     def _produce_topic(self,
                        topic,
@@ -928,3 +930,25 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         node_idxs = [node[0] for node in nodes]
 
         assert sorted(brokers) == sorted(node_idxs)
+
+    @cluster(num_nodes=3)
+    def test_list_topics(self):
+        # Regular user without authz priviledges
+        # should fail
+        result = self._get_topics(auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        # First check that no topics exist
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert len(result_raw.json()) == 0
+
+        self.topics = [TopicSpec()]
+        self._create_initial_topics()
+
+        # Check that one topic exists
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()[0] == self.topic
