@@ -55,7 +55,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	ss, err := d.ensureSyncedSecrets()
+	ss, err := d.ensureSyncedSecrets(ctx)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 
 // ensureSyncedSecrets ensures that Secrets required by Deployment are available
 // These Secrets are synced across different namespace via the Store
-func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
+func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (map[string]string, error) {
 	syncedSecrets := map[string]map[string][]byte{}
 
 	if d.clusterobj.IsSchemaRegistryTLSEnabled() { //nolint:nestif // secret syncing is complex
@@ -232,7 +232,7 @@ func (d *Deployment) ensureSyncedSecrets() (map[string]string, error) {
 
 	secretNames := map[string]string{}
 	for key, ss := range syncedSecrets {
-		name, err := d.store.CreateSyncedSecret(d.consoleobj, ss, key, d.log)
+		name, err := d.store.CreateSyncedSecret(ctx, d.consoleobj, ss, key, d.log)
 		if err != nil {
 			return nil, err
 		}
