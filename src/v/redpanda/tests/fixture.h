@@ -388,7 +388,9 @@ public:
           });
     }
 
-    model::ntp make_data(model::revision_id rev) {
+    model::ntp make_data(
+      model::revision_id rev,
+      std::optional<model::timestamp> base_ts = std::nullopt) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
         model::ntp ntp(
           model::kafka_namespace,
@@ -400,9 +402,18 @@ public:
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT
+
         builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
           | add_random_batches(
-            model::offset(0), 20, maybe_compress_batches::yes)
+            model::offset(0),
+            20,
+            maybe_compress_batches::yes,
+            log_append_config{
+              .should_fsync = log_append_config::fsync::yes,
+              .io_priority = ss::default_priority_class(),
+              .timeout = model::no_timeout},
+            disk_log_builder::should_flush_after::yes,
+            base_ts)
           | stop();
 
         add_topic(model::topic_namespace_view(ntp)).get();
