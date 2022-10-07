@@ -89,7 +89,7 @@ public:
     ss::future<upload_candidate_with_locks> get_next_compacted_segment(
       model::offset begin_inclusive,
       storage::log log,
-      const cloud_storage::partition_manifest* manifest,
+      const cloud_storage::partition_manifest& manifest,
       ss::lowres_clock::duration segment_lock_duration);
 
 private:

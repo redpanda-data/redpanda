@@ -104,10 +104,8 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
        .compacted_segment_indices = {0, 1, 2},
        .last_segment_num_records = 10});
 
-    auto& disk_log = b.get_disk_log_impl();
-
     archival::segment_collector collector{
-      model::offset{4}, &m, &disk_log, max_upload_size};
+      model::offset{4}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -134,7 +132,7 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
     {
         // start ahead of manifest end, no collection happens.
         archival::segment_collector collector{
-          model::offset{400}, &m, &b.get_disk_log_impl(), max_upload_size};
+          model::offset{400}, m, b.get_disk_log_impl(), max_upload_size};
 
         collector.collect_segments();
 
@@ -147,7 +145,7 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
         // start at manifest end. the collector will advance it first to prevent
         // overlap. no collection happens.
         archival::segment_collector collector{
-          model::offset{39}, &m, &b.get_disk_log_impl(), max_upload_size};
+          model::offset{39}, m, b.get_disk_log_impl(), max_upload_size};
 
         collector.collect_segments();
 
@@ -170,7 +168,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest) {
     auto defer = ss::defer([&b] { b.stop().get(); });
 
     archival::segment_collector collector{
-      model::offset{2}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{2}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -202,7 +200,7 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
        .last_segment_num_records = 2});
 
     archival::segment_collector collector{
-      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -230,7 +228,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
        .last_segment_num_records = 10});
 
     archival::segment_collector collector{
-      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -266,7 +264,7 @@ SEASTAR_THREAD_TEST_CASE(
        .last_segment_num_records = 5});
 
     archival::segment_collector collector{
-      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -302,7 +300,7 @@ SEASTAR_THREAD_TEST_CASE(
        .last_segment_num_records = 3});
 
     archival::segment_collector collector{
-      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -335,7 +333,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{2}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{2}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -374,7 +372,7 @@ SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
                       + b.get_segment(1).file_size()
                       + b.get_segment(2).file_size();
     archival::segment_collector collector{
-      model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
+      model::offset{0}, m, b.get_disk_log_impl(), max_size};
 
     collector.collect_segments();
 
@@ -416,7 +414,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{5}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
 
@@ -444,7 +442,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_adjustment) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{8}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{8}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     auto name = collector.adjust_segment_name();
@@ -471,7 +469,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_no_adjustment) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{8}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{8}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     auto name = collector.adjust_segment_name();
@@ -506,7 +504,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
                           + b.get_segment(1).file_size()
                           + b.get_segment(2).file_size();
         archival::segment_collector collector{
-          model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
+          model::offset{0}, m, b.get_disk_log_impl(), max_size};
 
         collector.collect_segments();
 
@@ -550,7 +548,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
                           + b.get_segment(1).file_size()
                           + b.get_segment(2).file_size();
         archival::segment_collector collector{
-          model::offset{0}, &m, &b.get_disk_log_impl(), max_size};
+          model::offset{0}, m, b.get_disk_log_impl(), max_size};
 
         collector.collect_segments();
 
@@ -598,7 +596,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_starts_in_gap) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{2}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{2}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
@@ -630,7 +628,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_ends_in_gap) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{1}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{1}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
@@ -662,7 +660,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
        .last_segment_num_records = 20});
 
     archival::segment_collector collector{
-      model::offset{0}, &m, &b.get_disk_log_impl(), max_upload_size};
+      model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
@@ -712,7 +710,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
                       + b.get_segment(1).size_bytes()
                       + b.get_segment(2).size_bytes();
     archival::segment_collector collector{
-      model::offset{5}, &m, &b.get_disk_log_impl(), max_size};
+      model::offset{5}, m, b.get_disk_log_impl(), max_size};
 
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());

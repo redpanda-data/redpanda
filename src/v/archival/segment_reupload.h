@@ -34,8 +34,8 @@ public:
 
     segment_collector(
       model::offset begin_inclusive,
-      const cloud_storage::partition_manifest* manifest,
-      const storage::disk_log_impl* log,
+      const cloud_storage::partition_manifest& manifest,
+      const storage::disk_log_impl& log,
       size_t max_uploaded_segment_size);
 
     void collect_segments();
@@ -101,8 +101,8 @@ private:
     model::offset _begin_inclusive;
     model::offset _end_inclusive;
 
-    const cloud_storage::partition_manifest* _manifest;
-    const storage::disk_log_impl* _log;
+    const cloud_storage::partition_manifest& _manifest;
+    const storage::disk_log_impl& _log;
     const storage::ntp_config* _ntp_cfg{};
     segment_seq _segments;
     bool _can_replace_manifest_segment{false};

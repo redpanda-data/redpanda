@@ -518,9 +518,9 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           _segment_upload_timeout);
         break;
     case segment_upload_kind::compacted:
-        auto m = manifest();
+        const auto& m = manifest();
         upload_with_locks = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, *log, &m, _segment_upload_timeout);
+          start_upload_offset, *log, m, _segment_upload_timeout);
         break;
     }
 

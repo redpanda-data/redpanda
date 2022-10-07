@@ -535,13 +535,21 @@ ss::future<upload_candidate_with_locks>
 archival_policy::get_next_compacted_segment(
   model::offset begin_inclusive,
   storage::log log,
-  const cloud_storage::partition_manifest* manifest,
+  const cloud_storage::partition_manifest& manifest,
   ss::lowres_clock::duration segment_lock_duration) {
     auto plog = get_concrete_log_impl(std::move(log));
+    if (!plog) {
+        vlog(
+          archival_log.warn,
+          "Upload policy find next compacted segment: cannot find log for ntp: "
+          "{}",
+          _ntp);
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
     segment_collector compacted_segment_collector{
       begin_inclusive,
       manifest,
-      plog.value(),
+      **plog,
       config::shard_local_cfg().compacted_log_segment_size
         * compacted_segment_size_multiplier};
 

@@ -21,8 +21,8 @@
 namespace archival {
 segment_collector::segment_collector(
   model::offset begin_inclusive,
-  const cloud_storage::partition_manifest* manifest,
-  const storage::disk_log_impl* log,
+  const cloud_storage::partition_manifest& manifest,
+  const storage::disk_log_impl& log,
   size_t max_uploaded_segment_size)
   : _begin_inclusive(begin_inclusive)
   , _manifest(manifest)
@@ -31,23 +31,23 @@ segment_collector::segment_collector(
   , _collected_size(0) {}
 
 void segment_collector::collect_segments() {
-    if (_manifest->size() == 0) {
+    if (_manifest.size() == 0) {
         vlog(
-          archival_log.warn,
-          "No segments to collect for ntp {}",
-          _manifest->get_ntp());
+          archival_log.info,
+          "No segments to collect for ntp {}, manifest empty",
+          _manifest.get_ntp());
         return;
     }
 
     align_begin_offset_to_manifest();
 
-    if (_begin_inclusive >= _manifest->get_last_offset()) {
+    if (_begin_inclusive >= _manifest.get_last_offset()) {
         vlog(
           archival_log.warn,
           "Start offset {} is ahead of manifest last offset {} for ntp {}",
           _begin_inclusive,
-          _manifest->get_last_offset(),
-          _manifest->get_ntp());
+          _manifest.get_last_offset(),
+          _manifest.get_ntp());
         return;
     }
 
@@ -62,7 +62,7 @@ void segment_collector::do_collect() {
     auto replace_boundary = find_replacement_boundary();
     auto start = _begin_inclusive;
     model::offset current_segment_end{0};
-    while (current_segment_end < _manifest->get_last_offset()) {
+    while (current_segment_end < _manifest.get_last_offset()) {
         auto result = find_next_compacted_segment(start);
         if (result.segment.get() == nullptr) {
             break;
@@ -79,7 +79,7 @@ void segment_collector::do_collect() {
               "Compacted segment collect for ntp {} stopping collection, total "
               "size: {} will overflow max allowed upload size: {}, current "
               "collected size: {}",
-              _manifest->get_ntp(),
+              _manifest.get_ntp(),
               _collected_size + segment_size,
               _max_uploaded_segment_size,
               _collected_size);
@@ -106,7 +106,7 @@ void segment_collector::do_collect() {
 }
 
 model::offset segment_collector::find_replacement_boundary() const {
-    auto it = _manifest->segment_containing(_begin_inclusive);
+    auto it = _manifest.segment_containing(_begin_inclusive);
 
     // Crossing this boundary means that the collection can replace at least one
     // segment in manifest.
@@ -114,10 +114,10 @@ model::offset segment_collector::find_replacement_boundary() const {
 
     // manifest: 10-19, 25-29
     // _begin_inclusive (in gap): 22.
-    if (it == _manifest->end()) {
+    if (it == _manifest.end()) {
         // first segment after gap: 25-29
         it = std::find_if(
-          _manifest->begin(), _manifest->end(), [this](const auto& entry) {
+          _manifest.begin(), _manifest.end(), [this](const auto& entry) {
               return entry.first.base_offset > _begin_inclusive;
           });
 
@@ -132,27 +132,28 @@ model::offset segment_collector::find_replacement_boundary() const {
 
 void segment_collector::align_end_offset_to_manifest(
   model::offset compacted_segment_end) {
-    if (compacted_segment_end >= _manifest->get_last_offset()) {
+    if (compacted_segment_end == _manifest.get_last_offset()) {
+        _end_inclusive = _manifest.get_last_offset();
+    } else if (compacted_segment_end > _manifest.get_last_offset()) {
         vlog(
           archival_log.debug,
           "Compacted segment collect for ntp {} offset {} advanced "
           "ahead of manifest, clamping to {}",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           compacted_segment_end,
-          _manifest->get_last_offset());
-        _end_inclusive = _manifest->get_last_offset();
+          _manifest.get_last_offset());
+        _end_inclusive = _manifest.get_last_offset();
     } else {
         // Align the end offset to the nearest segment ending in manifest.
-        auto it = _manifest->segment_containing(compacted_segment_end);
-        if (it == _manifest->end()) {
+        auto it = _manifest.segment_containing(compacted_segment_end);
+        if (it == _manifest.end()) {
             // compacted_segment_end is in a gap in the manifest.
-            if (
-              compacted_segment_end >= _manifest->get_start_offset().value()) {
+            if (compacted_segment_end >= _manifest.get_start_offset().value()) {
                 vlog(
                   archival_log.info,
                   "Compacted segment collect for ntp {}: collection ended at "
                   "gap in manifest: {}",
-                  _manifest->get_ntp(),
+                  _manifest.get_ntp(),
                   compacted_segment_end);
 
                 // try to fill the manifest gap with the data locally available.
@@ -173,18 +174,18 @@ void segment_collector::align_end_offset_to_manifest(
 
 segment_collector::lookup_result
 segment_collector::find_next_compacted_segment(model::offset start_offset) {
-    const auto& segment_set = _log->segments();
+    const auto& segment_set = _log.segments();
     auto it = segment_set.lower_bound(start_offset);
     // start_offset < log start due to eviction of compacted segments before
     // they could be uploaded, skip forward to log start.
-    if (start_offset < _log->offsets().start_offset) {
+    if (start_offset < _log.offsets().start_offset) {
         vlog(
           archival_log.debug,
           "Finding next compacted segment for {}: start_offset: {} behind log "
           "start: {}, skipping forward",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           start_offset,
-          _log->offsets().start_offset);
+          _log.offsets().start_offset);
         it = segment_set.begin();
     }
 
@@ -193,7 +194,7 @@ segment_collector::find_next_compacted_segment(model::offset start_offset) {
           archival_log.debug,
           "Finding next compacted segment for {}: can't find segment after "
           "offset: {}",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           start_offset);
         return {};
     }
@@ -203,15 +204,15 @@ segment_collector::find_next_compacted_segment(model::offset start_offset) {
         vlog(
           archival_log.trace,
           "Found compacted segment for ntp {}: {}",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           segment);
-        return {.segment = segment, .ntp_conf = &_log->config()};
+        return {.segment = segment, .ntp_conf = &_log.config()};
     }
     vlog(
       archival_log.debug,
       "Finding next compacted segment for {}: no compacted "
       "segments after offset: {}",
-      _manifest->get_ntp(),
+      _manifest.get_ntp(),
       start_offset);
     return {};
 }
@@ -257,42 +258,42 @@ cloud_storage::segment_name segment_collector::adjust_segment_name() const {
 }
 
 void segment_collector::align_begin_offset_to_manifest() {
-    if (_begin_inclusive >= _manifest->get_last_offset()) {
+    if (_begin_inclusive >= _manifest.get_last_offset()) {
         return;
     }
 
-    if (_begin_inclusive < _manifest->get_start_offset().value()) {
+    if (_begin_inclusive < _manifest.get_start_offset().value()) {
         vlog(
           archival_log.debug,
           "_begin_inclusive is behind manifest for ntp: {}, skipping forward "
           "to "
           "start of manifest from: {} to: {}",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           _begin_inclusive,
-          _manifest->get_start_offset().value());
+          _manifest.get_start_offset().value());
 
         // manifest: 10-40
         // _begin_inclusive: before: 5, after: 10
-        _begin_inclusive = _manifest->get_start_offset().value();
+        _begin_inclusive = _manifest.get_start_offset().value();
         return;
     }
 
-    auto it = _manifest->find(_begin_inclusive);
+    auto it = _manifest.find(_begin_inclusive);
 
     // If iterator points to a segment, it means that _begin_inclusive is
     // aligned on manifest segment boundary, so do nothing. Otherwise, skip
     // _begin_inclusive to the start of the next manifest segment.
-    if (it == _manifest->end()) {
-        it = _manifest->segment_containing(_begin_inclusive);
+    if (it == _manifest.end()) {
+        it = _manifest.segment_containing(_begin_inclusive);
 
         // manifest: 10-19, 25-29
         // _begin_inclusive (in gap): before: 22, after: 22
-        if (it == _manifest->end()) {
+        if (it == _manifest.end()) {
             vlog(
               archival_log.debug,
               "_begin_inclusive lies in manifest gap for ntp: {} "
               "value: {}",
-              _manifest->get_ntp(),
+              _manifest.get_ntp(),
               _begin_inclusive);
             return;
         }
@@ -305,7 +306,7 @@ void segment_collector::align_begin_offset_to_manifest() {
           archival_log.debug,
           "_begin_inclusive skipped to start of next segment for ntp: {} "
           "to: {}",
-          _manifest->get_ntp(),
+          _manifest.get_ntp(),
           _begin_inclusive);
     }
 }
