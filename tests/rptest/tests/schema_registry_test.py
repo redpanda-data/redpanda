@@ -22,7 +22,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings
+from rptest.services.redpanda import ResourceSettings, SecurityConfig
 
 
 def create_topic_names(count):
@@ -58,23 +58,22 @@ message Test2 {
 }"""
 
 
-class SchemaRegistryTest(RedpandaTest):
+class SchemaRegistryEndpoints(RedpandaTest):
     """
     Test schema registry against a redpanda cluster.
     """
-    def __init__(self, context):
-        super(SchemaRegistryTest, self).__init__(
+    def __init__(self, context, **kwargs):
+        super(SchemaRegistryEndpoints, self).__init__(
             context,
             num_brokers=3,
             enable_pp=True,
             enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
-            resource_settings=ResourceSettings(num_cpus=1))
+            resource_settings=ResourceSettings(num_cpus=1),
+            **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
-
-        self._ctx = context
 
     def _request(self, verb, path, hostname=None, **kwargs):
         """
@@ -152,45 +151,67 @@ class SchemaRegistryTest(RedpandaTest):
         assert set(names).issubset(self._get_topics().json())
         return names
 
-    def _get_config(self, headers=HTTP_GET_HEADERS):
-        return self._request("GET", "config", headers=headers)
+    def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET", "config", headers=headers, **kwargs)
 
-    def _set_config(self, data, headers=HTTP_POST_HEADERS):
-        return self._request("PUT", f"config", headers=headers, data=data)
+    def _set_config(self, data, headers=HTTP_POST_HEADERS, **kwargs):
+        return self._request("PUT",
+                             f"config",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
 
     def _get_config_subject(self,
                             subject,
                             fallback=False,
-                            headers=HTTP_GET_HEADERS):
+                            headers=HTTP_GET_HEADERS,
+                            **kwargs):
         return self._request(
             "GET",
             f"config/{subject}{'?defaultToGlobal=true' if fallback else ''}",
-            headers=headers)
+            headers=headers,
+            **kwargs)
 
-    def _set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS):
+    def _set_config_subject(self,
+                            subject,
+                            data,
+                            headers=HTTP_POST_HEADERS,
+                            **kwargs):
         return self._request("PUT",
                              f"config/{subject}",
                              headers=headers,
-                             data=data)
+                             data=data,
+                             **kwargs)
 
-    def _get_mode(self, headers=HTTP_GET_HEADERS):
-        return self._request("GET", "mode", headers=headers)
+    def _get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET", "mode", headers=headers, **kwargs)
 
-    def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
-        return self._request("GET", f"schemas/types", headers=headers)
+    def _get_schemas_types(self, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"schemas/types",
+                             headers=headers,
+                             **kwargs)
 
-    def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
-        return self._request("GET", f"schemas/ids/{id}", headers=headers)
+    def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS, **kwargs):
+        return self._request("GET",
+                             f"schemas/ids/{id}",
+                             headers=headers,
+                             **kwargs)
 
-    def _get_schemas_ids_id_versions(self, id, headers=HTTP_GET_HEADERS):
+    def _get_schemas_ids_id_versions(self,
+                                     id,
+                                     headers=HTTP_GET_HEADERS,
+                                     **kwargs):
         return self._request("GET",
                              f"schemas/ids/{id}/versions",
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
-    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS):
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET",
                              f"subjects{'?deleted=true' if deleted else ''}",
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
     def _post_subjects_subject(self,
                                subject,
@@ -217,17 +238,20 @@ class SchemaRegistryTest(RedpandaTest):
     def _get_subjects_subject_versions_version(self,
                                                subject,
                                                version,
-                                               headers=HTTP_GET_HEADERS):
+                                               headers=HTTP_GET_HEADERS,
+                                               **kwargs):
         return self._request("GET",
                              f"subjects/{subject}/versions/{version}",
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
     def _get_subjects_subject_versions_version_referenced_by(
-            self, subject, version, headers=HTTP_GET_HEADERS):
+            self, subject, version, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request(
             "GET",
             f"subjects/{subject}/versions/{version}/referencedBy",
-            headers=headers)
+            headers=headers,
+            **kwargs)
 
     def _get_subjects_subject_versions(self,
                                        subject,
@@ -267,12 +291,22 @@ class SchemaRegistryTest(RedpandaTest):
                                             subject,
                                             version,
                                             data,
-                                            headers=HTTP_POST_HEADERS):
+                                            headers=HTTP_POST_HEADERS,
+                                            **kwargs):
         return self._request(
             "POST",
             f"compatibility/subjects/{subject}/versions/{version}",
             headers=headers,
-            data=data)
+            data=data,
+            **kwargs)
+
+
+class SchemaRegistryTest(SchemaRegistryEndpoints):
+    """
+    Test schema registry against a redpanda cluster.
+    """
+    def __init__(self, context):
+        super(SchemaRegistryTest, self).__init__(context)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
@@ -977,7 +1011,7 @@ class SchemaRegistryTest(RedpandaTest):
                     for n in nodes:
                         n.account.remove(self.script_path, True)
 
-        svc = StressTest(self._ctx)
+        svc = StressTest(self.test_context)
         svc.start()
         svc.wait()
 
