@@ -59,6 +59,10 @@ public:
 
     deprecated_property enable_central_config;
 
+    // If true, permit any version of redpanda to start, even
+    // if potentially incompatible with existing system state.
+    property<bool> upgrade_override_checks;
+
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";

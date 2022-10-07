@@ -47,6 +47,7 @@
 #include "raft/fwd.h"
 #include "security/acl.h"
 #include "ssx/future-util.h"
+#include "version.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
@@ -261,6 +262,15 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
               // apply have to be accesssible
               return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
           });
+      })
+      .then([this] {
+          // Drop out after controller log replay if the log indicates that
+          // our running version is too far ahead of the last version that
+          // ran on this machine.
+          // TODO: once we have a feature table snapshot in KVStore, this can
+          // be done even earlier in startup, which is less risky because we
+          // won't have started up controller at all.
+          assert_compatible_version();
       })
       .then([this] { return cluster_creation_hook(); })
       .then(
@@ -497,6 +507,64 @@ int16_t controller::internal_topic_replication() const {
         // Respect `internal_topic_replication_factor` if enough
         // nodes were available.
         return replication_factor;
+    }
+}
+
+/**
+ * Redpanda does not permit upgrading from arbitrarily old versions.  We
+ * test & support upgrades from one feature release series to the next
+ * feature release series only.
+ *
+ * e.g. 22.1.1 -> 22.2.1 is permitted
+ *      22.1.1 -> 22.3.1 is NOT permitted.
+ *
+ * Note that the "old version" in this check is _not_ simply the last
+ * version that was run on this local node: it is the last version that
+ * the whole cluster agreed upon.  This means that clusters in a bad state
+ * will refuse to proceed with an upgrade if an offline node has prevented
+ * the cluster from fully upgrading to the previous version.
+ *
+ * e.g.
+ *  - Three nodes 1,2,3 at version 22.1.1
+ *  - Node 3 fails.
+ *  - User upgrades nodes 1,2 to version 22.2.1
+ *  - At this point the cluster's logical version remains at
+ *    the logical version of 22.1.1, because not all the nodes
+ *    have reported the new version 22.2.1.
+ *  - If user now tries to start redpanda 22.3.1 on node 1 or 2,
+ *    it will refuse to start.
+ *  - The user must get their cluster into a healthy state at version
+ *    22.2.1 (e.g. by decommissioning the failed node) before they
+ *    may proceed to version 22.3.1
+ */
+void controller::assert_compatible_version() {
+    auto old_version = _feature_table.local().get_active_version();
+    auto my_version = features::feature_table::get_latest_logical_version();
+
+    // No version currently in the feature table, can't do a safety check.
+    if (old_version == invalid_version) {
+        return;
+    }
+
+    if (old_version < my_version) {
+        // An upgrade is happening.  This may either be a new feature release,
+        // or a logical version change happened on a patch release due to
+        // some major backport.
+        vlog(
+          clusterlog.info,
+          "Upgrading: this node has logical version {} (Redpanda {}), cluster "
+          "is undergoing upgrade from previous logical version {}",
+          my_version,
+          redpanda_version(),
+          old_version);
+
+        // Compare the old version with our compiled-in knowledge of
+        // the lowest version we can safely upgrade from.
+        if (
+          old_version < _feature_table.local().get_upgradable_logical_version()
+          && !config::node().upgrade_override_checks()) {
+            vassert(false, "Attempted to upgrade from incompatible version!");
+        }
     }
 }
 

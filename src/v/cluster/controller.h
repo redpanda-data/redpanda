@@ -127,6 +127,7 @@ private:
     friend controller_probe;
 
     ss::future<> cluster_creation_hook();
+    void assert_compatible_version();
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core

@@ -353,6 +353,7 @@ public:
     ss::future<> stop();
 
     static cluster_version get_latest_logical_version();
+    static cluster_version get_upgradable_logical_version();
 
     feature_table();
 

@@ -73,9 +73,22 @@ std::string_view to_string_view(feature_state::state s) {
     __builtin_unreachable();
 };
 
+// For your convenience, a rough guide to the history of how logical
+// versions mapped to redpanda release versions:
+//  22.1.1 -> 3  (22.1.5 was version 4
+//  22.2.1 -> 5  (22.2.6 later proceeds to version 6)
+//  22.3.1 -> 7
+
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
+// ***Don't forget to update upgradable_version***
 static constexpr cluster_version latest_version = cluster_version{7};
+
+// The "upgradable" version is the cluster logical version from when
+// the last feature release series started.  For example, on redpanda
+// 22.3.1, cluster_version is 7, and previous_version is 5, which was
+// the logical version when 22.2.1 was released
+static constexpr cluster_version upgradable_version = cluster_version{5};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
@@ -130,6 +143,10 @@ cluster_version feature_table::get_latest_logical_version() {
     }
 
     return latest_version_cache;
+}
+
+cluster_version feature_table::get_upgradable_logical_version() {
+    return upgradable_version;
 }
 
 void feature_state::transition_active() { _state = state::active; }
