@@ -43,7 +43,8 @@ set(srcs
     data_policy_controller_test.cc
     health_monitor_test.cc
     topic_configuration_compat_test.cc
-    local_monitor_test.cc)
+    local_monitor_test.cc
+    tx_compaction_tests.cc)
 
 
 rp_test(

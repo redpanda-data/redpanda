@@ -111,11 +111,15 @@ struct mux_state_machine_fixture {
 
         _started = true;
     }
-    ~mux_state_machine_fixture() {
+    ~mux_state_machine_fixture() { stop_all(); }
+
+    void stop_all() {
         if (_started) {
             _recovery_throttle.stop().get();
             _group_mgr.stop().get0();
-            _raft.release();
+            if (_raft) {
+                _raft.release();
+            }
             _connections.stop().get0();
             _feature_table.stop().get0();
             _storage.stop().get0();
