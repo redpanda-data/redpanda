@@ -1292,3 +1292,64 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result["id"] == 1
         assert result["version"] == 1
         assert result["schema"]
+
+    @cluster(num_nodes=3)
+    def test_config(self):
+        """
+        Smoketest config endpoints
+        """
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.debug("Get initial global config")
+        result_raw = self._get_config(auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_config(auth=(super_username, super_password))
+        assert result_raw.json()["compatibilityLevel"] == "BACKWARD"
+
+        self.logger.debug("Set global config")
+        result_raw = self._set_config(data=json.dumps(
+            {"compatibility": "FULL"}),
+                                      auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._set_config(data=json.dumps(
+            {"compatibility": "FULL"}),
+                                      auth=(super_username, super_password))
+        assert result_raw.json()["compatibility"] == "FULL"
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key",
+            data=schema_1_data,
+            auth=(super_username, super_password))
+
+        self.logger.debug("Set subject config")
+        self.logger.debug("Set subject config")
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "BACKWARD_TRANSITIVE"}),
+            auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "BACKWARD_TRANSITIVE"}),
+            auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["compatibility"] == "BACKWARD_TRANSITIVE"
+
+        self.logger.debug("Get subject config - should be overriden")
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              auth=(self.username,
+                                                    self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              auth=(super_username,
+                                                    super_password))
+        assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
