@@ -762,7 +762,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     if (!term_opt.has_value()) {
         if (term_opt.error() == tm_stm::op_status::not_leader) {
             vlog(
-              txlog.warn,
+              txlog.trace,
               "this node isn't a leader for tx.id={} coordinator",
               tx_id);
             co_return init_tm_tx_reply{tx_errc::not_coordinator};
