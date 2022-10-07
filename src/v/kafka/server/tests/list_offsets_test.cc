@@ -212,9 +212,9 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     auto client = make_kafka_client().get0();
     client.connect().get();
 
-    // 3 batches of 2 records, with timestamps, 0, 1, 2.
-    const size_t batch_count = 3;
-    const size_t record_count = 2;
+    // 3 batches of 3 records, with timestamps incrementing 1ms per record
+    const size_t batch_count = 13;
+    const size_t record_count = 3;
     std::vector<model::record_batch> batches;
     batches.reserve(batch_count);
 
@@ -222,7 +222,13 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     auto base_timestamp = 100000;
 
     for (long i = 0; i < batch_count; ++i) {
+        // Mixture of compressed and uncompressed, they have distinct offset
+        // lookup behavior when searching by timequery, which will be
+        // validated
+        bool compressed = i % 3 == 0;
         batches.push_back(make_random_batch(model::test::record_batch_spec{
+          // after queries below.
+          .allow_compression = compressed,
           .count = record_count,
           .timestamp{base_timestamp + i * record_count}}));
         auto req = make_produce_request(ntp.tp, batches.back().share());
@@ -255,6 +261,43 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
         BOOST_CHECK(
           resp.data.topics[0].partitions[0].offset
           == model::offset(i * record_count));
+
+        // Fetch a timestamp in the middle of a batch, because these are
+        // compressed batches we should still get a result pointing
+        // to the start of the batch.
+        auto record_offset = 1; // Offset into batch which we will read
+        req.data.topics = {{
+          .name = ntp.tp.topic,
+          .partitions = {{
+            .partition_index = ntp.tp.partition,
+            .timestamp = model::timestamp(
+              base_timestamp + i * record_count + record_offset),
+          }},
+        }};
+
+        const auto& batch = batches[i];
+        auto resp_midbatch = client.dispatch(req, kafka::api_version(1)).get0();
+        BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics[0].partitions.size(), 1);
+        if (batch.compressed()) {
+            // Compressed batch: result will point to start of batch, slightly
+            // earlier than the query timestamp
+            BOOST_CHECK(
+              resp_midbatch.data.topics[0].partitions[0].timestamp
+              == model::timestamp(base_timestamp + i * record_count));
+            BOOST_CHECK(
+              resp_midbatch.data.topics[0].partitions[0].offset
+              == model::offset(i * record_count));
+        } else {
+            // Uncompressed batch: result should have seeked to correct record
+            BOOST_CHECK(
+              resp_midbatch.data.topics[0].partitions[0].timestamp
+              == model::timestamp(
+                base_timestamp + i * record_count + record_offset));
+            BOOST_CHECK(
+              resp_midbatch.data.topics[0].partitions[0].offset
+              == model::offset(i * record_count + record_offset));
+        }
     }
 
     client.stop().then([&client] { client.shutdown(); }).get();
