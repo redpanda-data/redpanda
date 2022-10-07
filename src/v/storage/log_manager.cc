@@ -69,6 +69,9 @@ log_manager::log_manager(
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
+        if (_compaction_timer.cancel()) {
+            _compaction_timer.rearm(_jitter());
+        }
     });
 }
 void log_manager::trigger_housekeeping() {
