@@ -342,7 +342,8 @@ private:
       apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
 
-    std::optional<model::tx_seq> get_tx_seq(model::producer_identity pid) {
+    std::optional<model::tx_seq>
+    get_tx_seq(model::producer_identity pid) const {
         auto log_it = _log_state.tx_seqs.find(pid);
         if (log_it == _log_state.tx_seqs.end()) {
             return log_it->second;
@@ -513,7 +514,7 @@ private:
         return model::offset(new_offset());
     }
 
-    bool is_transaction_ga() {
+    bool is_transaction_ga() const {
         return _feature_table.local().is_active(
           features::feature::transaction_ga);
     }

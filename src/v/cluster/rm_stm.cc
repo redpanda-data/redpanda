@@ -675,6 +675,20 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
 abort_origin rm_stm::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
+    if (is_transaction_ga()) {
+        auto tx_seq_for_pid = get_tx_seq(pid);
+        if (!tx_seq_for_pid) {
+            return abort_origin::present;
+        }
+
+        if (tx_seq < *tx_seq_for_pid) {
+            return abort_origin::past;
+        }
+        if (*tx_seq_for_pid < tx_seq) {
+            return abort_origin::future;
+        }
+    }
+
     auto expected_it = _mem_state.expected.find(pid);
     if (expected_it != _mem_state.expected.end()) {
         if (tx_seq < expected_it->second) {
@@ -703,6 +717,18 @@ abort_origin rm_stm::get_abort_origin(
         if (prepared_it->second.tx_seq < tx_seq) {
             return abort_origin::future;
         }
+    }
+
+    auto tx_seq_for_pid = get_tx_seq(pid);
+    if (!tx_seq_for_pid) {
+        return abort_origin::present;
+    }
+
+    if (tx_seq < *tx_seq_for_pid) {
+        return abort_origin::past;
+    }
+    if (*tx_seq_for_pid < tx_seq) {
+        return abort_origin::future;
     }
 
     return abort_origin::present;
