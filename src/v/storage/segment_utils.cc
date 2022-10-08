@@ -663,13 +663,15 @@ make_concatenated_segment(
     }
     co_await output.close();
 
+    auto& front = segments.front()->offsets();
+    auto& back = segments.back()->offsets();
+
     // offsets span the concatenated range
-    segment::offset_tracker offsets(
-      segments.front()->offsets().term,
-      segments.front()->offsets().base_offset);
-    offsets.committed_offset = segments.back()->offsets().committed_offset;
-    offsets.dirty_offset = segments.back()->offsets().dirty_offset;
-    offsets.stable_offset = segments.back()->offsets().stable_offset;
+    segment::offset_tracker offsets(front.term, front.base_offset);
+    offsets.committed_offset = std::max(
+      front.committed_offset, back.committed_offset);
+    offsets.dirty_offset = std::max(front.dirty_offset, back.committed_offset);
+    offsets.stable_offset = std::max(front.stable_offset, back.stable_offset);
 
     // build segment reader over combined data
     segment_reader reader(
