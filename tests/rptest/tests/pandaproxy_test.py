@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import base64
 import http.client
 import json
 import uuid
@@ -159,16 +158,17 @@ class PandaProxyBrokersTest(RedpandaTest):
                    backoff_sec=1)
 
 
-class PandaProxyTest(RedpandaTest):
+class PandaProxyEndpoints(RedpandaTest):
     """
-    Test pandaproxy against a redpanda cluster.
+    All the Pandaproxy endpoints
     """
-    def __init__(self, context):
-        super(PandaProxyTest, self).__init__(
+    def __init__(self, context, **kwargs):
+        super(PandaProxyEndpoints, self).__init__(
             context,
             num_brokers=3,
             enable_pp=True,
-            extra_rp_conf={"auto_create_topics_enabled": False})
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
@@ -176,8 +176,10 @@ class PandaProxyTest(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
 
-    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
-        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
+    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS, **kwargs):
+        return requests.get(f"{self._base_uri()}/brokers",
+                            headers=headers,
+                            **kwargs)
 
     def _create_topics(self,
                        names=create_topic_names(1),
@@ -193,16 +195,20 @@ class PandaProxyTest(RedpandaTest):
         assert set(names).issubset(self._get_topics().json())
         return names
 
-    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
-        return requests.get(f"{self._base_uri()}/topics", headers=headers)
+    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS, **kwargs):
+        return requests.get(f"{self._base_uri()}/topics",
+                            headers=headers,
+                            **kwargs)
 
     def _produce_topic(self,
                        topic,
                        data,
-                       headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS):
+                       headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS,
+                       **kwargs):
         return requests.post(f"{self._base_uri()}/topics/{topic}",
                              data,
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
     def _fetch_topic(self,
                      topic,
@@ -210,10 +216,12 @@ class PandaProxyTest(RedpandaTest):
                      offset=0,
                      max_bytes=1024,
                      timeout_ms=1000,
-                     headers=HTTP_FETCH_TOPIC_HEADERS):
+                     headers=HTTP_FETCH_TOPIC_HEADERS,
+                     **kwargs):
         return requests.get(
             f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
-            headers=headers)
+            headers=headers,
+            **kwargs)
 
     def _create_consumer(self, group_id, headers=HTTP_CREATE_CONSUMER_HEADERS):
         res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
@@ -243,6 +251,14 @@ class PandaProxyTest(RedpandaTest):
                             }),
                             headers=headers)
         return res
+
+
+class PandaProxyTest(PandaProxyEndpoints):
+    """
+    Test pandaproxy against a redpanda cluster.
+    """
+    def __init__(self, context):
+        super(PandaProxyTest, self).__init__(context)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -857,34 +873,19 @@ class PandaProxyTest(RedpandaTest):
         assert rc_res.status_code == requests.codes.no_content
 
 
-class PandaProxySASLTest(RedpandaTest):
+class PandaProxySASLTest(PandaProxyEndpoints):
     """
     Test pandaproxy can connect using SASL.
     """
     def __init__(self, context):
-        extra_rp_conf = dict(auto_create_topics_enabled=False, )
-
         security = SecurityConfig()
         security.enable_sasl = True
 
-        super(PandaProxySASLTest, self).__init__(context,
-                                                 num_brokers=3,
-                                                 enable_pp=True,
-                                                 security=security,
-                                                 extra_rp_conf=extra_rp_conf)
-
-        http.client.HTTPConnection.debuglevel = 1
-        http.client.print = lambda *args: self.logger.debug(" ".join(args))
+        super(PandaProxySASLTest, self).__init__(context, security=security)
 
     def _get_super_client(self):
         user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
         return KafkaCliTools(self.redpanda, user=user, passwd=password)
-
-    def _base_uri(self):
-        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
-
-    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
-        return requests.get(f"{self._base_uri()}/topics", headers=headers)
 
     @cluster(num_nodes=3)
     def test_list_topics(self):
@@ -907,56 +908,147 @@ class PandaProxySASLTest(RedpandaTest):
                    err_msg="Timeout waiting for topics to appear.")
 
 
-class PandaProxyBasicAuthTest(RedpandaTest):
-    password = 'simple'
-    algorithm = 'SCRAM-SHA-256'
-
+class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     def __init__(self, context):
-        extra_rp_conf = dict(auto_create_topics_enabled=False, )
 
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
         security.pp_authn_method = 'http_basic'
 
-        super(PandaProxyBasicAuthTest,
-              self).__init__(context,
-                             num_brokers=3,
-                             enable_pp=True,
-                             security=security,
-                             extra_rp_conf=extra_rp_conf)
-
-        self.admin = Admin(self.redpanda)
-
-        http.client.HTTPConnection.debuglevel = 1
-        http.client.print = lambda *args: self.logger.debug(" ".join(args))
-
-    def _base_uri(self):
-        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
-
-    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
-        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
-
-    def encode_base64(self, username: str, password: str):
-        msg = f'{username}:{password}'
-        # The decode at the end removes bytes type
-        return base64.b64encode(msg.encode('ascii')).decode()
+        super(PandaProxyBasicAuthTest, self).__init__(context,
+                                                      security=security)
 
     @cluster(num_nodes=3)
-    def test_basic_auth(self):
-        # Regular user has no access to Kafka API
-        headers = {
-            "authorization":
-            "Basic " + self.encode_base64("panda", self.password)
-        }
-        brokers = self._get_brokers(headers=headers).json()
-        assert brokers['error_code'] == 40101
+    def test_get_brokers(self):
+        # Regular user without authz priviledges
+        # should fail
+        res = self._get_brokers(auth=('red', 'panda')).json()
+        assert res['error_code'] == 40101
 
-        # Super user has full access to Kafka API
-        username, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
-        headers = {
-            "authorization": "Basic " + self.encode_base64(username, password)
-        }
-        brokers = self._get_brokers(headers=headers).json()
-        brokers['brokers'].sort()
-        assert brokers['brokers'] == [1, 2, 3]
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        brokers_raw = self._get_brokers(auth=(super_username, super_password))
+        brokers = brokers_raw.json()['brokers']
+
+        nodes = enumerate(self.redpanda.nodes, 1)
+        node_idxs = [node[0] for node in nodes]
+
+        assert sorted(brokers) == sorted(node_idxs)
+
+    @cluster(num_nodes=3)
+    def test_list_topics(self):
+        # Regular user without authz priviledges
+        # should fail
+        result = self._get_topics(auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        # First check that no topics exist
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert len(result_raw.json()) == 0
+
+        self.topics = [TopicSpec()]
+        self._create_initial_topics()
+
+        # Check that one topic exists
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()[0] == self.topic
+
+    @cluster(num_nodes=3)
+    def test_produce_topic(self):
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+
+        # Regular user without authz priviledges
+        # should fail
+        result = self._produce_topic(self.topic, data,
+                                     auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        dne_topic = TopicSpec()
+        self.logger.info(f"Producing to non-existant topic: {dne_topic.name}")
+        result_raw = self._produce_topic(dne_topic.name,
+                                         data,
+                                         auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        produce_result = result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["error_code"] == 3
+            assert o["offset"] == -1
+
+        self.logger.info(f'Producing to topic: {self.topic}')
+        result_raw = self._produce_topic(self.topic,
+                                         data,
+                                         auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            'Content-Type'] == 'application/vnd.kafka.v2+json'
+
+        produce_result = result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 0, f'error_code {o["error_code"]}'
+
+    @cluster(num_nodes=3)
+    def test_fetch_topic(self):
+        """
+        Create a topic, publish to it, and verify that pandaproxy can fetch
+        from it.
+        """
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+
+        # Regular user without authz priviledges
+        # should fail
+        result = self._fetch_topic(self.topic, data,
+                                   auth=('red', 'panda')).json()
+        assert result['error_code'] == 40101
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.info(f"Producing to topic: {self.topic}")
+        produce_result_raw = self._produce_topic(self.topic,
+                                                 data,
+                                                 auth=(super_username,
+                                                       super_password))
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 0, f'error_code {o["error_code"]}'
+
+        self.logger.info(f"Consuming from topic: {self.topic}")
+        fetch_raw_result_0 = self._fetch_topic(self.topic,
+                                               0,
+                                               auth=(super_username,
+                                                     super_password))
+        assert fetch_raw_result_0.status_code == requests.codes.ok
+        fetch_result_0 = fetch_raw_result_0.json()
+        expected = json.loads(data)
+        assert len(fetch_result_0) == 1
+        assert fetch_result_0[0]["topic"] == self.topic
+        assert fetch_result_0[0]["key"] is None
+        assert fetch_result_0[0]["value"] == expected["records"][0]["value"]
+        assert fetch_result_0[0]["partition"] == expected["records"][0][
+            "partition"]
+        assert fetch_result_0[0]["offset"] == 0

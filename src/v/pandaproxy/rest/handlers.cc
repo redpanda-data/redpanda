@@ -84,19 +84,18 @@ get_brokers(server::request_t rq, server::reply_t rp) {
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
-    // Servicing the request must be handled on the
-    // same core where the client is held. So we capture
-    // everything in a handler and pass that to the cache.
-    auto handler = [user{rq.user},
-                    authn_method{rq.authn_method},
-                    make_metadata_req](kafka_client_cache& cache) mutable {
-        client_ptr client = cache.fetch_or_insert(user, authn_method);
-        return client->dispatch(make_metadata_req).finally([client] {});
-    };
 
     return rq.service()
       .client_cache()
-      .invoke_on_cache(rq.user, handler)
+      .invoke_on_cache(
+        rq.user,
+        [user{rq.user}, authn_method{rq.authn_method}, make_metadata_req](
+          kafka_client_cache& cache) mutable {
+            // Servicing the request must be handled on the same core where the
+            // client is held. So we dispatch the request in this handler.
+            client_ptr client = cache.fetch_or_insert(user, authn_method);
+            return client->dispatch(make_metadata_req).finally([client] {});
+        })
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           json::get_brokers_res brokers;
@@ -129,10 +128,16 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
     };
+
     return rq.service()
-      .client()
-      .local()
-      .dispatch(make_list_topics_req)
+      .client_cache()
+      .invoke_on_cache(
+        rq.user,
+        [user{rq.user}, authn_method{rq.authn_method}, make_list_topics_req](
+          kafka_client_cache& cache) mutable {
+            client_ptr client = cache.fetch_or_insert(user, authn_method);
+            return client->dispatch(make_list_topics_req).finally([client] {});
+        })
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
@@ -175,17 +180,31 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
       max_bytes);
 
     return rq.service()
-      .client()
-      .local()
-      .fetch_partition(std::move(tp), offset, max_bytes, timeout)
-      .then([res_fmt, rp = std::move(rp)](kafka::fetch_response res) mutable {
-          ::json::StringBuffer str_buf;
-          ::json::Writer<::json::StringBuffer> w(str_buf);
+      .client_cache()
+      .invoke_on_cache(
+        rq.user,
+        [user{rq.user},
+         authn_method{rq.authn_method},
+         offset{offset},
+         timeout{timeout},
+         max_bytes{max_bytes},
+         res_fmt,
+         tp{std::move(tp)}](kafka_client_cache& cache) mutable {
+            client_ptr client = cache.fetch_or_insert(user, authn_method);
+            return client
+              ->fetch_partition(std::move(tp), offset, max_bytes, timeout)
+              .then([res_fmt](kafka::fetch_response res) {
+                  ::json::StringBuffer str_buf;
+                  ::json::Writer<::json::StringBuffer> w(str_buf);
 
-          ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
-
-          // TODO Ben: Prevent this linearization
-          ss::sstring json_rslt = str_buf.GetString();
+                  ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
+                  // TODO Ben: Prevent this linearization
+                  return ss::make_ready_future<ss::sstring>(
+                    str_buf.GetString());
+              })
+              .finally([client] {});
+        })
+      .then([res_fmt, rp = std::move(rp)](ss::sstring json_rslt) mutable {
           rp.rep->write_body("json", json_rslt);
           rp.mime_type = res_fmt;
           return std::move(rp);
@@ -206,11 +225,19 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
     vlog(plog.debug, "get_topics_name: topic: {}", topic);
 
-    auto records = ppj::rjson_parse(
-      rq.req->content.data(), ppj::produce_request_handler(req_fmt));
-
-    auto res = co_await rq.service().client().local().produce_records(
-      topic, std::move(records));
+    auto res = co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user},
+       authn_method{rq.authn_method},
+       data{rq.req->content.data()},
+       topic,
+       req_fmt](kafka_client_cache& cache) mutable {
+          auto records = ppj::rjson_parse(
+            data, ppj::produce_request_handler(req_fmt));
+          client_ptr client = cache.fetch_or_insert(user, authn_method);
+          return client->produce_records(topic, std::move(records))
+            .finally([client] {});
+      });
 
     auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
     rp.rep->write_body("json", json_rslt);
