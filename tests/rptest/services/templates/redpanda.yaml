@@ -43,9 +43,11 @@ redpanda:
 
 {% if include_seed_servers %}
   seed_servers:
+  {% for node in seed_servers %}
     - host:
-        address: {{nodes[1].account.hostname}}
+        address: {{node.account.hostname}}
         port: 33145
+  {% endfor %}
 {% endif %}
 
 {% if enable_pp %}
