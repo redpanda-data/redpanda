@@ -1503,6 +1503,27 @@ void application::start_runtime_services(
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
     _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
+    // Initialize the Raft RPC endpoint before the rest of the runtime RPC
+    // services so the cluster seeds can elect a leader and write a cluster
+    // UUID before proceeding with the rest of bootstrap.
+    const bool start_raft_rpc_early = cd.is_cluster_founder().get();
+    if (start_raft_rpc_early) {
+        syschecks::systemd_message("Starting RPC/raft").get();
+        _rpc
+          .invoke_on_all([this](rpc::rpc_server& s) {
+              std::vector<std::unique_ptr<rpc::service>> runtime_services;
+              runtime_services.push_back(std::make_unique<raft::service<
+                                           cluster::partition_manager,
+                                           cluster::shard_table>>(
+                _scheduling_groups.raft_sg(),
+                smp_service_groups.raft_smp_sg(),
+                partition_manager,
+                shard_table.local(),
+                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+              s.add_services(std::move(runtime_services));
+          })
+          .get();
+    }
     syschecks::systemd_message("Starting controller").get();
     controller->start(cd.initial_seed_brokers_if_no_cluster().get()).get0();
 
@@ -1518,7 +1539,7 @@ void application::start_runtime_services(
 
     syschecks::systemd_message("Starting RPC").get();
     _rpc
-      .invoke_on_all([this](rpc::rpc_server& s) {
+      .invoke_on_all([this, start_raft_rpc_early](rpc::rpc_server& s) {
           std::vector<std::unique_ptr<rpc::service>> runtime_services;
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
@@ -1532,14 +1553,18 @@ void application::start_runtime_services(
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
             std::ref(rm_partition_frontend)));
-          runtime_services.push_back(
-            std::make_unique<
-              raft::service<cluster::partition_manager, cluster::shard_table>>(
-              _scheduling_groups.raft_sg(),
-              smp_service_groups.raft_smp_sg(),
-              partition_manager,
-              shard_table.local(),
-              config::shard_local_cfg().raft_heartbeat_interval_ms()));
+
+          if (!start_raft_rpc_early) {
+              runtime_services.push_back(std::make_unique<raft::service<
+                                           cluster::partition_manager,
+                                           cluster::shard_table>>(
+                _scheduling_groups.raft_sg(),
+                smp_service_groups.raft_smp_sg(),
+                partition_manager,
+                shard_table.local(),
+                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+          }
+
           runtime_services.push_back(std::make_unique<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
