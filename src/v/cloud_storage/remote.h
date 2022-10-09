@@ -229,15 +229,15 @@ public:
       const remote_segment_path& path,
       retry_chain_node& parent);
 
-    /// \brief Delete segment from S3
+    /// \brief Delete object from S3
     ///
-    /// The method deletes the segment. It can retry after some errors.
+    /// The method deletes the object. It can retry after some errors.
     ///
-    /// \param segment_path is a segment's name in S3
+    /// \param path is a full S3 object path
     /// \param bucket is a name of the S3 bucket
-    ss::future<upload_result> delete_segment(
+    ss::future<upload_result> delete_object(
       const s3::bucket_name& bucket,
-      const remote_segment_path& segment_path,
+      const s3::object_key& path,
       retry_chain_node& parent);
 
     ss::future<download_result> do_download_manifest(
