@@ -165,6 +165,17 @@ public:
 
     bool is_internal_topic() const { return _ntp.ns != model::kafka_namespace; }
 
+    /**
+     * True if the topic is configured for "normal" tiered storage, i.e.
+     * both reads and writes to S3, and is not a read replica.
+     */
+    bool is_tiered_storage() const {
+        return _overrides != nullptr
+               && !_overrides->read_replica.value_or(false)
+               && _overrides->shadow_indexing_mode
+                    == model::shadow_indexing_mode::full;
+    }
+
 private:
     model::ntp _ntp;
     /// \brief currently this is the basedir. In the future

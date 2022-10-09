@@ -194,6 +194,20 @@ struct kafka_stages {
     ss::future<result<kafka_result>> replicate_finished;
 };
 
+/**
+ * When we remove a partition in the controller backend, we need to know
+ * whether the action is just for this node, or whether the partition
+ * is being deleted overall.
+ */
+enum class partition_removal_mode : uint8_t {
+    // We are removing a partition from this node only: delete
+    // local data but leave remote data alone.
+    local_only = 0,
+    // The partition is being permanently deleted from all nodes:
+    // remove remote data as well as local data.
+    global = 1
+};
+
 struct try_abort_request
   : serde::envelope<try_abort_request, serde::version<0>> {
     model::partition_id tm;

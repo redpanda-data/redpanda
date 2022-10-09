@@ -375,7 +375,9 @@ partition::timequery(storage::timequery_config cfg) {
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
-    return _raft->log().update_configuration(
+    _remote_delete_enabled = properties.remote_delete;
+
+    co_await _raft->log().update_configuration(
       properties.get_ntp_cfg_overrides());
 }
 
@@ -413,6 +415,30 @@ ss::future<> partition::remove_persistent_state() {
     }
     if (_id_allocator_stm) {
         co_await _id_allocator_stm->remove_persistent_state();
+    }
+}
+
+ss::future<> partition::remove_remote_persistent_state() {
+    // Backward compatibility: even if remote.delete is true, only do
+    // deletion if the partition is in full tiered storage mode (this
+    // excludes read replica clusters from deleting data in S3)
+    bool tiered_storage
+      = get_ntp_config().is_tiered_storage()
+        || (config::shard_local_cfg().cloud_storage_enable_remote_write() &&
+            config::shard_local_cfg().cloud_storage_enable_remote_read());
+
+    if (_cloud_storage_partition && tiered_storage && _remote_delete_enabled) {
+        vlog(
+          clusterlog.debug,
+          "Erasing S3 objects for partition {} ({} {} {})",
+          ntp(),
+          get_ntp_config(),
+          get_ntp_config().is_archival_enabled(),
+          get_ntp_config().is_read_replica_mode_enabled());
+        co_await _cloud_storage_partition->erase();
+    } else {
+        vlog(
+          clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());
     }
 }
 
