@@ -9,15 +9,21 @@
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-
 import time
-import re
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.redpanda import SISettings
+from rptest.util import wait_for_segments_removal
+from ducktape.mark import parametrize
+
+
+def topic_storage_purged(redpanda, topic: str):
+    storage = redpanda.storage()
+    return all(map(lambda n: topic not in n.ns["kafka"].topics, storage.nodes))
 
 
 class TopicDeleteTest(RedpandaTest):
@@ -50,14 +56,8 @@ class TopicDeleteTest(RedpandaTest):
 
         self.kafka_tools.delete_topic(self.topic)
 
-        def topic_storage_purged():
-            storage = self.redpanda.storage()
-            return all(
-                map(lambda n: self.topic not in n.ns["kafka"].topics,
-                    storage.nodes))
-
         try:
-            wait_until(lambda: topic_storage_purged(),
+            wait_until(lambda: topic_storage_purged(self.redpanda, self.topic),
                        timeout_sec=30,
                        backoff_sec=2,
                        err_msg="Topic storage was not removed")
@@ -71,6 +71,94 @@ class TopicDeleteTest(RedpandaTest):
                     self.logger.error(line.strip())
 
             raise
+
+
+class TopicDeleteCloudStorageTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=3,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(log_segment_size=1024 * 1024)
+        super().__init__(test_context=test_context,
+                         num_brokers=3,
+                         si_settings=self.si_settings)
+
+        self.kafka_tools = KafkaCliTools(self.redpanda)
+
+    @cluster(num_nodes=3)
+    @parametrize(disable_delete=False)
+    @parametrize(disable_delete=True)
+    def topic_delete_cloud_storage_test(self, disable_delete):
+        # Set retention to 5MB
+        self.kafka_tools.alter_topic_config(
+            self.topic, {'retention.local.target.bytes': 5 * 1024 * 1024})
+
+        # Write out 10MB
+        self.kafka_tools.produce(self.topic,
+                                 record_size=4096,
+                                 num_records=2560)
+
+        # Wait for segments evicted from local storage
+        for i in range(0, 3):
+            wait_for_segments_removal(self.redpanda, self.topic, i, 5)
+
+        # Confirm objects in remote storage
+        before_objects = self.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket)
+        assert sum(1 for _ in before_objects) > 0
+
+        if disable_delete:
+            # Set remote.delete=False before deleting: objects in
+            # S3 should not be removed.
+            self.kafka_tools.alter_topic_config(
+                self.topic, {'redpanda.remote.delete': 'false'})
+
+        # Delete topic
+        self.kafka_tools.delete_topic(self.topic)
+
+        # Local storage should be purged
+        wait_until(lambda: topic_storage_purged(self.redpanda, self.topic),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        def remote_empty():
+            """Return true if all objects removed from cloud storage"""
+            after_objects = self.s3_client.list_objects(
+                self.si_settings.cloud_storage_bucket)
+            self.logger.debug("Objects after topic deletion:")
+            empty = True
+            for i in after_objects:
+                self.logger.debug(f"  {i}")
+                empty = False
+
+            return empty
+
+        if disable_delete:
+            # Unfortunately there is no alternative ot sleeping here:
+            # we need to confirm not only that objects aren't deleted
+            # instantly, but that they also are not deleted after some
+            # delay.
+            time.sleep(10)
+            # TODO: stronger check, should compare total object list
+            assert not remote_empty()
+        else:
+            # The counter-test that deletion _doesn't_ happen in read replicas
+            # is done as part of read_replica_e2e_test
+            wait_until(remote_empty, timeout_sec=30, backoff_sec=1)
+
+        # TODO: include transactional data so that we verify that .txrange
+        # objects are deleted.
+
+        # TODO: test deleting repeatedly while undergoing write load, to
+        # catch the case where there are segments in S3 not reflected in the
+        # manifest.
+
+        # TODO: test making the S3 backend unavailable during the topic
+        # delete.  The delete action should be acked, but internally
+        # redpanda should keep retrying the S3 part until it succeeds.
+        # - When we bring the S3 backend back it shoudl succeed
+        # - If we restart redpanda before bringing the S3 backend back
+        #   it should also succeed.
 
 
 class TopicDeleteStressTest(RedpandaTest):
