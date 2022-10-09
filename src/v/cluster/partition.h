@@ -244,20 +244,7 @@ public:
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
-    ss::future<> remove_persistent_state() {
-        if (_rm_stm) {
-            co_await _rm_stm->remove_persistent_state();
-        }
-        if (_tm_stm) {
-            co_await _tm_stm->remove_persistent_state();
-        }
-        if (_archival_meta_stm) {
-            co_await _archival_meta_stm->remove_persistent_state();
-        }
-        if (_id_allocator_stm) {
-            co_await _id_allocator_stm->remove_persistent_state();
-        }
-    }
+    ss::future<> remove_persistent_state();
 
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
 

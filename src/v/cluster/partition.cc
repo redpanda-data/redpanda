@@ -400,6 +400,22 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     // epoch
     return model::next_offset(kafka::offset_cast(*o));
 }
+
+ss::future<> partition::remove_persistent_state() {
+    if (_rm_stm) {
+        co_await _rm_stm->remove_persistent_state();
+    }
+    if (_tm_stm) {
+        co_await _tm_stm->remove_persistent_state();
+    }
+    if (_archival_meta_stm) {
+        co_await _archival_meta_stm->remove_persistent_state();
+    }
+    if (_id_allocator_stm) {
+        co_await _id_allocator_stm->remove_persistent_state();
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
