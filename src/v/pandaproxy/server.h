@@ -16,7 +16,7 @@
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/types.h"
-#include "redpanda/request_auth.h"
+#include "cluster/request_auth.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>

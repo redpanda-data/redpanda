@@ -41,7 +41,6 @@ v_cc_library(
     cluster_config_schema_util.cc
     admin_server.cc
     cli_parser.cc
-    request_auth.cc
     application.cc
   DEPS
     Seastar::seastar

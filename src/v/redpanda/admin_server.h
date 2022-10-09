@@ -15,7 +15,7 @@
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
 #include "model/metadata.h"
-#include "request_auth.h"
+#include "cluster/request_auth.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 
