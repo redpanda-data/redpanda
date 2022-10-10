@@ -16,6 +16,7 @@
 #include "serde/serde.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
+#include "utils/uuid.h"
 #include "vassert.h"
 
 #include <seastar/core/sstring.hh>
@@ -42,6 +43,8 @@ using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 } // namespace s3
 
 namespace model {
+
+using node_uuid = named_type<uuid_t, struct node_uuid_type>;
 
 // Named after Kafka cleanup.policy topic property
 enum class cleanup_policy_bitflags : uint8_t {

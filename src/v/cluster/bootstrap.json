@@ -1,0 +1,15 @@
+{
+    "namespace": "cluster",
+    "service_name": "cluster_bootstrap",
+    "includes": [
+        "cluster/bootstrap_types.h"
+    ],
+    "methods": [
+        {
+            "name": "cluster_bootstrap_info",
+            "input_type": "cluster_bootstrap_info_request",
+            "output_type": "cluster_bootstrap_info_reply"
+        }
+    ]
+}
+

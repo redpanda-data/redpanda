@@ -1,6 +1,12 @@
 find_package(Roaring REQUIRED)
 include(rpcgen)
 rpcgen(
+  TARGET bootstrap_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cluster_bootstrap_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+rpcgen(
   TARGET controller_rpc
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/controller.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/controller_service.h
@@ -85,6 +91,7 @@ v_cc_library(
     security_frontend.cc
     data_policy_manager.cc
     data_policy_frontend.cc
+    cluster_discovery.cc
     controller_api.cc
     members_frontend.cc
     members_backend.cc
@@ -113,8 +120,10 @@ v_cc_library(
     partition_balancer_rpc_handler.cc
     node_status_backend.cc
     node_status_rpc_handler.cc
+    bootstrap_service.cc
   DEPS
     Seastar::seastar
+    bootstrap_rpc
     controller_rpc
     metadata_rpc
     id_allocator_rpc
