@@ -42,6 +42,7 @@
 
 #include <cstdlib>
 #include <exception>
+#include <system_error>
 
 namespace kafka::client {
 
@@ -194,6 +195,14 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         }
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
+    } catch (const std::system_error& ex) {
+        if (ex.code() == std::errc::broken_pipe) {
+            vlog(kclog.debug, "system_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        } else {
+            vlog(kclog.warn, "system_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
     } catch (const std::exception& ex) {
         // TODO(Ben): Probably vassert
         vlog(kclog.error, "unknown exception: {}", ex);
