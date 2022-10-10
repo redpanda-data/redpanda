@@ -58,6 +58,11 @@ struct rest_authn_endpoint {
 rest_authn_method get_authn_method(
   const std::vector<rest_authn_endpoint>& endpoints, size_t listener_idx);
 
+struct always_true : public binding<bool> {
+    always_true()
+      : binding<bool>(true) {}
+};
+
 namespace detail {
 
 template<>
