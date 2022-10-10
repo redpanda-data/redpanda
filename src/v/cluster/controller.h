@@ -118,7 +118,7 @@ public:
 
     ss::future<> wire_up();
 
-    ss::future<> start();
+    ss::future<> start(std::vector<model::broker>);
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
     ss::future<> stop();

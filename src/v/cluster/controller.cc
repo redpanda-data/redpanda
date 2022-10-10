@@ -98,12 +98,8 @@ ss::future<> controller::wire_up() {
       .then([this] { _probe.start(); });
 }
 
-ss::future<> controller::start() {
-    std::vector<model::broker> initial_raft0_brokers;
-    if (config::node().seed_servers().empty()) {
-        initial_raft0_brokers.push_back(
-          cluster::make_self_broker(config::node()));
-    }
+ss::future<>
+controller::start(std::vector<model::broker> initial_raft0_brokers) {
     return create_raft0(
              _partition_manager,
              _shard_table,

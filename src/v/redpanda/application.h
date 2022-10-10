@@ -50,6 +50,10 @@
 
 namespace po = boost::program_options; // NOLINT
 
+namespace cluster {
+class cluster_discovery;
+} // namespace cluster
+
 namespace kafka {
 struct group_metadata_migration;
 } // namespace kafka
@@ -114,11 +118,22 @@ private:
     using deferred_actions
       = std::vector<ss::deferred_action<std::function<void()>>>;
 
+    // Constructs services across shards required to get bootstrap metadata.
+    void wire_up_bootstrap_services();
+
+    // Starts services across shards required to get bootstrap metadata.
+    void start_bootstrap_services();
+
+    // Constructs services across shards meant for Redpanda runtime.
+    void wire_up_runtime_services(model::node_id node_id);
     void configure_admin_server();
-    void wire_up_services();
-    void wire_up_redpanda_services();
-    void start_redpanda(::stop_signal&);
-    void start_kafka(::stop_signal&);
+    void wire_up_redpanda_services(model::node_id);
+
+    // Starts the services meant for Redpanda runtime. Must be called after
+    // having constructed the subsystems via the corresponding `wire_up` calls.
+    void
+    start_runtime_services(const cluster::cluster_discovery&, ::stop_signal&);
+    void start_kafka(const model::node_id&, ::stop_signal&);
 
     // All methods are calleds from Seastar thread
     ss::app_template::config setup_app_config();
