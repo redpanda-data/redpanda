@@ -446,9 +446,11 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
         });
     auto index_fut = compaction_index_batch(b);
     return ss::when_all(std::move(write_fut), std::move(index_fut))
-      .then([](std::tuple<ss::future<append_result>, ss::future<>> p) {
+      .then([this](std::tuple<ss::future<append_result>, ss::future<>> p) {
           auto& [append_fut, index_fut] = p;
-          const bool has_error = append_fut.failed() || index_fut.failed();
+          const bool index_append_failed = index_fut.failed()
+                                           && has_compaction_index();
+          const bool has_error = append_fut.failed() || index_append_failed;
           if (!has_error) {
               index_fut.get();
               return std::move(append_fut);
