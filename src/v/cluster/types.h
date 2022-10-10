@@ -2450,6 +2450,8 @@ public:
     const assignments_set& get_assignments() const;
     assignments_set& get_assignments();
 
+    replication_factor get_replication_factor() const;
+
 private:
     topic_configuration _configuration;
     assignments_set _assignments;

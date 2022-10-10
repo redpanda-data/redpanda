@@ -149,6 +149,10 @@ public:
         topic_configuration& get_configuration() {
             return metadata.get_configuration();
         }
+
+        replication_factor get_replication_factor() const {
+            return metadata.get_replication_factor();
+        }
     };
 
     using delta = topic_table_delta;
@@ -259,6 +263,12 @@ public:
     /// If topic does not exists it returns an empty optional
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
+
+    ///\brief Returns configuration of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<replication_factor>
+      get_topic_replication_factor(model::topic_namespace_view) const;
 
     ///\brief Returns partition assignments of single topic.
     ///

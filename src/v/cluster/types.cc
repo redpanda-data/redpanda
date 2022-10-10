@@ -599,6 +599,16 @@ topic_configuration& topic_metadata::get_configuration() {
 
 assignments_set& topic_metadata::get_assignments() { return _assignments; }
 
+replication_factor topic_metadata::get_replication_factor() const {
+    // The main idea is do not use anymore replication_factor from topic_config.
+    // replication factor is dynamic property. And it is size of assigments set.
+    // So we will return rf for 0 partition, becasue it should exist for each
+    // topic
+    auto it = _assignments.find(model::partition_id(0));
+    return replication_factor(
+      static_cast<replication_factor::type>(it->replicas.size()));
+}
+
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
       o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);

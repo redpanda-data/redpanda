@@ -734,6 +734,14 @@ topic_table::get_topic_cfg(model::topic_namespace_view tp) const {
     return {};
 }
 
+std::optional<replication_factor> topic_table::get_topic_replication_factor(
+  model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return it->second.get_replication_factor();
+    }
+    return {};
+}
+
 std::optional<assignments_set>
 topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
