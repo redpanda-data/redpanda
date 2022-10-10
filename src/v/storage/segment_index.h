@@ -53,7 +53,8 @@ public:
       ss::sstring filename,
       model::offset base,
       size_t step,
-      debug_sanitize_files);
+      debug_sanitize_files,
+      bool is_internal = false);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -96,6 +97,12 @@ private:
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
+
+    /** We need to know if it's an internal topic or a user topic, because
+     *  indexing behavior is different (user topics only index user data
+     *  batches)
+     */
+    bool _is_internal;
 
     /** Constructor with mock file content for unit testing */
     segment_index(

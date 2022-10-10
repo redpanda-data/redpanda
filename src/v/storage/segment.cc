@@ -50,7 +50,8 @@ segment::segment(
   std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c,
   storage_resources& resources,
-  segment::generation_id gen) noexcept
+  segment::generation_id gen,
+  bool is_internal) noexcept
   : _resources(resources)
   , _appender_callbacks(this)
   , _generation_id(gen)
@@ -59,7 +60,8 @@ segment::segment(
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
-  , _cache(std::move(c)) {
+  , _cache(std::move(c))
+  , _is_internal(is_internal) {
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
     }
@@ -574,7 +576,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources) {
+  storage_resources& resources,
+  bool is_internal) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
@@ -597,7 +600,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       index_name,
       meta->base_offset,
       segment_index::default_data_buffer_step,
-      sanitize_fileops);
+      sanitize_fileops,
+      is_internal);
 
     co_return ss::make_lw_shared<segment>(
       segment::offset_tracker(meta->term, meta->base_offset),
@@ -622,6 +626,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   storage_resources& resources) {
     auto path = segment_path::make_segment_path(
       ntpc, base_offset, term, version);
+
     vlog(stlog.info, "Creating new segment {}", path.string());
     return open_segment(
              path,
@@ -629,7 +634,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              std::move(batch_cache),
              buf_size,
              read_ahead,
-             resources)
+             resources,
+             ntpc.is_internal_topic())
       .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
@@ -654,7 +660,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt,
-                          resources));
+                          resources,
+                          segment::generation_id{},
+                          seg->is_internal_topic()));
                   });
             });
       })
@@ -681,7 +689,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt,
-                          resources));
+                          resources,
+                          segment::generation_id{},
+                          seg->is_internal_topic()));
                   });
             });
       });
