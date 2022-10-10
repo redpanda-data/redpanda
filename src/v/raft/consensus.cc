@@ -216,7 +216,7 @@ clock_type::time_point consensus::majority_heartbeat() const {
         }
 
         if (auto it = _fstats.find(rni); it != _fstats.end()) {
-            return it->second.last_received_append_entries_reply_timestamp;
+            return it->second.last_received_reply_timestamp;
         }
 
         // if we do not know the follower state yet i.e. we have
@@ -315,7 +315,7 @@ consensus::success_reply consensus::update_follower_index(
           _group));
     }
 
-    update_node_hbeat_timestamp(node);
+    update_node_reply_timestamp(node);
 
     if (
       seq < idx.last_received_seq
@@ -2383,9 +2383,8 @@ void consensus::update_node_append_timestamp(vnode id) {
     }
 }
 
-void consensus::update_node_hbeat_timestamp(vnode id) {
-    _fstats.get(id).last_received_append_entries_reply_timestamp
-      = clock_type::now();
+void consensus::update_node_reply_timestamp(vnode id) {
+    _fstats.get(id).last_received_reply_timestamp = clock_type::now();
 }
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
@@ -3149,7 +3148,7 @@ bool consensus::should_reconnect_follower(vnode id) {
     }
 
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        auto last_at = it->second.last_received_append_entries_reply_timestamp;
+        auto last_at = it->second.last_received_reply_timestamp;
         const auto fail_count = it->second.heartbeats_failed;
 
         auto is_live = last_at + _jit.base_duration() > clock_type::now();
@@ -3223,8 +3222,7 @@ follower_metrics build_follower_metrics(
   const storage::offset_stats& lstats,
   std::chrono::milliseconds liveness_timeout,
   const follower_index_metadata& meta) {
-    const auto is_live = meta.last_received_append_entries_reply_timestamp
-                           + liveness_timeout
+    const auto is_live = meta.last_received_reply_timestamp + liveness_timeout
                          > clock_type::now();
     return follower_metrics{
       .id = id,
@@ -3232,7 +3230,7 @@ follower_metrics build_follower_metrics(
       .committed_log_index = meta.last_flushed_log_index,
       .dirty_log_index = meta.last_dirty_log_index,
       .match_index = meta.match_index,
-      .last_heartbeat = meta.last_received_append_entries_reply_timestamp,
+      .last_heartbeat = meta.last_received_reply_timestamp,
       .is_live = is_live,
       .under_replicated = (meta.is_recovering || !is_live)
                           && meta.match_index < lstats.dirty_offset};

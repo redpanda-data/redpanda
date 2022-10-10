@@ -230,7 +230,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
-        if (it->second.last_received_append_entries_reply_timestamp < timeout) {
+        if (it->second.last_received_reply_timestamp < timeout) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - didn't receive "
