@@ -23,7 +23,6 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
-#include <boost/uuid/uuid_generators.hpp>
 
 #include <chrono>
 #include <limits>
@@ -226,8 +225,7 @@ SEASTAR_THREAD_TEST_CASE(vector_test) {
 
 SEASTAR_THREAD_TEST_CASE(uuid_test) {
     auto b = iobuf();
-    boost::uuids::random_generator uuid_gen;
-    uuid_t u(uuid_gen());
+    uuid_t u = uuid_t::create();
     serde::write(b, u);
 
     auto parser = iobuf_parser{std::move(b)};
@@ -244,11 +242,11 @@ struct uuid_struct : serde::envelope<uuid_struct, serde::version<0>> {
 };
 
 template<typename map_t>
-void verify_uuid_map(boost::uuids::random_generator& uuid_gen) {
+void verify_uuid_map() {
     map_t m = {
-      {uuid_t(uuid_gen()), 0},
-      {uuid_t(uuid_gen()), 1},
-      {uuid_t(uuid_gen()), 2},
+      {uuid_t::create(), 0},
+      {uuid_t::create(), 1},
+      {uuid_t::create(), 2},
     };
     auto b = iobuf();
     serde::write(b, m);
@@ -263,20 +261,19 @@ void verify_uuid_map(boost::uuids::random_generator& uuid_gen) {
 }
 
 SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
-    boost::uuids::random_generator uuid_gen;
     uuid_struct us;
-    us.single = uuid_t(uuid_gen());
-    us.opt1 = std::make_optional<uuid_t>(uuid_gen());
+    us.single = uuid_t::create();
+    us.opt1 = std::make_optional<uuid_t>(uuid_t::create());
     us.opt2 = std::nullopt;
     us.vec = {
-      uuid_t(uuid_gen()),
-      uuid_t(uuid_gen()),
-      uuid_t(uuid_gen()),
+      uuid_t::create(),
+      uuid_t::create(),
+      uuid_t::create(),
     };
     us.opt_vec = {
-      std::make_optional<uuid_t>(uuid_gen()),
+      std::make_optional<uuid_t>(uuid_t::create()),
       std::nullopt,
-      std::make_optional<uuid_t>(uuid_gen()),
+      std::make_optional<uuid_t>(uuid_t::create()),
       std::nullopt,
     };
     auto b = iobuf();
@@ -293,8 +290,8 @@ SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
     }
 
     // Map types.
-    verify_uuid_map<std::unordered_map<uuid_t, int>>(uuid_gen);
-    verify_uuid_map<absl::flat_hash_map<uuid_t, int>>(uuid_gen);
+    verify_uuid_map<std::unordered_map<uuid_t, int>>();
+    verify_uuid_map<absl::flat_hash_map<uuid_t, int>>();
 }
 
 // struct with differing sizes:

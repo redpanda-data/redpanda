@@ -13,6 +13,7 @@
 
 #include <absl/hash/hash.h>
 #include <boost/functional/hash.hpp>
+#include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
@@ -28,8 +29,10 @@ public:
     static constexpr auto length = 16;
     using underlying_t = boost::uuids::uuid;
 
-    explicit uuid_t(const underlying_t& uuid)
-      : _uuid(uuid) {}
+    static uuid_t create() {
+        static thread_local boost::uuids::random_generator uuid_gen;
+        return uuid_t(uuid_gen());
+    }
 
     explicit uuid_t(const std::vector<uint8_t>& v)
       : _uuid({}) {
@@ -66,6 +69,9 @@ public:
     underlying_t& mutable_uuid() { return _uuid; }
 
 private:
+    explicit uuid_t(const underlying_t& uuid)
+      : _uuid(uuid) {}
+
     underlying_t _uuid;
 };
 
