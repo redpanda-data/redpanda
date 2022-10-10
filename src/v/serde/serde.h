@@ -294,7 +294,7 @@ void write(iobuf& out, T t);
 inline void write(iobuf& out, iobuf t);
 
 inline void write(iobuf& out, uuid_t t) {
-    out.append(t.uuid.data, uuid_t::length);
+    out.append(t.uuid().data, uuid_t::length);
 }
 
 template<typename T>
@@ -729,7 +729,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         in.consume_to(str.size(), str.begin());
         t = str;
     } else if constexpr (std::is_same_v<Type, uuid_t>) {
-        in.consume_to(uuid_t::length, t.uuid.begin());
+        in.consume_to(uuid_t::length, t.mutable_uuid().begin());
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(
