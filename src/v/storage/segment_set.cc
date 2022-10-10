@@ -359,7 +359,7 @@ static ss::future<segment_set> do_recover(
  * segment. Otherwise all open segment readers are returned.
  */
 static ss::future<segment_set::underlying_t> open_segments(
-  ss::sstring dir,
+  partition_path ppath,
   debug_sanitize_files sanitize_fileops,
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as,
@@ -370,17 +370,17 @@ static ss::future<segment_set::underlying_t> open_segments(
     return ss::do_with(
       segs_type{},
       [&as,
+       ppath,
        cache_factory,
        sanitize_fileops,
-       dir = std::move(dir),
        buf_size,
        read_ahead,
        &resources](segs_type& segs) {
           auto f = directory_walker::walk(
-            dir,
+            ss::sstring(ppath),
             [&as,
+             ppath,
              cache_factory,
-             dir,
              sanitize_fileops,
              &segs,
              buf_size,
@@ -397,20 +397,15 @@ static ss::future<segment_set::underlying_t> open_segments(
                   !seg.type || *seg.type != ss::directory_entry_type::regular) {
                     return ss::make_ready_future<>();
                 }
-                auto path = std::filesystem::path(
-                  fmt::format("{}/{}", dir, seg.name));
-                try {
-                    auto is_valid = segment_path::parse_segment_filename(
-                      path.filename().string());
-                    if (!is_valid) {
-                        return ss::make_ready_future<>();
-                    }
-                } catch (...) {
-                    // not a reader filename
+
+                auto path = segment_full_path::parse(ppath, seg.name);
+                if (!path) {
+                    // This is normal, we skip non-log files like indices
                     return ss::make_ready_future<>();
                 }
+
                 return open_segment(
-                         path,
+                         *path,
                          sanitize_fileops,
                          cache_factory(),
                          buf_size,
@@ -432,7 +427,7 @@ static ss::future<segment_set::underlying_t> open_segments(
 }
 
 ss::future<segment_set> recover_segments(
-  std::filesystem::path path,
+  partition_path path,
   debug_sanitize_files sanitize_fileops,
   bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> cache_factory,
@@ -441,16 +436,16 @@ ss::future<segment_set> recover_segments(
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
   storage_resources& resources) {
-    return ss::recursive_touch_directory(path.string())
+    return ss::recursive_touch_directory(ss::sstring(path))
       .then([&as,
+             path,
              cache_factory,
              sanitize_fileops,
-             path = std::move(path),
              read_buf_size,
              read_readahead_count,
              &resources] {
           return open_segments(
-            path.string(),
+            path,
             sanitize_fileops,
             cache_factory,
             as,

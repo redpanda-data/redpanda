@@ -380,10 +380,9 @@ ss::future<> kvstore::recover() {
          */
         load_snapshot_in_thread();
 
-        auto dir = std::filesystem::path(_ntpc.work_directory());
         auto segments
           = recover_segments(
-              std::move(dir),
+              partition_path(_ntpc),
               debug_sanitize_files::yes,
               _ntpc.is_compacted(),
               [] { return std::nullopt; },

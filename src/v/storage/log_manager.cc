@@ -338,10 +338,9 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
 
     co_await recover_log_state(cfg);
 
-    ss::sstring path = cfg.work_directory();
     with_cache cache_enabled = cfg.cache_enabled();
     auto segments = co_await recover_segments(
-      std::filesystem::path(path),
+      partition_path(cfg),
       _config.sanitize_fileops,
       cfg.is_compacted(),
       [this, cache_enabled] { return create_cache(cache_enabled); },
