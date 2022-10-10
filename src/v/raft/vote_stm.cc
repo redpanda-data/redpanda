@@ -75,6 +75,7 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
               try {
                   auto r = f.get0();
                   vlog(_ctxlog.info, "vote reply from {} - {}", n, r.value());
+                  _ptr->update_node_reply_timestamp(n);
                   voter_reply->second.set_value(r);
               } catch (...) {
                   voter_reply->second.set_value(errc::vote_dispatch_error);
