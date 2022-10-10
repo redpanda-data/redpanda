@@ -1217,6 +1217,11 @@ struct incremental_topic_updates
       = default;
 };
 
+using replication_factor
+  = named_type<uint16_t, struct replication_factor_type_tag>;
+
+std::istream& operator>>(std::istream& i, replication_factor& cs);
+
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend
 struct incremental_topic_custom_updates

@@ -513,6 +513,13 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
     return o;
 }
 
+std::istream& operator>>(std::istream& i, replication_factor& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = replication_factor(boost::lexical_cast<replication_factor::type>(s));
+    return i;
+};
+
 std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(
