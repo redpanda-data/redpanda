@@ -51,6 +51,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
     max_suspend_duration_seconds = 10
     min_inter_failure_time = 30
     max_inter_failure_time = 60
+    producer_throughput = 1000
+    min_produced_records = 100 * producer_throughput
+    consumer_timeout = 180
+    producer_timeout = 180
 
     def generate_random_workload(self, count, available_nodes):
         op_types = [ADD, ADD_NO_WAIT, DECOMMISSION]
@@ -89,7 +93,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         return operations
 
-    def _create_random_topics(self, count):
+    def _create_random_topics(self, count, compacted):
         max_partitions = 10
 
         topics = []
@@ -98,7 +102,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
             spec = TopicSpec(
                 name=name,
                 partition_count=random.randint(1, max_partitions),
-                replication_factor=random.choice(ALLOWED_REPLICATION))
+                replication_factor=random.choice(ALLOWED_REPLICATION),
+                cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                if compacted else TopicSpec.CLEANUP_DELETE)
 
             topics.append(spec)
 
@@ -109,12 +115,18 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS)
-    @matrix(enable_failures=[True, False], num_to_upgrade=[0, 3])
-    def test_node_operations(self, enable_failures, num_to_upgrade):
+    @matrix(enable_failures=[True, False],
+            num_to_upgrade=[0, 3],
+            compacted_topics=[True, False])
+    def test_node_operations(self, enable_failures, num_to_upgrade,
+                             compacted_topics):
         # allocate 5 nodes for the cluster
         extra_rp_conf = {
             "group_topic_partitions": 3,
             "default_topic_replications": 3,
+            # make segments small to ensure that they are compacted during
+            # the test (only sealed i.e. not being written segments are compacted)
+            "compacted_log_segment_size": 5 * (2 ^ 20)
         }
         if num_to_upgrade > 0:
             # Use the deprecated config to bootstrap older nodes.
@@ -134,13 +146,15 @@ class NodeOperationFuzzyTest(EndToEndTest):
         else:
             self.redpanda.start()
         # create some topics
-        topics = self._create_random_topics(10)
+        topics = self._create_random_topics(10, compacted_topics)
         self.redpanda.logger.info(f"using topics: {topics}")
         # select one of the topics to use in consumer/producer
         self.topic = random.choice(topics).name
 
-        self.start_producer(1, throughput=100)
-        self.start_consumer(1)
+        self.start_producer(1,
+                            throughput=self.producer_throughput,
+                            repeating_keys=100 if compacted_topics else None)
+        self.start_consumer(1, verify_offsets=not compacted_topics)
         self.await_startup()
         admin_fuzz = AdminOperationsFuzzer(self.redpanda,
                                            operations_interval=3)
@@ -333,6 +347,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
         enable_failures = False
         admin_fuzz.wait(20, 180)
         admin_fuzz.stop()
-        self.run_validation(enable_idempotence=False,
-                            producer_timeout_sec=60,
-                            consumer_timeout_sec=180)
+        self.run_validation(min_records=self.min_produced_records,
+                            enable_idempotence=False,
+                            producer_timeout_sec=self.producer_timeout,
+                            consumer_timeout_sec=self.consumer_timeout,
+                            enable_compaction=compacted_topics)

@@ -18,6 +18,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
+from rptest.utils.mode_checks import cleanup_on_early_exit
 
 NO_RECOVERY = "no_recovery"
 RESTART_RECOVERY = "restart_recovery"
@@ -141,26 +142,37 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
-            recovery=[NO_RECOVERY, RESTART_RECOVERY])
+            recovery=[NO_RECOVERY, RESTART_RECOVERY],
+            compacted=[False, True])
     def test_cancelling_partition_move(self, replication_factor, unclean_abort,
-                                       recovery):
+                                       recovery, compacted):
         """
         Cancel partition moving with active consumer / producer
         """
+
         self.start_redpanda(num_nodes=5,
                             extra_rp_conf={
                                 "default_topic_replications": 3,
+                                "compacted_log_segment_size": 1 * (2 ^ 20)
                             })
+        # skip compacted topics tests in debug mode
+        if compacted and self.debug_mode:
+            cleanup_on_early_exit(self)
+            return
 
         spec = TopicSpec(partition_count=self.partition_count,
-                         replication_factor=replication_factor)
+                         replication_factor=replication_factor,
+                         cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                         if compacted else TopicSpec.CLEANUP_DELETE)
 
         self.client().create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1, throughput=self.throughput)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer(1,
+                            throughput=self.throughput,
+                            repeating_keys=100 if compacted else None)
+        if not compacted:
+            self.start_consumer(1)
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(10)
 
@@ -170,7 +182,9 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 # restart one of the nodes after each move
                 self.redpanda.restart_nodes(
                     [random.choice(self.redpanda.nodes)])
-
+        # start consumer late in the process for the compaction to trigger
+        if compacted:
+            self.start_consumer(1, verify_offsets=False)
         if unclean_abort:
             # do not run offsets validation as we may experience data loss since partition movement is forcibly cancelling
             wait_until(lambda: self.producer.num_acked > 20000, timeout_sec=60)
@@ -181,32 +195,50 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.run_validation(
                 enable_idempotence=False,
                 consumer_timeout_sec=self.consumer_timeout_seconds,
-                min_records=self.min_records)
+                min_records=self.min_records,
+                enable_compaction=compacted)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
     # https://github.com/redpanda-data/redpanda/issues/6020
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
-            recovery=[NO_RECOVERY, RESTART_RECOVERY])
+            recovery=[NO_RECOVERY, RESTART_RECOVERY],
+            compacted=[False, True])
     def test_cancelling_partition_move_x_core(self, replication_factor,
-                                              unclean_abort, recovery):
+                                              unclean_abort, recovery,
+                                              compacted):
         """
         Cancel partition moving with active consumer / producer
         """
-        self.start_redpanda(num_nodes=5,
-                            extra_rp_conf={
-                                "default_topic_replications": 3,
-                            })
+
+        self.start_redpanda(
+            num_nodes=5,
+            extra_rp_conf={
+                "default_topic_replications": 3,
+                # make segments small to ensure that they are compacted during
+                # the test (only sealed i.e. not being written segments are compacted)
+                "compacted_log_segment_size": 1 * (2 ^ 20),
+            })
+
+        # skip compacted topics tests in debug mode
+        if compacted and self.debug_mode:
+            cleanup_on_early_exit(self)
+            return
 
         spec = TopicSpec(partition_count=self.partition_count,
-                         replication_factor=replication_factor)
+                         replication_factor=replication_factor,
+                         cleanup_policy=TopicSpec.CLEANUP_COMPACT
+                         if compacted else TopicSpec.CLEANUP_DELETE)
 
         self.client().create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1, throughput=self.throughput)
-        self.start_consumer(1)
+        self.start_producer(1,
+                            throughput=self.throughput,
+                            repeating_keys=100 if compacted else None)
+
+        self.start_consumer(1, verify_offsets=(not compacted))
         self.await_startup()
         # throttle recovery to prevent partition move from finishing
         self._throttle_recovery(10)
@@ -243,7 +275,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             self.run_validation(
                 enable_idempotence=False,
                 consumer_timeout_sec=self.consumer_timeout_seconds,
-                min_records=self.min_records)
+                min_records=self.min_records,
+                enable_compaction=compacted)
 
     def increase_replication_factor(self, topic, partition,
                                     requested_replication_factor):
