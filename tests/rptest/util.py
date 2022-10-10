@@ -123,6 +123,26 @@ def segments_count(redpanda, topic, partition_idx):
     )
 
 
+def produce_total_bytes(redpanda,
+                        topic,
+                        partition_index,
+                        bytes_to_produce,
+                        acks=-1):
+    kafka_tools = KafkaCliTools(redpanda)
+
+    def done():
+        nonlocal bytes_to_produce
+
+        kafka_tools.produce(topic, 10000, 1024, acks=acks)
+        bytes_to_produce -= 10000 * 1024
+        return bytes_to_produce < 0
+
+    wait_until(done,
+               timeout_sec=60,
+               backoff_sec=1,
+               err_msg="f{bytes_to_produce} bytes still left to produce")
+
+
 def produce_until_segments(redpanda,
                            topic,
                            partition_idx,

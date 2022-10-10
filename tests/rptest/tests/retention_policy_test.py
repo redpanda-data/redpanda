@@ -6,17 +6,22 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import itertools
 
 from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SISettings
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.util import (produce_until_segments, wait_for_segments_removal,
-                         segments_count)
+from rptest.util import (produce_until_segments, produce_total_bytes,
+                         wait_for_segments_removal, segments_count,
+                         expect_exception)
 
 
 def bytes_for_segments(want_segments, segment_size):
@@ -184,3 +189,113 @@ class RetentionPolicyTest(RedpandaTest):
                        err_msg="Segments were not removed")
 
         validate_time_query_until_deleted()
+
+
+class ShadowIndexingRetentionTest(RedpandaTest):
+    segment_size = 1000000  # 1MB
+    default_retention_segments = 2
+    retention_segments = 4
+    total_segments = 10
+    topic_name = "si_test_topic"
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(log_compaction_interval_ms=1000,
+                             retention_local_target_bytes_default=self.
+                             default_retention_segments * self.segment_size)
+
+        super(ShadowIndexingRetentionTest, self).__init__(
+            test_context=test_context,
+            num_brokers=1,
+            si_settings=SISettings(log_segment_size=self.segment_size),
+            extra_rp_conf=extra_rp_conf,
+            log_level="trace")
+
+        self.rpk = RpkTool(self.redpanda)
+
+    def segments_removed(self, limit: int):
+        segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+            "kafka", self.topic_name, 0)
+        self.logger.debug(f"Current segments: {segs}")
+
+        return len(segs) <= limit
+
+    @cluster(num_nodes=1)
+    @matrix(cluster_remote_write=[True, False],
+            topic_remote_write=["true", "false", "-1"])
+    def test_shadow_indexing_default_local_retention(self,
+                                                     cluster_remote_write,
+                                                     topic_remote_write):
+        """
+        Test the default local retention on topics with remote write enabled.
+        The retention.local-target topic configuration properties control
+        the local retention of topics with remote write enabled. The defaults
+        for these topic configs are controlled via cluster level configs:
+        * retention_local_target_bytes_ms_default
+        * retention_local_target_bytes_bytes_default
+
+        This test goes through all possible combinations of cluster and topic
+        level remote write configurations and checks if segments were removed
+        at the end.
+        """
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enable_remote_write": cluster_remote_write},
+            expect_restart=True)
+
+        self.rpk.create_topic(topic=self.topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  "cleanup.policy": TopicSpec.CLEANUP_DELETE,
+                                  "redpanda.remote.write": topic_remote_write
+                              })
+
+        expect_deletion = cluster_remote_write or topic_remote_write == "true"
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=self.total_segments *
+                            self.segment_size)
+
+        if expect_deletion:
+            wait_until(
+                lambda: self.segments_removed(self.default_retention_segments),
+                timeout_sec=5,
+                backoff_sec=1,
+                err_msg=f"Segments were not removed")
+        else:
+            with expect_exception(TimeoutError, lambda e: True):
+                wait_until(lambda: self.segments_removed(
+                    self.default_retention_segments),
+                           timeout_sec=5,
+                           backoff_sec=1)
+
+    @cluster(num_nodes=1)
+    def test_shadow_indexing_non_default_local_retention(self):
+        """
+        Test that the topic level retention.local-target.bytes config
+        overrides the cluster level default.
+        """
+        self.rpk.create_topic(topic=self.topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  "cleanup.policy":
+                                  TopicSpec.CLEANUP_DELETE,
+                                  "redpanda.remote.write":
+                                  "true",
+                                  "retention.local-target.bytes":
+                                  str(self.segment_size *
+                                      self.retention_segments)
+                              })
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=self.total_segments *
+                            self.segment_size)
+
+        wait_until(lambda: self.segments_removed(self.retention_segments),
+                   timeout_sec=5,
+                   backoff_sec=1,
+                   err_msg=f"Segments were not removed")
