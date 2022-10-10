@@ -524,8 +524,10 @@ std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(
       o,
-      "{{incremental_topic_custom_updates: data_policy: {}}}",
-      i.data_policy);
+      "{{incremental_topic_custom_updates: data_policy: {}, "
+      "replication_factor: {}}}",
+      i.data_policy,
+      i.replication_factor);
     return o;
 }
 
