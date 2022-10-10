@@ -25,6 +25,8 @@ FIXTURE_TEST(empty_log_garbage_collect, gc_fixture) {
 }
 
 FIXTURE_TEST(retention_test_time, gc_fixture) {
+    auto base_ts = model::timestamp{123000};
+    builder.set_time(base_ts);
     builder | storage::start() | storage::add_segment(0)
       | storage::add_random_batch(0, 100, storage::maybe_compress_batches::yes)
       | storage::add_random_batch(100, 2, storage::maybe_compress_batches::yes)
@@ -47,7 +49,9 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should leave one active segment");
-    builder | storage::garbage_collect(model::timestamp::now(), std::nullopt)
+    builder
+      | storage::garbage_collect(
+        model::timestamp{base_ts() + 1000}, std::nullopt)
       | storage::stop();
 
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
