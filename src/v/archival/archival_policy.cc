@@ -461,7 +461,7 @@ static ss::future<> get_file_range(
       upl);
     upl.content_length = upl.final_file_offset - upl.file_offset;
     vassert(
-      upl.content_length <= fsize,
+      upl.content_length <= segment->reader().file_size(),
       "Incorrect content length in {}, file size {}",
       upl,
       fsize);
