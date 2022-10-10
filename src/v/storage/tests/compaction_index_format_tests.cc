@@ -15,6 +15,7 @@
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/fs_utils.h"
 #include "storage/segment_utils.h"
 #include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
@@ -149,7 +150,7 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -176,7 +177,7 @@ FIXTURE_TEST(
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -217,7 +218,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -258,7 +259,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -324,7 +325,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -355,7 +356,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     final_idx.close().get();
     {
         auto final_rdr = storage::make_file_backed_compacted_reader(
-          "dummy name - final ",
+          storage::segment_full_path::mock("dummy name - final "),
           ss::file(ss::make_shared(tmpbuf_file(final_data))),
           ss::default_priority_class(),
           32_KiB);

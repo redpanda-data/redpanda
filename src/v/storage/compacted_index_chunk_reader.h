@@ -25,7 +25,7 @@ using namespace storage; // NOLINT
 class compacted_index_chunk_reader final : public compacted_index_reader::impl {
 public:
     compacted_index_chunk_reader(
-      ss::sstring name,
+      segment_full_path,
       ss::file,
       ss::io_priority_class,
       size_t max_chunk_memory) noexcept;

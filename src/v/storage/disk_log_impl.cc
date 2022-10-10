@@ -519,8 +519,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // lock on the range, which is then released. the remainder of the
     // compaction process operates on replacement segment, and any conflicting
     // log operations are later identified before committing changes.
-    auto staging_path = std::filesystem::path(
-      fmt::format("{}.compaction.staging", target->reader().filename()));
+    auto staging_path = target->reader().path().to_compaction_staging();
     auto [replacement, generations]
       = co_await storage::internal::make_concatenated_segment(
         staging_path, segments, cfg, _manager.resources());
@@ -548,8 +547,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
         co_await ss::remove_file(target->index().filename());
     }
 
-    auto compact_index = internal::compacted_index_path(
-      target->reader().filename().c_str());
+    auto compact_index = target->reader().path().to_compacted_index();
     if (co_await ss::file_exists(compact_index.string())) {
         co_await ss::remove_file(compact_index.string());
     }

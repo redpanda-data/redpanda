@@ -10,6 +10,7 @@
 #include "bytes/bytes.h"
 #include "config/mock_property.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
@@ -2913,10 +2914,7 @@ FIXTURE_TEST(test_simple_compaction_rebuild_index, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
 
     // Remove compacted indexes to trigger a full index rebuild.
-    auto seg_path = disk_log->segments()[0]->filename();
-    auto index_path = storage::internal::compacted_index_path(
-      std::filesystem::path(seg_path));
-
+    auto index_path = disk_log->segments()[0]->path().to_compacted_index();
     BOOST_REQUIRE(std::filesystem::remove(index_path));
 
     auto batches = read_and_validate_all_batches(log);

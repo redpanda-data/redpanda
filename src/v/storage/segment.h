@@ -123,7 +123,8 @@ public:
     // please use higher level API's when possible
     segment_reader& reader();
     size_t file_size() const { return _reader.file_size(); }
-    const ss::sstring& filename() const { return _reader.filename(); }
+    const ss::sstring filename() const { return _reader.filename(); }
+    const segment_full_path& path() const { return _reader.path(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();

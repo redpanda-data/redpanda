@@ -104,8 +104,7 @@ ss::future<> segment::remove_persistent_state() {
     rm.emplace_back(reader().filename().c_str());
     rm.emplace_back(index().filename().c_str());
     if (is_compacted_segment()) {
-        rm.push_back(
-          internal::compacted_index_path(reader().filename().c_str()));
+        rm.push_back(reader().path().to_compacted_index());
     }
     vlog(stlog.info, "removing: {}", rm);
     return ss::do_with(
@@ -264,9 +263,9 @@ ss::future<> segment::do_flush() {
     });
 }
 
-ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
-    auto path = internal::compacted_index_path(reader_path.c_str());
-    return ss::remove_file(path.c_str())
+ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
+    auto path = reader_path.to_compacted_index();
+    return ss::remove_file(path.string())
       .handle_exception([path](const std::exception_ptr& e) {
           try {
               rethrow_exception(e);
@@ -314,8 +313,7 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
               });
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then(
-          [this] { return remove_compacted_index(_reader.filename()); });
+        f = f.then([this] { return remove_compacted_index(_reader.path()); });
     }
 
     f = f.then(
@@ -609,7 +607,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     }
 
     auto rdr = std::make_unique<segment_reader>(
-      ss::sstring(path), buf_size, read_ahead, sanitize_fileops);
+      path, buf_size, read_ahead, sanitize_fileops);
     co_await rdr->load_size();
 
     auto index_name = std::filesystem::path(rdr->filename().c_str())
@@ -689,7 +687,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
             seg,
             [path, sanitize_fileops, pc, &resources](
               const ss::lw_shared_ptr<segment>& seg) {
-                auto compacted_path = internal::compacted_index_path(path);
+                auto compacted_path = path.to_compacted_index();
                 return internal::make_compacted_index_writer(
                          compacted_path, sanitize_fileops, pc, resources)
                   .then([seg, &resources](compacted_index_writer compact) {
