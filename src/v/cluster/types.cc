@@ -70,9 +70,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
-    ret.shadow_indexing_mode = shadow_indexing
-                                 ? *shadow_indexing
-                                 : model::shadow_indexing_mode::disabled;
+    ret.shadow_indexing_mode = shadow_indexing;
     ret.read_replica = read_replica;
     ret.retention_local_target_bytes = retention_local_target_bytes;
     ret.retention_local_target_ms = retention_local_target_ms;
@@ -100,9 +98,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
-            .shadow_indexing_mode = properties.shadow_indexing
-                                      ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled,
+            .shadow_indexing_mode = properties.shadow_indexing,
             .read_replica = properties.read_replica,
             .retention_local_target_bytes
             = properties.retention_local_target_bytes,

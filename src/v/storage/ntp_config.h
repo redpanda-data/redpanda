@@ -44,8 +44,7 @@ public:
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
         // if set the value will control how data is uploaded and retrieved
         // to/from S3
-        model::shadow_indexing_mode shadow_indexing_mode
-          = model::shadow_indexing_mode::disabled;
+        std::optional<model::shadow_indexing_mode> shadow_indexing_mode;
 
         std::optional<bool> read_replica;
 
@@ -147,13 +146,15 @@ public:
     }
 
     bool is_archival_enabled() const {
-        return _overrides != nullptr
-               && model::is_archival_enabled(_overrides->shadow_indexing_mode);
+        return _overrides != nullptr && _overrides->shadow_indexing_mode
+               && model::is_archival_enabled(
+                 _overrides->shadow_indexing_mode.value());
     }
 
     bool is_remote_fetch_enabled() const {
-        return _overrides != nullptr
-               && model::is_fetch_enabled(_overrides->shadow_indexing_mode);
+        return _overrides != nullptr && _overrides->shadow_indexing_mode
+               && model::is_fetch_enabled(
+                 _overrides->shadow_indexing_mode.value());
     }
 
     bool is_read_replica_mode_enabled() const {
