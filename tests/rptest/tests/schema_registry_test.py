@@ -1514,3 +1514,85 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
                                                         super_password))
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+
+    @cluster(num_nodes=3)
+    def test_protobuf(self):
+        """
+        Verify basic protobuf functionality
+        """
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.info("Posting failed schema should be 422")
+        result_raw = self._post_subjects_subject_versions(
+            subject="imported",
+            data=json.dumps({
+                "schema": imported_proto_def,
+                "schemaType": "PROTOBUF"
+            }),
+            auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.unprocessable_entity
+
+        self.logger.info("Posting simple as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject="simple",
+            data=json.dumps({
+                "schema": simple_proto_def,
+                "schemaType": "PROTOBUF"
+            }),
+            auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.info("Posting imported as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject="imported",
+            data=json.dumps({
+                "schema":
+                imported_proto_def,
+                "schemaType":
+                "PROTOBUF",
+                "references": [{
+                    "name": "simple",
+                    "subject": "simple",
+                    "version": 1
+                }]
+            }),
+            auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 2
+
+        result_raw = self._request("GET",
+                                   f"subjects/simple/versions/1/schema",
+                                   headers=HTTP_GET_HEADERS,
+                                   auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.text.strip() == simple_proto_def.strip()
+
+        result_raw = self._request("GET",
+                                   f"schemas/ids/1",
+                                   headers=HTTP_GET_HEADERS,
+                                   auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["schemaType"] == "PROTOBUF"
+        assert result["schema"].strip() == simple_proto_def.strip()
+
+        # Regular user should fail
+        result_raw = self._get_subjects_subject_versions_version_referenced_by(
+            "simple", 1, auth=(self.username, self.password))
+        assert result_raw.json()['error_code'] == 40101
+
+        result_raw = self._get_subjects_subject_versions_version_referenced_by(
+            "simple", 1, auth=(super_username, super_password))
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [2]
