@@ -145,8 +145,25 @@ private:
 
     ss::future<std::error_code> do_update_data_policy(
       topic_properties_update&, model::timeout_clock::time_point);
+    ss::future<std::error_code> do_update_replication_factor(
+      topic_properties_update&, model::timeout_clock::time_point);
     ss::future<topic_result> do_update_topic_properties(
       topic_properties_update, model::timeout_clock::time_point);
+
+    ss::future<std::error_code> change_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
+
+    using new_replicas_assigment = std::vector<move_topic_replicas_data>;
+    ss::future<std::error_code> increase_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
+    ss::future<std::error_code> decrease_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
 
     ss::future<result<model::offset>>
       stm_linearizable_barrier(model::timeout_clock::time_point);

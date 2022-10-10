@@ -38,9 +38,11 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/sharded.hh>
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <regex>
 #include <sstream>
 #include <system_error>
@@ -245,14 +247,44 @@ ss::future<std::error_code> topics_frontend::do_update_data_policy(
     }
 }
 
+ss::future<std::error_code> topics_frontend::do_update_replication_factor(
+  topic_properties_update& update, model::timeout_clock::time_point timeout) {
+    switch (update.custom_properties.replication_factor.op) {
+    case incremental_update_operation::set: {
+        auto value = update.custom_properties.replication_factor.value;
+        if (
+          !value.has_value()
+          || value.value() == cluster::replication_factor(0)) {
+            co_return cluster::errc::topic_invalid_replication_factor;
+        }
+
+        co_return co_await change_replication_factor(
+          update.tp_ns,
+          update.custom_properties.replication_factor.value.value(),
+          timeout);
+    }
+    case incremental_update_operation::none:
+        co_return cluster::errc::success;
+    default:
+        co_return cluster::errc::invalid_configuration_update;
+    }
+}
+
 ss::future<topic_result> topics_frontend::do_update_topic_properties(
   topic_properties_update update, model::timeout_clock::time_point timeout) {
     update_topic_properties_cmd cmd(update.tp_ns, update.properties);
     try {
+        auto update_rf_res = co_await do_update_replication_factor(
+          update, timeout);
+        if (update_rf_res != std::error_code(cluster::errc::success)) {
+            co_return topic_result(
+              update.tp_ns, cluster::errc(update_rf_res.value()));
+        }
+
         auto update_dp_res = co_await do_update_data_policy(update, timeout);
         if (update_dp_res != std::error_code(cluster::errc::success)) {
             co_return topic_result(
-              std::move(update.tp_ns), cluster::errc(update_dp_res.value()));
+              update.tp_ns, cluster::errc(update_dp_res.value()));
         }
         auto ec = co_await replicate_and_wait(
           _stm, _features, _as, std::move(cmd), timeout);
@@ -977,6 +1009,170 @@ topics_frontend::do_cancel_moving_partition_replicas(
       });
 
     co_return results;
+}
+
+ss::future<std::error_code> topics_frontend::change_replication_factor(
+  model::topic_namespace topic,
+  cluster::replication_factor new_replication_factor,
+  model::timeout_clock::time_point timeout) {
+    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+    if (!tp_metadata.has_value()) {
+        co_return errc::topic_not_exists;
+    }
+    if (!tp_metadata.value().get().is_topic_replicable()) {
+        co_return errc::topic_operation_error;
+    }
+
+    auto current_replication_factor
+      = tp_metadata.value().get().get_replication_factor();
+
+    if (current_replication_factor == new_replication_factor) {
+        co_return errc::success;
+    }
+
+    if (new_replication_factor < current_replication_factor) {
+        co_return co_await decrease_replication_factor(
+          topic, new_replication_factor, timeout);
+    }
+    co_return co_await increase_replication_factor(
+      topic, new_replication_factor, timeout);
+}
+
+ss::future<std::error_code> topics_frontend::increase_replication_factor(
+  model::topic_namespace topic,
+  cluster::replication_factor new_replication_factor,
+  model::timeout_clock::time_point timeout) {
+    std::vector<move_topic_replicas_data> new_assignments;
+
+    auto tp_metadata = _topics.local().get_topic_metadata(topic);
+    if (!tp_metadata.has_value()) {
+        co_return errc::topic_not_exists;
+    }
+
+    auto partition_count = tp_metadata->get_configuration().partition_count;
+
+    // units shold exist during replicate_and_wait call
+    using units_from_allocator
+      = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
+    std::vector<units_from_allocator> units;
+    units.reserve(partition_count);
+
+    std::optional<std::error_code> error;
+
+    co_await ss::max_concurrent_for_each(
+      tp_metadata->get_assignments(),
+      32,
+      [this, &units, &new_assignments, &error, topic, new_replication_factor](
+        partition_assignment& assignment) -> ss::future<> {
+          if (error) {
+              co_return;
+          }
+
+          if (assignment.replicas.size() > new_replication_factor) {
+              vlog(
+                clusterlog.warn,
+                "Current size of replicas {} > new_replication_factor {} for "
+                "topic {} and partition {}",
+                assignment.replicas.size(),
+                new_replication_factor,
+                topic,
+                assignment.id);
+              error = errc::topic_invalid_replication_factor;
+              co_return;
+          }
+
+          auto partition_constraints = cluster::partition_constraints(
+            assignment.id, new_replication_factor);
+
+          auto ntp = model::ntp(topic.ns, topic.tp, assignment.id);
+
+          auto reallocation = co_await _allocator.invoke_on(
+            partition_allocator::shard,
+            [partition_constraints,
+             assignment = std::move(assignment),
+             ntp = std::move(ntp)](partition_allocator& al) {
+                return al.reallocate_partition(
+                  partition_constraints,
+                  assignment,
+                  get_allocation_domain(ntp));
+            });
+
+          if (!reallocation) {
+              vlog(
+                clusterlog.warn,
+                "attempt to find reallocation for topic {}, partition {} "
+                "failed, error: {}",
+                topic,
+                assignment.id,
+                reallocation.error().message());
+              error = reallocation.error();
+              co_return;
+          }
+
+          units_from_allocator ptr = std::make_unique<allocation_units>(
+            std::move(reallocation.value()));
+
+          units.emplace_back(std::move(ptr));
+
+          new_assignments.emplace_back(
+            assignment.id, units.back()->get_assignments().front().replicas);
+      });
+
+    if (error) {
+        co_return error.value();
+    }
+
+    move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
+
+    co_return co_await replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout);
+}
+
+ss::future<std::error_code> topics_frontend::decrease_replication_factor(
+  model::topic_namespace topic,
+  cluster::replication_factor new_replication_factor,
+  model::timeout_clock::time_point timeout) {
+    std::vector<move_topic_replicas_data> new_assignments;
+
+    auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
+    if (!tp_metadata.has_value()) {
+        co_return errc::topic_not_exists;
+    }
+
+    std::optional<std::error_code> error;
+
+    auto metadata_ref = tp_metadata.value().get();
+
+    co_await ss::max_concurrent_for_each(
+      metadata_ref.get_assignments(),
+      32,
+      [&new_assignments, &error, topic, new_replication_factor](
+        partition_assignment& assignment) -> ss::future<> {
+          if (error) {
+              co_return;
+          }
+          if (assignment.replicas.size() < new_replication_factor) {
+              error = errc::topic_invalid_replication_factor;
+              co_return;
+          }
+
+          new_assignments.emplace_back(move_topic_replicas_data());
+          new_assignments.back().partition = assignment.id;
+          new_assignments.back().replicas.resize(new_replication_factor);
+          std::copy_n(
+            assignment.replicas.begin(),
+            new_replication_factor,
+            new_assignments.back().replicas.begin());
+      });
+
+    if (error) {
+        co_return error.value();
+    }
+
+    move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
+
+    co_return co_await replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), timeout);
 }
 
 } // namespace cluster
