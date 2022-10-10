@@ -51,6 +51,8 @@
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/http/reply.hh>
+#include <seastar/http/request.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -454,7 +456,11 @@ void admin_server::register_config_routes() {
 
     ss::httpd::config_json::set_log_level.set(
       _server._routes, [this](ss::const_req req) {
-          auto name = req.param["name"];
+          ss::sstring name;
+          if (!ss::httpd::connection::url_decode(req.param["name"], name)) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'name' got {{{}}}", req.param["name"]));
+          }
 
           // current level: will be used revert after a timeout (optional)
           ss::log_level cur_level;
