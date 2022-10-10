@@ -909,6 +909,9 @@ class PandaProxySASLTest(PandaProxyEndpoints):
 
 
 class PandaProxyBasicAuthTest(PandaProxyEndpoints):
+    username = 'red'
+    password = 'panda'
+
     def __init__(self, context):
 
         security = SecurityConfig()
@@ -923,7 +926,7 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     def test_get_brokers(self):
         # Regular user without authz priviledges
         # should fail
-        res = self._get_brokers(auth=('red', 'panda')).json()
+        res = self._get_brokers(auth=(self.username, self.password)).json()
         assert res['error_code'] == 40101
 
         super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -939,7 +942,7 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     def test_list_topics(self):
         # Regular user without authz priviledges
         # should fail
-        result = self._get_topics(auth=('red', 'panda')).json()
+        result = self._get_topics(auth=(self.username, self.password)).json()
         assert result['error_code'] == 40101
 
         super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -973,8 +976,10 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
         # Regular user without authz priviledges
         # should fail
-        result = self._produce_topic(self.topic, data,
-                                     auth=('red', 'panda')).json()
+        result = self._produce_topic(self.topic,
+                                     data,
+                                     auth=(self.username,
+                                           self.password)).json()
         assert result['error_code'] == 40101
 
         super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -1021,8 +1026,9 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
         # Regular user without authz priviledges
         # should fail
-        result = self._fetch_topic(self.topic, data,
-                                   auth=('red', 'panda')).json()
+        result = self._fetch_topic(self.topic,
+                                   data,
+                                   auth=(self.username, self.password)).json()
         assert result['error_code'] == 40101
 
         super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
