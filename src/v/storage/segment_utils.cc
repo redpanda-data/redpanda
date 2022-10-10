@@ -367,7 +367,8 @@ ss::future<storage::index_state> do_copy_segment_data(
             .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
                     segment_appender_ptr w) mutable {
                 auto raw = w.get();
-                auto red = copy_data_segment_reducer(std::move(l), raw);
+                auto red = copy_data_segment_reducer(
+                  std::move(l), raw, s->path().is_internal_topic());
                 auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
                 vlog(
                   gclog.trace,
