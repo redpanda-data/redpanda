@@ -246,7 +246,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
           batch.last_offset(),
           batch.header().first_timestamp,
           batch.header().max_timestamp,
-          batch.header().type == model::record_batch_type::raft_data)) {
+          _is_internal
+            || batch.header().type == model::record_batch_type::raft_data)) {
         _acc = 0;
     }
     co_await storage::write(*_appender, batch);
