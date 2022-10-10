@@ -12,6 +12,7 @@
 #pragma once
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "ssx/sformat.h"
 #include "tristate.h"
 
@@ -156,6 +157,8 @@ public:
         return _overrides != nullptr && _overrides->read_replica
                && _overrides->read_replica.value();
     }
+
+    bool is_internal_topic() const { return _ntp.ns != model::kafka_namespace; }
 
 private:
     model::ntp _ntp;
