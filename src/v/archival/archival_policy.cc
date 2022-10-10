@@ -393,7 +393,7 @@ static ss::future<> get_file_range(
         // Subsequent call to segment_reader::data_stream will fail in this
         // case. In order to avoid this we need to make another index lookup
         // to find a lower offset which is committed.
-        while (ix_end && ix_end->filepos > fsize) {
+        while (ix_end && ix_end->filepos >= fsize) {
             vlog(archival_log.debug, "The position is not flushed {}", *ix_end);
             auto lookup_offset = ix_end->offset - model::offset(1);
             ix_end = segment->index().find_nearest(lookup_offset);
