@@ -594,24 +594,22 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 }
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
   storage_resources& resources) {
-    auto const meta = segment_path::parse_segment_filename(
-      path.filename().string());
-    if (!meta || meta->version != record_version_type::v1) {
+    if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
-          meta->version,
+          path.get_version(),
           record_version_type::v1,
           path));
     }
 
     auto rdr = std::make_unique<segment_reader>(
-      path.string(), buf_size, read_ahead, sanitize_fileops);
+      ss::sstring(path), buf_size, read_ahead, sanitize_fileops);
     co_await rdr->load_size();
 
     auto index_name = std::filesystem::path(rdr->filename().c_str())
@@ -620,12 +618,12 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
 
     auto idx = segment_index(
       index_name,
-      meta->base_offset,
+      path.get_base_offset(),
       segment_index::default_data_buffer_step,
       sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
-      segment::offset_tracker(meta->term, meta->base_offset),
+      segment::offset_tracker(path.get_term(), path.get_base_offset()),
       std::move(*rdr),
       std::move(idx),
       nullptr,
@@ -645,9 +643,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   storage_resources& resources) {
-    auto path = segment_path::make_segment_path(
-      ntpc, base_offset, term, version);
-    vlog(stlog.info, "Creating new segment {}", path.string());
+    auto path = segment_full_path(ntpc, base_offset, term, version);
+    vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
              path,
              sanitize_fileops,

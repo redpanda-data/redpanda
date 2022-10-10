@@ -13,6 +13,7 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
@@ -237,7 +238,7 @@ private:
  * exist
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
