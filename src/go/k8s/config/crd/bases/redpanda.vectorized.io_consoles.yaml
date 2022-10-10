@@ -373,7 +373,9 @@ spec:
                       allowedOrigins:
                         description: AllowedOrigins indicates if response is allowed
                           from given origin
-                        type: string
+                        items:
+                          type: string
+                        type: array
                       audience:
                         description: Audience is the domain where this auth is intended
                           for
