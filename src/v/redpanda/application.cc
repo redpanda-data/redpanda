@@ -139,7 +139,7 @@ void application::shutdown() {
         _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
     }
     if (_rpc.local_is_initialized()) {
-        _rpc.invoke_on_all(&net::server::shutdown_input).get();
+        _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
     }
 
     // We schedule shutting down controller input and aborting its operation as
@@ -182,7 +182,7 @@ void application::shutdown() {
         _kafka_conn_quotas.stop().get();
     }
     if (_rpc.local_is_initialized()) {
-        _rpc.invoke_on_all(&net::server::wait_for_shutdown).get();
+        _rpc.invoke_on_all(&rpc::rpc_server::wait_for_shutdown).get();
         _rpc.stop().get();
     }
 
@@ -1421,28 +1421,29 @@ void application::start_redpanda(::stop_signal& app_signal) {
 
     syschecks::systemd_message("Starting RPC").get();
     _rpc
-      .invoke_on_all([this](net::server& s) {
-          auto proto = std::make_unique<rpc::simple_protocol>();
-          proto->register_service<cluster::id_allocator>(
+      .invoke_on_all([this](rpc::rpc_server& s) {
+          std::vector<std::unique_ptr<rpc::service>> runtime_services;
+          runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
-            std::ref(id_allocator_frontend));
+            std::ref(id_allocator_frontend)));
           // _rm_group_proxy is wrap around a sharded service with only
           // `.local()' access so it's ok to share without foreign_ptr
-          proto->register_service<cluster::tx_gateway>(
+          runtime_services.push_back(std::make_unique<cluster::tx_gateway>(
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
-            std::ref(rm_partition_frontend));
-          proto->register_service<
-            raft::service<cluster::partition_manager, cluster::shard_table>>(
-            _scheduling_groups.raft_sg(),
-            smp_service_groups.raft_smp_sg(),
-            partition_manager,
-            shard_table.local(),
-            config::shard_local_cfg().raft_heartbeat_interval_ms());
-          proto->register_service<cluster::service>(
+            std::ref(rm_partition_frontend)));
+          runtime_services.push_back(
+            std::make_unique<
+              raft::service<cluster::partition_manager, cluster::shard_table>>(
+              _scheduling_groups.raft_sg(),
+              smp_service_groups.raft_smp_sg(),
+              partition_manager,
+              shard_table.local(),
+              config::shard_local_cfg().raft_heartbeat_interval_ms()));
+          runtime_services.push_back(std::make_unique<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_topics_frontend()),
@@ -1456,31 +1457,30 @@ void application::start_redpanda(::stop_signal& app_signal) {
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
-            std::ref(_connection_cache));
+            std::ref(_connection_cache)));
 
-          proto->register_service<cluster::metadata_dissemination_handler>(
-            _scheduling_groups.cluster_sg(),
-            smp_service_groups.cluster_smp_sg(),
-            std::ref(controller->get_partition_leaders()));
+          runtime_services.push_back(
+            std::make_unique<cluster::metadata_dissemination_handler>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(controller->get_partition_leaders())));
 
-          proto->register_service<cluster::partition_balancer_rpc_handler>(
-            _scheduling_groups.cluster_sg(),
-            smp_service_groups.cluster_smp_sg(),
-            std::ref(controller->get_partition_balancer()));
+          runtime_services.push_back(
+            std::make_unique<cluster::partition_balancer_rpc_handler>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(controller->get_partition_balancer())));
 
-          proto->register_service<cluster::node_status_rpc_handler>(
-            _scheduling_groups.node_status(),
-            smp_service_groups.cluster_smp_sg(),
-            std::ref(node_status_backend));
+          runtime_services.push_back(
+            std::make_unique<cluster::node_status_rpc_handler>(
+              _scheduling_groups.node_status(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(node_status_backend)));
 
-          if (!config::shard_local_cfg().disable_metrics()) {
-              proto->setup_metrics();
-          }
-
-          s.set_protocol(std::move(proto));
+          s.add_services(std::move(runtime_services));
       })
       .get();
-    _rpc.invoke_on_all(&net::server::start).get();
+    _rpc.invoke_on_all(&rpc::rpc_server::start).get();
     vlog(
       _log.info,
       "Started RPC server listening at {}",

@@ -36,6 +36,7 @@
 #include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
+#include "rpc/rpc_server.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
 #include "storage/fwd.h"
@@ -173,7 +174,7 @@ private:
     ss::sharded<features::feature_table> _feature_table;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<kafka::group_manager> _co_group_manager;
-    ss::sharded<net::server> _rpc;
+    ss::sharded<rpc::rpc_server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;
     ss::sharded<net::server> _kafka_server;
