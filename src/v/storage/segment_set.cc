@@ -218,7 +218,7 @@ static ss::future<segment_set> unsafe_do_recover(
                   stlog.info,
                   "Error materializing index:{}. Recovering parent "
                   "segment:{}. Details:{}",
-                  s.index().filename(),
+                  s.index().path(),
                   s.filename(),
                   std::current_exception());
                 to_recover_set.insert(&s);
@@ -251,9 +251,9 @@ static ss::future<segment_set> unsafe_do_recover(
               }
               vlog(stlog.info, "Removing empty segment: {}", segment);
               segment->close().get();
-              ss::remove_file(segment->reader().filename()).get();
+              ss::remove_file(segment->reader().path().string()).get();
               try {
-                  ss::remove_file(segment->index().filename()).get();
+                  ss::remove_file(segment->index().path().string()).get();
               } catch (const std::filesystem::filesystem_error& e) {
                   // Ignore ENOENT on deletion: segments are allowed to
                   // exist without an index if redpanda shutdown without

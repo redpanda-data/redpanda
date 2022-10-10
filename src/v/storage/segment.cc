@@ -102,7 +102,7 @@ ss::future<> segment::remove_persistent_state() {
     std::vector<std::filesystem::path> rm;
     rm.reserve(3);
     rm.emplace_back(reader().filename().c_str());
-    rm.emplace_back(index().filename().c_str());
+    rm.emplace_back(index().path().string());
     if (is_compacted_segment()) {
         rm.push_back(reader().path().to_compacted_index());
     }
@@ -610,12 +610,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       path, buf_size, read_ahead, sanitize_fileops);
     co_await rdr->load_size();
 
-    auto index_name = std::filesystem::path(rdr->filename().c_str())
-                        .replace_extension("base_index")
-                        .string();
-
     auto idx = segment_index(
-      index_name,
+      rdr->path().to_index(),
       path.get_base_offset(),
       segment_index::default_data_buffer_step,
       sanitize_fileops);

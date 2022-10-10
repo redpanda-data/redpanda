@@ -27,7 +27,7 @@ public:
         _base_offset = base;
         // index
         _idx = std::unique_ptr<segment_index>(new segment_index(
-          "In memory iobuf",
+          segment_full_path::mock("In memory iobuf"),
           ss::file(ss::make_shared(tmpbuf_file(_data))),
           _base_offset,
           storage::segment_index::default_data_buffer_step));

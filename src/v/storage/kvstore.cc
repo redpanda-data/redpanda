@@ -289,8 +289,8 @@ ss::future<> kvstore::roll() {
                 lg.debug,
                 "Removing old segment with base offset {}",
                 seg->offsets().base_offset);
-              return ss::remove_file(seg->reader().filename()).then([seg] {
-                  return ss::remove_file(seg->index().filename());
+              return ss::remove_file(seg->reader().path().string()).then([seg] {
+                  return ss::remove_file(seg->index().path().string());
               });
           })
           .then([this] {
@@ -535,8 +535,8 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           "Removing old segment with base offset {}",
           seg->offsets().base_offset);
         seg->close().get();
-        ss::remove_file(seg->reader().filename()).get();
-        ss::remove_file(seg->index().filename()).get();
+        ss::remove_file(seg->reader().path().string()).get();
+        ss::remove_file(seg->index().path().string()).get();
     }
 
     // close the rest

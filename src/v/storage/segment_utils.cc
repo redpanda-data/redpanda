@@ -678,7 +678,7 @@ make_concatenated_segment(
         co_await ss::remove_file(index_name.string());
     }
     segment_index index(
-      index_name.string(),
+      index_name,
       offsets.base_offset,
       segment_index::default_data_buffer_step,
       cfg.sanitize);

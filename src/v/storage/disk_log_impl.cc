@@ -543,8 +543,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
      * remove index files. they will be rebuilt by the single segment compaction
      * operation, and also ensures we examine segments correctly on recovery.
      */
-    if (co_await ss::file_exists(target->index().filename())) {
-        co_await ss::remove_file(target->index().filename());
+    if (co_await ss::file_exists(target->index().path().string())) {
+        co_await ss::remove_file(target->index().path().string());
     }
 
     auto compact_index = target->reader().path().to_compacted_index();
