@@ -291,7 +291,8 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_timeboxed_uploads(self):
+    @matrix(acks=[-1, 0, 1])
+    def test_timeboxed_uploads(self, acks):
         """This test checks segment upload time limit. The feature is enabled in the
         configuration. The configuration defines maximum time interval between uploads.
         If the option is set then redpanda will start uploading a segment partially if
@@ -311,7 +312,7 @@ class ArchivalTest(RedpandaTest):
         # expect that the bucket won't have 9 segments with 1000 offsets.
         # The actual segments will be larger.
         for _ in range(0, 10):
-            self.kafka_tools.produce(self.topic, 1000, 1024)
+            self.kafka_tools.produce(self.topic, 1000, 1024, acks)
             time.sleep(1)
         time.sleep(5)
 
@@ -358,8 +359,8 @@ class ArchivalTest(RedpandaTest):
                     self.logger.info(
                         f"checking {segment} prev: {prev_committed_offset}")
                     base_offset = segment['base_offset']
-                    assert prev_committed_offset + 1 == base_offset, f"inconsistent segments, " +\
-                        "expected base_offset: {prev_committed_offset + 1}, actual: {base_offset}"
+                    assert prev_committed_offset + 1 == base_offset, "inconsistent segments, " +\
+                        f"expected base_offset: {prev_committed_offset + 1}, actual: {base_offset}"
                     prev_committed_offset = segment['committed_offset']
                     size += segment['size_bytes']
                 assert sizes[ntp] >= size
