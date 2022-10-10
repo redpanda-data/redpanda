@@ -21,6 +21,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SecurityConfig
 from rptest.services.admin import Admin
+from typing import Optional, List, Dict, Union
 
 
 def create_topic_names(count):
@@ -93,34 +94,44 @@ class Consumer:
         self.instance_id = res["instance_id"]
         self.base_uri = res["base_uri"]
 
-    def subscribe(self, topics, headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS):
+    def subscribe(self,
+                  topics,
+                  headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS,
+                  **kwargs):
         res = requests.post(f"{self.base_uri}/subscription",
                             json.dumps({"topics": topics}),
-                            headers=headers)
+                            headers=headers,
+                            **kwargs)
         return res
 
-    def remove(self, headers=HTTP_REMOVE_CONSUMER_HEADERS):
-        res = requests.delete(self.base_uri, headers=headers)
+    def remove(self, headers=HTTP_REMOVE_CONSUMER_HEADERS, **kwargs):
+        res = requests.delete(self.base_uri, headers=headers, **kwargs)
         return res
 
-    def fetch(self, headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS):
-        res = requests.get(f"{self.base_uri}/records", headers=headers)
+    def fetch(self, headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS, **kwargs):
+        res = requests.get(f"{self.base_uri}/records",
+                           headers=headers,
+                           **kwargs)
         return res
 
     def get_offsets(self,
                     data=None,
-                    headers=HTTP_CONSUMER_GET_OFFSETS_HEADERS):
+                    headers=HTTP_CONSUMER_GET_OFFSETS_HEADERS,
+                    **kwargs):
         return requests.request(method='get',
                                 url=f"{self.base_uri}/offsets",
                                 data=data,
-                                headers=headers)
+                                headers=headers,
+                                **kwargs)
 
     def set_offsets(self,
                     data=None,
-                    headers=HTTP_CONSUMER_SET_OFFSETS_HEADERS):
+                    headers=HTTP_CONSUMER_SET_OFFSETS_HEADERS,
+                    **kwargs):
         return requests.post(f"{self.base_uri}/offsets",
                              data=data,
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
 
 class PandaProxyBrokersTest(RedpandaTest):
@@ -223,7 +234,10 @@ class PandaProxyEndpoints(RedpandaTest):
             headers=headers,
             **kwargs)
 
-    def _create_consumer(self, group_id, headers=HTTP_CREATE_CONSUMER_HEADERS):
+    def _create_consumer(self,
+                         group_id,
+                         headers=HTTP_CREATE_CONSUMER_HEADERS,
+                         **kwargs):
         res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
                             '''
             {
@@ -233,7 +247,8 @@ class PandaProxyEndpoints(RedpandaTest):
                 "fetch.min.bytes": "1",
                 "consumer.request.timeout.ms": "10000"
             }''',
-                            headers=headers)
+                            headers=headers,
+                            **kwargs)
         return res
 
     def _create_named_consumer(self,
@@ -1058,3 +1073,135 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         assert fetch_result_0[0]["partition"] == expected["records"][0][
             "partition"]
         assert fetch_result_0[0]["offset"] == 0
+
+    def _offset_data(self, offset_value: Optional[int] = None):
+        offset_data = {
+            'partitions': [{
+                'topic': self.topic,
+                'partition': 0
+            }, {
+                'topic': self.topic,
+                'partition': 1
+            }, {
+                'topic': self.topic,
+                'partition': 2
+            }]
+        }
+
+        if offset_value is not None and type(offset_value) == int:
+            for p in offset_data['partitions']:
+                p['offset'] = offset_value
+
+        return offset_data
+
+    def _check_offsets(self, offsets: List[Dict[str, Union[str, int, List]]],
+                       offset_value: int):
+        for o in offsets:
+            assert o['topic'] == self.topic
+            assert o['partition'] in [0, 1, 2]
+            assert o['offset'] == offset_value
+            assert o['metadata'] == ''
+
+    @cluster(num_nodes=3)
+    def test_consumer(self):
+        """
+        Create a consumer group, subscribe to topics, fetch records,
+        set and get offsets, and remove the consumer
+        """
+
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        # Create 3 topics
+        self.topics = [
+            TopicSpec(partition_count=3, replication_factor=3),
+        ]
+        self._create_initial_topics()
+
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+
+        self.logger.info(f"Producing to topic: {self.topic}")
+        produce_result_raw = self._produce_topic(
+            self.topic,
+            '''
+        {
+            "records": [
+                {"value": "Redpanda", "partition": 0},
+                {"value": "Pandaproxy", "partition": 1},
+                {"value": "Demo", "partition": 2}
+            ]
+        }''',
+            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+            auth=(super_username, super_password))
+        assert produce_result_raw.status_code == requests.codes.ok
+
+        # Create a consumer
+        self.logger.info("Create a consumer")
+        cc_res = self._create_consumer(group_id,
+                                       auth=(self.username,
+                                             self.password)).json()
+        assert cc_res['error_code'] == 40101
+
+        cc_res = self._create_consumer(group_id,
+                                       auth=(super_username, super_password))
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json())
+
+        # Subscribe a consumer
+        self.logger.info(f"Subscribe consumer to topics: {self.topic}")
+        sc_res = c0.subscribe([self.topic],
+                              auth=(self.username, self.password)).json()
+        assert sc_res['error_code'] == 40101
+
+        sc_res = c0.subscribe([self.topic],
+                              auth=(super_username, super_password))
+        assert sc_res.status_code == requests.codes.no_content
+
+        # Fetch from a consumer
+        self.logger.info(f"Consumer fetch")
+        cf_res = c0.fetch(auth=(self.username, self.password)).json()
+        assert cf_res['error_code'] == 40101
+
+        cf_res = c0.fetch(auth=(super_username, super_password))
+        assert cf_res.status_code == requests.codes.ok
+        fetch_result = cf_res.json()
+        # 1 topic * 3 msg
+        assert len(fetch_result) == 1 * 3
+        for r in fetch_result:
+            assert r["value"]
+
+        self.logger.info("Get consumer offsets")
+        get_offset_data = self._offset_data()
+        cof_res = c0.get_offsets(json.dumps(get_offset_data),
+                                 auth=(self.username, self.password)).json()
+        assert cof_res['error_code'] == 40101
+
+        cof_res = c0.get_offsets(json.dumps(get_offset_data),
+                                 auth=(super_username, super_password))
+        assert cof_res.status_code == requests.codes.ok
+        offsets = cof_res.json()['offsets']
+        self._check_offsets(offsets, offset_value=-1)
+
+        self.logger.info("Set consumer offsets")
+        set_offset_data = self._offset_data(offset_value=0)
+        cos_res = c0.set_offsets(json.dumps(set_offset_data),
+                                 auth=(self.username, self.password)).json()
+        assert cos_res['error_code'] == 40101
+
+        cos_res = c0.set_offsets(json.dumps(set_offset_data),
+                                 auth=(super_username, super_password))
+        assert cos_res.status_code == requests.codes.no_content
+
+        # Redo fetch offsets. The offset values should now be 0 instead of -1
+        cof_res = c0.get_offsets(json.dumps(get_offset_data),
+                                 auth=(super_username, super_password))
+        assert cof_res.status_code == requests.codes.ok
+        offsets = cof_res.json()['offsets']
+        self._check_offsets(offsets, offset_value=0)
+
+        # Remove consumer
+        self.logger.info("Remove consumer")
+        rc_res = c0.remove(auth=(self.username, self.password)).json()
+        assert rc_res['error_code'] == 40101
+
+        rc_res = c0.remove(auth=(super_username, super_password))
+        assert rc_res.status_code == requests.codes.no_content
