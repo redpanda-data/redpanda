@@ -31,7 +31,7 @@ struct group_log_prepared_tx_offset {
     std::optional<ss::sstring> metadata;
 };
 
-struct group_log_fencing {
+struct group_log_fencing_v0 {
     kafka::group_id group_id;
 };
 

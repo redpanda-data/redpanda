@@ -1742,7 +1742,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     if (
       fence_it == _fence_pid_epoch.end()
       || r.pid.get_epoch() > fence_it->second) {
-        group_log_fencing fence{.group_id = id()};
+        group_log_fencing_v0 fence{.group_id = id()};
 
         // TODO: https://app.clubhouse.io/vectorized/story/2200
         // include producer_id into key to make it unique-ish
