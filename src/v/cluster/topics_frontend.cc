@@ -838,7 +838,9 @@ ss::future<topic_result> topics_frontend::do_create_partition(
   create_partitions_configuration p_cfg,
   model::timeout_clock::time_point timeout) {
     auto tp_cfg = _topics.local().get_topic_cfg(p_cfg.tp_ns);
-    if (!tp_cfg) {
+    auto replication_factor = _topics.local().get_topic_replication_factor(
+      p_cfg.tp_ns);
+    if (!tp_cfg || !replication_factor) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
     }
     // we only support increasing number of partitions
@@ -851,7 +853,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
       partition_allocator::shard,
       [p_cfg,
        current = tp_cfg->partition_count,
-       rf = tp_cfg->replication_factor](partition_allocator& al) {
+       rf = replication_factor.value()](partition_allocator& al) {
           return al.allocate(make_allocation_request(rf, current, p_cfg));
       });
 

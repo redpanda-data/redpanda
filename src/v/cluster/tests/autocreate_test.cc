@@ -25,16 +25,20 @@
 #include <chrono>
 #include <vector>
 
-std::vector<cluster::topic_configuration> test_topics_configuration() {
+std::vector<cluster::topic_configuration> test_topics_configuration(
+  cluster::replication_factor rf = cluster::replication_factor{1}) {
     return std::vector<cluster::topic_configuration>{
-      cluster::topic_configuration(test_ns, model::topic("tp-1"), 10, 1),
-      cluster::topic_configuration(test_ns, model::topic("tp-2"), 10, 1),
-      cluster::topic_configuration(test_ns, model::topic("tp-3"), 10, 1),
+      cluster::topic_configuration(test_ns, model::topic("tp-1"), 10, rf),
+      cluster::topic_configuration(test_ns, model::topic("tp-2"), 10, rf),
+      cluster::topic_configuration(test_ns, model::topic("tp-3"), 10, rf),
     };
 }
 
 void validate_topic_metadata(cluster::metadata_cache& cache) {
-    auto expected_topics = test_topics_configuration();
+    cluster::replication_factor expected_replication_factor
+      = cluster::replication_factor{1};
+    auto expected_topics = test_topics_configuration(
+      expected_replication_factor);
 
     for (auto& t_cfg : expected_topics) {
         auto tp_md = cache.get_topic_metadata(t_cfg.tp_ns);
@@ -44,7 +48,8 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
         auto cfg = cache.get_topic_cfg(t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->tp_ns, t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->partition_count, t_cfg.partition_count);
-        BOOST_REQUIRE_EQUAL(cfg->replication_factor, t_cfg.replication_factor);
+        BOOST_REQUIRE_EQUAL(
+          tp_md->get_replication_factor(), expected_replication_factor);
         BOOST_REQUIRE_EQUAL(
           cfg->properties.compaction_strategy,
           t_cfg.properties.compaction_strategy);
