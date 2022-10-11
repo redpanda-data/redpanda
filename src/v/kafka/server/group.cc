@@ -1674,11 +1674,58 @@ void group::insert_prepared(prepared_tx tx) {
 
 ss::future<cluster::commit_group_tx_reply>
 group::commit_tx(cluster::commit_group_tx_request r) {
-    // doesn't make sense to fence off a commit because transaction
-    // manager has already decided to commit and acked to a client
-
     if (_partition->term() != _term) {
         co_return make_commit_tx_reply(cluster::tx_errc::stale);
+    }
+
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        if (is_transaction_ga()) {
+            vlog(
+              _ctx_txlog.trace,
+              "can't find a tx {}, probably already comitted",
+              r.pid);
+            co_return make_commit_tx_reply(cluster::tx_errc::none);
+        }
+    } else if (txseq_it->second > r.tx_seq) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm recommits previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+        vlog(
+          _ctx_txlog.trace,
+          "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
+    } else if (txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't commit pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     auto prepare_it = _prepared_txs.find(r.pid);
@@ -1689,7 +1736,6 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
-
     if (prepare_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm prepares (tx_seq+1)
@@ -1705,26 +1751,10 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           r.tx_seq);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     } else if (prepare_it->second.tx_seq < r.tx_seq) {
-        if (_recovery_policy == violation_recovery_policy::best_effort) {
-            vlog(
-              _ctx_txlog.error,
-              "Rejecting commit with tx_seq:{} since prepare with lesser "
-              "tx_seq:{} exists",
-              r.tx_seq,
-              prepare_it->second.tx_seq);
-            co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
-        } else {
-            vassert(
-              false,
-              "Received commit with tx_seq:{} while prepare with lesser "
-              "tx_seq:{} exists",
-              r.tx_seq,
-              prepare_it->second.tx_seq);
-        }
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
-
     co_return co_await do_commit(r.group_id, r.pid);
 }
 
@@ -1775,14 +1805,15 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     auto txseq_it = _tx_seqs.find(r.pid.get_id());
     if (txseq_it != _tx_seqs.end()) {
         if (r.tx_seq != txseq_it->second) {
-             vlog(
+            vlog(
               _ctx_txlog.warn,
               "can't begin a tx {} with tx_seq {}: a producer id is already "
               "involved in a tx with tx_seq {}",
               r.pid,
               r.tx_seq,
               txseq_it->second);
-            co_return make_begin_tx_reply(cluster::tx_errc::unknown_server_error);
+            co_return make_begin_tx_reply(
+              cluster::tx_errc::unknown_server_error);
         }
         if (_prepared_txs.contains(r.pid)) {
             vlog(
@@ -2944,9 +2975,6 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
     group_log_commit_tx commit_tx;
     commit_tx.group_id = group_id;
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
       model::record_batch_type::group_commit_tx,
       commit_tx_record_version,
@@ -2963,7 +2991,17 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} commit batch",
+          e.error(),
+          pid);
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down();
+        }
+        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 
     prepare_it = _prepared_txs.find(pid);

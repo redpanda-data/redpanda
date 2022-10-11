@@ -750,7 +750,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
     if (!r) {
         vlog(
-          _ctx_log.error,
+          _ctx_log.warn,
           "Error \"{}\" on replicating pid:{} commit batch",
           r.error(),
           pid);

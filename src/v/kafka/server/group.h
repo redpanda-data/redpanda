@@ -815,8 +815,8 @@ private:
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
-    bool is_transaction_ga() const { 
-      return _feature_table.local().is_active(
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
           features::feature::transaction_ga);
     }
 
