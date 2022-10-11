@@ -15,6 +15,7 @@ from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.util import wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -249,6 +250,75 @@ class PartitionBalancerService(EndToEndTest):
 class PartitionBalancerTest(PartitionBalancerService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @skip_debug_mode
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @matrix(decom_before_add=[True, False])
+    def test_restack_nodes(self, decom_before_add):
+        extra_rp_conf = {"raft_learner_recovery_rate": 100 * 1024 * 1024}
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf=extra_rp_conf,
+                            new_bootstrap=True,
+                            max_num_seeds=5)
+        self.topic = TopicSpec(partition_count=1)
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1, throughput=10)
+        self.start_consumer(1)
+        self.await_startup()
+
+        redpanda = self.redpanda
+        used_node_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
+
+        # Wipe nodes in random order to exercise more than just decommissioning
+        # the first node first.
+        rand_order = list(range(1, len(self.redpanda.nodes) + 1))
+        random.shuffle(rand_order)
+        for i in rand_order:
+            node = self.redpanda.get_node(i)
+            # Wipe the node such that its next restart will assign it a new
+            # node ID.
+            old_node_id = redpanda.node_id(node)
+
+            def decommission_node():
+                self.redpanda._admin.decommission_broker(id=old_node_id)
+
+                def node_removed():
+                    try:
+                        brokers = self.redpanda._admin.get_brokers()
+                    except:
+                        return False
+                    return not any(b['node_id'] == old_node_id
+                                   for b in brokers)
+
+                wait_until(node_removed, timeout_sec=120, backoff_sec=2)
+
+            if decom_before_add:
+                decommission_node()
+
+            redpanda.stop_node(node)
+            redpanda.clean_node(node,
+                                preserve_logs=True,
+                                preserve_current_install=True)
+            redpanda.start_node(node,
+                                auto_assign_node_id=True,
+                                omit_seeds_on_idx_one=False)
+
+            if not decom_before_add:
+                decommission_node()
+
+            # The revived node should have a new node ID.
+            new_node_id = self.redpanda.node_id(node, force_refresh=True)
+            assert new_node_id not in used_node_ids, \
+                f"Expected new node ID for {old_node_id}, got {new_node_id}"
+            used_node_ids.append(new_node_id)
+
+            self.logger.debug(
+                f"Wiped and restarted node ID {old_node_id} at {node.account.hostname}"
+            )
+            wait_until(self.redpanda.healthy, timeout_sec=120, backoff_sec=1)
+        self.run_validation(min_records=100,
+                            consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
