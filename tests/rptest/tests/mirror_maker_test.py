@@ -30,12 +30,12 @@ from kafkatest.services.zookeeper import ZookeeperService
 from kafkatest.version import V_3_0_0
 
 
-class TestMirrorMakerService(EndToEndTest):
+class MirrorMakerService(EndToEndTest):
     kafka_source = "kafka"
     redpanda_source = "redpanda"
 
     def __init__(self, test_context):
-        super(TestMirrorMakerService, self).__init__(test_context)
+        super(MirrorMakerService, self).__init__(test_context)
 
         self.topic = TopicSpec(replication_factor=3)
         # create single zookeeper node for Kafka
@@ -116,9 +116,14 @@ class TestMirrorMakerService(EndToEndTest):
             "Producer failed to produce %d messages in a reasonable amount of time."
             % n_messages)
 
+
+class TestMirrorMakerService(MirrorMakerService):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     @cluster(num_nodes=10)
-    @parametrize(source_type=kafka_source)
-    @parametrize(source_type=redpanda_source)
+    @parametrize(source_type=MirrorMakerService.kafka_source)
+    @parametrize(source_type=MirrorMakerService.redpanda_source)
     def test_simple_end_to_end(self, source_type):
         # start brokers
         self.start_brokers(source_type=source_type)
@@ -148,8 +153,8 @@ class TestMirrorMakerService(EndToEndTest):
             assert len(desc.partitions) == t.partition_count
 
     @cluster(num_nodes=10)
-    @parametrize(source_type=kafka_source)
-    @parametrize(source_type=redpanda_source)
+    @parametrize(source_type=MirrorMakerService.kafka_source)
+    @parametrize(source_type=MirrorMakerService.redpanda_source)
     def test_consumer_group_mirroring(self, source_type):
         # start redpanda
         self.start_brokers(source_type=source_type)
