@@ -14,6 +14,7 @@ rp_test(
     waiter_queue_test.cc
     delta_for_test.cc
     token_bucket_test.cc
+    uuid_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
   ARGS "-- -c 1"
   LABELS utils
