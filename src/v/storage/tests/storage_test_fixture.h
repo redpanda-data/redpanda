@@ -37,22 +37,24 @@ using namespace std::chrono_literals; // NOLINT
 inline ss::logger tlog{"test_log"};
 
 struct random_batches_generator {
-    ss::circular_buffer<model::record_batch> operator()() {
+    ss::circular_buffer<model::record_batch>
+    operator()(std::optional<model::timestamp> base_ts = std::nullopt) {
         return model::test::make_random_batches(
-          model::offset(0), random_generators::get_int(1, 10));
+          model::offset(0), random_generators::get_int(1, 10), true, base_ts);
     }
 };
 
 struct key_limited_random_batch_generator {
     static constexpr int cardinality = 10;
 
-    ss::circular_buffer<model::record_batch> operator()() {
+    ss::circular_buffer<model::record_batch>
+    operator()(std::optional<model::timestamp> ts = std::nullopt) {
         return model::test::make_random_batches(model::test::record_batch_spec{
           .allow_compression = true,
           .count = random_generators::get_int(1, 10),
           .max_key_cardinality = cardinality,
           .bt = model::record_batch_type::raft_data,
-        });
+          .timestamp = ts});
     }
 };
 
@@ -61,6 +63,8 @@ public:
     ss::sstring test_dir;
     storage::kvstore kvstore;
     storage::storage_resources resources;
+
+    std::optional<model::timestamp> ts_cursor;
 
     storage_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10))
@@ -80,6 +84,12 @@ public:
     }
 
     ~storage_test_fixture() { kvstore.stop().get(); }
+
+    /**
+     * Only safe to call if you have generated some batches: this gives you
+     * a timestamp ahead of the most recently appended batch
+     */
+    model::timestamp now() { return *ts_cursor; }
 
     void configure_unit_test_logging() { std::cout.setf(std::ios::unitbuf); }
 
@@ -176,13 +186,17 @@ public:
         // do multiple append calls
 
         for ([[maybe_unused]] auto append : boost::irange(0, appends)) {
-            auto batches = batch_generator();
+            auto batches = batch_generator(ts_cursor);
             // Collect batches offsets
             for (auto& b : batches) {
                 headers.push_back(b.header());
                 b.set_term(term);
                 total_records += b.record_count();
             }
+
+            ts_cursor = model::timestamp{
+              batches.back().header().max_timestamp() + 1};
+
             // make expected offset inclusive
             auto reader = model::make_memory_record_batch_reader(
               std::move(batches));

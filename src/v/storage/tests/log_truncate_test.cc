@@ -293,12 +293,21 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
     auto ntp = model::ntp("default", "test", 0);
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
-    auto headers = append_random_batches(log, 15, model::term_id(0), [] {
-        ss::circular_buffer<model::record_batch> ret;
-        ret.push_back(
-          model::test::make_random_batch(model::offset(0), 1, true));
-        return ret;
-    });
+    auto headers = append_random_batches(
+      log,
+      15,
+      model::term_id(0),
+      [](std::optional<model::timestamp> ts = std::nullopt) {
+          ss::circular_buffer<model::record_batch> ret;
+          ret.push_back(model::test::make_random_batch(
+            model::offset(0),
+            1,
+            true,
+            model::record_batch_type::raft_data,
+            std::nullopt,
+            ts));
+          return ret;
+      });
     log.flush().get0();
 
     for (auto lstats = log.offsets(); lstats.dirty_offset > model::offset{};
