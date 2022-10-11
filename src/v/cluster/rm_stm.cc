@@ -382,11 +382,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     auto [_, insert_tx_seq] = _log_state.tx_seqs.emplace(pid, tx_seq);
     insert &= insert_tx_seq;
     if (!insert) {
-        // TODO: https://app.clubhouse.io/vectorized/story/2194
-        // tm_stm forgot that it had already begun a transaction
-        // (it may happen when it crashes)
-        // it's ok we fail this request, a client will abort a
-        // tx bumping its producer id's epoch
         vlog(
           _ctx_log.error,
           "there is already an ongoing transaction within {} session",
