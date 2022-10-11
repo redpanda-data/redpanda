@@ -351,7 +351,7 @@ FIXTURE_TEST(
     append_random_batches(log, 10, model::term_id(0));
     append_random_batches(log, 10, model::term_id(0));
     log.flush().get0();
-    auto ts = model::timestamp::now();
+    auto ts = now();
     append_random_batches(log, 10, model::term_id(0));
     log.flush().get0();
     // garbadge collect first append series
@@ -529,7 +529,8 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     append_random_batches(log, 10, model::term_id(1));
     log.flush().get0();
 
-    auto ts = model::timestamp::now();
+    auto ts = now();
+
     auto new_lstats = log.offsets();
     log.set_collectible_offset(new_lstats.dirty_offset);
 
