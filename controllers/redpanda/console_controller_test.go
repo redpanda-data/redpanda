@@ -12,6 +12,7 @@ package redpanda_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -178,7 +179,7 @@ var _ = Describe("Console controller", func() {
 	Context("When updating Console", func() {
 		ctx := context.Background()
 		It("Should not create new ConfigMap if no change on spec", func() {
-			By("Aetting Console")
+			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
 			createdConsole := &redpandav1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
@@ -349,16 +350,18 @@ var _ = Describe("Console controller", func() {
 		ctx := context.Background()
 		It("Should prioritize RedpandaCloud", func() {
 			var (
-				rpCloudDomain   = "test.auth.vectorized.io"
-				rpCloudAudience = "dev.vectorized.io"
+				rpCloudDomain         = "test.auth.vectorized.io"
+				rpCloudAudience       = "dev.vectorized.io"
+				rpCloudAllowedOrigins = []string{"http://localhost:3000", "https://dev--redpanda-cloud.local.app/"}
 			)
 
 			By("Updating Console RedpandaCloud Login fields")
 			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
 				console.Spec.Login.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
-					Enabled:  true,
-					Domain:   rpCloudDomain,
-					Audience: rpCloudAudience,
+					Enabled:        true,
+					Domain:         rpCloudDomain,
+					Audience:       rpCloudAudience,
+					AllowedOrigins: rpCloudAllowedOrigins,
 				}
 			}), timeout, interval).Should(Succeed())
 
@@ -382,7 +385,7 @@ var _ = Describe("Console controller", func() {
 						return false
 					}
 					rpCloudConfig := cc.Login.RedpandaCloud
-					if !rpCloudConfig.Enabled || rpCloudConfig.Domain != rpCloudDomain || rpCloudConfig.Audience != rpCloudAudience {
+					if !rpCloudConfig.Enabled || rpCloudConfig.Domain != rpCloudDomain || rpCloudConfig.Audience != rpCloudAudience || !reflect.DeepEqual(rpCloudAllowedOrigins, rpCloudConfig.AllowedOrigins) {
 						return false
 					}
 				}
