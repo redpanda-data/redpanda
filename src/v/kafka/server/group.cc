@@ -1656,6 +1656,19 @@ void group::reset_tx_state(model::term_id term) {
 
 void group::insert_prepared(prepared_tx tx) {
     auto pid = tx.pid;
+
+    auto [txseq_it, inserted] = _tx_seqs.try_emplace(pid.get_id(), tx.tx_seq);
+    if (!inserted) {
+        if (txseq_it->second != tx.tx_seq) {
+            vlog(
+              _ctx_txlog.warn,
+              "prepared_tx of pid {} has tx_seq {} while {} expected",
+              tx.pid,
+              tx.tx_seq,
+              txseq_it->second);
+        }
+    }
+
     _prepared_txs[pid] = std::move(tx);
 }
 
@@ -1836,115 +1849,80 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::stale);
     }
 
-    auto prepared_it = _prepared_txs.find(r.pid);
-    if (prepared_it != _prepared_txs.end()) {
-        if (prepared_it->second.tx_seq != r.tx_seq) {
+    auto is_txn_ga = is_transaction_ga();
+    if (!is_txn_ga) {
+        auto tx_it = _volatile_txs.find(r.pid);
+        if (tx_it == _volatile_txs.end()) {
+            // impossible situation, a transaction coordinator tries
+            // to prepare a transaction which wasn't started
+            vlog(
+              _ctx_txlog.error,
+              "Can't prepare pid:{} - unknown session",
+              r.pid);
+            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+        }
+        if (tx_it->second.tx_seq != r.tx_seq) {
             // current prepare_tx call is stale, rejecting
             co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
         }
-        // a tx was already prepared
-        co_return make_prepare_tx_reply(cluster::tx_errc::none);
+        if (r.etag != _term) {
+            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+        }
     }
 
     // checking fencing
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (fence_it != _fence_pid_epoch.end()) {
-        if (r.pid.get_epoch() < fence_it->second) {
-            vlog(
-              _ctx_txlog.trace,
-              "Can't prepare pid:{} - fenced out by epoch {}",
-              r.pid,
-              fence_it->second);
-            co_return make_prepare_tx_reply(cluster::tx_errc::fenced);
-        }
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
-
-    if (r.etag != _term) {
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto tx_it = _volatile_txs.find(r.pid);
-    if (tx_it == _volatile_txs.end()) {
-        // impossible situation, a transaction coordinator tries
-        // to prepare a transaction which wasn't started
-        vlog(_ctx_txlog.error, "Can't prepare pid:{} - unknown session", r.pid);
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it != _tx_seqs.end() && txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    if (tx_it->second.tx_seq != r.tx_seq) {
-        // current prepare_tx call is stale, rejecting
+    auto prepared_it = _prepared_txs.find(r.pid);
+    if (prepared_it == _prepared_txs.end()) {
+        vlog(
+          _ctx_txlog.warn, "Can't prepare tx with pid {}: unknown tx", r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (prepared_it->second.tx_seq != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare pid {}: passed txseq {} doesn't match known {}",
+          r.pid,
+          r.tx_seq,
+          prepared_it->second.tx_seq);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto tx_entry = group_log_prepared_tx{
-      .group_id = r.group_id, .pid = r.pid, .tx_seq = r.tx_seq};
-
-    for (const auto& [tp, offset] : tx_it->second.offsets) {
-        group_log_prepared_tx_offset tx_offset;
-
-        tx_offset.tp = tp;
-        tx_offset.offset = offset.offset;
-        tx_offset.leader_epoch = offset.leader_epoch;
-        tx_offset.metadata = offset.metadata;
-        tx_entry.offsets.push_back(tx_offset);
-    }
-
-    volatile_tx tx = tx_it->second;
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_prepare_tx,
-      prepared_tx_record_version,
-      r.pid,
-      std::move(tx_entry));
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        // Situation: replication has passed but the replicate method returns
-        // error - _volatile_txs is empty, _prepared_txs is empty so when a
-        // fetch happens the group thinks there is no active transaction and
-        // doesn't block while it should. So we do step_down to give next leader
-        // reply log and understand status of transaction
-        co_await _partition->raft()->step_down();
-
+    if (!is_txn_ga) {
         _volatile_txs.erase(r.pid);
-        _expiration_info.erase(r.pid);
-
-        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
-
-    // We move deletion tx from volatile after replication, because
-    // fetch_offset can see internal state when redpanda has ongoing tx, but it
-    // is not inside internal maps. So we need do moving tx between maps in
-    // atomic section
-    _volatile_txs.erase(r.pid);
-
-    prepared_tx ptx;
-    ptx.tx_seq = r.tx_seq;
-    for (const auto& [tp, offset] : tx.offsets) {
-        offset_metadata md{
-          .log_offset = e.value().last_offset,
-          .offset = offset.offset,
-          .metadata = offset.metadata.value_or(""),
-          .committed_leader_epoch = offset.leader_epoch};
-        ptx.offsets[tp] = md;
-    }
-    _prepared_txs[r.pid] = ptx;
 
     auto exp_it = _expiration_info.find(r.pid);
-    if (exp_it == _expiration_info.end()) {
-        vlog(
-          _ctx_txlog.error, "pid({}) should be inside _expiration_info", r.pid);
-        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
+    if (exp_it != _expiration_info.end()) {
+        exp_it->second.update_last_update_time();
     }
-    exp_it->second.update_last_update_time();
 
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
