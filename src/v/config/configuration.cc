@@ -971,13 +971,13 @@ configuration::configuration()
   , cloud_storage_enable_remote_read(
       *this,
       "cloud_storage_enable_remote_read",
-      "Enable remote read for all topics",
+      "Default remote read config value for new topics",
       {.visibility = visibility::tunable},
       false)
   , cloud_storage_enable_remote_write(
       *this,
       "cloud_storage_enable_remote_write",
-      "Enable remote write for all topics",
+      "Default remote write value for new topics",
       {.visibility = visibility::tunable},
       false)
   , cloud_storage_access_key(
