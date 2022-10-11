@@ -82,7 +82,9 @@ class EndToEndTest(Test):
                        extra_rp_conf=None,
                        si_settings=None,
                        environment=None,
-                       install_opts: Optional[InstallOptions] = None):
+                       install_opts: Optional[InstallOptions] = None,
+                       new_bootstrap=False,
+                       max_num_seeds=3):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -101,6 +103,12 @@ class EndToEndTest(Test):
                                         extra_node_conf=self._extra_node_conf,
                                         si_settings=self.si_settings,
                                         environment=environment)
+        if new_bootstrap:
+            seeds = [
+                self.redpanda.nodes[i]
+                for i in range(0, min(len(self.redpanda.nodes), max_num_seeds))
+            ]
+            self.redpanda.set_seed_servers(seeds)
         version_to_install = None
         if install_opts:
             if install_opts.install_previous_version:
@@ -112,7 +120,8 @@ class EndToEndTest(Test):
         if version_to_install:
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
-        self.redpanda.start()
+        self.redpanda.start(auto_assign_node_id=new_bootstrap,
+                            omit_seeds_on_idx_one=not new_bootstrap)
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new
