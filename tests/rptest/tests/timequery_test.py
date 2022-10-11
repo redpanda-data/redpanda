@@ -27,6 +27,7 @@ from ducktape.mark.resource import cluster as ducktape_cluster
 from kafkatest.version import V_3_0_0
 from ducktape.tests.test import Test
 from rptest.clients.default import DefaultClient
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class BaseTimeQuery:
@@ -126,6 +127,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     @cluster(num_nodes=4)
     @parametrize(batch_cache=True)
     @parametrize(batch_cache=False)
+    @skip_debug_mode
     def test_timequery(self, batch_cache: bool):
         self.redpanda.set_extra_rp_conf({
             # Testing with batch cache disabled is important, because otherwise
