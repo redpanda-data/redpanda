@@ -90,18 +90,18 @@ certmanager-install: kind-create
 	./hack/install-cert-manager.sh
 
 prepare-dockerfile:
-	echo "ARG BUILDPLATFORM" > Dockerfile
-	cat Dockerfile.in >> Dockerfile
+	echo "ARG BUILDPLATFORM" > Dockerfile.out
+	cat Dockerfile >> Dockerfile.out
 
 # Build the docker image
 docker-build: prepare-dockerfile
 	echo "~~~ Building operator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
 	echo "~~~ Building configurator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind: kind-create certmanager-install
