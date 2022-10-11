@@ -41,7 +41,7 @@ type EnterpriseLoginRedpandaCloud struct {
 	Audience string `json:"audience" yaml:"audience"`
 
 	// AllowedOrigins indicates if response is allowed from given origin
-	AllowedOrigins string `json:"allowedOrigins,omitempty" yaml:"allowedOrigins,omitempty"`
+	AllowedOrigins []string `json:"allowedOrigins,omitempty" yaml:"allowedOrigins,omitempty"`
 }
 
 // IsGoogleLoginEnabled returns true if Google SSO provider is enabled
