@@ -15,7 +15,7 @@
         <kafka.clients.version>2.4.1</kafka.clients.version>
         <commons.lang.version>3.9</commons.lang.version>
         <argparse4j.version>0.8.1</argparse4j.version>
-        <slf4j.version>1.7.30</slf4j.version>
+        <slf4j.version>1.7.36</slf4j.version>
         <buildDir>${project.basedir}/target</buildDir>
     </properties>
     <dependencies>
