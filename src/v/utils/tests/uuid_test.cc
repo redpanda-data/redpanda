@@ -27,3 +27,10 @@ SEASTAR_THREAD_TEST_CASE(test_named_uuid_type) {
     auto uuid2 = test_uuid(uuid_t::create());
     BOOST_REQUIRE_NE(uuid1, uuid2);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_to_from_vec) {
+    auto uuid1 = test_uuid(uuid_t::create());
+    auto uuid1_vec = uuid1().to_vector();
+    auto uuid2 = test_uuid(uuid1_vec);
+    BOOST_REQUIRE_EQUAL(uuid1, uuid2);
+}
