@@ -1514,10 +1514,6 @@ tx_gateway_frontend::do_commit_tm_tx(
             auto aborting_tx = co_await stm->mark_tx_killed(
               expected_term, tx.id);
             if (!aborting_tx.has_value()) {
-                if (aborting_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
                 outcome->set_value(tx_errc::invalid_txn_state);
                 co_return tx_errc::invalid_txn_state;
             }
