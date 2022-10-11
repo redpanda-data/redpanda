@@ -20,9 +20,11 @@
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "partition_balancer_types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -47,7 +49,8 @@ public:
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      config::binding<unsigned>);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -182,6 +185,20 @@ private:
       do_cancel_moving_partition_replicas(
         std::vector<model::ntp>, model::timeout_clock::time_point);
 
+    struct capacity_info {
+        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
+        absl::flat_hash_map<model::partition_id, int64_t> ntp_sizes;
+    };
+
+    partition_constraints get_partition_constraints(
+      model::partition_id id,
+      cluster::replication_factor new_replication_factor,
+      double max_disk_usage_ratio,
+      const capacity_info& info) const;
+
+    ss::future<capacity_info> get_health_info(
+      model::topic_namespace topic, int32_t partition_count) const;
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<partition_allocator>& _allocator;
@@ -193,7 +210,12 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
+
+    config::binding<unsigned> _hard_max_disk_usage_ratio;
+
     bool _partition_movement_disabled = false;
+
+    static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };
 
 } // namespace cluster

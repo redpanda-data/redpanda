@@ -15,6 +15,8 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
+#include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/constraints.h"
@@ -60,7 +62,8 @@ topics_frontend::topics_frontend(
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<features::feature_table>& features)
+  ss::sharded<features::feature_table>& features,
+  config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
@@ -71,7 +74,8 @@ topics_frontend::topics_frontend(
   , _hm_frontend(hm_frontend)
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
-  , _features(features) {}
+  , _features(features)
+  , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio) {}
 
 static bool
 needs_linearizable_barrier(const std::vector<topic_result>& results) {
@@ -1040,6 +1044,93 @@ ss::future<std::error_code> topics_frontend::change_replication_factor(
       topic, new_replication_factor, timeout);
 }
 
+ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
+  model::topic_namespace topic, int32_t partition_count) const {
+    capacity_info info;
+
+    partitions_filter::partitions_set_t parititon_set;
+    for (auto i = 0; i < partition_count; ++i) {
+        parititon_set.emplace(i);
+    }
+
+    partitions_filter::topic_map_t topic_map;
+    topic_map.emplace(topic.tp, std::move(parititon_set));
+
+    partitions_filter partitions_for_report;
+    partitions_for_report.namespaces.emplace(topic.ns, std::move(topic_map));
+
+    node_report_filter filter;
+    filter.ntp_filters = std::move(partitions_for_report);
+
+    auto health_report = co_await _hm_frontend.local().get_cluster_health(
+      cluster_report_filter{.node_report_filter = std::move(filter)},
+      force_refresh::no,
+      model::timeout_clock::now() + _get_health_report_timeout);
+
+    if (!health_report) {
+        vlog(
+          clusterlog.info,
+          "unable to get health report - {}",
+          health_report.error().message());
+        co_return info;
+    }
+
+    for (const auto& node_report : health_report.value().node_reports) {
+        uint64_t total = 0;
+        uint64_t free = 0;
+        for (const auto& disk : node_report.local_state.disks) {
+            total += disk.total;
+            free += disk.free;
+        }
+        info.node_disk_reports.emplace(
+          node_report.id, node_disk_space(node_report.id, total, total - free));
+    }
+
+    for (auto& node_report : health_report.value().node_reports) {
+        co_await ss::max_concurrent_for_each(
+          std::move(node_report.topics),
+          32,
+          [&info](const topic_status& status) -> ss::future<> {
+              for (const auto& partition : status.partitions) {
+                  info.ntp_sizes[partition.id] = partition.size_bytes;
+              }
+              co_return;
+          });
+    }
+
+    co_return info;
+}
+
+partition_constraints topics_frontend::get_partition_constraints(
+  model::partition_id id,
+  cluster::replication_factor new_replication_factor,
+  double max_disk_usage_ratio,
+  const capacity_info& info) const {
+    allocation_constraints allocation_constraints;
+
+    // Add constraint on least disk usage
+    allocation_constraints.soft_constraints.push_back(
+      ss::make_lw_shared<soft_constraint_evaluator>(
+        least_disk_filled(max_disk_usage_ratio, info.node_disk_reports)));
+
+    auto partition_size_it = info.ntp_sizes.find(id);
+    if (partition_size_it == info.ntp_sizes.end()) {
+        return partition_constraints(
+          id, new_replication_factor, std::move(allocation_constraints));
+    }
+
+    // Add constraint on partition max_disk_usage_ratio overfill
+    allocation_constraints.hard_constraints.push_back(
+      ss::make_lw_shared<hard_constraint_evaluator>(
+        disk_not_overflowed_by_partition(
+          max_disk_usage_ratio,
+          partition_size_it->second,
+          info.node_disk_reports)));
+
+    return partition_constraints(
+      id, new_replication_factor, std::move(allocation_constraints));
+}
+
 ss::future<std::error_code> topics_frontend::increase_replication_factor(
   model::topic_namespace topic,
   cluster::replication_factor new_replication_factor,
@@ -1061,10 +1152,27 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     std::optional<std::error_code> error;
 
+    auto healt_report = co_await get_health_info(topic, partition_count);
+
+    auto hard_max_disk_usage_ratio = (100 - _hard_max_disk_usage_ratio())
+                                     / 100.0;
+
+    auto partition_constraints = get_partition_constraints(
+      model::partition_id(0),
+      new_replication_factor,
+      hard_max_disk_usage_ratio,
+      healt_report);
+
     co_await ss::max_concurrent_for_each(
       tp_metadata->get_assignments(),
       32,
-      [this, &units, &new_assignments, &error, topic, new_replication_factor](
+      [this,
+       &units,
+       &new_assignments,
+       &error,
+       &partition_constraints,
+       topic,
+       new_replication_factor](
         partition_assignment& assignment) -> ss::future<> {
           if (error) {
               co_return;
@@ -1083,8 +1191,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
               co_return;
           }
 
-          auto partition_constraints = cluster::partition_constraints(
-            assignment.id, new_replication_factor);
+          partition_constraints.partition_id = assignment.id;
 
           auto ntp = model::ntp(topic.ns, topic.tp, assignment.id);
 
