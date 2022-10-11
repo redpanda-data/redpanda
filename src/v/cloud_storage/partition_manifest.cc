@@ -235,6 +235,10 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
     return _start_offset;
 }
 
+model::offset partition_manifest::get_last_uploaded_compacted_offset() const {
+    return _last_uploaded_compacted_offset;
+}
+
 model::initial_revision_id partition_manifest::get_revision_id() const {
     return _rev;
 }
@@ -400,6 +404,10 @@ bool partition_manifest::add(
         it->second.segment_term = key.term;
     }
     _last_offset = std::max(meta.committed_offset, _last_offset);
+    if (meta.is_compacted) {
+        _last_uploaded_compacted_offset = std::max(
+          meta.committed_offset, _last_uploaded_compacted_offset);
+    }
     return ok;
 }
 
@@ -478,14 +486,15 @@ partition_manifest::get_insert_iterator() {
     return std::inserter(_segments, _segments.begin());
 }
 
+//@formatter:off
 // clang-format off
 /**
      ┌──────────────────────┐
      │ expect_manifest_start│
      └──────────┬───────────┘
-                │ 
-                │ 
-                │ 
+                │
+                │
+                │
                 │                                                                            EndObject()
                 │  ┌────────────────────────────────────────────────────────────────────────────────────┐
                 │  │                                                     Key("replaced")                |
@@ -501,13 +510,13 @@ partition_manifest::get_insert_iterator() {
 ┌───────┤expect_manifest_key│◄─────────────────┤expect_segment│◄───┐               |expect_replaced│◄───┘
 │       └──┬────────────────┘   EndObject()    │   path       │    │               │   path        │◄───┐
 │          │          ▲                        └────┬─────────┘    │               └─────┬─────────┘    │
-│     Key()│          │String()                     │              │                     │              │  
-│          │          │Uint()                  Key()│              │                Key()│              │   
-│          │          │Null()                       ▼              │EndObject()          ▼              │ 
-│          ▼          │                       ┌──────────────┐     │              ┌───────────────┐     │     
-│      ┌──────────────┴──────┐                │expect_segment│     │              │expect_replaced│     │     
-│      │expect_manifest_value│                │ meta_start   │     │              │ meta_start    │     │      
-│      └─────────────────────┘                └─────┬────────┘     │              └──────┬────────┘     │     
+│     Key()│          │String()                     │              │                     │              │
+│          │          │Uint()                  Key()│              │                Key()│              │
+│          │          │Null()                       ▼              │EndObject()          ▼              │
+│          ▼          │                       ┌──────────────┐     │              ┌───────────────┐     │
+│      ┌──────────────┴──────┐                │expect_segment│     │              │expect_replaced│     │
+│      │expect_manifest_value│                │ meta_start   │     │              │ meta_start    │     │
+│      └─────────────────────┘                └─────┬────────┘     │              └──────┬────────┘     │
 │                                                   │              │                     │              │
 │                                      StartObject()│              │        StartObject()│              │
 │EndObject()                                        ▼              │                     ▼              │
@@ -522,9 +531,10 @@ partition_manifest::get_insert_iterator() {
                                                ┌─────────┴─────┐                  ┌──────────┴─────┐
                                                │ expect_segment│                  │ expect_replaced│
                                                │  meta_value   │                  │  meta_value    │
-                                               └───────────────┘                  └────────────────┘    
+                                               └───────────────┘                  └────────────────┘
 **/
 // clang-format on
+//@formatter:on
 
 struct partition_manifest_handler
   : public rapidjson::
@@ -657,6 +667,8 @@ struct partition_manifest_handler
                 _last_offset = model::offset(u);
             } else if ("start_offset" == _manifest_key) {
                 _start_offset = model::offset(u);
+            } else if ("last_uploaded_compacted_offset" == _manifest_key) {
+                _last_uploaded_compacted_offset = model::offset(u);
             } else if ("insync_offset" == _manifest_key) {
                 _insync_offset = model::offset(u);
             } else {
@@ -867,6 +879,7 @@ struct partition_manifest_handler
     std::optional<model::initial_revision_id> _revision_id;
     std::optional<model::offset> _last_offset;
     std::optional<model::offset> _start_offset;
+    std::optional<model::offset> _last_uploaded_compacted_offset;
     std::optional<model::offset> _insync_offset;
 
     // required segment meta fields
@@ -1005,6 +1018,9 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
         _start_offset = {};
     }
 
+    _last_uploaded_compacted_offset
+      = handler._last_uploaded_compacted_offset.value_or(model::offset{});
+
     if (handler._insync_offset) {
         _insync_offset = handler._insync_offset.value();
     }
@@ -1062,6 +1078,11 @@ void partition_manifest::serialize(std::ostream& out) const {
     if (_start_offset != model::offset{}) {
         w.Key("start_offset");
         w.Int64(_start_offset());
+    }
+
+    if (_last_uploaded_compacted_offset != model::offset{}) {
+        w.Key("last_uploaded_compacted_offset");
+        w.Int64(_last_uploaded_compacted_offset());
     }
     auto serialize_meta = [this, &w](const key& key, const segment_meta& meta) {
         auto sn = generate_local_segment_name(key.base_offset, key.term);

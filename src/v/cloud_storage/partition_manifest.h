@@ -104,6 +104,7 @@ public:
       model::initial_revision_id rev,
       model::offset so,
       model::offset lo,
+      model::offset lco,
       model::offset insync,
       const std::vector<segment_t>& segments,
       const std::vector<segment_t>& replaced)
@@ -111,6 +112,7 @@ public:
       , _rev(rev)
       , _last_offset(lo)
       , _start_offset(so)
+      , _last_uploaded_compacted_offset(lco)
       , _insync_offset(insync) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
@@ -154,6 +156,9 @@ public:
 
     /// Get starting offset
     std::optional<model::offset> get_start_offset() const;
+
+    /// Get last uploaded compacted offset
+    model::offset get_last_uploaded_compacted_offset() const;
 
     /// Get revision
     model::initial_revision_id get_revision_id() const;
@@ -268,6 +273,7 @@ private:
     segment_multimap _replaced;
     model::offset _last_offset;
     model::offset _start_offset;
+    model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
 };
 
