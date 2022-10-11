@@ -585,6 +585,9 @@ class RedpandaService(Service):
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
 
+    def set_skip_if_no_redpanda_log(self, v: bool):
+        self._skip_if_no_redpanda_log = v
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
