@@ -161,9 +161,15 @@ class PartitionBalancerService(EndToEndTest):
 
     def wait_until_ready(self,
                          timeout_sec=120,
+                         expected_unavailable_node_id=None,
                          expected_unavailable_node=None):
+        node_id = None
         if expected_unavailable_node:
-            node_id = self.redpanda.idx(expected_unavailable_node)
+            node_id = self.redpanda.node_id(expected_unavailable_node)
+        elif expected_unavailable_node_id:
+            node_id = expected_unavailable_node_id
+
+        if node_id:
             self.logger.info(f"waiting for quiescent state, "
                              f"expected unavailable node: {node_id}")
         else:
@@ -177,12 +183,15 @@ class PartitionBalancerService(EndToEndTest):
 
         return self.wait_until_status(predicate, timeout_sec=timeout_sec)
 
-    def check_no_replicas_on_node(self, node):
+    def check_no_replicas_on_node_id(self, node_id):
         node2pc = self.node2partition_count()
         self.logger.info(f"partition counts: {node2pc}")
         total_replicas = self.topic.partition_count * self.topic.replication_factor
         assert sum(node2pc.values()) == total_replicas
-        assert self.redpanda.idx(node) not in node2pc
+        assert node_id not in node2pc
+
+    def check_no_replicas_on_node(self, node):
+        self.check_no_replicas_on_node_id(self.redpanda.node_id(node))
 
     class NodeStopper:
         """Stop/kill/freeze one node at a time and wait for partition balancer."""
@@ -243,6 +252,74 @@ class PartitionBalancerService(EndToEndTest):
 class PartitionBalancerTest(PartitionBalancerService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_revived_nodes(self):
+        extra_node_conf = {"empty_seed_starts_cluster": False}
+        extra_rp_conf = {"raft_learner_recovery_rate": 100 * 1024 * 1024}
+        self.start_redpanda(num_nodes=5,
+                            extra_node_conf=extra_node_conf,
+                            extra_rp_conf=extra_rp_conf,
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)
+        self.topic = TopicSpec(partition_count=1)
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1, throughput=10)
+        self.start_consumer(1)
+        self.await_startup()
+
+        redpanda = self.redpanda
+        for node in redpanda.nodes:
+            # Wipe the node such that its next restart will assign it a new
+            # node ID.
+            old_node_id = redpanda.node_id(node)
+            redpanda.stop_node(node)
+            redpanda.clean_node(node,
+                                preserve_logs=True,
+                                preserve_current_install=True)
+            redpanda.start_node(node,
+                                auto_assign_node_id=True,
+                                omit_seeds_on_idx_one=False)
+
+            def decommission_node():
+                brokers = self.redpanda._admin.get_brokers()
+                for b in brokers:
+                    if b['node_id'] == old_node_id:
+                        try:
+                            self.redpanda._admin.decommission_broker(
+                                id=old_node_id)
+                        except:
+                            return False
+                return True
+
+            wait_until(decommission_node, timeout_sec=30, backoff_sec=1)
+
+            # The revived node should have a new node ID.
+            new_node_id = self.redpanda.node_id(node, force_refresh=True)
+            assert old_node_id != new_node_id, f"Expected new node ID for {old_node_id}"
+
+            # Wait for the cluster to return to healthy but with the old node
+            # marked as unavailable.
+            def old_node_is_emptied():
+                try:
+                    self.wait_until_ready(
+                        expected_unavailable_node_id=old_node_id)
+
+                    # It's possible that our readiness check only ensured no
+                    # moves were scheduled and that the node is unavailable.
+                    self.check_no_replicas_on_node_id(old_node_id)
+                except:
+                    return False
+                return True
+
+            wait_until(old_node_is_emptied, timeout_sec=120, backoff_sec=5)
+            self.logger.debug(
+                f"Wiped and restarted node ID {old_node_id} at {node.account.hostname}"
+            )
+            wait_until(self.redpanda.healthy, timeout_sec=120, backoff_sec=1)
+        self.run_validation(min_records=100,
+                            consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
