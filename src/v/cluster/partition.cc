@@ -125,9 +125,7 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
 
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
-    return cfg.is_remote_fetch_enabled()
-           || config::shard_local_cfg()
-                .cloud_storage_enable_remote_read.value();
+    return cfg.is_remote_fetch_enabled();
 }
 
 bool partition::cloud_data_available() const {
