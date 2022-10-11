@@ -122,6 +122,7 @@ public:
     using time_point_type = clock_type::time_point;
 
     static constexpr int8_t fence_control_record_v0_version{0};
+    static constexpr int8_t fence_control_record_version{1};
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
@@ -567,8 +568,18 @@ public:
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second < epoch) {
+        if (fence_it->second <= epoch) {
             fence_it->second = epoch;
+        }
+    }
+
+    void try_set_tx_seq(model::producer_id id, model::tx_seq txseq) {
+        if (!_fence_pid_epoch.contains(id)) {
+            return;
+        }
+        auto [ongoing_it, _] = _tx_seqs.try_emplace(id, txseq);
+        if (ongoing_it->second < txseq) {
+            ongoing_it->second = txseq;
         }
     }
 
@@ -829,6 +840,7 @@ private:
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
+    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;

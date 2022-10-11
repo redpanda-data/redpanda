@@ -35,6 +35,11 @@ struct group_log_fencing_v0 {
     kafka::group_id group_id;
 };
 
+struct group_log_fencing {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+};
+
 struct group_log_prepared_tx {
     kafka::group_id group_id;
     // TODO: get rid of pid, we have it in the headers
@@ -78,6 +83,15 @@ public:
             fence_it->second = epoch;
         }
     }
+    void try_set_fence(
+      model::producer_id id, model::producer_epoch epoch, model::tx_seq txseq) {
+        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
+        if (fence_it->second <= epoch) {
+            fence_it->second = epoch;
+            auto [ongoing_it, _] = _tx_seqs.try_emplace(id, txseq);
+            ongoing_it->second = txseq;
+        }
+    }
     bool has_data() const {
         return !_is_removed && (_is_loaded || _offsets.size() > 0);
     }
@@ -98,6 +112,11 @@ public:
         return _fence_pid_epoch;
     }
 
+    const absl::node_hash_map<model::producer_id, model::tx_seq>&
+    tx_seqs() const {
+        return _tx_seqs;
+    }
+
     group_metadata_value& get_metadata() { return _metadata; }
 
     const group_metadata_value& get_metadata() const { return _metadata; }
@@ -107,6 +126,7 @@ private:
     absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
+    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
     group_metadata_value _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};

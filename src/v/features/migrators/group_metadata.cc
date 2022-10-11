@@ -237,6 +237,11 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         return false;
     }
 
+    if (source.tx_seqs() != target.tx_seqs()) {
+        vlog(featureslog.info, "group ongoing txs does not match");
+        return false;
+    }
+
     if (source.prepared_txs().size() != target.prepared_txs().size()) {
         vlog(
           featureslog.info,

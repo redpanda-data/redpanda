@@ -455,6 +455,10 @@ ss::future<> group_manager::recover_partition(
             for (auto& [id, epoch] : group_stm.fences()) {
                 group->try_set_fence(id, epoch);
             }
+
+            for (auto& [id, txseq] : group_stm.tx_seqs()) {
+                group->try_set_tx_seq(id, txseq);
+            }
         }
     }
 
@@ -481,6 +485,9 @@ ss::future<> group_manager::recover_partition(
         }
         for (auto& [id, epoch] : group_stm.fences()) {
             group->try_set_fence(id, epoch);
+        }
+        for (auto& [id, txseq] : group_stm.tx_seqs()) {
+            group->try_set_tx_seq(id, txseq);
         }
     }
 

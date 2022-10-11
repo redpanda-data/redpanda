@@ -42,6 +42,7 @@ public:
     group_recovery_consumer_state end_of_stream() { return std::move(_state); }
 
 private:
+    void apply_tx_fence(model::record_batch&&);
     void handle_record(model::record);
     void handle_group_metadata(group_metadata_kv);
     void handle_offset_metadata(offset_metadata_kv);

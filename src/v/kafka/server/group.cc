@@ -173,6 +173,24 @@ static model::record_batch make_tx_batch(
     return std::move(builder).build();
 }
 
+static model::record_batch make_tx_fence_batch(
+  const model::producer_identity& pid, group_log_fencing_v0 cmd) {
+    return make_tx_batch(
+      model::record_batch_type::tx_fence,
+      group::fence_control_record_v0_version,
+      pid,
+      cmd);
+}
+
+static model::record_batch make_tx_fence_batch(
+  const model::producer_identity& pid, group_log_fencing cmd) {
+    return make_tx_batch(
+      model::record_batch_type::tx_fence,
+      group::fence_control_record_version,
+      pid,
+      cmd);
+}
+
 group_state group::set_state(group_state s) {
     vassert(
       valid_previous_state(s),
@@ -1728,66 +1746,75 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     }
 
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (
-      fence_it != _fence_pid_epoch.end()
-      && r.pid.get_epoch() < fence_it->second) {
+    if (fence_it == _fence_pid_epoch.end()) {
+        // intentionally empty
+    } else if (r.pid.get_epoch() < fence_it->second) {
         vlog(
           _ctx_txlog.error,
           "pid {} fenced out by epoch {}",
           r.pid,
           fence_it->second);
         co_return make_begin_tx_reply(cluster::tx_errc::fenced);
+    } else if (r.pid.get_epoch() > fence_it->second) {
+        // TODO: proactively cancel an ongoing txn
     }
 
-    if (
-      fence_it == _fence_pid_epoch.end()
-      || r.pid.get_epoch() > fence_it->second) {
-        group_log_fencing_v0 fence{.group_id = id()};
-
-        // TODO: https://app.clubhouse.io/vectorized/story/2200
-        // include producer_id into key to make it unique-ish
-        // to prevent being GCed by the compaction
-        auto batch = make_tx_batch(
-          model::record_batch_type::tx_fence,
-          fence_control_record_v0_version,
-          r.pid,
-          std::move(fence));
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto e = co_await _partition->raft()->replicate(
-          _term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
-
-        if (!e) {
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it != _tx_seqs.end()) {
+        if (r.tx_seq != txseq_it->second) {
+             vlog(
+              _ctx_txlog.warn,
+              "can't begin a tx {} with tx_seq {}: a producer id is already "
+              "involved in a tx with tx_seq {}",
+              r.pid,
+              r.tx_seq,
+              txseq_it->second);
+            co_return make_begin_tx_reply(cluster::tx_errc::unknown_server_error);
+        }
+        if (_prepared_txs.contains(r.pid)) {
             vlog(
-              _ctx_txlog.error,
-              "Error \"{}\" on replicating pid:{} fencing batch",
-              e.error(),
-              r.pid);
+              _ctx_txlog.warn,
+              "can't begin a tx {} with tx_seq {}: it was already begun and it "
+              "accepted writes",
+              r.pid,
+              r.tx_seq);
             co_return make_begin_tx_reply(
               cluster::tx_errc::unknown_server_error);
         }
-
-        // _fence_pid_epoch may change while the method waits for the
-        //  replicate coroutine to finish so the fence_it may become
-        //  invalidated and we need to grab it again
-        fence_it = _fence_pid_epoch.find(r.pid.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            _fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
-        } else {
-            fence_it->second = r.pid.get_epoch();
-        }
+        co_return cluster::begin_group_tx_reply(_term, cluster::tx_errc::none);
     }
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2194
-    // (auto-abort txes with the the same producer_id but older epoch)
-    auto [_, inserted] = _volatile_txs.try_emplace(
-      r.pid, volatile_tx{.tx_seq = r.tx_seq});
+    auto is_txn_ga = is_transaction_ga();
+    std::optional<model::record_batch> batch{};
+    if (is_txn_ga) {
+        group_log_fencing fence{.group_id = id(), .tx_seq = r.tx_seq};
+        batch = make_tx_fence_batch(r.pid, std::move(fence));
+    } else {
+        group_log_fencing_v0 fence{.group_id = id()};
+        batch = make_tx_fence_batch(r.pid, std::move(fence));
+    }
 
-    if (!inserted) {
-        // TODO: https://app.clubhouse.io/vectorized/story/2194
-        // (auto-abort txes with the the same producer_id but older epoch)
-        co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
+    auto reader = model::make_memory_record_batch_reader(
+      std::move(batch.value()));
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} fencing batch",
+          e.error(),
+          r.pid);
+        co_return make_begin_tx_reply(cluster::tx_errc::leader_not_found);
+    }
+
+    _fence_pid_epoch[r.pid.get_id()] = r.pid.get_epoch();
+    _tx_seqs[r.pid.get_id()] = r.tx_seq;
+
+    if (!is_txn_ga) {
+        _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
     }
 
     auto res = _expiration_info.insert_or_assign(
@@ -1921,6 +1948,30 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
 
 cluster::abort_origin group::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
+    if (is_transaction_ga()) {
+        auto it = _tx_seqs.find(pid.get_id());
+        if (it != _tx_seqs.end()) {
+            if (tx_seq < it->second) {
+                return cluster::abort_origin::past;
+            }
+            if (it->second < tx_seq) {
+                return cluster::abort_origin::future;
+            }
+        }
+
+        return cluster::abort_origin::present;
+    }
+
+    auto txseq_it = _tx_seqs.find(pid.get_id());
+    if (txseq_it != _tx_seqs.end()) {
+        if (tx_seq < txseq_it->second) {
+            return cluster::abort_origin::past;
+        }
+        if (txseq_it->second < tx_seq) {
+            return cluster::abort_origin::future;
+        }
+    }
+
     auto expected_it = _volatile_txs.find(pid);
     if (expected_it != _volatile_txs.end()) {
         if (tx_seq < expected_it->second.tx_seq) {
@@ -2776,6 +2827,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     }
 
     _prepared_txs.erase(pid);
+    _tx_seqs.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);
@@ -2857,6 +2909,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     }
 
     _prepared_txs.erase(prepare_it);
+    _tx_seqs.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
@@ -2896,6 +2949,12 @@ ss::future<> group::do_abort_old_txes() {
     }
     for (auto& [id, _] : _volatile_txs) {
         pids.push_back(id);
+    }
+    for (auto& [id, _] : _tx_seqs) {
+        auto it = _fence_pid_epoch.find(id);
+        if (it != _fence_pid_epoch.end()) {
+            pids.push_back(model::producer_identity(id(), it->second));
+        }
     }
 
     absl::btree_set<model::producer_identity> expired;

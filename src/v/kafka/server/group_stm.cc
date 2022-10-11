@@ -84,6 +84,7 @@ void group_stm::commit(model::producer_identity pid) {
     }
 
     _prepared_txs.erase(prepared_it);
+    _tx_seqs.erase(pid.get_id());
 }
 
 void group_stm::abort(
@@ -95,6 +96,7 @@ void group_stm::abort(
         return;
     }
     _prepared_txs.erase(prepared_it);
+    _tx_seqs.erase(pid.get_id());
 }
 
 } // namespace kafka
