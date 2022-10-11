@@ -2,7 +2,7 @@ find_package(Roaring REQUIRED)
 include(rpcgen)
 rpcgen(
   TARGET bootstrap_rpc
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap.json
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/cluster_bootstrap.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cluster_bootstrap_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
