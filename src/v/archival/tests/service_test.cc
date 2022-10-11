@@ -35,10 +35,6 @@ inline seastar::logger arch_svc_log("SVC-TEST");
 static const model::ns test_ns = model::ns("kafka");
 using namespace std::chrono_literals;
 
-static ss::future<> launch_remote(ss::sharded<cloud_storage::remote>& r) {
-    return r.invoke_on(0, [](auto& s) { return s.start(); });
-}
-
 FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     wait_for_controller_leadership().get();
     auto topic1 = model::topic("topic_1");
