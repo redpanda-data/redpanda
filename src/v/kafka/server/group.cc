@@ -2040,37 +2040,127 @@ group::abort_tx(cluster::abort_group_tx_request r) {
 
 ss::future<txn_offset_commit_response>
 group::store_txn_offsets(txn_offset_commit_request r) {
+    // replaying the log, the term isn't set yet
+    // we should use replay or not a leader error
     if (_partition->term() != _term) {
+        vlog(
+          _ctx_txlog.warn,
+          "Last known term {} doesn't match partition term {}",
+          _term,
+          _partition->term());
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
 
     model::producer_identity pid{r.data.producer_id, r.data.producer_epoch};
 
-    auto tx_it = _volatile_txs.find(pid);
-
-    if (tx_it == _volatile_txs.end()) {
+    // checking fencing
+    auto fence_it = _fence_pid_epoch.find(pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't store txn offsets: fence with pid {} isn't set",
+          pid);
         co_return txn_offset_commit_response(
-          r, error_code::unknown_server_error);
+          r, error_code::invalid_producer_epoch);
+    }
+    if (r.data.producer_epoch != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't store txn offsets with pid {} - the fence doesn't match {}",
+          pid,
+          fence_it->second);
+        co_return txn_offset_commit_response(
+          r, error_code::invalid_producer_epoch);
+    }
+
+    auto txseq_it = _tx_seqs.find(pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't store txn offsets: current tx with pid {} isn't ongoing",
+          pid);
+        co_return txn_offset_commit_response(
+          r, error_code::invalid_producer_epoch);
+    }
+    auto tx_seq = txseq_it->second;
+
+    if (!is_transaction_ga()) {
+        auto tx_it = _volatile_txs.find(pid);
+        if (tx_it == _volatile_txs.end()) {
+            co_return txn_offset_commit_response(
+              r, error_code::unknown_server_error);
+        }
+    }
+
+    absl::node_hash_map<model::topic_partition, group_log_prepared_tx_offset>
+      offsets;
+
+    auto prepare_it = _prepared_txs.find(pid);
+    if (prepare_it != _prepared_txs.end()) {
+        for (const auto& [tp, offset] : prepare_it->second.offsets) {
+            group_log_prepared_tx_offset md{
+              .tp = tp,
+              .offset = offset.offset,
+              .leader_epoch = offset.committed_leader_epoch,
+              .metadata = offset.metadata};
+            offsets[tp] = md;
+        }
     }
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
             model::topic_partition tp(t.name, p.partition_index);
-            volatile_offset md{
+            group_log_prepared_tx_offset md{
+              .tp = tp,
               .offset = p.committed_offset,
               .leader_epoch = p.committed_leader_epoch,
               .metadata = p.committed_metadata};
-            tx_it->second.offsets[tp] = md;
+            offsets[tp] = md;
         }
     }
+
+    auto tx_entry = group_log_prepared_tx{
+      .group_id = r.data.group_id, .pid = pid, .tx_seq = tx_seq};
+
+    for (const auto& [tp, offset] : offsets) {
+        tx_entry.offsets.push_back(offset);
+    }
+
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_prepare_tx,
+      prepared_tx_record_version,
+      pid,
+      std::move(tx_entry));
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    prepared_tx ptx;
+    ptx.tx_seq = tx_seq;
+    for (const auto& [tp, offset] : offsets) {
+        offset_metadata md{
+          .log_offset = e.value().last_offset,
+          .offset = offset.offset,
+          .metadata = offset.metadata.value_or(""),
+          .committed_leader_epoch = kafka::leader_epoch(offset.leader_epoch)};
+        ptx.offsets[tp] = md;
+    }
+    _prepared_txs[pid] = ptx;
 
     auto it = _expiration_info.find(pid);
     if (it != _expiration_info.end()) {
         it->second.update_last_update_time();
     } else {
-        vlog(
-          _ctx_txlog.error, "pid({}) should be inside _expiration_info", pid);
+        vlog(_ctx_txlog.warn, "pid {} should be in _expiration_info", pid);
     }
 
     co_return txn_offset_commit_response(r, error_code::none);
