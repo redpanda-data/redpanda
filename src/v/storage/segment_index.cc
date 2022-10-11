@@ -42,10 +42,12 @@ segment_index::segment_index(
   ss::sstring filename,
   model::offset base,
   size_t step,
-  debug_sanitize_files sanitize)
+  debug_sanitize_files sanitize,
+  bool is_internal)
   : _name(std::move(filename))
   , _step(step)
-  , _sanitize(sanitize) {
+  , _sanitize(sanitize)
+  , _is_internal(is_internal) {
     _state.base_offset = base;
 }
 
@@ -94,7 +96,7 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
-          hdr.type == model::record_batch_type::raft_data)) {
+          _is_internal || hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;
     }
     _needs_persistence = true;
