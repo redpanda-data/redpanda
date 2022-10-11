@@ -1079,6 +1079,8 @@ struct topic_properties
           batch_max_bytes);
     }
 
+    void update_shadow_indexing_mode_on_upgrade();
+
     friend bool operator==(const topic_properties&, const topic_properties&)
       = default;
 };
@@ -1263,7 +1265,10 @@ struct topic_properties_update
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration
-  : serde::envelope<topic_configuration, serde::version<0>> {
+  : serde::envelope<
+      topic_configuration,
+      serde::version<1>,
+      serde::compat_version<0>> {
     topic_configuration(
       model::ns ns,
       model::topic topic,
@@ -1304,6 +1309,26 @@ struct topic_configuration
         return std::tie(tp_ns, partition_count, replication_factor, properties);
     }
 
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+
+        tp_ns = read_nested<model::topic_namespace>(in, h._bytes_left_limit);
+        partition_count = read_nested<int32_t>(in, h._bytes_left_limit);
+        replication_factor = read_nested<int16_t>(in, h._bytes_left_limit);
+        properties = read_nested<topic_properties>(in, h._bytes_left_limit);
+
+        // This is the upgrade path for topics created before v22.3.
+        // Back then cluster cloud storage configs acted as overrides
+        // and not defaults. This meant that a topic with remote write
+        // disabled would still be archived if the cluster level remote
+        // write was enabled. In order to preserve the behaviour for existing
+        // topics we set the shadow indexing mode from the current cluster
+        // configuration.
+        if (h._version == 0) {
+            properties.update_shadow_indexing_mode_on_upgrade();
+        }
+    }
+
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 
     friend bool
@@ -1319,8 +1344,8 @@ struct custom_partition_assignment {
 };
 /**
  * custom_assignable_topic_configuration type represents topic configuration
- * together with possible custom partition assignments. When assignments vector
- * is empty all the partitions will be assigned automatically.
+ * together with possible custom partition assignments. When assignments
+ * vector is empty all the partitions will be assigned automatically.
  */
 struct custom_assignable_topic_configuration {
     explicit custom_assignable_topic_configuration(topic_configuration cfg)
@@ -1537,7 +1562,8 @@ struct patch {
     }
 };
 
-// generic type used for various registration handles such as in ntp_callbacks.h
+// generic type used for various registration handles such as in
+// ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
 constexpr notification_id_type notification_id_type_invalid{-1};
 
@@ -1869,7 +1895,8 @@ struct feature_update_action
     enum class action_t : std::uint16_t {
         // Notify when a feature is done with preparing phase
         complete_preparing = 1,
-        // Notify when a feature is made available, either by an administrator
+        // Notify when a feature is made available, either by an
+        // administrator
         // or via auto-activation policy
         activate = 2,
         // Notify when a feature is explicitly disabled by an administrator
@@ -1877,7 +1904,8 @@ struct feature_update_action
     };
 
     // Features have an internal bitflag representation, but it is not
-    // meant to be stable for use on the wire, so we refer to features by name
+    // meant to be stable for use on the wire, so we refer to features by
+    // name
     ss::sstring feature_name;
     action_t action;
 
@@ -2483,15 +2511,16 @@ struct cancel_partition_movements_reply
 };
 
 /*
- * Partition Allocation Domains is the way to make certain partition replicas
- * distributed evenly across the nodes of the cluster. When partition allocation
- * is done within any domain but `common`, all existing allocations outside
- * of that domain will be ignored while assigning partition a node.
- * The `common` domain will consider allocations in all domains.
- * Negative values are used for hardcoded domains, positive values are reserved
- * for future use as user assigned domains, and may be used for a feature that
- * would allow users to designate certain topics to have their partition
- * replicas and leaders evenly distrbuted regardless of other topics.
+ * Partition Allocation Domains is the way to make certain partition
+ * replicas distributed evenly across the nodes of the cluster. When
+ * partition allocation is done within any domain but `common`, all existing
+ * allocations outside of that domain will be ignored while assigning
+ * partition a node. The `common` domain will consider allocations in all
+ * domains. Negative values are used for hardcoded domains, positive values
+ * are reserved for future use as user assigned domains, and may be used for
+ * a feature that would allow users to designate certain topics to have
+ * their partition replicas and leaders evenly distrbuted regardless of
+ * other topics.
  */
 using partition_allocation_domain
   = named_type<int32_t, struct partition_allocation_domain_tag>;

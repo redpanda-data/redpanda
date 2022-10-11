@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -57,6 +58,51 @@ bool topic_properties::has_overrides() const {
            || retention_duration.has_value() || retention_duration.is_disabled()
            || recovery.has_value() || shadow_indexing.has_value()
            || read_replica.has_value() || batch_max_bytes.has_value();
+}
+
+void topic_properties::update_shadow_indexing_mode_on_upgrade() {
+    auto topic_remote_write = false;
+    auto topic_remote_read = false;
+
+    if (shadow_indexing) {
+        switch (shadow_indexing.value()) {
+        case model::shadow_indexing_mode::disabled:
+            break;
+        case model::shadow_indexing_mode::archival:
+            topic_remote_write = true;
+            break;
+        case model::shadow_indexing_mode::fetch:
+            topic_remote_read = true;
+            break;
+        case model::shadow_indexing_mode::full:
+            topic_remote_write = true;
+            topic_remote_read = true;
+            break;
+        default:
+            break;
+        }
+    }
+
+    auto remote_write
+      = config::shard_local_cfg().cloud_storage_enable_remote_write()
+        || topic_remote_write;
+    auto remote_read
+      = config::shard_local_cfg().cloud_storage_enable_remote_read()
+        || topic_remote_read;
+
+    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+
+    if (remote_write) {
+        mode = model::shadow_indexing_mode::archival;
+    }
+
+    if (remote_read) {
+        mode = mode == model::shadow_indexing_mode::archival
+                 ? model::shadow_indexing_mode::full
+                 : model::shadow_indexing_mode::fetch;
+    }
+
+    shadow_indexing = mode;
 }
 
 storage::ntp_config::default_overrides
@@ -900,7 +946,10 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         cfg.properties.recovery = adl<std::optional<bool>>{}.from(in);
         cfg.properties.shadow_indexing
           = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
+
+        cfg.properties.update_shadow_indexing_mode_on_upgrade();
     }
+
     return cfg;
 }
 
