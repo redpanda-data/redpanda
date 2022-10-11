@@ -230,6 +230,7 @@ class OpenMessagingBenchmark(Service):
                     --workers {worker_nodes} \
                     --output {OpenMessagingBenchmark.RESULT_FILE} \
                     --service-version {rp_version} \
+                    -t swarm \
                     {OpenMessagingBenchmark.WORKLOAD_FILE} >> {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} 2>&1 \
                     & disown"
 
