@@ -108,8 +108,10 @@ public:
     };
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
-    ss::future<input_stream_with_offsets>
-    offset_data_stream(kafka::offset kafka_offset, ss::io_priority_class);
+    ss::future<input_stream_with_offsets> offset_data_stream(
+      kafka::offset kafka_offset,
+      std::optional<model::timestamp>,
+      ss::io_priority_class);
 
     /// Hydrate the segment
     ss::future<> hydrate();

@@ -179,6 +179,10 @@ public:
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
+    /// Look up offset from timestamp
+    ss::future<std::optional<storage::timequery_result>>
+    timequery(storage::timequery_config cfg);
+
     /// Return first uploaded kafka offset
     kafka::offset first_uploaded_offset();
 
@@ -305,6 +309,7 @@ private:
     iterator begin();
     iterator end();
     iterator upper_bound(kafka::offset);
+    iterator seek_by_timestamp(model::timestamp);
 
     using segment_map_t = absl::btree_map<kafka::offset, segment_state>;
 

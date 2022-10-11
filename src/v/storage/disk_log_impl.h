@@ -79,6 +79,7 @@ public:
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
     offset_stats offsets() const final;
+    model::timestamp start_timestamp() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
     std::optional<model::offset>
     get_term_last_offset(model::term_id term) const final;
