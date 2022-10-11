@@ -2036,13 +2036,13 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
         case raft::errc::shutting_down:
             return error_code::request_timed_out;
         case raft::errc::not_leader:
+        case raft::errc::replicated_entry_truncated:
             return error_code::not_coordinator;
         case raft::errc::disconnected_endpoint:
         case raft::errc::exponential_backoff:
         case raft::errc::non_majority_replication:
         case raft::errc::vote_dispatch_error:
         case raft::errc::append_entries_dispatch_error:
-        case raft::errc::replicated_entry_truncated:
         case raft::errc::leader_flush_failed:
         case raft::errc::leader_append_failed:
         case raft::errc::configuration_change_in_progress:
