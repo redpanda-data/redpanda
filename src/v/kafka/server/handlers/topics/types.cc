@@ -87,19 +87,12 @@ get_bool_value(const config_map_t& config, std::string_view key) {
     return std::nullopt;
 }
 
-static std::optional<model::shadow_indexing_mode>
+static model::shadow_indexing_mode
 get_shadow_indexing_mode(const config_map_t& config) {
     auto arch_enabled = get_bool_value(config, topic_property_remote_write);
     auto si_enabled = get_bool_value(config, topic_property_remote_read);
 
-    // If the topic creation does not explicitly specify a shadow indexing mode
-    // we should use the default shadow indexing mode.
-    if (!arch_enabled && !si_enabled) {
-        return std::nullopt;
-    }
-
-    // If one of the topic properties is missing, patch it with the cluster
-    // config.
+    // If topic properties are missing, patch them with the cluster config.
     if (!arch_enabled) {
         arch_enabled
           = config::shard_local_cfg().cloud_storage_enable_remote_write();
