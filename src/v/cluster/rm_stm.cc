@@ -409,6 +409,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     // strictly after all records are written it means that it
     // won't be retrying old writes and we may reset the seq cache
     _log_state.seq_table.erase(pid);
+    _log_state.inflight[pid] = 0;
     _mem_state.inflight[pid] = 0;
 
     co_return synced_term;
@@ -1156,7 +1157,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         }
     }
 
-    if (_mem_state.inflight[bid.pid] > 0) {
+    if (_mem_state.inflight[bid.pid] > 0 || _log_state.inflight[bid.pid] > 0) {
         // this isn't the first attempt in the tx we should try dedupe
         auto cached_offset = known_seq(bid);
         if (cached_offset) {
@@ -1863,6 +1864,8 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     if (fence_it->second < bid.pid.get_epoch()) {
         fence_it->second = bid.pid.get_epoch();
     }
+
+    _log_state.inflight[bid.pid] = 0;
 }
 
 ss::future<> rm_stm::apply(model::record_batch b) {
@@ -1997,6 +2000,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
         }
+        _log_state.inflight[bid.pid]++;
     }
 }
 
