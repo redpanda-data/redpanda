@@ -69,6 +69,10 @@ type ConsoleSpec struct {
 
 	// Ingress contains configuration for the Console ingress.
 	Ingress *IngressConfig `json:"ingress,omitempty"`
+
+	// Cloud contains configurations for Redpanda cloud. If you're running a
+	// self-hosted installation, you can ignore this
+	Cloud *CloudConfig `json:"cloud,omitempty"`
 }
 
 // Server is the Console app HTTP server config
@@ -237,7 +241,9 @@ func (c *Console) GetClusterRef() types.NamespacedName {
 }
 
 // GetCluster returns the referenced Cluster object
-func (c *Console) GetCluster(ctx context.Context, cl client.Client) (*Cluster, error) {
+func (c *Console) GetCluster(
+	ctx context.Context, cl client.Client,
+) (*Cluster, error) {
 	cluster := &Cluster{}
 	if err := cl.Get(ctx, c.GetClusterRef(), cluster); err != nil {
 		return nil, err
