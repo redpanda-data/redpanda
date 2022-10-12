@@ -2382,7 +2382,11 @@ void consensus::update_node_append_timestamp(vnode id) {
         it->second.last_sent_append_entries_req_timestamp = clock_type::now();
     }
 }
-
+void consensus::maybe_update_node_reply_timestamp(vnode id) {
+    if (auto it = _fstats.find(id); it != _fstats.end()) {
+        it->second.last_received_reply_timestamp = clock_type::now();
+    }
+}
 void consensus::update_node_reply_timestamp(vnode id) {
     _fstats.get(id).last_received_reply_timestamp = clock_type::now();
 }
