@@ -26,8 +26,10 @@ from typing import Mapping, Optional, Union, Any
 
 import yaml
 from ducktape.services.service import Service
+from ducktape.tests.test import TestContext
 from rptest.archival.s3_client import S3Client
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
@@ -37,6 +39,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rolling_restarter import RollingRestarter
+from rptest.clients.rpk import RpkTool
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -1384,6 +1387,22 @@ class RedpandaService(Service):
         Override default stop() to execude stop_node in parallel
         """
         self._stop_time = time.time()  # The last time stop is invoked
+        self.logger.info("%s: exporting cluster config" % self.who_am_i())
+
+        service_dir = os.path.join(
+            TestContext.results_dir(self._context, self._context.test_index),
+            self.service_id)
+        cluster_config_filename = os.path.join(service_dir,
+                                               "cluster_config.yaml")
+        self.logger.debug("%s: cluster_config_filename %s" %
+                          (self.who_am_i(), cluster_config_filename))
+
+        if not os.path.isdir(service_dir):
+            mkdir_p(service_dir)
+
+        rpk = RpkTool(self)
+        rpk.cluster_config_export(cluster_config_filename, True)
+
         self.logger.info("%s: stopping service" % self.who_am_i())
 
         self._for_nodes(self.nodes,
