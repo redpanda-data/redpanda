@@ -1193,6 +1193,13 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         }
         co_return r.error();
     }
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
+        co_return tx_errc::timeout;
+    }
 
     auto expiration_it = _mem_state.expiration.find(bid.pid);
     if (expiration_it == _mem_state.expiration.end()) {
