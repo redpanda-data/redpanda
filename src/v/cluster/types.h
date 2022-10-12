@@ -1012,7 +1012,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<2>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<3>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1027,7 +1027,9 @@ struct topic_properties
       std::optional<bool> read_replica,
       std::optional<ss::sstring> read_replica_bucket,
       std::optional<remote_topic_properties> remote_topic_properties,
-      std::optional<uint32_t> batch_max_bytes)
+      std::optional<uint32_t> batch_max_bytes,
+      tristate<size_t> total_retention_bytes,
+      tristate<std::chrono::milliseconds> total_retention_ms)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1040,7 +1042,9 @@ struct topic_properties
       , read_replica(read_replica)
       , read_replica_bucket(std::move(read_replica_bucket))
       , remote_topic_properties(remote_topic_properties)
-      , batch_max_bytes(batch_max_bytes) {}
+      , batch_max_bytes(batch_max_bytes)
+      , total_retention_bytes(total_retention_bytes)
+      , total_retention_ms(total_retention_ms) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1055,6 +1059,8 @@ struct topic_properties
     std::optional<ss::sstring> read_replica_bucket;
     std::optional<remote_topic_properties> remote_topic_properties;
     std::optional<uint32_t> batch_max_bytes;
+    tristate<size_t> total_retention_bytes{std::nullopt};
+    tristate<std::chrono::milliseconds> total_retention_ms{std::nullopt};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1076,7 +1082,9 @@ struct topic_properties
           read_replica,
           read_replica_bucket,
           remote_topic_properties,
-          batch_max_bytes);
+          batch_max_bytes,
+          total_retention_bytes,
+          total_retention_ms);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)

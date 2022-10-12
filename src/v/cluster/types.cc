@@ -56,7 +56,11 @@ bool topic_properties::has_overrides() const {
            || retention_bytes.has_value() || retention_bytes.is_disabled()
            || retention_duration.has_value() || retention_duration.is_disabled()
            || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value() || batch_max_bytes.has_value();
+           || read_replica.has_value() || batch_max_bytes.has_value()
+           || total_retention_bytes.has_value()
+           || total_retention_bytes.is_disabled()
+           || total_retention_ms.has_value()
+           || total_retention_ms.is_disabled();
 }
 
 storage::ntp_config::default_overrides
@@ -206,7 +210,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
-      "batch_max_bytes: {}}}",
+      "batch_max_bytes: {}, total_retention_bytes: {}, total_retention_ms: "
+      "{}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -219,7 +224,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.read_replica,
       properties.read_replica_bucket,
       properties.remote_topic_properties,
-      properties.batch_max_bytes);
+      properties.batch_max_bytes,
+      properties.total_retention_bytes,
+      properties.total_retention_ms);
 
     return o;
 }
@@ -1853,7 +1860,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       read_replica,
       read_replica_bucket,
       remote_topic_properties,
-      std::nullopt};
+      std::nullopt,
+      tristate<size_t>{std::nullopt},
+      tristate<std::chrono::milliseconds>{std::nullopt}};
 }
 
 void adl<cluster::cluster_property_kv>::to(

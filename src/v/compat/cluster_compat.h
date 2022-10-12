@@ -327,6 +327,8 @@ struct compat_check<cluster::topic_properties> {
         json_write(read_replica_bucket);
         json_write(remote_topic_properties);
         json_write(batch_max_bytes);
+        json_write(total_retention_bytes);
+        json_write(total_retention_ms);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -344,6 +346,8 @@ struct compat_check<cluster::topic_properties> {
         json_read(read_replica_bucket);
         json_read(remote_topic_properties);
         json_read(batch_max_bytes);
+        json_read(total_retention_bytes);
+        json_read(total_retention_ms);
         return obj;
     }
 
@@ -361,6 +365,9 @@ struct compat_check<cluster::topic_properties> {
         auto reply = reflection::adl<cluster::topic_properties>{}.from(iobp);
 
         obj.batch_max_bytes = std::nullopt;
+        obj.total_retention_bytes = tristate<size_t>{std::nullopt};
+        obj.total_retention_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -420,6 +427,9 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.read_replica_bucket = std::nullopt;
         obj.properties.remote_topic_properties = std::nullopt;
         obj.properties.batch_max_bytes = std::nullopt;
+        obj.properties.total_retention_bytes = tristate<size_t>{std::nullopt};
+        obj.properties.total_retention_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -470,6 +480,10 @@ struct compat_check<cluster::create_topics_request> {
             topic.properties.read_replica_bucket = std::nullopt;
             topic.properties.remote_topic_properties = std::nullopt;
             topic.properties.batch_max_bytes = std::nullopt;
+            topic.properties.total_retention_bytes = tristate<size_t>{
+              std::nullopt};
+            topic.properties.total_retention_ms
+              = tristate<std::chrono::milliseconds>{std::nullopt};
         }
         if (req != obj) {
             throw compat_error(fmt::format(
