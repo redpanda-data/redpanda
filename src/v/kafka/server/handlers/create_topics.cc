@@ -34,7 +34,7 @@
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 12> supported_configs{
+static constexpr std::array<std::string_view, 14> supported_configs{
   topic_property_compression,
   topic_property_cleanup_policy,
   topic_property_timestamp_type,
@@ -46,7 +46,9 @@ static constexpr std::array<std::string_view, 12> supported_configs{
   topic_property_remote_write,
   topic_property_remote_read,
   topic_property_read_replica,
-  topic_property_max_message_bytes};
+  topic_property_max_message_bytes,
+  topic_property_retention_local_target_bytes,
+  topic_property_retention_local_target_ms};
 
 bool is_supported(std::string_view name) {
     return std::any_of(

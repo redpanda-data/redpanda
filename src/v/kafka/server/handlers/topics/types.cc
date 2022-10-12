@@ -178,6 +178,21 @@ to_cluster_type(const creatable_topic& t) {
     if (cfg.properties.read_replica_bucket.has_value()) {
         cfg.properties.read_replica = true;
     }
+
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+        || (cfg.properties.shadow_indexing
+            && model::is_archival_enabled(cfg.properties.shadow_indexing.value()))) {
+        cfg.properties.total_retention_bytes = get_tristate_value<size_t>(
+          config_entries, topic_property_retention_local_target_bytes);
+        cfg.properties.total_retention_ms
+          = get_tristate_value<std::chrono::milliseconds>(
+            config_entries, topic_property_retention_local_target_ms);
+
+        std::swap(
+          cfg.properties.retention_bytes, cfg.properties.total_retention_bytes);
+        std::swap(
+          cfg.properties.retention_duration, cfg.properties.total_retention_ms);
+    }
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
@@ -275,6 +290,38 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
     if (properties.read_replica_bucket) {
         config_entries[topic_property_read_replica] = from_config_type(
           *properties.read_replica_bucket);
+    }
+
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+        || (properties.shadow_indexing
+            && model::is_archival_enabled(properties.shadow_indexing.value()))) {
+        if (properties.total_retention_bytes.has_value()) {
+            config_entries[topic_property_retention_bytes] = from_config_type(
+              properties.total_retention_bytes.value());
+        } else {
+            auto it = config_entries.find(topic_property_retention_bytes);
+            if (it != config_entries.end()) {
+                config_entries.erase(it);
+            }
+        }
+        if (properties.retention_bytes.has_value()) {
+            config_entries[topic_property_retention_local_target_bytes]
+              = from_config_type(properties.retention_bytes.value());
+        }
+
+        if (properties.total_retention_ms.has_value()) {
+            config_entries[topic_property_retention_duration]
+              = from_config_type(properties.total_retention_ms.value());
+        } else {
+            auto it = config_entries.find(topic_property_retention_duration);
+            if (it != config_entries.end()) {
+                config_entries.erase(it);
+            }
+        }
+        if (properties.retention_duration.has_value()) {
+            config_entries[topic_property_retention_local_target_ms]
+              = from_config_type(properties.retention_duration.value());
+        }
     }
     /// Final topic_property not encoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
