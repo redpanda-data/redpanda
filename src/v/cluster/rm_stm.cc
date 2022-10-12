@@ -1161,8 +1161,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
         if (_mem_state.estimated.contains(bid.pid)) {
             // we received second produce request while the first is still
-            // being processed. this is highly unlikely situation because
-            // we replicate with ack=1 and it should be fast
+            // being processed.
             vlog(
               _ctx_log.warn, "Too frequent produce with same pid:{}", bid.pid);
             co_return errc::generic_tx_error;
@@ -1234,13 +1233,13 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     set_seq(bid, new_offset);
 
+    _mem_state.estimated.erase(bid.pid);
+
     if (!is_transaction_ga()) {
-        // TODO: check what happens on re-election
         if (!_mem_state.tx_start.contains(bid.pid)) {
             auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
             _mem_state.tx_start.emplace(bid.pid, base_offset);
             _mem_state.tx_starts.insert(base_offset);
-            _mem_state.estimated.erase(bid.pid);
         }
     }
 
