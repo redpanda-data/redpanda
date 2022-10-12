@@ -59,7 +59,7 @@ func TestEnsure(t *testing.T) {
 	noSidecarSts := stsFromCluster(noSidecarCluster)
 
 	withoutShadowIndexCacheDirectory := cluster.DeepCopy()
-	withoutShadowIndexCacheDirectory.Spec.Version = "dev"
+	withoutShadowIndexCacheDirectory.Spec.Version = "v21.10.1"
 	stsWithoutSecondPersistentVolume := stsFromCluster(withoutShadowIndexCacheDirectory)
 	// Remove shadow-indexing-cache from the volume claim templates
 	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
