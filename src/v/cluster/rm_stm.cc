@@ -396,9 +396,9 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
             pid);
             co_return tx_errc::unknown_server_error;
         }
-    }
 
-    track_tx(pid, transaction_timeout_ms);
+        track_tx(pid, transaction_timeout_ms);
+    }
 
     // a client may start new transaction only when the previous
     // tx is committed. since a client commits a transacitons
@@ -1200,6 +1200,13 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         _mem_state.estimated[bid.pid] = _insync_offset;
     }
 
+    auto expiration_it = _log_state.expiration.find(bid.pid);
+    if (expiration_it == _log_state.expiration.end()) {
+        co_return errc::generic_tx_error;
+    }
+    expiration_it->second.last_update = clock_type::now();
+    expiration_it->second.is_expiration_requested = false;
+
     auto r = co_await _c->replicate(
       synced_term,
       std::move(br),
@@ -1221,13 +1228,6 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         }
         co_return tx_errc::timeout;
     }
-
-    auto expiration_it = _log_state.expiration.find(bid.pid);
-    if (expiration_it == _log_state.expiration.end()) {
-        co_return errc::generic_tx_error;
-    }
-    expiration_it->second.last_update = clock_type::now();
-    expiration_it->second.is_expiration_requested = false;
 
     auto old_offset = r.value().last_offset;
     auto new_offset = from_log_offset(old_offset);
@@ -1633,10 +1633,13 @@ void rm_stm::track_tx(
     if (_gate.is_closed()) {
         return;
     }
-    _log_state.expiration[pid] = expiration_info{
-      .timeout = transaction_timeout_ms,
-      .last_update = clock_type::now(),
-      .is_expiration_requested = false};
+
+    if (!_log_state.expiration.contains(pid)) {
+        _log_state.expiration[pid] = expiration_info{
+            .timeout = transaction_timeout_ms,
+            .last_update = clock_type::now(),
+            .is_expiration_requested = false};
+    }
     if (!_is_autoabort_enabled) {
         return;
     }
@@ -1891,8 +1894,10 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     if (fence_it->second <= bid.pid.get_epoch()) {
         fence_it->second = bid.pid.get_epoch();
         _log_state.inflight[bid.pid] = 0;
+        _log_state.expiration.erase(pid);
         if (version == rm_stm::fence_control_record_version) {
             _log_state.tx_seqs[bid.pid] = tx_seq.value();
+            track_tx(bid.pid, transaction_timeout_ms.value());
         }
     }
 }
@@ -1949,7 +1954,7 @@ ss::future<> rm_stm::apply_control(
         }
 
         _mem_state.forget(pid);
-        _log_state.forget(pid);
+        expiration.erase(pid);
 
         if (
           _log_state.aborted.size() > _abort_index_segment_size
@@ -1968,7 +1973,7 @@ ss::future<> rm_stm::apply_control(
         }
 
         _mem_state.forget(pid);
-        _log_state.forget(pid);
+        expiration.erase(pid);
     }
 
     co_return;

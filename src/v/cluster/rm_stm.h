@@ -396,10 +396,6 @@ private:
         absl::flat_hash_map<model::producer_identity, int64_t> inflight;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
-        
-        void forget(model::producer_identity pid) {
-            expiration.erase(pid);
-        }
     };
 
     struct mem_state {
