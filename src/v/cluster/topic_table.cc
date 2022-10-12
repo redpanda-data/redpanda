@@ -40,6 +40,26 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
+void maybe_apply_local_retention_defaults(cluster::topic_properties& props) {
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()
+        || (props.shadow_indexing
+            && model::is_archival_enabled(props.shadow_indexing.value()))) {
+        if (
+          !props.retention_bytes.is_disabled()
+          && !props.retention_bytes.has_value()) {
+            props.retention_bytes = tristate<size_t>{
+              config::shard_local_cfg().retention_local_target_bytes_default()};
+        }
+
+        if (
+          !props.total_retention_ms.is_disabled()
+          && !props.total_retention_ms.has_value()) {
+            props.retention_duration = tristate<std::chrono::milliseconds>{
+              config::shard_local_cfg().retention_local_target_ms_default()};
+        }
+    }
+}
+
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     if (_topics.contains(cmd.key)) {
@@ -52,6 +72,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
       = cmd.value.cfg.properties.remote_topic_properties ? std::make_optional(
           cmd.value.cfg.properties.remote_topic_properties->remote_revision)
                                                          : std::nullopt;
+    maybe_apply_local_retention_defaults(cmd.value.cfg.properties);
+
     auto md = topic_metadata_item{
       .metadata = topic_metadata(
         std::move(cmd.value), model::revision_id(offset()), remote_revision)};
@@ -108,8 +130,8 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
               tp_nsv);
         } else {
             /// Prevent deletion of source topics that have non_replicable
-            /// topics. To delete this topic all of its non_replicable descedent
-            /// topics must first be deleted
+            /// topics. To delete this topic all of its non_replicable
+            /// descedent topics must first be deleted
             auto found = _topics_hierarchy.find(cmd.value);
             if (found != _topics_hierarchy.end() && !found->second.empty()) {
                 return ss::make_ready_future<std::error_code>(
@@ -190,8 +212,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(errc::update_in_progress);
     }
 
-    // assignment is already up to date, this operation is NOP do not propagate
-    // delta
+    // assignment is already up to date, this operation is NOP do not
+    // propagate delta
 
     if (are_replica_sets_equal(current_assignment_it->replicas, cmd.value)) {
         return ss::make_ready_future<std::error_code>(errc::success);
@@ -199,7 +221,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
     vassert(
       revisions_it != tp->second.replica_revisions.end(),
-      "partition {}, replica revisions map must exists as partition is present",
+      "partition {}, replica revisions map must exists as partition is "
+      "present",
       cmd.key);
 
     _updates_in_progress.emplace(
@@ -216,8 +239,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
     /**
-     * Update partition replica revisions. Assign new revision to added replicas
-     * and erase replicas which are removed from replica set
+     * Update partition replica revisions. Assign new revision to added
+     * replicas and erase replicas which are removed from replica set
      */
     auto added_replicas = subtract_replica_sets_by_node_id(
       current_assignment_it->replicas, previous_assignment.replicas);
@@ -233,11 +256,13 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         revisions_it->second.erase(removed.node_id);
     }
 
-    /// Update all non_replicable topics to have the same 'in-progress' state
+    /// Update all non_replicable topics to have the same 'in-progress'
+    /// state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
-            /// Insert non-replicable topic into the 'updates_in_progress' set
+            /// Insert non-replicable topic into the 'updates_in_progress'
+            /// set
             auto [_, success] = _updates_in_progress.emplace(
               model::ntp(cs.ns, cs.tp, current_assignment_it->id),
               in_progress_update(
@@ -250,11 +275,12 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
                 _probe));
             vassert(
               success,
-              "non_replicable topic {}-{} already in _updates_in_progress set",
+              "non_replicable topic {}-{} already in _updates_in_progress "
+              "set",
               cs.tp,
               current_assignment_it->id);
-            /// For each child topic of the to-be-moved source, update its new
-            /// replica assignment to reflect the change
+            /// For each child topic of the to-be-moved source, update its
+            /// new replica assignment to reflect the change
             auto sfound = _topics.find(cs);
             vassert(
               sfound != _topics.end(),
@@ -267,8 +293,8 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
               "Non replicable partition doesn't exist: {}-{}",
               cs,
               current_assignment_it->id);
-            /// The new assignments of the non_replicable topic/partition must
-            /// match the source topic
+            /// The new assignments of the non_replicable topic/partition
+            /// must match the source topic
             assignment_it->replicas = cmd.value;
         }
     }
@@ -326,7 +352,8 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
       std::move(cmd.value),
     };
 
-    /// Remove child non_replicable topics out of the 'updates_in_progress' set
+    /// Remove child non_replicable topics out of the 'updates_in_progress'
+    /// set
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
@@ -417,7 +444,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
 
     revisions_it->second = in_progress_it->second.get_replicas_revisions();
 
-    /// Update all non_replicable topics to have the same 'in-progress' state
+    /// Update all non_replicable topics to have the same 'in-progress'
+    /// state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
     if (found != _topics_hierarchy.end()) {
         for (const auto& cs : found->second) {
@@ -426,7 +454,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
 
             vassert(
               child_it != _updates_in_progress.end(),
-              "non_replicable topic {} in progress state inconsistent with its "
+              "non_replicable topic {} in progress state inconsistent with "
+              "its "
               "parent {}",
               cs,
               cmd.key);
@@ -444,15 +473,15 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
               "Non replicable partition {}/{} assignment must exists",
               cs,
               current_assignment_it->id);
-            /// The new assignments of the non_replicable topic/partition must
-            /// match the source topic
+            /// The new assignments of the non_replicable topic/partition
+            /// must match the source topic
             assignment_it->replicas
               = in_progress_it->second.get_previous_replicas();
         }
     }
     /**
-     * Cancel/force abort delta contains two assignments new_assignment is set
-     * to the one the partition is currently being moved from. Previous
+     * Cancel/force abort delta contains two assignments new_assignment is
+     * set to the one the partition is currently being moved from. Previous
      * assignment is set to an assignment which is target assignment from
      * current move.
      */
@@ -492,37 +521,6 @@ void incremental_update(
     }
 }
 
-template<>
-void incremental_update(
-  std::optional<model::shadow_indexing_mode>& property,
-  property_update<std::optional<model::shadow_indexing_mode>> override) {
-    switch (override.op) {
-    case incremental_update_operation::remove:
-        if (!override.value || !property) {
-            break;
-        }
-        // It's guaranteed that the remove operation will only be
-        // used with one of the 'drop_' flags.
-        property = model::add_shadow_indexing_flag(*property, *override.value);
-        if (*property == model::shadow_indexing_mode::disabled) {
-            property = std::nullopt;
-        }
-        return;
-    case incremental_update_operation::set:
-        // set new value
-        if (!override.value) {
-            break;
-        }
-        property = model::add_shadow_indexing_flag(
-          property ? *property : model::shadow_indexing_mode::disabled,
-          *override.value);
-        return;
-    case incremental_update_operation::none:
-        // do nothing
-        return;
-    }
-}
-
 template<typename T>
 void incremental_update(
   tristate<T>& property, property_update<tristate<T>> override) {
@@ -538,6 +536,65 @@ void incremental_update(
     case incremental_update_operation::none:
         // do nothing
         return;
+    }
+}
+
+void incremental_updates_for_shadow_indexing(
+  cluster::topic_properties& props,
+  property_update<std::optional<model::shadow_indexing_mode>> override) {
+    auto& si_property = props.shadow_indexing;
+    const bool was_write_enabled
+      = config::shard_local_cfg().cloud_storage_enable_remote_write()
+        || (si_property && model::is_archival_enabled(*si_property));
+
+    switch (override.op) {
+    case incremental_update_operation::remove:
+        if (!override.value || !si_property) {
+            break;
+        }
+        // It's guaranteed that the remove operation will only be
+        // used with one of the 'drop_' flags.
+        si_property = model::add_shadow_indexing_flag(
+          *si_property, *override.value);
+        if (*si_property == model::shadow_indexing_mode::disabled) {
+            si_property = std::nullopt;
+        }
+        return;
+    case incremental_update_operation::set:
+        // set new value
+        if (!override.value) {
+            break;
+        }
+        si_property = model::add_shadow_indexing_flag(
+          si_property ? *si_property : model::shadow_indexing_mode::disabled,
+          *override.value);
+        return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+
+    const bool is_write_enabled
+      = config::shard_local_cfg().cloud_storage_enable_remote_write()
+        || (si_property && model::is_archival_enabled(*si_property));
+
+    if (!was_write_enabled && is_write_enabled) {
+        props.total_retention_bytes = props.retention_bytes;
+        props.total_retention_ms = props.retention_duration;
+
+        props.retention_bytes = tristate<size_t>{
+          config::shard_local_cfg().retention_local_target_bytes_default()};
+        props.retention_duration = tristate<std::chrono::milliseconds>{
+          config::shard_local_cfg().retention_local_target_ms_default()};
+    }
+
+    if (was_write_enabled && !is_write_enabled) {
+        props.retention_bytes = props.total_retention_bytes;
+        props.retention_duration = props.total_retention_ms;
+
+        props.total_retention_bytes = tristate<size_t>{std::nullopt};
+        props.total_retention_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
     }
 }
 
@@ -559,15 +616,13 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(properties.compression, overrides.compression);
     incremental_update(properties.segment_size, overrides.segment_size);
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
-    incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
     incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
+    incremental_updates_for_shadow_indexing(
+      properties, overrides.shadow_indexing);
 
-    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()
         || (properties.shadow_indexing
-            && model::is_archival_enabled(properties.shadow_indexing.value()))
-        || (overrides.shadow_indexing.op == incremental_update_operation::set
-            && overrides.shadow_indexing.value.has_value()
-            && model::is_archival_enabled(overrides.shadow_indexing.value.value()))) {
+            && model::is_archival_enabled(properties.shadow_indexing.value()))) {
         incremental_update(
           properties.total_retention_bytes, overrides.retention_bytes);
         incremental_update(

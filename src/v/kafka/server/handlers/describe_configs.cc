@@ -501,7 +501,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
               = topic_config->properties.retention_duration;
             auto total_retention_bytes
               = topic_config->properties.retention_bytes;
-            if (config::shard_local_cfg().cloud_storage_enable_remote_write
+            if (config::shard_local_cfg().cloud_storage_enable_remote_write()
                 || (topic_config->properties.shadow_indexing
                     && model::is_archival_enabled(
                          topic_config->properties.shadow_indexing.value()))) {

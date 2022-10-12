@@ -179,7 +179,7 @@ to_cluster_type(const creatable_topic& t) {
         cfg.properties.read_replica = true;
     }
 
-    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()
         || (cfg.properties.shadow_indexing
             && model::is_archival_enabled(cfg.properties.shadow_indexing.value()))) {
         cfg.properties.total_retention_bytes = get_tristate_value<size_t>(
@@ -292,7 +292,7 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
           *properties.read_replica_bucket);
     }
 
-    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()
         || (properties.shadow_indexing
             && model::is_archival_enabled(properties.shadow_indexing.value()))) {
         if (properties.total_retention_bytes.has_value()) {
