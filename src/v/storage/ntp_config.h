@@ -49,6 +49,10 @@ public:
 
         std::optional<bool> read_replica;
 
+        tristate<size_t> retention_local_target_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> retention_local_target_ms{
+          std::nullopt};
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };

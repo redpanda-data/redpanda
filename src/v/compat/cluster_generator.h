@@ -685,6 +685,9 @@ struct instance_generator<cluster::topic_properties> {
           instance_generator<cluster::remote_topic_properties>::random(),
           tests::random_optional(
             [] { return random_generators::get_int<uint32_t>(1024 * 1024); }),
+          tests::random_tristate(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
         };
     }
 
