@@ -1851,9 +1851,9 @@ void rm_stm::apply_fence(model::record_batch&& b) {
       version,
       rm_stm::fence_control_record_version);
 
+    std::optional<model::tx_seq> tx_seq{};
     if (version == rm_stm::fence_control_record_version) {
-        auto tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
-        _log_state.tx_seqs.try_emplace(bid.pid, tx_seq);
+        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
     }
 
     auto key_buf = record.release_key();
@@ -1876,11 +1876,13 @@ void rm_stm::apply_fence(model::record_batch&& b) {
 
     auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
       bid.pid.get_id(), bid.pid.get_epoch());
-    if (fence_it->second < bid.pid.get_epoch()) {
+    if (fence_it->second <= bid.pid.get_epoch()) {
         fence_it->second = bid.pid.get_epoch();
+        _log_state.inflight[bid.pid] = 0;
+        if (version == rm_stm::fence_control_record_version) {
+            _log_state.tx_seqs[bid.pid] = tx_seq.value();
+        }
     }
-
-    _log_state.inflight[bid.pid] = 0;
 }
 
 ss::future<> rm_stm::apply(model::record_batch b) {
