@@ -108,14 +108,15 @@ partition_produce_stages make_ready_stage(produce_response::partition p) {
     };
 }
 
-static raft::replicate_options acks_to_replicate_options(int16_t acks) {
+static raft::replicate_options
+acks_to_replicate_options(int16_t acks, std::chrono::milliseconds timeout) {
     switch (acks) {
     case -1:
-        return raft::replicate_options(raft::consistency_level::quorum_ack);
+        return {raft::consistency_level::quorum_ack, timeout};
     case 0:
-        return raft::replicate_options(raft::consistency_level::no_ack);
+        return {raft::consistency_level::no_ack, timeout};
     case 1:
-        return raft::replicate_options(raft::consistency_level::leader_ack);
+        return {raft::consistency_level::leader_ack, timeout};
     default:
         throw std::invalid_argument("Not supported ack level");
     };
@@ -180,9 +181,10 @@ static partition_produce_stages partition_append(
   model::record_batch_reader reader,
   int16_t acks,
   int32_t num_records,
-  int64_t num_bytes) {
+  int64_t num_bytes,
+  std::chrono::milliseconds timeout_ms) {
     auto stages = partition->replicate(
-      bid, std::move(reader), acks_to_replicate_options(acks));
+      bid, std::move(reader), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
@@ -297,6 +299,7 @@ static partition_produce_stages produce_topic_partition(
              bid,
              acks = octx.request.data.acks,
              batch_max_bytes,
+             timeout = octx.request.data.timeout_ms,
              source_shard = ss::this_shard_id()](
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
@@ -337,7 +340,8 @@ static partition_produce_stages produce_topic_partition(
                   std::move(reader),
                   acks,
                   num_records,
-                  batch_size);
+                  batch_size,
+                  timeout);
                 return stages.dispatched
                   .then_wrapped([source_shard, dispatch = std::move(dispatch)](
                                   ss::future<> f) mutable {
