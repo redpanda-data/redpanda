@@ -306,37 +306,35 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     }
     auto synced_term = _insync_term;
 
-    // checking / setting pid fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    auto is_new_pid = fence_it == _log_state.fence_pid_epoch.end();
-    if (is_new_pid || pid.get_epoch() > fence_it->second) {
-        if (!is_new_pid) {
-            auto old_pid = model::producer_identity{
-              pid.get_id(), fence_it->second};
-            // there is a fence, it might be that tm_stm failed, forget about
-            // an ongoing transaction, assigned next pid for the same tx.id and
-            // started a new transaction without aborting the previous one.
-            //
-            // at the same time it's possible that it already aborted the old
-            // tx before starting this. do_abort_tx is idempotent so calling it
-            // just in case to proactivly abort the tx instead of waiting for
-            // the timeout
-            //
-            // moreover do_abort_tx is co-idempotent with do_commit_tx so if a
-            // tx was committed calling do_abort_tx will do nothing
-            auto ar = co_await do_abort_tx(
-              old_pid, std::nullopt, _sync_timeout);
-            if (ar == tx_errc::stale) {
-                co_return tx_errc::stale;
-            }
-            if (ar != tx_errc::none) {
-                co_return tx_errc::unknown_server_error;
-            }
+    if (fence_it == _log_state.fence_pid_epoch.end()) {
+        // intentionally empty
+    } else if (pid.get_epoch() > fence_it->second) {
+        auto old_pid = model::producer_identity{
+            pid.get_id(), fence_it->second};
+        // there is a fence, it might be that tm_stm failed, forget about
+        // an ongoing transaction, assigned next pid for the same tx.id and
+        // started a new transaction without aborting the previous one.
+        //
+        // at the same time it's possible that it already aborted the old
+        // tx before starting this. do_abort_tx is idempotent so calling it
+        // just in case to proactivly abort the tx instead of waiting for
+        // the timeout
+        //
+        // moreover do_abort_tx is co-idempotent with do_commit_tx so if a
+        // tx was committed calling do_abort_tx will do nothing
+        auto ar = co_await do_abort_tx(
+            old_pid, std::nullopt, _sync_timeout);
+        if (ar == tx_errc::stale) {
+            co_return tx_errc::stale;
+        }
+        if (ar != tx_errc::none) {
+            co_return tx_errc::unknown_server_error;
+        }
 
-            if (is_known_session(old_pid)) {
-                // can't begin a transaction while previous tx is in progress
-                co_return tx_errc::unknown_server_error;
-            }
+        if (is_known_session(old_pid)) {
+            // can't begin a transaction while previous tx is in progress
+            co_return tx_errc::unknown_server_error;
         }
     } else if (pid.get_epoch() < fence_it->second) {
         vlog(
