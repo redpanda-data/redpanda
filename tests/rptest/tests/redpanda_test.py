@@ -66,6 +66,12 @@ class RedpandaTest(Test):
                                         **kwargs)
         self._client = DefaultClient(self.redpanda)
 
+    def early_exit_hook(self):
+        """
+        Hook for `skip_debug_mode` decorator
+        """
+        self.redpanda.set_skip_if_no_redpanda_log(True)
+
     @property
     def topic(self):
         """
