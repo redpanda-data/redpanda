@@ -1029,7 +1029,8 @@ struct topic_properties
       std::optional<remote_topic_properties> remote_topic_properties,
       std::optional<uint32_t> batch_max_bytes,
       tristate<size_t> retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> retention_local_target_ms)
+      tristate<std::chrono::milliseconds> retention_local_target_ms,
+      bool remote_delete)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1044,7 +1045,8 @@ struct topic_properties
       , remote_topic_properties(remote_topic_properties)
       , batch_max_bytes(batch_max_bytes)
       , retention_local_target_bytes(retention_local_target_bytes)
-      , retention_local_target_ms(retention_local_target_ms) {}
+      , retention_local_target_ms(retention_local_target_ms)
+      , remote_delete(remote_delete) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1061,6 +1063,15 @@ struct topic_properties
     std::optional<uint32_t> batch_max_bytes;
     tristate<size_t> retention_local_target_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> retention_local_target_ms{std::nullopt};
+
+    // Remote deletes are enabled by default in new tiered storage topics,
+    // disabled by default in legacy topics during upgrade (the legacy path
+    // is handled during adl/serde decode).
+    // This is intentionally not an optional: all topics have a concrete value
+    // one way or another.  There is no "use the cluster default".
+    static constexpr bool default_remote_delete{true};
+    static constexpr bool legacy_remote_delete{false};
+    bool remote_delete{default_remote_delete};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1084,7 +1095,8 @@ struct topic_properties
           remote_topic_properties,
           batch_max_bytes,
           retention_local_target_bytes,
-          retention_local_target_ms);
+          retention_local_target_ms,
+          remote_delete);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1193,6 +1205,8 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> retention_local_target_bytes;
     property_update<tristate<std::chrono::milliseconds>>
       retention_local_target_ms;
+    property_update<bool> remote_delete{
+      false, incremental_update_operation::none};
 
     auto serde_fields() {
         return std::tie(
@@ -1206,7 +1220,8 @@ struct incremental_topic_updates
           shadow_indexing,
           batch_max_bytes,
           retention_local_target_bytes,
-          retention_local_target_ms);
+          retention_local_target_ms,
+          remote_delete);
     }
 
     friend std::ostream&
@@ -1346,6 +1361,10 @@ struct topic_configuration
               properties.retention_duration,
               properties.retention_local_target_bytes,
               properties.retention_local_target_ms);
+
+            // Legacy tiered storage topics do not delete data on
+            // topic deletion.
+            properties.remote_delete = topic_properties::legacy_remote_delete;
         }
     }
 

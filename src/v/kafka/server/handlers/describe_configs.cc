@@ -583,6 +583,19 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_config->properties.retention_local_target_ms,
               request.data.include_synonyms);
 
+            if (config_property_requested(
+                  resource.configuration_keys, topic_property_remote_delete)) {
+                add_topic_config<bool>(
+                  result,
+                  topic_property_remote_delete,
+                  cluster::topic_properties::default_remote_delete,
+                  topic_property_remote_delete,
+                  std::make_optional<bool>(
+                    topic_config->properties.remote_delete),
+                  true,
+                  [](const bool& b) { return b ? "true" : "false"; });
+            }
+
             // Data-policy property
             ss::sstring property_name = "redpanda.datapolicy";
             add_topic_config_if_requested(

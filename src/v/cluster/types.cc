@@ -59,7 +59,8 @@ bool topic_properties::has_overrides() const {
            || recovery.has_value() || shadow_indexing.has_value()
            || read_replica.has_value() || batch_max_bytes.has_value()
            || retention_local_target_bytes.has_value()
-           || retention_local_target_ms.has_value();
+           || retention_local_target_ms.has_value()
+           || remote_delete != default_remote_delete;
 }
 
 storage::ntp_config::default_overrides
@@ -238,7 +239,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
       "batch_max_bytes: {}, retention_local_target_bytes: {}, "
-      "retention_local_target_ms: {}}}",
+      "retention_local_target_ms: {}, remote_delete: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -253,7 +254,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.remote_topic_properties,
       properties.batch_max_bytes,
       properties.retention_local_target_bytes,
-      properties.retention_local_target_ms);
+      properties.retention_local_target_ms,
+      properties.remote_delete);
 
     return o;
 }
@@ -498,7 +500,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
       "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
-      "{}, retention_local_target_ms: {}}}",
+      "{}, retention_local_target_ms: {}, remote_delete: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -509,7 +511,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.shadow_indexing,
       i.batch_max_bytes,
       i.retention_local_target_bytes,
-      i.retention_local_target_ms);
+      i.retention_local_target_ms,
+      i.remote_delete);
     return o;
 }
 
@@ -969,6 +972,9 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
       cfg.properties.retention_duration,
       cfg.properties.retention_local_target_bytes,
       cfg.properties.retention_local_target_ms);
+
+    // Legacy topics from pre-22.3 get remote delete disabled.
+    cfg.properties.remote_delete = false;
 
     return cfg;
 }
@@ -1571,7 +1577,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.shadow_indexing,
       t.batch_max_bytes,
       t.retention_local_target_bytes,
-      t.retention_local_target_ms);
+      t.retention_local_target_ms,
+      t.remote_delete);
 }
 
 cluster::incremental_topic_updates
@@ -1645,6 +1652,7 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.retention_local_target_ms
           = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
               .from(in);
+        updates.remote_delete = adl<cluster::property_update<bool>>{}.from(in);
     }
 
     return updates;
@@ -1940,7 +1948,10 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       remote_topic_properties,
       std::nullopt,
       tristate<size_t>{std::nullopt},
-      tristate<std::chrono::milliseconds>{std::nullopt}};
+      tristate<std::chrono::milliseconds>{std::nullopt},
+      // Backward compat: ADL-generation (pre-22.3) topics use legacy tiered
+      // storage mode in which topic deletion does not delete objects in S3
+      false};
 }
 
 void adl<cluster::cluster_property_kv>::to(

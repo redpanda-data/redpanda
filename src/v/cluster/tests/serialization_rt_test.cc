@@ -592,6 +592,10 @@ cluster::topic_properties old_random_topic_properties() {
       [] { return tests::random_bool(); });
     properties.shadow_indexing = tests::random_optional(
       [] { return model::random_shadow_indexing_mode(); });
+
+    // Always test with remote_delete=false so that we survive
+    // an ADL roundtrip
+    properties.remote_delete = false;
     return properties;
 }
 
@@ -606,6 +610,9 @@ cluster::topic_properties random_topic_properties() {
     });
     properties.remote_topic_properties = tests::random_optional(
       [] { return random_remote_topic_properties(); });
+
+    // Always set remote_delete=false to survive an ADL roundtrip
+    properties.remote_delete = false;
 
     return properties;
 }
@@ -940,7 +947,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             tests::random_tristate([] { return tests::random_duration_ms(); })),
           .shadow_indexing = random_property_update(tests::random_optional(
             [] { return model::random_shadow_indexing_mode(); })),
-        };
+          .remote_delete = random_property_update(tests::random_bool())};
         roundtrip_test(updates);
     }
     { roundtrip_test(old_random_topic_configuration()); }

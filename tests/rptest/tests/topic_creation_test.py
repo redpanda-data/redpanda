@@ -184,6 +184,8 @@ class CreateTopicsTest(RedpandaTest):
         lambda: random.randint(-1, 10000000),
         'max.message.bytes':
         lambda: random.randint(1024 * 1024, 10 * 1024 * 1024),
+        'redpanda.remote.delete':
+        lambda: "true" if random.randint(0, 1) else "false"
     }
 
     def __init__(self, test_context):
