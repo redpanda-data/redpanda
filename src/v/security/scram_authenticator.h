@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "security/acl.h"
 #include "security/credential_store.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
@@ -31,13 +32,11 @@ public:
     bool complete() const override { return _state == state::complete; }
     bool failed() const override { return _state == state::failed; }
 
-    const ss::sstring& principal() const override { return authid(); }
-
-    const ss::sstring& authid() const {
+    const acl_principal& principal() const override {
         vassert(
           _state == state::complete,
           "Authentication id is not valid until auth process complete");
-        return _authid;
+        return _principal;
     }
 
 private:
@@ -57,7 +56,7 @@ private:
 
     state _state;
     credential_store& _credentials;
-    ss::sstring _authid;
+    acl_principal _principal;
 
     // populated during authentication process
     std::unique_ptr<scram_credential> _credential;

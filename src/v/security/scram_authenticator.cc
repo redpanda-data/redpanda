@@ -24,17 +24,18 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     vlog(seclog.debug, "Received client first message {}", *_client_first);
 
     // lookup credentials for this user
-    _authid = _client_first->username_normalized();
+    auto authid = _client_first->username_normalized();
     auto credential = _credentials.get<scram_credential>(
-      credential_user(_authid));
+      credential_user(authid));
     if (!credential) {
         return errc::invalid_credentials;
     }
+    _principal = credential->principal().value_or(
+      acl_principal{principal_type::user, authid});
     _credential = std::make_unique<scram_credential>(std::move(*credential));
 
     if (
-      !_client_first->authzid().empty()
-      && _client_first->authzid() != _authid) {
+      !_client_first->authzid().empty() && _client_first->authzid() != authid) {
         vlog(seclog.info, "Invalid authorization id and username pair");
         return errc::invalid_credentials;
     }
