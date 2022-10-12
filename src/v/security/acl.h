@@ -178,6 +178,7 @@ inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
  */
 enum class principal_type : int8_t {
     user = 0,
+    ephemeral_user = 1,
 };
 
 inline std::ostream& operator<<(std::ostream& os, resource_type type) {
@@ -208,6 +209,8 @@ inline std::ostream& operator<<(std::ostream& os, principal_type type) {
     switch (type) {
     case principal_type::user:
         return os << "user";
+    case principal_type::ephemeral_user:
+        return os << "ephemeral user";
     }
     __builtin_unreachable();
 }
