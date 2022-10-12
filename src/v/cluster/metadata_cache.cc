@@ -280,10 +280,18 @@ topic_properties metadata_cache::get_default_properties() const {
     tp.recovery = {false};
     tp.shadow_indexing = {get_default_shadow_indexing_mode()};
     tp.batch_max_bytes = get_default_batch_max_bytes();
-    tp.retention_local_target_bytes = tristate{
-      get_default_retention_local_target_bytes()};
-    tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
-      get_default_retention_local_target_ms()};
+    tp.total_retention_bytes = tristate<size_t>{};
+    tp.total_retention_ms = tristate<std::chrono::milliseconds>{};
+
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()) {
+        tp.total_retention_bytes = tristate{
+          get_default_retention_local_target_bytes()};
+        tp.total_retention_ms = tristate<std::chrono::milliseconds>{
+          get_default_retention_local_target_ms()};
+
+        std::swap(tp.total_retention_bytes, tp.retention_bytes);
+        std::swap(tp.total_retention_ms, tp.retention_duration);
+    }
 
     return tp;
 }
