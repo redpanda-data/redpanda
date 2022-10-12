@@ -572,7 +572,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
     }
 
-    // checking fencing from prepared phase
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
         // begin_tx should have set a fence
@@ -589,12 +588,11 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
     std::optional<model::tx_seq> tx_seq_for_pid;
     if (is_transaction_ga()) {
-        // We can't validate a request because the is_transaction_ga
-        // switch may happen mid tx execution and in this case we risk
-        // to deadlock the system; please uncomment in 23.1 release
-        // if (!_log_state.tx_seqs.contains(bid.pid)) {
-        //    co_return errc::invalid_producer_epoch;
-        // }
+        if (_log_state.tx_seqs.contains(bid.pid)) {
+            if (tx_seq != _log_state.tx_seqs[bid.pid]) {
+                co_return errc::request_rejected;
+            }
+        }
     } else {
         auto preparing_it = _mem_state.preparing.find(pid);
 
