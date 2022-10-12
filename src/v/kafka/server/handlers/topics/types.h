@@ -57,6 +57,10 @@ static constexpr std::string_view topic_property_remote_read
   = "redpanda.remote.read";
 static constexpr std::string_view topic_property_read_replica
   = "redpanda.remote.readreplica";
+static constexpr std::string_view topic_property_retention_local_target_bytes
+  = "retention.local.target.bytes";
+static constexpr std::string_view topic_property_retention_local_target_ms
+  = "retention.local.target.ms";
 
 // Data-policy property
 static constexpr std::string_view topic_property_data_policy_function_name
