@@ -1188,6 +1188,9 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
         co_return r.error();
     }
 
