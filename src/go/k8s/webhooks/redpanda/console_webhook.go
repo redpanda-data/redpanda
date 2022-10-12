@@ -42,6 +42,16 @@ func (v *ConsoleValidator) Handle(
 		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 	}
 
+	errs, err := ValidatePrometheus(ctx, v.Client, console)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	if len(errs) > 0 {
+		return admission.Errored(http.StatusBadRequest, apierrors.NewInvalid(
+			console.GroupVersionKind().GroupKind(),
+			console.Name, errs))
+	}
+
 	// Admit console even if cluster is not yet configured, controller will do backoff retries
 	// No checks on referenced cluster if console is deleting so controller can remove finalizers
 	cluster := &redpandav1alpha1.Cluster{}
