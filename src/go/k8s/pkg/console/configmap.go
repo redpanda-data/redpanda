@@ -146,6 +146,8 @@ func (cm *ConfigMap) generateConsoleConfig(
 		return "", err
 	}
 
+	consoleConfig.Cloud = cm.genCloud()
+
 	config, err := yaml.Marshal(consoleConfig)
 	if err != nil {
 		return "", err
@@ -163,6 +165,42 @@ func (cm *ConfigMap) genEnterprise() (e Enterprise) {
 		}
 	}
 	return e
+}
+
+func (cm *ConfigMap) genCloud() CloudConfig {
+	if cm.consoleobj.Spec.Cloud == nil ||
+		cm.consoleobj.Spec.Cloud.PrometheusEndpoint == nil {
+		return CloudConfig{}
+	}
+	prometheus := cm.consoleobj.Spec.Cloud.PrometheusEndpoint
+	cc := CloudConfig{
+		PrometheusEndpoint: PrometheusEndpointConfig{
+			Enabled: prometheus.Enabled,
+			BasicAuth: struct {
+				Username string "yaml:\"username\""
+			}{
+				Username: prometheus.BasicAuth.Username,
+			},
+		},
+	}
+	if prometheus.ResponseCacheDuration != nil {
+		cc.PrometheusEndpoint.ResponseCacheDuration = prometheus.ResponseCacheDuration.Duration
+	}
+	if prometheus.Prometheus != nil {
+		cc.PrometheusEndpoint.Prometheus = PrometheusConfig{
+			Address: prometheus.Prometheus.Address,
+		}
+		if prometheus.Prometheus.TargetRefreshInterval != nil {
+			cc.PrometheusEndpoint.Prometheus.TargetRefreshInterval = prometheus.Prometheus.TargetRefreshInterval.Duration
+		}
+		for _, promJob := range prometheus.Prometheus.Jobs {
+			cc.PrometheusEndpoint.Prometheus.Jobs = append(cc.PrometheusEndpoint.Prometheus.Jobs, PrometheusScraperJobConfig{
+				JobName:    promJob.JobName,
+				KeepLabels: promJob.KeepLabels,
+			})
+		}
+	}
+	return cc
 }
 
 var (
@@ -187,7 +225,9 @@ var (
 	EnterpriseGoogleClientSecretKey = "clientSecret"
 )
 
-func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
+func (cm *ConfigMap) genLogin(
+	ctx context.Context,
+) (e EnterpriseLogin, err error) {
 	if provider := cm.consoleobj.Spec.Login; provider != nil { //nolint:nestif // login config is complex
 		enterpriseLogin := EnterpriseLogin{
 			Enabled: provider.Enabled,
@@ -390,7 +430,9 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 	return clusterobj.Status.Nodes.External
 }
 
-func (cm *ConfigMap) genConnect(ctx context.Context) (conn connect.Config, err error) {
+func (cm *ConfigMap) genConnect(
+	ctx context.Context,
+) (conn connect.Config, err error) {
 	clusters := []connect.ConfigCluster{}
 	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
 		cluster, err := cm.buildConfigCluster(ctx, c)
