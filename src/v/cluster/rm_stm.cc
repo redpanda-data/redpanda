@@ -560,8 +560,30 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
     }
 
+    // checking fencing from prepared phase
+    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
+    if (fence_it == _log_state.fence_pid_epoch.end()) {
+        // begin_tx should have set a fence
+        co_return tx_errc::request_rejected;
+    }
+    if (pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_log.error,
+          "Can't commit pid:{} - fenced out by epoch {}",
+          pid,
+          fence_it->second);
+        co_return tx_errc::fenced;
+    }
+
     std::optional<model::tx_seq> tx_seq_for_pid;
-    if (!is_transaction_ga()) {
+    if (is_transaction_ga()) {
+        // We can't validate a request because the is_transaction_ga
+        // switch may happen mid tx execution and in this case we risk
+        // to deadlock the system; please uncomment in 23.1 release
+        // if (!_log_state.tx_seqs.contains(bid.pid)) {
+        //    co_return errc::invalid_producer_epoch;
+        // }
+    } else {
         auto preparing_it = _mem_state.preparing.find(pid);
 
         if (preparing_it != _mem_state.preparing.end()) {
@@ -598,26 +620,12 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
     }
 
-    _mem_state.expected.erase(pid);
-    _mem_state.preparing.erase(pid);
-    // checking fencing from prepared phase
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        // begin_tx should have set a fence
-        co_return tx_errc::request_rejected;
-    }
-    if (pid.get_epoch() != fence_it->second) {
-        vlog(
-          _ctx_log.error,
-          "Can't commit pid:{} - fenced out by epoch {}",
-          pid,
-          fence_it->second);
-        co_return tx_errc::fenced;
-    }
-
     if (!tx_seq_for_pid) {
         tx_seq_for_pid = get_tx_seq(pid);
     }
+
+    _mem_state.expected.erase(pid);
+    _mem_state.preparing.erase(pid);
 
     if (!tx_seq_for_pid) {
         vlog(
