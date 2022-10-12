@@ -109,11 +109,9 @@ private:
 
 class copy_data_segment_reducer : public compaction_reducer {
 public:
-    copy_data_segment_reducer(
-      compacted_offset_list l, segment_appender* a, bool is_internal)
+    copy_data_segment_reducer(compacted_offset_list l, segment_appender* a)
       : _list(std::move(l))
-      , _appender(a)
-      , _is_internal(is_internal) {}
+      , _appender(a) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);
     storage::index_state end_of_stream() { return std::move(_idx); }
@@ -132,7 +130,6 @@ private:
     segment_appender* _appender;
     index_state _idx;
     size_t _acc{0};
-    bool _is_internal;
 };
 
 class index_rebuilder_reducer : public compaction_reducer {

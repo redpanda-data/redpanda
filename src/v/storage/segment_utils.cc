@@ -373,8 +373,7 @@ ss::future<storage::index_state> do_copy_segment_data(
             .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
                     segment_appender_ptr w) mutable {
                 auto raw = w.get();
-                auto red = copy_data_segment_reducer(
-                  std::move(l), raw, s->is_internal_topic());
+                auto red = copy_data_segment_reducer(std::move(l), raw);
                 auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
                 vlog(
                   gclog.trace,
@@ -410,7 +409,7 @@ model::record_batch_reader create_segment_full_reader(
     set.reserve(1);
     set.push_back(s);
     auto lease = std::make_unique<lock_manager::lease>(
-      segment_set(std::move(set), s->is_internal_topic()));
+      segment_set(std::move(set)));
     lease->locks.push_back(std::move(h));
     return model::make_record_batch_reader<log_reader>(
       std::move(lease), reader_cfg, pb);

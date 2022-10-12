@@ -47,9 +47,8 @@ struct segment_ordering {
     }
 };
 
-segment_set::segment_set(segment_set::underlying_t segs, bool is_internal_topic)
-  : _handles(std::move(segs))
-  , _is_internal_topic(is_internal_topic) {
+segment_set::segment_set(segment_set::underlying_t segs)
+  : _handles(std::move(segs)) {
     std::sort(_handles.begin(), _handles.end(), segment_ordering{});
 }
 
@@ -366,8 +365,7 @@ static ss::future<segment_set::underlying_t> open_segments(
   ss::abort_source& as,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources,
-  bool is_internal_topic) {
+  storage_resources& resources) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
@@ -377,8 +375,7 @@ static ss::future<segment_set::underlying_t> open_segments(
        dir = std::move(dir),
        buf_size,
        read_ahead,
-       &resources,
-       is_internal_topic](segs_type& segs) {
+       &resources](segs_type& segs) {
           auto f = directory_walker::walk(
             dir,
             [&as,
@@ -388,8 +385,7 @@ static ss::future<segment_set::underlying_t> open_segments(
              &segs,
              buf_size,
              read_ahead,
-             &resources,
-             is_internal_topic](ss::directory_entry seg) {
+             &resources](ss::directory_entry seg) {
                 // abort if requested
                 if (as.abort_requested()) {
                     return ss::now();
@@ -419,8 +415,7 @@ static ss::future<segment_set::underlying_t> open_segments(
                          cache_factory(),
                          buf_size,
                          read_ahead,
-                         resources,
-                         is_internal_topic)
+                         resources)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
@@ -445,8 +440,7 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
-  storage_resources& resources,
-  bool is_internal_topic) {
+  storage_resources& resources) {
     return ss::recursive_touch_directory(path.string())
       .then([&as,
              cache_factory,
@@ -454,8 +448,7 @@ ss::future<segment_set> recover_segments(
              path = std::move(path),
              read_buf_size,
              read_readahead_count,
-             &resources,
-             is_internal_topic] {
+             &resources] {
           return open_segments(
             path.string(),
             sanitize_fileops,
@@ -463,14 +456,13 @@ ss::future<segment_set> recover_segments(
             as,
             read_buf_size,
             read_readahead_count,
-            resources,
-            is_internal_topic);
+            resources);
       })
       .then([&as,
              is_compaction_enabled,
-             last_clean_segment = std::move(last_clean_segment),
-             is_internal_topic](segment_set::underlying_t segs) {
-          auto segments = segment_set(std::move(segs), is_internal_topic);
+             last_clean_segment = std::move(last_clean_segment)](
+              segment_set::underlying_t segs) {
+          auto segments = segment_set(std::move(segs));
           // we have to mark compacted segments before recovery to allow reading
           // gaps introduced by compaction
           if (is_compaction_enabled) {

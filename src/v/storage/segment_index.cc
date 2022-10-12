@@ -42,12 +42,10 @@ segment_index::segment_index(
   ss::sstring filename,
   model::offset base,
   size_t step,
-  debug_sanitize_files sanitize,
-  bool is_internal)
+  debug_sanitize_files sanitize)
   : _name(std::move(filename))
   , _step(step)
-  , _sanitize(sanitize)
-  , _is_internal(is_internal) {
+  , _sanitize(sanitize) {
     _state.base_offset = base;
 }
 
