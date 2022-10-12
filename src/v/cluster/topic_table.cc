@@ -557,14 +557,31 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       properties.compaction_strategy, overrides.compaction_strategy);
     incremental_update(properties.compression, overrides.compression);
-    incremental_update(properties.retention_bytes, overrides.retention_bytes);
-    incremental_update(
-      properties.retention_duration, overrides.retention_duration);
     incremental_update(properties.segment_size, overrides.segment_size);
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
-
     incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
     incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
+
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write
+        || (properties.shadow_indexing
+            && model::is_archival_enabled(properties.shadow_indexing.value()))
+        || (overrides.shadow_indexing.op == incremental_update_operation::set
+            && overrides.shadow_indexing.value.has_value()
+            && model::is_archival_enabled(overrides.shadow_indexing.value.value()))) {
+        incremental_update(
+          properties.total_retention_bytes, overrides.retention_bytes);
+        incremental_update(
+          properties.total_retention_ms, overrides.retention_duration);
+        incremental_update(
+          properties.retention_bytes, overrides.local_target_retention_bytes);
+        incremental_update(
+          properties.retention_duration, overrides.local_target_retention_ms);
+    } else {
+        incremental_update(
+          properties.retention_bytes, overrides.retention_bytes);
+        incremental_update(
+          properties.retention_duration, overrides.retention_duration);
+    }
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
@@ -620,7 +637,8 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
         /// topic of the method should have passed
         vassert(
           success,
-          "Duplicate non_replicable_topic detected when it shouldn't exist");
+          "Duplicate non_replicable_topic detected when it shouldn't "
+          "exist");
     }
     auto md = topic_metadata(
       std::move(cfg), std::move(p_as), model::revision_id(o()), source.tp);

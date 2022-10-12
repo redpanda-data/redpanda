@@ -470,7 +470,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "{{incremental_topic_custom_updates: compression: {} "
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
-      "shadow_indexing: {}, batch_max_bytes: {}}}",
+      "shadow_indexing: {}, batch_max_bytes: {}, local_target_retention_bytes: "
+      "{}, local_target_retention_ms: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -479,7 +480,9 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.retention_bytes,
       i.retention_duration,
       i.shadow_indexing,
-      i.batch_max_bytes);
+      i.batch_max_bytes,
+      i.local_target_retention_bytes,
+      i.local_target_retention_ms);
     return o;
 }
 
@@ -1510,7 +1513,10 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing);
+      t.shadow_indexing,
+      t.batch_max_bytes,
+      t.local_target_retention_bytes,
+      t.local_target_retention_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1573,6 +1579,19 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
           std::optional<model::shadow_indexing_mode>>>{}
                                     .from(in);
     }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_batch_max_bytes_and_local_retention) {
+        updates.batch_max_bytes
+          = adl<cluster::property_update<std::optional<uint32_t>>>{}.from(in);
+        updates.local_target_retention_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.local_target_retention_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+    }
+
     return updates;
 }
 
