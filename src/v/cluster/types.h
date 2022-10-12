@@ -1271,7 +1271,10 @@ struct topic_properties_update
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration
-  : serde::envelope<topic_configuration, serde::version<0>> {
+  : serde::envelope<
+      topic_configuration,
+      serde::version<1>,
+      serde::compat_version<0>> {
     topic_configuration(
       model::ns ns,
       model::topic topic,
@@ -1310,6 +1313,21 @@ struct topic_configuration
 
     auto serde_fields() {
         return std::tie(tp_ns, partition_count, replication_factor, properties);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+
+        tp_ns = read_nested<model::topic_namespace>(in, h._bytes_left_limit);
+        partition_count = read_nested<int32_t>(in, h._bytes_left_limit);
+        replication_factor = read_nested<int16_t>(in, h._bytes_left_limit);
+        properties = read_nested<topic_properties>(in, h._bytes_left_limit);
+
+        if (h._version < 1) {
+            properties.total_retention_bytes = tristate<size_t>{};
+            properties.total_retention_ms
+              = tristate<std::chrono::milliseconds>{};
+        }
     }
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);

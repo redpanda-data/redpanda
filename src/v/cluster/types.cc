@@ -908,6 +908,10 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         cfg.properties.shadow_indexing
           = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
     }
+
+    cfg.properties.total_retention_bytes = tristate<size_t>{};
+    cfg.properties.total_retention_ms = tristate<std::chrono::milliseconds>{};
+
     return cfg;
 }
 
