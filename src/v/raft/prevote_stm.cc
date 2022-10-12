@@ -78,6 +78,7 @@ prevote_stm::process_reply(vnode n, ss::future<result<vote_reply>> f) {
                 auto r = f.get0();
                 if (r.has_value()) {
                     auto v = r.value();
+                    _ptr->update_node_reply_timestamp(n);
                     if (v.log_ok) {
                         vlog(
                           _ctxlog.trace,

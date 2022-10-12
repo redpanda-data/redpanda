@@ -99,7 +99,7 @@ struct follower_index_metadata {
     model::offset last_sent_offset;
     // timestamp of last append_entries_rpc call
     clock_type::time_point last_sent_append_entries_req_timestamp;
-    clock_type::time_point last_received_append_entries_reply_timestamp;
+    clock_type::time_point last_received_reply_timestamp;
     uint32_t heartbeats_failed{0};
     // The pair of sequences used to track append entries requests sent and
     // received by the follower. Every time append entries request is created
