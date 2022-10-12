@@ -29,6 +29,11 @@ class RollingRestarter:
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
         """
+        if not stop_timeout:
+            stop_timeout = 30
+        if not start_timeout:
+            start_timeout = 30
+
         admin = self.redpanda._admin
 
         def has_drained_leaders(node):
