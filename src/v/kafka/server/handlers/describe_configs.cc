@@ -497,13 +497,48 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<size_t>);
 
+            auto total_retention_ms
+              = topic_config->properties.retention_duration;
+            auto total_retention_bytes
+              = topic_config->properties.retention_bytes;
+            if (config::shard_local_cfg().cloud_storage_enable_remote_write
+                || (topic_config->properties.shadow_indexing
+                    && model::is_archival_enabled(
+                         topic_config->properties.shadow_indexing.value()))) {
+                total_retention_ms
+                  = topic_config->properties.total_retention_ms;
+                total_retention_bytes
+                  = topic_config->properties.total_retention_bytes;
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_retention_local_target_ms,
+                  std::make_optional(
+                    ctx.metadata_cache()
+                      .get_default_retention_local_target_ms()),
+                  topic_property_retention_local_target_ms,
+                  topic_config->properties.retention_duration,
+                  request.data.include_synonyms);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_retention_local_target_bytes,
+                  ctx.metadata_cache()
+                    .get_default_retention_local_target_bytes(),
+                  topic_property_retention_local_target_bytes,
+                  topic_config->properties.retention_bytes,
+                  request.data.include_synonyms);
+            }
+
             add_topic_config_if_requested(
               resource,
               result,
               config::shard_local_cfg().delete_retention_ms.name(),
               ctx.metadata_cache().get_default_retention_duration(),
               topic_property_retention_duration,
-              topic_config->properties.retention_duration,
+              total_retention_ms,
               request.data.include_synonyms);
 
             add_topic_config_if_requested(
@@ -512,7 +547,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
               config::shard_local_cfg().retention_bytes.name(),
               ctx.metadata_cache().get_default_retention_bytes(),
               topic_property_retention_bytes,
-              topic_config->properties.retention_bytes,
+              total_retention_bytes,
               request.data.include_synonyms);
 
             add_topic_config_if_requested(
