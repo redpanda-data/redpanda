@@ -10,6 +10,8 @@
  */
 
 #pragma once
+#include "archival/types.h"
+#include "cloud_roles/types.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
@@ -36,6 +38,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "s3/client.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -46,6 +49,7 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <filesystem>
 
 class redpanda_thread_fixture {
@@ -62,7 +66,10 @@ public:
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
-      bool remove_on_shutdown)
+      bool remove_on_shutdown,
+      std::optional<s3::configuration> s3_config = std::nullopt,
+      std::optional<archival::configuration> archival_cfg = std::nullopt,
+      std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -74,7 +81,10 @@ public:
           kafka_port,
           rpc_port,
           coproc_supervisor_port,
-          std::move(seed_servers));
+          std::move(seed_servers),
+          std::move(s3_config),
+          std::move(archival_cfg),
+          std::move(cloud_cfg));
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -135,6 +145,25 @@ public:
         std::nullopt,
         true) {}
 
+    struct init_cloud_storage_tag {};
+
+    // Start redpanda with shadow indexing enabled
+    explicit redpanda_thread_fixture(init_cloud_storage_tag)
+      : redpanda_thread_fixture(
+        model::node_id(1),
+        9092,
+        33145,
+        8082,
+        8081,
+        43189,
+        {},
+        ssx::sformat("test.dir_{}", time(0)),
+        std::nullopt,
+        true,
+        get_s3_config(),
+        get_archival_config(),
+        get_cloud_config()) {}
+
     ~redpanda_thread_fixture() {
         shutdown();
         if (remove_on_shutdown) {
@@ -151,19 +180,59 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
+    static s3::configuration get_s3_config() {
+        net::unresolved_address server_addr("127.0.0.1", 4430);
+        s3::configuration s3conf{
+          .uri = s3::access_point_uri("127.0.0.1"),
+          .access_key = cloud_roles::public_key_str("acess-key"),
+          .secret_key = cloud_roles::private_key_str("secret-key"),
+          .region = cloud_roles::aws_region_name("us-east-1"),
+        };
+        s3conf.server_addr = server_addr;
+        return s3conf;
+    }
+
+    static archival::configuration get_archival_config() {
+        archival::configuration aconf;
+        aconf.bucket_name = s3::bucket_name("test-bucket");
+        aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
+        aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
+        aconf.cloud_storage_initial_backoff = 100ms;
+        aconf.segment_upload_timeout = 1s;
+        aconf.manifest_upload_timeout = 1s;
+        aconf.time_limit = std::nullopt;
+        return aconf;
+    }
+
+    static cloud_storage::configuration get_cloud_config() {
+        auto s3conf = get_s3_config();
+        cloud_storage::configuration cconf;
+        cconf.client_config = s3conf;
+        cconf.bucket_name = s3::bucket_name("test-bucket");
+        cconf.connection_limit = archival::s3_connection_limit(4);
+        cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
+        return cconf;
+    }
+
     void configure(
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
       int32_t coproc_supervisor_port,
-      std::vector<config::seed_server> seed_servers) {
+      std::vector<config::seed_server> seed_servers,
+      std::optional<s3::configuration> s3_config = std::nullopt,
+      std::optional<archival::configuration> archival_cfg = std::nullopt,
+      std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
                                 rpc_port,
                                 coproc_supervisor_port,
                                 seed_servers = std::move(seed_servers),
-                                base_path]() mutable {
+                                base_path,
+                                s3_config,
+                                archival_cfg,
+                                cloud_cfg]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -192,6 +261,48 @@ public:
             node_config.get("coproc_supervisor_server")
               .set_value(
                 net::unresolved_address("127.0.0.1", coproc_supervisor_port));
+            if (s3_config) {
+                config.get("cloud_storage_enabled").set_value(true);
+                config.get("cloud_storage_region")
+                  .set_value(std::make_optional(s3_config->region()));
+                config.get("cloud_storage_access_key")
+                  .set_value(std::make_optional((*s3_config->access_key)()));
+                config.get("cloud_storage_secret_key")
+                  .set_value(std::make_optional((*s3_config->secret_key)()));
+                config.get("cloud_storage_api_endpoint")
+                  .set_value(std::make_optional(s3_config->server_addr.host()));
+                config.get("cloud_storage_api_endpoint_port")
+                  .set_value(
+                    static_cast<int16_t>(s3_config->server_addr.port()));
+            }
+            if (archival_cfg) {
+                config.get("cloud_storage_disable_tls").set_value(true);
+                config.get("cloud_storage_bucket")
+                  .set_value(std::make_optional(archival_cfg->bucket_name()));
+                config.get("cloud_storage_initial_backoff_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->cloud_storage_initial_backoff));
+                config.get("cloud_storage_reconciliation_interval_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->reconciliation_interval));
+                config.get("cloud_storage_manifest_upload_timeout_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->manifest_upload_timeout));
+                config.get("cloud_storage_segment_upload_timeout_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->segment_upload_timeout));
+            }
+            if (cloud_cfg) {
+                config.get("cloud_storage_enable_remote_read").set_value(true);
+                config.get("cloud_storage_enable_remote_write").set_value(true);
+                config.get("cloud_storage_max_connections")
+                  .set_value(
+                    static_cast<int16_t>(cloud_cfg->connection_limit()));
+            }
         }).get0();
     }
 

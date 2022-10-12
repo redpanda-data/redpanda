@@ -251,64 +251,28 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
     ss::gate::holder gh(_gate);
 
     _archivers.emplace(archiver->get_ntp(), archiver);
-    auto result = co_await archiver->download_manifest();
-
     auto ntp = archiver->get_ntp();
     auto part = _partition_manager.local().get(ntp);
     if (!part) {
         co_return;
     }
-    switch (result) {
-    case cloud_storage::download_result::success:
-        vlog(_rtclog.info, "Found manifest for partition {}", ntp);
+    vlog(_rtclog.info, "Starting archiver for partition {}", ntp);
 
-        if (part->get_ntp_config().is_read_replica_mode_enabled()) {
-            archiver->run_sync_manifest_loop();
-        } else {
-            if (ntp.tp.partition == 0) {
-                // Upload manifest once per topic. GCS has strict
-                // limits for single object updates.
-                ssx::background = upload_topic_manifest(
-                  model::topic_namespace(ntp.ns, ntp.tp.topic),
-                  archiver->get_revision_id());
-            }
-            _probe.start_archiving_ntp();
-            archiver->run_upload_loop();
+    if (part->get_ntp_config().is_read_replica_mode_enabled()) {
+        archiver->run_sync_manifest_loop();
+    } else {
+        if (ntp.tp.partition == 0) {
+            // Upload manifest once per topic. GCS has strict
+            // limits for single object updates.
+            ssx::background = upload_topic_manifest(
+              model::topic_namespace(ntp.ns, ntp.tp.topic),
+              archiver->get_revision_id());
         }
-
-        co_return;
-    case cloud_storage::download_result::notfound:
-        if (part->get_ntp_config().is_read_replica_mode_enabled()) {
-            vlog(
-              _rtclog.info,
-              "Couldn't download manifest for partition {} in read replica",
-              ntp);
-            archiver->run_sync_manifest_loop();
-        } else {
-            vlog(_rtclog.info, "Start archiving new partition {}", ntp);
-            // Start topic manifest upload
-            // asynchronously
-            if (ntp.tp.partition == 0) {
-                // Upload manifest once per topic. GCS has strict
-                // limits for single object updates.
-                ssx::background = upload_topic_manifest(
-                  model::topic_namespace(ntp.ns, ntp.tp.topic),
-                  archiver->get_revision_id());
-            }
-            _probe.start_archiving_ntp();
-
-            archiver->run_upload_loop();
-        }
-
-        co_return;
-    case cloud_storage::download_result::failed:
-    case cloud_storage::download_result::timedout:
-        vlog(_rtclog.warn, "Manifest download failed");
-        _archivers.erase(archiver->get_ntp());
-        co_return co_await archiver->stop().finally([archiver]() {
-            return ss::make_exception_future<>(ss::timed_out_error());
-        });
+        _probe.start_archiving_ntp();
+        archiver->run_upload_loop();
     }
+
+    co_return;
 }
 
 ss::future<>
@@ -373,8 +337,13 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     std::vector<model::ntp> to_create;
     // find new ntps that present in the snapshot only
     for (const auto& [ntp, p] : pm.partitions()) {
+        // archival_metadata_stm is only created for topics in kafka namespace
+        // if we ever uploaded some topics from kafka_internal by accident these
+        // topics won't have an STM and the snapshot so it's safe to limit
+        // creation of archivers by 'kafka' namespace for now.
+        // we will change this in the future when we will add DR
         if (
-          ntp.ns != model::redpanda_ns && !_archivers.contains(ntp)
+          ntp.ns == model::kafka_namespace && !_archivers.contains(ntp)
           && p->is_elected_leader()) {
             to_create.push_back(ntp);
         }
