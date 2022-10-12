@@ -57,13 +57,13 @@ static model::record_batch make_fence_batch(model::producer_identity pid) {
 }
 
 static model::record_batch
-make_fence_batch(model::producer_identity pid, model::tx_seq tx_seq) {
+make_fence_batch(model::producer_identity pid, model::tx_seq tx_seq, std::chrono::milliseconds transaction_timeout_ms) {
     iobuf key;
     auto pid_id = pid.id;
     reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
 
     iobuf value;
-    reflection::serialize(value, rm_stm::fence_control_record_version, tx_seq);
+    reflection::serialize(value, rm_stm::fence_control_record_version, tx_seq, transaction_timeout_ms);
 
     storage::record_batch_builder builder(
       model::record_batch_type::tx_fence, model::offset(0));
@@ -346,11 +346,12 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     }
 
     std::optional<model::record_batch> batch;
-    if (!is_transaction_ga()) {
-        batch = make_fence_batch(pid);
+    if (is_transaction_ga()) {
+        batch = make_fence_batch(pid, tx_seq, transaction_timeout_ms);
     } else {
-        batch = make_fence_batch(pid, tx_seq);
+        batch = make_fence_batch(pid);
     }
+
     auto reader = model::make_memory_record_batch_reader(std::move(*batch));
     auto r = co_await _c->replicate(
       synced_term,
@@ -1861,8 +1862,10 @@ void rm_stm::apply_fence(model::record_batch&& b) {
       rm_stm::fence_control_record_version);
 
     std::optional<model::tx_seq> tx_seq{};
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
     if (version == rm_stm::fence_control_record_version) {
         tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        transaction_timeout_ms = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
     }
 
     auto key_buf = record.release_key();
