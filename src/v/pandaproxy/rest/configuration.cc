@@ -83,15 +83,4 @@ configuration::configuration()
           }
           return msg;
       }) {}
-
-config::rest_authn_method configuration::authn_method(size_t listener_idx) {
-    const auto& pp_api = pandaproxy_api.value();
-
-    if (listener_idx < 0 || listener_idx >= pp_api.size()) {
-        return config::rest_authn_method::none;
-    }
-
-    return pp_api[listener_idx].authn_method.value_or(
-      config::rest_authn_method::none);
-}
 } // namespace pandaproxy::rest

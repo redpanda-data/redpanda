@@ -17,6 +17,7 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
+#include "redpanda/request_auth.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -51,6 +52,7 @@ public:
     ss::sharded<kafka::client::client>& client() { return _client; }
     seq_writer& writer() { return _writer.local(); }
     sharded_store& schema_store() { return _store; }
+    request_authenticator& authenticator() { return _auth; }
 
 private:
     ss::future<> do_start();
@@ -67,6 +69,7 @@ private:
     std::unique_ptr<cluster::controller>& _controller;
 
     one_shot _ensure_started;
+    request_authenticator _auth;
 };
 
 } // namespace pandaproxy::schema_registry

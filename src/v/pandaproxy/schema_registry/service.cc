@@ -17,6 +17,7 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
+#include "pandaproxy/auth_utils.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
@@ -30,6 +31,7 @@
 #include <seastar/core/memory.hh>
 #include <seastar/core/std-coroutine.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
 
 namespace pandaproxy::schema_registry {
 
@@ -41,6 +43,13 @@ auto wrap(ss::gate& g, one_shot& os, Handler h) {
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
         auto h{_h};
+
+        rq.authn_method = config::get_authn_method(
+          rq.service().config().schema_registry_api.value(),
+          rq.req->get_listener_idx());
+        rq.user = maybe_authenticate_request(
+          rq.authn_method, rq.service().authenticator(), *rq.req);
+
         auto units = co_await os();
         auto guard = gate_guard(g);
         co_return co_await h(std::move(rq), std::move(rp));
@@ -228,7 +237,8 @@ service::service(
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
-  , _ensure_started{[this]() { return do_start(); }} {}
+  , _ensure_started{[this]() { return do_start(); }}
+  , _auth{config::always_true(), controller.get()} {}
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};

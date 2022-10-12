@@ -24,6 +24,7 @@
 #include <iosfwd>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace config {
 
@@ -49,6 +50,17 @@ struct rest_authn_endpoint {
 
     friend std::ostream&
     operator<<(std::ostream& os, const rest_authn_endpoint& ep);
+};
+
+// A helper method that searches for the listener within a vector of
+// rest_authn_endpoints. Returns the authn method if the address is found.
+// Returns none type otherwise
+rest_authn_method get_authn_method(
+  const std::vector<rest_authn_endpoint>& endpoints, size_t listener_idx);
+
+struct always_true : public binding<bool> {
+    always_true()
+      : binding<bool>(true) {}
 };
 
 namespace detail {

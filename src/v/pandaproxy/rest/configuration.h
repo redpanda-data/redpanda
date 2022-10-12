@@ -41,12 +41,6 @@ struct configuration final : public config::config_store {
 
     configuration();
     explicit configuration(const YAML::Node& cfg);
-
-    // A helper method that searches for the listener within
-    // the list of pandaproxy_api endpoints.
-    // Returns the authn method if the address is found.
-    // Returns none type otherwise
-    config::rest_authn_method authn_method(size_t listener_idx);
 };
 
 } // namespace pandaproxy::rest

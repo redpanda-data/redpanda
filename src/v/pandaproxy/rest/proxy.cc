@@ -9,16 +9,15 @@
 
 #include "pandaproxy/rest/proxy.h"
 
-#include "config/rest_authn_endpoint.h"
 #include "net/unresolved_address.h"
 #include "pandaproxy/api/api-doc/rest.json.h"
+#include "pandaproxy/auth_utils.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/parsing/from_chars.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
 #include "pandaproxy/sharded_client_cache.h"
-#include "pandaproxy/types.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
@@ -34,19 +33,12 @@ auto wrap(Handler h) {
     return [h{std::move(h)}](
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
-        rq.authn_method = rq.service().config().authn_method(
+        rq.authn_method = config::get_authn_method(
+          rq.service().config().pandaproxy_api.value(),
           rq.req->get_listener_idx());
 
-        if (rq.authn_method == config::rest_authn_method::http_basic) {
-            // Will throw 400 & 401 if auth fails
-            auto auth_result = rq.service().authenticator().authenticate(
-              *rq.req);
-            // Will throw 403 if user enabled HTTP Basic Auth but
-            // did not give the authorization header.
-            auth_result.require_authenticated();
-            rq.user = credential_t{
-              auth_result.get_username(), auth_result.get_password()};
-        }
+        rq.user = maybe_authenticate_request(
+          rq.authn_method, rq.service().authenticator(), *rq.req);
 
         return h(std::move(rq), std::move(rp));
     };
@@ -90,11 +82,6 @@ server::routes_t get_proxy_routes() {
     return routes;
 }
 
-struct always_true : public config::binding<bool> {
-    always_true()
-      : config::binding<bool>(true) {}
-};
-
 proxy::proxy(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
@@ -115,7 +102,7 @@ proxy::proxy(
       "/definitions",
       _ctx,
       json::serialization_format::application_json)
-  , _auth{always_true(), controller} {}
+  , _auth{config::always_true(), controller} {}
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes());
