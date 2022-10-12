@@ -66,7 +66,13 @@ public:
       ss::sharded<rpc::connection_cache>& connection_cache,
       raft::group_id raft0_group);
 
-    ss::future<> start();
+    /**
+     * \param cluster_founder_nodes When a new cluster is about to bootstrap,
+     *    this should list all cluster founder nodes. It is assumed that all
+     *    cluster founder nodes are verified to have the same logical version
+     *    as the local node. In all other cases this list will be empty.
+     */
+    ss::future<> start(std::vector<model::node_id>&& cluster_founder_nodes);
     ss::future<> stop();
 
     ss::future<std::error_code> write_action(cluster::feature_update_action);
@@ -93,6 +99,13 @@ public:
 
 private:
     void update_node_version(model::node_id, cluster_version v);
+
+    /**
+     * When cluster discovery has verified seed server latest versions are
+     * the same as local latest version, this function is used to initialize
+     * seed servers versions in feature manager.
+     */
+    void set_node_to_latest_version(model::node_id);
 
     ss::future<> do_maybe_update_active_version();
     ss::future<> maybe_update_active_version();

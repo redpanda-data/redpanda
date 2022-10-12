@@ -103,6 +103,14 @@ ss::future<> controller::wire_up() {
 ss::future<>
 controller::start(std::vector<model::broker> initial_raft0_brokers) {
     const bool local_node_is_seed_server = !initial_raft0_brokers.empty();
+    std::vector<model::node_id> seed_nodes;
+    seed_nodes.reserve(initial_raft0_brokers.size());
+    std::transform(
+      initial_raft0_brokers.cbegin(),
+      initial_raft0_brokers.cend(),
+      std::back_inserter(seed_nodes),
+      [](const model::broker& b) { return b.id(); });
+
     return create_raft0(
              _partition_manager,
              _shard_table,
@@ -364,9 +372,11 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })
-      .then([this] {
+      .then([this, seed_nodes = std::move(seed_nodes)]() mutable {
           return _feature_manager.invoke_on(
-            feature_manager::backend_shard, &feature_manager::start);
+            feature_manager::backend_shard,
+            &feature_manager::start,
+            std::move(seed_nodes));
       })
       .then([this] {
           return _metrics_reporter.start_single(
