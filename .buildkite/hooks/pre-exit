@@ -1,4 +1,0 @@
-#!/bin/bash
-if [[ $ENABLE_STEP_CDT == '1' && -x bin/task ]]; then
-  bin/task ci:cdt-cleanup
-fi
