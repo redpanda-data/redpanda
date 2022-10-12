@@ -1195,12 +1195,8 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     } else {
         // this is the first attempt in the tx, reset dedupe cache
         reset_seq(bid);
-    }
 
-    if (!is_transaction_ga()) {
-        if (!_mem_state.tx_start.contains(bid.pid)) {
-            _mem_state.estimated.emplace(bid.pid, _insync_offset);
-        }
+        _mem_state.estimated[bid.pid] = _insync_offset;
     }
 
     auto r = co_await _c->replicate(
