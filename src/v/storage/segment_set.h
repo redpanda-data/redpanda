@@ -44,7 +44,7 @@ public:
     using const_iterator = underlying_t::const_iterator;
     using iterator = underlying_t::iterator;
 
-    explicit segment_set(underlying_t);
+    explicit segment_set(underlying_t, bool is_internal_topic = false);
     ~segment_set() noexcept = default;
     segment_set(segment_set&&) noexcept = default;
     segment_set& operator=(segment_set&& o) noexcept = default;
@@ -85,6 +85,7 @@ public:
 
 private:
     underlying_t _handles;
+    [[maybe_unused]] bool _is_internal_topic;
 
     friend std::ostream& operator<<(std::ostream&, const segment_set&);
 };

@@ -47,8 +47,9 @@ struct segment_ordering {
     }
 };
 
-segment_set::segment_set(segment_set::underlying_t segs)
-  : _handles(std::move(segs)) {
+segment_set::segment_set(segment_set::underlying_t segs, bool is_internal_topic)
+  : _handles(std::move(segs))
+  , _is_internal_topic(is_internal_topic) {
     std::sort(_handles.begin(), _handles.end(), segment_ordering{});
 }
 
@@ -467,9 +468,9 @@ ss::future<segment_set> recover_segments(
       })
       .then([&as,
              is_compaction_enabled,
-             last_clean_segment = std::move(last_clean_segment)](
-              segment_set::underlying_t segs) {
-          auto segments = segment_set(std::move(segs));
+             last_clean_segment = std::move(last_clean_segment),
+             is_internal_topic](segment_set::underlying_t segs) {
+          auto segments = segment_set(std::move(segs), is_internal_topic);
           // we have to mark compacted segments before recovery to allow reading
           // gaps introduced by compaction
           if (is_compaction_enabled) {

@@ -410,7 +410,7 @@ model::record_batch_reader create_segment_full_reader(
     set.reserve(1);
     set.push_back(s);
     auto lease = std::make_unique<lock_manager::lease>(
-      segment_set(std::move(set)));
+      segment_set(std::move(set), s->is_internal_topic()));
     lease->locks.push_back(std::move(h));
     return model::make_record_batch_reader<log_reader>(
       std::move(lease), reader_cfg, pb);

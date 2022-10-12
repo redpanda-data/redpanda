@@ -96,7 +96,7 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
-          _is_internal || hdr.type == model::record_batch_type::raft_data)) {
+          hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;
     }
     _needs_persistence = true;
