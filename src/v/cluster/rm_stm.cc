@@ -369,22 +369,32 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    bool insert = true;
+    if (_c->term() != synced_term) {
+        vlog(_ctx_log.warn, "term changeg from {} to {} during fencing pid {}", synced_term, _c->term(), pid);
+        co_return tx_errc::unknown_server_error;
+    }
+
+    auto tx_seq_it = _log_state.tx_seqs.find(pid);
+    if (tx_seq_it == _log_state.tx_seqs.end()) {
+        vlog(_ctx_log.error, "tx_seqs should be updated after fencing pid {}", pid);
+        co_return tx_errc::unknown_server_error;
+    }
+    if (tx_seq_it->second != tx_seq) {
+        vlog(_ctx_log.error, "expected tx_seq={} for pid {} got {}", tx_seq, pid, tx_seq_it->second);
+        co_return tx_errc::unknown_server_error;
+    }
+
     if (!is_transaction_ga()) {
         // We do not need it after transaction_ga. Because we do not have
         // prepare state anymore
         auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
-        insert &= inserted;
-    }
-
-    auto [_, insert_tx_seq] = _log_state.tx_seqs.emplace(pid, tx_seq);
-    insert &= insert_tx_seq;
-    if (!insert) {
-        vlog(
-          _ctx_log.error,
-          "there is already an ongoing transaction within {} session",
-          pid);
-        co_return tx_errc::unknown_server_error;
+        if (!inserted) {
+            vlog(
+            _ctx_log.error,
+            "there is already an ongoing transaction within {} session",
+            pid);
+            co_return tx_errc::unknown_server_error;
+        }
     }
 
     track_tx(pid, transaction_timeout_ms);
