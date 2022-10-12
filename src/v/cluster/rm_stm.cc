@@ -396,8 +396,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     // strictly after all records are written it means that it
     // won't be retrying old writes and we may reset the seq cache
     _log_state.seq_table.erase(pid);
-    _log_state.inflight[pid] = 0;
-    _mem_state.inflight[pid] = 0;
 
     co_return synced_term;
 }
@@ -473,17 +471,22 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto expected_it = _mem_state.expected.find(pid);
-    if (expected_it == _mem_state.expected.end()) {
-        // impossible situation, a transaction coordinator tries
-        // to prepare a transaction which wasn't started
-        vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
-        co_return tx_errc::request_rejected;
-    }
-
-    if (expected_it->second != tx_seq) {
-        // current prepare_tx call is stale, rejecting
-        co_return tx_errc::request_rejected;
+    if (is_transaction_ga()) {
+        if (!_log_state.tx_seqs.contains(pid)) {
+            co_return errc::invalid_producer_epoch;
+        }
+    } else {
+        auto expected_it = _mem_state.expected.find(pid);
+        if (expected_it == _mem_state.expected.end()) {
+            // impossible situation, a transaction coordinator tries
+            // to prepare a transaction which wasn't started
+            vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
+            co_return tx_errc::request_rejected;
+        }
+        if (expected_it->second != tx_seq) {
+            // current prepare_tx call is stale, rejecting
+            co_return tx_errc::request_rejected;
+        }
     }
 
     auto marker = prepare_marker{
@@ -982,12 +985,14 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
         ans.emplace(id, tx_info);
     }
 
-    for (auto& [id, offset] : _mem_state.tx_start) {
-        transaction_info tx_info;
-        tx_info.lso_bound = offset;
-        tx_info.status = get_tx_status(id);
-        tx_info.info = get_expiration_info(id);
-        ans.emplace(id, tx_info);
+    if (!is_transaction_ga()) {
+        for (auto& [id, offset] : _mem_state.tx_start) {
+            transaction_info tx_info;
+            tx_info.lso_bound = offset;
+            tx_info.status = get_tx_status(id);
+            tx_info.info = get_expiration_info(id);
+            ans.emplace(id, tx_info);
+        }
     }
 
     for (auto& [id, offset] : _log_state.ongoing_map) {
@@ -1144,7 +1149,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         }
     }
 
-    if (_mem_state.inflight[bid.pid] > 0 || _log_state.inflight[bid.pid] > 0) {
+    if (_log_state.inflight[bid.pid] > 0) {
         // this isn't the first attempt in the tx we should try dedupe
         auto cached_offset = known_seq(bid);
         if (cached_offset) {
@@ -1173,10 +1178,10 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         reset_seq(bid);
     }
 
-    _mem_state.inflight[bid.pid] = _mem_state.inflight[bid.pid] + 1;
-
-    if (!_mem_state.tx_start.contains(bid.pid)) {
-        _mem_state.estimated.emplace(bid.pid, _insync_offset);
+    if (!is_transaction_ga()) {
+        if (!_mem_state.tx_start.contains(bid.pid)) {
+            _mem_state.estimated.emplace(bid.pid, _insync_offset);
+        }
     }
 
     auto r = co_await _c->replicate(
@@ -1213,12 +1218,14 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     set_seq(bid, new_offset);
 
-    // TODO: check what happens on re-election
-    if (!_mem_state.tx_start.contains(bid.pid)) {
-        auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
-        _mem_state.tx_start.emplace(bid.pid, base_offset);
-        _mem_state.tx_starts.insert(base_offset);
-        _mem_state.estimated.erase(bid.pid);
+    if (!is_transaction_ga()) {
+        // TODO: check what happens on re-election
+        if (!_mem_state.tx_start.contains(bid.pid)) {
+            auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
+            _mem_state.tx_start.emplace(bid.pid, base_offset);
+            _mem_state.tx_starts.insert(base_offset);
+            _mem_state.estimated.erase(bid.pid);
+        }
     }
 
     co_return kafka_result{.last_offset = new_offset};
@@ -1468,9 +1475,11 @@ model::offset rm_stm::last_stable_offset() {
             first_tx_start = *_log_state.ongoing_set.begin();
         }
 
-        if (!_mem_state.tx_starts.empty()) {
-            first_tx_start = std::min(
-              first_tx_start, *_mem_state.tx_starts.begin());
+        if (!is_transaction_ga()) {
+            if (!_mem_state.tx_starts.empty()) {
+                first_tx_start = std::min(
+                first_tx_start, *_mem_state.tx_starts.begin());
+            }
         }
 
         for (auto& entry : _mem_state.estimated) {
@@ -1640,8 +1649,10 @@ ss::future<> rm_stm::do_abort_old_txes() {
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
     }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
+    if (!is_transaction_ga()) {
+        for (auto& [k, _] : _mem_state.tx_start) {
+            pids.push_back(k);
+        }
     }
     for (auto& [k, _] : _log_state.ongoing_map) {
         pids.push_back(k);
@@ -1908,6 +1919,7 @@ ss::future<> rm_stm::apply_control(
     if (crt == model::control_record_type::tx_abort) {
         _log_state.prepared.erase(pid);
         _log_state.tx_seqs.erase(pid);
+        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             // make a list
@@ -1927,6 +1939,7 @@ ss::future<> rm_stm::apply_control(
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
         _log_state.tx_seqs.erase(pid);
+        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             _log_state.ongoing_set.erase(offset_it->second.first);
@@ -1991,6 +2004,9 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
                 .last = model::offset(last_offset)});
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
+        }
+        if (!_log_state.inflight.contains(bid.pid)) {
+            _log_state.inflight[bid.pid] = 0;
         }
         _log_state.inflight[bid.pid]++;
     }
