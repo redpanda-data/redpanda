@@ -1107,7 +1107,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::invalid_producer_epoch;
     }
 
-    if (!is_transaction_ga()) {
+    if (is_transaction_ga()) {
+        if (!_log_state.tx_seqs.contains(bid.pid)) {
+            co_return errc::invalid_producer_epoch;
+        }
+    } else {
         if (!_mem_state.expected.contains(bid.pid)) {
             // there is an inflight abort
             // or this partition lost leadership => can't continue tx since
@@ -1199,6 +1203,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     set_seq(bid, new_offset);
 
+    // TODO: check what happens on re-election
     if (!_mem_state.tx_start.contains(bid.pid)) {
         auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
         _mem_state.tx_start.emplace(bid.pid, base_offset);
