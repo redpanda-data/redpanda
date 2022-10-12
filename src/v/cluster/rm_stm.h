@@ -392,9 +392,14 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
-
         // number of batches replicated withing a transaction
         absl::flat_hash_map<model::producer_identity, int64_t> inflight;
+        absl::flat_hash_map<model::producer_identity, expiration_info>
+          expiration;
+        
+        void forget(model::producer_identity pid) {
+            expiration.erase(pid);
+        }
     };
 
     struct mem_state {
@@ -407,8 +412,6 @@ private:
         // its offset but we must prevent read_comitted fetch from getting it
         // so we use last seen offset to estimate it
         absl::flat_hash_map<model::producer_identity, model::offset> estimated;
-        absl::flat_hash_map<model::producer_identity, expiration_info>
-          expiration;
         model::offset last_end_tx{-1};
         
         // FIELDS TO GO AFTER GA
@@ -428,7 +431,6 @@ private:
             expected.erase(pid);
             estimated.erase(pid);
             preparing.erase(pid);
-            expiration.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);
