@@ -38,8 +38,12 @@ namespace cluster {
 using use_tx_version_with_last_pid_bool
   = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
 
+// Update this if your patch bumps the version.
+// Current version of transaction record (v2).
+// Includes all changes for transactions GA.
+// + last_pid field - KIP-360 support
+// + transferring - tm_stm graceful failover support
 struct tm_transaction {
-    // Version 2 added last_pid field to tx log records
     static constexpr uint8_t version = 2;
 
     enum tx_status {
@@ -88,6 +92,15 @@ struct tm_transaction {
     ss::lowres_system_clock::time_point last_update_ts;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
+
+    // Set when transferring a tx from one leader to another. Typically only
+    // applies to ready/ongoing txns that can have dirty uncommitted state
+    // whereas any other status beyond that is checkpointed to the log.
+
+    // Any `transferring` transactions are first checkpointed as `not
+    // transferring` on the new leader before it makes any changes to the state.
+    // This happens lazily on access.
+    bool transferring = false;
 
     friend std::ostream& operator<<(std::ostream&, const tm_transaction&);
 
@@ -153,12 +166,13 @@ public:
 
     ss::gate& gate() { return _gate; }
 
-    std::optional<tm_transaction> get_tx(kafka::transactional_id);
-    checked<tm_transaction, tm_stm::op_status>
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      get_tx(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_ongoing(kafka::transactional_id);
     // mark_xxx: updates a transaction if the term matches etag
     // reset_xxx: updates a transaction and an etag
-    checked<tm_transaction, tm_stm::op_status>
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ongoing(kafka::transactional_id, model::term_id);
     ss::future<tm_stm::op_status> add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
@@ -185,6 +199,11 @@ public:
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _state_lock.hold_read_lock();
     }
+
+    ss::future<> checkpoint_ongoing_txs();
+
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id);
@@ -265,6 +284,7 @@ private:
       std::chrono::milliseconds,
       model::producer_identity);
     ss::future<stm_snapshot> do_take_snapshot();
+    std::optional<tm_transaction> do_get_tx(kafka::transactional_id);
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       update_tx(tm_transaction, model::term_id);
@@ -288,8 +308,9 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
 };
 
-// Version 1 added last_update_ts to tx lod record. And new status tombstone to
-// tx_status
+// Updates in v1.
+//  + last_update_ts - tracks last updated ts for transactions expiration
+//  + tx_status::tombstone - Removes all txn related state upon apply.
 struct tm_transaction_v1 {
     static constexpr uint8_t version = 1;
 
@@ -367,6 +388,7 @@ struct tm_transaction_v1 {
         result.status = upcast(status);
         result.timeout_ms = timeout_ms;
         result.last_update_ts = last_update_ts;
+        result.transferring = false;
         for (auto& partition : partitions) {
             result.partitions.push_back(tm_transaction::tx_partition{
               .ntp = partition.ntp, .etag = partition.etag});
@@ -438,6 +460,7 @@ struct tm_transaction_v0 {
         result.status = upcast(status);
         result.timeout_ms = timeout_ms;
         result.last_update_ts = tm_stm::clock_type::now();
+        result.transferring = false;
         for (auto& partition : partitions) {
             result.partitions.push_back(tm_transaction::tx_partition{
               .ntp = partition.ntp, .etag = partition.etag});
