@@ -13,6 +13,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -1772,20 +1773,40 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     }
 
     _mem_state.expected.erase(pid);
+    auto is_txn_ga = is_transaction_ga();
 
-    std::optional<prepare_marker> marker;
-    auto prepare_it = _mem_state.preparing.find(pid);
-    if (prepare_it != _mem_state.preparing.end()) {
-        marker = prepare_it->second;
-    }
-    prepare_it = _log_state.prepared.find(pid);
-    if (prepare_it != _log_state.prepared.end()) {
-        marker = prepare_it->second;
+    std::optional<model::tx_seq> tx_seq;
+    if (!is_txn_ga) {
+        auto prepare_it = _log_state.prepared.find(pid);
+        if (prepare_it != _log_state.prepared.end()) {
+            tx_seq = prepare_it->second.tx_seq;
+        } else {
+            prepare_it = _mem_state.preparing.find(pid);
+            if (prepare_it != _mem_state.preparing.end()) {
+                tx_seq = prepare_it->second.tx_seq;
+            }
+        }
     }
 
-    if (marker) {
+    if (!tx_seq) {
+        tx_seq = get_tx_seq(pid);
+    }
+
+    if (is_txn_ga && !tx_seq) {
+        vlog(
+          _ctx_log.error,
+          "Can not find tx_seq for pid({}) to expire old tx",
+          pid);
+    }
+
+    if (tx_seq) {
+        // It looks like a partition is fixed now but actually partitioning
+        // of the tx coordinator isn't support yet so it doesn't matter see
+        // https://github.com/redpanda-data/redpanda/issues/6137
+        // In order to support it we ned to update begin_tx to accept the id
+        // and use the true partition_id here
         auto r = co_await _tx_gateway_frontend.local().try_abort(
-          marker->tm_partition, marker->pid, marker->tx_seq, _sync_timeout);
+          model::partition_id(0), pid, *tx_seq, _sync_timeout);
         if (r.ec == tx_errc::none) {
             if (r.commited) {
                 auto batch = make_tx_control_batch(
