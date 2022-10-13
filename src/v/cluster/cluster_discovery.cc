@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
+#include "storage/kvstore.h"
 
 #include <chrono>
 
@@ -26,10 +27,13 @@ using std::vector;
 namespace cluster {
 
 cluster_discovery::cluster_discovery(
-  const model::node_uuid& node_uuid, ss::abort_source& as)
+  const model::node_uuid& node_uuid,
+  storage::kvstore& kvstore,
+  ss::abort_source& as)
   : _node_uuid(node_uuid)
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
+  , _kvstore(kvstore)
   , _as(as) {}
 
 ss::future<node_id> cluster_discovery::determine_node_id() {
@@ -38,6 +42,15 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
     if (configured_node_id != std::nullopt) {
         clusterlog.info("Using configured node ID {}", configured_node_id);
         co_return *configured_node_id;
+    }
+    static const bytes invariants_key("configuration_invariants");
+    auto invariants_buf = _kvstore.get(
+      storage::kvstore::key_space::controller, invariants_key);
+
+    if (invariants_buf) {
+        auto invariants = reflection::from_iobuf<configuration_invariants>(
+          std::move(*invariants_buf));
+        co_return invariants.node_id;
     }
     // TODO: once is_cluster_founder() refers to all seeds, verify that all the
     // seeds' seed_servers lists match and assign node IDs based on the
