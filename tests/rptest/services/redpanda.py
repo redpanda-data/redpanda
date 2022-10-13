@@ -1235,6 +1235,23 @@ class RedpandaService(Service):
                 self.EXECUTABLE_SAVE_PATH):
             node.account.remove(self.EXECUTABLE_SAVE_PATH)
 
+        if not preserve_current_install or not self._installer._started:
+            # Reset the binaries to use the original binaries.
+            # NOTE: if the installer hasn't been started, there is no
+            # installation to preserve!
+            self._installer.reset_current_install([node])
+
+    def trim_logs(self):
+        # Excessive logging may cause disks to fill up quickly.
+        # Call this method to removes TRACE and DEBUG log lines from redpanda logs
+        # Ensure this is only done on tests that have passed
+        def prune(node):
+            node.account.ssh(
+                f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            )
+
+        self._for_nodes(self.nodes, prune, parallel=True)
+
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
