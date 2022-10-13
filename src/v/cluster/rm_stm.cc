@@ -314,35 +314,32 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     // checking / setting pid fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    auto is_new_pid = fence_it == _log_state.fence_pid_epoch.end();
-    if (is_new_pid || pid.get_epoch() > fence_it->second) {
-        if (!is_new_pid) {
-            auto old_pid = model::producer_identity{
-              pid.get_id(), fence_it->second};
-            // there is a fence, it might be that tm_stm failed, forget about
-            // an ongoing transaction, assigned next pid for the same tx.id and
-            // started a new transaction without aborting the previous one.
-            //
-            // at the same time it's possible that it already aborted the old
-            // tx before starting this. do_abort_tx is idempotent so calling it
-            // just in case to proactivly abort the tx instead of waiting for
-            // the timeout
-            //
-            // moreover do_abort_tx is co-idempotent with do_commit_tx so if a
-            // tx was committed calling do_abort_tx will do nothing
-            auto ar = co_await do_abort_tx(
-              old_pid, std::nullopt, _sync_timeout);
-            if (ar == tx_errc::stale) {
-                co_return tx_errc::stale;
-            }
-            if (ar != tx_errc::none) {
-                co_return tx_errc::unknown_server_error;
-            }
+    if (fence_it == _log_state.fence_pid_epoch.end()) {
+        // intentionally empty
+    } else if (pid.get_epoch() > fence_it->second) {
+        auto old_pid = model::producer_identity{pid.get_id(), fence_it->second};
+        // there is a fence, it might be that tm_stm failed, forget about
+        // an ongoing transaction, assigned next pid for the same tx.id and
+        // started a new transaction without aborting the previous one.
+        //
+        // at the same time it's possible that it already aborted the old
+        // tx before starting this. do_abort_tx is idempotent so calling it
+        // just in case to proactivly abort the tx instead of waiting for
+        // the timeout
+        //
+        // moreover do_abort_tx is co-idempotent with do_commit_tx so if a
+        // tx was committed calling do_abort_tx will do nothing
+        auto ar = co_await do_abort_tx(old_pid, std::nullopt, _sync_timeout);
+        if (ar == tx_errc::stale) {
+            co_return tx_errc::stale;
+        }
+        if (ar != tx_errc::none) {
+            co_return tx_errc::unknown_server_error;
+        }
 
-            if (is_known_session(old_pid)) {
-                // can't begin a transaction while previous tx is in progress
-                co_return tx_errc::unknown_server_error;
-            }
+        if (is_known_session(old_pid)) {
+            // can't begin a transaction while previous tx is in progress
+            co_return tx_errc::unknown_server_error;
         }
     } else if (pid.get_epoch() < fence_it->second) {
         vlog(
@@ -380,21 +377,48 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
-    if (!inserted) {
-        // TODO: https://app.clubhouse.io/vectorized/story/2194
-        // tm_stm forgot that it had already begun a transaction
-        // (it may happen when it crashes)
-        // it's ok we fail this request, a client will abort a
-        // tx bumping its producer id's epoch
+    if (_c->term() != synced_term) {
         vlog(
-          _ctx_log.error,
-          "there is already an ongoing transaction within {} session",
+          _ctx_log.warn,
+          "term changeg from {} to {} during fencing pid {}",
+          synced_term,
+          _c->term(),
           pid);
         co_return tx_errc::unknown_server_error;
     }
 
-    track_tx(pid, transaction_timeout_ms);
+    if (is_transaction_ga()) {
+        auto tx_seq_it = _log_state.tx_seqs.find(pid);
+        if (tx_seq_it == _log_state.tx_seqs.end()) {
+            vlog(
+              _ctx_log.error,
+              "tx_seqs should be updated after fencing pid {}",
+              pid);
+            co_return tx_errc::unknown_server_error;
+        }
+        if (tx_seq_it->second != tx_seq) {
+            vlog(
+              _ctx_log.error,
+              "expected tx_seq={} for pid {} got {}",
+              tx_seq,
+              pid,
+              tx_seq_it->second);
+            co_return tx_errc::unknown_server_error;
+        }
+    } else {
+        // We do not need it after transaction_ga. Because we do not have
+        // prepare state anymore
+        auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
+        if (!inserted) {
+            vlog(
+              _ctx_log.error,
+              "there is already an ongoing transaction within {} session",
+              pid);
+            co_return tx_errc::unknown_server_error;
+        }
+
+        track_tx(pid, transaction_timeout_ms);
+    }
 
     // a client may start new transaction only when the previous
     // tx is committed. since a client commits a transacitons
