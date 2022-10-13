@@ -1935,6 +1935,8 @@ ss::future<> rm_stm::apply_control(
 
     if (crt == model::control_record_type::tx_abort) {
         _log_state.prepared.erase(pid);
+        _log_state.tx_seqs.erase(pid);
+        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             // make a list
@@ -1944,6 +1946,7 @@ ss::future<> rm_stm::apply_control(
         }
 
         _mem_state.forget(pid);
+        _log_state.expiration.erase(pid);
 
         if (
           _log_state.aborted.size() > _abort_index_segment_size
@@ -1953,6 +1956,8 @@ ss::future<> rm_stm::apply_control(
         }
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
+        _log_state.tx_seqs.erase(pid);
+        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             _log_state.ongoing_set.erase(offset_it->second.first);
@@ -1960,6 +1965,7 @@ ss::future<> rm_stm::apply_control(
         }
 
         _mem_state.forget(pid);
+        _log_state.expiration.erase(pid);
     }
 
     co_return;
