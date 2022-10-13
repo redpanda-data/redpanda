@@ -52,20 +52,21 @@ public:
      */
     class [[nodiscard]] units {
     public:
-        units() {}
+        units() = default;
 
         units(conn_quota& quotas, ss::net::inet_address const& addr)
           : _quotas(std::ref(quotas))
           , _addr(addr) {}
 
         units(units const&) = delete;
+        units& operator=(units const&) = delete;
         units(units&& rhs) noexcept
-          : _addr(std::move(rhs._addr)) {
+          : _addr(rhs._addr) {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
         }
-        units& operator=(units&& rhs) {
+        units& operator=(units&& rhs) noexcept {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
-            _addr = std::move(rhs._addr);
+            _addr = rhs._addr;
             return *this;
         }
 
