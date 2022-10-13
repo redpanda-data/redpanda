@@ -1159,31 +1159,39 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::invalid_producer_epoch;
     }
 
-    if (!_mem_state.expected.contains(bid.pid)) {
-        // there is an inflight abort
-        // or this partition lost leadership => can't continue tx since there is
-        //  risk that ack=1 writes are lost
-        // or it's a client bug and it keeps producing after commit / abort
-        // or a replication of the first batch in a transaction has failed
-        vlog(
-          _ctx_log.warn,
-          "Partition doesn't expect record with pid:{}",
-          bid.pid);
-        co_return errc::invalid_producer_epoch;
-    }
+    auto is_txn_ga = is_transaction_ga();
 
-    if (_mem_state.preparing.contains(bid.pid)) {
-        vlog(
-          _ctx_log.warn,
-          "Client keeps producing after initiating a prepare for pid:{}",
-          bid.pid);
-        co_return errc::generic_tx_error;
+    if (is_txn_ga) {
+        if (!_log_state.tx_seqs.contains(bid.pid)) {
+            co_return errc::invalid_producer_epoch;
+        }
+    } else {
+        if (!_mem_state.expected.contains(bid.pid)) {
+            // there is an inflight abort
+            // or this partition lost leadership => can't continue tx since
+            // there is
+            //  risk that ack=1 writes are lost
+            // or it's a client bug and it keeps producing after commit / abort
+            // or a replication of the first batch in a transaction has failed
+            vlog(
+              _ctx_log.warn,
+              "Partition doesn't expect record with pid:{}",
+              bid.pid);
+            co_return errc::invalid_producer_epoch;
+        }
+
+        if (_mem_state.preparing.contains(bid.pid)) {
+            vlog(
+              _ctx_log.warn,
+              "Client keeps producing after initiating a prepare for pid:{}",
+              bid.pid);
+            co_return errc::generic_tx_error;
+        }
     }
 
     if (_mem_state.estimated.contains(bid.pid)) {
         // we received second produce request while the first is still
-        // being processed. this is highly unlikely situation because
-        // we replicate with ack=1 and it should be fast
+        // being processed.
         vlog(_ctx_log.warn, "Too frequent produce with same pid:{}", bid.pid);
         co_return errc::generic_tx_error;
     }
@@ -1215,43 +1223,54 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     } else {
         // this is the first attempt in the tx, reset dedupe cache
         reset_seq(bid);
+
+        _mem_state.estimated[bid.pid] = _insync_offset;
     }
 
-    _mem_state.inflight[bid.pid] = _mem_state.inflight[bid.pid] + 1;
-
-    if (!_mem_state.tx_start.contains(bid.pid)) {
-        _mem_state.estimated.emplace(bid.pid, _insync_offset);
+    auto expiration_it = _log_state.expiration.find(bid.pid);
+    if (expiration_it == _log_state.expiration.end()) {
+        vlog(_ctx_log.warn, "Can not find expiration info for pid:{}", bid.pid);
+        co_return errc::generic_tx_error;
     }
+    expiration_it->second.last_update = clock_type::now();
+    expiration_it->second.is_expiration_requested = false;
 
     auto r = co_await _c->replicate(
       synced_term,
       std::move(br),
-      raft::replicate_options(raft::consistency_level::leader_ack));
+      raft::replicate_options(raft::consistency_level::quorum_ack));
     if (!r) {
         if (_mem_state.estimated.contains(bid.pid)) {
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
         co_return r.error();
     }
-
-    auto expiration_it = _mem_state.expiration.find(bid.pid);
-    if (expiration_it == _mem_state.expiration.end()) {
-        co_return errc::generic_tx_error;
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
+        co_return tx_errc::timeout;
     }
-    expiration_it->second.last_update = clock_type::now();
-    expiration_it->second.is_expiration_requested = false;
 
     auto old_offset = r.value().last_offset;
     auto new_offset = from_log_offset(old_offset);
 
     set_seq(bid, new_offset);
 
-    if (!_mem_state.tx_start.contains(bid.pid)) {
-        auto base_offset = model::offset(old_offset() - (bid.record_count - 1));
-        _mem_state.tx_start.emplace(bid.pid, base_offset);
-        _mem_state.tx_starts.insert(base_offset);
-        _mem_state.estimated.erase(bid.pid);
+    _mem_state.estimated.erase(bid.pid);
+
+    if (!is_txn_ga) {
+        if (!_mem_state.tx_start.contains(bid.pid)) {
+            auto base_offset = model::offset(
+              old_offset() - (bid.record_count - 1));
+            _mem_state.tx_start.emplace(bid.pid, base_offset);
+            _mem_state.tx_starts.insert(base_offset);
+        }
     }
 
     co_return kafka_result{.last_offset = new_offset};
