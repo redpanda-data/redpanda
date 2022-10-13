@@ -402,6 +402,8 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
+        // number of batches replicated withing a transaction
+        absl::flat_hash_map<model::producer_identity, int64_t> inflight;
     };
 
     struct mem_state {
