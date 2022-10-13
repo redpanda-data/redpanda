@@ -355,6 +355,16 @@ private:
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
 
+    std::optional<model::tx_seq>
+    get_tx_seq(model::producer_identity pid) const {
+        auto log_it = _log_state.tx_seqs.find(pid);
+        if (log_it != _log_state.tx_seqs.end()) {
+            return log_it->second;
+        }
+
+        return std::nullopt;
+    }
+
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
