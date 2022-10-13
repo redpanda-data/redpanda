@@ -23,6 +23,7 @@
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
@@ -1391,6 +1392,14 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(node_uuid, app_signal.abort_source());
     auto node_id = cd.determine_node_id().get();
+    if (config::node().node_id() == std::nullopt) {
+        // If we previously didn't have a node ID, set it in the config. We
+        // will persist it in the kvstore when the controller starts up.
+        ss::smp::invoke_on_all([node_id] {
+            config::node().node_id.set_value(
+              std::make_optional<model::node_id>(node_id));
+        }).get();
+    }
 
     vlog(_log.info, "Starting Redpanda with node_id {}", node_id);
 

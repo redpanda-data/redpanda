@@ -14,12 +14,13 @@
 #include "cluster/config_manager.h"
 #include "cluster/data_policy_manager.h"
 #include "cluster/feature_backend.h"
-#include "cluster/members_manager.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "raft/mux_state_machine.h"
 
 namespace cluster {
+
+class members_manager;
 
 // single instance
 using controller_stm = raft::mux_state_machine<
