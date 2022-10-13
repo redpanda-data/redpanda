@@ -49,7 +49,8 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # TODO: extend this to cover shutdown logging too, and
                     # clean up redpanda to not log so many errors on shutdown.
                     self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                    return r
+                self.redpanda.trim_logs()
+                return r
 
         # Propagate ducktape markers (e.g. parameterize) to our function
         # wrapper
