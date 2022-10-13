@@ -1111,7 +1111,6 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
         group_id = f"pandaproxy-group-{uuid.uuid4()}"
 
-        # Create 3 topics
         self.topics = [
             TopicSpec(partition_count=3, replication_factor=3),
         ]
@@ -1205,3 +1204,38 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
 
         rc_res = c0.remove(auth=(super_username, super_password))
         assert rc_res.status_code == requests.codes.no_content
+
+    @cluster(num_nodes=3)
+    def test_password_change(self):
+        """
+        Issue some rest requests as the superuser,
+        change the superuser password and then issue more requests.
+        """
+
+        self.topics = [
+            TopicSpec(partition_count=3, replication_factor=3),
+        ]
+        self._create_initial_topics()
+
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()[0] == self.topic
+
+        # Change admin password
+        admin = Admin(self.redpanda)
+        admin.update_user(super_username, 'new-secret', super_algorithm)
+
+        # Old password should fail
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.json()['error_code'] == 40101
+
+        # New password should succeed.
+        result_raw = self._get_topics(auth=(super_username, 'new-secret'))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()[0] == self.topic
+
+        # Put the original password back incase future changes to the
+        # teardown process in RedpandaService relies on the superuser
+        admin.update_user(super_username, super_password, super_algorithm)
