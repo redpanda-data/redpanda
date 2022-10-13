@@ -17,6 +17,7 @@
 package org.apache.kafka.tools;
 
 import static net.sourceforge.argparse4j.impl.Arguments.store;
+import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
@@ -26,7 +27,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
@@ -38,6 +47,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 /**
@@ -55,9 +65,116 @@ import org.apache.kafka.common.serialization.StringSerializer;
  */
 public class VerifiableProducer implements AutoCloseable {
 
+  class LoggingProducer {
+
+    protected Producer<String, String> producer;
+
+    public LoggingProducer(Producer<String, String> producer) {
+      this.producer = Objects.requireNonNull(producer);
+    }
+
+    protected ProducerRecord<String, String>
+    getRecord(String key, String value) {
+      ProducerRecord<String, String> record;
+      // Older versions of ProducerRecord don't include the message create time
+      // in the constructor. So including even a 'null' argument results in a
+      // NoSuchMethodException. Thus we only include the create time if it is
+      // explicitly specified to remain fully backward compatible with older
+      // clients.
+      if (createTime != null) {
+        record = new ProducerRecord<>(topic, null, createTime, key, value);
+        createTime += System.currentTimeMillis() - startTime;
+      } else {
+        record = new ProducerRecord<>(topic, key, value);
+      }
+      return record;
+    }
+
+    public void send(List<Map.Entry<String, String>> kvs) {
+      for (Map.Entry<String, String> entry : kvs) {
+        String key = entry.getKey();
+        String value = entry.getValue();
+        try {
+          numSent++;
+          producer.send(
+              getRecord(key, value), new PrintInfoCallback(key, value));
+        } catch (Exception e) {
+          synchronized (System.out) {
+            printJson(new FailedSend(key, value, topic, e));
+          }
+        }
+      }
+    }
+
+    public void close() { producer.close(); }
+  }
+
+  // A transactional version of the default producer.
+  // Can optionally inject aborts to simulate transactional
+  // failures. Only logs committed transaction records to
+  // console for test verification.
+  class TxLoggingProducer extends LoggingProducer {
+
+    private boolean enableRandomAborts;
+    private final Exception injectedAbortEx
+        = new KafkaException("Abort injected.");
+
+    public TxLoggingProducer(
+        Producer<String, String> producer, boolean enableRandomAborts) {
+      super(producer);
+      this.enableRandomAborts = enableRandomAborts;
+      producer.initTransactions();
+    }
+
+    private void resetProducer() {
+      producer.close();
+      producer = new KafkaProducer<>(
+          properties, new StringSerializer(), new StringSerializer());
+      producer.initTransactions();
+    }
+
+    public void send(List<Map.Entry<String, String>> kvs) {
+      ThreadLocalRandom random = ThreadLocalRandom.current();
+      List<Future<RecordMetadata>> sendFutures = new ArrayList<>();
+      List<PrintInfoCallback> cbs = new ArrayList<>();
+      Exception ex = null;
+      try {
+        producer.beginTransaction();
+        for (Map.Entry<String, String> entry : kvs) {
+          numSent++;
+          cbs.add(new PrintInfoCallback(entry.getKey(), entry.getValue()));
+          sendFutures.add(
+              producer.send(getRecord(entry.getKey(), entry.getValue())));
+        }
+
+        producer.flush();
+
+        if (enableRandomAborts && random.nextInt() % 3 == 0) {
+          producer.abortTransaction();
+          throw injectedAbortEx;
+        }
+        producer.commitTransaction();
+      } catch (Exception e) {
+        ex = e;
+        if (e != injectedAbortEx) {
+          resetProducer();
+        }
+      }
+      int i = 0;
+      for (PrintInfoCallback cb : cbs) {
+        try {
+          RecordMetadata md = ex != null ? null : sendFutures.get(i++).get();
+          cb.onCompletion(md, ex);
+        } catch (Exception e) {
+          // ignore.
+        }
+      }
+    }
+  }
+
   private final ObjectMapper mapper = new ObjectMapper();
   private final String topic;
-  private final Producer<String, String> producer;
+  private final LoggingProducer producer;
   // If maxMessages < 0, produce until the process is killed externally
   private long maxMessages = -1;
 
@@ -72,6 +189,11 @@ public class VerifiableProducer implements AutoCloseable {
 
   // Hook to trigger producing thread to stop sending messages
   private boolean stopProducing = false;
+
+  // Used to synchronize the producer instance and producer close().
+  // Shutdown needs to wait for inflight producers to finish before it
+  // close() the instance.
+  private CountDownLatch stopping = new CountDownLatch(1);
 
   // Prefix (plus a dot separator) added to every value produced by verifiable
   // producer if null, then values are produced without a prefix
@@ -89,19 +211,31 @@ public class VerifiableProducer implements AutoCloseable {
 
   private final Long startTime;
 
+  private final Long batchSize;
+
+  private final Properties properties;
+
   public VerifiableProducer(
-      KafkaProducer<String, String> producer, String topic, int throughput,
-      int maxMessages, Integer valuePrefix, Long createTime,
-      Integer repeatingKeys) {
+      Properties properties, String topic, int throughput, int maxMessages,
+      Integer valuePrefix, Long createTime, Integer repeatingKeys,
+      boolean isTransactional, boolean enableRandomAborts, long batchSize) {
 
     this.topic = topic;
     this.throughput = throughput;
     this.maxMessages = maxMessages;
-    this.producer = producer;
+    this.properties = properties;
+    KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(
+        properties, new StringSerializer(), new StringSerializer());
+    if (isTransactional) {
+      this.producer = new TxLoggingProducer(kafkaProducer, enableRandomAborts);
+    } else {
+      this.producer = new LoggingProducer(kafkaProducer);
+    }
     this.valuePrefix = valuePrefix;
     this.createTime = createTime;
     this.startTime = System.currentTimeMillis();
     this.repeatingKeys = repeatingKeys;
+    this.batchSize = batchSize;
   }
 
   /** Get the command-line argument parser. */
@@ -204,6 +338,54 @@ public class VerifiableProducer implements AutoCloseable {
         .help(
             "If specified, each produced record will have a key starting at 0 increment by 1 up to the number specified (exclusive), then the key is set to 0 again");
 
+    // Transactional producer configuration.
+    parser.addArgument("--transactional")
+        .action(storeTrue())
+        .type(Boolean.class)
+        .required(false)
+        .setDefault(false)
+        .metavar("IS-TRANSACTIONAL")
+        .dest("isTransactional")
+        .help("Uses a transactional producer when set to True.");
+
+    parser.addArgument("--transaction-batch-size")
+        .action(store())
+        .required(false)
+        .setDefault(2000L)
+        .type(Long.class)
+        .metavar("BATCH-SIZE")
+        .dest("txBatchSize")
+        .help("# of records in a single transaction.");
+
+    parser.addArgument("--transaction-timeout")
+        .action(store())
+        .required(false)
+        .setDefault(60000)
+        .type(Integer.class)
+        .metavar("TRANSACTION-TIMEOUT")
+        .dest("transactionTimeout")
+        .help(
+            "The transaction timeout in milliseconds. Default is 60000(1 minute).");
+
+    parser.addArgument("--transactional-id")
+        .action(store())
+        .required(false)
+        .setDefault("tx-producer")
+        .type(String.class)
+        .metavar("TRANSACTIONAL-ID")
+        .dest("transactionalId")
+        .help("The transactionalId to assign to the producer");
+
+    parser.addArgument("--enable-random-aborts")
+        .action(storeTrue())
+        .required(false)
+        .setDefault(false)
+        .type(Boolean.class)
+        .metavar("ENABLE-RANDOM-ABORTS")
+        .dest("enableRandomAborts")
+        .help(
+            "Whether or not to enable random transaction aborts (for system testing)");
+
     return parser;
   }
 
@@ -275,40 +457,27 @@ public class VerifiableProducer implements AutoCloseable {
       }
     }
 
-    StringSerializer serializer = new StringSerializer();
-    KafkaProducer<String, String> producer
-        = new KafkaProducer<>(producerProps, serializer, serializer);
+    boolean isTransactional = res.getBoolean("isTransactional");
+
+    long batchSize = 1;
+
+    if (isTransactional) {
+      producerProps.put(ProducerConfig.RETRIES_CONFIG, "5");
+      producerProps.put(
+          ProducerConfig.TRANSACTIONAL_ID_CONFIG,
+          res.getString("transactionalId"));
+      producerProps.put(
+          ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
+      producerProps.put(
+          ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
+          res.getInt("transactionTimeout"));
+      batchSize = res.getLong("txBatchSize");
+    }
 
     return new VerifiableProducer(
-        producer, topic, throughput, maxMessages, valuePrefix, createTime,
-        repeatingKeys);
-  }
-
-  /** Produce a message with given key and value. */
-  public void send(String key, String value) {
-    ProducerRecord<String, String> record;
-
-    // Older versions of ProducerRecord don't include the message create time in
-    // the constructor. So including even a 'null' argument results in a
-    // NoSuchMethodException. Thus we only include the create time if it is
-    // explicitly specified to remain fully backward compatible with older
-    // clients.
-    if (createTime != null) {
-      record = new ProducerRecord<>(topic, null, createTime, key, value);
-      createTime += System.currentTimeMillis() - startTime;
-    } else {
-      record = new ProducerRecord<>(topic, key, value);
-    }
-
-    numSent++;
-    try {
-      producer.send(record, new PrintInfoCallback(key, value));
-    } catch (Exception e) {
-
-      synchronized (System.out) {
-        printJson(new FailedSend(key, value, topic, e));
-      }
-    }
+        producerProps, topic, throughput, maxMessages, valuePrefix, createTime,
+        repeatingKeys, isTransactional, res.getBoolean("enableRandomAborts"),
+        batchSize);
   }
 
   /** Returns a string to publish: ether 'valuePrefix'.'val' or 'val' **/
@@ -463,13 +632,16 @@ public class VerifiableProducer implements AutoCloseable {
     private long acked;
     private long targetThroughput;
     private double avgThroughput;
+    private long batchSize;
 
     public ToolData(
-        long sent, long acked, long targetThroughput, double avgThroughput) {
+        long sent, long acked, long targetThroughput, double avgThroughput,
+        long batchSize) {
       this.sent = sent;
       this.acked = acked;
       this.targetThroughput = targetThroughput;
       this.avgThroughput = avgThroughput;
+      this.batchSize = batchSize;
     }
 
     @Override
@@ -485,6 +657,11 @@ public class VerifiableProducer implements AutoCloseable {
     @JsonProperty
     public long acked() {
       return this.acked;
+    }
+
+    @JsonProperty("batch_size")
+    public long batchSize() {
+      return this.batchSize;
     }
 
     @JsonProperty("target_throughput")
@@ -537,17 +714,26 @@ public class VerifiableProducer implements AutoCloseable {
     long maxMessages
         = (this.maxMessages < 0) ? Long.MAX_VALUE : this.maxMessages;
 
-    for (long i = 0; i < maxMessages; i++) {
-      if (this.stopProducing) {
-        break;
+    long numBatches = (long)Math.ceil(maxMessages / (double)batchSize);
+    long val = 0;
+    try {
+      for (long i = 0; i < numBatches; i++) {
+        if (this.stopProducing) {
+          break;
+        }
+        List<Map.Entry<String, String>> kvs = new ArrayList<>();
+        for (int j = 0; j < batchSize; j++) {
+          kvs.add(new AbstractMap.SimpleImmutableEntry<String, String>(
+              getKey(), getValue(val++)));
+        }
+        long sendStartMs = System.currentTimeMillis();
+        producer.send(kvs);
+        if (throttler.shouldThrottle(val, sendStartMs)) {
+          throttler.throttle();
+        }
       }
-      long sendStartMs = System.currentTimeMillis();
-
-      this.send(this.getKey(), this.getValue(i));
-
-      if (throttler.shouldThrottle(i, sendStartMs)) {
-        throttler.throttle();
-      }
+    } finally {
+      stopping.countDown();
     }
   }
 
@@ -572,6 +758,13 @@ public class VerifiableProducer implements AutoCloseable {
         // Trigger main thread to stop producing messages
         producer.stopProducing = true;
 
+        try {
+          producer.stopping.await();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+          // Force close the producer.
+        }
+
         // Flush any remaining messages
         producer.close();
 
@@ -582,7 +775,7 @@ public class VerifiableProducer implements AutoCloseable {
 
         producer.printJson(new ToolData(
             producer.numSent, producer.numAcked, producer.throughput,
-            avgThroughput));
+            avgThroughput, producer.batchSize));
       }, "verifiable-producer-shutdown-hook"));
 
       producer.run(throttler);
