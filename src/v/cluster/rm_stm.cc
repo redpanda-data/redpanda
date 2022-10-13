@@ -859,8 +859,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
             //
             // If it happens to be the first case then Redpanda rejects a
             // client's tx.
-            auto expiration_it = _mem_state.expiration.find(pid);
-            if (expiration_it != _mem_state.expiration.end()) {
+            auto expiration_it = _log_state.expiration.find(pid);
+            if (expiration_it != _log_state.expiration.end()) {
                 expiration_it->second.is_expiration_requested = true;
             }
             // spawing abort in the background and returning an error to
@@ -1005,8 +1005,8 @@ rm_stm::get_tx_status(model::producer_identity pid) const {
 
 std::optional<rm_stm::expiration_info>
 rm_stm::get_expiration_info(model::producer_identity pid) const {
-    auto it = _mem_state.expiration.find(pid);
-    if (it == _mem_state.expiration.end()) {
+    auto it = _log_state.expiration.find(pid);
+    if (it == _log_state.expiration.end()) {
         return std::nullopt;
     }
 
@@ -1070,7 +1070,7 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
 
     // We should delete information about expiration for pid, because inside
     // try_abort_old_tx it checks is tx expired or not.
-    _mem_state.expiration.erase(pid);
+    _log_state.expiration.erase(pid);
     co_await do_try_abort_old_tx(pid);
     co_return std::error_code(tx_errc::none);
 }
@@ -1641,14 +1641,14 @@ void rm_stm::track_tx(
     if (_gate.is_closed()) {
         return;
     }
-    _mem_state.expiration[pid] = expiration_info{
-      .timeout = transaction_timeout_ms,
-      .last_update = clock_type::now(),
-      .is_expiration_requested = false};
+    _log_state.expiration[pid] = expiration_info{
+        .timeout = transaction_timeout_ms,
+        .last_update = clock_type::now(),
+        .is_expiration_requested = false};
     if (!_is_autoabort_enabled) {
         return;
     }
-    auto deadline = _mem_state.expiration[pid].deadline();
+    auto deadline = _log_state.expiration[pid].deadline();
     try_arm(deadline);
 }
 
@@ -1681,8 +1681,8 @@ ss::future<> rm_stm::do_abort_old_txes() {
     }
     absl::btree_set<model::producer_identity> expired;
     for (auto pid : pids) {
-        auto expiration_it = _mem_state.expiration.find(pid);
-        if (expiration_it != _mem_state.expiration.end()) {
+        auto expiration_it = _log_state.expiration.find(pid);
+        if (expiration_it != _log_state.expiration.end()) {
             if (!expiration_it->second.is_expired(clock_type::now())) {
                 continue;
             }
@@ -1695,7 +1695,7 @@ ss::future<> rm_stm::do_abort_old_txes() {
     }
 
     std::optional<time_point_type> earliest_deadline;
-    for (auto& [pid, expiration] : _mem_state.expiration) {
+    for (auto& [pid, expiration] : _log_state.expiration) {
         if (!is_known_session(pid)) {
             continue;
         }
@@ -1737,8 +1737,8 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         co_return;
     }
 
-    auto expiration_it = _mem_state.expiration.find(pid);
-    if (expiration_it != _mem_state.expiration.end()) {
+    auto expiration_it = _log_state.expiration.find(pid);
+    if (expiration_it != _log_state.expiration.end()) {
         if (!expiration_it->second.is_expired(clock_type::now())) {
             co_return;
         }
@@ -1888,6 +1888,11 @@ void rm_stm::apply_fence(model::record_batch&& b) {
         _log_state.inflight[bid.pid] = 0;
         if (tx_seq.has_value()) {
             _log_state.tx_seqs[bid.pid] = tx_seq.value();
+            // with switching to log_state an active transaction may
+            // survive leadership and we need to start tracking it on
+            // the new leader so we can't rely on the begin_tx initi-
+            // -ated tracking and need to do it from apply
+            track_tx(bid.pid, transaction_timeout_ms.value());
         }
     }
 }
