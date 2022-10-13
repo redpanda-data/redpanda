@@ -78,7 +78,7 @@ public:
          * it is constructed with a reference to a `conn_quota`
          * it becomes live.
          */
-        bool live() { return _quotas.has_value(); }
+        bool live() const { return _quotas.has_value(); }
 
     private:
         std::optional<std::reference_wrapper<conn_quota>> _quotas;
