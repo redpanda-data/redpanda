@@ -43,14 +43,37 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-static model::record_batch
-make_fence_batch(int8_t version, model::producer_identity pid) {
+static model::record_batch make_fence_batch(model::producer_identity pid) {
     iobuf key;
     auto pid_id = pid.id;
     reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
 
     iobuf value;
-    reflection::serialize(value, version);
+    reflection::serialize(value, rm_stm::fence_control_record_v0_version);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_fence, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
+static model::record_batch make_fence_batch(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
+    iobuf key;
+    auto pid_id = pid.id;
+    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
+
+    iobuf value;
+    reflection::serialize(
+      value,
+      rm_stm::fence_control_record_version,
+      tx_seq,
+      transaction_timeout_ms);
 
     storage::record_batch_builder builder(
       model::record_batch_type::tx_fence, model::offset(0));
@@ -1719,10 +1742,18 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     iobuf_parser val_reader(std::move(val_buf));
     auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
-      version == rm_stm::fence_control_record_version,
+      version <= rm_stm::fence_control_record_version,
       "unknown fence record version: {} expected: {}",
       version,
       rm_stm::fence_control_record_version);
+
+    std::optional<model::tx_seq> tx_seq{};
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    if (version == rm_stm::fence_control_record_version) {
+        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        transaction_timeout_ms
+          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
+    }
 
     auto key_buf = record.release_key();
     iobuf_parser key_reader(std::move(key_buf));
