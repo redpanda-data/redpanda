@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
@@ -290,6 +291,12 @@ ss::future<> archiver_fixture::add_topic_with_archival_enabled(
           return wait_for_topics(std::move(results));
       });
 }
+ss::future<> archiver_fixture::create_archival_snapshot(
+  const storage::ntp_config& cfg, cloud_storage::partition_manifest manifest) {
+    return cluster::archival_metadata_stm::make_snapshot(
+      cfg, manifest, model::offset(0));
+}
+
 storage::api& archiver_fixture::get_local_storage_api() {
     return app.storage.local();
 }
@@ -473,6 +480,7 @@ cloud_storage::partition_manifest load_manifest(std::string_view v) {
 archival::remote_segment_path get_segment_path(
   const cloud_storage::partition_manifest& manifest,
   const archival::segment_name& name) {
+    vlog(fixt_log.debug, "get_segment_path {}", name);
     auto meta = manifest.get(name);
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);

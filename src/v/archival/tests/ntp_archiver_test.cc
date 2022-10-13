@@ -148,6 +148,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
         verify_manifest_content(req.content);
         manifest = load_manifest(req.content);
+        BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
 
     {
@@ -180,7 +181,6 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
         BOOST_CHECK_EQUAL(segment.base_offset, it->second.base_offset);
     }
-    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
@@ -350,16 +350,16 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       .committed_offset = segment1->offsets().dirty_offset - model::offset(1)};
     auto oldname = archival::segment_name("2-2-v1.log");
     old_manifest.add(oldname, old_meta);
-    std::stringstream old_str;
-    old_manifest.serialize(old_str);
     ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";
 
-    std::vector<s3_imposter_fixture::expectation> expectations({
-      s3_imposter_fixture::expectation{
-        .url = manifest_url, .body = ss::sstring(old_str.str())},
-    });
+    // Simulate pre-existing state in the snapshot
+    part->archival_meta_stm()
+      ->add_segments(old_manifest, ss::lowres_clock::now() + 1s)
+      .get();
 
+    std::vector<s3_imposter_fixture::expectation> expectations;
     set_expectations_and_listen(expectations);
+
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
@@ -372,8 +372,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     retry_chain_node fib;
 
-    archiver.download_manifest().get();
-
     auto res = archiver.upload_next_candidates().get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -381,24 +379,16 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     cloud_storage::partition_manifest manifest;
     {
         auto [begin, end] = get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 2);
-        std::set<ss::sstring> expected = {"PUT", "GET"};
-        for (auto it = begin; it != end; it++) {
-            auto key = it->second._method;
-            BOOST_REQUIRE(expected.contains(key));
-            expected.erase(key);
-
-            if (key == "PUT") {
-                manifest = load_manifest(it->second.content);
-            }
-        }
-        BOOST_REQUIRE(expected.empty());
+        BOOST_REQUIRE_EQUAL(len, 1);
+        BOOST_REQUIRE(begin->second._method == "PUT");
+        manifest = load_manifest(begin->second.content);
+        BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
     for (const segment_name& name : {s1name, s2name}) {
         auto url = get_segment_path(manifest, name);
@@ -421,8 +411,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         BOOST_CHECK(stm_manifest.get(s1name));
         BOOST_CHECK_EQUAL(stm_manifest.get(name)->base_offset, base_offset);
     }
-
-    BOOST_CHECK(stm_manifest == archiver.get_remote_manifest());
 }
 
 class counting_batch_consumer : public storage::batch_consumer {
@@ -553,9 +541,9 @@ static void test_partial_upload_impl(
       .ntp_revision = manifest.get_revision_id()};
 
     manifest.add(s1name, segment_meta);
-
-    std::stringstream old_str;
-    manifest.serialize(old_str);
+    part->archival_meta_stm()
+      ->add_segments(manifest, ss::lowres_clock::now() + 1s)
+      .get();
 
     segment_name s2name{
       ssx::sformat("{}-1-v1.log", last_uploaded_offset() + 1)};
@@ -571,12 +559,7 @@ static void test_partial_upload_impl(
       last_uploaded_offset,
       lso);
 
-    std::vector<s3_imposter_fixture::expectation> expectations({
-      s3_imposter_fixture::expectation{
-        .url = manifest_url, .body = ss::sstring(old_str.str())},
-    });
-
-    test.set_expectations_and_listen(expectations);
+    test.set_expectations_and_listen({});
 
     auto [aconf, cconf] = get_configurations();
     cloud_storage::remote remote(
@@ -591,8 +574,6 @@ static void test_partial_upload_impl(
 
     retry_chain_node fib;
 
-    archiver.download_manifest().get();
-
     auto res = archiver.upload_next_candidates(lso).get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -600,23 +581,15 @@ static void test_partial_upload_impl(
     for (auto req : test.get_requests()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
     }
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 2);
 
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 2);
-        std::set<ss::sstring> expected = {"PUT", "GET"};
-        for (auto it = begin; it != end; it++) {
-            auto key = it->second._method;
-            BOOST_REQUIRE(expected.contains(key));
-            expected.erase(key);
-
-            if (key == "PUT") {
-                manifest = load_manifest(it->second.content);
-            }
-        }
-        BOOST_REQUIRE(expected.empty());
+        BOOST_REQUIRE_EQUAL(len, 1);
+        BOOST_REQUIRE(begin->second._method == "PUT");
+        manifest = load_manifest(begin->second.content);
+        BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
 
     ss::sstring url2 = "/" + get_segment_path(manifest, s2name)().string();
@@ -641,12 +614,12 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 5);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 4);
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 3);
-        std::multiset<ss::sstring> expected = {"PUT", "PUT", "GET"};
+        BOOST_REQUIRE_EQUAL(len, 2);
+        std::multiset<ss::sstring> expected = {"PUT", "PUT"};
         for (auto it = begin; it != end; it++) {
             auto key = it->second._method;
             BOOST_REQUIRE(expected.contains(key));
@@ -661,6 +634,9 @@ static void test_partial_upload_impl(
             }
         }
         BOOST_REQUIRE(expected.empty());
+        BOOST_REQUIRE(part->archival_meta_stm());
+        const auto& stm_manifest = part->archival_meta_stm()->manifest();
+        BOOST_REQUIRE(stm_manifest == manifest);
     }
 
     {
@@ -682,10 +658,6 @@ static void test_partial_upload_impl(
         BOOST_REQUIRE_EQUAL(stats.min_offset, base_upl2);
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl2);
     }
-
-    BOOST_REQUIRE(part->archival_meta_stm());
-    const auto& stm_manifest = part->archival_meta_stm()->manifest();
-    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
