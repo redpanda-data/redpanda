@@ -1033,12 +1033,14 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
         ans.emplace(id, tx_info);
     }
 
-    for (auto& [id, offset] : _mem_state.tx_start) {
-        transaction_info tx_info;
-        tx_info.lso_bound = offset;
-        tx_info.status = get_tx_status(id);
-        tx_info.info = get_expiration_info(id);
-        ans.emplace(id, tx_info);
+    if (!is_transaction_ga()) {
+        for (auto& [id, offset] : _mem_state.tx_start) {
+            transaction_info tx_info;
+            tx_info.lso_bound = offset;
+            tx_info.status = get_tx_status(id);
+            tx_info.info = get_expiration_info(id);
+            ans.emplace(id, tx_info);
+        }
     }
 
     for (auto& [id, offset] : _log_state.ongoing_map) {
@@ -1517,9 +1519,11 @@ model::offset rm_stm::last_stable_offset() {
             first_tx_start = *_log_state.ongoing_set.begin();
         }
 
-        if (!_mem_state.tx_starts.empty()) {
-            first_tx_start = std::min(
-              first_tx_start, *_mem_state.tx_starts.begin());
+        if (!is_transaction_ga()) {
+            if (!_mem_state.tx_starts.empty()) {
+                first_tx_start = std::min(
+                  first_tx_start, *_mem_state.tx_starts.begin());
+            }
         }
 
         for (auto& entry : _mem_state.estimated) {
@@ -1691,8 +1695,10 @@ ss::future<> rm_stm::do_abort_old_txes() {
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
     }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
+    if (!is_transaction_ga()) {
+        for (auto& [k, _] : _mem_state.tx_start) {
+            pids.push_back(k);
+        }
     }
     for (auto& [k, _] : _log_state.ongoing_map) {
         pids.push_back(k);
