@@ -52,8 +52,16 @@ struct content_handler {
 
     ss::sstring
     handle(ss::httpd::const_req request, ss::httpd::reply& repl) const {
+        size_t num_requests = fixture.requests().size();
+
         fixture.requests().push_back(request);
         fixture.targets().insert(std::make_pair(request._url, request));
+
+        if (auto it = fixture.indexed_requests_to_fail().find(num_requests);
+            it != fixture.indexed_requests_to_fail().end()) {
+            repl.set_status(it->second.status);
+            return it->second.body;
+        }
 
         vlog(
           http_imposter_log.trace,
@@ -62,12 +70,20 @@ struct content_handler {
           request.content_length,
           request._method);
 
-        ss::httpd::request lookup_r{request};
-        lookup_r._url = remove_query_params(request._url);
+        if (request._method == "PUT") {
+            fixture.when()
+              .request(request._url)
+              .then_reply_with(request.content);
+            repl.set_status(ss::httpd::reply::status_type::ok);
+            return "";
+        } else {
+            ss::httpd::request lookup_r{request};
+            lookup_r._url = remove_query_params(request._url);
 
-        auto response = fixture.lookup(lookup_r);
-        repl.set_status(response.status);
-        return response.body;
+            auto response = fixture.lookup(lookup_r);
+            repl.set_status(response.status);
+            return response.body;
+        }
     }
 
     http_imposter_fixture& fixture;
@@ -89,4 +105,14 @@ bool http_imposter_fixture::has_call(std::string_view url) const {
              _requests.cend(),
              [&url](const auto& r) { return r._url == url; })
            != _requests.cend();
+}
+
+void http_imposter_fixture::fail_nth_request_with(
+  size_t n, http_test_utils::response response) {
+    _fail_requests_at_index[n] = std::move(response);
+}
+
+void http_imposter_fixture::reset_http_call_state() {
+    _requests.clear();
+    _targets.clear();
 }

@@ -21,6 +21,14 @@ class http_imposter_fixture {
 public:
     static constexpr std::string_view httpd_host_name = "127.0.0.1";
     static constexpr uint httpd_port_number = 4430;
+    static constexpr std::string_view error_payload
+      = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchKey</Code>
+    <Message>Object not found</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
 
 public:
     http_imposter_fixture();
@@ -57,6 +65,20 @@ public:
     http_test_utils::registered_urls& when() { return _urls; }
 
     bool has_call(std::string_view url) const;
+
+    /// Enables requests at a specific order to fail, eg to fail the third
+    /// request:
+    ///     fail_nth_request_with(2, {.body = "foo", .status = ...});
+    ///
+    /// The failing request is also added to the set of calls stored by fixture.
+    void fail_nth_request_with(size_t n, http_test_utils::response response);
+
+    const absl::flat_hash_map<size_t, http_test_utils::response>&
+    indexed_requests_to_fail() const {
+        return _fail_requests_at_index;
+    }
+
+    void reset_http_call_state();
 
     // Helper to progress over a range and check if the current element is
     // present in it. If the element is found at a position, the range for
@@ -109,4 +131,6 @@ private:
     std::multimap<ss::sstring, ss::httpd::request> _targets;
 
     http_test_utils::registered_urls _urls;
+    absl::flat_hash_map<size_t, http_test_utils::response>
+      _fail_requests_at_index;
 };
