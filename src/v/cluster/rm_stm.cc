@@ -1781,8 +1781,12 @@ void rm_stm::apply_fence(model::record_batch&& b) {
 
     auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
       bid.pid.get_id(), bid.pid.get_epoch());
-    if (fence_it->second < bid.pid.get_epoch()) {
+    // using less-or-equal to update tx_seqs on every transaction
+    if (fence_it->second <= bid.pid.get_epoch()) {
         fence_it->second = bid.pid.get_epoch();
+        if (tx_seq.has_value()) {
+            _log_state.tx_seqs[bid.pid] = tx_seq.value();
+        }
     }
 }
 
