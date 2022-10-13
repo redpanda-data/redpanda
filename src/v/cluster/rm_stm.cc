@@ -487,6 +487,18 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::fenced;
     }
 
+    if (_log_state.tx_seqs.contains(pid)) {
+        if (_log_state.tx_seqs[pid] != tx_seq) {
+            vlog(
+              _ctx_log.warn,
+              "expectd tx_seq {} doesn't match gived {} for pid {}",
+              _log_state.tx_seqs[pid],
+              tx_seq,
+              pid);
+        }
+        co_return errc::invalid_producer_epoch;
+    }
+
     if (synced_term != etag) {
         vlog(
           _ctx_log.warn,
@@ -501,17 +513,18 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto expected_it = _mem_state.expected.find(pid);
-    if (expected_it == _mem_state.expected.end()) {
-        // impossible situation, a transaction coordinator tries
-        // to prepare a transaction which wasn't started
-        vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
-        co_return tx_errc::request_rejected;
-    }
-
-    if (expected_it->second != tx_seq) {
-        // current prepare_tx call is stale, rejecting
-        co_return tx_errc::request_rejected;
+    if (!is_transaction_ga()) {
+        auto expected_it = _mem_state.expected.find(pid);
+        if (expected_it == _mem_state.expected.end()) {
+            // impossible situation, a transaction coordinator tries
+            // to prepare a transaction which wasn't started
+            vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
+            co_return tx_errc::request_rejected;
+        }
+        if (expected_it->second != tx_seq) {
+            // current prepare_tx call is stale, rejecting
+            co_return tx_errc::request_rejected;
+        }
     }
 
     auto marker = prepare_marker{
