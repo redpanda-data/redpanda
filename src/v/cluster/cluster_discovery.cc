@@ -24,8 +24,10 @@ using std::vector;
 
 namespace cluster {
 
-cluster_discovery::cluster_discovery(const model::node_uuid& node_uuid)
-  : _node_uuid(node_uuid) {}
+cluster_discovery::cluster_discovery(
+  const model::node_uuid& node_uuid, ss::abort_source& as)
+  : _node_uuid(node_uuid)
+  , _as(as) {}
 
 ss::future<node_id> cluster_discovery::determine_node_id() {
     co_return *config::node().node_id();

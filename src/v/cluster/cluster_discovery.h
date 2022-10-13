@@ -22,7 +22,7 @@ namespace cluster {
 // Provides metadata pertaining to initial cluster discovery.
 class cluster_discovery {
 public:
-    explicit cluster_discovery(const model::node_uuid& node_uuid);
+    cluster_discovery(const model::node_uuid& node_uuid, ss::abort_source&);
 
     // Returns this node's node ID.
     //
@@ -65,6 +65,8 @@ private:
     bool is_cluster_founder() const;
 
     const model::node_uuid _node_uuid;
+
+    ss::abort_source& _as;
 };
 
 } // namespace cluster

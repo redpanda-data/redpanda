@@ -1389,7 +1389,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     // ID. A valid node ID is required before we can initialize the rest of our
     // subsystems.
     const auto& node_uuid = storage.local().node_uuid();
-    cluster::cluster_discovery cd(node_uuid);
+    cluster::cluster_discovery cd(node_uuid, app_signal.abort_source());
     auto node_id = cd.determine_node_id().get();
 
     vlog(_log.info, "Starting Redpanda with node_id {}", node_id);
