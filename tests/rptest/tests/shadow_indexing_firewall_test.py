@@ -57,9 +57,10 @@ class ShadowIndexingFirewallTest(RedpandaTest):
                                count=5,
                                acks=-1)
 
-        self.rpk.alter_topic_config(self.s3_topic_name,
-                                    TopicSpec.PROPERTY_RETENTION_BYTES,
-                                    self.retention_bytes)
+        self.rpk.alter_topic_config(
+            self.s3_topic_name,
+            TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            self.retention_bytes)
 
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.s3_topic_name,

@@ -97,7 +97,7 @@ inline constexpr auto add_segment = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batch = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 6>();
+    arg_3_way_assert<sizeof...(args), 1, 7>();
     return std::make_tuple(
       add_random_batch_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -207,6 +207,16 @@ public:
                   std::get<4>(args),
                   std::get<5>(args),
                   std::get<6>(args))
+                  .get();
+            } else if constexpr (size == 8) {
+                add_random_batch(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args),
+                  std::get<6>(args),
+                  std::get<7>(args))
                   .get();
             }
 
@@ -334,6 +344,14 @@ public:
     requires model::BatchReaderConsumer<Consumer>
     auto consume(Consumer c, log_reader_config config = reader_config()) {
         return consume_impl(std::move(c), std::move(config));
+    }
+
+    ss::future<> update_configuration(ntp_config::default_overrides o) {
+        if (_log) {
+            return _log->update_configuration(o);
+        }
+
+        return ss::make_ready_future<>();
     }
 
     // Configuration getters

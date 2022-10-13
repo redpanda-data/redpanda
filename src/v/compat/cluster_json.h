@@ -578,6 +578,9 @@ inline void rjson_serialize(
     write_member(w, "read_replica_bucket", tps.read_replica_bucket);
     write_member(w, "remote_topic_properties", tps.remote_topic_properties);
     write_member(w, "batch_max_bytes", tps.batch_max_bytes);
+    write_member(
+      w, "retention_local_target_bytes", tps.retention_local_target_bytes);
+    write_member(w, "retention_local_target_ms", tps.retention_local_target_ms);
     w.EndObject();
 }
 
@@ -595,6 +598,9 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "read_replica_bucket", obj.read_replica_bucket);
     read_member(rd, "remote_topic_properties", obj.remote_topic_properties);
     read_member(rd, "batch_max_bytes", obj.batch_max_bytes);
+    read_member(
+      rd, "retention_local_target_bytes", obj.retention_local_target_bytes);
+    read_member(rd, "retention_local_target_ms", obj.retention_local_target_ms);
 }
 
 inline void rjson_serialize(

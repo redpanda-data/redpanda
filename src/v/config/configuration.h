@@ -240,6 +240,11 @@ struct configuration final : public config_store {
     property<int16_t> cloud_storage_upload_ctrl_min_shares;
     property<int16_t> cloud_storage_upload_ctrl_max_shares;
 
+    // Defaults for local retention for partitions of topics with
+    // cloud storage read and write enabled
+    property<std::optional<size_t>> retention_local_target_bytes_default;
+    property<std::chrono::milliseconds> retention_local_target_ms_default;
+
     // Archival cache
     property<size_t> cloud_storage_cache_size;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;

@@ -163,6 +163,18 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         co_return create_topic_results(updates, errc::no_leader_controller);
     }
 
+    if (!_features.local().is_active(features::feature::cloud_retention)) {
+        // The ADL encoding for cluster::incremental_topic_updates has evolved
+        // in v22.3. ADL is not forwards compatible, so we need to safe-guard
+        // against sending a message from the future to older nodes.
+
+        vlog(
+          clusterlog.info,
+          "Refusing to update topics as not all cluster nodes are running "
+          "v22.3");
+        co_return create_topic_results(updates, errc::feature_disabled);
+    }
+
     // current node is a leader, just replicate
     if (cluster_leader == _self) {
         // replicate empty batch to make sure leader local state is up to date.
@@ -418,6 +430,24 @@ errc topics_frontend::validate_topic_configuration(
                 return errc::topic_invalid_replication_factor;
             }
         }
+    }
+
+    const auto& properties = assignable_config.cfg.properties;
+
+    if (
+      properties.retention_bytes.has_value()
+      && properties.retention_local_target_bytes.has_value()
+      && properties.retention_bytes.value()
+           < properties.retention_local_target_bytes.value()) {
+        return errc::invalid_retention_configuration;
+    }
+
+    if (
+      properties.retention_duration.has_value()
+      && properties.retention_local_target_ms.has_value()
+      && properties.retention_duration.value()
+           < properties.retention_local_target_ms.value()) {
+        return errc::invalid_retention_configuration;
     }
 
     return errc::success;

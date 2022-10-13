@@ -236,6 +236,18 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   model::shadow_indexing_mode::archival);
                 continue;
             }
+            if (cfg.name == topic_property_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_bytes,
+                  cfg.value,
+                  op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_ms, cfg.value, op);
+                continue;
+            }
             if (cfg.name == topic_property_remote_read) {
                 parse_and_set_shadow_indexing_mode(
                   update.properties.shadow_indexing,

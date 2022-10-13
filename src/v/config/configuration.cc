@@ -1142,6 +1142,20 @@ configuration::configuration()
       "maximum number of IO and CPU shares that archival upload can use",
       {.visibility = visibility::tunable},
       1000)
+  , retention_local_target_bytes_default(
+      *this,
+      "retention_local_target_bytes_default",
+      "Local retention size target for partitions of topics with cloud storage "
+      "write enabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
+  , retention_local_target_ms_default(
+      *this,
+      "retention_local_target_ms_default",
+      "Local retention time target for partitions of topics with cloud storage "
+      "write enabled",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      24h)
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",

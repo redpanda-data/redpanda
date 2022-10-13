@@ -178,6 +178,13 @@ to_cluster_type(const creatable_topic& t) {
     if (cfg.properties.read_replica_bucket.has_value()) {
         cfg.properties.read_replica = true;
     }
+
+    cfg.properties.retention_local_target_bytes = get_tristate_value<size_t>(
+      config_entries, topic_property_retention_local_target_bytes);
+    cfg.properties.retention_local_target_ms
+      = get_tristate_value<std::chrono::milliseconds>(
+        config_entries, topic_property_retention_local_target_ms);
+
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
@@ -275,6 +282,16 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
     if (properties.read_replica_bucket) {
         config_entries[topic_property_read_replica] = from_config_type(
           *properties.read_replica_bucket);
+    }
+
+    if (properties.retention_local_target_bytes.has_value()) {
+        config_entries[topic_property_retention_local_target_bytes]
+          = from_config_type(*properties.retention_local_target_bytes);
+    }
+
+    if (properties.retention_local_target_ms.has_value()) {
+        config_entries[topic_property_retention_local_target_ms]
+          = from_config_type(*properties.retention_local_target_ms);
     }
     /// Final topic_property not encoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user

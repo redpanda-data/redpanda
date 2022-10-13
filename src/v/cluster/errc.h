@@ -61,7 +61,8 @@ enum class errc : int16_t {
     feature_disabled,
     invalid_request,
     no_update_in_progress,
-    unknown_update_interruption_error
+    unknown_update_interruption_error,
+    invalid_retention_configuration
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -176,6 +177,10 @@ struct errc_category final : public std::error_category {
             return "Partition configuration is not being updated";
         case errc::unknown_update_interruption_error:
             return "Error while cancelling partition reconfiguration";
+        case errc::invalid_retention_configuration:
+            return "retention.bytes and retention.ms must be greater or equal "
+                   "than retention.local.target.bytes and "
+                   "retention.local.target.ms respectively";
         }
         return "cluster::errc::unknown";
     }

@@ -344,7 +344,9 @@ FIXTURE_TEST(
       "redpanda.datapolicy",
       "redpanda.remote.read",
       "redpanda.remote.write",
-      "max.message.bytes"};
+      "max.message.bytes",
+      "retention.local.target.bytes",
+      "retention.local.target.ms"};
 
     // All properies_request
     auto all_describe_resp = describe_configs(test_tp);

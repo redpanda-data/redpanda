@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -56,7 +57,9 @@ bool topic_properties::has_overrides() const {
            || retention_bytes.has_value() || retention_bytes.is_disabled()
            || retention_duration.has_value() || retention_duration.is_disabled()
            || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value() || batch_max_bytes.has_value();
+           || read_replica.has_value() || batch_max_bytes.has_value()
+           || retention_local_target_bytes.has_value()
+           || retention_local_target_ms.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -67,10 +70,10 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
-    ret.shadow_indexing_mode = shadow_indexing
-                                 ? *shadow_indexing
-                                 : model::shadow_indexing_mode::disabled;
+    ret.shadow_indexing_mode = shadow_indexing;
     ret.read_replica = read_replica;
+    ret.retention_local_target_bytes = retention_local_target_bytes;
+    ret.retention_local_target_ms = retention_local_target_ms;
     return ret;
 }
 
@@ -95,10 +98,11 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
-            .shadow_indexing_mode = properties.shadow_indexing
-                                      ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled,
-            .read_replica = properties.read_replica});
+            .shadow_indexing_mode = properties.shadow_indexing,
+            .read_replica = properties.read_replica,
+            .retention_local_target_bytes
+            = properties.retention_local_target_bytes,
+            .retention_local_target_ms = properties.retention_local_target_ms});
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -106,6 +110,33 @@ storage::ntp_config topic_configuration::make_ntp_config(
       std::move(overrides),
       rev,
       init_rev};
+}
+
+void topic_configuration::maybe_adjust_retention_policies(
+  std::optional<model::shadow_indexing_mode> topic_shadow_indexing_mode,
+  tristate<std::size_t>& retention_bytes,
+  tristate<std::chrono::milliseconds>& retention_ms,
+  tristate<std::size_t>& local_target_bytes,
+  tristate<std::chrono::milliseconds>& local_target_ms) {
+    auto cloud_storage_enabled
+      = config::shard_local_cfg().cloud_storage_enabled();
+
+    // Note that `remote_write_enabled` true when either of the topic
+    // config or cluster config are set to true. This includes the case
+    // when the topic property is explicitly set to false. This is confusing
+    // and may require revisiting.
+    auto remote_write_enabled
+      = model::is_archival_enabled(topic_shadow_indexing_mode.value_or(
+          model::shadow_indexing_mode::disabled))
+        || config::shard_local_cfg().cloud_storage_enable_remote_write();
+
+    if (cloud_storage_enabled && remote_write_enabled) {
+        local_target_bytes = retention_bytes;
+        local_target_ms = retention_ms;
+
+        retention_bytes = tristate<size_t>{};
+        retention_ms = tristate<std::chrono::milliseconds>{};
+    }
 }
 
 model::topic_metadata topic_configuration_assignment::get_metadata() const {
@@ -206,7 +237,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
-      "batch_max_bytes: {}}}",
+      "batch_max_bytes: {}, retention_local_target_bytes: {}, "
+      "retention_local_target_ms: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -219,7 +251,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.read_replica,
       properties.read_replica_bucket,
       properties.remote_topic_properties,
-      properties.batch_max_bytes);
+      properties.batch_max_bytes,
+      properties.retention_local_target_bytes,
+      properties.retention_local_target_ms);
 
     return o;
 }
@@ -463,7 +497,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "{{incremental_topic_custom_updates: compression: {} "
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
-      "shadow_indexing: {}, batch_max_bytes: {}}}",
+      "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
+      "{}, retention_local_target_ms: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -472,7 +507,9 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.retention_bytes,
       i.retention_duration,
       i.shadow_indexing,
-      i.batch_max_bytes);
+      i.batch_max_bytes,
+      i.retention_local_target_bytes,
+      i.retention_local_target_ms);
     return o;
 }
 
@@ -901,6 +938,14 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         cfg.properties.shadow_indexing
           = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
     }
+
+    cluster::topic_configuration::maybe_adjust_retention_policies(
+      cfg.properties.shadow_indexing,
+      cfg.properties.retention_bytes,
+      cfg.properties.retention_duration,
+      cfg.properties.retention_local_target_bytes,
+      cfg.properties.retention_local_target_ms);
+
     return cfg;
 }
 
@@ -1499,7 +1544,10 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing);
+      t.shadow_indexing,
+      t.batch_max_bytes,
+      t.retention_local_target_bytes,
+      t.retention_local_target_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1562,6 +1610,19 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
           std::optional<model::shadow_indexing_mode>>>{}
                                     .from(in);
     }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_batch_max_bytes_and_local_retention) {
+        updates.batch_max_bytes
+          = adl<cluster::property_update<std::optional<uint32_t>>>{}.from(in);
+        updates.retention_local_target_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.retention_local_target_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+    }
+
     return updates;
 }
 
@@ -1853,7 +1914,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       read_replica,
       read_replica_bucket,
       remote_topic_properties,
-      std::nullopt};
+      std::nullopt,
+      tristate<size_t>{std::nullopt},
+      tristate<std::chrono::milliseconds>{std::nullopt}};
 }
 
 void adl<cluster::cluster_property_kv>::to(

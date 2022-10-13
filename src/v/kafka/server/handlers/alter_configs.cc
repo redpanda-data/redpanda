@@ -181,6 +181,16 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.batch_max_bytes, cfg.value);
                 continue;
             }
+            if (cfg.name == topic_property_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_ms, cfg.value);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_bytes, cfg.value);
+                continue;
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),
