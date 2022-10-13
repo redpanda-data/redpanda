@@ -1481,46 +1481,49 @@ tx_gateway_frontend::do_commit_tm_tx(
             }
         }
 
-        std::vector<ss::future<prepare_tx_reply>> pfs;
-        for (auto rm : tx.partitions) {
-            pfs.push_back(_rm_partition_frontend.local().prepare_tx(
-              rm.ntp,
-              rm.etag,
-              model::tx_manager_ntp.tp.partition,
-              tx.pid,
-              tx.tx_seq,
-              timeout));
-        }
-
         std::vector<ss::future<prepare_group_tx_reply>> pgfs;
         for (auto group : tx.groups) {
             pgfs.push_back(_rm_group_proxy->prepare_group_tx(
               group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
         }
 
-        if (
-          !is_transaction_ga()
-          && tx.status == tm_transaction::tx_status::ongoing) {
-            auto preparing_tx = co_await stm->mark_tx_preparing(
-              expected_term, tx.id);
-            if (!preparing_tx.has_value()) {
-                if (preparing_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
-            }
-            tx = preparing_tx.value();
-        }
-
+        std::vector<ss::future<prepare_tx_reply>> pfs;
+        pfs.reserve(tx.partitions.size());
         auto ok = true;
         auto rejected = false;
-        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-        for (const auto& r : prs) {
-            ok = ok && (r.ec == tx_errc::none);
-            rejected = rejected || (r.ec == tx_errc::request_rejected);
+
+        if (!is_transaction_ga()) {
+            for (auto rm : tx.partitions) {
+                pfs.push_back(_rm_partition_frontend.local().prepare_tx(
+                  rm.ntp,
+                  rm.etag,
+                  model::tx_manager_ntp.tp.partition,
+                  tx.pid,
+                  tx.tx_seq,
+                  timeout));
+            }
+
+            if (tx.status == tm_transaction::tx_status::ongoing) {
+                auto preparing_tx = co_await stm->mark_tx_preparing(
+                  expected_term, tx.id);
+                if (!preparing_tx.has_value()) {
+                    if (preparing_tx.error() == tm_stm::op_status::not_leader) {
+                        outcome->set_value(tx_errc::not_coordinator);
+                        co_return tx_errc::not_coordinator;
+                    }
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+                tx = preparing_tx.value();
+            }
+
+            auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+            for (const auto& r : prs) {
+                ok = ok && (r.ec == tx_errc::none);
+                rejected = rejected || (r.ec == tx_errc::request_rejected);
+            }
         }
+
         auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
         for (const auto& r : pgrs) {
             ok = ok && (r.ec == tx_errc::none);
