@@ -43,14 +43,37 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-static model::record_batch
-make_fence_batch(int8_t version, model::producer_identity pid) {
+static model::record_batch make_fence_batch(model::producer_identity pid) {
     iobuf key;
     auto pid_id = pid.id;
     reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
 
     iobuf value;
-    reflection::serialize(value, version);
+    reflection::serialize(value, rm_stm::fence_control_record_v0_version);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_fence, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
+static model::record_batch make_fence_batch(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
+    iobuf key;
+    auto pid_id = pid.id;
+    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
+
+    iobuf value;
+    reflection::serialize(
+      value,
+      rm_stm::fence_control_record_version,
+      tx_seq,
+      transaction_timeout_ms);
 
     storage::record_batch_builder builder(
       model::record_batch_type::tx_fence, model::offset(0));
@@ -321,26 +344,8 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
                 co_return tx_errc::unknown_server_error;
             }
         }
-
-        auto batch = make_fence_batch(
-          rm_stm::fence_control_record_version, pid);
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto r = co_await _c->replicate(
-          synced_term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
-        if (!r) {
-            vlog(
-              _ctx_log.error,
-              "Error \"{}\" on replicating pid:{} fencing batch",
-              r.error(),
-              pid);
-            co_return tx_errc::unknown_server_error;
-        }
-        if (!co_await wait_no_throw(
-              model::offset(r.value().last_offset()), _sync_timeout)) {
-            co_return tx_errc::unknown_server_error;
-        }
+        // we want to replicate tx_fence batch on every transaction so
+        // intentionally dropping through
     } else if (pid.get_epoch() < fence_it->second) {
         vlog(
           _ctx_log.error,
@@ -348,6 +353,30 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           pid,
           fence_it->second);
         co_return tx_errc::fenced;
+    }
+
+    auto batch = is_transaction_ga()
+                   ? make_fence_batch(pid, tx_seq, transaction_timeout_ms)
+                   : make_fence_batch(pid);
+
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    auto r = co_await _c->replicate(
+      synced_term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!r) {
+        vlog(
+          _ctx_log.warn,
+          "Error \"{}\" on replicating pid:{} fencing batch",
+          r.error(),
+          pid);
+        co_return tx_errc::unknown_server_error;
+    }
+
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        co_return tx_errc::unknown_server_error;
     }
 
     auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
@@ -1719,10 +1748,18 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     iobuf_parser val_reader(std::move(val_buf));
     auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
-      version == rm_stm::fence_control_record_version,
+      version <= rm_stm::fence_control_record_version,
       "unknown fence record version: {} expected: {}",
       version,
       rm_stm::fence_control_record_version);
+
+    std::optional<model::tx_seq> tx_seq{};
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    if (version == rm_stm::fence_control_record_version) {
+        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        transaction_timeout_ms
+          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
+    }
 
     auto key_buf = record.release_key();
     iobuf_parser key_reader(std::move(key_buf));
