@@ -66,11 +66,6 @@ namespace {
 
 using server = ctx_server<proxy>;
 
-ss::shard_id consumer_shard(const kafka::group_id& g_id) {
-    auto hash = xxhash_64(g_id().data(), g_id().length());
-    return jump_consistent_hash(hash, ss::smp::count);
-}
-
 } // namespace
 
 ss::future<server::reply_t>
@@ -284,14 +279,12 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     }
 
     auto base_uri = make_consumer_uri_base(rq, group_id);
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _base_uri{std::move(base_uri)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _base_uri{std::move(base_uri)},
+                    _res_fmt{res_fmt},
+                    _req_data{std::move(req_data)},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto base_uri{std::move(_base_uri)};
         auto res_fmt{_res_fmt};
@@ -310,7 +303,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           req_data.auto_commit_enable);
 
         try {
-            co_await client.get_consumer(group_id, req_data.name);
+            co_await client->get_consumer(group_id, req_data.name);
             auto ec = make_error_condition(
               reply_error_code::consumer_already_exists);
             rp.rep = errored_body(ec, ec.message());
@@ -318,7 +311,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
         } catch (const kafka::client::consumer_error& e) {
             // Ignore - consumer doesn't exist
         }
-        auto name = co_await client.create_consumer(group_id, req_data.name);
+        auto name = co_await client->create_consumer(group_id, req_data.name);
         json::create_consumer_response res{
           .instance_id = name, .base_uri = base_uri + name};
         auto json_rslt = ppj::rjson_serialize(res);
@@ -327,8 +320,12 @@ create_consumer(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 ss::future<server::reply_t>
@@ -343,16 +340,12 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
     auto member_id = parse::request_param<kafka::member_id>(
       *rq.req, "instance");
 
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _member_id{std::move(member_id)},
-       _rq{std::move(rq)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _member_id{std::move(member_id)},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
-        auto rq{std::move(_rq)};
         auto rp{std::move(_rp)};
         vlog(
           plog.debug,
@@ -360,13 +353,17 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
           group_id,
           member_id);
 
-        co_await client.remove_consumer(group_id, member_id);
+        co_await client->remove_consumer(group_id, member_id);
         rp.rep->set_status(ss::httpd::reply::status_type::no_content);
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 ss::future<server::reply_t>
@@ -384,14 +381,12 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
 
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _member_id{std::move(member_id)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _member_id{std::move(member_id)},
+                    _res_fmt{res_fmt},
+                    _req_data{std::move(req_data)},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto res_fmt{_res_fmt};
@@ -404,15 +399,19 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
           member_id,
           req_data.topics);
 
-        co_await client.subscribe_consumer(
+        co_await client->subscribe_consumer(
           group_id, member_id, std::move(req_data.topics));
         rp.mime_type = res_fmt;
         rp.rep->set_status(ss::httpd::reply::status_type::no_content);
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 ss::future<server::reply_t>
@@ -429,15 +428,13 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
     auto max_bytes{
       parse::query_param<std::optional<int32_t>>(*rq.req, "max_bytes")};
 
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _name{std::move(name)},
-       _timeout{timeout},
-       _max_bytes{max_bytes},
-       _res_fmt{res_fmt},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _name{std::move(name)},
+                    _timeout{timeout},
+                    _max_bytes{max_bytes},
+                    _res_fmt{res_fmt},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto name{std::move(_name)};
         auto timeout{_timeout};
@@ -452,7 +449,7 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
           timeout,
           max_bytes);
 
-        auto res = co_await client.consumer_fetch(
+        auto res = co_await client->consumer_fetch(
           group_id, name, timeout, max_bytes);
         ::json::StringBuffer str_buf;
         ::json::Writer<::json::StringBuffer> w(str_buf);
@@ -466,8 +463,12 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 ss::future<server::reply_t>
@@ -483,14 +484,12 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::partitions_request_to_offset_request(ppj::rjson_parse(
       rq.req->content.data(), ppj::partitions_request_handler()));
 
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _member_id{std::move(member_id)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _member_id{std::move(member_id)},
+                    _res_fmt{res_fmt},
+                    _req_data{std::move(req_data)},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto res_fmt{_res_fmt};
@@ -503,7 +502,7 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
           member_id,
           req_data);
 
-        auto res = co_await client.consumer_offset_fetch(
+        auto res = co_await client->consumer_offset_fetch(
           group_id, member_id, std::move(req_data));
         ::json::StringBuffer str_buf;
         ::json::Writer<::json::StringBuffer> w(str_buf);
@@ -514,8 +513,12 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 ss::future<server::reply_t>
@@ -536,13 +539,11 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
                           rq.req->content.data(),
                           ppj::partition_offsets_request_handler()));
 
-    auto group_shard{consumer_shard(group_id)};
-    auto handler =
-      [_group_id{std::move(group_id)},
-       _member_id{std::move(member_id)},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+    auto handler = [_group_id{std::move(group_id)},
+                    _member_id{std::move(member_id)},
+                    _req_data{std::move(req_data)},
+                    _rp{std::move(rp)}](
+                     client_ptr client) mutable -> ss::future<server::reply_t> {
         auto group_id{std::move(_group_id)};
         auto member_id{std::move(_member_id)};
         auto req_data{std::move(_req_data)};
@@ -554,14 +555,18 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
           member_id,
           req_data);
 
-        auto res = co_await client.consumer_offset_commit(
+        auto res = co_await client->consumer_offset_commit(
           group_id, member_id, std::move(req_data));
         rp.rep->set_status(ss::httpd::reply::status_type::no_content);
         co_return std::move(rp);
     };
 
-    co_return co_await rq.service().client().invoke_on(
-      group_shard, rq.context().smp_sg, std::move(handler));
+    co_return co_await rq.service().client_cache().invoke_on_cache(
+      rq.user,
+      [user{rq.user}, authn_method{rq.authn_method}, h{std::move(handler)}](
+        kafka_client_cache& cache) mutable -> ss::future<server::reply_t> {
+          return h(cache.fetch_or_insert(user, authn_method));
+      });
 }
 
 } // namespace pandaproxy::rest
