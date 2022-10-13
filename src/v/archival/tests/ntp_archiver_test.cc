@@ -84,7 +84,7 @@ void log_upload_candidate(const archival::upload_candidate& up) {
 
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments, archiver_fixture) {
-    set_expectations_and_listen({});
+    listen();
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
@@ -557,8 +557,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       ->add_segments(old_segments, ss::lowres_clock::now() + 1s)
       .get();
 
-    std::vector<s3_imposter_fixture::expectation> expectations;
-    set_expectations_and_listen(expectations);
+    listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
@@ -685,6 +684,13 @@ struct upload_range {
 /// data.
 static void test_partial_upload_impl(
   archiver_fixture& test, upload_range first, upload_range last) {
+    // Make sure that the ntp archiver in the fixture is not able to make any
+    // progress, so only the archiver started in this test is responsible for
+    // any state changes.
+    test.start_request_masking(
+      http_test_utils::response{
+        "slow down", ss::httpd::reply::status_type::service_unavailable},
+      60s);
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1), 10},
     };
@@ -704,7 +710,7 @@ static void test_partial_upload_impl(
     // Generate new manifest
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     const auto& layout = test.get_layouts(manifest_ntp);
-    vlog(test_log.debug, "Layout size", layout.size());
+    vlog(test_log.debug, "Layout size: {}", layout.size());
     for (const auto& s : layout) {
         vlog(test_log.debug, "- Segment {}", s.base_offset);
         for (const auto& r : s.ranges) {
@@ -768,9 +774,22 @@ static void test_partial_upload_impl(
       last_uploaded_offset,
       lso);
 
-    test.set_expectations_and_listen({});
+    test.listen();
 
     auto [aconf, cconf] = get_configurations();
+
+    // Starts a custom http imposter so that assertions about requests made by
+    // archiver started in this test are not polluted by requests from the
+    // archiver in the fixture app. The archiver in this test talks to the
+    // custom imposter.
+    net::unresolved_address test_server_address{
+      http_imposter_fixture::httpd_host_name.data(),
+      http_imposter_fixture::httpd_port_number + 1};
+    cconf.client_config.server_addr = test_server_address;
+
+    http_imposter_fixture test_server{test_server_address};
+    test_server.listen();
+
     cloud_storage::remote remote(
       cconf.connection_limit,
       cconf.client_config,
@@ -782,18 +801,15 @@ static void test_partial_upload_impl(
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
-
     auto res = archiver.upload_next_candidates(lso).get();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
-    for (auto req : test.get_requests()) {
-        vlog(test_log.info, "{} {}", req._method, req._url);
-    }
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 2);
+    test_server.log_requests();
+    BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 2);
 
     {
-        auto [begin, end] = test.get_targets().equal_range(manifest_url);
+        auto [begin, end] = test_server.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT");
@@ -804,7 +820,7 @@ static void test_partial_upload_impl(
     ss::sstring url2 = "/" + get_segment_path(manifest, s2name)().string();
 
     {
-        auto [begin, end] = test.get_targets().equal_range(url2);
+        auto [begin, end] = test_server.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
@@ -823,9 +839,10 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 4);
+    test_server.log_requests();
+    BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 4);
     {
-        auto [begin, end] = test.get_targets().equal_range(manifest_url);
+        auto [begin, end] = test_server.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 2);
         std::multiset<ss::sstring> expected = {"PUT", "PUT"};
@@ -849,14 +866,14 @@ static void test_partial_upload_impl(
     }
 
     {
-        auto [begin, end] = test.get_targets().equal_range(url2);
+        auto [begin, end] = test_server.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
     {
         ss::sstring url3 = "/" + get_segment_path(manifest, s3name)().string();
-        auto [begin, end] = test.get_targets().equal_range(url3);
+        auto [begin, end] = test_server.get_targets().equal_range(url3);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT

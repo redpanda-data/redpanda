@@ -23,7 +23,19 @@ http_imposter_fixture::http_imposter_fixture()
     _server.start().get();
 }
 
+http_imposter_fixture::http_imposter_fixture(net::unresolved_address address)
+  : _server_addr{ss::ipv4_addr{address.host().data(), address.port()}} {
+    _id = fmt::format("{}", uuid_t::create());
+    _server.start().get();
+}
+
 http_imposter_fixture::~http_imposter_fixture() { _server.stop().get(); }
+
+void http_imposter_fixture::start_request_masking(
+  http_test_utils::response canned_response,
+  ss::lowres_clock::duration duration) {
+    _masking_active = {canned_response, duration, ss::lowres_clock::now()};
+}
 
 const std::vector<ss::httpd::request>&
 http_imposter_fixture::get_requests() const {
@@ -50,6 +62,17 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
     _handler = std::make_unique<function_handler>(
       [this](const_req req, reply& repl) -> ss::sstring {
+          if (_masking_active) {
+              if (
+                ss::lowres_clock::now() - _masking_active->started
+                > _masking_active->duration) {
+                  _masking_active.reset();
+              } else {
+                  repl.set_status(_masking_active->canned_response.status);
+                  return _masking_active->canned_response.body;
+              }
+          }
+
           _requests.push_back(req);
           _targets.insert(std::make_pair(req._url, req));
 

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "net/unresolved_address.h"
 #include "seastarx.h"
 #include "test_utils/registered_urls.h"
 #include "vassert.h"
@@ -21,14 +22,6 @@ class http_imposter_fixture {
 public:
     static constexpr std::string_view httpd_host_name = "127.0.0.1";
     static constexpr uint httpd_port_number = 4430;
-    static constexpr std::string_view error_payload
-      = R"xml(<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-    <Code>NoSuchKey</Code>
-    <Message>Object not found</Message>
-    <Resource>resource</Resource>
-    <RequestId>requestid</RequestId>
-</Error>)xml";
 
 public:
     using request_predicate
@@ -37,6 +30,7 @@ public:
     using predicates = std::vector<request_predicate>;
 
     http_imposter_fixture();
+    http_imposter_fixture(net::unresolved_address address);
     virtual ~http_imposter_fixture();
 
     http_imposter_fixture(const http_imposter_fixture&) = delete;
@@ -110,7 +104,21 @@ public:
         return _urls.lookup(req);
     }
 
+    void log_requests() const;
+
+    /// Makes the server return the canned response for duration, without
+    /// logging any incoming requests.
+    void start_request_masking(
+      http_test_utils::response canned_response,
+      ss::lowres_clock::duration duration);
+
 private:
+    struct request_masking {
+        http_test_utils::response canned_response;
+        ss::lowres_clock::duration duration;
+        ss::lowres_clock::time_point started;
+    };
+
     void set_routes(ss::httpd::routes& r);
 
     ss::socket_address _server_addr;
@@ -126,4 +134,6 @@ private:
     predicates _fail_requests_when;
 
     absl::flat_hash_map<size_t, http_test_utils::response> _fail_responses;
+    ss::sstring _id;
+    std::optional<request_masking> _masking_active;
 };
