@@ -344,26 +344,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
                 co_return tx_errc::unknown_server_error;
             }
         }
-
-        auto batch = make_fence_batch(
-          rm_stm::fence_control_record_version, pid);
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto r = co_await _c->replicate(
-          synced_term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
-        if (!r) {
-            vlog(
-              _ctx_log.error,
-              "Error \"{}\" on replicating pid:{} fencing batch",
-              r.error(),
-              pid);
-            co_return tx_errc::unknown_server_error;
-        }
-        if (!co_await wait_no_throw(
-              model::offset(r.value().last_offset()), _sync_timeout)) {
-            co_return tx_errc::unknown_server_error;
-        }
     } else if (pid.get_epoch() < fence_it->second) {
         vlog(
           _ctx_log.error,
@@ -371,6 +351,33 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           pid,
           fence_it->second);
         co_return tx_errc::fenced;
+    }
+
+    std::optional<model::record_batch> batch;
+    if (is_transaction_ga()) {
+        batch = make_fence_batch(pid, tx_seq, transaction_timeout_ms);
+    } else {
+        batch = make_fence_batch(pid);
+    }
+
+    auto reader = model::make_memory_record_batch_reader(std::move(*batch));
+    auto r = co_await _c->replicate(
+      synced_term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!r) {
+        vlog(
+          _ctx_log.error,
+          "Error \"{}\" on replicating pid:{} fencing batch",
+          r.error(),
+          pid);
+        co_return tx_errc::unknown_server_error;
+    }
+
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        co_return tx_errc::unknown_server_error;
     }
 
     auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
