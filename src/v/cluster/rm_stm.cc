@@ -34,11 +34,6 @@ static ss::sstring abort_idx_name(model::offset first, model::offset last) {
     return fmt::format("abort.idx.{}.{}", first, last);
 }
 
-static const model::violation_recovery_policy crash{
-  model::violation_recovery_policy::crash};
-static const model::violation_recovery_policy best_effort{
-  model::violation_recovery_policy::best_effort};
-
 static bool is_sequence(int32_t last_seq, int32_t next_seq) {
     return (last_seq + 1 == next_seq)
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
@@ -274,9 +269,6 @@ rm_stm::rm_stm(
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp())) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
-    }
-    if (_recovery_policy != crash && _recovery_policy != best_effort) {
-        vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
 }
@@ -645,11 +637,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
                   preparing_it->second.tx_seq);
             }
 
-            if (_recovery_policy == best_effort) {
-                vlog(_ctx_log.error, "{}", msg);
-                co_return tx_errc::request_rejected;
-            }
-            vassert(false, "{}", msg);
+            vlog(_ctx_log.error, "{}", msg);
+            co_return tx_errc::request_rejected;
         }
 
         auto prepare_it = _log_state.prepared.find(pid);
@@ -695,11 +684,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           "exists",
           tx_seq,
           *tx_seq_for_pid);
-        if (_recovery_policy == best_effort) {
-            vlog(_ctx_log.error, "{}", msg);
-            co_return tx_errc::request_rejected;
-        }
-        vassert(false, "{}", msg);
+        vlog(_ctx_log.error, "{}", msg);
+        co_return tx_errc::request_rejected;
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
@@ -2045,12 +2031,6 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
               _ctx_log.error,
               "Adding a record with pid:{} to a tx after it was prepared",
               bid.pid);
-            if (_recovery_policy != best_effort) {
-                vassert(
-                  false,
-                  "Adding a record with pid:{} to a tx after it was prepared",
-                  bid.pid);
-            }
             return;
         }
 
