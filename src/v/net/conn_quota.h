@@ -70,7 +70,7 @@ public:
             return *this;
         }
 
-        ~units();
+        ~units() noexcept;
 
         /**
          * A default-constructed `units` is not live, i.e.
