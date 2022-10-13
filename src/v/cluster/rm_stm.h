@@ -414,31 +414,29 @@ private:
         // with this approach a combination of mem_state and log_state is
         // always up to date
         model::term_id term;
+        // before we replicate the first batch of a transaction we don't know
+        // its offset but we must prevent read_comitted fetch from getting it
+        // so we use last seen offset to estimate it
+        absl::flat_hash_map<model::producer_identity, model::offset> estimated;
+        model::offset last_end_tx{-1};
+
+        // FIELDS TO GO AFTER GA
         // a map from producer_identity (a session) to the first offset of
         // the current transaction in this session
         absl::flat_hash_map<model::producer_identity, model::offset> tx_start;
         // a heap of the first offsets of all ongoing transactions
         absl::btree_set<model::offset> tx_starts;
-        // before we replicate the first batch of a transaction we don't know
-        // its offset but we must prevent read_comitted fetch from getting it
-        // so we use last seen offset to estimate it
-        absl::flat_hash_map<model::producer_identity, model::offset> estimated;
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
         absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
-        absl::flat_hash_map<model::producer_identity, expiration_info>
-          expiration;
-        model::offset last_end_tx{-1};
-        absl::flat_hash_map<model::producer_identity, int64_t> inflight;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
             estimated.erase(pid);
             preparing.erase(pid);
-            expiration.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);
