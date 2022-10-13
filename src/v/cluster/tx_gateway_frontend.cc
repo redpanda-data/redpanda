@@ -1514,10 +1514,6 @@ tx_gateway_frontend::do_commit_tm_tx(
             auto aborting_tx = co_await stm->mark_tx_killed(
               expected_term, tx.id);
             if (!aborting_tx.has_value()) {
-                if (aborting_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
                 outcome->set_value(tx_errc::invalid_txn_state);
                 co_return tx_errc::invalid_txn_state;
             }
@@ -1533,32 +1529,18 @@ tx_gateway_frontend::do_commit_tm_tx(
         throw;
     }
 
-    if (!is_transaction_ga()) {
-        outcome->set_value(tx_errc::none);
-    }
-
     auto changed_tx = co_await stm->mark_tx_prepared(expected_term, tx.id);
     if (!changed_tx.has_value()) {
-        if (changed_tx.error() == tm_stm::op_status::not_leader) {
-            if (is_transaction_ga()) {
-                outcome->set_value(tx_errc::not_coordinator);
-            }
-            co_return tx_errc::not_coordinator;
-        }
-        if (is_transaction_ga()) {
-            outcome->set_value(tx_errc::unknown_server_error);
-        }
+        outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
 
-    if (is_transaction_ga()) {
-        // We can reduce the number of disk operation if we will not write
-        // preparing state on disk. But after it we should ans to client when we
-        // sure that tx will be recommited after fail. We can guarantee it only
-        // if we ans after marking tx prepared. Becase after fail tx will be
-        // recommited again and client will see expected bechavior.
-        outcome->set_value(tx_errc::none);
-    }
+    // We can reduce the number of disk operation if we will not write
+    // preparing state on disk. But after it we should ans to client when we
+    // sure that tx will be recommited after fail. We can guarantee it only
+    // if we ans after marking tx prepared. Becase after fail tx will be
+    // recommited again and client will see expected bechavior.
+    outcome->set_value(tx_errc::none);
 
     tx = changed_tx.value();
 
