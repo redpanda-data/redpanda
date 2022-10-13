@@ -521,6 +521,11 @@ private:
     template<class T>
     void fill_snapshot_wo_seqs(T&);
 
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
+
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
