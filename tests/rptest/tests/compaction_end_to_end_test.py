@@ -116,6 +116,6 @@ class CompactionEndToEndTest(EndToEndTest):
                    backoff_sec=2)
 
         # enable consumer and validate consumed records
-        self.start_consumer(num_nodes=1)
+        self.start_consumer(num_nodes=1, verify_offsets=False)
 
         self.run_validation(enable_compaction=True)
