@@ -156,8 +156,13 @@ static ss::future<> apply_proto(
 ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
         return s.socket.accept().then_wrapped(
-          [this, &s](ss::future<ss::accept_result> f_cs_sa) mutable
-          -> ss::future<ss::stop_iteration> {
+          [this, &s](ss::future<ss::accept_result> f_cs_sa) {
+              return accept_finish(s, std::move(f_cs_sa));
+          });
+    });
+}
+
+ss::future<ss::stop_iteration> server::accept_finish(listener& s, ss::future<ss::accept_result> f_cs_sa) {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
                   co_return ss::stop_iteration::yes;
@@ -240,8 +245,6 @@ ss::future<> server::accept(listener& s) {
                       _proto.get(), resources(this, conn), std::move(cq_units));
                 });
               co_return ss::stop_iteration::no;
-          });
-    });
 }
 
 void server::shutdown_input() {
