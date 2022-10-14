@@ -62,7 +62,8 @@ class Operation():
 
 def random_string(length):
     return ''.join(
-        [random.choice(string.ascii_letters) for i in range(0, length)])
+        [random.choice(string.ascii_lowercase) for i in range(0, length)]
+    )  # Using only lower case to avoid getting "ERROR" or other string that would be perceived as an error in the log
 
 
 @unique
