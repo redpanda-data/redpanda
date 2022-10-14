@@ -481,7 +481,7 @@ configuration::configuration()
       "enable_transactions",
       "Enable transactions",
       {.visibility = visibility::user},
-      false)
+      true)
   , abort_index_segment_size(
       *this,
       "abort_index_segment_size",
