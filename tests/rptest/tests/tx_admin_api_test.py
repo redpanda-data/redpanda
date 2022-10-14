@@ -33,8 +33,6 @@ class TxAdminTest(RedpandaTest):
               self).__init__(test_context=test_context,
                              num_brokers=3,
                              extra_rp_conf={
-                                 "enable_idempotence": True,
-                                 "enable_transactions": True,
                                  "tx_timeout_delay_ms": 10000000,
                                  "abort_timed_out_transactions_interval_ms":
                                  10000000,

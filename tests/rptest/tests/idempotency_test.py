@@ -23,8 +23,6 @@ def on_delivery(err, msg):
 class IdempotencyTest(RedpandaTest):
     def __init__(self, test_context):
         extra_rp_conf = {
-            "enable_idempotence": True,
-            "id_allocator_replication": 3,
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,

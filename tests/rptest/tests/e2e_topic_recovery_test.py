@@ -41,8 +41,6 @@ class EndToEndTopicRecovery(RedpandaTest):
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
-            enable_idempotence=True,
-            enable_transactions=True,
             enable_leader_balancer=False,
             partition_autobalancing_mode="off",
             group_initial_rebalance_delay=300,
