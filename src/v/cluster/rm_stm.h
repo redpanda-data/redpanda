@@ -122,7 +122,7 @@ public:
     };
 
     struct tx_snapshot {
-        static constexpr uint8_t version = 2;
+        static constexpr uint8_t version = 3;
 
         std::vector<model::producer_identity> fenced;
         std::vector<tx_range> ongoing;
@@ -131,6 +131,25 @@ public:
         std::vector<abort_index> abort_indexes;
         model::offset offset;
         std::vector<seq_entry> seqs;
+
+        struct tx_seqs_snapshot {
+            model::producer_identity pid;
+            model::tx_seq tx_seq;
+        };
+
+        struct inflight_snapshot {
+            model::producer_identity pid;
+            int64_t counter;
+        };
+
+        struct expiration_snapshot {
+            model::producer_identity pid;
+            duration_type timeout;
+        };
+
+        std::vector<tx_seqs_snapshot> tx_seqs;
+        std::vector<inflight_snapshot> inflight;
+        std::vector<expiration_snapshot> expiration;
     };
 
     struct abort_snapshot {
