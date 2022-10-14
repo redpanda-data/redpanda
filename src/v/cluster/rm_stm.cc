@@ -2077,6 +2077,31 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     iobuf_parser data_parser(std::move(tx_ss_buf));
     if (hdr.version == tx_snapshot::version) {
         data = reflection::adl<tx_snapshot>{}.from(data_parser);
+    } else if (hdr.version == tx_snapshot_v2::version) {
+        auto data_v2 = reflection::adl<tx_snapshot_v2>{}.from(data_parser);
+        data.fenced = std::move(data_v2.fenced);
+        data.ongoing = std::move(data_v2.ongoing);
+        data.prepared = std::move(data_v2.prepared);
+        data.aborted = std::move(data_v2.aborted);
+        data.abort_indexes = std::move(data_v2.abort_indexes);
+        data.offset = std::move(data_v2.offset);
+        data.seqs = std::move(data_v2.seqs);
+
+        for (auto& entry : data_v2.ongoing) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+        }
+        for (auto& entry : data_v2.prepared) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+              .pid = entry.pid, .tx_seq = entry.tx_seq});
+        }
+
+        for (auto& entry : data_v2.seqs) {
+            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+              .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
+        }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
         data.fenced = std::move(data_v1.fenced);
@@ -2108,6 +2133,17 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             seq.last_write_timestamp = seq_v1.last_write_timestamp;
             data.seqs.push_back(std::move(seq));
         }
+
+        for (auto& entry : data_v1.ongoing) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+        }
+        for (auto& entry : data_v1.prepared) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+              .pid = entry.pid, .tx_seq = entry.tx_seq});
+        }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
         data.fenced = std::move(data_v0.fenced);
@@ -2123,6 +2159,16 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .last_offset = kafka::offset{-1},
               .last_write_timestamp = seq_v0.last_write_timestamp};
             data.seqs.push_back(std::move(seq));
+        }
+        for (auto& entry : data_v0.ongoing) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+        }
+        for (auto& entry : data_v0.prepared) {
+            data.inflight.emplace_back(
+              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
+            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+              .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
     } else {
         vassert(
@@ -2169,6 +2215,23 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         if (snapshot_opt) {
             _log_state.last_abort_snapshot = snapshot_opt.value();
         }
+    }
+
+    for (auto& entry : data.tx_seqs) {
+        _log_state.tx_seqs.emplace(entry.pid, entry.tx_seq);
+    }
+
+    for (auto& entry : data.inflight) {
+        _log_state.inflight.emplace(entry.pid, entry.counter);
+    }
+
+    for (auto& entry : data.expiration) {
+        _log_state.expiration.emplace(
+          entry.pid,
+          expiration_info{
+            .timeout = entry.timeout,
+            .last_update = clock_type::now(),
+            .is_expiration_requested = false});
     }
 
     _last_snapshot_offset = data.offset;
