@@ -557,21 +557,48 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       properties.compaction_strategy, overrides.compaction_strategy);
     incremental_update(properties.compression, overrides.compression);
-    incremental_update(properties.retention_bytes, overrides.retention_bytes);
-    incremental_update(
-      properties.retention_duration, overrides.retention_duration);
+
+    /**
+     * Upgrade handling for retention properties:
+     * if a pre-22.3 redpanda wrote an incremental alter message touching
+     * retention properties, and it is a tired storage topic, then we must
+     * redirect these retention property changes to the local-target properties.
+     */
+    bool si_will_be_enabled = (
+      (!properties.shadow_indexing && config::shard_local_cfg().cloud_storage_enable_remote_write)
+      || (properties.shadow_indexing.has_value() && *(properties.shadow_indexing) != model::shadow_indexing_mode::disabled)
+        || (overrides.shadow_indexing.op==incremental_update_operation::set
+          && overrides.shadow_indexing.value  &&
+          overrides.shadow_indexing.value != model::shadow_indexing_mode::disabled));
+    if (overrides.handle_retentions_as_legacy && si_will_be_enabled) {
+        // Legacy upgrade case: switch retention.* into retention.local.*, force
+        // unlimited retention of cloud data.
+        incremental_update(
+          properties.retention_local_target_bytes, overrides.retention_bytes);
+        incremental_update(
+          properties.retention_local_target_ms, overrides.retention_duration);
+        properties.retention_bytes = tristate<size_t>{};
+        properties.retention_duration = tristate<std::chrono::milliseconds>{};
+    } else {
+        // Normal case: take properties at face value
+        incremental_update(
+          properties.retention_bytes, overrides.retention_bytes);
+        incremental_update(
+          properties.retention_duration, overrides.retention_duration);
+
+        incremental_update(
+          properties.retention_local_target_bytes,
+          overrides.retention_local_target_bytes);
+        incremental_update(
+          properties.retention_local_target_ms,
+          overrides.retention_local_target_ms);
+    }
+
     incremental_update(properties.segment_size, overrides.segment_size);
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
 
     incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
     incremental_update(properties.batch_max_bytes, overrides.batch_max_bytes);
-
-    incremental_update(
-      properties.retention_local_target_bytes,
-      overrides.retention_local_target_bytes);
-    incremental_update(
-      properties.retention_local_target_ms,
-      overrides.retention_local_target_ms);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
