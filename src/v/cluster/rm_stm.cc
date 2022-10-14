@@ -241,6 +241,18 @@ struct tx_snapshot_v1 {
     std::vector<seq_entry_v1> seqs;
 };
 
+struct tx_snapshot_v2 {
+    static constexpr uint8_t version = 2;
+
+    std::vector<model::producer_identity> fenced;
+    std::vector<rm_stm::tx_range> ongoing;
+    std::vector<rm_stm::prepare_marker> prepared;
+    std::vector<rm_stm::tx_range> aborted;
+    std::vector<rm_stm::abort_index> abort_indexes;
+    model::offset offset;
+    std::vector<rm_stm::seq_entry> seqs;
+};
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -2164,9 +2176,13 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 }
 
 uint8_t rm_stm::active_snapshot_version() {
+    if (is_transaction_ga()) {
+        return tx_snapshot::version;
+    }
+
     if (_feature_table.local().is_active(
           features::feature::rm_stm_kafka_cache)) {
-        return tx_snapshot::version;
+        return tx_snapshot_v2::version;
     }
     return tx_snapshot_v1::version;
 }
