@@ -280,7 +280,7 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         // uploads are merged.
         for (auto it = m.segment_containing(offset); it != m.end(); it++) {
             mdiff.add(
-              segment_name(cloud_storage::generate_segment_name(
+              segment_name(cloud_storage::generate_local_segment_name(
                 it->first.base_offset, it->first.term)),
               it->second);
         }
@@ -800,7 +800,7 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     for (const auto& [key, meta] : manifest()) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
-        auto sname = cloud_storage::generate_segment_name(
+        auto sname = cloud_storage::generate_local_segment_name(
           key.base_offset, key.term);
         auto spath = cloud_storage::generate_remote_segment_path(
           _ntp, _rev, sname, meta.archiver_term);

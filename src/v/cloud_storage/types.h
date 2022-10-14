@@ -47,6 +47,9 @@ using local_segment_path
 using s3_connection_limit
   = named_type<size_t, struct archival_s3_connection_limit_t>;
 
+/// Version of the segment name format
+enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
+
 enum class download_result : int32_t {
     success,
     notfound,
