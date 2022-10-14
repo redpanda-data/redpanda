@@ -9,6 +9,10 @@
 #include "random/generators.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
+#include "security/ephemeral_credential.h"
+#include "security/sasl_authentication.h"
+#include "security/scram_credential.h"
+#include "security/types.h"
 #include "utils/base64.h"
 
 #include <seastar/testing/thread_test_case.hh>
