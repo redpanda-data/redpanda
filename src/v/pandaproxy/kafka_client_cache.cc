@@ -17,13 +17,19 @@
 
 #include <seastar/core/loop.hh>
 
+#include <chrono>
+
 namespace pandaproxy {
 
 kafka_client_cache::kafka_client_cache(
-  YAML::Node const& cfg, size_t max_size, std::chrono::milliseconds keep_alive)
+  YAML::Node const& cfg,
+  size_t max_size,
+  std::chrono::milliseconds keep_alive,
+  ss::timer<ss::lowres_clock>& clean_and_evict_timer)
   : _config{cfg}
   , _cache_max_size{max_size}
-  , _keep_alive{keep_alive} {}
+  , _keep_alive{keep_alive}
+  , _clean_and_evict_timer{clean_and_evict_timer} {}
 
 client_ptr kafka_client_cache::make_client(
   credential_t user, config::rest_authn_method authn_method) {
@@ -55,10 +61,23 @@ client_ptr kafka_client_cache::fetch_or_insert(
     if (it_hash == inner_hash.end()) {
         if (_cache.size() >= _cache_max_size) {
             if (!_cache.empty()) {
+                using namespace std::chrono_literals;
+
                 auto item = inner_list.back();
                 vlog(plog.debug, "Cache size reached, evicting {}", item.key);
                 inner_list.pop_back();
                 _evicted_items.push_back(std::move(item));
+
+                // If the timer is not armed, then trigger it for a few seconds
+                // from now. If the timer is armed and it won't run until far
+                // into the future, then trigger it a few seconds from now. If
+                // the timer is armed and it will run soon, then do nothing.
+                auto window = ss::lowres_clock::now() + 1s;
+                if (
+                  !_clean_and_evict_timer.armed()
+                  || (_clean_and_evict_timer.armed() && _clean_and_evict_timer.get_timeout() > window)) {
+                    _clean_and_evict_timer.rearm(window);
+                }
             }
         }
 

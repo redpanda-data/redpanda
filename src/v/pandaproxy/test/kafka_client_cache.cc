@@ -13,8 +13,11 @@
 #include "config/rest_authn_endpoint.h"
 #include "kafka/client/configuration.h"
 #include "pandaproxy/types.h"
+#include "ssx/future-util.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -25,13 +28,20 @@
 using namespace std::chrono_literals;
 
 namespace pandaproxy {
-class test_client_cache : public kafka_client_cache {
-public:
+struct test_client_cache : public kafka_client_cache {
+    ss::timer<ss::lowres_clock> clean_and_evict_timer;
+    ss::gate g;
+
     explicit test_client_cache(size_t max_size)
       : kafka_client_cache(
         to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
         max_size,
-        1000ms) {}
+        1000ms,
+        std::reference_wrapper(clean_and_evict_timer)) {
+        clean_and_evict_timer.set_callback([this] {
+            ssx::spawn_with_gate(g, [this] { return clean_stale_clients(); });
+        });
+    }
 };
 } // namespace pandaproxy
 
@@ -105,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
 
     user2.name = "party";
     // Fourth fetch tests not-found path: cache.size == cache.max_size and cache
-    // is not empty The LRU replacement policy takes affect and an element is
+    // is not empty. The LRU replacement policy takes affect and an element is
     // evicted
     client2 = client_cache.fetch_or_insert(
       user2, config::rest_authn_method::http_basic);
@@ -115,4 +125,6 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
     BOOST_TEST(client2->config().scram_password.value() == user2.pass);
     BOOST_TEST(client_cache.size() == s);
     BOOST_TEST(client_cache.max_size() == max_s);
+
+    client_cache.g.close().get();
 }

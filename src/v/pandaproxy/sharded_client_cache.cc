@@ -44,7 +44,11 @@ ss::future<> sharded_client_cache::start(
     });
 
     return _cache
-      .start(proxy_client_cfg, client_cache_max_size, client_keep_alive)
+      .start(
+        proxy_client_cfg,
+        client_cache_max_size,
+        client_keep_alive,
+        std::reference_wrapper(_clean_timer))
       .then([this] { _clean_timer.arm(clean_timer_period); });
 }
 
