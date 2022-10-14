@@ -567,7 +567,7 @@ open_output_file_stream(const std::filesystem::path& path) {
 ss::future<std::optional<partition_downloader::offset_range>>
 partition_downloader::download_segment_file(
   const segment& segm, const download_part& part) {
-    auto name = generate_segment_name(
+    auto name = generate_local_segment_name(
       segm.manifest_key.base_offset, segm.manifest_key.term);
     auto remote_path = generate_remote_segment_path(
       _ntpc.ntp(), segm.meta.ntp_revision, name, segm.meta.archiver_term);

@@ -509,8 +509,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(0), model::term_id(1)},
-      {manifest_ntp, model::offset(1000), model::term_id(4)},
+      {manifest_ntp, model::offset(0), model::term_id(1), 10},
+      {manifest_ntp, model::offset(1000), model::term_id(4), 10},
     };
     init_storage_api_local(segments);
     wait_for_partition_leadership(manifest_ntp);
@@ -549,7 +549,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       manifest_ntp, manifest_revision);
     for (const auto& s : old_manifest) {
         old_segments.add(
-          segment_name(cloud_storage::generate_segment_name(
+          segment_name(cloud_storage::generate_local_segment_name(
             s.first.base_offset, s.first.term)),
           s.second);
     }
@@ -590,8 +590,10 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         manifest = load_manifest(begin->second.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
-    for (const segment_name& name : {s1name, s2name}) {
-        auto url = get_segment_path(manifest, name);
+
+    {
+        // Check that we uploaded second segment
+        auto url = get_segment_path(manifest, s2name);
         auto [begin, end] = get_targets().equal_range("/" + url().string());
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
@@ -744,7 +746,7 @@ static void test_partial_upload_impl(
       manifest_ntp, manifest_revision);
     for (const auto& s : manifest) {
         all_segments.add(
-          segment_name(cloud_storage::generate_segment_name(
+          segment_name(cloud_storage::generate_local_segment_name(
             s.first.base_offset, s.first.term)),
           s.second);
     }

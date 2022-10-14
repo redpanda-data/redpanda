@@ -83,7 +83,7 @@ archival_metadata_stm::segments_from_manifest(
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
-        auto name = cloud_storage::generate_segment_name(
+        auto name = cloud_storage::generate_local_segment_name(
           key.base_offset, key.term);
         segments.push_back(segment{
           .ntp_revision_deprecated = meta.ntp_revision,

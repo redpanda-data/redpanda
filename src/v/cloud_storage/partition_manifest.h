@@ -12,6 +12,7 @@
 
 #include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/types.h"
 #include "json/document.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
@@ -57,7 +58,7 @@ remote_segment_path generate_remote_segment_path(
   model::term_id archiver_term);
 
 /// Generate correct S3 segment name based on term and base offset
-segment_name generate_segment_name(model::offset o, model::term_id t);
+segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
 remote_manifest_path
 generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
@@ -67,7 +68,7 @@ class partition_manifest final : public base_manifest {
 public:
     struct segment_meta {
         using value_t = segment_meta;
-        static constexpr serde::version_t redpanda_serde_version = 1;
+        static constexpr serde::version_t redpanda_serde_version = 2;
         static constexpr serde::version_t redpanda_serde_compat_version = 0;
 
         bool is_compacted;
@@ -80,6 +81,12 @@ public:
 
         model::initial_revision_id ntp_revision;
         model::term_id archiver_term;
+        /// Term of the segment (included in segment file name)
+        model::term_id segment_term;
+        /// Offset translation delta at the end of the range
+        model::offset_delta delta_offset_end;
+        /// Segment name format specifier
+        segment_name_format sname_format{segment_name_format::v1};
 
         auto operator<=>(const segment_meta&) const = default;
     };
@@ -88,6 +95,7 @@ public:
     using key = segment_name_components;
     using value = segment_meta;
     using segment_map = absl::btree_map<key, value>;
+    using segment_multimap = absl::btree_multimap<key, value>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
@@ -95,6 +103,16 @@ public:
         segment_name name;
         segment_meta meta;
     };
+
+    /// Generate segment name to use in the cloud
+    static segment_name
+    generate_remote_segment_name(const key& k, const value& val);
+    /// Generate segment path to use in the cloud
+    static remote_segment_path generate_remote_segment_path(
+      const model::ntp& ntp, const key& k, const value& val);
+    /// Generate segment path to use locally
+    static local_segment_path generate_local_segment_path(
+      const model::ntp& ntp, const key& k, const value& val);
 
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
@@ -182,15 +200,26 @@ public:
     /// Returns an iterator to the segment containing offset o, such that o >=
     /// segment.base_offset and o <= segment.committed_offset.
     const_iterator segment_containing(model::offset o) const;
+    using iterator_pair = std::pair<const_iterator, const_iterator>;
+
+    /// Return iterators that can be used to access
+    /// segments that were replaced by newer segments.
+    iterator_pair replaced_segments() const;
 
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const partition_manifest_handler& handler);
+    void update(partition_manifest_handler&& handler);
+
+    /// Move segments from _segments to _replaced
+    void move_aligned_offset_range(
+      model::offset begin_inclusive, model::offset end_inclusive);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
     segment_map _segments;
+    /// Collection of replaced but not yet removed segments
+    segment_map _replaced;
     model::offset _last_offset;
 };
 
