@@ -21,7 +21,6 @@ func TestParams_Write(t *testing.T) {
 			name: "create default config file if there is no config file yet",
 			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers: []
     rpc_server:
         address: 0.0.0.0
@@ -50,7 +49,8 @@ rpk:
     rack: my_rack
 `,
 			cfgChanges: func(c *Config) *Config {
-				c.Redpanda.ID = 6
+				c.Redpanda.ID = new(int)
+				*c.Redpanda.ID = 6
 				return c
 			},
 			exp: `redpanda:
@@ -140,6 +140,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 		t.Errorf("unexpected error while writing sample config file: %s", err)
 		return
 	}
+	id := 1
 	expCfg := &Config{
 		fileLocation: "/etc/redpanda/redpanda.yaml",
 		Redpanda: RedpandaNodeConfig{
@@ -156,7 +157,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    9644,
 			}},
-			ID:            1,
+			ID:            &id,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},

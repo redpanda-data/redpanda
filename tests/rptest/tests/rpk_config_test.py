@@ -39,7 +39,6 @@ class RpkConfigTest(RedpandaTest):
 pandaproxy: {}
 redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers: []
     rpc_server:
         address: 0.0.0.0

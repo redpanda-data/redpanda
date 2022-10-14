@@ -136,7 +136,8 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.ID = int(hostIndex)
+	cfg.Redpanda.ID = new(int)
+	*cfg.Redpanda.ID = int(hostIndex)
 
 	// In case of a single seed server, the list should contain the current node itself.
 	// Normally the cluster is able to recognize it's talking to itself, except when the cluster is

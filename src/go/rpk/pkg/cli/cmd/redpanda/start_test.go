@@ -331,7 +331,7 @@ func TestStartCommand(t *testing.T) {
 				Address: "10.21.34.58",
 				Port:    9092,
 			}}
-			require.Exactly(st, 39, conf.Redpanda.ID)
+			require.Exactly(st, 39, *conf.Redpanda.ID)
 			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
 			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
 		},
@@ -402,7 +402,7 @@ func TestStartCommand(t *testing.T) {
 				Port:    9092,
 			}}
 			// The value set with --node-id should have been prioritized
-			require.Exactly(st, 42, conf.Redpanda.ID)
+			require.Exactly(st, 42, *conf.Redpanda.ID)
 			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
 			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
 			require.Exactly(st, expectedAdvKafkaAPI, conf.Redpanda.AdvertisedKafkaAPI)
@@ -481,7 +481,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			require.Exactly(st, 34, conf.Redpanda.ID)
+			require.Exactly(st, 34, *conf.Redpanda.ID)
 		},
 	}, {
 		name: "it should write the default node ID if --node-id isn't passed and the config file doesn't exist",
@@ -523,7 +523,8 @@ func TestStartCommand(t *testing.T) {
 		},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
-			conf.Redpanda.ID = 98
+			conf.Redpanda.ID = new(int)
+			*conf.Redpanda.ID = 98
 			return conf.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -532,7 +533,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				98,
-				conf.Redpanda.ID,
+				*conf.Redpanda.ID,
 			)
 		},
 	}, {
@@ -1400,7 +1401,7 @@ func TestStartCommand(t *testing.T) {
 			// Config:
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 			expectedClusterFields := map[string]interface{}{
 				"auto_create_topics_enabled": true,
@@ -1428,7 +1429,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 		},
 	}, {
@@ -1457,7 +1458,7 @@ func TestStartCommand(t *testing.T) {
 				"storage_min_free_bytes":     10485760,
 				"topic_partitions_per_shard": 1000,
 			}
-			require.Equal(st, 0, conf.Redpanda.ID)
+			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},

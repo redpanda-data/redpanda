@@ -62,7 +62,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "1",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 1, c.Redpanda.ID)
+				require.Exactly(st, 1, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "54312",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, c.Redpanda.ID)
+				require.Exactly(st, 54312, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "54312",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, c.Redpanda.ID)
+				require.Exactly(st, 54312, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -458,7 +458,7 @@ func TestDefault(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    9644,
 			}},
-			ID:            0,
+			ID:            nil,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
@@ -483,7 +483,6 @@ func TestWrite(t *testing.T) {
 			conf: getValidConfig,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -534,7 +533,6 @@ schema_registry: {}
 			},
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -586,7 +584,6 @@ schema_registry: {}
 			wantErr: false,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -621,7 +618,6 @@ schema_registry: {}
 			wantErr: false,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -825,7 +821,8 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when id of server is negative",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.ID = -100
+				c.Redpanda.ID = new(int)
+				*c.Redpanda.ID = -100
 				return c
 			},
 			expected: []string{"redpanda.node_id can't be a negative integer"},
