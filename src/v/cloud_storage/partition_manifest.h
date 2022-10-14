@@ -91,6 +91,11 @@ public:
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
+    struct segment_name_meta {
+        segment_name name;
+        segment_meta meta;
+    };
+
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
 
