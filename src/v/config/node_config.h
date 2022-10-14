@@ -26,7 +26,12 @@ struct node_config final : public config_store {
 public:
     property<bool> developer_mode;
     property<data_directory_path> data_directory;
-    property<model::node_id> node_id;
+
+    // NOTE: during the normal runtime of a cluster, it is safe to assume that
+    // the value of the node ID has been determined, and that there is a value
+    // set for this property.
+    property<std::optional<model::node_id>> node_id;
+
     property<std::optional<model::rack_id>> rack;
     property<std::vector<seed_server>> seed_servers;
 

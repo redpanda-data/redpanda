@@ -383,8 +383,8 @@ class Admin:
     def get_cluster_config_status(self, node: ClusterNode = None):
         return self._request("GET", "cluster_config/status", node=node).json()
 
-    def get_node_config(self):
-        return self._request("GET", "node_config").json()
+    def get_node_config(self, node=None):
+        return self._request("GET", "node_config", node).json()
 
     def get_features(self, node=None):
         return self._request("GET", "features", node=node).json()

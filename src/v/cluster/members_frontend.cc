@@ -34,7 +34,7 @@ members_frontend::members_frontend(
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
-  : _self(config::node().node_id())
+  : _self(*config::node().node_id())
   , _node_op_timeout(
       config::shard_local_cfg().node_management_operation_timeout_ms)
   , _stm(stm)

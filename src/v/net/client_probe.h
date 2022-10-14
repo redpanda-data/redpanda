@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
@@ -70,6 +71,7 @@ public:
     void setup_metrics(
       ss::metrics::metric_groups& mgs,
       const std::optional<rpc::connection_cache_label>& label,
+      const std::optional<model::node_id>& node_id,
       const net::unresolved_address& target_addr);
 
 private:

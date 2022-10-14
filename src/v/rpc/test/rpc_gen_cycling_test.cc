@@ -9,6 +9,8 @@
 
 #include "model/timeout_clock.h"
 #include "random/generators.h"
+#include "rpc/backoff_policy.h"
+#include "rpc/connection_cache.h"
 #include "rpc/exceptions.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
@@ -22,6 +24,7 @@
 #include "test_utils/fixture.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/metrics_api.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
@@ -169,6 +172,44 @@ FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     auto ret = f.get();
     BOOST_REQUIRE(ret.has_value());
     BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
+}
+
+FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::connection_cache cache;
+
+    // Check that we can create connections from a cache, and moreover that we
+    // can run several clients targeted at the same server, if we provide
+    // multiple node IDs to the cache.
+    constexpr const size_t num_nodes_ids = 10;
+    const auto ccfg = client_config();
+    for (int i = 0; i < num_nodes_ids; ++i) {
+        const auto payload = random_generators::gen_alphanum_string(100);
+        const auto node_id = model::node_id(i);
+        cache
+          .emplace(
+            node_id,
+            ccfg,
+            rpc::make_exponential_backoff_policy<rpc::clock_type>(
+              std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
+          .get();
+        auto reconnect_transport = cache.get(node_id);
+        auto transport_res = reconnect_transport
+                               ->get_connected(rpc::clock_type::now() + 5s)
+                               .get();
+        BOOST_REQUIRE(transport_res.has_value());
+        auto transport = transport_res.value();
+        echo::echo_client_protocol client(*transport);
+        auto cleanup = ss::defer([&transport] { transport->stop().get(); });
+        auto f = client.echo(
+          echo::echo_req{.str = payload},
+          rpc::client_opts(rpc::clock_type::now() + 100ms));
+        auto ret = f.get();
+        BOOST_CHECK(ret.has_value());
+        BOOST_CHECK_EQUAL(ret.value().data.str, payload);
+    }
 }
 
 FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {

@@ -12,6 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
+#include "cluster/controller_stm.h"
 #include "cluster/drain_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
@@ -26,6 +27,7 @@
 #include "random/generators.h"
 #include "redpanda/application.h"
 #include "reflection/adl.h"
+#include "seastarx.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
@@ -43,6 +45,8 @@ namespace cluster {
 
 members_manager::members_manager(
   consensus_ptr raft0,
+  ss::sharded<controller_stm>& controller_stm,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<members_table>& members_table,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_allocator>& allocator,
@@ -54,6 +58,8 @@ members_manager::members_manager(
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
   , _raft0(raft0)
+  , _controller_stm(controller_stm)
+  , _feature_table(feature_table)
   , _members_table(members_table)
   , _connection_cache(connections)
   , _allocator(allocator)
@@ -61,7 +67,8 @@ members_manager::members_manager(
   , _drain_manager(drain_manager)
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
-  , _update_queue(max_updates_queue_size) {
+  , _update_queue(max_updates_queue_size)
+  , _next_assigned_id(model::node_id(1)) {
     auto sub = _as.local().subscribe([this]() noexcept {
         _update_queue.abort(
           std::make_exception_ptr(ss::abort_requested_exception{}));
@@ -202,7 +209,9 @@ ss::future<> members_manager::handle_raft0_cfg_update(
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
+    vlog(clusterlog.info, "Applying update to members_manager");
     if (b.header().type == model::record_batch_type::raft_configuration) {
+        vlog(clusterlog.info, "Raft config update");
         co_return co_await apply_raft_configuration_batch(std::move(b));
     }
 
@@ -270,6 +279,39 @@ members_manager::apply_update(model::record_batch b) {
                 }
                 return f.then([error] { return error; });
             });
+      },
+      [this](register_node_uuid_cmd cmd) {
+          const auto& node_uuid = cmd.key;
+          const auto& requested_node_id = cmd.value;
+          const auto node_id_str = requested_node_id == std::nullopt
+                                     ? "no node ID"
+                                     : fmt::to_string(*requested_node_id);
+          vlog(
+            clusterlog.info,
+            "Applying registration of UUID {} with {}",
+            node_uuid,
+            node_id_str);
+          if (requested_node_id) {
+              if (likely(try_register_node_id(*requested_node_id, node_uuid))) {
+                  return ss::make_ready_future<std::error_code>(errc::success);
+              }
+              vlog(
+                clusterlog.warn,
+                "Couldn't register UUID {}, node ID {} already taken",
+                node_uuid,
+                requested_node_id);
+              return ss::make_ready_future<std::error_code>(
+                errc::join_request_dispatch_error);
+          }
+          auto node_id = get_or_assign_node_id(node_uuid);
+          if (node_id == std::nullopt) {
+              vlog(clusterlog.error, "No more node IDs to assign");
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          vlog(
+            clusterlog.info, "Node UUID {} has node ID {}", node_uuid, node_id);
+          return ss::make_ready_future<std::error_code>(errc::success);
       });
 }
 ss::future<std::error_code>
@@ -302,6 +344,14 @@ members_manager::get_node_updates() {
     }
 
     return ss::make_ready_future<std::vector<node_update>>(std::move(ret));
+}
+
+model::node_id members_manager::get_node_id(const model::node_uuid& node_uuid) {
+    const auto it = _id_by_uuid.find(node_uuid);
+    vassert(
+      it != _id_by_uuid.end(),
+      "Node registration must be completed before calling");
+    return it->second;
 }
 
 template<typename Cmd>
@@ -395,6 +445,7 @@ void members_manager::join_raft0() {
                             std::move(join_node_request{
                               features::feature_table::
                                 get_latest_logical_version(),
+                              _storage.local().node_uuid()().to_vector(),
                               _self}))
                      .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;
@@ -421,6 +472,54 @@ void members_manager::join_raft0() {
               return ss::now();
           });
     });
+}
+
+bool members_manager::try_register_node_id(
+  const model::node_id& requested_node_id,
+  const model::node_uuid& requested_node_uuid) {
+    vassert(requested_node_id != model::node_id(-1), "invalid node ID");
+    vlog(
+      clusterlog.info,
+      "Registering node ID {} as node UUID {}",
+      requested_node_id,
+      requested_node_uuid);
+    const auto it = _id_by_uuid.find(requested_node_uuid);
+    if (it == _id_by_uuid.end()) {
+        if (_members_table.local().contains(requested_node_id)) {
+            // The cluster was likely just upgraded from a version that didn't
+            // have node UUIDs. If the node ID is already a part of the
+            // member's table, accept the requested UUID.
+            clusterlog.info(
+              "registering node ID that is already a member of the cluster");
+        }
+        // This is a brand new node with node ID assignment support that's
+        // requesting the given node ID.
+        _id_by_uuid.emplace(requested_node_uuid, requested_node_id);
+        return true;
+    }
+    const auto& node_id = it->second;
+    return node_id == requested_node_id;
+}
+
+std::optional<model::node_id>
+members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
+    const auto it = _id_by_uuid.find(node_uuid);
+    if (it == _id_by_uuid.end()) {
+        while (_members_table.local().contains(_next_assigned_id)) {
+            if (_next_assigned_id == INT_MAX) {
+                return std::nullopt;
+            }
+            ++_next_assigned_id;
+        }
+        _id_by_uuid.emplace(node_uuid, _next_assigned_id);
+        vlog(
+          clusterlog.info,
+          "Assigned node UUID {} a node ID {}",
+          node_uuid,
+          _next_assigned_id);
+        return _next_assigned_id++;
+    }
+    return it->second;
 }
 
 ss::future<result<join_node_reply>>
@@ -490,92 +589,216 @@ auto members_manager::dispatch_rpc_to_leader(
       std::forward<Func>(f));
 }
 
+ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
+  const model::node_uuid& node_uuid,
+  const std::optional<model::node_id>& node_id) {
+    using ret_t = result<join_node_reply>;
+    ss::sstring node_id_str = node_id ? ssx::sformat("node ID {}", *node_id)
+                                      : "no node ID";
+    vlog(
+      clusterlog.debug,
+      "Replicating registration of UUID {} with {}",
+      node_uuid,
+      node_id_str);
+    // Otherwise, replicate a request to register the UUID.
+    auto errc = co_await replicate_and_wait(
+      _controller_stm,
+      _feature_table,
+      _as,
+      register_node_uuid_cmd(node_uuid, node_id),
+      model::timeout_clock::now() + 30s);
+    vlog(
+      clusterlog.debug,
+      "Registration replication completed for UUID '{}': {}",
+      node_uuid,
+      errc);
+    if (errc != errc::success) {
+        co_return errc;
+    }
+    const auto assigned_node_id = get_node_id(node_uuid);
+    if (node_id && assigned_node_id != *node_id) {
+        vlog(
+          clusterlog.warn,
+          "Node registration for UUID {} as {} completed but already already "
+          "assigned as {}",
+          node_uuid,
+          *node_id,
+          assigned_node_id);
+        co_return errc::invalid_request;
+    }
+
+    // On success, return the node ID.
+    co_return ret_t(join_node_reply{true, get_node_id(node_uuid)});
+}
+
 ss::future<result<join_node_reply>>
 members_manager::handle_join_request(join_node_request const req) {
     using ret_t = result<join_node_reply>;
+
+    bool node_id_assignment_supported = _feature_table.local().is_active(
+      features::feature::node_id_assignment);
+    bool req_has_node_uuid = !req.node_uuid.empty();
+    if (node_id_assignment_supported && !req_has_node_uuid) {
+        vlog(
+          clusterlog.warn,
+          "Invalid join request for node ID {}, node UUID is required",
+          req.node.id());
+        co_return errc::invalid_request;
+    }
+    std::optional<model::node_id> req_node_id = std::nullopt;
+    if (req.node.id() >= 0) {
+        req_node_id = req.node.id();
+    }
+    if (!node_id_assignment_supported && !req_node_id) {
+        vlog(
+          clusterlog.warn,
+          "Got request to assign node ID, but feature not active",
+          req.node.id());
+        co_return errc::invalid_request;
+    }
+    if (
+      req_has_node_uuid
+      && req.node_uuid.size() != model::node_uuid::type::length) {
+        vlog(
+          clusterlog.warn,
+          "Invalid join request, expected UUID or empty; got {}-byte value",
+          req.node_uuid.size());
+        co_return errc::invalid_request;
+    }
+    model::node_uuid node_uuid;
+    if (!req_node_id && !req_has_node_uuid) {
+        vlog(clusterlog.warn, "Node ID assignment attempt had no node UUID");
+        co_return errc::invalid_request;
+    }
+
+    ss::sstring node_uuid_str = "no node_uuid";
+    if (req_has_node_uuid) {
+        node_uuid = model::node_uuid(uuid_t(req.node_uuid));
+        node_uuid_str = ssx::sformat("{}", node_uuid);
+    }
     vlog(
       clusterlog.info,
-      "Processing node '{}' join request (version {})",
+      "Processing node '{} ({})' join request (version {})",
       req.node.id(),
+      node_uuid_str,
       req.logical_version);
 
-    // curent node is a leader
-    if (_raft0->is_elected_leader()) {
-        // if configuration contains the broker already just update its config
-        // with data from join request
-
-        if (_raft0->config().contains_broker(req.node.id())) {
-            vlog(
-              clusterlog.info,
-              "Broker {} is already member of a cluster, updating "
-              "configuration",
-              req.node.id());
-            auto node_id = req.node.id();
-            auto update_req = configuration_update_request(
-              req.node, _self.id());
-            co_return co_await handle_configuration_update_request(
-              std::move(update_req))
-              .then([node_id](result<configuration_update_reply> r) {
-                  if (r) {
-                      auto success = r.value().success;
-                      return ret_t(join_node_reply{
-                        success, success ? node_id : model::node_id{-1}});
-                  }
-                  return ret_t(r.error());
-              });
-        }
-
-        if (_raft0->config().contains_address(req.node.rpc_address())) {
-            vlog(
-              clusterlog.info,
-              "Broker {} address ({}) conflicts with the address of another "
-              "node",
-              req.node.id(),
-              req.node.rpc_address());
-            co_return ret_t(join_node_reply{false, model::node_id(-1)});
-        }
-        if (req.node.id() != _self.id()) {
-            co_await update_broker_client(
-              _self.id(),
-              _connection_cache,
-              req.node.id(),
-              req.node.rpc_address(),
-              _rpc_tls_config);
-        }
-        // Just update raft0 configuration
-        // we do not use revisions in raft0 configuration, it is always revision
-        // 0 which is perfectly fine. this will work like revision less raft
-        // protocol.
-        co_return co_await _raft0
-          ->add_group_members({req.node}, model::revision_id(0))
-          .then([broker = req.node](std::error_code ec) {
-              if (!ec) {
-                  return ret_t(join_node_reply{true, broker.id()});
-              }
+    if (!_raft0->is_elected_leader()) {
+        vlog(clusterlog.debug, "Not the leader; dispatching to leader node");
+        // Current node is not the leader have to send an RPC to leader
+        // controller
+        co_return co_await dispatch_rpc_to_leader(
+          _join_timeout,
+          [req, tout = rpc::clock_type::now() + _join_timeout](
+            controller_client_protocol c) mutable {
+              return c.join_node(join_node_request(req), rpc::client_opts(tout))
+                .then(&rpc::get_ctx_data<join_node_reply>);
+          })
+          .handle_exception([](const std::exception_ptr& e) {
               vlog(
                 clusterlog.warn,
-                "Error adding node {} to cluster - {}",
-                broker,
-                ec.message());
-              return ret_t(ec);
+                "Error while dispatching join request to leader node - {}",
+                e);
+              return ss::make_ready_future<ret_t>(
+                errc::join_request_dispatch_error);
           });
     }
-    // Current node is not the leader have to send an RPC to leader
-    // controller
-    co_return co_await dispatch_rpc_to_leader(
-      _join_timeout,
-      [req, tout = rpc::clock_type::now() + _join_timeout](
-        controller_client_protocol c) mutable {
-          return c.join_node(join_node_request(req), rpc::client_opts(tout))
-            .then(&rpc::get_ctx_data<join_node_reply>);
-      })
-      .handle_exception([](const std::exception_ptr& e) {
+
+    if (likely(node_id_assignment_supported && req_has_node_uuid)) {
+        const auto it = _id_by_uuid.find(node_uuid);
+        if (!req_node_id) {
+            if (it == _id_by_uuid.end()) {
+                // The UUID isn't yet in our table. Register it, but return,
+                // expecting the node to come back with another join request
+                // once its Raft subsystems are up.
+                co_return co_await replicate_new_node_uuid(
+                  node_uuid, req_node_id);
+            }
+            // The requested UUID already exists; this is a duplicate request
+            // to assign a node ID. Just return the registered node ID.
+            co_return ret_t(join_node_reply{true, it->second});
+        }
+        // We've been passed a node ID. The caller expects to be added to the
+        // Raft group by the end of this function.
+        if (it == _id_by_uuid.end()) {
+            // The node ID was manually provided and this is a new attempt to
+            // register the UUID.
+            auto r = co_await replicate_new_node_uuid(node_uuid, req_node_id);
+            if (r.has_error() || !r.value().success) {
+                co_return r;
+            }
+        } else {
+            // Validate that the node ID matches the one in our table.
+            if (*req_node_id != it->second) {
+                co_return ret_t(join_node_reply{false, model::node_id(-1)});
+            }
+        }
+        // Proceed to adding the node ID to the controller Raft group.
+        // Presumably the node that made this join request started its Raft
+        // subsystem with the node ID and is waiting to join the group.
+    }
+
+    // if configuration contains the broker already just update its config
+    // with data from join request
+
+    if (_raft0->config().contains_broker(req.node.id())) {
+        vlog(
+          clusterlog.info,
+          "Broker {} is already member of a cluster, updating "
+          "configuration",
+          req.node.id());
+        auto node_id = req.node.id();
+        auto update_req = configuration_update_request(req.node, _self.id());
+        co_return co_await handle_configuration_update_request(
+          std::move(update_req))
+          .then([node_id](result<configuration_update_reply> r) {
+              if (r) {
+                  auto success = r.value().success;
+                  return ret_t(join_node_reply{
+                    success, success ? node_id : model::node_id{-1}});
+              }
+              return ret_t(r.error());
+          });
+    }
+
+    // Older versions of Redpanda don't support having multiple servers pointed
+    // at the same address.
+    if (
+      !node_id_assignment_supported
+      && _raft0->config().contains_address(req.node.rpc_address())) {
+        vlog(
+          clusterlog.info,
+          "Broker {} address ({}) conflicts with the address of another "
+          "node",
+          req.node.id(),
+          req.node.rpc_address());
+        co_return ret_t(join_node_reply{false, model::node_id(-1)});
+    }
+
+    if (req.node.id() != _self.id()) {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          req.node.id(),
+          req.node.rpc_address(),
+          _rpc_tls_config);
+    }
+    // Just update raft0 configuration
+    // we do not use revisions in raft0 configuration, it is always revision
+    // 0 which is perfectly fine. this will work like revision less raft
+    // protocol.
+    co_return co_await _raft0
+      ->add_group_members({req.node}, model::revision_id(0))
+      .then([broker = req.node](std::error_code ec) {
+          if (!ec) {
+              return ret_t(join_node_reply{true, broker.id()});
+          }
           vlog(
             clusterlog.warn,
-            "Error while dispatching join request to leader node - {}",
-            e);
-          return ss::make_ready_future<ret_t>(
-            errc::join_request_dispatch_error);
+            "Error adding node {} to cluster - {}",
+            broker,
+            ec.message());
+          return ret_t(ec);
       });
 }
 

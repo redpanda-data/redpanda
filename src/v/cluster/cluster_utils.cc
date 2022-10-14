@@ -193,8 +193,15 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
     // As for memory, if disk_gb is zero this is handled like a legacy broker.
     uint32_t disk_gb = space_info.capacity >> 30;
 
+    // If this node hasn't been configured with a node ID, use -1 to indicate
+    // that we don't yet know it yet. This shouldn't be used during the normal
+    // operation of a broker, and instead should be used to indicate a broker
+    // that needs to be assigned a node ID when it first starts up.
+    model::node_id node_id = node_cfg.node_id() == std::nullopt
+                               ? model::node_id(-1)
+                               : *node_cfg.node_id();
     return model::broker(
-      model::node_id(node_cfg.node_id),
+      node_id,
       kafka_addr,
       rpc_addr,
       node_cfg.rack,

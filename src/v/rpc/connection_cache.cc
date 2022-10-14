@@ -36,7 +36,7 @@ ss::future<> connection_cache::emplace(
         _cache.emplace(
           n,
           ss::make_lw_shared<rpc::reconnect_transport>(
-            std::move(c), std::move(backoff_policy), _label));
+            std::move(c), std::move(backoff_policy), _label, n));
     });
 }
 ss::future<> connection_cache::remove(model::node_id n) {

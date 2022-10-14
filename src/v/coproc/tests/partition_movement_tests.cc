@@ -58,7 +58,8 @@ FIXTURE_TEST(test_move_source_topic, coproc_test_fixture) {
     const ss::shard_id next_shard = (*shard + 1) % ss::smp::count;
     info("Current target shard {} and next shard {}", *shard, next_shard);
     model::broker_shard bs{
-      .node_id = model::node_id(config::node().node_id), .shard = next_shard};
+      .node_id = model::node_id(*config::node().node_id()),
+      .shard = next_shard};
 
     /// Move the input onto the new desired target
     auto& topics_fe = root_fixture()->app.controller->get_topics_frontend();

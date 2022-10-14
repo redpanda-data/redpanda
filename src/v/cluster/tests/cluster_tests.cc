@@ -45,3 +45,46 @@ FIXTURE_TEST(test_three_node_cluster, cluster_test_fixture) {
 
     wait_for_all_members(3s).get();
 }
+
+FIXTURE_TEST(test_auto_assign_node_id, cluster_test_fixture) {
+    create_node_application(model::node_id{0}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
+
+    create_node_application(model::node_id{1}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(1, *config::node().node_id());
+
+    create_node_application(model::node_id{2}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(2, *config::node().node_id());
+
+    wait_for_all_members(3s).get();
+}
+
+FIXTURE_TEST(test_auto_assign_non_seeds, cluster_test_fixture) {
+    create_node_application(model::node_id{0});
+    BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
+
+    create_node_application(model::node_id{1}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(1, *config::node().node_id());
+
+    create_node_application(model::node_id{2}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(2, *config::node().node_id());
+
+    wait_for_all_members(3s).get();
+}
+
+FIXTURE_TEST(test_auto_assign_with_explicit_node_id, cluster_test_fixture) {
+    create_node_application(model::node_id{0});
+    BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
+
+    // Explicitly assign node ID 2. Node ID assignment should assign around it.
+    create_node_application(model::node_id{2});
+    BOOST_REQUIRE_EQUAL(2, *config::node().node_id());
+
+    create_node_application(model::node_id{1}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(1, *config::node().node_id());
+
+    create_node_application(model::node_id{3}, configure_node_id::no);
+    BOOST_REQUIRE_EQUAL(3, *config::node().node_id());
+
+    wait_for_all_members(3s).get();
+}

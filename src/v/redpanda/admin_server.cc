@@ -438,7 +438,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
           ss::httpd::reply::status_type::service_unavailable);
     }
 
-    if (leader_id_opt.value() == config::node().node_id()) {
+    if (leader_id_opt.value() == *config::node().node_id()) {
         vlog(
           logger.info,
           "Can't redirect to leader from leader node ({})",
@@ -559,7 +559,7 @@ bool need_redirect_to_leader(
           ss::httpd::reply::status_type::service_unavailable);
     }
 
-    return leader_id_opt.value() != config::node().node_id();
+    return leader_id_opt.value() != *config::node().node_id();
 }
 
 model::node_id parse_broker_id(const ss::httpd::request& req) {

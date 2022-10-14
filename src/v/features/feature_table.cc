@@ -45,6 +45,8 @@ std::string_view to_string_view(feature f) {
         return "rpc_v2_by_default";
     case feature::cloud_retention:
         return "cloud_retention";
+    case feature::node_id_assignment:
+        return "node_id_assignment";
     case feature::test_alpha:
         return "__test_alpha";
     }

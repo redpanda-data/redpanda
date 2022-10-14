@@ -83,7 +83,7 @@ std::optional<cluster::leader_term> get_leader_term(
         const auto previous = md_cache.get_previous_leader_id(tp_ns, p_id);
         leader_term->leader = previous;
 
-        if (previous == config::node().node_id()) {
+        if (previous == *config::node().node_id()) {
             auto idx = fast_prng_source() % replicas.size();
             leader_term->leader = replicas[idx];
         }
@@ -333,7 +333,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
             // is not yet consistent with what's in members_table,
             // because a node configuration update didn't propagate
             // via raft0 yet
-            if (broker->id() == config::node().node_id()) {
+            if (broker->id() == *config::node().node_id()) {
                 return l;
             }
         }

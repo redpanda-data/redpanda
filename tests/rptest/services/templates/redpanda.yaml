@@ -12,7 +12,9 @@ organization: "vectorized"
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
+{% if node_id is not none %}
   node_id: {{node_id}}
+{% endif %}
   rpc_server:
     address: "{{node.account.hostname}}"
     port: 33145
@@ -39,12 +41,11 @@ redpanda:
       port: {{admin_alternate_port}}
 
 
-{% if node_id > 1 %}
+{% if include_seed_servers %}
   seed_servers:
     - host:
         address: {{nodes[1].account.hostname}}
         port: 33145
-      node_id: 1
 {% endif %}
 
 {% if enable_pp %}

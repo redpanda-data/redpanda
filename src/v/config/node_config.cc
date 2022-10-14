@@ -29,8 +29,10 @@ node_config::node_config() noexcept
   , node_id(
       *this,
       "node_id",
-      "Unique id identifying a node in the cluster",
-      {.required = required::yes, .visibility = visibility::user})
+      "Unique id identifying a node in the cluster. If missing, a unique id "
+      "will be assigned for this node when it joins the cluster",
+      {.visibility = visibility::user},
+      std::nullopt)
   , rack(
       *this,
       "rack",
