@@ -121,6 +121,13 @@ public:
     ss::future<result<std::vector<move_cancellation_result>>>
       cancel_moving_all_partition_replicas(model::timeout_clock::time_point);
 
+    // High level code should use update_topic_properties (which will RPC
+    // to the controller leader as needed).  This lower level method is only
+    // used by upgrade migration code to update topic properties directly
+    // from the controller leader.
+    ss::future<topic_result> do_update_topic_properties(
+      topic_properties_update, model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -151,8 +158,6 @@ private:
       topic_properties_update&, model::timeout_clock::time_point);
     ss::future<std::error_code> do_update_replication_factor(
       topic_properties_update&, model::timeout_clock::time_point);
-    ss::future<topic_result> do_update_topic_properties(
-      topic_properties_update, model::timeout_clock::time_point);
 
     ss::future<std::error_code> change_replication_factor(
       model::topic_namespace,
