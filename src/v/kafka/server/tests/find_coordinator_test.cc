@@ -21,8 +21,10 @@ FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
     auto client = make_kafka_client().get0();
     client.connect().get();
 
+    using underlying_t = std::underlying_type_t<kafka::coordinator_type>;
     kafka::find_coordinator_request req("key");
-    req.data.key_type = kafka::coordinator_type::transaction;
+    req.data.key_type = kafka::coordinator_type(
+      std::numeric_limits<underlying_t>::max());
 
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
