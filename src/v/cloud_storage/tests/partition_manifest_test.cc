@@ -612,31 +612,6 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
     BOOST_REQUIRE(m == restored);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
-    partition_manifest a(manifest_ntp, model::initial_revision_id(0));
-    a.add(segment_name("1-1-v1.log"), {});
-    a.add(segment_name("2-2-v1.log"), {});
-    a.add(segment_name("3-3-v1.log"), {});
-    partition_manifest b(manifest_ntp, model::initial_revision_id(0));
-    b.add(segment_name("1-1-v1.log"), {});
-    b.add(segment_name("2-2-v1.log"), {});
-    {
-        auto c = a.difference(b);
-        BOOST_REQUIRE(c.size() == 1);
-        auto res = *c.begin();
-        auto expected = partition_manifest::key{
-          .base_offset = model::offset(3), .term = model::term_id(3)};
-        BOOST_REQUIRE(res.first == expected);
-    }
-    // check that set difference is not symmetrical
-    b.add(segment_name("3-3-v1.log"), {});
-    b.add(segment_name("4-4-v1.log"), {});
-    {
-        auto c = a.difference(b);
-        BOOST_REQUIRE(c.size() == 0);
-    }
-}
-
 // modeled after cluster::archival_metadata_stm::segment
 struct metadata_stm_segment
   : public serde::envelope<

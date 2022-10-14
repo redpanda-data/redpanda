@@ -153,13 +153,6 @@ public:
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
 
-    /// Return new manifest that contains only those segments that present
-    /// in local manifest and not found in 'remote_set'.
-    ///
-    /// \param remote_set the manifest to compare to
-    /// \return manifest with segments that doesn't present in 'remote_set'
-    partition_manifest difference(const partition_manifest& remote_set) const;
-
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
 

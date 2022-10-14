@@ -337,25 +337,6 @@ partition_manifest::get_insert_iterator() {
     return std::inserter(_segments, _segments.begin());
 }
 
-partition_manifest
-partition_manifest::difference(const partition_manifest& remote_set) const {
-    vassert(
-      _ntp == remote_set._ntp && _rev == remote_set._rev,
-      "Local manifest {}-{} and remote {}-{} doesn't match",
-      _ntp,
-      _rev,
-      remote_set._ntp,
-      remote_set._rev);
-    partition_manifest result(_ntp, _rev);
-    std::set_difference(
-      begin(),
-      end(),
-      remote_set.begin(),
-      remote_set.end(),
-      result.get_insert_iterator());
-    return result;
-}
-
 /**
      ┌──────────────────────┐
      │ expect_manifest_start│
