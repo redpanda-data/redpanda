@@ -52,7 +52,16 @@ node_config::node_config() noexcept
       "seed_server list is empty the node will be a cluster root and it will "
       "form a new cluster",
       {.visibility = visibility::user},
-      {})
+      {},
+      [](std::vector<seed_server> s) -> std::optional<ss::sstring> {
+          std::sort(s.begin(), s.end());
+          const auto s_dupe_i = std::adjacent_find(s.cbegin(), s.cend());
+          if (s_dupe_i != s.cend()) {
+              return fmt::format(
+                "Duplicate items in seed_servers: {}", *s_dupe_i);
+          }
+          return std::nullopt;
+      })
   , empty_seed_starts_cluster(
       *this,
       "empty_seed_starts_cluster",
