@@ -459,6 +459,10 @@ ss::future<> group_manager::recover_partition(
             for (auto& [id, txseq] : group_stm.tx_seqs()) {
                 group->try_set_tx_seq(id, txseq);
             }
+
+            for (auto& [id, timeout] : group_stm.timeouts()) {
+                group->try_set_timeout(id, timeout);
+            }
         }
     }
 
@@ -488,6 +492,9 @@ ss::future<> group_manager::recover_partition(
         }
         for (auto& [id, txseq] : group_stm.tx_seqs()) {
             group->try_set_tx_seq(id, txseq);
+        }
+        for (auto& [id, timeout] : group_stm.timeouts()) {
+            group->try_set_timeout(id, timeout);
         }
     }
 

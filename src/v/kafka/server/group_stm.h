@@ -38,6 +38,7 @@ struct group_log_fencing_v0 {
 struct group_log_fencing {
     kafka::group_id group_id;
     model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
 };
 
 struct group_log_prepared_tx {
@@ -84,12 +85,16 @@ public:
         }
     }
     void try_set_fence(
-      model::producer_id id, model::producer_epoch epoch, model::tx_seq txseq) {
+      model::producer_id id,
+      model::producer_epoch epoch,
+      model::tx_seq txseq,
+      model::timeout_clock::duration transaction_timeout_ms) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
         if (fence_it->second <= epoch) {
             fence_it->second = epoch;
-            auto [ongoing_it, _] = _tx_seqs.try_emplace(id, txseq);
-            ongoing_it->second = txseq;
+            model::producer_identity pid(id(), epoch());
+            _tx_seqs[pid] = txseq;
+            _timeouts[pid] = transaction_timeout_ms;
         }
     }
     bool has_data() const {
@@ -112,9 +117,15 @@ public:
         return _fence_pid_epoch;
     }
 
-    const absl::node_hash_map<model::producer_id, model::tx_seq>&
+    const absl::node_hash_map<model::producer_identity, model::tx_seq>&
     tx_seqs() const {
         return _tx_seqs;
+    }
+
+    const absl::
+      node_hash_map<model::producer_identity, model::timeout_clock::duration>&
+      timeouts() const {
+        return _timeouts;
     }
 
     group_metadata_value& get_metadata() { return _metadata; }
@@ -126,7 +137,10 @@ private:
     absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
+    absl::node_hash_map<model::producer_identity, model::tx_seq> _tx_seqs;
+    absl::
+      node_hash_map<model::producer_identity, model::timeout_clock::duration>
+        _timeouts;
     group_metadata_value _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};

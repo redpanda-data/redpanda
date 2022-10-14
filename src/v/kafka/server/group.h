@@ -573,13 +573,34 @@ public:
         }
     }
 
-    void try_set_tx_seq(model::producer_id id, model::tx_seq txseq) {
-        if (!_fence_pid_epoch.contains(id)) {
+    void try_set_tx_seq(model::producer_identity id, model::tx_seq txseq) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
             return;
         }
-        auto [ongoing_it, _] = _tx_seqs.try_emplace(id, txseq);
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [ongoing_it, _] = _tx_seqs.try_emplace(id.get_id(), txseq);
         if (ongoing_it->second < txseq) {
             ongoing_it->second = txseq;
+        }
+    }
+
+    void try_set_timeout(
+      model::producer_identity id,
+      model::timeout_clock::duration transaction_timeout_ms) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            return;
+        }
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [info_it, inserted] = _expiration_info.try_emplace(
+          id, expiration_info(transaction_timeout_ms));
+        if (inserted) {
+            try_arm(info_it->second.deadline());
         }
     }
 
@@ -859,7 +880,7 @@ private:
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
 
     struct expiration_info {
-        explicit expiration_info(model::timeout_clock::duration timeout)
+        expiration_info(model::timeout_clock::duration timeout)
           : timeout(timeout)
           , last_update(model::timeout_clock::now()) {}
 

@@ -1787,7 +1787,10 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     auto is_txn_ga = is_transaction_ga();
     std::optional<model::record_batch> batch{};
     if (is_txn_ga) {
-        group_log_fencing fence{.group_id = id(), .tx_seq = r.tx_seq};
+        group_log_fencing fence{
+          .group_id = id(),
+          .tx_seq = r.tx_seq,
+          .transaction_timeout_ms = r.timeout};
         batch = make_tx_fence_batch(r.pid, std::move(fence));
     } else {
         group_log_fencing_v0 fence{.group_id = id()};

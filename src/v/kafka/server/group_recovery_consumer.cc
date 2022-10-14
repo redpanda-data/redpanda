@@ -153,7 +153,10 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
         auto cmd = reflection::adl<group_log_fencing>{}.from(val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(
-          bid.pid.get_id(), bid.pid.get_epoch(), cmd.tx_seq);
+          bid.pid.get_id(),
+          bid.pid.get_epoch(),
+          cmd.tx_seq,
+          cmd.transaction_timeout_ms);
     } else {
         vassert(
           false,
