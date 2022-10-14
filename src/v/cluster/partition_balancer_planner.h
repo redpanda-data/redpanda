@@ -95,6 +95,9 @@ private:
     void get_unavailable_nodes_reassignments(
       plan_data&, reallocation_request_state&);
 
+    void get_rack_constraint_repair_reassignments(
+      plan_data&, reallocation_request_state&);
+
     void get_full_node_reassignments(plan_data&, reallocation_request_state&);
 
     void init_per_node_state(
