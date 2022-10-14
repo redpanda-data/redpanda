@@ -17,6 +17,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
+#include "serde/envelope_for_each_field.h"
 #include "tristate.h"
 #include "utils/to_string.h"
 
@@ -865,6 +866,36 @@ std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
     return o;
 }
 
+/**
+ * Use a custom serde decoder to record the version, we need this to
+ * correctly interpret the retention properties (see
+ * `handle_retentions_as_legacy`)
+ */
+void incremental_topic_updates::serde_read(
+  iobuf_parser& in, const serde::header& hdr) {
+    serde::envelope_for_each_field(*this, [&](auto& f) {
+        using FieldType = std::decay_t<decltype(f)>;
+        if (hdr._bytes_left_limit == in.bytes_left()) {
+            return false;
+        }
+        if (unlikely(in.bytes_left() < hdr._bytes_left_limit)) {
+            throw serde::serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "field spill over in {}, field type {}: envelope_end={}, "
+              "in.bytes_left()={}",
+              serde::type_str<incremental_topic_updates>(),
+              serde::type_str<FieldType>(),
+              hdr._bytes_left_limit,
+              in.bytes_left()));
+        }
+        f = serde::read_nested<FieldType>(in, hdr._bytes_left_limit);
+        return true;
+    });
+    if (hdr._version < 2) {
+        handle_retentions_as_legacy = true;
+    }
+}
+
 } // namespace cluster
 
 namespace reflection {
@@ -1621,6 +1652,8 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.retention_local_target_ms
           = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
               .from(in);
+    } else {
+        updates.handle_retentions_as_legacy = true;
     }
 
     return updates;

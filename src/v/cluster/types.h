@@ -1194,6 +1194,11 @@ struct incremental_topic_updates
     property_update<tristate<std::chrono::milliseconds>>
       retention_local_target_ms;
 
+    // Flag set during decode if decoding a pre-22.3 ADL message, in which
+    // retention properties on tiered storage properties have a special meaning
+    // that topic_table::apply must handle.
+    bool handle_retentions_as_legacy{false};
+
     auto serde_fields() {
         return std::tie(
           compression,
@@ -1208,6 +1213,8 @@ struct incremental_topic_updates
           retention_local_target_bytes,
           retention_local_target_ms);
     }
+
+    void serde_read(iobuf_parser&, const serde::header&);
 
     friend std::ostream&
     operator<<(std::ostream&, const incremental_topic_updates&);
