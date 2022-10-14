@@ -30,10 +30,6 @@ class TransactionsTest(RedpandaTest):
 
     def __init__(self, test_context):
         extra_rp_conf = {
-            "enable_idempotence": True,
-            "enable_transactions": True,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 3,
             "enable_leader_balancer": False,
             "partition_autobalancing_mode": "off",
         }
@@ -393,10 +389,6 @@ class UpgradeTransactionTest(RedpandaTest):
             self.test_context,
             1,
             extra_rp_conf={
-                "enable_idempotence": True,
-                "enable_transactions": True,
-                "transaction_coordinator_replication": 1,
-                "id_allocator_replication": 1,
                 "enable_leader_balancer": False,
                 "enable_auto_rebalance_on_node_add": False,
             },

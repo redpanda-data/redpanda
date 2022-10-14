@@ -29,10 +29,6 @@ class TxVerifierTest(RedpandaTest):
     """
     def __init__(self, test_context):
         extra_rp_conf = {
-            "enable_idempotence": True,
-            "enable_transactions": True,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 3,
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,

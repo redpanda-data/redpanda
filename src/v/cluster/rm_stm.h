@@ -192,8 +192,6 @@ public:
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
-    void testing_only_enable_transactions() { _is_tx_enabled = true; }
-
     struct expiration_info {
         duration_type timeout;
         time_point_type last_update;

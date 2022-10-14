@@ -41,7 +41,6 @@ class TxAbortSnapshotTest(RedpandaTest):
         extra_rp_conf = {
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
-            "enable_transactions": True,
             "log_segment_size": 1048576,
             "delete_retention_ms": 1,
             "abort_index_segment_size": 2

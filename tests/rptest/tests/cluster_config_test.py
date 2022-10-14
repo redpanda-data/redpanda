@@ -27,7 +27,7 @@ from ducktape.utils.util import wait_until
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
-    'enable_idempotence': True,
+    'enable_idempotence': False,
 }
 
 SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
@@ -160,7 +160,7 @@ class ClusterConfigTest(RedpandaTest):
         for k, v in BOOTSTRAP_CONFIG.items():
             assert config[k] == v
 
-        set_again = {'enable_idempotence': False}
+        set_again = {'enable_idempotence': True}
         assert BOOTSTRAP_CONFIG['enable_idempotence'] != set_again[
             'enable_idempotence']
         self.redpanda.set_extra_rp_conf(set_again)
