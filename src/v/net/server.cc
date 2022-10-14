@@ -162,84 +162,83 @@ ss::future<> server::accept(listener& s) {
     });
 }
 
-ss::future<ss::stop_iteration> server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
-              if (_as.abort_requested()) {
-                  f_cs_sa.ignore_ready_future();
-                  co_return ss::stop_iteration::yes;
-              }
-              auto ar = f_cs_sa.get();
-              ar.connection.set_nodelay(true);
-              ar.connection.set_keepalive(true);
+ss::future<ss::stop_iteration>
+server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
+    if (_as.abort_requested()) {
+        f_cs_sa.ignore_ready_future();
+        co_return ss::stop_iteration::yes;
+    }
+    auto ar = f_cs_sa.get();
+    ar.connection.set_nodelay(true);
+    ar.connection.set_keepalive(true);
 
-              conn_quota::units cq_units;
-              if (cfg.conn_quotas) {
-                  cq_units = co_await cfg.conn_quotas->get().local().get(
-                    ar.remote_address.addr());
-                  if (!cq_units.live()) {
-                      // Connection limit hit, drop this connection.
-                      _probe.connection_rejected();
-                      vlog(
-                        rpc::rpclog.info,
-                        "Connection limit reached, rejecting {}",
-                        ar.remote_address.addr());
-                      co_return ss::stop_iteration::no;
-                  }
-              }
+    conn_quota::units cq_units;
+    if (cfg.conn_quotas) {
+        cq_units = co_await cfg.conn_quotas->get().local().get(
+          ar.remote_address.addr());
+        if (!cq_units.live()) {
+            // Connection limit hit, drop this connection.
+            _probe.connection_rejected();
+            vlog(
+              rpc::rpclog.info,
+              "Connection limit reached, rejecting {}",
+              ar.remote_address.addr());
+            co_return ss::stop_iteration::no;
+        }
+    }
 
-              // Apply socket buffer size settings
-              if (cfg.tcp_recv_buf.has_value()) {
-                  // Explicitly store in an int to decouple the
-                  // config type from the set_sockopt type.
-                  int recv_buf = cfg.tcp_recv_buf.value();
-                  ar.connection.set_sockopt(
-                    SOL_SOCKET, SO_RCVBUF, &recv_buf, sizeof(recv_buf));
-              }
+    // Apply socket buffer size settings
+    if (cfg.tcp_recv_buf.has_value()) {
+        // Explicitly store in an int to decouple the
+        // config type from the set_sockopt type.
+        int recv_buf = cfg.tcp_recv_buf.value();
+        ar.connection.set_sockopt(
+          SOL_SOCKET, SO_RCVBUF, &recv_buf, sizeof(recv_buf));
+    }
 
-              if (cfg.tcp_send_buf.has_value()) {
-                  int send_buf = cfg.tcp_send_buf.value();
-                  ar.connection.set_sockopt(
-                    SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
-              }
+    if (cfg.tcp_send_buf.has_value()) {
+        int send_buf = cfg.tcp_send_buf.value();
+        ar.connection.set_sockopt(
+          SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
+    }
 
-              if (_connection_rates) {
-                  try {
-                      co_await _connection_rates->maybe_wait(
-                        ar.remote_address.addr());
-                  } catch (const std::exception& e) {
-                      vlog(
-                        rpc::rpclog.trace,
-                        "Timeout while waiting free token for connection rate. "
-                        "addr:{}",
-                        ar.remote_address);
-                      _probe.timeout_waiting_rate_limit();
-                      co_return ss::stop_iteration::no;
-                  }
-              }
+    if (_connection_rates) {
+        try {
+            co_await _connection_rates->maybe_wait(ar.remote_address.addr());
+        } catch (const std::exception& e) {
+            vlog(
+              rpc::rpclog.trace,
+              "Timeout while waiting free token for connection rate. "
+              "addr:{}",
+              ar.remote_address);
+            _probe.timeout_waiting_rate_limit();
+            co_return ss::stop_iteration::no;
+        }
+    }
 
-              auto conn = ss::make_lw_shared<net::connection>(
-                _connections,
-                name,
-                std::move(ar.connection),
-                ar.remote_address,
-                _probe,
-                cfg.stream_recv_buf);
-              vlog(
-                rpc::rpclog.trace,
-                "{} - Incoming connection from {} on \"{}\"",
-                _proto->name(),
-                ar.remote_address,
-                name);
-              if (_conn_gate.is_closed()) {
-                  co_await conn->shutdown();
-                  throw ss::gate_closed_exception();
-              }
-              ssx::spawn_with_gate(
-                _conn_gate,
-                [this, conn, cq_units = std::move(cq_units)]() mutable {
-                    return apply_proto(
-                      _proto.get(), resources(this, conn), std::move(cq_units));
-                });
-              co_return ss::stop_iteration::no;
+    auto conn = ss::make_lw_shared<net::connection>(
+      _connections,
+      name,
+      std::move(ar.connection),
+      ar.remote_address,
+      _probe,
+      cfg.stream_recv_buf);
+    vlog(
+      rpc::rpclog.trace,
+      "{} - Incoming connection from {} on \"{}\"",
+      _proto->name(),
+      ar.remote_address,
+      name);
+    if (_conn_gate.is_closed()) {
+        co_await conn->shutdown();
+        throw ss::gate_closed_exception();
+    }
+    ssx::spawn_with_gate(
+      _conn_gate, [this, conn, cq_units = std::move(cq_units)]() mutable {
+          return apply_proto(
+            _proto.get(), resources(this, conn), std::move(cq_units));
+      });
+    co_return ss::stop_iteration::no;
 }
 
 void server::shutdown_input() {
