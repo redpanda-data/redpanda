@@ -33,6 +33,8 @@ static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
 static constexpr const char* access_time_tracker_file_name = "accesstime";
 
+class cache_test_fixture;
+
 struct cache_item {
     ss::file body;
     size_t size;
@@ -130,6 +132,8 @@ private:
     cache_probe probe;
     access_time_tracker _access_time_tracker;
     ss::timer<ss::lowres_clock> _tracker_timer;
+
+    friend class cache_test_fixture;
 };
 
 } // namespace cloud_storage

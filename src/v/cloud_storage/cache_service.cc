@@ -116,8 +116,8 @@ ss::future<> cache::consume_cache_space(size_t sz) {
 
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
-    auto [cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native(), _access_time_tracker);
+    auto [cache_size, candidates_for_deletion, empty_dirs]
+      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
     probe.set_size(cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
@@ -132,7 +132,7 @@ ss::future<> cache::clean_up_at_start() {
     _access_time_tracker.remove_others(tmp);
     _current_cache_size = cache_size;
 
-    for (auto& file_item : candidates_for_deletion) {
+    for (const auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
 
         // delete only tmp files that are left from previous RedPanda run
@@ -143,12 +143,27 @@ ss::future<> cache::clean_up_at_start() {
             } catch (std::exception& e) {
                 vlog(
                   cst_log.error,
-                  "Cache eviction couldn't delete {}: {}.",
+                  "Startup cache cleanup couldn't delete {}: {}.",
                   filepath_to_remove,
                   e.what());
             }
         }
     }
+
+    for (const auto& path : empty_dirs) {
+        try {
+            co_await ss::remove_file(path);
+        } catch (std::exception& e) {
+            // Leaving an empty dir will not prevent progress, so tolerate
+            // errors on deletion (could be e.g. a permissions error)
+            vlog(
+              cst_log.error,
+              "Startup cache cleanup couldn't delete {}: {}.",
+              path,
+              e);
+        }
+    }
+
     vlog(
       cst_log.debug,
       "Clean up at start deleted files of total size {}.",
@@ -158,8 +173,8 @@ ss::future<> cache::clean_up_at_start() {
 ss::future<> cache::clean_up_cache() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [current_cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native(), _access_time_tracker);
+    auto [current_cache_size, candidates_for_deletion, _]
+      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
     _current_cache_size = current_cache_size;
     probe.set_size(_current_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
@@ -178,6 +193,12 @@ ss::future<> cache::clean_up_cache() {
         auto size_to_delete
           = _current_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
+
+        // Sort by atime for the subsequent LRU trimming loop
+        std::sort(
+          candidates_for_deletion.begin(),
+          candidates_for_deletion.end(),
+          [](auto& a, auto& b) { return a.access_time < b.access_time; });
 
         size_t i_to_delete = 0;
         while (i_to_delete < candidates_for_deletion.size()

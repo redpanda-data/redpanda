@@ -29,12 +29,12 @@
 
 namespace cloud_storage {
 
-ss::future<std::pair<uint64_t, std::vector<file_list_item>>>
-recursive_directory_walker::walk(
+ss::future<walk_result> recursive_directory_walker::walk(
   ss::sstring start_dir, const access_time_tracker& tracker) {
     gate_guard guard{_gate};
 
     std::vector<file_list_item> files;
+    std::vector<ss::sstring> empty_dirs;
     uint64_t current_cache_size(0);
 
     std::deque<ss::sstring> dirlist = {start_dir};
@@ -50,18 +50,20 @@ recursive_directory_walker::walk(
 
         try {
             ss::file target_dir = co_await open_directory(target);
+            bool dir_empty{true};
             auto sub = target_dir.list_directory(
               [&files,
                &current_cache_size,
                &dirlist,
+               &dir_empty,
                _target{target},
                _tracker{tracker}](ss::directory_entry entry) -> ss::future<> {
                   auto target{_target};
                   auto tracker{_tracker};
-                  vlog(cst_log.debug, "Looking at directory {}", target);
 
                   auto entry_path = std::filesystem::path(target)
                                     / std::filesystem::path(entry.name);
+                  dir_empty = false;
                   if (
                     entry.type
                     && entry.type == ss::directory_entry_type::regular) {
@@ -91,6 +93,10 @@ recursive_directory_walker::walk(
               });
             co_await sub.done().finally(
               [target_dir]() mutable { return target_dir.close(); });
+
+            if (unlikely(dir_empty) && target != start_dir) {
+                empty_dirs.push_back(target);
+            }
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
                 // skip this directory, move to the ext one
@@ -99,11 +105,11 @@ recursive_directory_walker::walk(
             }
         }
     }
-    std::sort(files.begin(), files.end(), [](auto& a, auto& b) {
-        return a.access_time < b.access_time;
-    });
 
-    co_return std::make_pair(current_cache_size, files);
+    co_return walk_result{
+      .cache_size = current_cache_size,
+      .regular_files = files,
+      .empty_dirs = empty_dirs};
 }
 
 ss::future<> recursive_directory_walker::stop() {
