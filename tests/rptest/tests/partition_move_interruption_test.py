@@ -198,8 +198,6 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 min_records=self.min_records,
                 enable_compaction=compacted)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
-    # https://github.com/redpanda-data/redpanda/issues/6020
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
