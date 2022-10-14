@@ -157,12 +157,12 @@ ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
         return s.socket.accept().then_wrapped(
           [this, &s](ss::future<ss::accept_result> f_cs_sa) {
-              return accept_finish(s, std::move(f_cs_sa));
+              return accept_finish(s.name, std::move(f_cs_sa));
           });
     });
 }
 
-ss::future<ss::stop_iteration> server::accept_finish(listener& s, ss::future<ss::accept_result> f_cs_sa) {
+ss::future<ss::stop_iteration> server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
                   co_return ss::stop_iteration::yes;
@@ -170,11 +170,6 @@ ss::future<ss::stop_iteration> server::accept_finish(listener& s, ss::future<ss:
               auto ar = f_cs_sa.get();
               ar.connection.set_nodelay(true);
               ar.connection.set_keepalive(true);
-
-              // `s` is a lambda reference argument to a coroutine:
-              // this is the last place we may refer to it before
-              // any scheduling points.
-              auto name = s.name;
 
               conn_quota::units cq_units;
               if (cfg.conn_quotas) {
