@@ -339,6 +339,13 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    def check_rack_placement(self, topic, rack_layout):
+        for p in self.topic_partitions_replicas(topic):
+            racks = {rack_layout[r - 1] for r in p.replicas}
+            assert (
+                len(racks) == 3
+            ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
+
     @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
@@ -356,14 +363,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.topic = TopicSpec(partition_count=random.randint(20, 30))
         self.client().create_topic(self.topic)
 
-        def check_rack_placement():
-            for p in self.topic_partitions_replicas(self.topic):
-                racks = {(r - 1) // 2 for r in p.replicas}
-                assert (
-                    len(racks) == 3
-                ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
-
-        check_rack_placement()
+        self.check_rack_placement(self.topic, rack_layout)
 
         self.start_producer(1)
         self.start_consumer(1)
@@ -375,10 +375,55 @@ class PartitionBalancerTest(PartitionBalancerService):
                 ns.make_unavailable(node, wait_for_previous_node=True)
                 self.wait_until_ready(expected_unavailable_node=node)
                 self.check_no_replicas_on_node(node)
-                check_rack_placement()
+                self.check_rack_placement(self.topic, rack_layout)
 
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_rack_constraint_repair(self):
+        """
+        Test partition balancer rack constraint repair with the following scenario:
+        * kill a node, making the whole AZ unavailable.
+        * partition balancer will move partitions to remaining nodes,
+          causing rack awareness constraint to be violated
+        * start another node, making the number of available AZs enough to satisfy
+          rack constraint
+        * check that the balancer repaired the constraint
+        """
+
+        extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
+        self.redpanda = RedpandaService(self.test_context,
+                                        num_brokers=5,
+                                        extra_rp_conf=extra_rp_conf)
+
+        rack_layout = "ABBCC"
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.set_extra_node_conf(node, {"rack": rack_layout[ix]})
+
+        self.redpanda.start(nodes=self.redpanda.nodes[0:4])
+        self._client = DefaultClient(self.redpanda)
+
+        self.topic = TopicSpec(partition_count=random.randint(20, 30))
+        self.client().create_topic(self.topic)
+
+        self.check_rack_placement(self.topic, rack_layout)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        with self.NodeStopper(self) as ns:
+            node = self.redpanda.nodes[3]
+            ns.make_unavailable(node)
+            self.wait_until_ready(expected_unavailable_node=node)
+
+            self.redpanda.start_node(self.redpanda.nodes[4])
+
+            self.wait_until_ready(expected_unavailable_node=node)
+            self.check_rack_placement(self.topic, rack_layout)
+
+        self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
