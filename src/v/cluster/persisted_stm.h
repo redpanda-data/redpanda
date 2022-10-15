@@ -88,6 +88,9 @@ public:
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
+    ss::future<std::vector<model::tx_range>>
+      aborted_tx_ranges(model::offset, model::offset) override;
+
     virtual ss::future<> remove_persistent_state();
 
     ss::future<> make_snapshot();

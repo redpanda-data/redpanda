@@ -61,6 +61,8 @@ struct compacted_index {
         truncation = 1U,
         /// needed to determine if we should self compact first
         self_compaction = 1U << 1U,
+        /// index writer was forced to stop without writing all the entries.
+        incomplete = 1U << 2U,
     };
     struct footer {
         // initial version of footer

@@ -33,6 +33,7 @@ namespace storage::internal {
 ///
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
+  ss::lw_shared_ptr<storage::stm_manager>,
   storage::compaction_config,
   storage::probe&,
   storage::readers_cache&,

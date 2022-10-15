@@ -65,9 +65,6 @@ public:
     ~spill_key_index() override;
 
     // public
-
-    ss::future<> maybe_open();
-    ss::future<> open();
     ss::future<> index(
       model::record_batch_type, const iobuf& key, model::offset, int32_t) final;
     ss::future<> index(const compaction_key& b, model::offset, int32_t) final;
@@ -110,6 +107,8 @@ private:
         _mem_units.return_units(release_units);
     }
 
+    ss::future<> maybe_open();
+    ss::future<> open();
     ss::future<> drain_all_keys();
     ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
@@ -132,6 +131,7 @@ private:
     size_t _keys_mem_usage{0};
     compacted_index::footer _footer;
     crc::crc32c _crc;
+    ss::gate _gate;
 
     friend std::ostream& operator<<(std::ostream&, const spill_key_index&);
 };
