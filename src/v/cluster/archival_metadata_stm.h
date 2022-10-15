@@ -20,6 +20,8 @@
 
 #include <seastar/util/log.hh>
 
+#include <system_error>
+
 namespace cluster {
 
 /// This replicated state machine allows storing archival manifest (a set of
@@ -32,7 +34,7 @@ public:
     explicit archival_metadata_stm(
       raft::consensus*, cloud_storage::remote& remote, ss::logger& logger);
 
-    /// Add the difference between manifests to the raft log, replicate it and
+    /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
     ss::future<std::error_code> add_segments(
       const cloud_storage::partition_manifest&,

@@ -258,8 +258,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         as->get().check();
     }
 
-    auto add_segments = segments_from_manifest(
-      new_manifest.difference(*_manifest));
+    auto add_segments = segments_from_manifest(new_manifest);
     if (add_segments.empty()) {
         co_return errc::success;
     }
