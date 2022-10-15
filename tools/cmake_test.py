@@ -265,8 +265,23 @@ class TestRunner():
                      args=self.test_args)
         logger.info(cmd)
 
+        # setup llvm symbolizer. first look for location in ci, then in redpanda
+        # vbuild directory. if none, then asan will look in PATH
+        env = os.environ.copy()
+        llvm_symbolizer = shutil.which("llvm-symbolizer",
+                                       path="/vectorized/llvm/bin")
+        if llvm_symbolizer is None:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "vbuild/llvm/install/bin")
+            path = os.path.abspath(path)  # remove ".."
+            llvm_symbolizer = shutil.which("llvm-symbolizer", path=path)
+        if llvm_symbolizer is not None:
+            env["ASAN_SYMBOLIZER_PATH"] = llvm_symbolizer
+        logger.info(f"Using llvm-symbolizer: {llvm_symbolizer}")
+
         # We only capture stderr because that's where backtraces go
         p = subprocess.Popen(cmd,
+                             env=env,
                              shell=True,
                              stderr=subprocess.PIPE,
                              encoding='utf-8')
