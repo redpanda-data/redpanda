@@ -93,7 +93,8 @@ func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
-		conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
+		conf.Redpanda.ID = new(int)
+		*conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
 	}
 }
 
@@ -377,10 +378,9 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	command.Flags().IntVar(
 		&nodeID,
 		nodeIDFlag,
-		0,
-		"The node ID. Must be an integer and must be unique"+
-			" within a cluster",
-	)
+		-1,
+		"The node ID. Must be an integer and must be unique within a cluster. If unset, Redpanda will assign one automatically")
+	command.Flags().MarkHidden(nodeIDFlag)
 	command.Flags().StringSliceVarP(
 		&seeds,
 		"seeds",

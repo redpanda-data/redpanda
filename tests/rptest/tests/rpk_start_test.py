@@ -40,6 +40,24 @@ class RpkRedpandaStartTest(RedpandaTest):
         assert self.redpanda.search_log_any(
             "WARNING: This is a setup for development purposes only")
 
+    @cluster(num_nodes=3)
+    def test_simple_start_three(self):
+        """
+        Validate simple start using rpk with multiple nodes. Node IDs should be
+        assigned automatically by Redpanda.
+        """
+        node_ids = set()
+        seeds_str = ",".join(
+            [f"{n.account.hostname}" for n in self.redpanda.nodes])
+        for node in self.redpanda.nodes:
+            seeds_arg = f"--seeds={seeds_str}"
+            if self.redpanda.idx(node) == 1:
+                seeds_arg = ""
+            args = f"{seeds_arg} --rpc-addr={node.account.hostname}"
+            self.redpanda.start_node_with_rpk(node, args)
+            node_ids.add(self.redpanda.node_id(node))
+        assert len(node_ids) == 3, f"Node IDs: {node_ids}"
+
     @cluster(num_nodes=1)
     def test_container_mode(self):
         """

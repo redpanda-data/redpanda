@@ -55,7 +55,7 @@ func (c *Config) FileLocation() string {
 // consider it a node property.
 type RedpandaNodeConfig struct {
 	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
-	ID                         int                       `yaml:"node_id" json:"node_id"`
+	ID                         *int                      `yaml:"node_id,omitempty" json:"node_id,omitempty"`
 	Rack                       string                    `yaml:"rack,omitempty" json:"rack"`
 	SeedServers                []SeedServer              `yaml:"seed_servers" json:"seed_servers"`
 	RPCServer                  SocketAddress             `yaml:"rpc_server,omitempty" json:"rpc_server"`

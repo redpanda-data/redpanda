@@ -115,7 +115,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		configPath string
 	)
 	c := &cobra.Command{
-		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
+		Use:   "bootstrap [--self <ip>] [--ips <ip1,ip2,...>]",
 		Short: "Initialize the configuration to bootstrap a cluster",
 		Long:  helpBootstrap,
 		Args:  cobra.ExactArgs(0),
@@ -131,7 +131,9 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			ownIP, err := parseSelfIP(self)
 			out.MaybeDieErr(err)
 
-			cfg.Redpanda.ID = id
+			if id >= 0 {
+				cfg.Redpanda.ID = &id
+			}
 			cfg.Redpanda.RPCServer.Address = ownIP.String()
 			cfg.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
 				Address: ownIP.String(),
@@ -171,9 +173,9 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		&id,
 		"id",
 		-1,
-		"This node's ID (required).",
+		"This node's ID. If unset, Redpanda will assign one automatically.",
 	)
-	cobra.MarkFlagRequired(c.Flags(), "id")
+	c.Flags().MarkHidden("id")
 	return c
 }
 

@@ -178,7 +178,7 @@ func checkRedpandaConfig(cfg *Config) []error {
 	if rp.Directory == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	if rp.ID < 0 {
+	if rp.ID != nil && *rp.ID < 0 {
 		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
 

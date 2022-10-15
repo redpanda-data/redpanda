@@ -328,7 +328,7 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Directory                  weakString                `yaml:"data_directory"`
-		ID                         weakInt                   `yaml:"node_id" `
+		ID                         *weakInt                  `yaml:"node_id"`
 		Rack                       weakString                `yaml:"rack"`
 		SeedServers                seedServers               `yaml:"seed_servers"`
 		RPCServer                  SocketAddress             `yaml:"rpc_server"`
@@ -351,7 +351,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 	rpc.Directory = string(internal.Directory)
-	rpc.ID = int(internal.ID)
+	rpc.ID = (*int)(internal.ID)
 	rpc.Rack = string(internal.Rack)
 	rpc.SeedServers = internal.SeedServers
 	rpc.RPCServer = internal.RPCServer
