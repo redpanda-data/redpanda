@@ -32,9 +32,9 @@ from ducktape.mark import ok_to_fail
 CONSUMER_TIMEOUT = 90
 
 
-class PartitionBalancerTest(EndToEndTest):
+class PartitionBalancerService(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
-        super(PartitionBalancerTest, self).__init__(
+        super(PartitionBalancerService, self).__init__(
             ctx,
             *args,
             extra_rp_conf={
@@ -236,6 +236,11 @@ class PartitionBalancerTest(EndToEndTest):
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
+
+
+class PartitionBalancerTest(PartitionBalancerService):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):

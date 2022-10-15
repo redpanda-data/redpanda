@@ -92,7 +92,7 @@ using persistent_last_applied
 //      |<------------------------|               |          |
 //      |                         |               |          |
 template<typename... T>
-requires(State<T>, ...) class mux_state_machine final : public state_machine {
+requires(State<T>, ...) class mux_state_machine : public state_machine {
 public:
     explicit mux_state_machine(
       ss::logger&, consensus*, persistent_last_applied, T&...);
@@ -101,7 +101,7 @@ public:
     mux_state_machine(const mux_state_machine&) = delete;
     mux_state_machine& operator=(mux_state_machine&&) = delete;
     mux_state_machine& operator=(const mux_state_machine&) = delete;
-    ~mux_state_machine() final = default;
+    ~mux_state_machine() = default;
 
     // Lifecycle management
     ss::future<> start() final { return raft::state_machine::start(); }

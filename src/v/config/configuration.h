@@ -303,6 +303,23 @@ struct configuration final : public config_store {
     property<bool> enable_rack_awareness;
 
     property<std::chrono::milliseconds> node_status_interval;
+    // controller log limitng
+    property<bool> enable_controller_log_rate_limiting;
+    property<size_t> rps_limit_topic_operations;
+    property<std::optional<size_t>>
+      controller_log_accummulation_rps_capacity_topic_operations;
+    property<size_t> rps_limit_acls_and_users_operations;
+    property<std::optional<size_t>>
+      controller_log_accummulation_rps_capacity_acls_and_users_operations;
+    property<size_t> rps_limit_node_management_operations;
+    property<std::optional<size_t>>
+      controller_log_accummulation_rps_capacity_node_management_operations;
+    property<size_t> rps_limit_move_operations;
+    property<std::optional<size_t>>
+      controller_log_accummulation_rps_capacity_move_operations;
+    property<size_t> rps_limit_configuration_operations;
+    property<std::optional<size_t>>
+      controller_log_accummulation_rps_capacity_configuration_operations;
 
     configuration();
 
