@@ -108,6 +108,7 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 ss::future<> cache::consume_cache_space(size_t sz) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
     _current_cache_size += sz;
+    probe.set_size(_current_cache_size);
     if (_current_cache_size > _max_cache_size) {
         if (ss::lowres_clock::now() - _last_clean_up > min_clean_up_interval) {
             auto units = ss::try_get_units(_cleanup_sm, 1);
@@ -275,6 +276,9 @@ ss::future<> cache::clean_up_cache() {
           "Cache eviction deleted {} files of total size {}.",
           i_to_delete,
           deleted_size);
+
+        probe.set_size(_current_cache_size);
+        probe.set_num_files(candidates_for_deletion.size() - i_to_delete);
     }
 
     _last_clean_up = ss::lowres_clock::now();
