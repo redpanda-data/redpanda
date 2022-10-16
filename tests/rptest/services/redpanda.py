@@ -1284,7 +1284,6 @@ class RedpandaService(Service):
                         (node, "Redpanda process unexpectedly stopped"))
 
         if crashes:
-            self.save_executable()
             raise NodeCrash(crashes)
 
     def raise_on_bad_logs(self, allow_list=None):
@@ -1358,16 +1357,6 @@ class RedpandaService(Service):
                     self.logger.warn(
                         f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
                     )
-
-        for node, lines in bad_lines.items():
-            # LeakSanitizer type errors may include raw backtraces that the devloper
-            # needs the binary to decode + investigate
-            if any([
-                    re.findall("Sanitizer|[Aa]ssert|SEGV|Segmentation fault",
-                               l) for l in lines
-            ]):
-                self.save_executable()
-                break
 
         if bad_lines:
             raise BadLogLines(bad_lines)
@@ -2118,54 +2107,6 @@ class RedpandaService(Service):
 
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
-
-    def save_executable(self):
-        """
-        For the currently executing test, enable preserving the redpanda
-        executable as if it were a log.  This is expensive in storage space:
-        only do it if you catch an error that you think the binary will
-        be needed to make sense of, like a LeakSanitizer error.
-
-        This function does nothing in non-CI environments: in local development
-        environments, the developer already has the binary.
-        """
-
-        if self._saved_executable:
-            # Only ever do this once per test: the whole test runs with
-            # the same binaries.
-            return
-
-        # Assume that if 'CI' isn't explicitly set to false, we do want to keep
-        # the executable.
-        if os.environ.get('CI', None) == 'false':
-            self.logger.info("Skipping saving executable, not in CI")
-            return
-
-        self.logger.info(
-            f"Saving executable as {os.path.basename(self.EXECUTABLE_SAVE_PATH)}"
-        )
-
-        # Any node will do. Even in a mixed-version upgrade test, we should
-        # still have the original binaries available.
-        node = self.nodes[0]
-        if self._installer._started:
-            head_root_path = self._installer.root_for_version(
-                RedpandaInstaller.HEAD)
-            binary = f"{head_root_path}/libexec/redpanda"
-        else:
-            binary = self.find_raw_binary('redpanda')
-
-        save_to = self.EXECUTABLE_SAVE_PATH
-        try:
-            node.account.ssh(f"cd /tmp ; gzip -c {binary} > {save_to}")
-        except Exception as e:
-            # Don't obstruct remaining test teardown when trying to save binary during failure
-            # handling: eat the exception and log it.
-            self.logger.exception(
-                f"Error while compressing binary {binary} to {save_to}")
-        else:
-            self._saved_executable = True
-            self._context.log_collect['executable', self] = True
 
     def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
         # Test helper for grepping the redpanda log.
