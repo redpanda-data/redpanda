@@ -395,6 +395,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
         }
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
+            probe.miss_get();
             co_return std::nullopt;
         } else {
             throw;
