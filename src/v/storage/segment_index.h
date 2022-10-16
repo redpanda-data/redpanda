@@ -65,6 +65,16 @@ public:
     segment_index(const segment_index&) = delete;
     segment_index& operator=(const segment_index&) = delete;
 
+    /**
+     * Estimate the size of an index file for a log segment
+     * of a certain size.
+     */
+    static uint64_t estimate_size(uint64_t log_size) {
+        // Index entry every `step` bytes, each entry is 16 bytes
+        // plus one entry that is with the first batch.
+        return 1 + 16 * log_size / default_data_buffer_step;
+    }
+
     void maybe_track(const model::record_batch_header&, size_t filepos);
     std::optional<entry> find_nearest(model::offset);
     std::optional<entry> find_nearest(model::timestamp);
