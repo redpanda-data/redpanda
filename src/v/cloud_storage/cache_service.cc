@@ -89,11 +89,6 @@ cache::recursive_delete_empty_directory(const std::string_view& key) {
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::directory_not_empty) {
                 // we stop when we find a non-empty directory
-                vlog(
-                  cst_log.debug,
-                  "Could not delete directory {}: {}.",
-                  normal_path,
-                  e.what());
                 co_return;
             } else {
                 throw;
