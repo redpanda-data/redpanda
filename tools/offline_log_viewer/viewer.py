@@ -26,11 +26,11 @@ def print_kv_store(store):
             logger.info(json.dumps(items, indent=2))
 
 
-def print_controller(store):
+def print_controller(store, bin_dump: bool):
     for ntp in store.ntps:
         if ntp.nspace == "redpanda" and ntp.topic == "controller":
             ctrl = ControllerLog(ntp)
-            ctrl.decode()
+            ctrl.decode(bin_dump)
             logger.info(json.dumps(ctrl.records, indent=2))
 
 
@@ -114,6 +114,10 @@ def main():
             required=False,
             help='for kafka type, if set, parse only this topic')
         parser.add_argument('-v', "--verbose", action="store_true")
+        parser.add_argument(
+            '--dump',
+            action='store_true',
+            help='output binary dumps of keys and values being parsed')
         return parser
 
     parser = generate_options()
@@ -130,7 +134,7 @@ def main():
     if options.type == "kvstore":
         print_kv_store(store)
     elif options.type == "controller":
-        print_controller(store)
+        print_controller(store, options.dump)
     elif options.type == "kafka":
         validate_topic(options.path, options.topic)
         print_kafka(store, options.topic, headers_only=True)
