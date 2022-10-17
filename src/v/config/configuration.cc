@@ -1118,6 +1118,12 @@ configuration::configuration()
       "Interval for cloud storage housekeeping tasks",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_storage_enable_compacted_topic_reupload(
+      *this,
+      "cloud_storage_enable_compacted_topic_reupload",
+      "Enable re-uploading data for compacted topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",

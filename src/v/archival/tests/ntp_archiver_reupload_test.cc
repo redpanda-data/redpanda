@@ -9,6 +9,7 @@
  */
 
 #include "archival/tests/service_fixture.h"
+#include "config/configuration.h"
 #include "storage/ntp_config.h"
 #include "test_utils/fixture.h"
 
@@ -772,4 +773,61 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
 
     BOOST_REQUIRE(stm_manifest.replaced_segments().empty());
+}
+
+FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(0), model::term_id(1), 1000},
+      {manifest_ntp, model::offset(1000), model::term_id(4), 10},
+    };
+
+    initialize(segments);
+    auto action = ss::defer([this] { archiver->stop().get(); });
+
+    listen();
+
+    // Upload two non compacted segments, no segment is compacted yet.
+    auto res = archiver->upload_next_candidates().get();
+
+    auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
+    BOOST_REQUIRE(res == expected);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    auto manifest = verify_manifest_request(*part);
+    verify_segment_request("0-1-v1.log", manifest);
+    verify_segment_request("1000-4-v1.log", manifest);
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const cloud_storage::partition_manifest& stm_manifest
+      = part->archival_meta_stm()->manifest();
+    verify_stm_manifest(stm_manifest, segments);
+
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
+
+    // Mark first segment compacted artificially, since the topic has compaction
+    // disabled, and re-upload, nothing is uploaded.
+    reset_http_call_state();
+    auto seg = mark_segments_as_compacted({0});
+
+    expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {0, 0, 0}};
+
+    // Disable re-upload
+    config::shard_local_cfg()
+      .get("cloud_storage_enable_compacted_topic_reupload")
+      .set_value(false);
+    res = archiver->upload_next_candidates().get();
+    BOOST_REQUIRE(res == expected);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 0);
+
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
+
+    BOOST_REQUIRE(stm_manifest.replaced_segments().empty());
+
+    // Re-enable uploads so other tests do not fail!
+    config::shard_local_cfg()
+      .get("cloud_storage_enable_compacted_topic_reupload")
+      .set_value(true);
 }

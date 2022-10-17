@@ -674,7 +674,9 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
       last_stable_offset,
       allow_reuploads_t::no);
 
-    if (_partition->get_ntp_config().is_compacted()) {
+    if (
+      config::shard_local_cfg().cloud_storage_enable_compacted_topic_reupload()
+      && _partition->get_ntp_config().is_compacted()) {
         params.emplace_back(
           segment_upload_kind::compacted,
           compacted_concurrency_ratio,
