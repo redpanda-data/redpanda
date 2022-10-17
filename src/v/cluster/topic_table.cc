@@ -17,6 +17,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -561,7 +562,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       properties.remote_delete,
       overrides.remote_delete,
-      topic_properties::default_remote_delete);
+      storage::ntp_config::default_remote_delete);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;

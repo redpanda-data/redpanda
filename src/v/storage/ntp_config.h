@@ -27,6 +27,12 @@ using topic_recovery_enabled
 
 class ntp_config {
 public:
+    // Remote deletes are enabled by default in new tiered storage topics,
+    // disabled by default in legacy topics during upgrade (the legacy path
+    // is handled during adl/serde decode).
+    static constexpr bool default_remote_delete{true};
+    static constexpr bool legacy_remote_delete{false};
+
     struct default_overrides {
         // if not set use the log_manager's configuration
         std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -52,6 +58,9 @@ public:
         tristate<size_t> retention_local_target_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_local_target_ms{
           std::nullopt};
+
+        // Controls whether topic deletion should imply deletion in S3
+        std::optional<bool> remote_delete;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -174,6 +183,14 @@ public:
                && !_overrides->read_replica.value_or(false)
                && _overrides->shadow_indexing_mode
                     == model::shadow_indexing_mode::full;
+    }
+
+    bool remote_delete() const {
+        if (_overrides == nullptr) {
+            return default_remote_delete;
+        } else {
+            return _overrides->remote_delete.value_or(default_remote_delete);
+        }
     }
 
 private:

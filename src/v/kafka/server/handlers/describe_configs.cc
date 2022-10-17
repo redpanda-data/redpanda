@@ -588,7 +588,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 add_topic_config<bool>(
                   result,
                   topic_property_remote_delete,
-                  cluster::topic_properties::default_remote_delete,
+                  storage::ntp_config::default_remote_delete,
                   topic_property_remote_delete,
                   std::make_optional<bool>(
                     topic_config->properties.remote_delete),

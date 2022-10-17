@@ -60,7 +60,7 @@ bool topic_properties::has_overrides() const {
            || read_replica.has_value() || batch_max_bytes.has_value()
            || retention_local_target_bytes.has_value()
            || retention_local_target_ms.has_value()
-           || remote_delete != default_remote_delete;
+           || remote_delete != storage::ntp_config::default_remote_delete;
 }
 
 storage::ntp_config::default_overrides
@@ -75,6 +75,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.read_replica = read_replica;
     ret.retention_local_target_bytes = retention_local_target_bytes;
     ret.retention_local_target_ms = retention_local_target_ms;
+    ret.remote_delete = remote_delete;
     return ret;
 }
 
@@ -103,7 +104,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .read_replica = properties.read_replica,
             .retention_local_target_bytes
             = properties.retention_local_target_bytes,
-            .retention_local_target_ms = properties.retention_local_target_ms});
+            .retention_local_target_ms = properties.retention_local_target_ms,
+            .remote_delete = properties.remote_delete});
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -974,7 +976,7 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
       cfg.properties.retention_local_target_ms);
 
     // Legacy topics from pre-22.3 get remote delete disabled.
-    cfg.properties.remote_delete = false;
+    cfg.properties.remote_delete = storage::ntp_config::legacy_remote_delete;
 
     return cfg;
 }

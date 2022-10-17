@@ -375,8 +375,6 @@ partition::timequery(storage::timequery_config cfg) {
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
-    _remote_delete_enabled = properties.remote_delete;
-
     co_await _raft->log().update_configuration(
       properties.get_ntp_cfg_overrides());
 }
@@ -427,7 +425,9 @@ ss::future<> partition::remove_remote_persistent_state() {
         || (config::shard_local_cfg().cloud_storage_enable_remote_write() &&
             config::shard_local_cfg().cloud_storage_enable_remote_read());
 
-    if (_cloud_storage_partition && tiered_storage && _remote_delete_enabled) {
+    if (
+      _cloud_storage_partition && tiered_storage
+      && get_ntp_config().remote_delete()) {
         vlog(
           clusterlog.debug,
           "Erasing S3 objects for partition {} ({} {} {})",

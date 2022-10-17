@@ -187,7 +187,7 @@ to_cluster_type(const creatable_topic& t) {
 
     cfg.properties.remote_delete
       = get_bool_value(config_entries, topic_property_remote_delete)
-          .value_or(cluster::topic_properties::default_remote_delete);
+          .value_or(storage::ntp_config::default_remote_delete);
 
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user

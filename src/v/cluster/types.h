@@ -1083,9 +1083,7 @@ struct topic_properties
     // is handled during adl/serde decode).
     // This is intentionally not an optional: all topics have a concrete value
     // one way or another.  There is no "use the cluster default".
-    static constexpr bool default_remote_delete{true};
-    static constexpr bool legacy_remote_delete{false};
-    bool remote_delete{default_remote_delete};
+    bool remote_delete{storage::ntp_config::default_remote_delete};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1378,7 +1376,8 @@ struct topic_configuration
 
             // Legacy tiered storage topics do not delete data on
             // topic deletion.
-            properties.remote_delete = topic_properties::legacy_remote_delete;
+            properties.remote_delete
+              = storage::ntp_config::legacy_remote_delete;
         }
     }
 

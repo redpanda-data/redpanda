@@ -176,7 +176,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
                 parse_and_set_bool(
                   update.properties.remote_delete,
                   cfg.value,
-                  cluster::topic_properties::default_remote_delete);
+                  storage::ntp_config::default_remote_delete);
             }
             if (cfg.name == topic_property_remote_write) {
                 auto set_value = update.properties.shadow_indexing.value
