@@ -175,6 +175,34 @@ def decode_feature_command(record):
 
 
 def decode_record(batch, record):
+def decode_cluster_bootstrap_command(record):
+    def decode_user_and_credential(r):
+        user_cred = {}
+        user_cred['username'] = r.read_string()
+        cmd['salt'] = obfuscate_secret(r.read_iobuf().hex())
+        cmd['server_key'] = obfuscate_secret(r.read_iobuf().hex())
+        cmd['stored_key'] = obfuscate_secret(r.read_iobuf().hex())
+
+    rdr = Reader(BytesIO(record.value))
+    k_rdr = Reader(BytesIO(record.key))
+    cmd = {}
+    rdr.read_envelope()
+    cmd['type'] = rdr.read_int8()
+    if cmd['type'] == 0 or cmd['type'] == 5:  # TODO: remove 5
+        cmd['type_name'] = 'bootstrap_cluster'
+        cmd['key'] = k_rdr.read_int8()
+        cmd['v'] = rdr.read_int8()
+        if cmd['v'] == 0:
+            cmd['cluster_uuid'] = ''.join([
+                f'{rdr.read_uint8():02x}' + ('-' if k in [3, 5, 7, 9] else '')
+                for k in range(16)
+            ])
+            cmd['bootstrap_user_cred'] = rdr.read_optional(
+                decode_user_and_credential)
+
+    return cmd
+
+
     ret = {}
     header = batch.header
     ret['type'] = batch.type.name
@@ -196,6 +224,9 @@ def decode_record(batch, record):
         ret['data'] = decode_config_command(record)
     if header.type == BatchType.feature_update:
         ret['data'] = decode_feature_command(record)
+    if batch.type == BatchType.cluster_bootstrap_cmd:
+        ret['data'] = decode_cluster_bootstrap_command(record)
+
     return ret
 
 
