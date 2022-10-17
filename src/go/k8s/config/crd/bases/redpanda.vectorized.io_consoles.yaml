@@ -37,6 +37,97 @@ spec:
             description: ConsoleSpec defines the desired state of Console Most of
               the fields here are copied from Console config REF https://github.com/redpanda-data/console/blob/master/backend/pkg/api/config.go
             properties:
+              cloud:
+                description: Cloud contains configurations for Redpanda cloud. If
+                  you're running a self-hosted installation, you can ignore this
+                properties:
+                  prometheusEndpoint:
+                    description: PrometheusEndpointConfig configures the Prometheus
+                      endpoint that shall be exposed in Redpanda Cloud so that users
+                      can scrape this URL to collect their dataplane's metrics in
+                      their own time-series database.
+                    properties:
+                      basicAuth:
+                        description: BasicAuthConfig are credentials that will be
+                          required by the user in order to scrape the endpoint
+                        properties:
+                          passwordRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                              namespace:
+                                description: 'Namespace of the referent. More info:
+                                  https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                type: string
+                            required:
+                            - name
+                            - namespace
+                            type: object
+                          username:
+                            type: string
+                        required:
+                        - passwordRef
+                        - username
+                        type: object
+                      enabled:
+                        type: boolean
+                      prometheus:
+                        description: PrometheusConfig is configuration of prometheus
+                          instance
+                        properties:
+                          address:
+                            description: Address to Prometheus endpoint
+                            type: string
+                          jobs:
+                            description: Jobs is the list of Prometheus Jobs that
+                              we want to discover so that we can then scrape the discovered
+                              targets ourselves.
+                            items:
+                              description: PrometheusScraperJobConfig is the configuration
+                                object that determines what Prometheus targets we
+                                should scrape.
+                              properties:
+                                jobName:
+                                  description: JobName refers to the Prometheus job
+                                    name whose discovered targets we want to scrape
+                                  type: string
+                                keepLabels:
+                                  description: KeepLabels is a list of label keys
+                                    that are added by Prometheus when scraping the
+                                    target and should remain for all metrics as exposed
+                                    to the Prometheus endpoint.
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - jobName
+                              - keepLabels
+                              type: object
+                            type: array
+                          targetRefreshInterval:
+                            default: 10s
+                            type: string
+                        required:
+                        - address
+                        - jobs
+                        type: object
+                      responseCacheDuration:
+                        default: 1s
+                        format: duration
+                        type: string
+                    required:
+                    - enabled
+                    - prometheus
+                    type: object
+                required:
+                - prometheusEndpoint
+                type: object
               clusterRef:
                 description: The referenced Redpanda Cluster
                 properties:

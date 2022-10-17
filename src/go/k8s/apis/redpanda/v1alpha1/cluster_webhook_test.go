@@ -1685,3 +1685,63 @@ func TestKafkaTLSRules(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestCloudStorage(t *testing.T) {
+	rpCluster := validRedpandaCluster()
+
+	const (
+		bucket    = "bucket"
+		region    = "us-west-1"
+		accessKey = "key"
+		secretKey = "secret"
+		namespace = "ns"
+	)
+
+	t.Run("valid cloud storage with config file", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.CloudStorage.Enabled = true
+		newRp.Spec.CloudStorage.Bucket = bucket
+		newRp.Spec.CloudStorage.Region = region
+		newRp.Spec.CloudStorage.AccessKey = accessKey
+		newRp.Spec.CloudStorage.SecretKeyRef.Name = secretKey
+		newRp.Spec.CloudStorage.SecretKeyRef.Namespace = namespace
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.NoError(t, err)
+	})
+
+	t.Run("invalid cloud storage with config file (no access key)", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.CloudStorage.Enabled = true
+		newRp.Spec.CloudStorage.Bucket = bucket
+		newRp.Spec.CloudStorage.Region = region
+		newRp.Spec.CloudStorage.SecretKeyRef.Name = secretKey
+		newRp.Spec.CloudStorage.SecretKeyRef.Namespace = namespace
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid cloud storage with config file (no secret)", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.CloudStorage.Enabled = true
+		newRp.Spec.CloudStorage.CredentialsSource = v1alpha1.CredentialsSourceConfigFile
+		newRp.Spec.CloudStorage.Bucket = bucket
+		newRp.Spec.CloudStorage.Region = region
+		newRp.Spec.CloudStorage.AccessKey = accessKey
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("valid cloud storage with sts", func(t *testing.T) {
+		newRp := rpCluster.DeepCopy()
+		newRp.Spec.CloudStorage.Enabled = true
+		newRp.Spec.CloudStorage.CredentialsSource = v1alpha1.CredentialsSource("sts")
+		newRp.Spec.CloudStorage.Bucket = bucket
+		newRp.Spec.CloudStorage.Region = region
+
+		err := newRp.ValidateUpdate(rpCluster)
+		assert.NoError(t, err)
+	})
+}
