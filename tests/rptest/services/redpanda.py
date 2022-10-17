@@ -601,6 +601,7 @@ class RedpandaService(Service):
                 self._extra_rp_conf)
 
     def set_si_settings(self, si_settings: SISettings):
+        si_settings.load_context(self.logger, self._context)
         self._si_settings = si_settings
         self._extra_rp_conf = self._si_settings.update_rp_conf(
             self._extra_rp_conf)
