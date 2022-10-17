@@ -804,12 +804,12 @@ func (r *Cluster) validateArchivalStorage() field.ErrorList {
 	if !r.Spec.CloudStorage.Enabled {
 		return allErrs
 	}
-	if r.Spec.CloudStorage.AccessKey == "" {
+	if r.Spec.CloudStorage.CredentialsSource.IsDefault() && r.Spec.CloudStorage.AccessKey == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("accessKey"),
 				r.Spec.CloudStorage.AccessKey,
-				"AccessKey has to be provided for cloud storage to be enabled"))
+				"AccessKey has to be provided for cloud storage to be enabled using default credentials source"))
 	}
 	if r.Spec.CloudStorage.Bucket == "" {
 		allErrs = append(allErrs,
@@ -825,19 +825,19 @@ func (r *Cluster) validateArchivalStorage() field.ErrorList {
 				r.Spec.CloudStorage.Region,
 				"Region has to be provided for cloud storage to be enabled"))
 	}
-	if r.Spec.CloudStorage.SecretKeyRef.Name == "" {
+	if r.Spec.CloudStorage.CredentialsSource.IsDefault() && r.Spec.CloudStorage.SecretKeyRef.Name == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("secretKeyRef").Child("name"),
 				r.Spec.CloudStorage.SecretKeyRef.Name,
-				"SecretKeyRef name has to be provided for cloud storage to be enabled"))
+				"SecretKeyRef name has to be provided for cloud storage to be enabled using default credentials source"))
 	}
-	if r.Spec.CloudStorage.SecretKeyRef.Namespace == "" {
+	if r.Spec.CloudStorage.SecretKeyRef.Name != "" && r.Spec.CloudStorage.SecretKeyRef.Namespace == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("secretKeyRef").Child("namespace"),
 				r.Spec.CloudStorage.SecretKeyRef.Namespace,
-				"SecretKeyRef namespace has to be provided for cloud storage to be enabled"))
+				"SecretKeyRef namespace has to be defined when name is provided"))
 	}
 	return allErrs
 }

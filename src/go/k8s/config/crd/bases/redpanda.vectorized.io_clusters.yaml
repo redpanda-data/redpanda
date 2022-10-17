@@ -87,6 +87,13 @@ spec:
                         description: Storage class name - https://kubernetes.io/docs/concepts/storage/storage-classes/
                         type: string
                     type: object
+                  credentialsSource:
+                    description: Determines how to load credentials for archival storage.
+                      Supported values are config_file (default), aws_instance_metadata,
+                      sts, gcp_instance_metadata (see the cloud_storage_credentials_source
+                      property at https://docs.redpanda.com/docs/reference/cluster-properties/).
+                      When using config_file then accessKey and secretKeyRef are mandatory.
+                    type: string
                   disableTLS:
                     description: Disable TLS (can be used in tests)
                     type: boolean
