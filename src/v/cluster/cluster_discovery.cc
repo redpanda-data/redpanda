@@ -9,10 +9,13 @@
 
 #include "cluster/cluster_discovery.h"
 
+#include "cluster/bootstrap_types.h"
+#include "cluster/cluster_bootstrap_service.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
@@ -52,8 +55,7 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
         co_return invariants.node_id;
     }
 
-    if (auto cf_node_id = get_cluster_founder_node_id(); cf_node_id) {
-        // TODO: verify that all the seeds' seed_servers lists match
+    if (auto cf_node_id = co_await get_cluster_founder_node_id(); cf_node_id) {
         clusterlog.info("Using index based node ID {}", *cf_node_id);
         co_return *cf_node_id;
     }
@@ -103,22 +105,34 @@ std::optional<model::node_id::type> get_node_index_in_seed_servers() {
 
 } // namespace
 
-std::vector<model::broker> cluster_discovery::initial_seed_brokers() const {
+ss::future<cluster_discovery::brokers>
+cluster_discovery::initial_seed_brokers() {
     // If configured as the root node, we'll want to start the cluster with
     // just this node as the initial seed.
     if (config::node().empty_seed_starts_cluster()) {
         if (config::node().seed_servers().empty()) {
-            return {make_self_broker(config::node())};
+            co_return brokers{make_self_broker(config::node())};
         }
         // Not a root
-        return {};
+        co_return brokers{};
     }
     if (get_node_index_in_seed_servers()) {
-        // TODO: return the discovered nodes plus this node
-        return {make_self_broker(config::node())};
+        co_await fetch_cluster_bootstrap_info();
+        brokers seed_brokers = get_seed_brokers_for_bootstrap();
+        seed_brokers.push_back(make_self_broker(config::node()));
+        co_return std::move(seed_brokers);
     }
     // Non-seed server
-    return {};
+    co_return brokers{};
+}
+
+ss::future<cluster_discovery::brokers>
+cluster_discovery::initial_seed_brokers_if_no_cluster(
+  const std::optional<model::cluster_uuid>& stored_cluster_uuid) {
+    if (stored_cluster_uuid.has_value()) {
+        co_return brokers{};
+    }
+    co_return co_await initial_seed_brokers();
 }
 
 ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
@@ -182,18 +196,259 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
     co_return false;
 }
 
-/*static*/ std::optional<node_id>
+ss::future<cluster_bootstrap_info_reply>
+cluster_discovery::request_cluster_bootstrap_info_single(
+  const net::unresolved_address addr) const {
+    vlog(clusterlog.info, "Requesting cluster bootstrap info from {}", addr);
+    _as.check();
+    for (auto repeat_jitter = simple_time_jitter<model::timeout_clock>(1s);;) {
+        result<cluster_bootstrap_info_reply> reply_result(
+          std::errc::connection_refused);
+        try {
+            reply_result = co_await do_with_client_one_shot<
+              cluster_bootstrap_client_protocol>(
+              addr,
+              config::node().rpc_server_tls(),
+              2s,
+              [](cluster_bootstrap_client_protocol c) {
+                  return c
+                    .cluster_bootstrap_info(
+                      cluster_bootstrap_info_request{},
+                      rpc::client_opts(rpc::clock_type::now() + 2s))
+                    .then(&rpc::get_ctx_data<cluster_bootstrap_info_reply>);
+              });
+            if (reply_result) {
+                vlog(
+                  clusterlog.info,
+                  "Obtained cluster bootstrap info from {}",
+                  addr);
+                vlog(clusterlog.debug, "{}", reply_result.value());
+                co_return std::move(reply_result.value());
+            }
+            vlog(
+              clusterlog.debug,
+              "Cluster bootstrap info failed with {}",
+              reply_result.error());
+        } catch (...) {
+            vlog(
+              clusterlog.warn,
+              "Error requesting cluster bootstrap info from {}, retrying. {}",
+              addr,
+              std::current_exception());
+        }
+        co_await ss::sleep_abortable(repeat_jitter.next_duration(), _as);
+        vlog(clusterlog.trace, "Retrying cluster bootstrap info from {}", addr);
+    }
+}
+
+ss::future<> cluster_discovery::fetch_cluster_bootstrap_info() {
+    if (_cluster_bootstrap_info_fetched) {
+        co_return;
+    }
+    const auto units = co_await _fetch_cluster_bootstrap_mx.get_units(_as);
+    if (_cluster_bootstrap_info_fetched) {
+        co_return;
+    }
+
+    const net::unresolved_address& self_addr
+      = config::node().advertised_rpc_api();
+    const std::vector<config::seed_server>& self_seed_servers
+      = config::node().seed_servers();
+
+    std::vector<
+      std::pair<net::unresolved_address, cluster_bootstrap_info_reply>>
+      peers;
+    peers.reserve(self_seed_servers.size());
+    for (const config::seed_server& seed_server : self_seed_servers) {
+        // do not call oneself
+        if (seed_server.addr == self_addr) {
+            continue;
+        }
+        peers.emplace_back(seed_server.addr, cluster_bootstrap_info_reply{});
+    }
+    co_await ss::parallel_for_each(peers, [this](auto& peer) -> ss::future<> {
+        peer.second = co_await request_cluster_bootstrap_info_single(
+          peer.first);
+        co_return;
+    });
+    _cluster_bootstrap_info = std::move(peers);
+    _cluster_bootstrap_info_fetched = true;
+}
+
+namespace {
+
+bool equal(
+  const std::vector<net::unresolved_address>& lhs,
+  const std::vector<config::seed_server>& rhs) {
+    return std::equal(
+      lhs.cbegin(),
+      lhs.cend(),
+      rhs.cbegin(),
+      rhs.cend(),
+      [](const net::unresolved_address& lhs, const config::seed_server& rhs) {
+          return lhs == rhs.addr;
+      });
+}
+
+void check_configuration_match(
+  bool& failure,
+  const net::unresolved_address& peer_addr,
+  const cluster_bootstrap_info_reply& peer_reply) {
+    const std::vector<config::seed_server>& self_seed_servers
+      = config::node().seed_servers();
+
+    if (!equal(peer_reply.seed_servers, self_seed_servers)) {
+        vlog(
+          clusterlog.error,
+          "Cluster configuration error: seed server list mismatch, "
+          "local: "
+          "{}, {}: {}",
+          self_seed_servers,
+          peer_addr,
+          peer_reply.seed_servers);
+        failure = true;
+    }
+    if (
+      peer_reply.empty_seed_starts_cluster
+      != config::node().empty_seed_starts_cluster()) {
+        vlog(
+          clusterlog.error,
+          "Cluster configuration error: empty_seed_starts_cluster "
+          "mismatch, local: {}, {}: {}",
+          config::node().empty_seed_starts_cluster(),
+          peer_addr,
+          peer_reply.empty_seed_starts_cluster);
+        failure = true;
+    }
+}
+
+} // namespace
+
+cluster_discovery::brokers
+cluster_discovery::get_seed_brokers_for_bootstrap() const {
+    vassert(
+      _cluster_bootstrap_info_fetched,
+      "Cluster bootstrap info not fetched yet");
+
+    // Validate the returned replies and populate the brokers vector
+    bool failed = false;
+    brokers seed_brokers;
+    seed_brokers.reserve(_cluster_bootstrap_info.size());
+    for (const auto& peer : _cluster_bootstrap_info) {
+        if (
+          peer.second.version
+          != features::feature_table::get_latest_logical_version()) {
+            vlog(
+              clusterlog.error,
+              "Cluster setup error: logical version mismatch, local: {}, {}: "
+              "{}",
+              features::feature_table::get_latest_logical_version(),
+              peer.first,
+              peer.second.version);
+            failed = true;
+        }
+        if (peer.second.cluster_uuid.has_value()) {
+            vlog(
+              clusterlog.error,
+              "Cluster setup error: peer is already a member of cluster {}",
+              *peer.second.cluster_uuid);
+            failed = true;
+        }
+        check_configuration_match(failed, peer.first, peer.second);
+        seed_brokers.push_back(peer.second.broker);
+    }
+    if (failed) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Cannot bootstrap a cluster due to seed servers mismatch, check "
+          "the log above for details"));
+    }
+
+    // The other seeds will likely mostly all have -1 as their node_id if their
+    // node_id was not set explicitly. Have the returned seed broker node_id
+    // populated with indices, relying on the fact that all seed broker's have
+    // identical configuration. Note that the order is preserved from
+    // seed_servers to seed_brokers, but the latter is missing one item for
+    // self.
+    const std::vector<config::seed_server>& self_seed_servers
+      = config::node().seed_servers();
+    for (auto [ib, is]
+         = std::tuple{seed_brokers.begin(), self_seed_servers.cbegin()};
+         ib != seed_brokers.cend();
+         ++ib) {
+        while (is != self_seed_servers.cend()
+               && is->addr != ib->rpc_address()) {
+            ++is;
+        }
+        if (ib->id() == model::unassigned_node_id) {
+            vassert(
+              is != self_seed_servers.cend(),
+              "seed_brokers and seed_servers mismatch");
+            const auto idx = boost::numeric_cast<model::node_id::type>(
+              std::distance(self_seed_servers.cbegin(), is));
+            ib->replace_unassigned_node_id(model::node_id{idx});
+        }
+    }
+
+    vlog(clusterlog.debug, "Seed brokers discovered: {}", seed_brokers);
+    return seed_brokers;
+}
+
+ss::future<std::optional<node_id>>
 cluster_discovery::get_cluster_founder_node_id() {
     if (config::node().empty_seed_starts_cluster()) {
         if (config::node().seed_servers().empty()) {
-            return node_id{0};
+            co_return node_id{0};
         }
+        co_return std::nullopt;
     } else {
         if (auto idx = get_node_index_in_seed_servers(); idx) {
-            return node_id{*idx};
+            co_await fetch_cluster_bootstrap_info();
+            if (remote_cluster_uuid_exists()) {
+                vlog(
+                  clusterlog.info,
+                  "Cluster presence detected in other seed servers");
+                co_return std::nullopt;
+            } else {
+                co_return node_id{*idx};
+            }
         }
+        co_return std::nullopt;
     }
-    return {};
+}
+
+bool cluster_discovery::remote_cluster_uuid_exists() const {
+    vassert(
+      _cluster_bootstrap_info_fetched,
+      "Cluster bootstrap info not fetched yet");
+
+    bool failed = false;
+    std::optional<model::cluster_uuid> remote_cluster_uuid;
+    for (auto& [peer_addr, peer_reply] : _cluster_bootstrap_info) {
+        if (peer_reply.cluster_uuid) {
+            if (remote_cluster_uuid) {
+                if (*remote_cluster_uuid != *peer_reply.cluster_uuid) {
+                    vlog(
+                      clusterlog.error,
+                      "Cluster setup error: peer seed servers belong to "
+                      "different clusters: {} and {}",
+                      *peer_reply.cluster_uuid,
+                      *remote_cluster_uuid);
+                    failed = true;
+                }
+            } else {
+                remote_cluster_uuid = peer_reply.cluster_uuid;
+            }
+        }
+        check_configuration_match(failed, peer_addr, peer_reply);
+    }
+    if (failed) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Cannot start the node due to seed servers mismatch, check the log "
+          "above for details"));
+    }
+    return remote_cluster_uuid.has_value();
 }
 
 } // namespace cluster

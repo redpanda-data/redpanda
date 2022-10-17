@@ -13,6 +13,7 @@
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 
@@ -24,6 +25,7 @@ class kvstore;
 } // namespace storage
 
 namespace cluster {
+struct cluster_bootstrap_info_reply;
 
 // Provides metadata pertaining to initial cluster discovery. It is the
 // entrypoint into the steps to join a cluster.
@@ -60,6 +62,8 @@ namespace cluster {
 // TODO: reconcile the RPC dispatch logic here with that in members_manager.
 class cluster_discovery {
 public:
+    using brokers = std::vector<model::broker>;
+
     cluster_discovery(
       const model::node_uuid& node_uuid,
       storage::kvstore& kvstore,
@@ -73,33 +77,73 @@ public:
     // this sends a request to the controllers to register this node's UUID and
     // assign it a node ID.
     //
-    // TODO: implement the below behavior.
-    //
     // On a seed server with no data on it (i.e. a fresh node), this sends
     // requests to all other seed servers to determine if there is a valid
     // assignment of node IDs for the seeds.
     ss::future<model::node_id> determine_node_id();
 
-    // Returns brokers to be used to form a Raft group for a new cluster.
-    //
-    // If this node is a cluster founder, returns all seed servers, assuming
-    // all founders are configured with identical seed servers list.
-    // If this node is not a cluster founder, returns an empty list.
-    // In case of Emtpy Seed Cluster Bootstrap, that reflects to a list of the
-    // root broker in root if cluster is not there yet, and empty otherwise.
-    std::vector<model::broker> initial_seed_brokers() const;
+    /**
+     * Returns brokers to be used to form a Raft group for a new cluster.
+     *
+     * If this node is a cluster founder, returns all seed servers, assuming
+     * all founders are configured with identical seed servers list.
+     * If this node is not a cluster founder, returns an empty list.
+     * In case of Emtpy Seed Cluster Bootstrap, that reflects to a list of the
+     * root broker in root if cluster is not there yet, and empty otherwise.
+     * \throw std::runtime_error if cluster needs a bootstrap but seed brokers
+     * do not satisfy relevant validation
+     */
+    ss::future<brokers> initial_seed_brokers();
+
+    ss::future<brokers> initial_seed_brokers_if_no_cluster(
+      const std::optional<model::cluster_uuid>& stored_cluster_uuid);
 
 private:
-    // Returns index-based node_id if the local node is a founding member
-    // of the cluster, as indicated by either us having an empty seed server
-    // (we are the root node in a legacy config), or our node IP listed
-    // as one of the seed servers.
-    static std::optional<model::node_id> get_cluster_founder_node_id();
-
     // Sends requests to each seed server to register the local node UUID until
     // one succeeds. Upon success, sets `node_id` to the assigned node ID and
     // returns true.
     ss::future<bool> dispatch_node_uuid_registration_to_seeds(model::node_id&);
+
+    ss::future<cluster_bootstrap_info_reply>
+      request_cluster_bootstrap_info_single(net::unresolved_address) const;
+
+    /**
+     * If not already present, requests cluster_bootstrap_info from all seeds
+     * and stores it into _cluster_bootstrap_info_replies
+     */
+    ss::future<> fetch_cluster_bootstrap_info();
+
+    /**
+     * Validate cluster_bootstrap_info responses from seeds for the purpose
+     * of new cluster formation
+     * \throw std::runtime_error if valdation has failed
+     * \return list of peer seed_brokes to start cluster with
+     */
+    brokers get_seed_brokers_for_bootstrap() const;
+
+    // Returns index-based node_id if the local node is a founding member
+    // of the cluster, as indicated by either us having an empty seed server
+    // (we are the root node in a legacy config), or our node IP listed
+    // as one of the seed servers.
+    ss::future<std::optional<model::node_id>> get_cluster_founder_node_id();
+
+    /**
+     * Validate cluster_bootstap_info responses from seeds for the purpose
+     * of at least being a wiped cluster member seed server, and check if it
+     * actually can be such. There are other scenarios possible for that, e.g.
+     * starting a new node as a seed.
+     *
+     * Validation failures: two or more distinct cluster_uuid reported by other
+     * seeds; configuration mismatch of the local with other seeds.
+     *
+     * \return true if a cluster uuid is detected in other seeds, and the
+     *    validation to join that cluster as a seed passed
+     * \return false if the server is rather a cluster founder than a wiped
+     *    cluster member or other kind of seed-joiner
+     * \throw std::runtime_error if it cannot be either of them (validation
+     *    has been failed)
+     */
+    bool remote_cluster_uuid_exists() const;
 
     const model::node_uuid _node_uuid;
     simple_time_jitter<model::timeout_clock> _join_retry_jitter;
@@ -107,6 +151,11 @@ private:
 
     storage::kvstore& _kvstore;
     ss::abort_source& _as;
+    std::vector<
+      std::pair<net::unresolved_address, cluster_bootstrap_info_reply>>
+      _cluster_bootstrap_info;
+    bool _cluster_bootstrap_info_fetched{false};
+    mutex _fetch_cluster_bootstrap_mx;
 };
 
 } // namespace cluster

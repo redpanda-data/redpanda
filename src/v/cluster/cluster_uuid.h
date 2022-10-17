@@ -14,6 +14,8 @@
 #include "bytes/bytes.h"
 #include "storage/kvstore.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace cluster {
 
 constexpr const char* cluster_uuid_key = "cluster_uuid";
