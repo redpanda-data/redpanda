@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
 import time
 
@@ -79,16 +80,20 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
     def __init__(self, test_context):
         self.si_settings = SISettings(log_segment_size=1024 * 1024)
-        super().__init__(test_context=test_context,
-                         num_brokers=3,
-                         si_settings=self.si_settings)
+        super().__init__(
+            test_context=test_context,
+            # Use all nodes as brokers: enables each test to set num_nodes
+            # and get a cluster of that size
+            num_brokers=test_context.cluster.available().size(),
+            si_settings=self.si_settings)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
-    @cluster(num_nodes=3)
-    @parametrize(disable_delete=False)
-    @parametrize(disable_delete=True)
-    def topic_delete_cloud_storage_test(self, disable_delete):
+    def _populate_topic(self):
+        """
+        Get system into state where there is data in both local
+        and remote storage for the topic.
+        """
         # Set retention to 5MB
         self.kafka_tools.alter_topic_config(
             self.topic, {'retention.local.target.bytes': 5 * 1024 * 1024})
@@ -107,11 +112,21 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             self.si_settings.cloud_storage_bucket)
         assert sum(1 for _ in before_objects) > 0
 
+    @cluster(num_nodes=3)
+    @parametrize(disable_delete=False)
+    @parametrize(disable_delete=True)
+    def topic_delete_cloud_storage_test(self, disable_delete):
         if disable_delete:
             # Set remote.delete=False before deleting: objects in
             # S3 should not be removed.
             self.kafka_tools.alter_topic_config(
                 self.topic, {'redpanda.remote.delete': 'false'})
+
+        self._populate_topic()
+
+        objects_before = set(
+            self.redpanda.s3_client.list_objects(
+                self.si_settings.cloud_storage_bucket))
 
         # Delete topic
         self.kafka_tools.delete_topic(self.topic)
@@ -139,8 +154,13 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # instantly, but that they also are not deleted after some
             # delay.
             time.sleep(10)
-            # TODO: stronger check, should compare total object list
-            assert not remote_empty()
+            objects_after = set(
+                self.redpanda.s3_client.list_objects(
+                    self.si_settings.cloud_storage_bucket))
+            objects_deleted = objects_before - objects_after
+            self.logger.debug(
+                f"Objects deleted after topic deletion: {objects_deleted}")
+            assert len(objects_deleted) == 0
         else:
             # The counter-test that deletion _doesn't_ happen in read replicas
             # is done as part of read_replica_e2e_test
@@ -159,6 +179,56 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # - When we bring the S3 backend back it shoudl succeed
         # - If we restart redpanda before bringing the S3 backend back
         #   it should also succeed.
+
+    @cluster(num_nodes=4)
+    def partition_movement_test(self):
+        """
+        The unwary programmer might do S3 deletion from the
+        remove_persistent_state function in Redpanda, but
+        they must not!  This function is also used in the case
+        when we move a partition and clean up after ourselves.
+
+        This test verifies that partition movement removes local
+        data but _not_ cloud data.
+        """
+
+        admin = Admin(self.redpanda)
+
+        self._populate_topic()
+
+        objects_before = set(o.Key
+                             for o in self.redpanda.s3_client.list_objects(
+                                 self.si_settings.cloud_storage_bucket))
+
+        def get_nodes(partition):
+            return list(r['node_id'] for r in partition['replicas'])
+
+        nodes_before = get_nodes(admin.get_partitions(self.topic, 0))
+        replacement_node = next(
+            iter((set([self.redpanda.idx(n)
+                       for n in self.redpanda.nodes]) - set(nodes_before))))
+        nodes_after = nodes_before[1:] + [
+            replacement_node,
+        ]
+        new_assignments = list({'core': 0, 'node_id': n} for n in nodes_after)
+        admin.set_partition_replicas(self.topic, 0, new_assignments)
+
+        def move_complete():
+            p = admin.get_partitions(self.topic, 0)
+            return p["status"] == "done" and get_nodes(p) == nodes_after
+
+        wait_until(move_complete, timeout_sec=30, backoff_sec=1)
+
+        # Some additional time in case a buggy deletion path is async
+        time.sleep(5)
+
+        objects_after = set(o.Key
+                            for o in self.redpanda.s3_client.list_objects(
+                                self.si_settings.cloud_storage_bucket))
+
+        deleted = objects_before - objects_after
+        self.logger.debug(f"Objects deleted after partition move: {deleted}")
+        assert len(deleted) == 0
 
 
 class TopicDeleteStressTest(RedpandaTest):
