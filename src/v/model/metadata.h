@@ -200,6 +200,13 @@ public:
         _maintenance_state = st;
     }
 
+    void replace_unassigned_node_id(const node_id id) {
+        vassert(
+          _id == unassigned_node_id,
+          "Cannot replace an assigned node_id in model::broker");
+        _id = id;
+    }
+
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 

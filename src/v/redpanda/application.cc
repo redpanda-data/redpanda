@@ -1355,7 +1355,8 @@ void application::start_bootstrap_services() {
           bootstrap_service.push_back(
             std::make_unique<cluster::bootstrap_service>(
               _scheduling_groups.cluster_sg(),
-              smp_service_groups.cluster_smp_sg()));
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(storage)));
           s.add_services(std::move(bootstrap_service));
       })
       .get();
@@ -1507,7 +1508,7 @@ void application::start_runtime_services(
       ->start(
         storage.local().get_cluster_uuid().has_value()
           ? std::vector<model::broker>{}
-          : cd.initial_seed_brokers())
+          : cd.initial_seed_brokers().get())
       .get0();
 
     kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
