@@ -905,7 +905,7 @@ struct join_node_request
 
 struct join_node_reply : serde::envelope<join_node_reply, serde::version<0>> {
     bool success{false};
-    model::node_id id{-1};
+    model::node_id id{model::unassigned_node_id};
 
     join_node_reply() noexcept = default;
 
