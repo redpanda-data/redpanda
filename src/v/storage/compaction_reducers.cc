@@ -121,6 +121,26 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
         return std::move(batch);
     }
 
+    // 0. Reset the transactional bit, we need not carry it forward.
+    // All the data batches retained until this point are committed.
+    // From this point on, these batches are treated like non transaction
+    // batches by subsequent compactions.
+    // Client implementations treat transactional batches differently
+    // from non transactional batches. For transactional batches an
+    // additional filter is applied to check if they fall in the
+    // aborted list of transactions. Marking these batches here as
+    // non transactional means that clients skip that extra check.
+    auto& hdr = batch.header();
+    bool hdr_changed = false;
+    if (hdr.attrs.is_transactional() && !hdr.attrs.is_control()) {
+        hdr.attrs.unset_transactional_type();
+        // We do not recompute crc here as the batch records may
+        // be filtered in step 4 in which case we need to recompute
+        // it anyway. It is expensive to loop through the batch and
+        // is wasteful to do it twice.
+        hdr_changed = true;
+    }
+
     // 1. compute which records to keep
     const auto base = batch.base_offset();
     std::vector<int32_t> offset_deltas;
@@ -138,6 +158,10 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
+        if (hdr_changed) {
+            hdr.crc = model::crc_record_batch(batch);
+            hdr.header_crc = model::internal_header_only_crc(hdr);
+        }
         return std::move(batch);
     }
 
@@ -210,20 +234,19 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // Additionally, the MaxTimestamp of an empty batch always retains the
     // previous value prior to becoming empty.
     //
-    const auto& oldh = batch.header();
     const auto first_time = model::timestamp(
-      oldh.first_timestamp() + first_timestamp_delta.value());
-    auto last_time = oldh.max_timestamp;
-    if (oldh.attrs.timestamp_type() == model::timestamp_type::create_time) {
+      hdr.first_timestamp() + first_timestamp_delta.value());
+    auto last_time = hdr.max_timestamp;
+    if (hdr.attrs.timestamp_type() == model::timestamp_type::create_time) {
         last_time = model::timestamp(first_time() + last_timestamp_delta);
     }
-    auto h = oldh;
-    h.first_timestamp = first_time;
-    h.max_timestamp = last_time;
-    h.record_count = rec_count;
-    reset_size_checksum_metadata(h, ret);
+    auto new_hdr = hdr;
+    new_hdr.first_timestamp = first_time;
+    new_hdr.max_timestamp = last_time;
+    new_hdr.record_count = rec_count;
+    reset_size_checksum_metadata(new_hdr, ret);
     auto new_batch = model::record_batch(
-      h, std::move(ret), model::record_batch::tag_ctor_ng{});
+      new_hdr, std::move(ret), model::record_batch::tag_ctor_ng{});
     return new_batch;
 }
 
