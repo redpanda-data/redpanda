@@ -2470,18 +2470,20 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
 
     auto latest_cfg = _configuration_manager.get_latest();
 
-    /**
-     * current config still contains learners, do nothing
-     */
-    if (unlikely(!latest_cfg.current_config().learners.empty())) {
-        co_return;
-    }
     switch (latest_cfg.get_state()) {
     case configuration_state::simple:
         co_return;
     case configuration_state::transitional:
         vlog(
           _ctxlog.info, "finishing transition of configuration {}", latest_cfg);
+
+        /**
+         * current config still contains learners, do nothing
+         */
+        if (unlikely(!latest_cfg.current_config().learners.empty())) {
+            co_return;
+        }
+
         latest_cfg.finish_configuration_transition();
         break;
     case configuration_state::joint:
