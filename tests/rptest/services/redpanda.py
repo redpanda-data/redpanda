@@ -100,6 +100,12 @@ CHAOS_LOG_ALLOW_LIST = [
     ),
 ]
 
+# Log errors that are expected in tests that change replication factor
+CHANGE_REPLICATION_FACTOR_ALLOW_LIST = [
+    re.compile(
+        "cluster - .*Unable to allocate topic with given replication factor"),
+]
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):

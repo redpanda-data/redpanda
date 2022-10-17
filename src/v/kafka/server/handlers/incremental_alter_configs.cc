@@ -110,6 +110,20 @@ static void parse_and_set_shadow_indexing_mode(
     }
 }
 
+static void parse_and_set_topic_replication_factor(
+  cluster::property_update<std::optional<cluster::replication_factor>>&
+    property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // set property value
+    if (op == config_resource_operation::set) {
+        property.value = cluster::replication_factor(
+          boost::lexical_cast<cluster::replication_factor::type>(*value));
+        property.op = cluster::incremental_update_operation::set;
+    }
+    return;
+}
+
 /**
  * valides the optional config
  */
@@ -259,6 +273,11 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
             if (cfg.name == topic_property_max_message_bytes) {
                 parse_and_set_optional(
                   update.properties.batch_max_bytes, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_replication_factor) {
+                parse_and_set_topic_replication_factor(
+                  update.custom_properties.replication_factor, cfg.value, op);
                 continue;
             }
             if (

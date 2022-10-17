@@ -65,7 +65,8 @@ public:
       update_topic_properties_cmd,
       create_partition_cmd,
       create_non_replicable_topic_cmd,
-      cancel_moving_partition_replicas_cmd>();
+      cancel_moving_partition_replicas_cmd,
+      move_topic_replicas_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type

@@ -59,12 +59,13 @@ using namespace std::chrono_literals;
 
 namespace archival::internal {
 
-static cloud_storage::manifest_topic_configuration
-convert_topic_configuration(const cluster::topic_configuration& cfg) {
+static cloud_storage::manifest_topic_configuration convert_topic_configuration(
+  const cluster::topic_configuration& cfg,
+  cluster::replication_factor replication_factor) {
     cloud_storage::manifest_topic_configuration result {
         .tp_ns = cfg.tp_ns,
         .partition_count = cfg.partition_count,
-        .replication_factor = cfg.replication_factor,
+        .replication_factor = replication_factor,
         .properties = {
             .compression = cfg.properties.compression,
             .cleanup_policy_bitflags = cfg.properties.cleanup_policy_bitflags,
@@ -200,7 +201,9 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
   model::topic_namespace topic_ns, model::initial_revision_id rev) {
     gate_guard gg(_gate);
     auto cfg = _topic_table.local().get_topic_cfg(topic_ns);
-    if (!cfg) {
+    auto replication_factor = _topic_table.local().get_topic_replication_factor(
+      topic_ns);
+    if (!cfg || !replication_factor) {
         co_return;
     }
     try {
@@ -212,7 +215,8 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
             retry_chain_logger ctxlog(archival_log, fib);
             vlog(ctxlog.info, "Uploading topic manifest {}", topic_ns);
             cloud_storage::topic_manifest tm(
-              convert_topic_configuration(*cfg), rev);
+              convert_topic_configuration(*cfg, replication_factor.value()),
+              rev);
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
             auto res = co_await _remote.local().upload_manifest(

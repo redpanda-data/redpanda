@@ -47,6 +47,8 @@ std::string_view to_string_view(feature f) {
         return "cloud_retention";
     case feature::node_id_assignment:
         return "node_id_assignment";
+    case feature::replication_factor_change:
+        return "replication_factor_change";
     case feature::test_alpha:
         return "__test_alpha";
     }

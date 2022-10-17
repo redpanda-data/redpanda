@@ -215,9 +215,14 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
             std::ref(_partition_leaders),
             std::ref(_tp_state),
             std::ref(_data_policy_frontend),
+            std::ref(_hm_frontend),
             std::ref(_as),
             std::ref(_cloud_storage_api),
-            std::ref(_feature_table));
+            std::ref(_feature_table),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .storage_space_alert_free_threshold_percent.bind();
+            }));
       })
       .then([this] {
           return _members_backend.start_single(

@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
@@ -116,6 +117,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::set;
     update.properties.shadow_indexing.op
       = cluster::incremental_update_operation::set;
+    update.custom_properties.replication_factor.op
+      = cluster::incremental_update_operation::set;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
 
@@ -189,6 +192,11 @@ create_topic_properties_update(alter_configs_resource& resource) {
             if (cfg.name == topic_property_retention_local_target_bytes) {
                 parse_and_set_tristate(
                   update.properties.retention_local_target_bytes, cfg.value);
+                continue;
+            }
+            if (cfg.name == topic_property_replication_factor) {
+                parse_and_set_optional(
+                  update.custom_properties.replication_factor, cfg.value);
                 continue;
             }
             if (

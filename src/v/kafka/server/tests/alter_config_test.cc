@@ -430,6 +430,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     properties.emplace("retention.ms", "1234");
     properties.emplace("cleanup.policy", "compact");
     properties.emplace("redpanda.remote.read", "true");
+    properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
       {make_alter_topic_config_resource(test_tp, properties)});
@@ -457,9 +458,11 @@ FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
     absl::flat_hash_map<ss::sstring, ss::sstring> properties_1;
     properties_1.emplace("retention.ms", "1234");
     properties_1.emplace("cleanup.policy", "compact");
+    properties_1.emplace("replication.factor", "1");
 
     absl::flat_hash_map<ss::sstring, ss::sstring> properties_2;
     properties_2.emplace("retention.bytes", "4096");
+    properties_2.emplace("replication.factor", "1");
 
     auto resp = alter_configs({
       make_alter_topic_config_resource(topic_1, properties_1),
@@ -492,6 +495,7 @@ FIXTURE_TEST(
 
     absl::flat_hash_map<ss::sstring, ss::sstring> properties;
     properties.emplace("unclean.leader.election.enable", "true");
+    properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
       {make_alter_topic_config_resource(test_tp, properties)});
@@ -527,6 +531,7 @@ FIXTURE_TEST(
      */
     absl::flat_hash_map<ss::sstring, ss::sstring> properties;
     properties.emplace("retention.ms", "1234");
+    properties.emplace("replication.factor", "1");
 
     auto resp = alter_configs(
       {make_alter_topic_config_resource(test_tp, properties)});
@@ -545,6 +550,7 @@ FIXTURE_TEST(
      */
     absl::flat_hash_map<ss::sstring, ss::sstring> new_properties;
     new_properties.emplace("retention.bytes", "4096");
+    new_properties.emplace("replication.factor", "1");
 
     alter_configs({make_alter_topic_config_resource(test_tp, new_properties)});
 
@@ -757,6 +763,7 @@ FIXTURE_TEST(
 
     absl::flat_hash_map<ss::sstring, ss::sstring> alter_config_properties;
     alter_config_properties.emplace("retention.ms", "1234");
+    alter_config_properties.emplace("replication.factor", "1");
 
     auto resp_alter = alter_configs(
       {make_alter_topic_config_resource(test_tp, alter_config_properties)});

@@ -513,12 +513,21 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
     return o;
 }
 
+std::istream& operator>>(std::istream& i, replication_factor& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = replication_factor(boost::lexical_cast<replication_factor::type>(s));
+    return i;
+};
+
 std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(
       o,
-      "{{incremental_topic_custom_updates: data_policy: {}}}",
-      i.data_policy);
+      "{{incremental_topic_custom_updates: data_policy: {}, "
+      "replication_factor: {}}}",
+      i.data_policy,
+      i.replication_factor);
     return o;
 }
 
@@ -591,6 +600,16 @@ topic_configuration& topic_metadata::get_configuration() {
 }
 
 assignments_set& topic_metadata::get_assignments() { return _assignments; }
+
+replication_factor topic_metadata::get_replication_factor() const {
+    // The main idea is do not use anymore replication_factor from topic_config.
+    // replication factor is dynamic property. And it is size of assigments set.
+    // So we will return rf for 0 partition, becasue it should exist for each
+    // topic
+    auto it = _assignments.find(model::partition_id(0));
+    return replication_factor(
+      static_cast<replication_factor::type>(it->replicas.size()));
+}
 
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
@@ -724,6 +743,11 @@ operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
 std::ostream&
 operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
     fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
+    fmt::print(o, "{{partition: {}, replicas: {}}}", r.partition, r.replicas);
     return o;
 }
 

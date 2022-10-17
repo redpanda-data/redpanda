@@ -208,6 +208,36 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       }
                       return ec;
                   });
+            },
+            [this, base_offset](move_topic_replicas_cmd cmd) {
+                auto assignments = _topic_table.local().get_topic_assignments(
+                  cmd.key);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this,
+                         assignments = std::move(assignments),
+                         cmd = std::move(cmd)](std::error_code ec) {
+                      if (!assignments.has_value()) {
+                          return std::error_code(errc::topic_not_exists);
+                      }
+                      if (ec == errc::success) {
+                          for (const auto& [partition_id, replicas] :
+                               cmd.value) {
+                              auto assigment_it = assignments.value().find(
+                                partition_id);
+                              auto ntp = model::ntp(
+                                cmd.key.ns, cmd.key.tp, partition_id);
+                              if (assigment_it == assignments.value().end()) {
+                                  return std::error_code(
+                                    errc::partition_not_exists);
+                              }
+                              auto to_add = subtract_replica_sets(
+                                replicas, assigment_it->replicas);
+                              _partition_allocator.local().add_allocations(
+                                to_add, get_allocation_domain(ntp));
+                          }
+                      }
+                      return ec;
+                  });
             });
       });
 }
