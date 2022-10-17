@@ -237,6 +237,24 @@ type CloudStorageConfig struct {
 	APIEndpointPort int `json:"apiEndpointPort,omitempty"`
 	// Cache directory that will be mounted for Redpanda
 	CacheStorage *StorageSpec `json:"cacheStorage,omitempty"`
+	// Determines how to load credentials for archival storage. Supported values
+	// are config_file (default), aws_instance_metadata, sts, gcp_instance_metadata
+	// (see the cloud_storage_credentials_source property at
+	// https://docs.redpanda.com/docs/reference/cluster-properties/).
+	// When using config_file then accessKey and secretKeyRef are mandatory.
+	CredentialsSource CredentialsSource `json:"credentialsSource,omitempty"`
+}
+
+// CredentialsSource represents a mechanism for loading credentials for archival storage
+type CredentialsSource string
+
+const (
+	// credentialsSourceConfigFile is the default options for credentials source
+	CredentialsSourceConfigFile CredentialsSource = "config_file"
+)
+
+func (c CredentialsSource) IsDefault() bool {
+	return c == "" || c == CredentialsSourceConfigFile
 }
 
 // StorageSpec defines the storage specification of the Cluster
