@@ -198,7 +198,7 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
     // operation of a broker, and instead should be used to indicate a broker
     // that needs to be assigned a node ID when it first starts up.
     model::node_id node_id = node_cfg.node_id() == std::nullopt
-                               ? model::node_id(-1)
+                               ? model::unassigned_node_id
                                : *node_cfg.node_id();
     return model::broker(
       node_id,

@@ -32,6 +32,14 @@
 
 namespace model {
 using node_id = named_type<int32_t, struct node_id_model_type>;
+
+/**
+ * Reserved to represent the node_id value yet to be assigned
+ * when node is configured for automatic assignment of node_ids.
+ * Never used in node configuration.
+ */
+constexpr node_id unassigned_node_id(-1);
+
 /**
  * We use revision_id to identify entities evolution in time. f.e. NTP that was
  * first created and then removed, raft configuration

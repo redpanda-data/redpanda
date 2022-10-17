@@ -32,7 +32,13 @@ node_config::node_config() noexcept
       "Unique id identifying a node in the cluster. If missing, a unique id "
       "will be assigned for this node when it joins the cluster",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      [](std::optional<model::node_id> id) -> std::optional<ss::sstring> {
+          if (id && (*id)() < 0) {
+              return fmt::format("Negative node_id ({}) not allowed", *id);
+          }
+          return std::nullopt;
+      })
   , rack(
       *this,
       "rack",
