@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
   name: consoles.redpanda.vectorized.io
 spec:
@@ -98,6 +97,7 @@ spec:
                               description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                               type: string
                           type: object
+                          x-kubernetes-map-type: atomic
                         name:
                           type: string
                         tls:
@@ -149,6 +149,7 @@ spec:
                                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                           type: object
                         tokenRef:
                           description: TokenRef configures token header auth referenced
@@ -189,6 +190,7 @@ spec:
                               description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                               type: string
                           type: object
+                          x-kubernetes-map-type: atomic
                         url:
                           type: string
                       required:
@@ -251,6 +253,7 @@ spec:
                               TODO: Add other useful fields. apiVersion, kind, uid?'
                             type: string
                         type: object
+                        x-kubernetes-map-type: atomic
                     required:
                     - enabled
                     - roleBindingsRef
@@ -334,6 +337,7 @@ spec:
                                   uid?'
                                 type: string
                             type: object
+                            x-kubernetes-map-type: atomic
                           targetPrincipal:
                             description: TargetPrincipal is the user that shall be
                               impersonated by the service account
@@ -520,6 +524,7 @@ spec:
                     description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                     type: string
                 type: object
+                x-kubernetes-map-type: atomic
               connectivity:
                 description: Connectivity defines internal/external hosts
                 properties:
@@ -538,9 +543,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

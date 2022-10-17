@@ -187,7 +187,9 @@ var (
 	EnterpriseGoogleClientSecretKey = "clientSecret"
 )
 
-func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
+func (cm *ConfigMap) genLogin(
+	ctx context.Context,
+) (e EnterpriseLogin, err error) {
 	if provider := cm.consoleobj.Spec.Login; provider != nil { //nolint:nestif // login config is complex
 		enterpriseLogin := EnterpriseLogin{
 			Enabled: provider.Enabled,
@@ -390,7 +392,9 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 	return clusterobj.Status.Nodes.External
 }
 
-func (cm *ConfigMap) genConnect(ctx context.Context) (conn connect.Config, err error) {
+func (cm *ConfigMap) genConnect(
+	ctx context.Context,
+) (conn connect.Config, err error) {
 	clusters := []connect.ConfigCluster{}
 	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
 		cluster, err := cm.buildConfigCluster(ctx, c)

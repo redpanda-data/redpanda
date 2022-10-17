@@ -573,7 +573,7 @@ func (r *StatefulSetResource) obj(
 }
 
 // getPrestopHook creates a hook that drains the node before shutting down.
-func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
+func (r *StatefulSetResource) getPreStopHook() *corev1.LifecycleHandler {
 	// TODO replace scripts with proper RPK calls
 	curlCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
 	genericMaintenancePath := "/v1/maintenance"
@@ -582,7 +582,7 @@ func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
 		" && " +
 		fmt.Sprintf(`until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do res=$(%s); finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
 
-	return &corev1.Handler{
+	return &corev1.LifecycleHandler{
 		Exec: &corev1.ExecAction{
 			Command: []string{
 				"/bin/bash",
@@ -594,13 +594,13 @@ func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
 }
 
 // getPostStartHook creates a hook that removes maintenance mode after startup.
-func (r *StatefulSetResource) getPostStartHook() *corev1.Handler {
+func (r *StatefulSetResource) getPostStartHook() *corev1.LifecycleHandler {
 	// TODO replace scripts with proper RPK calls
 	curlCommand := r.composeCURLMaintenanceCommand(`-X DELETE --silent -o /dev/null -w "%{http_code}"`, nil)
 	// HTTP code 400 is returned by v22 nodes during an upgrade from v21 until the new version reaches quorum and the maintenance mode feature is enabled
 	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do status=$(%s); sleep 0.5; done`, curlCommand)
 
-	return &corev1.Handler{
+	return &corev1.LifecycleHandler{
 		Exec: &corev1.ExecAction{
 			Command: []string{
 				"/bin/bash",

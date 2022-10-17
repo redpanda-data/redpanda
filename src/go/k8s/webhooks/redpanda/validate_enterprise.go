@@ -22,7 +22,9 @@ func (e *ErrKeyNotFound) Error() string {
 }
 
 // ValidateEnterpriseRBAC validates the referenced RBAC ConfigMap
-func ValidateEnterpriseRBAC(ctx context.Context, cl client.Client, console *redpandav1alpha1.Console) error {
+func ValidateEnterpriseRBAC(
+	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+) error {
 	if enterprise := console.Spec.Enterprise; enterprise != nil {
 		configmap := &corev1.ConfigMap{}
 		if err := cl.Get(ctx, client.ObjectKey{Namespace: console.GetNamespace(), Name: enterprise.RBAC.RoleBindingsRef.Name}, configmap); err != nil {
@@ -36,7 +38,9 @@ func ValidateEnterpriseRBAC(ctx context.Context, cl client.Client, console *redp
 }
 
 // ValidateEnterpriseGoogleSA validates the referenced Google SA ConfigMap
-func ValidateEnterpriseGoogleSA(ctx context.Context, cl client.Client, console *redpandav1alpha1.Console) error {
+func ValidateEnterpriseGoogleSA(
+	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+) error {
 	if login := console.Spec.Login; console.IsGoogleLoginEnabled() && login.Google.Directory != nil {
 		configmap := &corev1.ConfigMap{}
 		if err := cl.Get(ctx, client.ObjectKey{Namespace: console.GetNamespace(), Name: login.Google.Directory.ServiceAccountRef.Name}, configmap); err != nil {
@@ -50,7 +54,9 @@ func ValidateEnterpriseGoogleSA(ctx context.Context, cl client.Client, console *
 }
 
 // ValidateEnterpriseGoogleClientCredentials validates the referenced Google Client Credentials ConfigMap
-func ValidateEnterpriseGoogleClientCredentials(ctx context.Context, cl client.Client, console *redpandav1alpha1.Console) error {
+func ValidateEnterpriseGoogleClientCredentials(
+	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+) error {
 	if console.IsGoogleLoginEnabled() {
 		cc := console.Spec.Login.Google.ClientCredentialsRef
 		key := redpandav1alpha1.SecretKeyRef{Namespace: cc.Namespace, Name: cc.Name}

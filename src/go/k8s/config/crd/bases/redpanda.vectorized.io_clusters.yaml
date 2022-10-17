@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
+    controller-gen.kubebuilder.io/version: v0.10.0
   creationTimestamp: null
   name: clusters.redpanda.vectorized.io
 spec:
@@ -42,9 +41,9 @@ spec:
                 description: "For configuration parameters not exposed, a map can
                   be provided for string values. Such values are passed transparently
                   to Redpanda. The key format is \"<subsystem>.field\", e.g., \n additionalConfiguration:
-                  \  redpanda.enable_idempotence: \"true\"   redpanda.default_topic_partitions:
-                  \"3\"   pandaproxy_client.produce_batch_size_bytes: \"2097152\"
-                  \n Notes: 1. versioning is not supported for map keys 2. key names
+                  redpanda.enable_idempotence: \"true\" redpanda.default_topic_partitions:
+                  \"3\" pandaproxy_client.produce_batch_size_bytes: \"2097152\" \n
+                  Notes: 1. versioning is not supported for map keys 2. key names
                   not supported by Redpanda will lead to failure on start up 3. updating
                   this map requires a manual restart of the Redpanda pods. Please
                   be aware of sync period when one Redpandais POD is restarted 4.
@@ -142,6 +141,7 @@ spec:
                         description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                         type: string
                     type: object
+                    x-kubernetes-map-type: atomic
                   trustfile:
                     description: Path to certificate that should be used to validate
                       server certificate
@@ -376,6 +376,7 @@ spec:
                                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                             requireClientAuth:
                               description: Enables two-way verification on the server
                                 side. If enabled, all Kafka API clients are required
@@ -542,6 +543,7 @@ spec:
                                   description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                   type: string
                               type: object
+                              x-kubernetes-map-type: atomic
                             requireClientAuth:
                               description: Enables two-way verification on the server
                                 side. If enabled, all Pandaproxy API clients are required
@@ -702,6 +704,7 @@ spec:
                                 description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
                                 type: string
                             type: object
+                            x-kubernetes-map-type: atomic
                           requireClientAuth:
                             description: Enables two-way verification on the server
                               side. If enabled, all SchemaRegistry clients are required
@@ -1017,9 +1020,9 @@ spec:
                                       the service port The format of the error shall
                                       comply with the following rules: - built-in
                                       error values shall be specified in this file
-                                      and those shall use   CamelCase names - cloud
+                                      and those shall use CamelCase names - cloud
                                       provider specific error values must have names
-                                      that comply with the   format foo.example.com/CamelCase.
+                                      that comply with the format foo.example.com/CamelCase.
                                       --- The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)'
                                     maxLength: 316
                                     pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
@@ -1103,9 +1106,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

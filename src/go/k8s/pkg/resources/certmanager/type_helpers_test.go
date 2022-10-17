@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"testing"
 
+	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/go-logr/logr"
-	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/stretchr/testify/require"
@@ -320,7 +320,7 @@ func TestClusterCertificates(t *testing.T) {
 			types.NamespacedName{
 				Name:      "test",
 				Namespace: "test",
-			}, fake.NewClientBuilder().WithRuntimeObjects(&secret).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.DiscardLogger{})
+			}, fake.NewClientBuilder().WithRuntimeObjects(&secret).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.Discard())
 		resources, err := cc.Resources(context.TODO())
 		require.NoError(t, err)
 		for _, r := range resources {

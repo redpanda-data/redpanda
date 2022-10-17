@@ -2,8 +2,7 @@
 # Image URL to use all building/pushing image targets
 OPERATOR_IMG_LATEST ?= "localhost/redpanda-operator:dev"
 CONFIGURATOR_IMG_LATEST ?= "localhost/configurator:dev"
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+CRD_OPTIONS ?= "crd"
 
 # default redpanda image to load
 REDPANDA_IMG ?= "localhost/redpanda:dev"
@@ -126,7 +125,7 @@ helm-e2e-tests: kuttl test docker-build docker-build-configurator
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.10.0)
 
 # Download kuttl locally if necessary
 KUTTL = $(shell pwd)/bin/kubectl-kuttl
@@ -148,11 +147,7 @@ PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-get-tool
 @[ -f $(1) ] || { \
 set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
-rm -rf $$TMP_DIR ;\
+echo "Installing $(2)" ;\
+GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 }
 endef

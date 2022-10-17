@@ -237,7 +237,9 @@ func (c *Console) GetClusterRef() types.NamespacedName {
 }
 
 // GetCluster returns the referenced Cluster object
-func (c *Console) GetCluster(ctx context.Context, cl client.Client) (*Cluster, error) {
+func (c *Console) GetCluster(
+	ctx context.Context, cl client.Client,
+) (*Cluster, error) {
 	cluster := &Cluster{}
 	if err := cl.Get(ctx, c.GetClusterRef(), cluster); err != nil {
 		return nil, err
