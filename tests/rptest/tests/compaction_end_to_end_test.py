@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import sys
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
@@ -64,7 +65,11 @@ class CompactionEndToEndTest(EndToEndTest):
         return [len(p.segments) for p in topic_partitions]
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(key_set_cardinality=[10],
+    # sys.maxsize is a special high cardinality case where no keys should be
+    # compacted away. With transactions enabled, all the aborted batches
+    # should be compacted away from the log and should not show up in
+    # consumed list.
+    @matrix(key_set_cardinality=[10, sys.maxsize],
             initial_cleanup_policy=[
                 TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE
             ],
@@ -144,4 +149,6 @@ class CompactionEndToEndTest(EndToEndTest):
         # enable consumer and validate consumed records
         self.start_consumer(num_nodes=1, verify_offsets=False)
 
-        self.run_validation(enable_compaction=True)
+        self.run_validation(enable_compaction=True,
+                            enable_transactions=transactions,
+                            consumer_timeout_sec=90)
