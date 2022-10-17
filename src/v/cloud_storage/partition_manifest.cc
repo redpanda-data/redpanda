@@ -306,16 +306,13 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(key);
 }
 
-std::vector<partition_manifest::segment_name_meta>
-partition_manifest::replaced_segments() const {
-    std::vector<partition_manifest::segment_name_meta> segments;
+void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
+
+std::vector<segment_meta> partition_manifest::replaced_segments() const {
+    std::vector<segment_meta> segments;
     segments.reserve(_replaced.size());
     for (const auto& kv : _replaced) {
-        segments.push_back(segment_name_meta{
-          .name = generate_local_segment_name(
-            kv.first.base_offset, kv.first.term),
-          .meta = kv.second,
-        });
+        segments.push_back(kv.second);
     }
     return segments;
 }

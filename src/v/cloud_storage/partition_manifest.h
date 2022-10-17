@@ -72,30 +72,7 @@ class partition_manifest final : public base_manifest {
     friend struct partition_manifest_accessor;
 
 public:
-    struct segment_meta {
-        using value_t = segment_meta;
-        static constexpr serde::version_t redpanda_serde_version = 2;
-        static constexpr serde::version_t redpanda_serde_compat_version = 0;
-
-        bool is_compacted;
-        size_t size_bytes;
-        model::offset base_offset;
-        model::offset committed_offset;
-        model::timestamp base_timestamp;
-        model::timestamp max_timestamp;
-        model::offset_delta delta_offset;
-
-        model::initial_revision_id ntp_revision;
-        model::term_id archiver_term;
-        /// Term of the segment (included in segment file name)
-        model::term_id segment_term;
-        /// Offset translation delta at the end of the range
-        model::offset_delta delta_offset_end;
-        /// Segment name format specifier
-        segment_name_format sname_format{segment_name_format::v1};
-
-        auto operator<=>(const segment_meta&) const = default;
-    };
+    using segment_meta = cloud_storage::segment_meta;
 
     /// Segment key in the maifest
     using key = segment_name_components;
@@ -104,11 +81,6 @@ public:
     using segment_multimap = absl::btree_multimap<key, value>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
-
-    struct segment_name_meta {
-        segment_name name;
-        segment_meta meta;
-    };
 
     /// Generate segment name to use in the cloud
     static segment_name
@@ -208,7 +180,10 @@ public:
     const_iterator segment_containing(model::offset o) const;
 
     /// Return collection of segments that were replaced by newer segments.
-    std::vector<segment_name_meta> replaced_segments() const;
+    std::vector<segment_meta> replaced_segments() const;
+
+    /// Delete all replaced segments from the manifest
+    void delete_replaced_segments();
 
 private:
     /// Update manifest content from json document that supposed to be generated

@@ -706,8 +706,8 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
     {
         auto res = m.replaced_segments();
         BOOST_REQUIRE(res.size() == 1);
-        BOOST_REQUIRE(res[0].meta.base_offset == model::offset{20});
-        BOOST_REQUIRE(res[0].meta.committed_offset == model::offset{29});
+        BOOST_REQUIRE(res[0].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[0].committed_offset == model::offset{29});
     }
     // Replace several segments
     m.add(
@@ -718,15 +718,15 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
     {
         auto res = m.replaced_segments();
         BOOST_REQUIRE(res.size() == 4);
-        BOOST_REQUIRE(res[0].meta.base_offset == model::offset{0});
-        BOOST_REQUIRE(res[0].meta.committed_offset == model::offset{9});
-        BOOST_REQUIRE(res[1].meta.base_offset == model::offset{10});
-        BOOST_REQUIRE(res[1].meta.committed_offset == model::offset{19});
-        BOOST_REQUIRE(res[2].meta.base_offset == model::offset{20});
-        BOOST_REQUIRE(res[2].meta.committed_offset == model::offset{29});
+        BOOST_REQUIRE(res[0].base_offset == model::offset{0});
+        BOOST_REQUIRE(res[0].committed_offset == model::offset{9});
+        BOOST_REQUIRE(res[1].base_offset == model::offset{10});
+        BOOST_REQUIRE(res[1].committed_offset == model::offset{19});
+        BOOST_REQUIRE(res[2].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[2].committed_offset == model::offset{29});
         // The segment with base offset 20 was replaced twice
-        BOOST_REQUIRE(res[3].meta.base_offset == model::offset{20});
-        BOOST_REQUIRE(res[3].meta.committed_offset == model::offset{29});
+        BOOST_REQUIRE(res[3].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[3].committed_offset == model::offset{29});
     }
 }
 

@@ -123,4 +123,29 @@ struct manifest_topic_configuration {
     topic_properties properties;
 };
 
+struct segment_meta {
+    using value_t = segment_meta;
+    static constexpr serde::version_t redpanda_serde_version = 2;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
+
+    bool is_compacted;
+    size_t size_bytes;
+    model::offset base_offset;
+    model::offset committed_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::offset_delta delta_offset;
+
+    model::initial_revision_id ntp_revision;
+    model::term_id archiver_term;
+    /// Term of the segment (included in segment file name)
+    model::term_id segment_term;
+    /// Offset translation delta at the end of the range
+    model::offset_delta delta_offset_end;
+    /// Segment name format specifier
+    segment_name_format sname_format{segment_name_format::v1};
+
+    auto operator<=>(const segment_meta&) const = default;
+};
+
 } // namespace cloud_storage
