@@ -86,6 +86,8 @@ public:
     void remove_allocations(
       const std::vector<model::broker_shard>&, partition_allocation_domain);
 
+    bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
+
     allocation_state& state() { return *_state; }
 
 private:
