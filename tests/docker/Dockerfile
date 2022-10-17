@@ -105,7 +105,7 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
 # install go
 RUN mkdir -p /usr/local/go/ && \
     bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
-    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.19.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
+    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.19.2.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
 ENV PATH="${PATH}:/usr/local/go/bin"
 
 # Install `kaf`
