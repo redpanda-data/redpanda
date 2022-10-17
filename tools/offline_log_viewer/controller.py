@@ -174,7 +174,6 @@ def decode_feature_command(record):
     return cmd
 
 
-def decode_record(batch, record):
 def decode_cluster_bootstrap_command(record):
     def decode_user_and_credential(r):
         user_cred = {}
@@ -203,6 +202,7 @@ def decode_cluster_bootstrap_command(record):
     return cmd
 
 
+def decode_record(batch, record, bin_dump: bool):
     ret = {}
     header = batch.header
     ret['type'] = batch.type.name
@@ -210,6 +210,9 @@ def decode_cluster_bootstrap_command(record):
     ret['offset'] = header.base_offset + record.offset_delta
     ret['ts'] = datetime.datetime.utcfromtimestamp(
         header.first_ts / 1000.0).strftime('%Y-%m-%d %H:%M:%S')
+    if bin_dump:
+        ret['key_dump'] = record.key.__str__()
+        ret['value_dump'] = record.value.__str__()
     ret['data'] = None
 
     if batch.type == BatchType.raft_configuration:
@@ -235,9 +238,9 @@ class ControllerLog:
         self.ntp = ntp
         self.records = []
 
-    def decode(self):
+    def decode(self, bin_dump: bool):
         for path in self.ntp.segments:
             s = Segment(path)
             for b in s:
                 for r in b:
-                    self.records.append(decode_record(b, r))
+                    self.records.append(decode_record(b, r, bin_dump))
