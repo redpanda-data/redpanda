@@ -218,6 +218,11 @@ class VerifiableProducer(BackgroundThreadService):
         for line in node.account.ssh_capture(cmd):
             line = line.strip()
 
+            transport = node.account.ssh_client.get_transport()
+            while transport.packetizer.need_rekey():
+                self.logger.debug("Waiting for ssh rekeying...")
+                time.sleep(1)
+
             data = self.try_parse_json(line)
             if data is not None:
 
