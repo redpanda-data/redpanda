@@ -1,6 +1,9 @@
 package v1alpha1
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // Enterprise defines configurable fields for features that require license
 type Enterprise struct {
@@ -70,4 +73,54 @@ type EnterpriseLoginGoogleDirectory struct {
 
 	// TargetPrincipal is the user that shall be impersonated by the service account
 	TargetPrincipal string `json:"targetPrincipal"`
+}
+
+// CloudConfig contains configurations for Redpanda cloud. If you're running a
+// self-hosted installation, you can ignore this
+type CloudConfig struct {
+	PrometheusEndpoint *PrometheusEndpointConfig `json:"prometheusEndpoint"`
+}
+
+// PrometheusEndpointConfig configures the Prometheus endpoint that shall be
+// exposed in Redpanda Cloud so that users can scrape this URL to
+// collect their dataplane's metrics in their own time-series database.
+type PrometheusEndpointConfig struct {
+	Enabled   bool            `json:"enabled"`
+	BasicAuth BasicAuthConfig `json:"basicAuth,omitempty"`
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=duration
+	// +kubebuilder:default="1s"
+	ResponseCacheDuration *metav1.Duration  `json:"responseCacheDuration,omitempty"`
+	Prometheus            *PrometheusConfig `json:"prometheus"`
+}
+
+// BasicAuthConfig are credentials that will be required by the user in order to
+// scrape the endpoint
+type BasicAuthConfig struct {
+	Username    string       `json:"username"`
+	PasswordRef SecretKeyRef `json:"passwordRef"`
+}
+
+// PrometheusConfig is configuration of prometheus instance
+type PrometheusConfig struct {
+	// Address to Prometheus endpoint
+	Address string `json:"address"`
+
+	// Jobs is the list of Prometheus Jobs that we want to discover so that we
+	// can then scrape the discovered targets ourselves.
+	Jobs []PrometheusScraperJobConfig `json:"jobs"`
+
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:default="10s"
+	TargetRefreshInterval *metav1.Duration `json:"targetRefreshInterval,omitempty"`
+}
+
+// PrometheusScraperJobConfig is the configuration object that determines what Prometheus
+// targets we should scrape.
+type PrometheusScraperJobConfig struct {
+	// JobName refers to the Prometheus job name whose discovered targets we want to scrape
+	JobName string `json:"jobName"`
+	// KeepLabels is a list of label keys that are added by Prometheus when scraping
+	// the target and should remain for all metrics as exposed to the Prometheus endpoint.
+	KeepLabels []string `json:"keepLabels"`
 }

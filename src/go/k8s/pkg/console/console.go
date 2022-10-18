@@ -11,10 +11,11 @@
 package console
 
 import (
+	"time"
+
 	"github.com/cloudhut/common/rest"
 	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
-
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
@@ -36,6 +37,7 @@ type ConsoleConfig struct {
 	License    string          `json:"license,omitempty" yaml:"license,omitempty"`
 	Enterprise Enterprise      `json:"enterprise,omitempty" yaml:"enterprise,omitempty"`
 	Login      EnterpriseLogin `json:"login,omitempty" yaml:"login,omitempty"`
+	Cloud      CloudConfig     `json:"cloud,omitempty" yaml:"cloud,omitempty"`
 }
 
 // SetDefaults sets sane defaults
@@ -74,4 +76,52 @@ type EnterpriseLoginGoogle struct {
 type EnterpriseLoginGoogleDirectory struct {
 	ServiceAccountFilepath string `json:"serviceAccountFilepath" yaml:"serviceAccountFilepath"`
 	TargetPrincipal        string `json:"targetPrincipal" yaml:"targetPrincipal"`
+}
+
+type CloudConfig struct {
+	// PrometheusEndpoint configures the Prometheus endpoint that shall be
+	// exposed in Redpanda Cloud so that users can scrape this URL to
+	// collect their dataplane's metrics in their own time-series database.
+	PrometheusEndpoint PrometheusEndpointConfig `yaml:"prometheusEndpoint"`
+}
+
+type PrometheusEndpointConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// password is set via env var by mounting a secret
+	BasicAuth struct {
+		Username string `yaml:"username"`
+	} `yaml:"basicAuth"`
+	ResponseCacheDuration time.Duration    `yaml:"responseCacheDuration"`
+	Prometheus            PrometheusConfig `yaml:"prometheus"`
+}
+
+type PrometheusConfig struct {
+	// Address to Prometheus endpoint (e.g. "https://prometheus-blocks-prod-us-central1.grafana.net/api/prom)
+	Address string `yaml:"address"`
+
+	// BasicAuth that shall be used when talking to the Prometheus target.
+	BasicAuth PrometheusClientBasicAuthConfig `yaml:"basicAuth"`
+
+	// Jobs is the list of Prometheus Jobs that we want to discover so that we
+	// can then scrape the discovered targets ourselves.
+	Jobs []PrometheusScraperJobConfig `yaml:"jobs"`
+
+	TargetRefreshInterval time.Duration `yaml:"targetRefreshInterval"`
+}
+
+// PrometheusScraperJobConfig is the configuration object that determines what Prometheus
+// targets we should scrape.
+type PrometheusScraperJobConfig struct {
+	// JobName refers to the Prometheus job name whose discovered targets we want to scrape
+	JobName string `yaml:"jobName"`
+	// KeepLabels is a list of label keys that are added by Prometheus when scraping
+	// the target and should remain for all metrics as exposed to the Prometheus endpoint.
+	KeepLabels []string `yaml:"keepLabels"`
+}
+
+type PrometheusClientBasicAuthConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
