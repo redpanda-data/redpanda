@@ -24,8 +24,6 @@ import time
 import signal
 from collections import namedtuple
 
-from paramiko import SSHException
-
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
 
@@ -217,69 +215,60 @@ class VerifiableProducer(BackgroundThreadService):
         last_produced_time = time.time()
         prev_msg = None
 
-        try:
-            for line in node.account.ssh_capture(cmd):
-                line = line.strip()
+        for line in node.account.ssh_capture(cmd):
+            line = line.strip()
 
-                data = self.try_parse_json(line)
-                if data is not None:
+            data = self.try_parse_json(line)
+            if data is not None:
 
-                    with self.lock:
-                        if data["name"] == "producer_send_error":
-                            data["node"] = idx
-                            value = self.message_validator(data["value"])
-                            key = data["key"]
-                            self.not_acked_values.append((key, value))
-                            self.produced_count[idx] += 1
+                with self.lock:
+                    if data["name"] == "producer_send_error":
+                        data["node"] = idx
+                        value = self.message_validator(data["value"])
+                        key = data["key"]
+                        self.not_acked_values.append((key, value))
+                        self.produced_count[idx] += 1
 
-                        elif data["name"] == "producer_send_success":
-                            partition = TopicPartition(data["topic"],
-                                                       data["partition"])
-                            value = self.message_validator(data["value"])
-                            key = data["key"]
-                            self.acked_values.append((key, value))
+                    elif data["name"] == "producer_send_success":
+                        partition = TopicPartition(data["topic"],
+                                                   data["partition"])
+                        value = self.message_validator(data["value"])
+                        key = data["key"]
+                        self.acked_values.append((key, value))
 
-                            if partition not in self.acked_values_by_partition:
-                                self.acked_values_by_partition[partition] = []
-                            self.acked_values_by_partition[partition].append(
-                                value)
+                        if partition not in self.acked_values_by_partition:
+                            self.acked_values_by_partition[partition] = []
+                        self.acked_values_by_partition[partition].append(value)
 
-                            self.produced_count[idx] += 1
+                        self.produced_count[idx] += 1
 
-                            # Completions are not guaranteed to be called in-order wrt offsets,
-                            # even if there is only one producer, so we must handle situation
-                            # where we see an offset lower than what we already recorded as highest.
-                            self._last_acked_offsets[partition] = max(
-                                data["offset"],
-                                self._last_acked_offsets.get(partition, 0))
+                        # Completions are not guaranteed to be called in-order wrt offsets,
+                        # even if there is only one producer, so we must handle situation
+                        # where we see an offset lower than what we already recorded as highest.
+                        self._last_acked_offsets[partition] = max(
+                            data["offset"],
+                            self._last_acked_offsets.get(partition, 0))
 
-                            # Log information if there is a large gap between successively acknowledged messages
-                            t = time.time()
-                            time_delta_sec = t - last_produced_time
-                            if time_delta_sec > 2 and prev_msg is not None:
-                                self.logger.debug(
-                                    "Time delta between successively acked messages is large: "
-                                    +
-                                    "delta_t_sec: %s, prev_message: %s, current_message: %s"
-                                    % (str(time_delta_sec), str(prev_msg),
-                                       str(data)))
+                        # Log information if there is a large gap between successively acknowledged messages
+                        t = time.time()
+                        time_delta_sec = t - last_produced_time
+                        if time_delta_sec > 2 and prev_msg is not None:
+                            self.logger.debug(
+                                "Time delta between successively acked messages is large: "
+                                +
+                                "delta_t_sec: %s, prev_message: %s, current_message: %s"
+                                % (str(time_delta_sec), str(prev_msg),
+                                   str(data)))
 
-                            last_produced_time = t
-                            prev_msg = data
+                        last_produced_time = t
+                        prev_msg = data
 
-                        elif data["name"] == "shutdown_complete":
-                            if node in self.clean_shutdown_nodes:
-                                raise Exception(
-                                    "Unexpected shutdown event from producer, already shutdown. Producer index: %d"
-                                    % idx)
-                            self.clean_shutdown_nodes.add(node)
-        except SSHException:
-            self.logger.exception("Unclean worker shutdown")
-            # This is a workaround for paramiko triggering SSHExceptions when rekeying under
-            # load. We log and ignore the exception if the command shutdown is already ack-ed.
-            # See https://github.com/redpanda-data/redpanda/issues/6792
-            if not node in self.clean_shutdown_nodes:
-                raise
+                    elif data["name"] == "shutdown_complete":
+                        if node in self.clean_shutdown_nodes:
+                            raise Exception(
+                                "Unexpected shutdown event from producer, already shutdown. Producer index: %d"
+                                % idx)
+                        self.clean_shutdown_nodes.add(node)
 
     def start_cmd(self, idx):
         cmd = "java -cp /opt/redpanda-tests/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
