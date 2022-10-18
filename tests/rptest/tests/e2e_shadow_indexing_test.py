@@ -11,7 +11,6 @@ import json
 import os
 import random
 
-from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -228,7 +227,6 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                              'default_topic_replications': self.num_brokers,
                          })
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4639
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write_with_node_failures(self):
         self.start_producer()
@@ -307,7 +305,6 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         rpk.alter_topic_config(self.topic, 'retention.bytes',
                                str(self.segment_size))
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6111
     @cluster(num_nodes=8)
     def test_create_or_delete_topics_while_busy(self):
         self.logger.info(f"Environment: {os.environ}")
