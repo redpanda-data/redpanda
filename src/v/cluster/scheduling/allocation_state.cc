@@ -118,6 +118,7 @@ void allocation_state::update_allocation_nodes(
                 _partitions_reserve_shard0));
         } else {
             it->second->update_core_count(b.properties().cores);
+            it->second->update_rack(b.rack());
             // node was added back to the cluster
             if (it->second->is_removed()) {
                 it->second->mark_as_active();
