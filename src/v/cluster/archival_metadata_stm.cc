@@ -427,6 +427,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     });
 
     _insync_offset = b.last_offset();
+    _manifest->advance_insync_offset(b.last_offset());
 }
 
 ss::future<> archival_metadata_stm::handle_eviction() {
@@ -464,9 +465,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     *_manifest = std::move(manifest);
     auto start_offset = get_start_offset();
 
-    // We can skip all offsets up to the last_offset because we can be sure
-    // that in the skipped batches there won't be any new remote segments.
-    _insync_offset = get_last_offset();
+    _insync_offset = _manifest->get_insync_offset();
     auto next_offset = std::max(
       _raft->start_offset(), model::next_offset(_insync_offset));
     set_next(next_offset);
@@ -512,6 +511,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       _raft->log_config().get_initial_revision(),
       snap.start_offset,
       snap.last_offset,
+      header.offset,
       snap.segments,
       snap.replaced);
 

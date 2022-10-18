@@ -157,10 +157,14 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
         .committed_offset = model::offset(1999),
         .archiver_term = model::term_id(1),
       });
+    m1.advance_insync_offset(model::offset{2});
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m1, ss::lowres_clock::now() + 10s).get();
+    archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
+    // Manifests are not stictly equal in general but here we can
+    // make them to be.
     BOOST_REQUIRE(archival_stm->manifest() == m1);
 
     // Replace first segment
@@ -214,10 +218,12 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .archiver_term = model::term_id(1),
         .sname_format = cloud_storage::segment_name_format::v2,
       });
+    m.advance_insync_offset(model::offset{42});
 
     BOOST_REQUIRE(m.advance_start_offset(model::offset{100}));
     BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(100));
-    cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{0})
+    BOOST_REQUIRE_EQUAL(m.get_insync_offset(), model::offset(42));
+    cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{42})
       .get();
 
     cluster::archival_metadata_stm archival_stm(
@@ -272,6 +278,7 @@ FIXTURE_TEST(
         .committed_offset = model::offset(399),
         .archiver_term = model::term_id(1),
       });
+    m.advance_insync_offset(model::offset{4});
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 4);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
@@ -412,8 +419,9 @@ FIXTURE_TEST(
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
       });
+    m.advance_insync_offset(model::offset(3));
 
-    make_old_snapshot(ntp_cfg, m, model::offset{0}).get();
+    make_old_snapshot(ntp_cfg, m, model::offset{3}).get();
 
     cluster::archival_metadata_stm archival_stm(
       _raft.get(), cloud_api.local(), logger);

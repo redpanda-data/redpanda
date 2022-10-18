@@ -104,12 +104,14 @@ public:
       model::initial_revision_id rev,
       model::offset so,
       model::offset lo,
+      model::offset insync,
       const std::vector<segment_t>& segments,
       const std::vector<segment_t>& replaced)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _last_offset(lo)
-      , _start_offset(so) {
+      , _start_offset(so)
+      , _insync_offset(insync) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -138,6 +140,17 @@ public:
 
     // Get last offset
     const model::offset get_last_offset() const;
+
+    // Get insync offset of the archival_metadata_stm
+    //
+    // The offset is an offset of the last applied record with the
+    // archival_metadata_stm command.
+    const model::offset get_insync_offset() const;
+
+    // Move insync offset forward
+    // The method is supposed to be called by the archival_metadata_stm after
+    // applying all commands in the record batch to the manifest.
+    void advance_insync_offset(model::offset o);
 
     /// Get starting offset
     std::optional<model::offset> get_start_offset() const;
@@ -248,6 +261,7 @@ private:
     segment_multimap _replaced;
     model::offset _last_offset;
     model::offset _start_offset;
+    model::offset _insync_offset;
 };
 
 } // namespace cloud_storage
