@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/members_table.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
@@ -58,9 +59,13 @@ struct topic_table_fixture {
           create_allocation_node(model::node_id(2), 12));
         allocator.local().register_node(
           create_allocation_node(model::node_id(3), 4));
+        pb_state
+          .start_single(std::ref(table), std::ref(members), std::ref(allocator))
+          .get();
     }
 
     ~topic_table_fixture() {
+        pb_state.stop().get();
         table.stop().get0();
         allocator.stop().get0();
         members.stop().get0();
@@ -149,5 +154,6 @@ struct topic_table_fixture {
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
+    ss::sharded<cluster::partition_balancer_state> pb_state;
     ss::abort_source as;
 };

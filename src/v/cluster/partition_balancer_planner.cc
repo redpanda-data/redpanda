@@ -12,6 +12,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/members_table.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
@@ -51,12 +52,10 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
 
 partition_balancer_planner::partition_balancer_planner(
   planner_config config,
-  topic_table& topic_table,
-  members_table& members_table,
+  partition_balancer_state& state,
   partition_allocator& partition_allocator)
   : _config(config)
-  , _topic_table(topic_table)
-  , _members_table(members_table)
+  , _state(state)
   , _partition_allocator(partition_allocator) {
     _config.soft_max_disk_usage_ratio = std::min(
       _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
@@ -67,7 +66,7 @@ void partition_balancer_planner::init_per_node_state(
   const std::vector<raft::follower_metrics>& follower_metrics,
   reallocation_request_state& rrs,
   plan_data& result) const {
-    for (const auto& broker : _members_table.all_brokers()) {
+    for (const auto& broker : _state.members().all_brokers()) {
         if (
           broker->get_membership_state() == model::membership_state::removed) {
             continue;
@@ -305,7 +304,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
         return;
     }
 
-    for (const auto& t : _topic_table.topics_map()) {
+    for (const auto& t : _state.topics().topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             // End adding movements if batch is collected
             if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
@@ -392,7 +391,7 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 
     absl::flat_hash_map<model::node_id, std::vector<model::ntp>> ntp_on_nodes;
-    for (const auto& t : _topic_table.topics_map()) {
+    for (const auto& t : _state.topics().topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             for (const auto& r : a.replicas) {
                 ntp_on_nodes[r.node_id].emplace_back(
@@ -429,7 +428,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                 continue;
             }
 
-            const auto& topic_metadata = _topic_table.topics_map().at(
+            const auto& topic_metadata = _state.topics().topics_map().at(
               model::topic_namespace_view(partition_to_move));
             const auto& current_assignments
               = topic_metadata.get_assignments().find(
@@ -531,7 +530,7 @@ void partition_balancer_planner::get_full_node_reassignments(
  */
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
   plan_data& result, const reallocation_request_state& rrs) {
-    for (const auto& update : _topic_table.updates_in_progress()) {
+    for (const auto& update : _state.topics().updates_in_progress()) {
         if (
           update.second.get_state()
           != topic_table::in_progress_state::update_requested) {
@@ -547,7 +546,7 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
             }
         }
 
-        auto current_assignments = _topic_table.get_partition_assignment(
+        auto current_assignments = _state.topics().get_partition_assignment(
           update.first);
         if (!current_assignments.has_value()) {
             continue;
@@ -583,7 +582,7 @@ partition_balancer_planner::plan_reassignments(
         return result;
     }
 
-    if (_topic_table.has_updates_in_progress()) {
+    if (_state.topics().has_updates_in_progress()) {
         get_unavailable_node_movement_cancellations(result, rrs);
         if (!result.cancellations.empty()) {
             result.status = status::cancellations_planned;
@@ -596,9 +595,7 @@ partition_balancer_planner::plan_reassignments(
         return result;
     }
 
-    if (
-      !_topic_table.has_updates_in_progress()
-      && !result.violations.is_empty()) {
+    if (!result.violations.is_empty()) {
         init_ntp_sizes_from_health_report(health_report, rrs);
         get_unavailable_nodes_reassignments(result, rrs);
         get_full_node_reassignments(result, rrs);

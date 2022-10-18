@@ -29,6 +29,7 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/metrics_reporter.h"
 #include "cluster/partition_balancer_backend.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
@@ -70,7 +71,11 @@ controller::controller(
   , _shard_table(st)
   , _storage(storage)
   , _storage_node(storage_node)
-  , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
+  , _tp_updates_dispatcher(
+      _partition_allocator,
+      _tp_state,
+      _partition_leaders,
+      _partition_balancer_state)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
   , _raft_manager(raft_manager)
@@ -96,6 +101,12 @@ ss::future<> controller::wire_up() {
             []() { return config::shard_local_cfg().superusers.bind(); });
       })
       .then([this] { return _tp_state.start(); })
+      .then([this] {
+          return _partition_balancer_state.start_single(
+            std::ref(_tp_state),
+            std::ref(_members_table),
+            std::ref(_partition_allocator));
+      })
       .then([this] { _probe.start(); });
 }
 
@@ -375,9 +386,8 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
           return _partition_balancer.start_single(
             _raft0,
             std::ref(_stm),
-            std::ref(_tp_state),
+            std::ref(_partition_balancer_state),
             std::ref(_hm_frontend),
-            std::ref(_members_table),
             std::ref(_partition_allocator),
             std::ref(_tp_frontend),
             config::shard_local_cfg().partition_autobalancing_mode.bind(),
@@ -443,6 +453,7 @@ ss::future<> controller::stop() {
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _drain_manager.stop(); })
+          .then([this] { return _partition_balancer_state.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })
           .then([this] { return _members_table.stop(); })

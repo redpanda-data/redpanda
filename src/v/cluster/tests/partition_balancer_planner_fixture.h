@@ -13,6 +13,7 @@
 
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "model/metadata.h"
@@ -50,7 +51,7 @@ static std::unique_ptr<cluster::allocation_node> create_allocation_node(
 struct controller_workers {
 public:
     controller_workers()
-      : dispatcher(allocator, table, leaders) {
+      : dispatcher(allocator, table, leaders, state) {
         table.start().get();
         members.start_single().get();
         allocator
@@ -62,9 +63,13 @@ public:
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<bool>(true))
           .get();
+        state
+          .start_single(std::ref(table), std::ref(members), std::ref(allocator))
+          .get();
     }
 
     ~controller_workers() {
+        state.stop().get();
         table.stop().get();
         allocator.stop().get();
         members.stop().get();
@@ -74,6 +79,7 @@ public:
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
+    ss::sharded<cluster::partition_balancer_state> state;
     cluster::topic_updates_dispatcher dispatcher;
 };
 
@@ -85,8 +91,7 @@ struct partition_balancer_planner_fixture {
           .hard_max_disk_usage_ratio = 0.95,
           .movement_disk_size_batch = reallocation_batch_size,
           .node_availability_timeout_sec = std::chrono::minutes(1)},
-        workers.table.local(),
-        workers.members.local(),
+        workers.state.local(),
         workers.allocator.local()) {}
 
     cluster::topic_configuration_assignment make_tp_configuration(

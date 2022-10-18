@@ -15,6 +15,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/topics_frontend.h"
 #include "random/generators.h"
 
@@ -33,9 +34,8 @@ static constexpr std::chrono::seconds add_move_cmd_timeout = 10s;
 partition_balancer_backend::partition_balancer_backend(
   consensus_ptr raft0,
   ss::sharded<controller_stm>& controller_stm,
-  ss::sharded<topic_table>& topic_table,
+  ss::sharded<partition_balancer_state>& state,
   ss::sharded<health_monitor_frontend>& health_monitor,
-  ss::sharded<members_table>& members_table,
   ss::sharded<partition_allocator>& partition_allocator,
   ss::sharded<topics_frontend>& topics_frontend,
   config::binding<model::partition_autobalancing_mode>&& mode,
@@ -46,9 +46,8 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<size_t>&& movement_batch_size_bytes)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
-  , _topic_table(topic_table.local())
+  , _state(state.local())
   , _health_monitor(health_monitor.local())
-  , _members_table(members_table.local())
   , _partition_allocator(partition_allocator.local())
   , _topics_frontend(topics_frontend.local())
   , _mode(std::move(mode))
@@ -160,8 +159,7 @@ ss::future<> partition_balancer_backend::do_tick() {
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .node_availability_timeout_sec = _availability_timeout(),
           },
-          _topic_table,
-          _members_table,
+          _state,
           _partition_allocator)
           .plan_reassignments(health_report.value(), follower_metrics);
 
@@ -169,7 +167,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
     if (
-      _topic_table.has_updates_in_progress()
+      _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::cancellations_planned
       || plan_data.status == planner_status::movement_planned) {
         _last_status = partition_balancer_status::in_progress;
@@ -193,7 +191,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
-          _topic_table.updates_in_progress().size(),
+          _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
           plan_data.failed_reassignments_count);

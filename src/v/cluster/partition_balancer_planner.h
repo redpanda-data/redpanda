@@ -40,8 +40,7 @@ class partition_balancer_planner {
 public:
     partition_balancer_planner(
       planner_config config,
-      topic_table& topic_table,
-      members_table& members_table,
+      partition_balancer_state& state,
       partition_allocator& partition_allocator);
 
     enum class status {
@@ -121,8 +120,7 @@ private:
     bool all_reports_received(const reallocation_request_state&);
 
     planner_config _config;
-    topic_table& _topic_table;
-    members_table& _members_table;
+    partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
 };
 
