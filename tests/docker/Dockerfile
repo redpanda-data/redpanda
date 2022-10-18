@@ -70,7 +70,6 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
     echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
-    echo 'RekeyLimit 1024G none' >> /etc/ssh/sshd_config && \
     echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
     echo 'root hard nofile 65535' >> /etc/security/limits.conf
 
