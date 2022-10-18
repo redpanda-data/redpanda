@@ -427,6 +427,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     });
 
     _insync_offset = b.last_offset();
+    _manifest->advance_insync_offset(b.last_offset());
 }
 
 ss::future<> archival_metadata_stm::handle_eviction() {
@@ -464,9 +465,14 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     *_manifest = std::move(manifest);
     auto start_offset = get_start_offset();
 
-    // We can skip all offsets up to the last_offset because we can be sure
-    // that in the skipped batches there won't be any new remote segments.
-    _insync_offset = get_last_offset();
+    auto iso = _manifest->get_insync_offset();
+    if (iso == model::offset{}) {
+        // Handle legacy manifests which don't have the 'insync_offset'
+        // field.
+        _insync_offset = _manifest->get_last_offset();
+    } else {
+        _insync_offset = iso;
+    }
     auto next_offset = std::max(
       _raft->start_offset(), model::next_offset(_insync_offset));
     set_next(next_offset);
@@ -512,6 +518,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       _raft->log_config().get_initial_revision(),
       snap.start_offset,
       snap.last_offset,
+      header.offset,
       snap.segments,
       snap.replaced);
 
@@ -555,7 +562,11 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         // shouldn't stop eviction from happening.
         return model::offset::max();
     }
-    return get_last_offset();
+    auto lo = get_last_offset();
+    if (_manifest->size() == 0 && lo == model::offset{0}) {
+        lo = model::offset::min();
+    }
+    return lo;
 }
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {

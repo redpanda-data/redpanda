@@ -31,6 +31,7 @@ static constexpr std::string_view empty_manifest_json = R"json({
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "insync_offset": 0,
     "last_offset": 0
 })json";
 static constexpr std::string_view complete_manifest_json = R"json({

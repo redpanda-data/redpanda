@@ -176,13 +176,13 @@ segment_name generate_local_segment_name(model::offset o, model::term_id t) {
 partition_manifest::partition_manifest()
   : _ntp()
   , _rev()
-  , _last_offset() {}
+  , _last_offset(0) {}
 
 partition_manifest::partition_manifest(
   model::ntp ntp, model::initial_revision_id rev)
   : _ntp(std::move(ntp))
   , _rev(rev)
-  , _last_offset() {}
+  , _last_offset(0) {}
 
 // NOTE: the methods that generate remote paths use the xxhash function
 // to randomize the prefix. S3 groups the objects into chunks based on
@@ -217,6 +217,14 @@ const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 const model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
+}
+
+const model::offset partition_manifest::get_insync_offset() const {
+    return _insync_offset;
+}
+
+void partition_manifest::advance_insync_offset(model::offset o) {
+    _insync_offset = std::max(o, _insync_offset);
 }
 
 std::optional<model::offset> partition_manifest::get_start_offset() const {
@@ -634,6 +642,8 @@ struct partition_manifest_handler
                 _last_offset = model::offset(u);
             } else if ("start_offset" == _manifest_key) {
                 _start_offset = model::offset(u);
+            } else if ("insync_offset" == _manifest_key) {
+                _insync_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -842,6 +852,7 @@ struct partition_manifest_handler
     std::optional<model::initial_revision_id> _revision_id;
     std::optional<model::offset> _last_offset;
     std::optional<model::offset> _start_offset;
+    std::optional<model::offset> _insync_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -977,6 +988,10 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
         _start_offset = {};
     }
 
+    if (handler._insync_offset) {
+        _insync_offset = handler._insync_offset.value();
+    }
+
     if (handler._segments) {
         _segments = std::move(*handler._segments);
         if (handler._start_offset == std::nullopt && !_segments.empty()) {
@@ -1023,6 +1038,10 @@ void partition_manifest::serialize(std::ostream& out) const {
     w.Int64(_rev());
     w.Key("last_offset");
     w.Int64(_last_offset());
+    if (_insync_offset != model::offset{}) {
+        w.Key("insync_offset");
+        w.Int64(_insync_offset());
+    }
     if (_start_offset != model::offset{}) {
         w.Key("start_offset");
         w.Int64(_start_offset());
