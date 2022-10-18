@@ -451,10 +451,12 @@ ss::future<> cache::put(
       .finally([&out]() { return out.close(); });
 
     // commit write transaction
+    auto src = (dir_path / tmp_filename).native();
     auto dest = (dir_path / filename).native();
-    co_await ss::rename_file((dir_path / tmp_filename).native(), dest);
 
-    auto put_size = co_await ss::file_size(dest);
+    auto put_size = co_await ss::file_size(src);
+
+    co_await ss::rename_file(src, dest);
 
     // Bump access time of the file
     if (ss::this_shard_id() == 0) {
