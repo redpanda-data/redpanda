@@ -267,6 +267,8 @@ const (
 	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
 	enterpriseGoogleSAMountName = "enterprise-google-sa"
 	enterpriseGoogleSAMountPath = "/etc/console/enterprise/google"
+
+	prometheusBasicAuthPassowrdEnvVar = "CLOUD_PROMETHEUSENDPOINT_BASICAUTH_PASSWORD"
 )
 
 func (d *Deployment) getVolumes(ss string) []corev1.Volume {
@@ -394,6 +396,30 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 				},
 			},
 			VolumeMounts: volumeMounts,
+			Env:          d.genEnvVars(),
+		},
+	}
+}
+
+func (d *Deployment) genEnvVars() []corev1.EnvVar {
+	if d.consoleobj.Spec.Cloud == nil ||
+		d.consoleobj.Spec.Cloud.PrometheusEndpoint == nil ||
+		!d.consoleobj.Spec.Cloud.PrometheusEndpoint.Enabled {
+		return []corev1.EnvVar{}
+	}
+	// the webhook enforces that the secret is in the same namespace as console
+	passwordRef := d.consoleobj.Spec.Cloud.PrometheusEndpoint.BasicAuth.PasswordRef
+	return []corev1.EnvVar{
+		{
+			Name: prometheusBasicAuthPassowrdEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: passwordRef.Key,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: passwordRef.Name,
+					},
+				},
+			},
 		},
 	}
 }
