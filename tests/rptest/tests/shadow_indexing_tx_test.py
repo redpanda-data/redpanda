@@ -20,7 +20,6 @@ from rptest.util import (
 from rptest.utils.si_utils import Producer
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 import confluent_kafka as ck
 
@@ -57,7 +56,6 @@ class ShadowIndexingTxTest(RedpandaTest):
             rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
             rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5651
     @cluster(num_nodes=3)
     def test_shadow_indexing_aborted_txs(self):
         """Check that messages belonging to aborted transaction are not seen by clients
