@@ -9,7 +9,6 @@
 
 import random
 
-from ducktape.mark import ok_to_fail
 from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec

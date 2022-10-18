@@ -11,7 +11,6 @@ from rptest.services.cluster import cluster
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest

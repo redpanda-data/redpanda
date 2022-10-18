@@ -21,7 +21,6 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 
 from rptest.util import wait_until
-from ducktape.mark import ok_to_fail
 
 
 class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
