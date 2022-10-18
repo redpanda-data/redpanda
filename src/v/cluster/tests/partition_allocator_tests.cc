@@ -44,12 +44,15 @@ FIXTURE_TEST(register_node, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 3);
 }
 
-model::broker create_broker(int node_id, uint32_t core_count) {
+model::broker create_broker(
+  int node_id,
+  uint32_t core_count,
+  std::optional<model::rack_id> rack = std::nullopt) {
     return model::broker(
       model::node_id(node_id),
       net::unresolved_address("localhost", 1024),
       net::unresolved_address("localhost", 1024),
-      std::nullopt,
+      std::move(rack),
       model::broker_properties{.cores = core_count});
 }
 
@@ -453,7 +456,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
     }
 }
 
-FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
+FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
     register_node(0, 2);
     register_node(1, 4);
     register_node(2, 7);
@@ -474,8 +477,11 @@ FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
     }
     auto it = allocator.state().allocation_nodes().find(model::node_id(1));
     auto allocated = it->second->allocated_partitions();
+    auto new_rack = model::rack_id{"rack_A"};
     allocator.update_allocation_nodes(std::vector<model::broker>{
-      create_broker(0, 2), create_broker(1, 10), create_broker(2, 7)});
+      create_broker(0, 2),
+      create_broker(1, 10, new_rack),
+      create_broker(2, 7)});
     BOOST_REQUIRE_EQUAL(it->second->cpus(), 10);
     // changing core count doesn't change number of allocated partitions
     BOOST_REQUIRE_EQUAL(it->second->allocated_partitions(), allocated);
@@ -483,6 +489,7 @@ FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
       it->second->max_capacity(),
       10 * cluster::allocation_node::max_allocations_per_core
         - cluster::allocation_node::core0_extra_weight);
+    BOOST_REQUIRE_EQUAL(it->second->rack(), new_rack);
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {

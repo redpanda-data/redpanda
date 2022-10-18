@@ -110,6 +110,7 @@ void allocation_state::update_allocation_nodes(
                 b.rack()));
         } else {
             it->second->update_core_count(b.properties().cores);
+            it->second->update_rack(b.rack());
             // node was added back to the cluster
             if (it->second->is_removed()) {
                 it->second->mark_as_active();

@@ -79,6 +79,9 @@ public:
     bool is_removed() const { return _state == state::deleted; }
 
     void update_core_count(uint32_t);
+    void update_rack(std::optional<model::rack_id> rack) {
+        _rack = std::move(rack);
+    }
 
     allocation_capacity allocated_partitions() const {
         return _allocated_partitions;
