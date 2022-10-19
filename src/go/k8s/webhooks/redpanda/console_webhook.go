@@ -8,12 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -42,16 +40,6 @@ func (v *ConsoleValidator) Handle(
 
 	if !console.IsAllowedNamespace() {
 		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
-	}
-
-	errs, err := ValidatePrometheus(ctx, v.Client, console)
-	if err != nil {
-		return admission.Errored(http.StatusInternalServerError, err)
-	}
-	if len(errs) > 0 {
-		return admission.Errored(http.StatusBadRequest, apierrors.NewInvalid(
-			console.GroupVersionKind().GroupKind(),
-			console.Name, errs))
 	}
 
 	// Admit console even if cluster is not yet configured, controller will do backoff retries
@@ -138,18 +126,6 @@ func (m *ConsoleDefaulter) Default(console *redpandav1alpha1.Console) (*admissio
 	}
 	if license := console.Spec.LicenseRef; license != nil && license.Key == "" {
 		license.Key = consolepkg.DefaultLicenseSecretKey
-	}
-	if console.Spec.Cloud != nil &&
-		console.Spec.Cloud.PrometheusEndpoint != nil &&
-		console.Spec.Cloud.PrometheusEndpoint.ResponseCacheDuration == nil {
-		console.Spec.Cloud.PrometheusEndpoint.ResponseCacheDuration = &metav1.Duration{Duration: 1 * time.Second}
-	}
-
-	if console.Spec.Cloud != nil &&
-		console.Spec.Cloud.PrometheusEndpoint != nil &&
-		console.Spec.Cloud.PrometheusEndpoint.Prometheus != nil &&
-		console.Spec.Cloud.PrometheusEndpoint.Prometheus.TargetRefreshInterval == nil {
-		console.Spec.Cloud.PrometheusEndpoint.Prometheus.TargetRefreshInterval = &metav1.Duration{Duration: 10 * time.Second}
 	}
 
 	current, err := json.Marshal(console)
