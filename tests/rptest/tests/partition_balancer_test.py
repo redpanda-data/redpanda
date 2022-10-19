@@ -10,6 +10,7 @@ import os
 import random
 import time
 
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.util import wait_until, wait_until_result
