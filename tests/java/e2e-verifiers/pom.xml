@@ -17,7 +17,7 @@
         <argparse4j.version>0.8.1</argparse4j.version>
         <slf4j.version>1.7.36</slf4j.version>
         <buildDir>${project.basedir}/target</buildDir>
-        <jackson.version>2.13.4</jackson.version>
+        <jackson.version>2.13.4.1</jackson.version>
     </properties>
     <dependencies>
         <dependency>
