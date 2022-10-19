@@ -22,6 +22,7 @@
 
 namespace storage {
 class kvstore;
+class api;
 } // namespace storage
 
 namespace cluster {
@@ -65,9 +66,7 @@ public:
     using brokers = std::vector<model::broker>;
 
     cluster_discovery(
-      const model::node_uuid& node_uuid,
-      storage::kvstore& kvstore,
-      ss::abort_source&);
+      const model::node_uuid& node_uuid, storage::api&, ss::abort_source&);
 
     // Determines what the node ID for this node should be. Once called, we can
     // proceed with initializing anything that depends on node ID (Raft
@@ -95,8 +94,16 @@ public:
      */
     ss::future<brokers> initial_seed_brokers();
 
-    ss::future<brokers> initial_seed_brokers_if_no_cluster(
-      const std::optional<model::cluster_uuid>& stored_cluster_uuid);
+    ss::future<brokers> initial_seed_brokers_if_no_cluster();
+
+    /**
+     * A cluster founder is a node that is configured as a seed server, and
+     * whose local on-disk state along with the remote state from other seed
+     * servers indicate that a cluster doesn't already exist. A cluster founder
+     * will form the initial controller Raft group with all other seed servers,
+     * to which non-seeds can join later.
+     */
+    ss::future<bool> is_cluster_founder();
 
 private:
     // Sends requests to each seed server to register the local node UUID until
@@ -149,6 +156,7 @@ private:
     simple_time_jitter<model::timeout_clock> _join_retry_jitter;
     const std::chrono::milliseconds _join_timeout;
 
+    const bool _has_stored_cluster_uuid;
     storage::kvstore& _kvstore;
     ss::abort_source& _as;
     std::vector<

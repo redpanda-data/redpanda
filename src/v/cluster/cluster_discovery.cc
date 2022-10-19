@@ -31,12 +31,13 @@ namespace cluster {
 
 cluster_discovery::cluster_discovery(
   const model::node_uuid& node_uuid,
-  storage::kvstore& kvstore,
+  storage::api& storage,
   ss::abort_source& as)
   : _node_uuid(node_uuid)
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
-  , _kvstore(kvstore)
+  , _has_stored_cluster_uuid(storage.get_cluster_uuid().has_value())
+  , _kvstore(storage.kvs())
   , _as(as) {}
 
 ss::future<node_id> cluster_discovery::determine_node_id() {
@@ -127,12 +128,20 @@ cluster_discovery::initial_seed_brokers() {
 }
 
 ss::future<cluster_discovery::brokers>
-cluster_discovery::initial_seed_brokers_if_no_cluster(
-  const std::optional<model::cluster_uuid>& stored_cluster_uuid) {
-    if (stored_cluster_uuid.has_value()) {
+cluster_discovery::initial_seed_brokers_if_no_cluster() {
+    if (!co_await is_cluster_founder()) {
         co_return brokers{};
     }
     co_return co_await initial_seed_brokers();
+}
+
+ss::future<bool> cluster_discovery::is_cluster_founder() {
+    if (_has_stored_cluster_uuid) {
+        co_return false;
+    }
+    const std::optional<model::node_id> cluster_founder_node_id
+      = co_await get_cluster_founder_node_id();
+    co_return cluster_founder_node_id.has_value();
 }
 
 ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
