@@ -81,7 +81,7 @@ static model::record _make_random_record(
       std::move(headers));
 }
 
-static model::record make_random_record(int index, iobuf key) {
+model::record make_random_record(int index, iobuf key) {
     return _make_random_record(
       index, std::make_optional<iobuf>(std::move(key)));
 }

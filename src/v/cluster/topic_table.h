@@ -149,6 +149,10 @@ public:
         topic_configuration& get_configuration() {
             return metadata.get_configuration();
         }
+
+        replication_factor get_replication_factor() const {
+            return metadata.get_replication_factor();
+        }
     };
 
     using delta = topic_table_delta;
@@ -216,6 +220,7 @@ public:
       apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
@@ -259,6 +264,12 @@ public:
     /// If topic does not exists it returns an empty optional
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
+
+    ///\brief Returns configuration of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<replication_factor>
+      get_topic_replication_factor(model::topic_namespace_view) const;
 
     ///\brief Returns partition assignments of single topic.
     ///
@@ -354,6 +365,13 @@ private:
     template<typename Func>
     std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
     transform_topics(Func&&) const;
+
+    void change_partition_replicas(
+      model::ntp ntp,
+      const std::vector<model::broker_shard>& new_assignment,
+      topic_metadata_item& metadata,
+      partition_assignment& current_assignment,
+      model::offset o);
 
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;

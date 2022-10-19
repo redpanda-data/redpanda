@@ -233,7 +233,7 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
 
     return partition_constraints(
       assignments.id,
-      topic_metadata.get_configuration().replication_factor,
+      topic_metadata.get_replication_factor(),
       std::move(allocation_constraints));
 }
 

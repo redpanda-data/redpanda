@@ -151,7 +151,8 @@ static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
     };
 }
 
-static model::control_record_type parse_control_batch(model::record_batch& b) {
+static model::control_record_type
+parse_control_batch(const model::record_batch& b) {
     const auto& hdr = b.header();
 
     vassert(
@@ -171,6 +172,11 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
       version == model::current_control_record_version,
       "unknown control record version");
     return model::control_record_type(key_reader.read_int16());
+}
+
+model::control_record_type
+rm_stm::parse_tx_control_batch(const model::record_batch& b) {
+    return parse_control_batch(b);
 }
 
 struct seq_entry_v0 {
@@ -249,19 +255,6 @@ rm_stm::rm_stm(
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
-}
-
-bool rm_stm::check_tx_permitted() {
-    // TODO support compaction
-    if (_c->log_config().is_compacted()) {
-        vlog(
-          _ctx_log.error,
-          "Can't process a transactional request to {}. Compacted topic "
-          "doesn't support transactional processing.",
-          _c->ntp());
-        return false;
-    }
-    return true;
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(

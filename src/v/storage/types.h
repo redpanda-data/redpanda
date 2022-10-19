@@ -53,9 +53,15 @@ struct disk : serde::envelope<disk, serde::version<0>> {
 
 std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
 
+// Helps to identify transactional stms in the registered list of stms.
+// Avoids an ugly dynamic cast to the base class.
+enum class stm_type : int8_t { transactional = 0, non_transactional = 1 };
+
 class snapshotable_stm {
 public:
     virtual ~snapshotable_stm() = default;
+
+    virtual stm_type type() { return stm_type::non_transactional; }
 
     // create a snapshot at given offset unless a snapshot with given or newer
     // offset already exists
@@ -65,6 +71,16 @@ public:
     // lets the stm control snapshotting and log eviction by limiting
     // log eviction attempts to offsets not greater than this.
     virtual model::offset max_collectible_offset() = 0;
+
+    // Only valid for state machines maintaining transactional state.
+    // Returns aborted transactions in range [from, to] offsets.
+    virtual ss::future<std::vector<model::tx_range>>
+      aborted_tx_ranges(model::offset, model::offset) = 0;
+
+    virtual model::control_record_type
+    parse_tx_control_batch(const model::record_batch&) {
+        return model::control_record_type::unknown;
+    }
 };
 
 /**
@@ -95,7 +111,13 @@ public:
  */
 class stm_manager {
 public:
-    void add_stm(ss::shared_ptr<snapshotable_stm> stm) { _stms.push_back(stm); }
+    void add_stm(ss::shared_ptr<snapshotable_stm> stm) {
+        if (stm->type() == stm_type::transactional) {
+            vassert(!_tx_stm, "Multiple transactional stms not allowed.");
+            _tx_stm = stm;
+        }
+        _stms.push_back(stm);
+    }
 
     ss::future<> ensure_snapshot_exists(model::offset offset) {
         auto f = ss::now();
@@ -120,7 +142,25 @@ public:
         return result;
     }
 
+    ss::future<std::vector<model::tx_range>>
+    aborted_tx_ranges(model::offset to, model::offset from) {
+        std::vector<model::tx_range> r;
+        if (_tx_stm) {
+            r = co_await _tx_stm->aborted_tx_ranges(to, from);
+        }
+        co_return r;
+    }
+
+    model::control_record_type
+    parse_tx_control_batch(const model::record_batch& b) {
+        if (!_tx_stm) {
+            return model::control_record_type::unknown;
+        }
+        return _tx_stm->parse_tx_control_batch(b);
+    }
+
 private:
+    ss::shared_ptr<snapshotable_stm> _tx_stm;
     std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
 };
 

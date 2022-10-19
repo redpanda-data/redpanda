@@ -1217,13 +1217,20 @@ struct incremental_topic_updates
       = default;
 };
 
+using replication_factor
+  = named_type<uint16_t, struct replication_factor_type_tag>;
+
+std::istream& operator>>(std::istream& i, replication_factor& cs);
+
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend
 struct incremental_topic_custom_updates
-  : serde::envelope<incremental_topic_custom_updates, serde::version<0>> {
+  : serde::envelope<incremental_topic_custom_updates, serde::version<1>> {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+    // Replication factor is custom handled.
+    property_update<std::optional<replication_factor>> replication_factor;
 
     friend std::ostream&
     operator<<(std::ostream&, const incremental_topic_custom_updates&);
@@ -1233,7 +1240,7 @@ struct incremental_topic_custom_updates
       const incremental_topic_custom_updates&)
       = default;
 
-    auto serde_fields() { return std::tie(data_policy); }
+    auto serde_fields() { return std::tie(data_policy, replication_factor); }
 };
 
 /**
@@ -1969,6 +1976,23 @@ struct cancel_moving_partition_replicas_cmd_data
     auto serde_fields() { return std::tie(force); }
 };
 
+struct move_topic_replicas_data
+  : serde::envelope<move_topic_replicas_data, serde::version<0>> {
+    move_topic_replicas_data() noexcept = default;
+    explicit move_topic_replicas_data(
+      model::partition_id partition, std::vector<model::broker_shard> replicas)
+      : partition(partition)
+      , replicas(std::move(replicas)) {}
+
+    model::partition_id partition;
+    std::vector<model::broker_shard> replicas;
+
+    auto serde_fields() { return std::tie(partition, replicas); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const move_topic_replicas_data&);
+};
+
 struct feature_update_license_update_cmd_data
   : serde::envelope<feature_update_license_update_cmd_data, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
@@ -2444,6 +2468,8 @@ public:
 
     const assignments_set& get_assignments() const;
     assignments_set& get_assignments();
+
+    replication_factor get_replication_factor() const;
 
 private:
     topic_configuration _configuration;

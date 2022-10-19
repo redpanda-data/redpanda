@@ -188,8 +188,11 @@ class ClusterMetricsTest(RedpandaTest):
         cluster_metrics = MetricCheck(
             self.logger,
             self.redpanda,
-            controller,
-            re.compile("redpanda_cluster_.*"),
+            controller, [
+                "redpanda_cluster_brokers", "redpanda_cluster_topics",
+                "redpanda_cluster_partitions",
+                "redpanda_cluster_unavailable_partitions"
+            ],
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
 
         RpkTool(self.redpanda).create_topic("test-topic", partitions=3)

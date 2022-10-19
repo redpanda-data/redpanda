@@ -481,6 +481,13 @@ struct tx_range {
     auto operator<=>(const tx_range&) const = default;
 };
 
+// Comparator that sorts in ascending order by first offset.
+struct tx_range_cmp {
+    auto operator()(const tx_range& l, const tx_range& r) {
+        return l.first > r.first;
+    }
+};
+
 static constexpr producer_identity unknown_pid{-1, -1};
 
 struct batch_identity {

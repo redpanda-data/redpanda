@@ -100,6 +100,12 @@ CHAOS_LOG_ALLOW_LIST = [
     ),
 ]
 
+# Log errors that are expected in tests that change replication factor
+CHANGE_REPLICATION_FACTOR_ALLOW_LIST = [
+    re.compile(
+        "cluster - .*Unable to allocate topic with given replication factor"),
+]
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
@@ -601,6 +607,7 @@ class RedpandaService(Service):
                 self._extra_rp_conf)
 
     def set_si_settings(self, si_settings: SISettings):
+        si_settings.load_context(self.logger, self._context)
         self._si_settings = si_settings
         self._extra_rp_conf = self._si_settings.update_rp_conf(
             self._extra_rp_conf)

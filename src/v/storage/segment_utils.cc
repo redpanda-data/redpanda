@@ -286,6 +286,9 @@ ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
                 if (bool(footer.flags & flags::self_compaction)) {
                     return compacted_index::recovery_state::already_compacted;
                 }
+                if (bool(footer.flags & flags::incomplete)) {
+                    return compacted_index::recovery_state::index_needs_rebuild;
+                }
                 // if we deal with old version of index that is not yet
                 // compacted request a rebuild
                 if (
@@ -497,22 +500,48 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
 ss::future<> rebuild_compaction_index(
   model::record_batch_reader rdr,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  std::vector<model::tx_range>&& aborted_txs,
   std::filesystem::path p,
   compaction_config cfg,
   storage_resources& resources) {
     return make_compacted_index_writer(p, cfg.sanitize, cfg.iopc, resources)
-      .then([r = std::move(rdr)](compacted_index_writer w) mutable {
-          auto u = std::make_unique<compacted_index_writer>(std::move(w));
-          auto ptr = u.get();
-          return std::move(r)
-            .consume(index_rebuilder_reducer(ptr), model::no_timeout)
-            .then_wrapped([x = std::move(u)](ss::future<> fut) mutable {
-                return x->close()
-                  .handle_exception([](std::exception_ptr e) {
-                      vlog(gclog.warn, "error closing compacted index:{}", e);
-                  })
-                  .then([f = std::move(fut), x = std::move(x)]() mutable {
-                      return std::move(f);
+      .then([r = std::move(rdr), stm_manager, txs = std::move(aborted_txs)](
+              compacted_index_writer w) mutable {
+          return ss::do_with(
+            std::move(w),
+            [stm_manager, r = std::move(r), txs = std::move(txs)](
+              auto& writer) mutable {
+                return std::move(r)
+                  .consume(
+                    tx_reducer(stm_manager, std::move(txs), &writer),
+                    model::no_timeout)
+                  .then_wrapped(
+                    [&writer](ss::future<tx_reducer::stats> fut) mutable {
+                        if (fut.failed()) {
+                            vlog(
+                              gclog.error,
+                              "Error rebuilding index: {}, {}",
+                              writer.filename(),
+                              fut.get_exception());
+                        } else {
+                            vlog(
+                              gclog.info,
+                              "tx reducer path: {} stats {}",
+                              writer.filename(),
+                              fut.get0());
+                        }
+                    })
+                  .finally([&writer]() {
+                      // writer needs to be closed in all cases,
+                      // else can trigger a potential assert.
+                      return writer.close().handle_exception(
+                        [](std::exception_ptr e) {
+                            vlog(
+                              gclog.warn,
+                              "error closing compacted index:{}",
+                              e);
+                        });
                   });
             });
       });
@@ -520,6 +549,7 @@ ss::future<> rebuild_compaction_index(
 
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
@@ -564,9 +594,13 @@ ss::future<compaction_result> self_compact_segment(
         vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
         pb.corrupted_compaction_index();
         auto h = co_await s->read_lock();
-
+        // TODO: Improve memory management here, eg: ton of aborted txs?
+        auto aborted_txs = co_await stm_manager->aborted_tx_ranges(
+          s->offsets().base_offset, s->offsets().stable_offset);
         co_await rebuild_compaction_index(
           create_segment_full_reader(s, cfg, pb, std::move(h)),
+          stm_manager,
+          std::move(aborted_txs),
           idx_path,
           cfg,
           resources);
@@ -576,7 +610,7 @@ ss::future<compaction_result> self_compact_segment(
           "rebuilt index: {}, attempting compaction again",
           idx_path);
         co_return co_await self_compact_segment(
-          s, cfg, pb, readers_cache, resources);
+          s, stm_manager, cfg, pb, readers_cache, resources);
     }
     }
     __builtin_unreachable();
@@ -629,13 +663,15 @@ make_concatenated_segment(
     }
     co_await output.close();
 
+    auto& front = segments.front()->offsets();
+    auto& back = segments.back()->offsets();
+
     // offsets span the concatenated range
-    segment::offset_tracker offsets(
-      segments.front()->offsets().term,
-      segments.front()->offsets().base_offset);
-    offsets.committed_offset = segments.back()->offsets().committed_offset;
-    offsets.dirty_offset = segments.back()->offsets().dirty_offset;
-    offsets.stable_offset = segments.back()->offsets().stable_offset;
+    segment::offset_tracker offsets(front.term, front.base_offset);
+    offsets.committed_offset = std::max(
+      front.committed_offset, back.committed_offset);
+    offsets.dirty_offset = std::max(front.dirty_offset, back.committed_offset);
+    offsets.stable_offset = std::max(front.stable_offset, back.stable_offset);
 
     // build segment reader over combined data
     segment_reader reader(

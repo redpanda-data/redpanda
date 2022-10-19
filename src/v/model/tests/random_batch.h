@@ -36,6 +36,8 @@ struct record_batch_spec {
     std::optional<model::timestamp> timestamp;
 };
 
+model::record make_random_record(int, iobuf);
+
 /**
  * Makes random batch starting at requested offset.
  *

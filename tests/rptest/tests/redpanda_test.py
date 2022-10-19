@@ -54,9 +54,6 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
-        if self.si_settings:
-            self.si_settings.load_context(self.logger, test_context)
-
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
                                         extra_rp_conf=extra_rp_conf,

@@ -13,6 +13,7 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
+#include "cluster/controller_log_limiter.h"
 #include "cluster/controller_service.h"
 #include "cluster/data_policy_frontend.h"
 #include "cluster/feature_backend.h"
@@ -146,7 +147,33 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
             std::ref(_as));
       })
       .then([this] {
+          limiter_configuration limiter_conf{
+            config::shard_local_cfg()
+              .enable_controller_log_rate_limiting.bind(),
+            config::shard_local_cfg().rps_limit_topic_operations.bind(),
+            config::shard_local_cfg()
+              .controller_log_accummulation_rps_capacity_topic_operations
+              .bind(),
+            config::shard_local_cfg()
+              .rps_limit_acls_and_users_operations.bind(),
+            config::shard_local_cfg()
+              .controller_log_accummulation_rps_capacity_acls_and_users_operations
+              .bind(),
+            config::shard_local_cfg()
+              .rps_limit_node_management_operations.bind(),
+            config::shard_local_cfg()
+              .controller_log_accummulation_rps_capacity_node_management_operations
+              .bind(),
+            config::shard_local_cfg().rps_limit_move_operations.bind(),
+            config::shard_local_cfg()
+              .controller_log_accummulation_rps_capacity_move_operations.bind(),
+            config::shard_local_cfg().rps_limit_configuration_operations.bind(),
+            config::shard_local_cfg()
+              .controller_log_accummulation_rps_capacity_configuration_operations
+              .bind(),
+          };
           return _stm.start_single(
+            std::move(limiter_conf),
             std::ref(clusterlog),
             _raft0.get(),
             raft::persistent_last_applied::yes,
@@ -188,9 +215,14 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
             std::ref(_partition_leaders),
             std::ref(_tp_state),
             std::ref(_data_policy_frontend),
+            std::ref(_hm_frontend),
             std::ref(_as),
             std::ref(_cloud_storage_api),
-            std::ref(_feature_table));
+            std::ref(_feature_table),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .storage_space_alert_free_threshold_percent.bind();
+            }));
       })
       .then([this] {
           return _members_backend.start_single(

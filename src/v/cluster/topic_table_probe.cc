@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -149,10 +150,10 @@ void topic_table_probe::handle_topic_creation(
          [this, topic_namespace] {
              auto md = _topic_table.get_topic_metadata_ref(topic_namespace);
              if (md) {
-                 return md.value().get().get_configuration().replication_factor;
+                 return md.value().get().get_replication_factor();
              }
 
-             return int16_t{0};
+             return cluster::replication_factor{0};
          },
          sm::description("Configured number of replicas for the topic"),
          labels)

@@ -198,7 +198,6 @@ func TestSetCommand(t *testing.T) {
 			name: "set without config file on disk",
 			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:
@@ -223,7 +222,6 @@ schema_registry: {}
 			name: "set with loaded config",
 			cfgFile: `redpanda:
     data_directory: data/dir
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:
@@ -242,7 +240,6 @@ rpk:
 `,
 			exp: `redpanda:
     data_directory: data/dir
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:

@@ -173,6 +173,18 @@ public:
         return last_stable_offset();
     }
 
+    storage::stm_type type() override {
+        return storage::stm_type::transactional;
+    }
+
+    ss::future<std::vector<model::tx_range>>
+    aborted_tx_ranges(model::offset from, model::offset to) override {
+        return aborted_transactions(from, to);
+    }
+
+    model::control_record_type
+    parse_tx_control_batch(const model::record_batch&) override;
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader,
@@ -310,7 +322,7 @@ private:
     void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
-    bool check_tx_permitted();
+    constexpr bool check_tx_permitted() { return true; }
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();

@@ -43,16 +43,19 @@ set(srcs
     data_policy_controller_test.cc
     health_monitor_test.cc
     topic_configuration_compat_test.cc
-    local_monitor_test.cc)
+    local_monitor_test.cc
+    tx_compaction_tests.cc)
 
-
+foreach(cluster_test_src ${srcs})
+get_filename_component(test_name ${cluster_test_src} NAME_WE)
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_cluster
-  SOURCES ${srcs}
+  BINARY_NAME test_${test_name}
+  SOURCES ${cluster_test_src}
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine v::cluster
   LABELS cluster
 )
+endforeach()
 
 # These 2 files have a `using namespace cluster;` and removing that
 # would require modifying the FIXTURE_TEST and PERF_TEST_F macros.

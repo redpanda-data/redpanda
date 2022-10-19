@@ -482,7 +482,8 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
 
         // The actual partition and replica count for this topic.
         int32_t pcount = topic_metadata.get_configuration().partition_count;
-        int32_t rcount = topic_metadata.get_configuration().replication_factor;
+        cluster::replication_factor rcount
+          = topic_metadata.get_replication_factor();
 
         size_estimate += pcount
                          * (bytes_per_partition + bytes_per_replica * rcount);

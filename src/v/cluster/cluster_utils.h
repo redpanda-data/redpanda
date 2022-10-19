@@ -229,6 +229,10 @@ ss::future<std::error_code> replicate_and_wait(
        &as = as,
        timeout,
        use_serde_serialization](controller_stm& stm) mutable {
+          if (!stm.throttle<Cmd>()) {
+              return ss::make_ready_future<std::error_code>(
+                errc::throttling_quota_exceeded);
+          }
           if constexpr (Cmd::serde_opts == serde_opts::adl_and_serde) {
               if (unlikely(!use_serde_serialization)) {
                   return serialize_cmd(std::forward<Cmd>(cmd))
