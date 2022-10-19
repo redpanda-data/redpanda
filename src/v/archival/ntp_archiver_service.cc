@@ -12,6 +12,7 @@
 
 #include "archival/archival_policy.h"
 #include "archival/logger.h"
+#include "archival/retention_calculator.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/tx_range_manifest.h"
@@ -71,7 +72,11 @@ ntp_archiver::ntp_archiver(
       config::shard_local_cfg()
         .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
   , _upload_sg(conf.upload_scheduling_group)
-  , _io_priority(conf.upload_io_priority) {
+  , _io_priority(conf.upload_io_priority)
+  , _housekeeping_interval(
+      config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
+  , _housekeeping_jitter(_housekeeping_interval(), 5ms)
+  , _next_housekeeping(_housekeeping_jitter()) {
     vassert(
       _partition && _partition->is_elected_leader(),
       "must be the leader to launch ntp_archiver {}",
@@ -81,6 +86,7 @@ ntp_archiver::ntp_archiver(
     if (_partition && _partition->is_read_replica_mode_enabled()) {
         _bucket = _partition->get_read_replica_bucket();
     }
+
     vlog(
       archival_log.debug,
       "created ntp_archiver {} in term {}",
@@ -214,6 +220,11 @@ ss::future<> ntp_archiver::upload_loop() {
               result.num_cancelled);
         }
 
+        if (ss::lowres_clock::now() >= _next_housekeeping) {
+            co_await housekeeping();
+            _next_housekeeping = _housekeeping_jitter();
+        }
+
         if (!upload_loop_can_continue()) {
             break;
         }
@@ -310,6 +321,12 @@ bool ntp_archiver::upload_loop_can_continue() const {
 
 bool ntp_archiver::sync_manifest_loop_can_continue() const {
     // todo: think about it
+    return !_as.abort_requested() && !_gate.is_closed()
+           && _partition->is_elected_leader()
+           && _partition->term() == _start_term;
+}
+
+bool ntp_archiver::housekeeping_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
            && _partition->is_elected_leader()
            && _partition->term() == _start_term;
@@ -852,6 +869,139 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
           "archival metadata cleanup completed, nothing to clean up");
     }
     co_return result;
+}
+
+ss::future<> ntp_archiver::housekeeping() {
+    try {
+        if (housekeeping_can_continue()) {
+            co_await apply_retention();
+            co_await garbage_collect();
+        }
+    } catch (std::exception& e) {
+        vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
+    }
+}
+
+ss::future<> ntp_archiver::apply_retention() {
+    if (!housekeeping_can_continue()) {
+        co_return;
+    }
+
+    auto retention_calculator = retention_calculator::factory(
+      manifest(), _partition->get_ntp_config());
+    if (!retention_calculator) {
+        co_return;
+    }
+
+    auto next_start_offset = retention_calculator->next_start_offset();
+    if (next_start_offset) {
+        vlog(
+          _rtclog.debug,
+          "{} Advancing start offset to {} satisfy retention policy",
+          retention_calculator->strategy_name(),
+          *next_start_offset);
+
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        auto deadline = ss::lowres_clock::now() + sync_timeout;
+        auto error = co_await _partition->archival_meta_stm()->truncate(
+          *next_start_offset, deadline, _as);
+        if (error != cluster::errc::success) {
+            vlog(
+              _rtclog.warn,
+              "Failed to update archival metadata STM start offest according "
+              "to retention policy: {}",
+              error);
+        }
+    } else {
+        vlog(
+          _rtclog.debug,
+          "{} Retention policies are already met.",
+          retention_calculator->strategy_name());
+    }
+}
+
+// Garbage collection can be improved as follows:
+// * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
+// segments
+// * issue #6844: flush _replaced and advance the start offset even if the
+// deletions fail if the backlog breaches a certain limit. This can lead to
+// segments begin orphaned, but it's preferable to unbounded backlog growth.
+ss::future<> ntp_archiver::garbage_collect() {
+    if (!housekeeping_can_continue()) {
+        co_return;
+    }
+
+    auto to_remove = _partition->archival_meta_stm()->get_segments_to_cleanup();
+
+    std::atomic<size_t> successful_deletes{0};
+    co_await ss::max_concurrent_for_each(
+      to_remove, _concurrency, [this, &successful_deletes](const auto& meta) {
+          auto segment_name = cloud_storage::generate_local_segment_name(
+            meta.base_offset, meta.segment_term);
+          auto path = cloud_storage::generate_remote_segment_path(
+            _ntp, meta.ntp_revision, segment_name, meta.archiver_term);
+
+          return ss::do_with(
+            std::move(path), [this, &successful_deletes](auto& path) {
+                return delete_segment(path).then(
+                  [this, &successful_deletes, &path](
+                    cloud_storage::upload_result res) {
+                      if (res == cloud_storage::upload_result::success) {
+                          ++successful_deletes;
+
+                          vlog(
+                            _rtclog.info,
+                            "Deleted segment from cloud storage: {}",
+                            path);
+                      }
+                  });
+            });
+      });
+
+    if (successful_deletes == to_remove.size()) {
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        auto deadline = ss::lowres_clock::now() + sync_timeout;
+        auto error = co_await _partition->archival_meta_stm()->cleanup_metadata(
+          deadline, _as);
+
+        if (error != cluster::errc::success) {
+            vlog(
+              _rtclog.info,
+              "Failed to clean up metadata after garbage collection: {}",
+              error);
+        }
+    } else {
+        vlog(
+          _rtclog.info,
+          "Failed to delete all selected segments from cloud storage. Will "
+          "retry on the next housekeeping run.");
+    }
+
+    _probe.segments_deleted(successful_deletes);
+    vlog(
+      _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
+}
+
+ss::future<cloud_storage::upload_result>
+ntp_archiver::delete_segment(const remote_segment_path& path) {
+    _as.check();
+
+    retry_chain_node fib(
+      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+
+    auto res = co_await _remote.delete_object(
+      _bucket, s3::object_key{path}, fib);
+
+    if (res == cloud_storage::upload_result::success) {
+        auto tx_range_manifest_path
+          = cloud_storage::tx_range_manifest(path).get_manifest_path();
+        co_await _remote.delete_object(
+          _bucket, s3::object_key{tx_range_manifest_path}, fib);
+    }
+
+    co_return res;
 }
 
 } // namespace archival

@@ -143,6 +143,19 @@ public:
     ss::future<std::optional<cloud_storage::partition_manifest>>
     maybe_truncate_manifest(retry_chain_node& rtc);
 
+    /// \brief Perform housekeeping operations.
+    ss::future<> housekeeping();
+
+    /// \brief Advance the start offest for the remote partition
+    /// according to the retention policy specified by the partition
+    /// configuration. This function does *not* delete any data.
+    ss::future<> apply_retention();
+
+    /// \brief Remove segments that are no longer queriable by:
+    /// segments that are below the current start offset and segments
+    /// that have been replaced with their compacted equivalent.
+    ss::future<> garbage_collect();
+
 private:
     /// Information about started upload
     struct scheduled_upload {
@@ -203,8 +216,17 @@ private:
     /// Launch the sync manifest loop fiber.
     ss::future<> sync_manifest_loop();
 
+    /// Delete a segment and its transaction metadata from S3.
+    /// The transaction metadata is only deleted if the segment
+    /// deletion was successful.
+    ///
+    /// Throws if an abort was requested.
+    ss::future<cloud_storage::upload_result>
+    delete_segment(const remote_segment_path& path);
+
     bool upload_loop_can_continue() const;
     bool sync_manifest_loop_can_continue() const;
+    bool housekeeping_can_continue() const;
     const cloud_storage::partition_manifest& manifest() const;
 
     ntp_level_probe _probe;
@@ -232,6 +254,10 @@ private:
     ss::lowres_clock::time_point _last_upload_time;
     ss::scheduling_group _upload_sg;
     ss::io_priority_class _io_priority;
+
+    config::binding<std::chrono::milliseconds> _housekeeping_interval;
+    simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
+    ss::lowres_clock::time_point _next_housekeeping;
 
     loop_state _upload_loop_state{loop_state::initial};
     loop_state _sync_manifest_loop_state{loop_state::initial};
