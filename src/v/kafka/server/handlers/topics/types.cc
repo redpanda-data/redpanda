@@ -185,6 +185,10 @@ to_cluster_type(const creatable_topic& t) {
       = get_tristate_value<std::chrono::milliseconds>(
         config_entries, topic_property_retention_local_target_ms);
 
+    cfg.properties.remote_delete
+      = get_bool_value(config_entries, topic_property_remote_delete)
+          .value_or(storage::ntp_config::default_remote_delete);
+
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
@@ -293,6 +297,10 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
         config_entries[topic_property_retention_local_target_ms]
           = from_config_type(*properties.retention_local_target_ms);
     }
+
+    config_entries[topic_property_remote_delete] = from_config_type(
+      properties.remote_delete);
+
     /// Final topic_property not encoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
     return config_entries;

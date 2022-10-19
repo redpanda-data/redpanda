@@ -202,6 +202,15 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
+    /// Helper for erase()
+    ss::future<bool> tolerant_delete_object(
+      const s3::bucket_name& bucket,
+      const s3::object_key& path,
+      retry_chain_node& parent);
+
+    /// Remove objects from S3
+    ss::future<> erase();
+
 private:
     /// Create new remote_segment instances for all new
     /// items in the manifest.

@@ -86,7 +86,8 @@ public:
       std::optional<s3::bucket_name> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
-    ss::future<> remove(const model::ntp& ntp);
+
+    ss::future<> remove(const model::ntp& ntp, partition_removal_mode mode);
 
     std::optional<storage::log> log(const model::ntp& ntp) {
         return _storage.log_mgr().get(ntp);

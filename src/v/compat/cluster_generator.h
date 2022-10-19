@@ -688,7 +688,9 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_tristate(
             [] { return random_generators::get_int<size_t>(); }),
           tests::random_tristate([] { return tests::random_duration_ms(); }),
-        };
+          // Remote delete always false to enable ADL roundtrip (ADL
+          // always decodes to false for legacy topics)
+          false};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }
@@ -830,6 +832,11 @@ struct instance_generator<cluster::incremental_topic_updates> {
                   return instance_generator<
                     model::shadow_indexing_mode>::random();
               });
+          }),
+          .remote_delete = random_property_update([] {
+              // Enable ADL roundtrip, which always decodes as false
+              // for legacy topics
+              return false;
           })};
     }
 

@@ -63,6 +63,8 @@ static constexpr std::string_view topic_property_retention_local_target_ms
   = "retention.local.target.ms";
 static constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
+static constexpr std::string_view topic_property_remote_delete
+  = "redpanda.remote.delete";
 
 // Data-policy property
 static constexpr std::string_view topic_property_data_policy_function_name

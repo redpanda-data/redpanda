@@ -341,7 +341,8 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     // NOTE: we have to upload something as segment in order for the
     // mock to work correctly.
 
-    auto expected_success = remote.delete_segment(bucket, path, fib).get();
+    auto expected_success
+      = remote.delete_object(bucket, s3::object_key(path), fib).get();
     BOOST_REQUIRE(expected_success == upload_result::success);
 
     auto expected_notfound = remote.segment_exists(bucket, path, fib).get();

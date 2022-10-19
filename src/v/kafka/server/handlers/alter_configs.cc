@@ -47,6 +47,24 @@ void parse_and_set_optional(
     property_update.value = boost::lexical_cast<T>(*value);
 }
 
+void parse_and_set_bool(
+  cluster::property_update<bool>& property_update,
+  const std::optional<ss::sstring>& value,
+  bool default_value) {
+    if (!value) {
+        property_update.value = default_value;
+    } else {
+        try {
+            property_update.value = string_switch<bool>(*(value))
+                                      .match("true", true)
+                                      .match("false", false);
+        } catch (...) {
+            // Our callers expect this exception type on malformed values
+            throw boost::bad_lexical_cast();
+        }
+    }
+}
+
 template<typename T>
 void parse_and_set_tristate(
   cluster::property_update<tristate<T>>& property_update,
@@ -153,6 +171,12 @@ create_topic_properties_update(alter_configs_resource& resource) {
                 parse_and_set_tristate(
                   update.properties.retention_bytes, cfg.value);
                 continue;
+            }
+            if (cfg.name == topic_property_remote_delete) {
+                parse_and_set_bool(
+                  update.properties.remote_delete,
+                  cfg.value,
+                  storage::ntp_config::default_remote_delete);
             }
             if (cfg.name == topic_property_remote_write) {
                 auto set_value = update.properties.shadow_indexing.value

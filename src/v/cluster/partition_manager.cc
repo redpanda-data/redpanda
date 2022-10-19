@@ -226,7 +226,8 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
     }
 }
 
-ss::future<> partition_manager::remove(const model::ntp& ntp) {
+ss::future<>
+partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
     auto partition = get(ntp);
 
     if (!partition) {
@@ -246,6 +247,13 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
       .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
       .then([partition] { return partition->stop(); })
       .then([partition] { return partition->remove_persistent_state(); })
+      .then([partition, mode] {
+          if (mode == partition_removal_mode::global) {
+              return partition->remove_remote_persistent_state();
+          } else {
+              return ss::now();
+          }
+      })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }

@@ -194,6 +194,20 @@ struct kafka_stages {
     ss::future<result<kafka_result>> replicate_finished;
 };
 
+/**
+ * When we remove a partition in the controller backend, we need to know
+ * whether the action is just for this node, or whether the partition
+ * is being deleted overall.
+ */
+enum class partition_removal_mode : uint8_t {
+    // We are removing a partition from this node only: delete
+    // local data but leave remote data alone.
+    local_only = 0,
+    // The partition is being permanently deleted from all nodes:
+    // remove remote data as well as local data.
+    global = 1
+};
+
 struct try_abort_request
   : serde::envelope<try_abort_request, serde::version<0>> {
     model::partition_id tm;
@@ -1029,7 +1043,8 @@ struct topic_properties
       std::optional<remote_topic_properties> remote_topic_properties,
       std::optional<uint32_t> batch_max_bytes,
       tristate<size_t> retention_local_target_bytes,
-      tristate<std::chrono::milliseconds> retention_local_target_ms)
+      tristate<std::chrono::milliseconds> retention_local_target_ms,
+      bool remote_delete)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1044,7 +1059,8 @@ struct topic_properties
       , remote_topic_properties(remote_topic_properties)
       , batch_max_bytes(batch_max_bytes)
       , retention_local_target_bytes(retention_local_target_bytes)
-      , retention_local_target_ms(retention_local_target_ms) {}
+      , retention_local_target_ms(retention_local_target_ms)
+      , remote_delete(remote_delete) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1061,6 +1077,13 @@ struct topic_properties
     std::optional<uint32_t> batch_max_bytes;
     tristate<size_t> retention_local_target_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> retention_local_target_ms{std::nullopt};
+
+    // Remote deletes are enabled by default in new tiered storage topics,
+    // disabled by default in legacy topics during upgrade (the legacy path
+    // is handled during adl/serde decode).
+    // This is intentionally not an optional: all topics have a concrete value
+    // one way or another.  There is no "use the cluster default".
+    bool remote_delete{storage::ntp_config::default_remote_delete};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1084,7 +1107,8 @@ struct topic_properties
           remote_topic_properties,
           batch_max_bytes,
           retention_local_target_bytes,
-          retention_local_target_ms);
+          retention_local_target_ms,
+          remote_delete);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1193,6 +1217,8 @@ struct incremental_topic_updates
     property_update<tristate<size_t>> retention_local_target_bytes;
     property_update<tristate<std::chrono::milliseconds>>
       retention_local_target_ms;
+    property_update<bool> remote_delete{
+      false, incremental_update_operation::none};
 
     auto serde_fields() {
         return std::tie(
@@ -1206,7 +1232,8 @@ struct incremental_topic_updates
           shadow_indexing,
           batch_max_bytes,
           retention_local_target_bytes,
-          retention_local_target_ms);
+          retention_local_target_ms,
+          remote_delete);
     }
 
     friend std::ostream&
@@ -1346,6 +1373,11 @@ struct topic_configuration
               properties.retention_duration,
               properties.retention_local_target_bytes,
               properties.retention_local_target_ms);
+
+            // Legacy tiered storage topics do not delete data on
+            // topic deletion.
+            properties.remote_delete
+              = storage::ntp_config::legacy_remote_delete;
         }
     }
 

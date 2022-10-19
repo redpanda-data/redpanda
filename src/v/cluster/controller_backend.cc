@@ -792,9 +792,8 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "controller_backend attempted to process an event that should only "
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
-        return delete_partition(delta.ntp, rev).then([] {
-            return std::error_code(errc::success);
-        });
+        return delete_partition(delta.ntp, rev, partition_removal_mode::global)
+          .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
@@ -1227,7 +1226,8 @@ ss::future<> controller_backend::finish_partition_update(
         return ss::make_ready_future<>();
     }
     vlog(clusterlog.trace, "[{}] removing partition replica", ntp);
-    return delete_partition(std::move(ntp), rev);
+    return delete_partition(
+      std::move(ntp), rev, partition_removal_mode::local_only);
 }
 
 template<typename Func>
@@ -1550,8 +1550,8 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
 }
 
-ss::future<>
-controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
+ss::future<> controller_backend::delete_partition(
+  model::ntp ntp, model::revision_id rev, partition_removal_mode mode) {
     auto part = _partition_manager.local().get(ntp);
     if (unlikely(part.get() == nullptr)) {
         return ss::make_ready_future<>();
@@ -1574,9 +1574,9 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
                 leaders.remove_leader(ntp, rev);
             });
       })
-      .then([this, ntp = std::move(ntp)] {
+      .then([this, ntp = std::move(ntp), mode] {
           // remove partition
-          return _partition_manager.local().remove(ntp);
+          return _partition_manager.local().remove(ntp, mode);
       });
 }
 

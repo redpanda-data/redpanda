@@ -47,9 +47,11 @@ class BaseTimeQuery:
 
         if cloud_storage:
             for k, v in {
-                    'redpanda.remote.read': True,
-                    'redpanda.remote.write': True,
-                    'retention.bytes':
+                    'redpanda.remote.read':
+                    True,
+                    'redpanda.remote.write':
+                    True,
+                    'retention.local.target.bytes':
                     self.log_segment_size * local_retain_segments
             }.items():
                 self.client().alter_topic_config(topic.name, k, v)

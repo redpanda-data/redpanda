@@ -329,6 +329,7 @@ struct compat_check<cluster::topic_properties> {
         json_write(batch_max_bytes);
         json_write(retention_local_target_bytes);
         json_write(retention_local_target_ms);
+        json_write(remote_delete);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -348,6 +349,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(batch_max_bytes);
         json_read(retention_local_target_bytes);
         json_read(retention_local_target_ms);
+        json_read(remote_delete);
         return obj;
     }
 
@@ -431,6 +433,10 @@ struct compat_check<cluster::topic_configuration> {
           std::nullopt};
         obj.properties.retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
+
+        // ADL will always squash remote_delete to false
+        obj.properties.remote_delete = false;
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -590,6 +596,7 @@ GEN_COMPAT_CHECK(
       json_write(retention_bytes);
       json_write(retention_duration);
       json_write(shadow_indexing);
+      json_write(remote_delete);
   },
   {
       json_read(compression);
@@ -600,6 +607,7 @@ GEN_COMPAT_CHECK(
       json_read(retention_bytes);
       json_read(retention_duration);
       json_read(shadow_indexing);
+      json_read(remote_delete);
   })
 
 GEN_COMPAT_CHECK(

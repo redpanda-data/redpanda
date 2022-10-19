@@ -23,6 +23,7 @@ from rptest.services.redpanda import ResourceSettings, SISettings
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.util import wait_for_segments_removal
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize, ok_to_fail
@@ -184,6 +185,8 @@ class CreateTopicsTest(RedpandaTest):
         lambda: random.randint(-1, 10000000),
         'max.message.bytes':
         lambda: random.randint(1024 * 1024, 10 * 1024 * 1024),
+        'redpanda.remote.delete':
+        lambda: "true" if random.randint(0, 1) else "false"
     }
 
     def __init__(self, test_context):
@@ -423,6 +426,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
     def __init__(self, test_context):
         si_settings = SISettings(cloud_storage_enable_remote_write=False,
                                  cloud_storage_enable_remote_read=False)
+        self._s3_bucket = si_settings.cloud_storage_bucket
 
         super(CreateTopicUpgradeTest, self).__init__(test_context=test_context,
                                                      num_brokers=3,
@@ -437,16 +441,30 @@ class CreateTopicUpgradeTest(RedpandaTest):
         )
         self.redpanda.start()
 
+    def _populate_tiered_storage_topic(self, topic_name):
+        for n in range(0, 8):
+            self.rpk.produce(topic_name, "key", "b" * 512 * 1024)
+        wait_for_segments_removal(self.redpanda, topic_name, 0, 1)
+
     @cluster(num_nodes=3)
     def test_retention_config_on_upgrade_from_v22_2_to_v22_3(self):
         self.rpk.create_topic("test-topic-with-retention",
                               config={"retention.bytes": 10000})
 
-        self.rpk.create_topic("test-si-topic-with-retention",
-                              config={
-                                  "retention.bytes": 10000,
-                                  "redpanda.remote.write": "true"
-                              })
+        self.rpk.create_topic(
+            "test-si-topic-with-retention",
+            config={
+                "retention.bytes": 10000,
+                "redpanda.remote.write": "true",
+                "redpanda.remote.read": "true",
+                # Small segment.bytes so that we can readily
+                # get data into S3 by writing small amounts.
+                "segment.bytes": 1000000
+            })
+
+        # Write a few megabytes of data, enough to spill to S3.  This will be used
+        # later for checking that deletion behavior is correct on legacy topics.
+        self._populate_tiered_storage_topic("test-si-topic-with-retention")
 
         self.installer.install(
             self.redpanda.nodes,
@@ -460,7 +478,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
         si_configs = self.rpk.describe_topic_configs(
             "test-si-topic-with-retention")
 
-        self.logger.debug(f"test-si-topic-with-retention conig: {si_configs}")
+        self.logger.debug(f"test-si-topic-with-retention config: {si_configs}")
         self.logger.debug(f"test-topic-with-retention: {non_si_configs}")
 
         # "test-topic-with-retention" did not have remote write enabled
@@ -475,6 +493,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
             "-1", "DEFAULT_CONFIG")
         assert non_si_configs["retention.local.target.ms"][
             1] == "DEFAULT_CONFIG"
+        assert non_si_configs["redpanda.remote.delete"][0] == "false"
 
         # 'test-si-topic-with-retention' was enabled from remote write
         # at the time of the upgrade, so retention.local.target.* configs
@@ -486,6 +505,89 @@ class CreateTopicUpgradeTest(RedpandaTest):
         assert si_configs["retention.local.target.bytes"] == (
             "10000", "DYNAMIC_TOPIC_CONFIG")
         assert si_configs["retention.local.target.ms"][1] == "DEFAULT_CONFIG"
+        assert si_configs["redpanda.remote.delete"][0] == "false"
+
+        # After upgrade, newly created topics should have remote.delete
+        # enabled by default, and interpret assignments to retention properties
+        # literally (no mapping of retention -> retention.local)
+        for (new_topic_name,
+             enable_si) in [("test-topic-post-upgrade-nosi", False),
+                            ("test-topic-post-upgrade-si", True)]:
+            create_config = {
+                "retention.bytes": 10000,
+                "retention.local.target.bytes": 5000,
+                "segment.bytes": 1000000
+            }
+            if enable_si:
+                create_config['redpanda.remote.write'] = 'true'
+                create_config['redpanda.remote.read'] = 'true'
+
+            self.rpk.create_topic(new_topic_name, config=create_config)
+            new_config = self.rpk.describe_topic_configs(new_topic_name)
+            assert new_config["redpanda.remote.delete"][0] == "true"
+            assert new_config["retention.bytes"] == ("10000",
+                                                     "DYNAMIC_TOPIC_CONFIG")
+            assert new_config["retention.ms"][1] == "DEFAULT_CONFIG"
+            assert new_config["retention.local.target.ms"][
+                1] == "DEFAULT_CONFIG"
+            assert new_config["retention.local.target.bytes"] == (
+                "5000", "DYNAMIC_TOPIC_CONFIG")
+            if enable_si:
+                assert new_config['redpanda.remote.write'][0] == "true"
+                assert new_config['redpanda.remote.read'][0] == "true"
+
+            # The remote.delete property is applied irrespective of whether
+            # the topic is initially tiered storage enabled.
+            assert new_config['redpanda.remote.delete'][0] == "true"
+
+            if enable_si:
+                self._populate_tiered_storage_topic(new_topic_name)
+
+        # A newly created tiered storage topic should have its data deleted
+        # in S3 when the topic is deleted
+        self._delete_tiered_storage_topic("test-topic-post-upgrade-si", True)
+
+        # Ensure that the `redpanda.remote.delete==false` configuration is
+        # really taking effect, by deleting a legacy topic and ensuring data is
+        # left behind in S3
+        self._delete_tiered_storage_topic("test-si-topic-with-retention",
+                                          False)
+
+    def _delete_tiered_storage_topic(self, topic_name: str,
+                                     expect_s3_deletion: bool):
+        self.logger.debug(f"Deleting {topic_name} and checking S3 result")
+
+        before_objects = set(
+            o.Key for o in self.s3_client.list_objects(self._s3_bucket)
+            if topic_name in o.Key)
+
+        # Test is meaningless if there were no objects to start with
+        assert len(before_objects) > 0
+
+        self.rpk.delete_topic(topic_name)
+
+        def is_empty():
+            return sum(1 for o in self.s3_client.list_objects(self._s3_bucket)
+                       if topic_name in o.Key) == 0
+
+        if expect_s3_deletion:
+            wait_until(is_empty, timeout_sec=10, backoff_sec=1)
+        else:
+            # When we expect objects to remain, require that they remain for
+            # at least some time, to avoid false-passing if they were deleted with
+            # some small delay.
+            sleep(10)
+
+        after_objects = set(
+            o.Key for o in self.s3_client.list_objects(self._s3_bucket)
+            if topic_name in o.Key)
+        deleted_objects = before_objects - after_objects
+        if expect_s3_deletion:
+            assert deleted_objects
+        else:
+            self.logger.debug(
+                f"deleted objects (should be empty): {deleted_objects}")
+            assert len(deleted_objects) == 0
 
     # Previous version of Redpanda have a bug due to which the topic
     # level overrides are not applied for remote read/write. This causes

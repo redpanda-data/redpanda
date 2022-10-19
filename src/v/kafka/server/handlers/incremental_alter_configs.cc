@@ -60,6 +60,35 @@ void parse_and_set_optional(
     }
 }
 
+void parse_and_set_bool(
+  cluster::property_update<bool>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  bool default_value) {
+    // A remove on a concrete (non-nullable) property is a reset to default,
+    // as is an assignment to nullopt.
+    if (
+      op == config_resource_operation::remove
+      || (op == config_resource_operation::set && !value)) {
+        property.op = cluster::incremental_update_operation::set;
+        property.value = default_value;
+        return;
+    }
+
+    if (op == config_resource_operation::set && value) {
+        try {
+            property.value = string_switch<bool>(*value)
+                               .match("true", true)
+                               .match("false", false);
+        } catch (std::runtime_error) {
+            // Our callers expect this exception type on malformed values
+            throw boost::bad_lexical_cast();
+        }
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
 template<typename T>
 void parse_and_set_tristate(
   cluster::property_update<tristate<T>>& property,
@@ -268,6 +297,15 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   cfg.value,
                   op,
                   model::shadow_indexing_mode::fetch);
+                continue;
+            }
+            if (cfg.name == topic_property_remote_delete) {
+                parse_and_set_bool(
+                  update.properties.remote_delete,
+                  cfg.value,
+                  op,
+                  // Topic deletion is enabled by default
+                  true);
                 continue;
             }
             if (cfg.name == topic_property_max_message_bytes) {

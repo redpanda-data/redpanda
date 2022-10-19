@@ -658,17 +658,16 @@ ss::future<download_result> remote::segment_exists(
     co_return *result;
 }
 
-ss::future<upload_result> remote::delete_segment(
+ss::future<upload_result> remote::delete_object(
   const s3::bucket_name& bucket,
-  const remote_segment_path& segment_path,
+  const s3::object_key& path,
   retry_chain_node& parent) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto path = s3::object_key(segment_path());
     auto lease = co_await _pool.acquire();
     auto permit = fib.retry();
-    vlog(ctxlog.debug, "Delete segment {}", path);
+    vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         std::exception_ptr eptr = nullptr;
@@ -714,14 +713,14 @@ ss::future<upload_result> remote::delete_segment(
     if (!result) {
         vlog(
           ctxlog.warn,
-          "DeleteObject {}, {}, backoff quota exceded, segment not deleted",
+          "DeleteObject {}, {}, backoff quota exceded, object not deleted",
           path,
           bucket);
         result = upload_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
-          "DeleteObject {}, {}, segment not deleted, error: {}",
+          "DeleteObject {}, {}, object not deleted, error: {}",
           path,
           bucket,
           *result);

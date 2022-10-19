@@ -17,6 +17,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -509,6 +510,24 @@ void incremental_update(
     }
 }
 
+template<typename T>
+void incremental_update(
+  T& property, property_update<T> override, const T& default_value) {
+    switch (override.op) {
+    case incremental_update_operation::remove:
+        // remove override, fallback to default
+        property = default_value;
+        return;
+    case incremental_update_operation::set:
+        // set new value
+        property = override.value;
+        return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+}
+
 ss::future<std::error_code>
 topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     auto tp = _topics.find(cmd.key);
@@ -540,6 +559,10 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     incremental_update(
       properties.retention_local_target_ms,
       overrides.retention_local_target_ms);
+    incremental_update(
+      properties.remote_delete,
+      overrides.remote_delete,
+      storage::ntp_config::default_remote_delete);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
