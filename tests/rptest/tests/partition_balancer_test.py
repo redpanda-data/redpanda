@@ -24,7 +24,6 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix
-from ducktape.mark import ok_to_fail
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer

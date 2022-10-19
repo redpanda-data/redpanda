@@ -12,7 +12,6 @@ import json
 import uuid
 import requests
 from rptest.services.cluster import cluster
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec

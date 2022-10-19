@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import time
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
@@ -18,9 +17,6 @@ from rptest.util import expect_exception
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
-from ducktape.mark import ok_to_fail
-
-import json
 
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.end_to_end import EndToEndTest

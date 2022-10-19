@@ -8,15 +8,10 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster_spec import ClusterSpec
-from ducktape.mark import ok_to_fail
 
-import os
 import time
 
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import ResourceSettings
