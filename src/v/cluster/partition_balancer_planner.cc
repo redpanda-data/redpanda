@@ -201,7 +201,6 @@ std::optional<size_t> partition_balancer_planner::get_partition_size(
 
 partition_constraints partition_balancer_planner::get_partition_constraints(
   const partition_assignment& assignments,
-  const topic_metadata& topic_metadata,
   size_t partition_size,
   double max_disk_usage_ratio,
   reallocation_request_state& rrs) const {
@@ -232,7 +231,7 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
 
     return partition_constraints(
       assignments.id,
-      topic_metadata.get_replication_factor(),
+      assignments.replicas.size(),
       std::move(allocation_constraints));
 }
 
@@ -337,7 +336,6 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 
             auto constraints = get_partition_constraints(
               a,
-              t.second.metadata,
               partition_size.value(),
               _config.hard_max_disk_usage_ratio,
               rrs);
@@ -443,7 +441,6 @@ void partition_balancer_planner::get_full_node_reassignments(
 
             auto constraints = get_partition_constraints(
               *current_assignments,
-              topic_metadata.metadata,
               ntp_size_it->first,
               _config.soft_max_disk_usage_ratio,
               rrs);

@@ -80,7 +80,6 @@ private:
 
     partition_constraints get_partition_constraints(
       const partition_assignment& assignments,
-      const topic_metadata& topic_metadata,
       size_t partition_size,
       double max_disk_usage_ratio,
       reallocation_request_state&) const;
