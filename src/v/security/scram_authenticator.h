@@ -20,6 +20,8 @@ class scram_authenticator final : public sasl_mechanism {
     static constexpr int nonce_size = 130;
 
 public:
+    using scram = ScramMechanism;
+
     explicit scram_authenticator(credential_store& credentials)
       : _state{state::client_first_message}
       , _credentials(credentials) {}
@@ -39,8 +41,6 @@ public:
     }
 
 private:
-    using scram = ScramMechanism;
-
     enum class state {
         client_first_message,
         client_final_message,
