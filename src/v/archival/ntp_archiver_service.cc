@@ -273,12 +273,21 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         vlog(
           _rtclog.debug, "Updating the archival_meta_stm in read-replica mode");
         cloud_storage::partition_manifest mdiff(_ntp, _rev);
-        auto offset
-          = _partition->archival_meta_stm()->manifest().get_last_offset()
-            + model::offset(1);
-        // TODO: this code needs to be updated when the compacted segment
-        // uploads are merged.
-        for (auto it = m.segment_containing(offset); it != m.end(); it++) {
+
+        auto diff_base_offset
+          = _partition->archival_meta_stm()->manifest().get_last_offset();
+        if (diff_base_offset == model::offset{}) {
+            // We have no segments yet: take everything
+            diff_base_offset = m.get_start_offset().value_or(model::offset{});
+        } else {
+            // Expect different batches to start contiguously from after
+            // our last seen batch.
+            // TODO: this code needs to be updated when the compacted segment
+            // uploads are merged.
+            diff_base_offset += 1;
+        }
+        for (auto it = m.segment_containing(diff_base_offset); it != m.end();
+             it++) {
             mdiff.add(
               segment_name(cloud_storage::generate_local_segment_name(
                 it->first.base_offset, it->first.term)),
