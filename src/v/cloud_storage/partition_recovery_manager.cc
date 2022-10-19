@@ -364,7 +364,7 @@ partition_downloader::download_log_with_capped_size(
     model::offset_delta start_delta{0};
     for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
         const auto& meta = it->second.meta;
-        if (total_size > max_size) {
+        if (total_size != 0 && total_size + meta.size_bytes > max_size) {
             vlog(
               _ctxlog.debug,
               "Max size {} reached, skipping {}",

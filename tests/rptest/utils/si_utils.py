@@ -242,6 +242,43 @@ def get_on_disk_size_per_ntp(chk):
     return size_bytes_per_ntp
 
 
+def get_expected_ntp_restored_size(nodes_segments_report: dict[str,
+                                                               dict[str,
+                                                                    (str,
+                                                                     int)]],
+                                   retention_policy: int):
+    """ Get expected retestored ntp disk size
+    We expect that redpanda will restore max
+    amount of segments with total size less
+    than retention_policy
+    """
+    size_bytes_per_ntp = {}
+    segments_sizes_per_ntp = {}
+    for _node, report in nodes_segments_report.items():
+        tmp_partition_size = defaultdict(int)
+        tmp_segments_sizes = defaultdict(dict)
+        for path, summary in report.items():
+            segment = _parse_checksum_entry(path, summary, True)
+            ntp = segment.ntp
+            size = summary[1]
+            tmp_partition_size[ntp] += size
+            tmp_segments_sizes[ntp][segment.base_offset] = size
+        for ntp, size in tmp_partition_size.items():
+            if not ntp in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
+                size_bytes_per_ntp[ntp] = size
+                segments_sizes_per_ntp[ntp] = tmp_segments_sizes[ntp]
+        expected_restored_sizes = {}
+        for ntp, segments in segments_sizes_per_ntp.items():
+            expected_restored_sizes[ntp] = 0
+            for segment in sorted(segments.keys(), reverse=True):
+                if expected_restored_sizes[ntp] + segments_sizes_per_ntp[ntp][
+                        segment] > retention_policy:
+                    break
+                expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][
+                    segment]
+    return expected_restored_sizes
+
+
 def is_close_size(actual_size, expected_size):
     """Checks if the log size is close to expected size.
     The actual size shouldn't be less than expected. Also, the difference

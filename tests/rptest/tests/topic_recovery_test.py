@@ -17,7 +17,6 @@ from collections import namedtuple, defaultdict, deque
 from typing import NamedTuple, Optional, Callable, Sequence, Tuple
 
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -36,6 +35,7 @@ from rptest.utils.si_utils import (
     verify_file_layout,
     gen_manifest_path,
     get_on_disk_size_per_ntp,
+    get_expected_ntp_restored_size,
     is_close_size,
     EMPTY_SEGMENT_SIZE,
     default_log_segment_size,
@@ -721,7 +721,7 @@ class SizeBasedRetention(BaseCase):
     The test generates 20MB of data per ntp, than after the restart it recovers
     the topic with size limit set to 10MB per ntp.
     The verification takes into account individual segment size. The recovery process
-    should restore at least 10MB but not more than 10MB + segment size."""
+    should restore at not more than 10MB but not less than 10MB - oldest segment size."""
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
                  rpk_producer_maker, topics):
         self.topics = topics
@@ -779,12 +779,14 @@ class SizeBasedRetention(BaseCase):
         ]
 
         size_bytes_per_ntp = get_on_disk_size_per_ntp(restored)
+        expected_restored_size_per_ntp = get_expected_ntp_restored_size(
+            baseline, self.restored_size_bytes)
 
         for ntp, size_bytes in size_bytes_per_ntp.items():
             self.logger.info(
                 f"Partition {ntp} had size {size_bytes} on disk after recovery"
             )
-            assert is_close_size(size_bytes, self.restored_size_bytes), \
+            assert is_close_size(size_bytes, expected_restored_size_per_ntp[ntp]), \
                 f"Too much or not enough data restored, expected {self.restored_size_bytes} got {size_bytes}"
 
         for topic in self.topics:
@@ -1364,7 +1366,6 @@ class TopicRecoveryTest(RedpandaTest):
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4887
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
     def test_size_based_retention(self):
         """Test topic recovery with size based retention policy.
