@@ -21,6 +21,7 @@ import threading
 import collections
 import re
 import uuid
+import zipfile
 from enum import Enum
 from typing import Mapping, Optional, Tuple, Union, Any
 
@@ -34,6 +35,7 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
+from ducktape.tests.test import TestContext
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
@@ -1294,6 +1296,63 @@ class RedpandaService(Service):
 
         if crashes:
             raise NodeCrash(crashes)
+
+    def cloud_storage_diagnostics(self):
+        """
+        When a cloud storage test fails, it is often useful to know what
+        the state of the S3 bucket was, and what was in the manifest
+        JSON files.
+
+        This function lists the contents of the bucket (up to a key count
+        limit) into the ducktape log, and writes a zip file into the ducktape
+        results directory containing a sample of the manifest.json files.
+        """
+        if not self._si_settings:
+            self.logger.debug("Skipping cloud diagnostics, no SI settings")
+            return
+
+        try:
+            self._cloud_storage_diagnostics()
+        except:
+            # We are running during test teardown, so do log the exception
+            # instead of propagating: this was a best effort thing
+            self.logger.exception("Failed to gather cloud storage diagnostics")
+
+    def _cloud_storage_diagnostics(self):
+        # In case it's a big test, do not exhaustively log every object
+        # or dump every manifest
+        key_dump_limit = 10000
+        manifest_dump_limit = 10
+
+        self.logger.info(
+            f"Gathering cloud storage diagnostics in bucket {self._si_settings.cloud_storage_bucket}"
+        )
+
+        manifests_to_dump = []
+        for o in self.s3_client.list_objects(
+                self._si_settings.cloud_storage_bucket):
+            key = o.Key
+            if key_dump_limit > 0:
+                self.logger.info(f"  {key}")
+                key_dump_limit -= 1
+
+            # Gather manifest.json and topic_manifest.json files
+            if key.endswith('manifest.json') and manifest_dump_limit > 0:
+                manifests_to_dump.append(key)
+                manifest_dump_limit -= 1
+
+        archive_basename = "cloud_diagnostics.zip"
+        archive_path = os.path.join(
+            TestContext.results_dir(self._context, self._context.test_index),
+            archive_basename)
+        with zipfile.ZipFile(archive_path, mode='w') as archive:
+            for m in manifests_to_dump:
+                self.logger.info(f"Fetching manifest {m}")
+                body = self.s3_client.get_object_data(
+                    self._si_settings.cloud_storage_bucket, m)
+                filename = m.replace("/", "_")
+                with archive.open(filename, "w") as outstr:
+                    outstr.write(body)
 
     def raise_on_bad_logs(self, allow_list=None):
         """

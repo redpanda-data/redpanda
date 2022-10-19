@@ -42,6 +42,9 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                 # self.redpanda.decode_backtraces()
 
                 self.redpanda.raise_on_crash()
+
+                self.redpanda.cloud_storage_diagnostics()
+
                 raise
             else:
                 self.redpanda.logger.info("Test passed, doing log checks...")
