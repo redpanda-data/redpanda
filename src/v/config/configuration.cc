@@ -1112,6 +1112,12 @@ configuration::configuration()
       "Timeout for SI metadata synchronization",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_housekeeping_interval_ms(
+      *this,
+      "cloud_storage_housekeeping_interval_ms",
+      "Interval for cloud storage housekeeping tasks",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5min)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
