@@ -293,19 +293,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {
-		secretName := types.NamespacedName{
-			Name:      r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name,
-			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
+		if err := r.prepareCloudStorage(ctx, cfg); err != nil {
+			return nil, err
 		}
-		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
-		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
-		if err != nil {
-			return nil, fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
-		}
-		if secretKeyStr == "" {
-			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
-		}
-		r.prepareCloudStorage(cfg, secretKeyStr)
 	}
 
 	for _, user := range r.pandaCluster.Spec.Superusers {
@@ -385,13 +375,35 @@ func calculateExternalPort(internalPort, specifiedExternalPort int) int {
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(
-	cfg *configuration.GlobalConfiguration, secretKeyStr string,
-) {
+	ctx context.Context, cfg *configuration.GlobalConfiguration,
+) error {
+	if r.pandaCluster.Spec.CloudStorage.AccessKey != "" {
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", r.pandaCluster.Spec.CloudStorage.AccessKey)
+	}
+	if r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name != "" {
+		secretName := types.NamespacedName{
+			Name:      r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name,
+			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
+		}
+		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
+		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
+		if err != nil {
+			return fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
+		}
+		if secretKeyStr == "" {
+			return fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
+		}
+
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_secret_key", secretKeyStr)
+	}
+
+	if r.pandaCluster.Spec.CloudStorage.CredentialsSource != "" {
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_credentials_source", string(r.pandaCluster.Spec.CloudStorage.CredentialsSource))
+	}
+
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_enabled", r.pandaCluster.Spec.CloudStorage.Enabled)
-	cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", r.pandaCluster.Spec.CloudStorage.AccessKey)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_region", r.pandaCluster.Spec.CloudStorage.Region)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_bucket", r.pandaCluster.Spec.CloudStorage.Bucket)
-	cfg.SetAdditionalRedpandaProperty("cloud_storage_secret_key", secretKeyStr)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_disable_tls", r.pandaCluster.Spec.CloudStorage.DisableTLS)
 
 	interval := r.pandaCluster.Spec.CloudStorage.ReconcilicationIntervalMs
@@ -423,6 +435,7 @@ func (r *ConfigMapResource) prepareCloudStorage(
 			cfg.SetAdditionalRedpandaProperty("cloud_storage_cache_size", size)
 		}
 	}
+	return nil
 }
 
 func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
