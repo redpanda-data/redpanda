@@ -1405,7 +1405,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     // subsystems.
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(
-      node_uuid, storage.local().kvs(), app_signal.abort_source());
+      node_uuid, storage.local(), app_signal.abort_source());
     auto node_id = cd.determine_node_id().get();
     if (config::node().node_id() == std::nullopt) {
         // If we previously didn't have a node ID, set it in the config. We
@@ -1504,12 +1504,7 @@ void application::start_runtime_services(
     _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller").get();
-    controller
-      ->start(
-        storage.local().get_cluster_uuid().has_value()
-          ? std::vector<model::broker>{}
-          : cd.initial_seed_brokers().get())
-      .get0();
+    controller->start(cd.initial_seed_brokers_if_no_cluster().get()).get0();
 
     kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
       *controller, group_router);
