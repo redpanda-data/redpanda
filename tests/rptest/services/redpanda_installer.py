@@ -298,11 +298,17 @@ class RedpandaInstaller:
         if version == RedpandaInstaller.HEAD:
             version = self._head_version
         # NOTE: the released versions are sorted highest first.
+        result = None
         for v in self._released_versions:
             if (v[0] == version[0]
                     and v[1] < version[1]) or (v[0] < version[0]):
-                return v
-        return None
+                result = v
+                break
+
+        self._redpanda.logger.info(
+            f"Selected prior feature version {result}, from my version {version}, from available versions {self._released_versions}"
+        )
+        return result
 
     def install(self, nodes, version):
         """
