@@ -92,7 +92,9 @@ func (r *IngressResource) WithAnnotations(
 }
 
 // WithTLS sets Ingress TLS with specified issuer
-func (r *IngressResource) WithTLS(clusterIssuer, secretName string) *IngressResource {
+func (r *IngressResource) WithTLS(
+	clusterIssuer, secretName string,
+) *IngressResource {
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
 	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
 

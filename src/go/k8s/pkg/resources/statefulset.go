@@ -418,6 +418,15 @@ func (r *StatefulSetResource) obj(
 									Name:  "HOST_PORT",
 									Value: r.getNodePort(ExternalListenerName),
 								},
+								{
+									Name: "TOPOLOGY_ZONE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion: "v1",
+											FieldPath:  "metadata.annotations['topology.kubernetes.io/zone']",
+										},
+									},
+								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  pointer.Int64Ptr(userID),

@@ -46,6 +46,7 @@ const (
 	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
 	hostPortEnvVar                                       = "HOST_PORT"
 	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
+	topologyZone                                         = "TOPOLOGY_ZONE"
 )
 
 type brokerID int
@@ -65,6 +66,7 @@ type configuratorConfig struct {
 	hostPort                                       int
 	proxyHostPort                                  int
 	hostIP                                         string
+	zone                                           string
 }
 
 func (c *configuratorConfig) String() string {
@@ -79,7 +81,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"zone: %s\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -90,7 +93,8 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.zone)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -146,6 +150,8 @@ func main() {
 	if len(cfg.Redpanda.SeedServers) == 1 {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
 	}
+
+	cfg.Redpanda.Rack = topologyZone
 
 	cfgBytes, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -358,6 +364,10 @@ func checkEnvVars() (configuratorConfig, error) {
 		{
 			value: &c.hostIP,
 			name:  hostIPEnvVar,
+		},
+		{
+			value: &c.zone,
+			name:  topologyZone,
 		},
 	}
 	for _, envVar := range envVarList {
