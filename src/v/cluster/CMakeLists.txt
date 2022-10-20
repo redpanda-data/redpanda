@@ -131,6 +131,7 @@ v_cc_library(
     bootstrap_service.cc
     bootstrap_backend.cc
     ephemeral_credential_frontend.cc
+    ephemeral_credential_service.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
