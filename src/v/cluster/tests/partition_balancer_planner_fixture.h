@@ -136,8 +136,15 @@ struct partition_balancer_planner_fixture {
     }
 
     void allocator_register_nodes(
-      size_t nodes_amount,
-      const std::optional<model::rack_id>& rack_id = std::nullopt) {
+      size_t nodes_amount, const std::vector<ss::sstring>& rack_ids = {}) {
+        if (!rack_ids.empty()) {
+            vassert(
+              rack_ids.size() == nodes_amount,
+              "mismatch between rack ids: {} and the number of new nodes: {}",
+              rack_ids,
+              nodes_amount);
+        }
+
         auto& members_table = workers.members.local();
 
         std::vector<model::broker> new_brokers;
@@ -146,6 +153,11 @@ struct partition_balancer_planner_fixture {
         }
 
         for (size_t i = 0; i < nodes_amount; ++i) {
+            std::optional<model::rack_id> rack_id;
+            if (!rack_ids.empty()) {
+                rack_id = model::rack_id{rack_ids[i]};
+            }
+
             workers.allocator.local().register_node(create_allocation_node(
               model::node_id(last_node_idx), 4, rack_id));
             new_brokers.push_back(model::broker(

@@ -699,12 +699,9 @@ FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
  */
 FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     vlog(logger.debug, "test_rack_awareness");
-    allocator_register_nodes(1, model::rack_id("rack_1"));
-    allocator_register_nodes(1, model::rack_id("rack_2"));
-    allocator_register_nodes(1, model::rack_id("rack_3"));
+    allocator_register_nodes(3, {"rack_1", "rack_2", "rack_3"});
     create_topic("topic-1", 1, 3);
-    allocator_register_nodes(1, model::rack_id("rack_3"));
-    allocator_register_nodes(1, model::rack_id("rack_4"));
+    allocator_register_nodes(2, {"rack_3", "rack_4"});
 
     auto hr = create_health_report();
     // Make node_4 disk free size less to make partition allocator disk usage
