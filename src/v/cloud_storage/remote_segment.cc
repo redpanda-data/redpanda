@@ -113,10 +113,7 @@ remote_segment::remote_segment(
 
     _path = m.generate_segment_path(key, *meta);
 
-    auto parsed_name = parse_segment_name(
-      generate_segment_name(key.base_offset, key.term));
-    vassert(parsed_name, "Can't parse segment name, name: {}", key);
-    _term = parsed_name->term;
+    _term = key.term;
 
     _base_rp_offset = meta->base_offset;
     _max_rp_offset = meta->committed_offset;

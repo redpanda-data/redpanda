@@ -12,6 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
@@ -30,6 +31,7 @@ static constexpr std::string_view empty_manifest_json = R"json({
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "insync_offset": 0,
     "last_offset": 0
 })json";
 static constexpr std::string_view complete_manifest_json = R"json({
@@ -62,7 +64,21 @@ static constexpr std::string_view complete_manifest_json = R"json({
             "base_offset": 30,
             "committed_offset": 39,
             "base_timestamp": 123020,
-            "max_timestamp": 123029
+            "max_timestamp": 123029,
+            "delta_offset": 1
+        },
+        "40-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 40,
+            "committed_offset": 49,
+            "base_timestamp": 123030,
+            "max_timestamp": 123039,
+            "delta_offset": 2,
+            "archiver_term": 42,
+            "segment_term": 11,
+            "delta_offset_end": 9,
+            "sname_format": 2
         }
     }
 })json";
@@ -379,6 +395,9 @@ void require_equal_segment_meta(
     BOOST_REQUIRE_EQUAL(expected.delta_offset, actual.delta_offset);
     BOOST_REQUIRE_EQUAL(expected.ntp_revision, actual.ntp_revision);
     BOOST_REQUIRE_EQUAL(expected.archiver_term, actual.archiver_term);
+    BOOST_REQUIRE_EQUAL(expected.segment_term, actual.segment_term);
+    BOOST_REQUIRE_EQUAL(expected.delta_offset_end, actual.delta_offset_end);
+    BOOST_REQUIRE_EQUAL(expected.sname_format, actual.sname_format);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
@@ -387,7 +406,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
       path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
-    BOOST_REQUIRE_EQUAL(m.size(), 3);
+    BOOST_REQUIRE_EQUAL(m.size(), 4);
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
        partition_manifest::segment_meta{
@@ -398,7 +417,9 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .base_timestamp = model::timestamp(123000),
          .max_timestamp = model::timestamp(123009),
          .ntp_revision = model::initial_revision_id(
-           1) // revision is propagated from manifest
+           1), // revision is propagated from manifest
+         .segment_term = model::term_id(
+           1), // segment_term is propagated from manifest
        }},
       {"20-1-v1.log",
        partition_manifest::segment_meta{
@@ -409,7 +430,9 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .base_timestamp = model::timestamp(123010),
          .max_timestamp = model::timestamp(123019),
          .ntp_revision = model::initial_revision_id(
-           1) // revision is propagated from manifest
+           1), // revision is propagated from manifest
+         .segment_term = model::term_id(
+           1), // segment_term is propagated from manifest
        }},
       {"30-1-v1.log",
        partition_manifest::segment_meta{
@@ -419,12 +442,31 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .committed_offset = model::offset(39),
          .base_timestamp = model::timestamp(123020),
          .max_timestamp = model::timestamp(123029),
+         .delta_offset = model::offset_delta(1),
          .ntp_revision = model::initial_revision_id(
-           1) // revision is propagated from manifest
+           1), // revision is propagated from manifest
+         .segment_term = model::term_id(
+           1), // segment_term is propagated from manifest
+       }},
+      {"40-1-v1.log",
+       partition_manifest::segment_meta{
+         .is_compacted = false,
+         .size_bytes = 4096,
+         .base_offset = model::offset(40),
+         .committed_offset = model::offset(49),
+         .base_timestamp = model::timestamp(123030),
+         .max_timestamp = model::timestamp(123039),
+         .delta_offset = model::offset_delta(2),
+         .ntp_revision = model::initial_revision_id(
+           1), // revision is propagated from manifest
+         .archiver_term = model::term_id{42},
+         .segment_term = model::term_id{11},
+         .delta_offset_end = model::offset_delta(9),
+         .sname_format = segment_name_format::v2,
        }},
     };
     for (const auto& actual : m) {
-        auto sn = generate_segment_name(
+        auto sn = generate_local_segment_name(
           actual.first.base_offset, actual.first.term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
@@ -442,18 +484,20 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
        partition_manifest::segment_meta{
-         false,
-         1024,
-         model::offset(10),
-         model::offset(19),
-         model::timestamp(123456),
-         model::timestamp(123456789),
-         model::offset_delta(12313),
-         model::initial_revision_id(3),
-         model::term_id(3)}}};
+         .is_compacted = false,
+         .size_bytes = 1024,
+         .base_offset = model::offset(10),
+         .committed_offset = model::offset(19),
+         .base_timestamp = model::timestamp(123456),
+         .max_timestamp = model::timestamp(123456789),
+         .delta_offset = model::offset_delta(12313),
+         .ntp_revision = model::initial_revision_id(3),
+         .archiver_term = model::term_id(3),
+         .segment_term = model::term_id(1), // set by the manifest
+       }}};
 
     for (const auto& actual : m) {
-        auto sn = generate_segment_name(
+        auto sn = generate_local_segment_name(
           actual.first.base_offset, actual.first.term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
@@ -510,7 +554,8 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
          .max_timestamp = model::timestamp(123456789),
          .delta_offset = model::offset_delta(12313),
          .ntp_revision = model::initial_revision_id(3),
-         .archiver_term = model::term_id(3)}},
+         .archiver_term = model::term_id(3),
+         .segment_term = model::term_id(1)}},
       {"20-1-v1.log",
        partition_manifest::segment_meta{
          .is_compacted = false,
@@ -518,11 +563,14 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
          .base_offset = model::offset(20),
          .committed_offset = model::offset(29),
          .ntp_revision = model::initial_revision_id(
-           1)}}, // if ntp_revision if missing in meta, we get revision from
-                 // manifest
+           1), // if ntp_revision if missing in meta, we get revision from
+               // manifest
+         .segment_term = model::term_id(1), // set by the manifest
+
+       }},
     };
     for (const auto& actual : m) {
-        auto sn = generate_segment_name(
+        auto sn = generate_local_segment_name(
           actual.first.base_offset, actual.first.term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
@@ -555,10 +603,14 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
        partition_manifest::segment_meta{
-         false, 1024, model::offset(10), model::offset(19)}}};
+         .is_compacted = false,
+         .size_bytes = 1024,
+         .base_offset = model::offset(10),
+         .committed_offset = model::offset(19),
+         .segment_term = model::term_id(1)}}};
 
     for (const auto& actual : m) {
-        auto sn = generate_segment_name(
+        auto sn = generate_local_segment_name(
           actual.first.base_offset, actual.first.term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
@@ -589,6 +641,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .committed_offset = model::offset(19),
         .max_timestamp = model::timestamp::missing(),
         .ntp_revision = model::initial_revision_id(0),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("20-1-v1.log"),
@@ -599,6 +652,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .committed_offset = model::offset(29),
         .max_timestamp = model::timestamp::missing(),
         .ntp_revision = model::initial_revision_id(3),
+        .segment_term = model::term_id(1),
       });
     auto [is, size] = m.serialize();
     iobuf buf;
@@ -612,29 +666,408 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
     BOOST_REQUIRE(m == restored);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
-    partition_manifest a(manifest_ntp, model::initial_revision_id(0));
-    a.add(segment_name("1-1-v1.log"), {});
-    a.add(segment_name("2-2-v1.log"), {});
-    a.add(segment_name("3-3-v1.log"), {});
-    partition_manifest b(manifest_ntp, model::initial_revision_id(0));
-    b.add(segment_name("1-1-v1.log"), {});
-    b.add(segment_name("2-2-v1.log"), {});
+SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    m.add(
+      segment_name("0-1-v1.log"),
+      {.base_offset = model::offset{0},
+       .committed_offset = model::offset{9},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("10-1-v1.log"),
+      {.base_offset = model::offset{10},
+       .committed_offset = model::offset{19},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("20-1-v1.log"),
+      {.base_offset = model::offset{20},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("30-1-v1.log"),
+      {.base_offset = model::offset{30},
+       .committed_offset = model::offset{39},
+       .sname_format = segment_name_format::v2});
+    m.add(
+      segment_name("40-1-v1.log"),
+      {.base_offset = model::offset{40},
+       .committed_offset = model::offset{49},
+       .sname_format = segment_name_format::v2});
+    // There shouldn't be any replaced segments
     {
-        auto c = a.difference(b);
-        BOOST_REQUIRE(c.size() == 1);
-        auto res = *c.begin();
-        auto expected = partition_manifest::key{
-          .base_offset = model::offset(3), .term = model::term_id(3)};
-        BOOST_REQUIRE(res.first == expected);
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.empty());
     }
-    // check that set difference is not symmetrical
-    b.add(segment_name("3-3-v1.log"), {});
-    b.add(segment_name("4-4-v1.log"), {});
+    // Try to replace in the middle
+    m.add(
+      segment_name("20-1-v1.log"),
+      {.base_offset = model::offset{20},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
     {
-        auto c = a.difference(b);
-        BOOST_REQUIRE(c.size() == 0);
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.size() == 1);
+        BOOST_REQUIRE(res[0].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[0].committed_offset == model::offset{29});
     }
+    // Replace several segments
+    m.add(
+      segment_name("0-1-v1.log"),
+      {.base_offset = model::offset{0},
+       .committed_offset = model::offset{29},
+       .sname_format = segment_name_format::v2});
+    {
+        auto res = m.replaced_segments();
+        BOOST_REQUIRE(res.size() == 4);
+        BOOST_REQUIRE(res[0].base_offset == model::offset{0});
+        BOOST_REQUIRE(res[0].committed_offset == model::offset{9});
+        BOOST_REQUIRE(res[1].base_offset == model::offset{10});
+        BOOST_REQUIRE(res[1].committed_offset == model::offset{19});
+        BOOST_REQUIRE(res[2].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[2].committed_offset == model::offset{29});
+        // The segment with base offset 20 was replaced twice
+        BOOST_REQUIRE(res[3].base_offset == model::offset{20});
+        BOOST_REQUIRE(res[3].committed_offset == model::offset{29});
+    }
+}
+
+namespace cloud_storage {
+
+struct partition_manifest_accessor {
+    static void add_replaced_segment(
+      partition_manifest* m,
+      const segment_name& key,
+      const partition_manifest::segment_meta& meta) {
+        auto comp = parse_segment_name(key);
+        m->_replaced.insert(std::make_pair(*comp, meta));
+    }
+    static auto find(segment_name n, const partition_manifest& m) {
+        auto key = parse_segment_name(n);
+        return m._replaced.equal_range(*key);
+    }
+};
+} // namespace cloud_storage
+
+SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
+    using accessor = cloud_storage::partition_manifest_accessor;
+    std::map<ss::sstring, partition_manifest::segment_meta> expected_segments
+      = {
+        // v0 segments
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 1024,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(99),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"100-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 2048,
+           .base_offset = model::offset(100),
+           .committed_offset = model::offset(199),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        // v1 segments
+        {"200-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(200),
+           .committed_offset = model::offset(299),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(1),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+        // v2 segments
+        {"300-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(300),
+           .committed_offset = model::offset(399),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{42},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v2,
+         }},
+        {"400-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(400),
+           .committed_offset = model::offset(499),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{42},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v2,
+         }},
+      };
+    std::multimap<ss::sstring, partition_manifest::segment_meta>
+      expected_replaced_segments = {
+        // v0 segments
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 1024,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(9),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 2048,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(59),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1)}},
+        // v1 segments
+        {"60-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(60),
+           .committed_offset = model::offset(79),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(1),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+        {"60-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(60),
+           .committed_offset = model::offset(199),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(1),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+        // v2 segments
+        {"200-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(200),
+           .committed_offset = model::offset(279),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{41},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v2,
+         }},
+        {"200-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(200),
+           .committed_offset = model::offset(389),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{41},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v2,
+         }},
+      };
+
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    for (const auto& segment : expected_segments) {
+        m.add(segment_name(segment.first), segment.second);
+    }
+
+    for (const auto& segment : expected_replaced_segments) {
+        accessor::add_replaced_segment(
+          &m, segment_name(segment.first), segment.second);
+    }
+
+    auto [is, size] = m.serialize();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    partition_manifest restored;
+    restored.update(std::move(rstr)).get0();
+
+    BOOST_REQUIRE(restored == m);
+
+    for (const auto& expected : expected_segments) {
+        auto actual = restored.find(expected.second.base_offset);
+        require_equal_segment_meta(expected.second, actual->second);
+    }
+
+    for (const auto& expected : expected_replaced_segments) {
+        auto actual = accessor::find(segment_name(expected.first), restored);
+        auto res = std::any_of(
+          actual.first, actual.second, [&expected](const auto& a) {
+              return expected.second == a.second;
+          });
+        BOOST_REQUIRE(res);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_offset_advance) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+    m.add(
+      segment_name("0-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{0},
+        .committed_offset = model::offset{100},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    m.add(
+      segment_name("101-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{101},
+        .committed_offset = model::offset{200},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    m.add(
+      segment_name("201-2-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{201},
+        .committed_offset = model::offset{300},
+      });
+    m.add(
+      segment_name("301-3-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{301},
+        .committed_offset = model::offset{400},
+      });
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(0));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(101)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(101));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(200)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(101));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(201)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(201));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(300)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(201));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(301)));
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(301));
+    auto m2 = m.truncate();
+    BOOST_REQUIRE(m2.size() == 3);
+    BOOST_REQUIRE(m.size() == 1);
+
+    auto m3 = m.truncate(model::offset(401));
+    BOOST_REQUIRE(m3.size() == 1);
+    BOOST_REQUIRE(m.size() == 0);
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_partition_manifest_start_offset_advance_with_gap) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+    m.add(
+      segment_name("10-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{100},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(10));
+    m.add(
+      segment_name("200-2-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{200},
+        .committed_offset = model::offset{300},
+      });
+    BOOST_REQUIRE(!m.advance_start_offset(model::offset(0)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(10));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(10));
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(150)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(200));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_complete_manifest_serialization_roundtrip_with_start_offset) {
+    std::map<ss::sstring, partition_manifest::segment_meta> expected_segments
+      = {
+        {"0-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 1024,
+           .base_offset = model::offset(0),
+           .committed_offset = model::offset(99),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"100-1-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 2048,
+           .base_offset = model::offset(100),
+           .committed_offset = model::offset(199),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(1),
+         }},
+        {"200-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(200),
+           .committed_offset = model::offset(299),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(1),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+        {"300-2-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(300),
+           .committed_offset = model::offset(399),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .segment_term = model::term_id(2),
+         }},
+      };
+
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    for (const auto& segment : expected_segments) {
+        m.add(segment_name(segment.first), segment.second);
+    }
+    m.advance_start_offset(model::offset(100));
+
+    auto [is, size] = m.serialize();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    partition_manifest restored;
+    restored.update(std::move(rstr)).get0();
+
+    BOOST_REQUIRE(restored == m);
+
+    for (const auto& expected : expected_segments) {
+        auto actual = restored.find(expected.second.base_offset);
+        require_equal_segment_meta(expected.second, actual->second);
+    }
+
+    BOOST_REQUIRE(restored.get_start_offset() == model::offset(100));
 }
 
 // modeled after cluster::archival_metadata_stm::segment
@@ -665,23 +1098,80 @@ struct segment_meta_v0 {
 
     auto operator<=>(const segment_meta_v0&) const = default;
 };
+struct segment_meta_v1 {
+    using value_t = segment_meta_v1;
+    static constexpr serde::version_t redpanda_serde_version = 1;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
 
+    bool is_compacted;
+    size_t size_bytes;
+    model::offset base_offset;
+    model::offset committed_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::offset delta_offset;
+
+    model::initial_revision_id ntp_revision;
+    model::term_id archiver_term;
+
+    auto operator<=>(const segment_meta_v1&) const = default;
+};
+
+template<class segment_meta_t>
 struct metadata_stm_segment
   : public serde::envelope<
-      metadata_stm_segment,
+      metadata_stm_segment<segment_meta_t>,
       serde::version<0>,
       serde::compat_version<0>> {
     cloud_storage::segment_name name;
-    segment_meta_v0 meta;
+    segment_meta_t meta;
 
-    bool operator==(const old::metadata_stm_segment&) const = default;
+    bool operator==(const metadata_stm_segment&) const = default;
 };
 
 } // namespace old
 
-SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
-    auto timestamp = model::timestamp::now();
+template<class segment_meta_prev>
+void test_segment_meta_serde_compat_impl(
+  cloud_storage::partition_manifest::segment_meta meta_new,
+  cloud_storage::partition_manifest::segment_meta meta_wo_new_fields,
+  segment_meta_prev meta_old) {
+    BOOST_CHECK(
+      serde::from_iobuf<cloud_storage::partition_manifest::segment_meta>(
+        serde::to_iobuf(meta_old))
+      == meta_wo_new_fields);
 
+    BOOST_CHECK(
+      serde::from_iobuf<segment_meta_prev>(serde::to_iobuf(meta_new))
+      == meta_old);
+
+    auto name = segment_name{"12-11-v1.log"};
+
+    metadata_stm_segment segment_new{
+      .name = name,
+      .meta = meta_new,
+    };
+    metadata_stm_segment segment_wo_new_fields{
+      .name = name,
+      .meta = meta_wo_new_fields,
+    };
+    old::metadata_stm_segment<segment_meta_prev> segment_old{
+      .name = name,
+      .meta = meta_old,
+    };
+
+    BOOST_CHECK(
+      serde::from_iobuf<metadata_stm_segment>(serde::to_iobuf(segment_old))
+      == segment_wo_new_fields);
+
+    BOOST_CHECK(
+      serde::from_iobuf<old::metadata_stm_segment<segment_meta_prev>>(
+        serde::to_iobuf(segment_new))
+      == segment_old);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat_v1) {
+    auto timestamp = model::timestamp::now();
     cloud_storage::partition_manifest::segment_meta meta_new{
       .is_compacted = false,
       .size_bytes = 1234,
@@ -693,7 +1183,6 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .ntp_revision = model::initial_revision_id{42},
       .archiver_term = model::term_id{123},
     };
-
     cloud_storage::partition_manifest::segment_meta meta_wo_new_fields
       = meta_new;
     meta_wo_new_fields.ntp_revision = model::initial_revision_id{};
@@ -709,37 +1198,44 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .delta_offset = model::offset_cast(meta_new.delta_offset),
     };
 
-    BOOST_CHECK(
-      serde::from_iobuf<cloud_storage::partition_manifest::segment_meta>(
-        serde::to_iobuf(meta_old))
-      == meta_wo_new_fields);
+    test_segment_meta_serde_compat_impl(meta_new, meta_wo_new_fields, meta_old);
+}
 
-    BOOST_CHECK(
-      serde::from_iobuf<old::segment_meta_v0>(serde::to_iobuf(meta_new))
-      == meta_old);
-
-    auto name = segment_name{"12-11-v1.log"};
-
-    metadata_stm_segment segment_new{
-      .name = name,
-      .meta = meta_new,
+SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat_v2) {
+    auto timestamp = model::timestamp::now();
+    cloud_storage::partition_manifest::segment_meta meta_new{
+      .is_compacted = false,
+      .size_bytes = 1234,
+      .base_offset = model::offset{12},
+      .committed_offset = model::offset{34},
+      .base_timestamp = timestamp,
+      .max_timestamp = timestamp,
+      .delta_offset = model::offset_delta{7},
+      .ntp_revision = model::initial_revision_id{42},
+      .archiver_term = model::term_id{123},
+      .segment_term = model::term_id{2},
+      .delta_offset_end = model::offset_delta{11},
+      .sname_format = segment_name_format::v2,
     };
-    metadata_stm_segment segment_wo_new_fields{
-      .name = name,
-      .meta = meta_wo_new_fields,
-    };
-    old::metadata_stm_segment segment_old{
-      .name = name,
-      .meta = meta_old,
+    cloud_storage::partition_manifest::segment_meta meta_wo_new_fields
+      = meta_new;
+    meta_wo_new_fields.segment_term = model::term_id{};
+    meta_wo_new_fields.delta_offset_end = model::offset_delta{};
+    meta_wo_new_fields.sname_format = segment_name_format::v1;
+
+    old::segment_meta_v1 meta_old{
+      .is_compacted = meta_new.is_compacted,
+      .size_bytes = meta_new.size_bytes,
+      .base_offset = meta_new.base_offset,
+      .committed_offset = meta_new.committed_offset,
+      .base_timestamp = meta_new.base_timestamp,
+      .max_timestamp = meta_new.max_timestamp,
+      .delta_offset = model::offset_cast(meta_new.delta_offset),
+      .ntp_revision = model::initial_revision_id{42},
+      .archiver_term = model::term_id{123},
     };
 
-    BOOST_CHECK(
-      serde::from_iobuf<metadata_stm_segment>(serde::to_iobuf(segment_old))
-      == segment_wo_new_fields);
-
-    BOOST_CHECK(
-      serde::from_iobuf<old::metadata_stm_segment>(serde::to_iobuf(segment_new))
-      == segment_old);
+    test_segment_meta_serde_compat_impl(meta_new, meta_wo_new_fields, meta_old);
 }
 
 /**
@@ -1056,4 +1552,110 @@ SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
     BOOST_REQUIRE(
       m.timequery(model::timestamp{m.rbegin()->second.max_timestamp() + 1})
       == std::nullopt);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
+    static constexpr std::string_view raw = R"json({
+        "version": 1,
+        "namespace": "test-ns",
+        "topic": "test-topic",
+        "partition": 42,
+        "revision": 1,
+        "last_offset": 39,
+        "segments": {
+            "10-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 1024,
+                "base_offset": 10,
+                "committed_offset": 19,
+                "base_timestamp": 1000,
+                "max_timestamp":  1001,
+                "archiver_term": 1
+            },
+            "20-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 2048,
+                "base_offset": 20,
+                "committed_offset": 29,
+                "base_timestamp": 1002,
+                "max_timestamp":  1003,
+                "delta_offset": 1,
+                "delta_offset_end": 10,
+                "archiver_term": 2,
+                "segment_term": 1,
+                "sname_format": 2
+            },
+            "30-1-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 1024,
+                "base_offset": 30,
+                "committed_offset": 39,
+                "base_timestamp": 1004,
+                "max_timestamp":  1005
+            },
+            "40-2-v1.log": {
+                "is_compacted": false,
+                "size_bytes": 4096,
+                "base_offset": 40,
+                "committed_offset": 42,
+                "base_timestamp": 1006,
+                "max_timestamp":  1007,
+                "delta_offset": 1,
+                "segment_term": 2,
+                "delta_offset_end": 10,
+                "sname_format": 2
+            }
+        }
+    })json";
+
+    partition_manifest m;
+    m.update(make_manifest_stream(raw)).get0();
+
+    {
+        // old format with archival term
+        auto s = m.find(model::offset(10));
+        auto expected = remote_segment_path(
+          "9b367cb7/test-ns/test-topic/42_1/10-1-v1.log.1");
+        auto actual1 = partition_manifest::generate_remote_segment_path(
+          m.get_ntp(), s->first, s->second);
+        auto actual2 = m.generate_segment_path(s->first, s->second);
+        BOOST_REQUIRE_EQUAL(expected, actual1);
+        BOOST_REQUIRE_EQUAL(expected, actual2);
+    }
+
+    {
+        // new format with archival term
+        auto s = m.find(model::offset(20));
+        auto expected = remote_segment_path(
+          "96c6b7a9/test-ns/test-topic/42_1/20-29-2048-1-v1.log.2");
+        auto actual1 = partition_manifest::generate_remote_segment_path(
+          m.get_ntp(), s->first, s->second);
+        auto actual2 = m.generate_segment_path(s->first, s->second);
+        BOOST_REQUIRE_EQUAL(expected, actual1);
+        BOOST_REQUIRE_EQUAL(expected, actual2);
+    }
+
+    {
+        // old format without archival term
+        auto s = m.find(model::offset(30));
+        auto expected = remote_segment_path(
+          "df1262f5/test-ns/test-topic/42_1/30-1-v1.log");
+        auto actual1 = partition_manifest::generate_remote_segment_path(
+          m.get_ntp(), s->first, s->second);
+        auto actual2 = m.generate_segment_path(s->first, s->second);
+        BOOST_REQUIRE_EQUAL(expected, actual1);
+        BOOST_REQUIRE_EQUAL(expected, actual2);
+    }
+
+    {
+        // new format without archival term
+        auto s = m.find(model::offset(40));
+        auto expected = remote_segment_path(
+          "e44e8104/test-ns/test-topic/42_1/40-42-4096-2-v1.log");
+        auto actual1 = partition_manifest::generate_remote_segment_path(
+          m.get_ntp(), s->first, s->second);
+        auto actual2 = m.generate_segment_path(s->first, s->second);
+        BOOST_REQUIRE_EQUAL(expected, actual1);
+        BOOST_REQUIRE_EQUAL(expected, actual2);
+    }
 }

@@ -47,6 +47,11 @@ using local_segment_path
 using s3_connection_limit
   = named_type<size_t, struct archival_s3_connection_limit_t>;
 
+/// Version of the segment name format
+enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
+
+std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
+
 enum class download_result : int32_t {
     success,
     notfound,
@@ -116,6 +121,31 @@ struct manifest_topic_configuration {
         tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
     };
     topic_properties properties;
+};
+
+struct segment_meta {
+    using value_t = segment_meta;
+    static constexpr serde::version_t redpanda_serde_version = 2;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
+
+    bool is_compacted;
+    size_t size_bytes;
+    model::offset base_offset;
+    model::offset committed_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::offset_delta delta_offset;
+
+    model::initial_revision_id ntp_revision;
+    model::term_id archiver_term;
+    /// Term of the segment (included in segment file name)
+    model::term_id segment_term;
+    /// Offset translation delta at the end of the range
+    model::offset_delta delta_offset_end;
+    /// Segment name format specifier
+    segment_name_format sname_format{segment_name_format::v1};
+
+    auto operator<=>(const segment_meta&) const = default;
 };
 
 } // namespace cloud_storage

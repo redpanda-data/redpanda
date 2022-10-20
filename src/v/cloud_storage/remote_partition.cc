@@ -485,7 +485,18 @@ kafka::offset remote_partition::first_uploaded_offset() {
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
     try {
-        auto it = _manifest.begin();
+        // Invariant: _manifest has at least one segment so start offset is
+        // guaranteed to not to be nullopt.
+        auto so = _manifest.get_start_offset();
+        // Invariant: start offset is only advanced forward by segment boundary.
+        // It can only be equal to base_offset of one of the segments so we can
+        // always convert it to kafka offset.
+        auto it = _manifest.find(*so);
+        vassert(
+          it != _manifest.end(),
+          "unexpected start_offset {} in {}",
+          *so,
+          _manifest.get_ntp());
         auto off = get_kafka_base_offset(it->second);
         vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", off);
         return off;

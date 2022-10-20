@@ -29,7 +29,9 @@
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
 
+#include <algorithm>
 #include <charconv>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -167,7 +169,7 @@ remote_segment_path generate_remote_segment_path(
     }
 }
 
-segment_name generate_segment_name(model::offset o, model::term_id t) {
+segment_name generate_local_segment_name(model::offset o, model::term_id t) {
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
 }
 
@@ -217,11 +219,19 @@ const model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
 }
 
+const model::offset partition_manifest::get_insync_offset() const {
+    return _insync_offset;
+}
+
+void partition_manifest::advance_insync_offset(model::offset o) {
+    _insync_offset = std::max(o, _insync_offset);
+}
+
 std::optional<model::offset> partition_manifest::get_start_offset() const {
-    if (_segments.empty()) {
+    if (_start_offset == model::offset{}) {
         return std::nullopt;
     }
-    return _segments.begin()->second.base_offset;
+    return _start_offset;
 }
 
 model::initial_revision_id partition_manifest::get_revision_id() const {
@@ -230,9 +240,46 @@ model::initial_revision_id partition_manifest::get_revision_id() const {
 
 remote_segment_path partition_manifest::generate_segment_path(
   const partition_manifest::key& key, const segment_meta& meta) const {
-    auto name = generate_segment_name(key.base_offset, key.term);
-    return generate_remote_segment_path(
+    auto name = generate_remote_segment_name(key, meta);
+    return cloud_storage::generate_remote_segment_path(
       _ntp, meta.ntp_revision, name, meta.archiver_term);
+}
+
+segment_name partition_manifest::generate_remote_segment_name(
+  const partition_manifest::key& k, const partition_manifest::value& val) {
+    switch (val.sname_format) {
+    case segment_name_format::v1:
+        return segment_name(
+          ssx::sformat("{}-{}-v1.log", k.base_offset(), k.term()));
+    case segment_name_format::v2:
+        // Use new stlyle format ".../base-committed-term-size-v1.log"
+        return segment_name(ssx::sformat(
+          "{}-{}-{}-{}-v1.log",
+          k.base_offset(),
+          val.committed_offset(),
+          val.size_bytes,
+          k.term()));
+    }
+    __builtin_unreachable();
+}
+
+remote_segment_path partition_manifest::generate_remote_segment_path(
+  const model::ntp& ntp,
+  const partition_manifest::key& k,
+  const partition_manifest::value& val) {
+    auto name = generate_remote_segment_name(k, val);
+    return cloud_storage::generate_remote_segment_path(
+      ntp, val.ntp_revision, name, val.archiver_term);
+}
+
+local_segment_path partition_manifest::generate_local_segment_path(
+  const model::ntp& ntp,
+  const partition_manifest::key& k,
+  const partition_manifest::value& val) {
+    auto name = cloud_storage::generate_local_segment_name(
+      k.base_offset, k.term);
+    return local_segment_path(
+      fmt::format("{}_{}/{}", ntp.path(), val.ntp_revision, name()));
 }
 
 partition_manifest::const_iterator partition_manifest::begin() const {
@@ -267,11 +314,75 @@ bool partition_manifest::contains(const segment_name& name) const {
     return _segments.contains(key);
 }
 
+void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
+
+bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
+    if (new_start_offset > _start_offset && !_segments.empty()) {
+        key k = {
+          .base_offset = new_start_offset,
+          .term = model::term_id::max(),
+        };
+        auto it = _segments.upper_bound(k);
+        if (it == _segments.begin()) {
+            return false;
+        }
+        it = std::prev(it);
+        if (it->second.committed_offset < new_start_offset) {
+            auto n = std::next(it);
+            if (n == _segments.end()) {
+                // The whole offset range is supposed to be truncated
+                _start_offset = new_start_offset;
+            } else {
+                _start_offset = n->second.base_offset;
+            }
+        } else {
+            _start_offset = it->second.base_offset;
+        }
+        return true;
+    }
+    return false;
+}
+
+std::vector<segment_meta> partition_manifest::replaced_segments() const {
+    std::vector<segment_meta> segments;
+    segments.reserve(_replaced.size());
+    for (const auto& kv : _replaced) {
+        segments.push_back(kv.second);
+    }
+    return segments;
+}
+
+void partition_manifest::move_aligned_offset_range(
+  model::offset begin_inclusive, model::offset end_inclusive) {
+    auto k = key{
+      .base_offset = begin_inclusive,
+      .term = model::term_id::min(),
+    };
+    auto it = _segments.lower_bound(k);
+    while (it != _segments.end()
+           // The segment is considered replaced only if all its
+           // offsets are covered by new segment's offset range
+           && it->first.base_offset >= begin_inclusive
+           && it->second.committed_offset <= end_inclusive) {
+        _replaced.insert(*it);
+        it = _segments.erase(it);
+    }
+}
+
 bool partition_manifest::add(
   const partition_manifest::key& key, const segment_meta& meta) {
+    if (_start_offset == model::offset{} && _segments.empty()) {
+        // This can happen if this is the first time we add something
+        // to the manifest or if all data was removed previously.
+        _start_offset = meta.base_offset;
+    }
+    move_aligned_offset_range(meta.base_offset, meta.committed_offset);
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
+    }
+    if (ok && it->second.segment_term == model::term_id{}) {
+        it->second.segment_term = key.term;
     }
     _last_offset = std::max(meta.committed_offset, _last_offset);
     return ok;
@@ -290,14 +401,29 @@ bool partition_manifest::add(
 
 partition_manifest
 partition_manifest::truncate(model::offset starting_rp_offset) {
+    if (!advance_start_offset(starting_rp_offset)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "can't truncate manifest up to {} due to misalignment",
+          starting_rp_offset));
+    }
+    return truncate();
+}
+
+partition_manifest partition_manifest::truncate() {
     partition_manifest removed(_ntp, _rev);
     for (auto it : _segments) {
-        if (it.second.committed_offset < starting_rp_offset) {
+        if (it.second.committed_offset < _start_offset) {
             removed.add(it.first, it.second);
         }
     }
     for (auto s : removed._segments) {
         _segments.erase(s.first);
+    }
+    if (_segments.empty()) {
+        // start offset only makes sense if we have segments
+        _start_offset = model::offset{};
+        // NOTE: _last_offset should not be reset
     }
     return removed;
 }
@@ -337,62 +463,53 @@ partition_manifest::get_insert_iterator() {
     return std::inserter(_segments, _segments.begin());
 }
 
-partition_manifest
-partition_manifest::difference(const partition_manifest& remote_set) const {
-    vassert(
-      _ntp == remote_set._ntp && _rev == remote_set._rev,
-      "Local manifest {}-{} and remote {}-{} doesn't match",
-      _ntp,
-      _rev,
-      remote_set._ntp,
-      remote_set._rev);
-    partition_manifest result(_ntp, _rev);
-    std::set_difference(
-      begin(),
-      end(),
-      remote_set.begin(),
-      remote_set.end(),
-      result.get_insert_iterator());
-    return result;
-}
-
+// clang-format off
 /**
      ┌──────────────────────┐
      │ expect_manifest_start│
      └──────────┬───────────┘
-                │                             ┌───────────────┐
-                │            Key("segments")  │expect_segments│
-   StartObject()│        ┌───────────────────►│    start      │
-                │        │                    └──────┬────────┘
-                │        │                           │StartObject()
-                ▼        │                           ▼
-        ┌────────────────┴──┐                  ┌──────────────┐
-┌───────┤expect_manifest_key│◄─────────────────┤expect_segment│◄───┐
-│       └──┬────────────────┘   EndObject()    │   path       │    │
-│          │          ▲                        └────┬─────────┘    │
-│     Key()│          │String()                     │              │
-│          │          │Uint()                  Key()│              │
-│          │          │Null()                       ▼              │EndObject()
-│          ▼          │                       ┌──────────────┐     │
-│      ┌──────────────┴──────┐                │expect_segment│     │
-│      │expect_manifest_value│                │ meta_start   │     │
-│      └─────────────────────┘                └─────┬────────┘     │
-│                                                   │              │
-│                                      StartObject()│              │
-│EndObject()                                        ▼              │
-│                                             ┌───────────────┐    │
-│                                             │ expect_segment├────┘
-│                                             │  meta_key     │
-│            ┌────────┐                       └───┬───────────┘
-│            │terminal│                           │      ▲String()
-└───────────►│  state │                           │      │Uint()
-             └────────┘                      Key()│      │Bool()
-                                                  ▼      │Null()
-                                               ┌─────────┴─────┐
-                                               │ expect_segment│
-                                               │  meta_value   │
-                                               └───────────────┘
+                │ 
+                │ 
+                │ 
+                │                                                                            EndObject()
+                │  ┌────────────────────────────────────────────────────────────────────────────────────┐
+                │  │                                                     Key("replaced")                |
+                │  │  ┌───────────────────────────────────────────────────────────────────┐             |
+                |  |  |                                                                   ▼             |
+                │  │  │                       ┌───────────────┐                    ┌───────────────┐    |
+                │  │  │      Key("segments")  │expect_segments│                    │expect_replaced│    |
+   StartObject()│  │  │  ┌───────────────────►│    start      │                    │    start      │    |
+                │  │  │  │                    └──────┬────────┘                    └──────┬────────┘    |
+                │  │  │  │                           │StartObject()          StartObject()│             |
+                ▼  ▼  ▼  │                           ▼                                    ▼             |
+        ┌────────────────┴──┐                  ┌──────────────┐                    ┌───────────────┐    |
+┌───────┤expect_manifest_key│◄─────────────────┤expect_segment│◄───┐               |expect_replaced│◄───┘
+│       └──┬────────────────┘   EndObject()    │   path       │    │               │   path        │◄───┐
+│          │          ▲                        └────┬─────────┘    │               └─────┬─────────┘    │
+│     Key()│          │String()                     │              │                     │              │  
+│          │          │Uint()                  Key()│              │                Key()│              │   
+│          │          │Null()                       ▼              │EndObject()          ▼              │ 
+│          ▼          │                       ┌──────────────┐     │              ┌───────────────┐     │     
+│      ┌──────────────┴──────┐                │expect_segment│     │              │expect_replaced│     │     
+│      │expect_manifest_value│                │ meta_start   │     │              │ meta_start    │     │      
+│      └─────────────────────┘                └─────┬────────┘     │              └──────┬────────┘     │     
+│                                                   │              │                     │              │
+│                                      StartObject()│              │        StartObject()│              │
+│EndObject()                                        ▼              │                     ▼              │
+│                                             ┌───────────────┐    │              ┌────────────────┐    │
+│                                             │ expect_segment├────┘              │ expect_replaced├────┘
+│                                             │  meta_key     │                   │  meta_key      │
+│            ┌────────┐                       └───┬───────────┘                   └────┬───────────┘
+│            │terminal│                           │      ▲String()                     │     ▲String()
+└───────────►│  state │                           │      │Uint()                       │     │Uint()
+             └────────┘                      Key()│      │Bool()                  Key()│     │Bool()
+                                                  ▼      │Null()                       ▼     │Null()
+                                               ┌─────────┴─────┐                  ┌──────────┴─────┐
+                                               │ expect_segment│                  │ expect_replaced│
+                                               │  meta_value   │                  │  meta_value    │
+                                               └───────────────┘                  └────────────────┘    
 **/
+// clang-format on
 
 struct partition_manifest_handler
   : public rapidjson::
@@ -406,14 +523,23 @@ struct partition_manifest_handler
         case state::expect_segments_start:
             _state = state::expect_segment_path;
             return true;
+        case state::expect_replaced_start:
+            _state = state::expect_replaced_path;
+            return true;
         case state::expect_segment_meta_start:
             _state = state::expect_segment_meta_key;
+            return true;
+        case state::expect_replaced_meta_start:
+            _state = state::expect_replaced_meta_key;
             return true;
         case state::expect_manifest_key:
         case state::expect_manifest_value:
         case state::expect_segment_path:
         case state::expect_segment_meta_key:
         case state::expect_segment_meta_value:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_key:
+        case state::expect_replaced_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -425,11 +551,14 @@ struct partition_manifest_handler
             _manifest_key = key_string(str, length);
             if (_manifest_key == "segments") {
                 _state = state::expect_segments_start;
+            } else if (_manifest_key == "replaced") {
+                _state = state::expect_replaced_start;
             } else {
                 _state = state::expect_manifest_value;
             }
             return true;
         case state::expect_segment_path:
+        case state::expect_replaced_path:
             _segment_name = segment_name{str};
             _parsed_segment_key = parse_segment_name(_segment_name);
             if (!_parsed_segment_key) {
@@ -441,17 +570,28 @@ struct partition_manifest_handler
             _segment_key = {
               .base_offset = _parsed_segment_key->base_offset,
               .term = _parsed_segment_key->term};
-            _state = state::expect_segment_meta_start;
+            if (_state == state::expect_segment_path) {
+                _state = state::expect_segment_meta_start;
+            } else {
+                _state = state::expect_replaced_meta_start;
+            }
             return true;
         case state::expect_segment_meta_key:
             _segment_meta_key = key_string(str, length);
             _state = state::expect_segment_meta_value;
             return true;
+        case state::expect_replaced_meta_key:
+            _segment_meta_key = key_string(str, length);
+            _state = state::expect_replaced_meta_value;
+            return true;
         case state::expect_manifest_start:
         case state::expect_manifest_value:
         case state::expect_segments_start:
+        case state::expect_replaced_start:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_value:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -473,10 +613,15 @@ struct partition_manifest_handler
         case state::expect_manifest_start:
         case state::expect_manifest_key:
         case state::expect_segments_start:
+        case state::expect_replaced_start:
         case state::expect_segment_path:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_key:
         case state::expect_segment_meta_value:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
+        case state::expect_replaced_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -495,11 +640,16 @@ struct partition_manifest_handler
                 _revision_id = model::initial_revision_id(u);
             } else if ("last_offset" == _manifest_key) {
                 _last_offset = model::offset(u);
+            } else if ("start_offset" == _manifest_key) {
+                _start_offset = model::offset(u);
+            } else if ("insync_offset" == _manifest_key) {
+                _insync_offset = model::offset(u);
             } else {
                 return false;
             }
             _state = state::expect_manifest_key;
             return true;
+        case state::expect_replaced_meta_value:
         case state::expect_segment_meta_value:
             if ("size_bytes" == _segment_meta_key) {
                 _size_bytes = static_cast<size_t>(u);
@@ -517,15 +667,29 @@ struct partition_manifest_handler
                 _ntp_revision = model::initial_revision_id(u);
             } else if ("archiver_term" == _segment_meta_key) {
                 _archiver_term = model::term_id(u);
+            } else if ("segment_term" == _segment_meta_key) {
+                _segment_term = model::term_id(u);
+            } else if ("delta_offset_end" == _segment_meta_key) {
+                _delta_offset_end = model::offset_delta(u);
+            } else if ("sname_format" == _segment_meta_key) {
+                _meta_sname_format = segment_name_format(u);
             }
-            _state = state::expect_segment_meta_key;
+            if (_state == state::expect_segment_meta_value) {
+                _state = state::expect_segment_meta_key;
+            } else {
+                _state = state::expect_replaced_meta_key;
+            }
             return true;
         case state::expect_manifest_start:
         case state::expect_manifest_key:
         case state::expect_segments_start:
+        case state::expect_replaced_start:
         case state::expect_segment_path:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_key:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
         case state::terminal_state:
             return false;
         }
@@ -538,9 +702,11 @@ struct partition_manifest_handler
             _state = state::terminal_state;
             return true;
         case state::expect_segment_path:
+        case state::expect_replaced_path:
             _state = state::expect_manifest_key;
             return true;
         case state::expect_segment_meta_key:
+        case state::expect_replaced_meta_key:
             check_that_required_meta_fields_are_present();
             _meta = {
               .is_compacted = _is_compacted.value(),
@@ -555,19 +721,35 @@ struct partition_manifest_handler
                 model::offset_delta::min()),
               .ntp_revision = _ntp_revision.value_or(
                 _revision_id.value_or(model::initial_revision_id())),
-              .archiver_term = _archiver_term.value_or(model::term_id{})};
-            if (!_segments) {
-                _segments = std::make_unique<segment_map>();
+              .archiver_term = _archiver_term.value_or(model::term_id{}),
+              .segment_term = _segment_term.value_or(_segment_key.term),
+              .delta_offset_end = _delta_offset_end.value_or(
+                model::offset_delta::min()),
+              .sname_format = _meta_sname_format.value_or(
+                segment_name_format::v1)};
+            if (_state == state::expect_segment_meta_key) {
+                if (!_segments) {
+                    _segments = std::make_unique<segment_map>();
+                }
+                _segments->insert(std::make_pair(_segment_key, _meta));
+                _state = state::expect_segment_path;
+            } else {
+                if (!_replaced) {
+                    _replaced = std::make_unique<segment_multimap>();
+                }
+                _replaced->insert(std::make_pair(_segment_key, _meta));
+                _state = state::expect_replaced_path;
             }
-            _segments->insert(std::make_pair(_segment_key, _meta));
             clear_meta_fields();
-            _state = state::expect_segment_path;
             return true;
         case state::expect_manifest_start:
         case state::expect_manifest_value:
         case state::expect_segments_start:
+        case state::expect_replaced_start:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_value:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -582,6 +764,13 @@ struct partition_manifest_handler
                 return true;
             }
             return false;
+        case state::expect_replaced_meta_value:
+            if ("is_compacted" == _segment_meta_key) {
+                _is_compacted = b;
+                _state = state::expect_replaced_meta_key;
+                return true;
+            }
+            return false;
         case state::expect_manifest_start:
         case state::expect_manifest_key:
         case state::expect_manifest_value:
@@ -589,6 +778,10 @@ struct partition_manifest_handler
         case state::expect_segment_path:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_key:
+        case state::expect_replaced_start:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
         case state::terminal_state:
             return false;
         }
@@ -608,6 +801,13 @@ struct partition_manifest_handler
         case state::expect_segment_path:
         case state::expect_segment_meta_start:
         case state::expect_segment_meta_key:
+        case state::expect_replaced_start:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
+        case state::expect_replaced_meta_value:
+            _state = state::expect_replaced_meta_key;
+            return true;
         case state::terminal_state:
             return false;
         }
@@ -624,10 +824,16 @@ struct partition_manifest_handler
         expect_segment_meta_start,
         expect_segment_meta_key,
         expect_segment_meta_value,
+        expect_replaced_start,
+        expect_replaced_path,
+        expect_replaced_meta_start,
+        expect_replaced_meta_key,
+        expect_replaced_meta_value,
         terminal_state,
     } _state{state::expect_manifest_start};
 
     using segment_map = partition_manifest::segment_map;
+    using segment_multimap = partition_manifest::segment_multimap;
 
     key_string _manifest_key;
     key_string _segment_meta_key;
@@ -636,6 +842,7 @@ struct partition_manifest_handler
     partition_manifest::key _segment_key;
     partition_manifest::segment_meta _meta;
     std::unique_ptr<segment_map> _segments;
+    std::unique_ptr<segment_multimap> _replaced;
 
     // required manifest fields
     std::optional<int32_t> _version;
@@ -644,6 +851,8 @@ struct partition_manifest_handler
     std::optional<int32_t> _partition_id;
     std::optional<model::initial_revision_id> _revision_id;
     std::optional<model::offset> _last_offset;
+    std::optional<model::offset> _start_offset;
+    std::optional<model::offset> _insync_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -657,6 +866,9 @@ struct partition_manifest_handler
     std::optional<model::offset_delta> _delta_offset;
     std::optional<model::initial_revision_id> _ntp_revision;
     std::optional<model::term_id> _archiver_term;
+    std::optional<model::term_id> _segment_term;
+    std::optional<model::offset_delta> _delta_offset_end;
+    std::optional<segment_name_format> _meta_sname_format;
 
     void check_that_required_meta_fields_are_present() {
         if (!_is_compacted) {
@@ -698,6 +910,9 @@ struct partition_manifest_handler
         _delta_offset = std::nullopt;
         _ntp_revision = std::nullopt;
         _archiver_term = std::nullopt;
+        _segment_term = std::nullopt;
+        _delta_offset_end = std::nullopt;
+        _meta_sname_format = std::nullopt;
     }
 
     void check_manifest_fields_are_present() {
@@ -739,7 +954,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     partition_manifest_handler handler;
 
     if (reader.Parse(wrapper, handler)) {
-        partition_manifest::update(handler);
+        partition_manifest::update(std::move(handler));
     } else {
         rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
         size_t o = reader.GetErrorOffset();
@@ -753,7 +968,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-void partition_manifest::update(const partition_manifest_handler& handler) {
+void partition_manifest::update(partition_manifest_handler&& handler) {
     if (handler._version != static_cast<int>(manifest_version::v1)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -767,8 +982,26 @@ void partition_manifest::update(const partition_manifest_handler& handler) {
       handler._partition_id.value());
     _last_offset = handler._last_offset.value();
 
+    if (handler._start_offset) {
+        _start_offset = handler._start_offset.value();
+    } else {
+        _start_offset = {};
+    }
+
+    if (handler._insync_offset) {
+        _insync_offset = handler._insync_offset.value();
+    }
+
     if (handler._segments) {
         _segments = std::move(*handler._segments);
+        if (handler._start_offset == std::nullopt && !_segments.empty()) {
+            // Backward compatibility. Old manifest format doesn't have
+            // start_offset field. In this case we need to set it implicitly.
+            _start_offset = _segments.begin()->first.base_offset;
+        }
+    }
+    if (handler._replaced) {
+        _replaced = std::move(*handler._replaced);
     }
 }
 
@@ -805,47 +1038,82 @@ void partition_manifest::serialize(std::ostream& out) const {
     w.Int64(_rev());
     w.Key("last_offset");
     w.Int64(_last_offset());
+    if (_insync_offset != model::offset{}) {
+        w.Key("insync_offset");
+        w.Int64(_insync_offset());
+    }
+    if (_start_offset != model::offset{}) {
+        w.Key("start_offset");
+        w.Int64(_start_offset());
+    }
+    auto serialize_meta = [this, &w](const key& key, const segment_meta& meta) {
+        auto sn = generate_local_segment_name(key.base_offset, key.term);
+        w.Key(sn());
+        w.StartObject();
+        w.Key("is_compacted");
+        w.Bool(meta.is_compacted);
+        w.Key("size_bytes");
+        w.Int64(meta.size_bytes);
+        w.Key("committed_offset");
+        w.Int64(meta.committed_offset());
+        w.Key("base_offset");
+        w.Int64(meta.base_offset());
+        if (meta.base_timestamp != model::timestamp::missing()) {
+            w.Key("base_timestamp");
+            w.Int64(meta.base_timestamp.value());
+        }
+        if (meta.max_timestamp != model::timestamp::missing()) {
+            w.Key("max_timestamp");
+            w.Int64(meta.max_timestamp.value());
+        }
+        if (meta.delta_offset != model::offset_delta::min()) {
+            w.Key("delta_offset");
+            w.Int64(meta.delta_offset());
+        }
+        if (meta.ntp_revision != _rev) {
+            vassert(
+              meta.ntp_revision != model::initial_revision_id(),
+              "ntp {}: missing ntp_revision for segment {} in the manifest",
+              _ntp,
+              sn);
+            w.Key("ntp_revision");
+            w.Int64(meta.ntp_revision());
+        }
+        if (meta.archiver_term != model::term_id::min()) {
+            w.Key("archiver_term");
+            w.Int64(meta.archiver_term());
+        }
+        w.Key("segment_term");
+        if (meta.segment_term == model::term_id::min()) {
+            w.Int64(key.term());
+        } else {
+            w.Int64(meta.segment_term());
+        }
+        if (
+          meta.sname_format == segment_name_format::v2
+          && meta.delta_offset_end != model::offset_delta::min()) {
+            w.Key("delta_offset_end");
+            w.Int64(meta.delta_offset_end());
+        }
+        if (meta.sname_format != segment_name_format::v1) {
+            w.Key("sname_format");
+            w.Int64(static_cast<int16_t>(meta.sname_format));
+        }
+        w.EndObject();
+    };
     if (!_segments.empty()) {
         w.Key("segments");
         w.StartObject();
         for (const auto& [key, meta] : _segments) {
-            auto sn = generate_segment_name(key.base_offset, key.term);
-            w.Key(sn());
-            w.StartObject();
-            w.Key("is_compacted");
-            w.Bool(meta.is_compacted);
-            w.Key("size_bytes");
-            w.Int64(meta.size_bytes);
-            w.Key("committed_offset");
-            w.Int64(meta.committed_offset());
-            w.Key("base_offset");
-            w.Int64(meta.base_offset());
-            if (meta.base_timestamp != model::timestamp::missing()) {
-                w.Key("base_timestamp");
-                w.Int64(meta.base_timestamp.value());
-            }
-            if (meta.max_timestamp != model::timestamp::missing()) {
-                w.Key("max_timestamp");
-                w.Int64(meta.max_timestamp.value());
-            }
-            if (meta.delta_offset != model::offset_delta::min()) {
-                w.Key("delta_offset");
-                w.Int64(meta.delta_offset());
-            }
-            if (meta.ntp_revision != _rev) {
-                vassert(
-                  meta.ntp_revision != model::initial_revision_id(),
-                  "ntp {}: missing ntp_revision for segment {} in the manifest",
-                  _ntp,
-                  sn);
-                w.Key("ntp_revision");
-                w.Int64(meta.ntp_revision());
-            }
-            if (meta.archiver_term != model::term_id::min()) {
-                w.Key("archiver_term");
-                w.Int64(meta.archiver_term());
-            }
-            w.EndObject();
+            serialize_meta(key, meta);
+        }
+        w.EndObject();
+    }
+    if (!_replaced.empty()) {
+        w.Key("replaced");
+        w.StartObject();
+        for (const auto& [key, meta] : _replaced) {
+            serialize_meta(key, meta);
         }
         w.EndObject();
     }
@@ -1002,7 +1270,7 @@ partition_manifest::timequery(model::timestamp t) const {
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
-    o << generate_segment_name(k.base_offset, k.term);
+    o << generate_local_segment_name(k.base_offset, k.term);
     return o;
 }
 } // namespace cloud_storage

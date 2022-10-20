@@ -12,6 +12,7 @@
 
 #include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/types.h"
 #include "json/document.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
@@ -57,45 +58,79 @@ remote_segment_path generate_remote_segment_path(
   model::term_id archiver_term);
 
 /// Generate correct S3 segment name based on term and base offset
-segment_name generate_segment_name(model::offset o, model::term_id t);
+segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
 remote_manifest_path
 generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
 
+// This structure can be impelenented
+// to allow access to private fields of the manifest.
+struct partition_manifest_accessor;
+
 /// Manifest file stored in S3
 class partition_manifest final : public base_manifest {
+    friend struct partition_manifest_accessor;
+
 public:
-    struct segment_meta {
-        using value_t = segment_meta;
-        static constexpr serde::version_t redpanda_serde_version = 1;
-        static constexpr serde::version_t redpanda_serde_compat_version = 0;
-
-        bool is_compacted;
-        size_t size_bytes;
-        model::offset base_offset;
-        model::offset committed_offset;
-        model::timestamp base_timestamp;
-        model::timestamp max_timestamp;
-        model::offset_delta delta_offset;
-
-        model::initial_revision_id ntp_revision;
-        model::term_id archiver_term;
-
-        auto operator<=>(const segment_meta&) const = default;
-    };
+    using segment_meta = cloud_storage::segment_meta;
 
     /// Segment key in the maifest
     using key = segment_name_components;
     using value = segment_meta;
     using segment_map = absl::btree_map<key, value>;
+    using segment_multimap = absl::btree_multimap<key, value>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
+
+    /// Generate segment name to use in the cloud
+    static segment_name
+    generate_remote_segment_name(const key& k, const value& val);
+    /// Generate segment path to use in the cloud
+    static remote_segment_path generate_remote_segment_path(
+      const model::ntp& ntp, const key& k, const value& val);
+    /// Generate segment path to use locally
+    static local_segment_path generate_local_segment_path(
+      const model::ntp& ntp, const key& k, const value& val);
 
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
 
     /// Create manifest for specific ntp
     explicit partition_manifest(model::ntp ntp, model::initial_revision_id rev);
+
+    template<class segment_t>
+    partition_manifest(
+      model::ntp ntp,
+      model::initial_revision_id rev,
+      model::offset so,
+      model::offset lo,
+      model::offset insync,
+      const std::vector<segment_t>& segments,
+      const std::vector<segment_t>& replaced)
+      : _ntp(std::move(ntp))
+      , _rev(rev)
+      , _last_offset(lo)
+      , _start_offset(so)
+      , _insync_offset(insync) {
+        for (auto nm : replaced) {
+            auto key = parse_segment_name(nm.name);
+            vassert(
+              key.has_value(),
+              "can't parse name of the replaced segment in the manifest '{}'",
+              nm.name);
+            nm.meta.segment_term = key->term;
+            _replaced.insert(std::make_pair(key.value(), nm.meta));
+        }
+        for (auto nm : segments) {
+            auto maybe_key = parse_segment_name(nm.name);
+            vassert(
+              maybe_key.has_value(),
+              "can't parse name of the segment in the manifest '{}'",
+              nm.name);
+            nm.meta.segment_term = maybe_key->term;
+            _segments.insert(std::make_pair(*maybe_key, nm.meta));
+        }
+    }
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -105,6 +140,17 @@ public:
 
     // Get last offset
     const model::offset get_last_offset() const;
+
+    // Get insync offset of the archival_metadata_stm
+    //
+    // The offset is an offset of the last applied record with the
+    // archival_metadata_stm command.
+    const model::offset get_insync_offset() const;
+
+    // Move insync offset forward
+    // The method is supposed to be called by the archival_metadata_stm after
+    // applying all commands in the record batch to the manifest.
+    void advance_insync_offset(model::offset o);
 
     /// Get starting offset
     std::optional<model::offset> get_start_offset() const;
@@ -134,10 +180,23 @@ public:
     bool add(const key& key, const segment_meta& meta);
     bool add(const segment_name& name, const segment_meta& meta);
 
-    /// \brief Truncate the manifest
+    /// \brief Truncate the manifest (remove entries from the manifest)
+    ///
+    /// \note version with parameter advances start offset before truncating
     /// \param starting_rp_offset is a new starting offset of the manifest
     /// \return manifest that contains only removed segments
     partition_manifest truncate(model::offset starting_rp_offset);
+    partition_manifest truncate();
+
+    /// \brief Set start offset without removing any data from the
+    /// manifest.
+    ///
+    /// Only allows start_offset to move forward
+    /// and can only be placed on a segment boundary (should
+    /// be equal to base_offset of one of the segments).
+    /// Empty manfest has start_offset set to model::offset::min()
+    /// \returns true if start offset was moved
+    bool advance_start_offset(model::offset start_offset);
 
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
@@ -147,13 +206,6 @@ public:
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
-
-    /// Return new manifest that contains only those segments that present
-    /// in local manifest and not found in 'remote_set'.
-    ///
-    /// \param remote_set the manifest to compare to
-    /// \return manifest with segments that doesn't present in 'remote_set'
-    partition_manifest difference(const partition_manifest& remote_set) const;
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
@@ -185,15 +237,31 @@ public:
     /// segment.base_offset and o <= segment.committed_offset.
     const_iterator segment_containing(model::offset o) const;
 
+    /// Return collection of segments that were replaced by newer segments.
+    std::vector<segment_meta> replaced_segments() const;
+
+    /// Removes all replaced segments from the manifest.
+    /// Method 'replaced_segments' will return empty value
+    /// after the call.
+    void delete_replaced_segments();
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const partition_manifest_handler& handler);
+    void update(partition_manifest_handler&& handler);
+
+    /// Move segments from _segments to _replaced
+    void move_aligned_offset_range(
+      model::offset begin_inclusive, model::offset end_inclusive);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
     segment_map _segments;
+    /// Collection of replaced but not yet removed segments
+    segment_multimap _replaced;
     model::offset _last_offset;
+    model::offset _start_offset;
+    model::offset _insync_offset;
 };
 
 } // namespace cloud_storage

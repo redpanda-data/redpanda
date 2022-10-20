@@ -272,11 +272,23 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
     } else {
         vlog(
           _rtclog.debug, "Updating the archival_meta_stm in read-replica mode");
+        cloud_storage::partition_manifest mdiff(_ntp, _rev);
+        auto offset
+          = _partition->archival_meta_stm()->manifest().get_last_offset()
+            + model::offset(1);
+        // TODO: this code needs to be updated when the compacted segment
+        // uploads are merged.
+        for (auto it = m.segment_containing(offset); it != m.end(); it++) {
+            mdiff.add(
+              segment_name(cloud_storage::generate_local_segment_name(
+                it->first.base_offset, it->first.term)),
+              it->second);
+        }
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
         auto error = co_await _partition->archival_meta_stm()->add_segments(
-          m, deadline, _as);
+          mdiff, deadline, _as);
         if (
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
@@ -788,7 +800,7 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     for (const auto& [key, meta] : manifest()) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
-        auto sname = cloud_storage::generate_segment_name(
+        auto sname = cloud_storage::generate_local_segment_name(
           key.base_offset, key.term);
         auto spath = cloud_storage::generate_remote_segment_path(
           _ntp, _rev, sname, meta.archiver_term);

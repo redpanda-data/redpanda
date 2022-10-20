@@ -509,8 +509,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(0), model::term_id(1)},
-      {manifest_ntp, model::offset(1000), model::term_id(4)},
+      {manifest_ntp, model::offset(0), model::term_id(1), 10},
+      {manifest_ntp, model::offset(1000), model::term_id(4), 10},
     };
     init_storage_api_local(segments);
     wait_for_partition_leadership(manifest_ntp);
@@ -545,8 +545,16 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";
 
     // Simulate pre-existing state in the snapshot
+    cloud_storage::partition_manifest old_segments(
+      manifest_ntp, manifest_revision);
+    for (const auto& s : old_manifest) {
+        old_segments.add(
+          segment_name(cloud_storage::generate_local_segment_name(
+            s.first.base_offset, s.first.term)),
+          s.second);
+    }
     part->archival_meta_stm()
-      ->add_segments(old_manifest, ss::lowres_clock::now() + 1s)
+      ->add_segments(old_segments, ss::lowres_clock::now() + 1s)
       .get();
 
     std::vector<s3_imposter_fixture::expectation> expectations;
@@ -582,8 +590,10 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         manifest = load_manifest(begin->second.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
-    for (const segment_name& name : {s1name, s2name}) {
-        auto url = get_segment_path(manifest, name);
+
+    {
+        // Check that we uploaded second segment
+        auto url = get_segment_path(manifest, s2name);
         auto [begin, end] = get_targets().equal_range("/" + url().string());
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
@@ -597,10 +607,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     for (const auto& [name, base_offset] :
          std::vector<std::pair<segment_name, model::offset>>{
-           {s1name, segments[0].base_offset},
            {s2name, segments[1].base_offset},
            {oldname, old_meta.base_offset}}) {
-        BOOST_CHECK(stm_manifest.get(s1name));
+        BOOST_CHECK(stm_manifest.get(name));
         BOOST_CHECK_EQUAL(stm_manifest.get(name)->base_offset, base_offset);
     }
 }
@@ -733,8 +742,16 @@ static void test_partial_upload_impl(
       .ntp_revision = manifest.get_revision_id()};
 
     manifest.add(s1name, segment_meta);
+    cloud_storage::partition_manifest all_segments(
+      manifest_ntp, manifest_revision);
+    for (const auto& s : manifest) {
+        all_segments.add(
+          segment_name(cloud_storage::generate_local_segment_name(
+            s.first.base_offset, s.first.term)),
+          s.second);
+    }
     part->archival_meta_stm()
-      ->add_segments(manifest, ss::lowres_clock::now() + 1s)
+      ->add_segments(all_segments, ss::lowres_clock::now() + 1s)
       .get();
 
     segment_name s2name{
