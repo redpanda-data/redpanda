@@ -45,7 +45,8 @@ set(srcs
     topic_configuration_compat_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
-    archival_metadata_stm_test.cc)
+    archival_metadata_stm_test.cc
+    ephemeral_credential_test.cc)
 
 foreach(cluster_test_src ${srcs})
 get_filename_component(test_name ${cluster_test_src} NAME_WE)
