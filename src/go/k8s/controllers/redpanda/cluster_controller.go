@@ -11,6 +11,7 @@
 package redpanda
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -111,6 +113,10 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
+	}
+
+	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
 	}
 
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
@@ -281,6 +287,30 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 	case corev1.PullNever:
 	default:
 		return fmt.Errorf("available image pull policy: \"%s\", \"%s\" or \"%s\": %w", corev1.PullAlways, corev1.PullIfNotPresent, corev1.PullNever, errInvalidImagePullPolicy)
+	}
+	return nil
+}
+
+// setLicense sets the referenced license in Redpanda.
+// If user sets the license and then removes it in the spec, the loaded license is not unset.
+// Currently don't have admin API to unset license.
+func (r *ClusterReconciler) setLicense(ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger) error {
+	if l := rp.Spec.LicenseRef; l != nil {
+		ll, err := l.GetSecret(ctx, r.Client)
+		if err != nil {
+			return err
+		}
+		license, err := l.GetValue(ll, redpandav1alpha1.DefaultLicenseSecretKey)
+		if err != nil {
+			return err
+		}
+		adminAPI, err := consolepkg.NewAdminAPI(ctx, r.Client, r.Scheme, rp, r.clusterDomain, r.AdminAPIClientFactory, log)
+		if err != nil {
+			return err
+		}
+		if err := adminAPI.SetLicense(ctx, bytes.NewReader(license)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
