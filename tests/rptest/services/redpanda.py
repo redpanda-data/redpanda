@@ -1341,6 +1341,8 @@ class RedpandaService(Service):
                 allowed = False
                 for a in allow_list:
                     if a.search(line) is not None:
+                        self.logger.warn(
+                            f"Ignoring allow-listed log line '{line}'")
                         allowed = True
                         break
 
