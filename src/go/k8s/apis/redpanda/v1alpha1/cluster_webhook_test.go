@@ -200,6 +200,23 @@ func TestDefault(t *testing.T) {
 		assert.True(t, redpandaCluster.Spec.PodDisruptionBudget.Enabled)
 		assert.Equal(t, intstr.FromInt(1), *redpandaCluster.Spec.PodDisruptionBudget.MaxUnavailable)
 	})
+	t.Run("cluster license key default is set", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				LicenseRef: &v1alpha1.SecretKeyRef{
+					Name:      "test",
+					Namespace: "",
+				},
+			},
+		}
+		redpandaCluster.Default()
+		assert.Equal(t, v1alpha1.DefaultLicenseSecretKey, redpandaCluster.Spec.LicenseRef.Key)
+	})
 }
 
 func TestValidateUpdate(t *testing.T) {
