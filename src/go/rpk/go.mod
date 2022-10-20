@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/rpk
 
-go 1.19.2
+go 1.19
 
 require (
 	cloud.google.com/go/compute v1.7.0
