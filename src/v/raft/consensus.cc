@@ -139,6 +139,7 @@ consensus::consensus(
         maybe_step_down();
         dispatch_vote(false);
     });
+    vlog(_ctxlog.info, "AWONG vnode {}", _self);
 }
 
 void consensus::setup_metrics() {

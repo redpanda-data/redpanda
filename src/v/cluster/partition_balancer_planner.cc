@@ -532,6 +532,13 @@ void partition_balancer_planner::get_full_node_reassignments(
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
   plan_data& result, const reallocation_request_state& rrs) {
     for (const auto& update : _topic_table.updates_in_progress()) {
+        vlog(
+          clusterlog.info,
+          "AWONG ntp {}: {} move in progress from {} to {}",
+          update.first,
+          update.second.get_state(),
+          update.second.get_previous_replicas(),
+          update.second.get_result_replicas());
         if (
           update.second.get_state()
           != topic_table::in_progress_state::update_requested) {
@@ -556,6 +563,9 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
             if (
               rrs.timed_out_unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
+                vlog(
+                  clusterlog.info,
+                  "AWONG cancelling; node {} is unavailable", r.node_id);
                 if (!was_on_decommissioning_node) {
                     result.cancellations.push_back(update.first);
                 } else {

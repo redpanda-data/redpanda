@@ -459,6 +459,7 @@ ss::future<> controller_backend::fetch_deltas() {
       .then([this](deltas_t deltas) {
           return ss::with_semaphore(
             _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
+                vlog(clusterlog.info, "AWONG fetched {} topic deltas", deltas.size());
                 for (auto& d : deltas) {
                     auto ntp = d.ntp;
                     _topic_deltas[ntp].push_back(std::move(d));
@@ -581,6 +582,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     while (!(stop || it == deltas.end())) {
         // start_topics_reconciliation_loop will catch this during shutdown
         _as.local().check();
+        vlog(clusterlog.info, "AWONG reconciling {}", *it);
 
         if (has_non_replicable_op_type(*it)) {
             /// This if statement has nothing to do with correctness and is only
@@ -1146,6 +1148,7 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
         co_return co_await update_partition_replica_set(
           ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::cancel_update:
+        vlog(clusterlog.info, "AWONG executing reconfiguration to cancel {}", ntp);
         co_return co_await cancel_replica_set_update(
           ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::force_abort_update:

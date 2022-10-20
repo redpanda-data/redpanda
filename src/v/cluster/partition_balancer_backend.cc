@@ -201,7 +201,7 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
-          vlog(clusterlog.info, "cancel movement for ntp {}", ntp);
+          vlog(clusterlog.info, "dispatching cancel movement for ntp {}", ntp);
           return _topics_frontend
             .cancel_moving_partition_replicas(
               ntp,

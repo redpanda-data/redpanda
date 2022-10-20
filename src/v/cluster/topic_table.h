@@ -99,6 +99,10 @@ public:
             return _previous_replicas;
         }
 
+        const std::vector<model::broker_shard>& get_result_replicas() const {
+            return _result_replicas;
+        }
+
         const replicas_revision_map& get_replicas_revisions() const {
             return _replicas_revisions;
         }

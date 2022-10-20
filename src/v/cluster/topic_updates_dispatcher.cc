@@ -122,6 +122,10 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto new_target_replicas
                   = _topic_table.local().get_previous_replica_set(cmd.key);
                 auto ntp = cmd.key;
+                vlog(
+                  clusterlog.debug,
+                  "AWONG applying cancellation to reset {} to {}",
+                  current_assignment, new_target_replicas);
                 return dispatch_updates_to_cores(std::move(cmd), base_offset)
                   .then([this,
                          ntp = std::move(ntp),
