@@ -82,7 +82,8 @@ class EndToEndTest(Test):
                        extra_rp_conf=None,
                        si_settings=None,
                        environment=None,
-                       install_opts: Optional[InstallOptions] = None):
+                       install_opts: Optional[InstallOptions] = None,
+                       auto_assign_node_id: bool = False):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -112,7 +113,7 @@ class EndToEndTest(Test):
         if version_to_install:
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
-        self.redpanda.start()
+        self.redpanda.start(auto_assign_node_id=auto_assign_node_id)
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new
@@ -123,7 +124,7 @@ class EndToEndTest(Test):
             ]
             self.redpanda._installer.install(nodes_to_upgrade,
                                              RedpandaInstaller.HEAD)
-            self.redpanda.restart_nodes(nodes_to_upgrade)
+            self.redpanda.restart_nodes(nodes_to_upgrade, auto_assign_node_id=auto_assign_node_id)
 
         self._client = DefaultClient(self.redpanda)
         self._rpk_client = RpkTool(self.redpanda)
