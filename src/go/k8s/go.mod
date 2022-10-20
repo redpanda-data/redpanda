@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/k8s
 
-go 1.19.2
+go 1.19
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1

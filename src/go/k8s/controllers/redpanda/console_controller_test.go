@@ -393,4 +393,97 @@ var _ = Describe("Console controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
+
+	Context("When using prometheus endpoint", func() {
+		ctx := context.Background()
+		It("Should prioritize RedpandaCloud", func() {
+			var (
+				secretName  = "basic-auth"
+				password    = "password"
+				passwordKey = "password"
+			)
+			By("Creating Basic auth secret")
+			jwt := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: ConsoleNamespace,
+				},
+				Data: map[string][]byte{passwordKey: []byte(password)},
+			}
+			Expect(k8sClient.Create(ctx, jwt)).Should(Succeed())
+
+			By("Updating Console RedpandaCloud Login fields")
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
+				console.Spec.Cloud = &redpandav1alpha1.CloudConfig{
+					PrometheusEndpoint: &redpandav1alpha1.PrometheusEndpointConfig{
+						Enabled: true,
+						BasicAuth: redpandav1alpha1.BasicAuthConfig{
+							Username: "username",
+							PasswordRef: redpandav1alpha1.SecretKeyRef{
+								Name:      secretName,
+								Namespace: ConsoleNamespace,
+								Key:       passwordKey,
+							},
+						},
+						Prometheus: &redpandav1alpha1.PrometheusConfig{
+							Address: "address",
+							Jobs: []redpandav1alpha1.PrometheusScraperJobConfig{
+								{
+									JobName:    "job",
+									KeepLabels: []string{"label"},
+								},
+							},
+							TargetRefreshInterval: &metav1.Duration{Duration: 1 * time.Minute},
+						},
+					},
+				}
+			}), timeout, interval).Should(Succeed())
+
+			By("Having only RedpandaCloud provider in ConfigMap")
+			console := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
+			createdConfigMaps := &corev1.ConfigMapList{}
+			var latestConfig *consolepkg.ConsoleConfig
+			Eventually(func() bool {
+				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(console)), client.InNamespace(ConsoleNamespace)); err != nil {
+					return false
+				}
+				if len(createdConfigMaps.Items) != 1 {
+					return false
+				}
+				for _, cm := range createdConfigMaps.Items {
+					cc := &consolepkg.ConsoleConfig{}
+					if err := yaml.Unmarshal([]byte(cm.Data["config.yaml"]), cc); err != nil {
+						return false
+					}
+					if !cc.Cloud.PrometheusEndpoint.Enabled {
+						return false
+					}
+					latestConfig = cc
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
+			prometheusConfig := latestConfig.Cloud.PrometheusEndpoint
+
+			Expect(prometheusConfig.BasicAuth.Username).Should(Equal("username"))
+			Expect(prometheusConfig.Prometheus.Address).Should(Equal("address"))
+			Expect(prometheusConfig.Prometheus.Jobs[0].JobName).Should(Equal("job"))
+			Expect(prometheusConfig.Prometheus.Jobs[0].KeepLabels[0]).Should(Equal("label"))
+
+			By("Having a deployment with password injected")
+			deploymentLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, deploymentLookupKey, createdDeployment); err != nil {
+					return false
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
+			envs := createdDeployment.Spec.Template.Spec.Containers[0].Env
+
+			Expect(envs[0].Name).Should(Equal("CLOUD_PROMETHEUSENDPOINT_BASICAUTH_PASSWORD"))
+			Expect(envs[0].ValueFrom.SecretKeyRef.Key).Should(Equal(passwordKey))
+			Expect(envs[0].ValueFrom.SecretKeyRef.Name).Should(Equal(secretName))
+		})
+	})
 })
