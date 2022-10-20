@@ -86,7 +86,7 @@ public:
 private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
-        std::unique_ptr<netbuf> buffer;
+        std::unique_ptr<ss::scattered_message<char>> scattered_message;
         client_opts::resource_units_t resource_units;
     };
     using requests_queue_t
