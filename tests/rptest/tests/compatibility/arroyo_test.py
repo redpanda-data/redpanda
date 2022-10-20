@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -27,6 +28,7 @@ class ArroyoTest(PreallocNodesTest):
                          *args,
                          **kwargs)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6826
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
         test_node = self.preallocated_nodes[0]
@@ -40,6 +42,7 @@ class ArroyoTest(PreallocNodesTest):
                     f"python3 -m pytest {ArroyoTest.TEST_SUITE_PATH} "
                     "-k KafkaStreamsTestCase -rf",
                     combine_stderr=True,
+                    allow_fail=False,
                     timeout_sec=120):
                 self.logger.info(line)
                 if 'FAILED' in line:
@@ -47,10 +50,10 @@ class ArroyoTest(PreallocNodesTest):
 
             if failed:
                 assert False, "Arroyo test failures occurred. Please check the log file"
-        except RemoteCommandError as err:
-            if err.exit_status == 2:
-                assert False, "Arroyo test suite was interrupted"
-            elif err.exit_status == 3:
-                assert False, "Internal error during execution of Arroyo test suite"
-            elif err.exit_status == 4:
-                assert False, "Pytest command line invocation error"
+        finally:
+            # Possible reasons to enter this finally block are
+            # 1. ssh_capture timeouts
+            # 2. assert in source itself
+            test_node.account.kill_process('arroyo',
+                                           clean_shutdown=False,
+                                           allow_fail=True)
