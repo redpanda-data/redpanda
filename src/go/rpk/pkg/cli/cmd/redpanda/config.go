@@ -147,6 +147,13 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			cfg.Redpanda.SeedServers = []config.SeedServer{}
 			cfg.Redpanda.SeedServers = seeds
 
+			// In bootstrapping a new cluster, use seeds-driven cluster
+			// formation.
+			if cfg.Redpanda.Other == nil {
+				cfg.Redpanda.Other = make(map[string]interface{})
+			}
+			cfg.Redpanda.Other["empty_seed_starts_cluster"] = false
+
 			err = cfg.Write(fs)
 			out.MaybeDie(err, "error writing config file: %v", err)
 		},

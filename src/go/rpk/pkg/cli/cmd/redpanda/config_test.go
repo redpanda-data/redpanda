@@ -13,6 +13,7 @@
 package redpanda
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -139,7 +140,9 @@ func TestBootstrap(t *testing.T) {
 
 			if tt.id != "" {
 				require.NotNil(t, conf.Redpanda.ID)
-				require.Equal(t, 1, *conf.Redpanda.ID)
+				id, err := strconv.Atoi(tt.id)
+				require.Nil(t, err)
+				require.Equal(t, id, *conf.Redpanda.ID)
 			} else {
 				require.Nil(t, conf.Redpanda.ID)
 			}
@@ -156,6 +159,8 @@ func TestBootstrap(t *testing.T) {
 				return
 			}
 			require.ElementsMatch(t, tt.expSeedServers, conf.Redpanda.SeedServers)
+			require.Contains(t, conf.Redpanda.Other, "empty_seed_starts_cluster")
+			require.Equal(t, false, conf.Redpanda.Other["empty_seed_starts_cluster"])
 		})
 	}
 }
