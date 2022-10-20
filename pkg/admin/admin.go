@@ -88,6 +88,7 @@ type AdminAPIClient interface {
 	DeleteUser(ctx context.Context, username string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
+	SetLicense(ctx context.Context, license interface{}) error
 
 	Brokers(ctx context.Context) ([]admin.Broker, error)
 	DecommissionBroker(ctx context.Context, node int) error
