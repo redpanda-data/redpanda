@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
 import uuid
@@ -14,6 +15,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -1281,3 +1283,89 @@ class PandaProxyAutoAuthTest(PandaProxyEndpoints):
                 check_connection(n.account.hostname)
             restart_node()
             restart_node_idx = (restart_node_idx + 1) % node_count
+
+
+class PandaProxyClientStopTest(PandaProxyEndpoints):
+    username = 'red'
+    password = 'panda'
+    algorithm = 'SCRAM-SHA-256'
+
+    topics = [TopicSpec()]
+
+    def __init__(self, context):
+
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.pp_authn_method = 'http_basic'
+
+        super(PandaProxyClientStopTest, self).__init__(
+            context,
+            security=security,
+            pp_keep_alive=60000 * 5,  # Time in ms
+            pp_cache_max_size=1)
+
+    @cluster(num_nodes=3)
+    def test_client_stop(self):
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        rpk = RpkTool(self.redpanda)
+
+        o = rpk.sasl_create_user(self.username, self.password, self.algorithm)
+        self.logger.debug(f'Sasl create user {o}')
+
+        # Only the super user can add ACLs
+        o = rpk.sasl_allow_principal(f'User:{self.username}', ['all'], 'topic',
+                                     self.topic, super_username,
+                                     super_password, super_algorithm)
+        self.logger.debug(f'Allow all topic perms {o}')
+
+        # Issue some request so that the client cache holds a single
+        # client for the super user
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()[0] == self.topic
+
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+
+        import time
+
+        def _produce_req(username, userpass, timeout_sec=30):
+            start = time.time()
+            stop = start + timeout_sec
+            while time.time() < stop:
+                self.logger.info(
+                    f"Producing to topic: {self.topic}, User: {username}")
+                produce_result_raw = self._produce_topic(self.topic,
+                                                         data,
+                                                         auth=(username,
+                                                               userpass))
+                self.logger.debug(
+                    f"Producing to topic: {self.topic}, User: {username}, Result: {produce_result_raw.status_code}"
+                )
+
+                if produce_result_raw.status_code != requests.codes.ok:
+                    return produce_result_raw.status_code
+
+            return requests.codes.ok
+
+        executor = ThreadPoolExecutor(max_workers=2)
+
+        super_fut = executor.submit(_produce_req,
+                                    username=super_username,
+                                    userpass=super_password)
+        regular_fut = executor.submit(_produce_req,
+                                      username=self.username,
+                                      userpass=self.password)
+
+        if super_fut.result() != requests.codes.ok:
+            raise RuntimeError('Produce failed with super user')
+
+        if regular_fut.result() != requests.codes.ok:
+            raise RuntimeError('Produce failed with regular user')
