@@ -355,6 +355,15 @@ func (m *mockAdminAPI) GetFeatures(
 	}, nil
 }
 
+func (m *mockAdminAPI) SetLicense(_ context.Context, _ interface{}) error {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return &unavailableError{}
+	}
+	return nil
+}
+
 //nolint:gocritic // It's test API
 func (m *mockAdminAPI) RegisterPropertySchema(
 	name string, metadata admin.ConfigPropertyMetadata,
