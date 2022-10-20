@@ -54,7 +54,15 @@ public:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
-    ss::future<std::error_code> maybe_create_bootstrap_user();
+    /**
+     * For use during cluster creation, if RP_BOOTSTRAP_USER is set
+     * then returns the user creds specified in it
+     *
+     * @returns empty value if RP_BOOTSTRAP_USER is not set or user creds
+     *          cannot be parsed
+     */
+    static std::optional<user_and_credential>
+    get_bootstrap_user_creds_from_env();
 
 private:
     ss::future<std::vector<errc>> do_create_acls(

@@ -244,7 +244,8 @@ ss::future<std::error_code> replicate_and_wait(
           }
           vassert(
             use_serde_serialization,
-            "Requested to ADL serialize a serde-only type");
+            "serde_raft_0 feature not enabled while serializing a serde-only "
+            "controller command");
           auto b = serde_serialize_cmd(std::forward<Cmd>(cmd));
           return stm.replicate_and_wait(
             std::move(b), timeout, as.local(), term);

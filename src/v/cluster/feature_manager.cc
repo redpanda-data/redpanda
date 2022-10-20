@@ -73,7 +73,8 @@ feature_manager::feature_manager(
 
     ) {}
 
-ss::future<> feature_manager::start() {
+ss::future<>
+feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     vlog(clusterlog.info, "Starting...");
 
     // Register for node health change notifications
@@ -152,6 +153,10 @@ ss::future<> feature_manager::start() {
           [this] { return _as.local().abort_requested(); },
           [this] { return maybe_log_license_check_info(); });
     });
+
+    for (const model::node_id n : cluster_founder_nodes) {
+        set_node_to_latest_version(n);
+    }
 
     co_return;
 }
@@ -508,6 +513,24 @@ feature_manager::write_action(cluster::feature_update_action action) {
         return replicate_and_wait(
           _stm, _feature_table, _as, std::move(cmd), timeout);
     }
+}
+
+void feature_manager::set_node_to_latest_version(const model::node_id node_id) {
+    const cluster_version latest
+      = features::feature_table::get_latest_logical_version();
+    if (const version_map::iterator i = _node_versions.find(node_id);
+        i != _node_versions.end()) {
+        if (i->second == latest) {
+            return; // already there
+        }
+        vlog(
+          clusterlog.info,
+          "Overriding a previously set version for {} from {} to {}",
+          node_id,
+          i->second,
+          latest);
+    }
+    update_node_version(node_id, latest);
 }
 
 } // namespace cluster

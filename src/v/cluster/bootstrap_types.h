@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "serde/serde.h"
 
@@ -34,13 +35,32 @@ struct cluster_bootstrap_info_reply
   : serde::envelope<cluster_bootstrap_info_reply, serde::version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    // TODO: add fields!
+    model::broker broker;
+    cluster_version version;
+    std::vector<net::unresolved_address> seed_servers;
+    bool empty_seed_starts_cluster;
+    std::optional<model::cluster_uuid> cluster_uuid;
 
-    auto serde_fields() { return std::tie(); }
+    auto serde_fields() {
+        return std::tie(
+          broker,
+          version,
+          seed_servers,
+          empty_seed_starts_cluster,
+          cluster_uuid);
+    }
 
     friend std::ostream&
-    operator<<(std::ostream& o, const cluster_bootstrap_info_reply&) {
-        fmt::print(o, "{{}}");
+    operator<<(std::ostream& o, const cluster_bootstrap_info_reply& v) {
+        fmt::print(
+          o,
+          "{{broker: {}, version: {}, seed_servers: {}, ESCB: {}, "
+          "cluster_UUID: {}}}",
+          v.broker,
+          v.version,
+          v.seed_servers,
+          v.empty_seed_starts_cluster,
+          v.cluster_uuid);
         return o;
     }
 };

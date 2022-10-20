@@ -118,7 +118,13 @@ public:
 
     ss::future<> wire_up();
 
-    ss::future<> start(std::vector<model::broker>);
+    /**
+     * Create raft0, and start the services that the \c controller owns.
+     * \param initial_raft0_brokers Brokers to start raft0 with. Empty for
+     *      non-seeds.
+     */
+    ss::future<> start(std::vector<model::broker> initial_raft0_brokers);
+
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
     ss::future<> stop();
@@ -126,7 +132,14 @@ public:
 private:
     friend controller_probe;
 
-    ss::future<> cluster_creation_hook();
+    /**
+     * Create a \c bootstrap_cluster_cmd, replicate-and-wait it to the current
+     * quorum, retry infinitely if replicate-and-wait fails.
+     */
+    ss::future<> create_cluster();
+
+    ss::future<> cluster_creation_hook(bool local_node_is_seed_server);
+
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core
@@ -171,6 +184,7 @@ private:
     consensus_ptr _raft0;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     controller_probe _probe;
+    ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
 };
 
 } // namespace cluster

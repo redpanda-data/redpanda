@@ -56,6 +56,8 @@
 // NOTE: several fixtures may still require a node ID be supplied for the sake
 // of differentiating ports, data directories, loggers, etc.
 using configure_node_id = ss::bool_class<struct configure_node_id_tag>;
+using empty_seed_starts_cluster
+  = ss::bool_class<struct empty_seed_starts_cluster_tag>;
 
 class redpanda_thread_fixture {
 public:
@@ -75,7 +77,9 @@ public:
       std::optional<s3::configuration> s3_config = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
-      configure_node_id use_node_id = configure_node_id::yes)
+      configure_node_id use_node_id = configure_node_id::yes,
+      const empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -91,7 +95,8 @@ public:
           std::move(s3_config),
           std::move(archival_cfg),
           std::move(cloud_cfg),
-          use_node_id);
+          use_node_id,
+          empty_seed_starts_cluster_val);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -230,7 +235,9 @@ public:
       std::optional<s3::configuration> s3_config = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
-      configure_node_id use_node_id = configure_node_id::yes) {
+      configure_node_id use_node_id = configure_node_id::yes,
+      const empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
@@ -241,7 +248,8 @@ public:
                                 s3_config,
                                 archival_cfg,
                                 cloud_cfg,
-                                use_node_id]() mutable {
+                                use_node_id,
+                                empty_seed_starts_cluster_val]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -257,6 +265,8 @@ public:
             node_config.get("node_id").set_value(
               use_node_id ? std::make_optional(node_id)
                           : std::optional<model::node_id>(std::nullopt));
+            node_config.get("empty_seed_starts_cluster")
+              .set_value(bool(empty_seed_starts_cluster_val));
             node_config.get("rack").set_value(
               std::make_optional(model::rack_id(rack_name)));
             node_config.get("seed_servers").set_value(seed_servers);

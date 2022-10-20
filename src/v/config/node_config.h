@@ -34,6 +34,7 @@ public:
 
     property<std::optional<model::rack_id>> rack;
     property<std::vector<seed_server>> seed_servers;
+    property<bool> empty_seed_starts_cluster;
 
     // Internal RPC listener
     property<net::unresolved_address> rpc_server;

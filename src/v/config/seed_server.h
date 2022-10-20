@@ -25,6 +25,9 @@ struct seed_server {
     net::unresolved_address addr;
 
     bool operator==(const seed_server&) const = default;
+    friend bool operator<(const seed_server& lhs, const seed_server& rhs) {
+        return lhs.addr < rhs.addr;
+    }
 
     friend std::ostream&
     operator<<(std::ostream& o, const config::seed_server& s) {

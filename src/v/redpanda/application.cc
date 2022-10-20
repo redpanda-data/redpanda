@@ -19,6 +19,7 @@
 #include "cluster/bootstrap_service.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
+#include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
@@ -1335,6 +1336,18 @@ void application::start_bootstrap_services() {
 
     storage.invoke_on_all(&storage::api::start).get();
 
+    if (std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(
+          cluster::cluster_uuid_key_space, bytes(cluster::cluster_uuid_key));
+        cluster_uuid_buf) {
+        const auto cluster_uuid = model::cluster_uuid{
+          serde::from_iobuf<uuid_t>(std::move(*cluster_uuid_buf))};
+        storage
+          .invoke_on_all([&cluster_uuid](storage::api& storage) {
+              storage.set_cluster_uuid(cluster_uuid);
+          })
+          .get();
+    }
+
     syschecks::systemd_message("Starting internal RPC bootstrap service").get();
     _rpc
       .invoke_on_all([this](rpc::rpc_server& s) {
@@ -1342,7 +1355,8 @@ void application::start_bootstrap_services() {
           bootstrap_service.push_back(
             std::make_unique<cluster::bootstrap_service>(
               _scheduling_groups.cluster_sg(),
-              smp_service_groups.cluster_smp_sg()));
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(storage)));
           s.add_services(std::move(bootstrap_service));
       })
       .get();
@@ -1391,7 +1405,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     // subsystems.
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(
-      node_uuid, storage.local().kvs(), app_signal.abort_source());
+      node_uuid, storage.local(), app_signal.abort_source());
     auto node_id = cd.determine_node_id().get();
     if (config::node().node_id() == std::nullopt) {
         // If we previously didn't have a node ID, set it in the config. We
@@ -1402,7 +1416,11 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         }).get();
     }
 
-    vlog(_log.info, "Starting Redpanda with node_id {}", node_id);
+    vlog(
+      _log.info,
+      "Starting Redpanda with node_id {}, cluster UUID {}",
+      node_id,
+      storage.local().get_cluster_uuid());
 
     wire_up_runtime_services(node_id);
 
@@ -1444,8 +1462,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 }
 
 void application::start_runtime_services(
-  const cluster::cluster_discovery& cluster_discovery,
-  ::stop_signal& app_signal) {
+  cluster::cluster_discovery& cd, ::stop_signal& app_signal) {
     ssx::background = _feature_table.invoke_on_all(
       [this](features::feature_table& ft) -> ss::future<> {
           try {
@@ -1486,8 +1503,30 @@ void application::start_runtime_services(
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
     _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
+    // Initialize the Raft RPC endpoint before the rest of the runtime RPC
+    // services so the cluster seeds can elect a leader and write a cluster
+    // UUID before proceeding with the rest of bootstrap.
+    const bool start_raft_rpc_early = cd.is_cluster_founder().get();
+    if (start_raft_rpc_early) {
+        syschecks::systemd_message("Starting RPC/raft").get();
+        _rpc
+          .invoke_on_all([this](rpc::rpc_server& s) {
+              std::vector<std::unique_ptr<rpc::service>> runtime_services;
+              runtime_services.push_back(std::make_unique<raft::service<
+                                           cluster::partition_manager,
+                                           cluster::shard_table>>(
+                _scheduling_groups.raft_sg(),
+                smp_service_groups.raft_smp_sg(),
+                partition_manager,
+                shard_table.local(),
+                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+              s.add_services(std::move(runtime_services));
+          })
+          .get();
+    }
     syschecks::systemd_message("Starting controller").get();
-    controller->start(cluster_discovery.initial_raft0_brokers()).get0();
+    controller->start(cd.initial_seed_brokers_if_no_cluster().get()).get0();
+
     kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
       *controller, group_router);
 
@@ -1500,7 +1539,7 @@ void application::start_runtime_services(
 
     syschecks::systemd_message("Starting RPC").get();
     _rpc
-      .invoke_on_all([this](rpc::rpc_server& s) {
+      .invoke_on_all([this, start_raft_rpc_early](rpc::rpc_server& s) {
           std::vector<std::unique_ptr<rpc::service>> runtime_services;
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
@@ -1514,14 +1553,18 @@ void application::start_runtime_services(
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
             std::ref(rm_partition_frontend)));
-          runtime_services.push_back(
-            std::make_unique<
-              raft::service<cluster::partition_manager, cluster::shard_table>>(
-              _scheduling_groups.raft_sg(),
-              smp_service_groups.raft_smp_sg(),
-              partition_manager,
-              shard_table.local(),
-              config::shard_local_cfg().raft_heartbeat_interval_ms()));
+
+          if (!start_raft_rpc_early) {
+              runtime_services.push_back(std::make_unique<raft::service<
+                                           cluster::partition_manager,
+                                           cluster::shard_table>>(
+                _scheduling_groups.raft_sg(),
+                smp_service_groups.raft_smp_sg(),
+                partition_manager,
+                shard_table.local(),
+                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+          }
+
           runtime_services.push_back(std::make_unique<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

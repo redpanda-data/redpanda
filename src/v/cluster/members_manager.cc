@@ -477,7 +477,7 @@ void members_manager::join_raft0() {
 bool members_manager::try_register_node_id(
   const model::node_id& requested_node_id,
   const model::node_uuid& requested_node_uuid) {
-    vassert(requested_node_id != model::node_id(-1), "invalid node ID");
+    vassert(requested_node_id != model::unassigned_node_id, "invalid node ID");
     vlog(
       clusterlog.info,
       "Registering node ID {} as node UUID {}",
@@ -730,7 +730,8 @@ members_manager::handle_join_request(join_node_request const req) {
         } else {
             // Validate that the node ID matches the one in our table.
             if (*req_node_id != it->second) {
-                co_return ret_t(join_node_reply{false, model::node_id(-1)});
+                co_return ret_t(
+                  join_node_reply{false, model::unassigned_node_id});
             }
         }
         // Proceed to adding the node ID to the controller Raft group.
@@ -755,7 +756,7 @@ members_manager::handle_join_request(join_node_request const req) {
               if (r) {
                   auto success = r.value().success;
                   return ret_t(join_node_reply{
-                    success, success ? node_id : model::node_id{-1}});
+                    success, success ? node_id : model::unassigned_node_id});
               }
               return ret_t(r.error());
           });
@@ -772,7 +773,7 @@ members_manager::handle_join_request(join_node_request const req) {
           "node",
           req.node.id(),
           req.node.rpc_address());
-        co_return ret_t(join_node_reply{false, model::node_id(-1)});
+        co_return ret_t(join_node_reply{false, model::unassigned_node_id});
     }
 
     if (req.node.id() != _self.id()) {
