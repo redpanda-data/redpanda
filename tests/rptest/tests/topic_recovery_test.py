@@ -1193,7 +1193,7 @@ class TopicRecoveryTest(RedpandaTest):
 
         wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
 
-    def do_run(self, test_case: BaseCase, upload_delay_sec=60):
+    def do_run(self, test_case: BaseCase, upload_delay_sec=60, repetitions=1):
         """Template method invoked by all tests."""
 
         if test_case.initial_cleanup_needed:
@@ -1232,36 +1232,40 @@ class TopicRecoveryTest(RedpandaTest):
 
         baseline = self._collect_file_checksums()
 
-        self._wipe_data()
+        for i in range(repetitions):
+            self.logger.info(f"repetition {i}")
+            self._wipe_data()
 
-        self._start_redpanda_nodes()
-
-        time.sleep(5)
-
-        self.logger.info("Restoring topic data")
-        controller_cs = self._collect_controller_log_checksums()
-        test_case.restore_redpanda(baseline, controller_cs)
-
-        self.logger.info("Waiting while topic is created")
-        self._wait_for_topic(test_case.expected_recovered_topics)
-
-        restored = self._collect_file_checksums()
-        self.logger.info(f"Restored data - {restored}")
-
-        self.logger.info("Validating restored data per node")
-        for node in self.redpanda.nodes:
-            host = node.account.hostname
-            self.logger.info(f"Validating node {host}")
-            test_case.validate_node(host, baseline[host], restored[host])
-
-        self.logger.info("Validate all")
-        test_case.validate_cluster(baseline, restored)
-
-        if test_case.second_restart_needed:
-            self._stop_redpanda_nodes()
             self._start_redpanda_nodes()
-            time.sleep(20)
-            test_case.after_restart_validation()
+
+            time.sleep(5)
+
+            self.logger.info("Restoring topic data")
+            controller_cs = self._collect_controller_log_checksums()
+            test_case.restore_redpanda(baseline, controller_cs)
+
+            self.logger.info("Waiting while topic is created")
+            self._wait_for_topic(test_case.expected_recovered_topics)
+
+            restored = self._collect_file_checksums()
+            self.logger.info(f"Restored data - {restored}")
+
+            self.logger.info("Validating restored data per node")
+            for node in self.redpanda.nodes:
+                host = node.account.hostname
+                self.logger.info(f"Validating node {host}")
+                test_case.validate_node(host, baseline[host], restored[host])
+
+            self.logger.info("Validate all")
+            test_case.validate_cluster(baseline, restored)
+
+            if test_case.second_restart_needed:
+                self._stop_redpanda_nodes()
+                self._start_redpanda_nodes()
+                time.sleep(20)
+                test_case.after_restart_validation()
+
+            self._stop_redpanda_nodes()
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
@@ -1283,6 +1287,16 @@ class TopicRecoveryTest(RedpandaTest):
                                       self.rpk, self.s3_bucket, self.logger,
                                       self.rpk_producer_maker, self.redpanda)
         self.do_run(test_case)
+
+    @cluster(num_nodes=3,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
+    def test_empty_segments_repeated(self):
+        """Test case in which the segments are uploaded but they doesn't
+        have any data batches but they do have configuration batches."""
+        test_case = EmptySegmentsCase(self.s3_client, self.kafka_tools,
+                                      self.rpk, self.s3_bucket, self.logger,
+                                      self.rpk_producer_maker, self.redpanda)
+        self.do_run(test_case, repetitions=5)
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
