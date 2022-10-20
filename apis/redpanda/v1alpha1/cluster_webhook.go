@@ -53,6 +53,9 @@ var validHostnameSegment = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0
 // that has previously been decommissioned can cause issues.
 var AllowDownscalingInWebhook = false
 
+// DefaultLicenseSecretKey is the default key required in secret referenced by `SecretKeyRef`.
+var DefaultLicenseSecretKey = "license"
+
 type resourceField struct {
 	resources *corev1.ResourceRequirements
 	path      *field.Path
@@ -109,6 +112,10 @@ func (r *Cluster) Default() {
 			Enabled:        true,
 			MaxUnavailable: &defaultMaxUnavailable,
 		}
+	}
+
+	if r.Spec.LicenseRef != nil && r.Spec.LicenseRef.Key == "" {
+		r.Spec.LicenseRef.Key = DefaultLicenseSecretKey
 	}
 }
 
