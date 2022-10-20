@@ -17,6 +17,7 @@
 #include "cluster/controller_log_limiter.h"
 #include "cluster/controller_service.h"
 #include "cluster/data_policy_frontend.h"
+#include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
@@ -47,6 +48,9 @@
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
 #include "security/acl.h"
+#include "security/authorizer.h"
+#include "security/credential_store.h"
+#include "security/ephemeral_credential_store.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/thread.hh>
@@ -92,6 +96,7 @@ ss::future<> controller::wire_up() {
             config::shard_local_cfg().enable_rack_awareness.bind());
       })
       .then([this] { return _credentials.start(); })
+      .then([this] { return _ephemeral_credentials.start(); })
       .then([this] {
           return _authorizer.start(
             []() { return config::shard_local_cfg().superusers.bind(); });
@@ -216,6 +221,14 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
             std::ref(_feature_table),
             std::ref(_as),
             std::ref(_authorizer));
+      })
+      .then([this] {
+          return _ephemeral_credential_frontend.start(
+            self(),
+            std::ref(_credentials),
+            std::ref(_ephemeral_credentials),
+            std::ref(_feature_table),
+            std::ref(_connections));
       })
       .then([this] {
           return _data_policy_frontend.start(
@@ -451,6 +464,7 @@ ss::future<> controller::stop() {
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
+          .then([this] { return _ephemeral_credential_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _data_policy_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
@@ -459,6 +473,7 @@ ss::future<> controller::stop() {
           .then([this] { return _stm.stop(); })
           .then([this] { return _bootstrap_backend.stop(); })
           .then([this] { return _authorizer.stop(); })
+          .then([this] { return _ephemeral_credentials.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
