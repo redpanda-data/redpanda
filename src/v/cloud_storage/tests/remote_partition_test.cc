@@ -220,6 +220,7 @@ make_imposter_expectations(
         auto url = m.generate_segment_path(*res, meta);
         results.push_back(cloud_storage_fixture::expectation{
           .url = "/" + url().string(), .body = body});
+        m.advance_insync_offset(meta.committed_offset);
     }
     std::stringstream ostr;
     m.serialize(ostr);

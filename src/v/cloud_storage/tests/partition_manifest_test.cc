@@ -653,6 +653,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .ntp_revision = model::initial_revision_id(3),
         .segment_term = model::term_id(1),
       });
+    m.advance_insync_offset(model::offset{29});
     auto [is, size] = m.serialize();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
@@ -890,6 +891,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
     for (const auto& segment : expected_segments) {
         m.add(segment_name(segment.first), segment.second);
     }
+    m.advance_insync_offset(model::offset{389});
 
     for (const auto& segment : expected_replaced_segments) {
         accessor::add_replaced_segment(
@@ -1049,6 +1051,7 @@ SEASTAR_THREAD_TEST_CASE(
         m.add(segment_name(segment.first), segment.second);
     }
     m.advance_start_offset(model::offset(100));
+    m.advance_insync_offset(model::offset{399});
 
     auto [is, size] = m.serialize();
     iobuf buf;
