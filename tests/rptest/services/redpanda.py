@@ -591,6 +591,9 @@ class RedpandaService(Service):
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
 
+        self._node_id_by_idx = {}
+
+
     def set_skip_if_no_redpanda_log(self, v: bool):
         self._skip_if_no_redpanda_log = v
 
@@ -1734,7 +1737,7 @@ class RedpandaService(Service):
         We first check the admin API to do a kafka-independent check, and then verify
         that kafka clients see the same thing.
         """
-        node_id = self.node_id(node)
+        node_id = self.node_id(node, force_refresh=True)
         self.logger.debug(
             f"registered: checking if broker {node_id} ({node.name}) is registered..."
         )
@@ -2060,7 +2063,11 @@ class RedpandaService(Service):
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
 
-    def node_id(self, node):
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        idx = self.idx(node)
+        if not force_refresh:
+            if idx in self._node_id_by_idx:
+                return self._node_id_by_idx[idx]
         def _try_get_node_id():
             try:
                 node_cfg = self._admin.get_node_config(node)
@@ -2070,9 +2077,11 @@ class RedpandaService(Service):
 
         node_id = wait_until_result(
             _try_get_node_id,
-            timeout_sec=30,
-            err_msg=f"couldn't reach admin endpoing for {node.account.hostname}"
+            timeout_sec=timeout_sec,
+            err_msg=f"couldn't reach admin endpoint for {node.account.hostname}"
         )
+        self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
+        self._node_id_by_idx[idx] = node_id
         return node_id
 
     def healthy(self):
