@@ -2452,11 +2452,26 @@ void consensus::maybe_update_leader_commit_idx() {
         vlog(_ctxlog.warn, "Error updating leader commit index", e);
     });
 }
-/**
- * The `maybe_commit_configuration` method is the place where configuration
- * state transition is decided and executed
- */
+
 ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
+    /**
+     * Configuration transitions are executed after current configuration is
+     * committed.
+     *
+     * Based on the current configuration state we decide how to transition
+     * configuration.
+     *
+     * For the simple configuration there is nothing to do.
+     *
+     * In transitional state (first step of configuration change when learners
+     * are added to the configuration) after all learners are promoted we
+     * trigger transition to either joint (if there are replicas to remove) or
+     * simple configuration.
+     *
+     * When configuration is in joint state we first demote all nodes that must
+     * be removed to learners and then trigger transition to simple
+     * configuration leaving joint state
+     */
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
         co_return;
