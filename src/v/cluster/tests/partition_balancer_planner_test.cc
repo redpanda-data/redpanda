@@ -820,3 +820,42 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
     BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
 }
+
+/*
+ * 4 nodes; 1 topic; 2 partitions with 3 replicas in 2 racks;
+ * Planner should repair the rack awareness constraint.
+ *   node_0: partitions: 2; rack: rack_A;
+ *   node_1: partitions: 2; rack: rack_B;
+ *   node_2: partitions: 2; rack: rack_B;
+ *   node_3: partitions: 0; rack: rack_C;
+ */
+FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
+    allocator_register_nodes(3, {"rack_A", "rack_B", "rack_B"});
+    // Partitions will be created with rack constraint violated (because there
+    // are only 2 racks)
+    create_topic("topic-1", 2, 3);
+    allocator_register_nodes(1, {"rack_C"});
+
+    auto hr = create_health_report();
+    auto fm = create_follower_metrics({});
+
+    auto plan_data = planner.plan_reassignments(hr, fm);
+
+    check_violations(plan_data, {}, {});
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
+    for (const auto& ras : plan_data.reassignments) {
+        const auto& new_replicas
+          = ras.allocation_units.get_assignments().front().replicas;
+        BOOST_REQUIRE_EQUAL(new_replicas.size(), 3);
+        absl::node_hash_set<model::rack_id> racks;
+        for (const auto& bs : new_replicas) {
+            auto rack = workers.allocator.local().state().get_rack_id(
+              bs.node_id);
+            BOOST_REQUIRE(rack);
+            racks.insert(*rack);
+        }
+        BOOST_REQUIRE_EQUAL(racks.size(), 3);
+    }
+    BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 0);
+}
