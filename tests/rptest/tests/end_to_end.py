@@ -80,9 +80,12 @@ class EndToEndTest(Test):
     def start_redpanda(self,
                        num_nodes=1,
                        extra_rp_conf=None,
+                       extra_node_conf=None,
                        si_settings=None,
                        environment=None,
-                       install_opts: Optional[InstallOptions] = None):
+                       install_opts: Optional[InstallOptions] = None,
+                       auto_assign_node_id: bool = False,
+                       omit_seeds_on_idx_one: bool = True):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -93,6 +96,13 @@ class EndToEndTest(Test):
             # merge both configurations, the extra_rp_conf passed in
             # paramter takes the precedence
             self._extra_rp_conf = {**self._extra_rp_conf, **extra_rp_conf}
+        if extra_node_conf is not None:
+            if self._extra_node_conf is None:
+                self._extra_node_conf = dict()
+            self._extra_node_conf = {
+                **self._extra_node_conf,
+                **extra_node_conf
+            }
         assert self.redpanda is None
 
         self.redpanda = RedpandaService(self.test_context,
@@ -112,7 +122,15 @@ class EndToEndTest(Test):
         if version_to_install:
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
-        self.redpanda.start()
+
+        # As a best practice, set up the cluster so there are three seed nodes.
+        # When 'omit_seeds_on_idx_one' is False this is important to ensure
+        # there is a group of founding nodes rather than a single founder.
+        num_seed_servers = min(num_nodes, 3)
+        self.redpanda.set_seed_servers(
+            [self.redpanda.get_node(i + 1) for i in range(num_seed_servers)])
+        self.redpanda.start(auto_assign_node_id=auto_assign_node_id,
+                            omit_seeds_on_idx_one=omit_seeds_on_idx_one)
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new
@@ -123,7 +141,10 @@ class EndToEndTest(Test):
             ]
             self.redpanda._installer.install(nodes_to_upgrade,
                                              RedpandaInstaller.HEAD)
-            self.redpanda.restart_nodes(nodes_to_upgrade)
+            self.redpanda.restart_nodes(
+                nodes_to_upgrade,
+                auto_assign_node_id=auto_assign_node_id,
+                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
 
         self._client = DefaultClient(self.redpanda)
         self._rpk_client = RpkTool(self.redpanda)
