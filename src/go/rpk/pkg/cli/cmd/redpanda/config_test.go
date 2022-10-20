@@ -33,6 +33,10 @@ func TestBootstrap(t *testing.T) {
 		expectedErr    string
 	}{
 		{
+			name: "it should omit node id without errors",
+			self: "192.168.34.5",
+		},
+		{
 			name: "it should set the root node config for a single node",
 			id:   "1",
 			self: "192.168.34.5",
@@ -132,6 +136,13 @@ func TestBootstrap(t *testing.T) {
 			require.NoError(t, err)
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(t, err)
+
+			if tt.id != "" {
+				require.NotNil(t, conf.Redpanda.ID)
+				require.Equal(t, 1, *conf.Redpanda.ID)
+			} else {
+				require.Nil(t, conf.Redpanda.ID)
+			}
 
 			require.Equal(t, tt.self, conf.Redpanda.RPCServer.Address)
 			require.Equal(t, tt.self, conf.Redpanda.KafkaAPI[0].Address)
