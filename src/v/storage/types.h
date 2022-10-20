@@ -159,6 +159,8 @@ public:
         return _tx_stm->parse_tx_control_batch(b);
     }
 
+    bool has_tx_stm() { return _tx_stm.get(); }
+
 private:
     ss::shared_ptr<snapshotable_stm> _tx_stm;
     std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
