@@ -154,6 +154,9 @@ type ClusterSpec struct {
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
 	// RestartConfig allows to control the behavior of the cluster when restarting
 	RestartConfig *RestartConfig `json:"restartConfig,omitempty"`
+
+	// If key is not provided in the SecretRef, Secret data should have key "license"
+	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades
