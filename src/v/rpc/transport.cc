@@ -195,22 +195,30 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
           // send
           auto sz = b.buffer().size_bytes();
           return get_units(_memory, sz)
-            .then([this,
-                   b = std::move(b),
-                   f = std::move(f),
-                   seq,
-                   u = std::move(opts.resource_units)](
-                    ssx::semaphore_units units) mutable {
-                auto e = entry{
-                  .buffer = std::make_unique<netbuf>(std::move(b)),
-                  .resource_units = std::move(u),
-                };
-
-                _requests_queue.emplace(
-                  seq, std::make_unique<entry>(std::move(e)));
-                dispatch_send();
-                return std::move(f).finally([u = std::move(units)] {});
+            .then([b = std::move(b)](ssx::semaphore_units units) mutable {
+                return std::move(b).as_scattered().then(
+                  [u = std::move(units)](
+                    ss::scattered_message<char> scattered_message) mutable {
+                      return std::make_tuple(
+                        std::move(u), std::move(scattered_message));
+                  });
             })
+            .then_unpack(
+              [this, f = std::move(f), seq, u = std::move(opts.resource_units)](
+                ssx::semaphore_units units,
+                ss::scattered_message<char> scattered_message) mutable {
+                  auto e = entry{
+                    .scattered_message
+                    = std::make_unique<ss::scattered_message<char>>(
+                      std::move(scattered_message)),
+                    .resource_units = std::move(u),
+                  };
+
+                  _requests_queue.emplace(
+                    seq, std::make_unique<entry>(std::move(e)));
+                  dispatch_send();
+                  return std::move(f).finally([u = std::move(units)] {});
+              })
             .finally([this, seq] {
                 // update last sequence to make progress, for successfull
                 // dispatches this will be noop, as _last_seq was already update
@@ -232,14 +240,13 @@ void transport::dispatch_send() {
               [this] {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
-                  auto buffer = std::move(it->second->buffer).get();
+                  auto v = std::move(*it->second->scattered_message);
                   // These units are released once we are out of scope here
                   // and that is intentional because the underlying write call
                   // to the batched output stream guarantees us the in-order
                   // delivery of the dispatched write calls, which is the intent
                   // of holding on to the units up until this point.
                   auto units = std::move(it->second->resource_units);
-                  auto v = std::move(*buffer).as_scattered();
                   auto msg_size = v.size();
                   _requests_queue.erase(it->first);
                   auto f = _out.write(std::move(v));
