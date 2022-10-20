@@ -171,6 +171,8 @@ public:
     const_iterator cbegin() const;
     const_iterator cend() const;
 
+    std::string hexdump(size_t) const;
+
 private:
     /// \brief trims the back, and appends direct.
     void prepend_take_ownership(fragment*);
