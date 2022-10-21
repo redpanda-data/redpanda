@@ -199,18 +199,19 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
-          vlog(clusterlog.info, "cancel movement for ntp {}", ntp);
           return _topics_frontend
             .cancel_moving_partition_replicas(
               ntp,
               model::timeout_clock::now() + add_move_cmd_timeout,
               current_term)
             .then([ntp = std::move(ntp)](auto errc) {
-                vlog(
-                  clusterlog.info,
-                  "{} movement cancellation submitted, errc: {}",
-                  ntp,
-                  errc);
+                if (errc) {
+                    vlog(
+                      clusterlog.warn,
+                      "submitting {} movement cancellation failed, error: {}",
+                      ntp,
+                      errc.message());
+                }
             });
       });
 
@@ -218,12 +219,6 @@ ss::future<> partition_balancer_backend::do_tick() {
       plan_data.reassignments,
       32,
       [this, current_term](ntp_reassignments& reassignment) {
-          vlog(
-            clusterlog.info,
-            "moving {} to {}",
-            reassignment.ntp,
-            reassignment.allocation_units.get_assignments().front().replicas);
-
           return _topics_frontend
             .move_partition_replicas(
               reassignment.ntp,
@@ -231,11 +226,13 @@ ss::future<> partition_balancer_backend::do_tick() {
               model::timeout_clock::now() + add_move_cmd_timeout,
               current_term)
             .then([reassignment = std::move(reassignment)](auto errc) {
-                vlog(
-                  clusterlog.info,
-                  "{} reassignment submitted, errc: {}",
-                  reassignment.ntp,
-                  errc);
+                if (errc) {
+                    vlog(
+                      clusterlog.warn,
+                      "submitting {} reassignment failed, error: {}",
+                      reassignment.ntp,
+                      errc.message());
+                }
             });
       });
 }

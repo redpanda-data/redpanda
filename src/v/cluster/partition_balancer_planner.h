@@ -57,6 +57,12 @@ public:
         std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
         status status = status::empty;
+
+        void add_reassignment(
+          model::ntp,
+          const std::vector<model::broker_shard>& orig_replicas,
+          allocation_units,
+          std::string_view reason);
     };
 
     plan_data plan_reassignments(

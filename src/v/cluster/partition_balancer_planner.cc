@@ -293,6 +293,23 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
     return reallocation;
 }
 
+void partition_balancer_planner::plan_data::add_reassignment(
+  model::ntp ntp,
+  const std::vector<model::broker_shard>& orig_replicas,
+  allocation_units allocation_units,
+  std::string_view reason) {
+    vlog(
+      clusterlog.info,
+      "ntp: {}, planning move {} -> {} (reason: {})",
+      ntp,
+      orig_replicas,
+      allocation_units.get_assignments().front().replicas,
+      reason);
+
+    reassignments.emplace_back(ntp_reassignments{
+      .ntp = ntp, .allocation_units = std::move(allocation_units)});
+}
+
 /*
  * Function is trying to move ntp out of unavailable nodes
  * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
@@ -348,9 +365,11 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
               stable_replicas,
               rrs);
             if (new_allocation_units) {
-                result.reassignments.emplace_back(ntp_reassignments{
-                  .ntp = ntp,
-                  .allocation_units = std::move(new_allocation_units.value())});
+                result.add_reassignment(
+                  ntp,
+                  a.replicas,
+                  std::move(new_allocation_units.value()),
+                  "unavailable nodes");
             } else {
                 result.failed_reassignments_count += 1;
             }
@@ -447,9 +466,11 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
           stable_replicas,
           rrs);
         if (new_allocation_units) {
-            result.reassignments.emplace_back(ntp_reassignments{
-              .ntp = ntp,
-              .allocation_units = std::move(new_allocation_units.value())});
+            result.add_reassignment(
+              ntp,
+              orig_replicas,
+              std::move(new_allocation_units.value()),
+              "rack constraint repair");
         } else {
             result.failed_reassignments_count += 1;
         }
@@ -600,10 +621,11 @@ void partition_balancer_planner::get_full_node_reassignments(
                   rrs);
 
                 if (new_allocation_units) {
-                    result.reassignments.emplace_back(ntp_reassignments{
-                      .ntp = partition_to_move,
-                      .allocation_units = std::move(
-                        new_allocation_units.value())});
+                    result.add_reassignment(
+                      partition_to_move,
+                      current_assignments->replicas,
+                      std::move(new_allocation_units.value()),
+                      "full nodes");
                     success = true;
                     break;
                 } else {
@@ -651,6 +673,13 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
               rrs.timed_out_unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
                 if (!was_on_decommissioning_node) {
+                    vlog(
+                      clusterlog.info,
+                      "ntp: {}, cancelling move {} -> {}",
+                      update.first,
+                      update.second.get_previous_replicas(),
+                      current_assignments->replicas);
+
                     result.cancellations.push_back(update.first);
                 } else {
                     result.failed_reassignments_count += 1;
