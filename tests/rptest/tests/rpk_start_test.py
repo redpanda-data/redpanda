@@ -41,10 +41,37 @@ class RpkRedpandaStartTest(RedpandaTest):
             "WARNING: This is a setup for development purposes only")
 
     @cluster(num_nodes=3)
-    def test_simple_start_three(self):
+    def test_simple_start_three_with_seeds(self):
         """
         Validate simple start using rpk with multiple nodes. Node IDs should be
-        assigned automatically by Redpanda.
+        assigned automatically by Redpanda, configuring seeds-driven cluster
+        formation.
+        """
+        node_ids = set()
+        seeds_str = ",".join(
+            [f"{n.account.hostname}" for n in self.redpanda.nodes])
+
+        def start_with_rpk(node):
+            seeds_arg = f"--seeds={seeds_str}"
+            bootstrap_arg = "--set redpanda.empty_seed_starts_cluster=false"
+            args = f"{seeds_arg} {bootstrap_arg} --rpc-addr={node.account.hostname}"
+            self.redpanda.start_node_with_rpk(node, args)
+
+        # Seed nodes need to be started in parallel because they need to be
+        # able to form a quorum before they become ready.
+        self.redpanda._for_nodes(self.redpanda.nodes,
+                                 start_with_rpk,
+                                 parallel=True)
+        for node in self.redpanda.nodes:
+            node_ids.add(self.redpanda.node_id(node))
+        assert len(node_ids) == 3, f"Node IDs: {node_ids}"
+
+    @cluster(num_nodes=3)
+    def test_simple_start_three_with_root(self):
+        """
+        Validate simple start using rpk with multiple nodes. Node IDs should be
+        assigned automatically by Redpanda, configuring a single root node as
+        the cluster founder.
         """
         node_ids = set()
         seeds_str = ",".join(
