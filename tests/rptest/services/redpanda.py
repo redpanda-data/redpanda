@@ -6,44 +6,43 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import collections
 import concurrent.futures
 import copy
-
-import time
 import os
-import socket
-import signal
-import tempfile
-import shutil
-import requests
 import random
-import threading
-import collections
 import re
+import shutil
+import signal
+import socket
+import tempfile
+import threading
+import time
 import uuid
 from enum import Enum
 from typing import Mapping, Optional, Union, Any
 
+import requests
 import yaml
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.errors import TimeoutError
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
-from rptest.archival.s3_client import S3Client
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
-from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
-from ducktape.errors import TimeoutError
 
+from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rpk import RpkTool
+from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.clients.rpk import RpkTool
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.services import tls
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -103,6 +102,12 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile(
         "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
     ),
+]
+
+# Log errors emitted by refresh credentials system when cloud storage is enabled with IAM roles
+# without a corresponding mock service set up to return credentials
+IAM_ROLES_API_CALL_ALLOW_LIST = [
+    re.compile(r'cloud_roles - .*api request failed')
 ]
 
 
@@ -1393,7 +1398,7 @@ class RedpandaService(Service):
         # though they print out the version.
         version_lines = [
             l for l in node.account.ssh_capture(version_cmd, allow_fail=True) \
-                if VERSION_LINE_RE.match(l)
+            if VERSION_LINE_RE.match(l)
         ]
         assert len(version_lines) == 1, version_lines
         return VERSION_LINE_RE.findall(version_lines[0])[0]

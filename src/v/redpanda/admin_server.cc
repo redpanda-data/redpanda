@@ -986,13 +986,27 @@ void config_multi_property_validation(
     if (updated_config.cloud_storage_enabled()) {
         // The properties that cloud_storage::configuration requires
         // to be set if cloud storage is enabled.
-        std::vector<std::reference_wrapper<
-          const config::property<std::optional<ss::sstring>>>>
-          properties{
-            std::ref(updated_config.cloud_storage_secret_key),
-            std::ref(updated_config.cloud_storage_access_key),
-            std::ref(updated_config.cloud_storage_region),
-            std::ref(updated_config.cloud_storage_bucket)};
+        using config_properties_seq = std::vector<std::reference_wrapper<
+          const config::property<std::optional<ss::sstring>>>>;
+
+        config_properties_seq properties{};
+
+        if (
+          updated_config.cloud_storage_credentials_source
+          == model::cloud_credentials_source::config_file) {
+            properties = {
+              std::ref(updated_config.cloud_storage_region),
+              std::ref(updated_config.cloud_storage_bucket),
+              std::ref(updated_config.cloud_storage_access_key),
+              std::ref(updated_config.cloud_storage_secret_key),
+            };
+        } else {
+            properties = {
+              std::ref(updated_config.cloud_storage_region),
+              std::ref(updated_config.cloud_storage_bucket),
+            };
+        }
+
         for (auto& p : properties) {
             if (p() == std::nullopt) {
                 errors[ss::sstring(p.get().name())]
