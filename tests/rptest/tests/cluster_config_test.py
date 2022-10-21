@@ -6,24 +6,25 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
+import json
+import pprint
+import re
+import tempfile
 import time
 from typing import Any, NamedTuple
-import requests
-import json
-import re
-import yaml
-import tempfile
 
-from rptest.services.admin import Admin
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.util import expect_exception, expect_http_error
+import requests
+import yaml
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+
+from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import expect_http_error
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
@@ -1085,7 +1086,7 @@ class ClusterConfigTest(RedpandaTest):
         assert 'INVALID_CONFIG' in out
         assert "changing broker properties isn't supported via this API" in out
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=IAM_ROLES_API_CALL_ALLOW_LIST)
     def test_cloud_validation(self):
         """
         Cloud storage configuration has special multi-property rules, check
@@ -1097,25 +1098,78 @@ class ClusterConfigTest(RedpandaTest):
         with expect_http_error(400):
             self.admin.patch_cluster_config(upsert=invalid_update, remove=[])
 
-        # It is valid to enable cloud storage along with its accompanying properties
-        valid_update = {
+        # Required for STS to function correctly, the token file is just a placeholder
+        # to make the refresh credentials system boot up.
+        self.redpanda.set_environment({
+            'AWS_ROLE_ARN':
+            'role',
+            'AWS_WEB_IDENTITY_TOKEN_FILE':
+            '/etc/hosts'
+        })
+
+        # Exercise a set of valid combinations of access+secret keys and credentials sources
+        valid_updates = [
+            {
+                'cloud_storage_enabled': True,
+                'cloud_storage_credentials_source': 'aws_instance_metadata',
+                'cloud_storage_region': 'us-east-1',
+                'cloud_storage_bucket': 'dearliza'
+            },
+            {
+                'cloud_storage_enabled': True,
+                'cloud_storage_credentials_source': 'gcp_instance_metadata',
+                'cloud_storage_region': 'us-east-1',
+                'cloud_storage_bucket': 'dearliza'
+            },
+            {
+                'cloud_storage_enabled': True,
+                'cloud_storage_credentials_source': 'sts',
+                'cloud_storage_region': 'us-east-1',
+                'cloud_storage_bucket': 'dearliza'
+            },
+            {
+                'cloud_storage_enabled': True,
+                'cloud_storage_secret_key': 'open',
+                'cloud_storage_access_key': 'sesame',
+                'cloud_storage_credentials_source': 'config_file',
+                'cloud_storage_region': 'us-east-1',
+                'cloud_storage_bucket': 'dearliza'
+            },
+        ]
+        for payload in valid_updates:
+            # It is valid to remove keys from config when the credentials source is dynamic
+            removed = []
+            if 'cloud_storage_access_key' not in payload:
+                removed.append('cloud_storage_access_key')
+            if 'cloud_storage_secret_key' not in payload:
+                removed.append('cloud_storage_secret_key')
+            self.logger.debug(
+                f'patching with {pprint.pformat(payload, indent=1)}, removed keys: {removed}'
+            )
+            patch_result = self.admin.patch_cluster_config(upsert=payload,
+                                                           remove=removed)
+            self._wait_for_version_sync(patch_result['config_version'])
+
+            # Check we really set it properly, and Redpanda can restart without
+            # hitting a validation issue on startup (this is what would happen
+            # if the API validation wasn't working properly)
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Set the config to static for the next set of checks
+        static_config = {
             'cloud_storage_enabled': True,
             'cloud_storage_secret_key': 'open',
             'cloud_storage_access_key': 'sesame',
             'cloud_storage_region': 'us-east-1',
             'cloud_storage_bucket': 'dearliza'
         }
-        patch_result = self.admin.patch_cluster_config(upsert=valid_update,
+        patch_result = self.admin.patch_cluster_config(upsert=static_config,
                                                        remove=[])
         self._wait_for_version_sync(patch_result['config_version'])
-
-        # Check we really set it properly, and Redpanda can restart without
-        # hitting a validation issue on startup (this is what would happen
-        # if the API validation wasn't working properly)
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # It is invalid to clear any required cloud storage properties while
-        # cloud storage is enabled
+        # cloud storage is enabled and the credentials source is static.
         forbidden_to_clear = [
             'cloud_storage_secret_key', 'cloud_storage_access_key',
             'cloud_storage_region', 'cloud_storage_bucket'
