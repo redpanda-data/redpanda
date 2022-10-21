@@ -115,33 +115,6 @@ storage::ntp_config topic_configuration::make_ntp_config(
       init_rev};
 }
 
-void topic_configuration::maybe_adjust_retention_policies(
-  std::optional<model::shadow_indexing_mode> topic_shadow_indexing_mode,
-  tristate<std::size_t>& retention_bytes,
-  tristate<std::chrono::milliseconds>& retention_ms,
-  tristate<std::size_t>& local_target_bytes,
-  tristate<std::chrono::milliseconds>& local_target_ms) {
-    auto cloud_storage_enabled
-      = config::shard_local_cfg().cloud_storage_enabled();
-
-    // Note that `remote_write_enabled` true when either of the topic
-    // config or cluster config are set to true. This includes the case
-    // when the topic property is explicitly set to false. This is confusing
-    // and may require revisiting.
-    auto remote_write_enabled
-      = model::is_archival_enabled(topic_shadow_indexing_mode.value_or(
-          model::shadow_indexing_mode::disabled))
-        || config::shard_local_cfg().cloud_storage_enable_remote_write();
-
-    if (cloud_storage_enabled && remote_write_enabled) {
-        local_target_bytes = retention_bytes;
-        local_target_ms = retention_ms;
-
-        retention_bytes = tristate<size_t>{};
-        retention_ms = tristate<std::chrono::milliseconds>{};
-    }
-}
-
 model::topic_metadata topic_configuration_assignment::get_metadata() const {
     model::topic_metadata ret(cfg.tp_ns);
     ret.partitions.reserve(assignments.size());
@@ -967,13 +940,6 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         cfg.properties.shadow_indexing
           = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
     }
-
-    cluster::topic_configuration::maybe_adjust_retention_policies(
-      cfg.properties.shadow_indexing,
-      cfg.properties.retention_bytes,
-      cfg.properties.retention_duration,
-      cfg.properties.retention_local_target_bytes,
-      cfg.properties.retention_local_target_ms);
 
     // Legacy topics from pre-22.3 get remote delete disabled.
     cfg.properties.remote_delete = storage::ntp_config::legacy_remote_delete;
