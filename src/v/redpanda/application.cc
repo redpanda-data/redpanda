@@ -38,6 +38,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
@@ -1336,6 +1337,8 @@ void application::start_bootstrap_services() {
 
     storage.invoke_on_all(&storage::api::start).get();
 
+    // Before we start up our bootstrapping RPC service, load any relevant
+    // on-disk state we may need: existing cluster UUID, node ID, etc.
     if (std::optional<iobuf> cluster_uuid_buf = storage.local().kvs().get(
           cluster::cluster_uuid_key_space, bytes(cluster::cluster_uuid_key));
         cluster_uuid_buf) {
@@ -1347,24 +1350,29 @@ void application::start_bootstrap_services() {
           })
           .get();
     }
-
-    syschecks::systemd_message("Starting internal RPC bootstrap service").get();
-    _rpc
-      .invoke_on_all([this](rpc::rpc_server& s) {
-          std::vector<std::unique_ptr<rpc::service>> bootstrap_service;
-          bootstrap_service.push_back(
-            std::make_unique<cluster::bootstrap_service>(
-              _scheduling_groups.cluster_sg(),
-              smp_service_groups.cluster_smp_sg(),
-              std::ref(storage)));
-          s.add_services(std::move(bootstrap_service));
-      })
-      .get();
-    _rpc.invoke_on_all(&rpc::rpc_server::start).get();
-    vlog(
-      _log.info,
-      "Started RPC server listening at {}",
-      config::node().rpc_server());
+    static const bytes invariants_key("configuration_invariants");
+    auto configured_node_id = config::node().node_id();
+    if (auto invariants_buf = storage.local().kvs().get(
+          storage::kvstore::key_space::controller, invariants_key);
+        invariants_buf) {
+        auto invariants
+          = reflection::from_iobuf<cluster::configuration_invariants>(
+            std::move(*invariants_buf));
+        const auto& stored_node_id = invariants.node_id;
+        vlog(_log.info, "Loaded stored node ID for node: {}", stored_node_id);
+        if (
+          configured_node_id != std::nullopt
+          && *configured_node_id != stored_node_id) {
+            throw std::invalid_argument(ssx::sformat(
+              "Configured node ID {} doesn't match stored node ID {}",
+              *configured_node_id,
+              stored_node_id));
+        }
+        ss::smp::invoke_on_all([stored_node_id] {
+            config::node().node_id.set_value(
+              std::make_optional(stored_node_id));
+        }).get0();
+    }
 
     // Load the local node UUID, or create one if none exists.
     auto& kvs = storage.local().kvs();
@@ -1394,13 +1402,31 @@ void application::start_bootstrap_services() {
           storage.set_node_uuid(node_uuid);
       })
       .get();
+
+    syschecks::systemd_message("Starting internal RPC bootstrap service").get();
+    _rpc
+      .invoke_on_all([this](rpc::rpc_server& s) {
+          std::vector<std::unique_ptr<rpc::service>> bootstrap_service;
+          bootstrap_service.push_back(
+            std::make_unique<cluster::bootstrap_service>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(storage)));
+          s.add_services(std::move(bootstrap_service));
+      })
+      .get();
+    _rpc.invoke_on_all(&rpc::rpc_server::start).get();
+    vlog(
+      _log.info,
+      "Started RPC server listening at {}",
+      config::node().rpc_server());
 }
 
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     wire_up_bootstrap_services();
     start_bootstrap_services();
 
-    // Begin the cluster discovery manager so we can determine our initial node
+    // Begin the cluster discovery manager so we can confirm our initial node
     // ID. A valid node ID is required before we can initialize the rest of our
     // subsystems.
     const auto& node_uuid = storage.local().node_uuid();
@@ -1525,7 +1551,7 @@ void application::start_runtime_services(
           .get();
     }
     syschecks::systemd_message("Starting controller").get();
-    controller->start(cd.initial_seed_brokers_if_no_cluster().get()).get0();
+    controller->start(cd).get0();
 
     kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
       *controller, group_router);

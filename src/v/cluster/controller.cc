@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/bootstrap_backend.h"
+#include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
@@ -100,9 +101,8 @@ ss::future<> controller::wire_up() {
       .then([this] { _probe.start(); });
 }
 
-ss::future<>
-controller::start(std::vector<model::broker> initial_raft0_brokers) {
-    const bool local_node_is_seed_server = !initial_raft0_brokers.empty();
+ss::future<> controller::start(cluster_discovery& discovery) {
+    const auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
     std::transform(
@@ -282,9 +282,7 @@ controller::start(std::vector<model::broker> initial_raft0_brokers) {
               return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
           });
       })
-      .then([this, local_node_is_seed_server] {
-          return cluster_creation_hook(local_node_is_seed_server);
-      })
+      .then([this, &discovery] { return cluster_creation_hook(discovery); })
       .then(
         [this] { return _backend.invoke_on_all(&controller_backend::start); })
       .then([this] {
@@ -513,15 +511,9 @@ ss::future<> controller::create_cluster() {
  * after it has been created, before anything else has been written
  * to it, and before we have started communicating with peers.
  */
-ss::future<>
-controller::cluster_creation_hook(const bool local_node_is_seed_server) {
-    if (_storage.local().get_cluster_uuid()) {
-        // Cluster already exists
-        co_return;
-    }
-
-    if (!local_node_is_seed_server) {
-        // We are not on a seed server / root node
+ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
+    auto is_cluster_founder = co_await discovery.is_cluster_founder();
+    if (!is_cluster_founder) {
         co_return;
     }
 
