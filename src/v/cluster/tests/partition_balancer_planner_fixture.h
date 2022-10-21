@@ -17,6 +17,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "model/metadata.h"
+#include "random/generators.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 
@@ -115,24 +116,54 @@ struct partition_balancer_planner_fixture {
         return {cfg, std::move(pas)};
     }
 
-    cluster::create_topic_cmd make_create_topic_cmd(
-      const ss::sstring& name, int partitions, int16_t replication_factor) {
-        return {
-          make_tp_ns(name),
-          make_tp_configuration(name, partitions, replication_factor)};
-    }
-
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
         return {test_ns, model::topic(tp)};
     }
 
-    void create_topic(
-      const ss::sstring& name, int partitions, int16_t replication_factor) {
-        auto cmd = make_create_topic_cmd(name, partitions, replication_factor);
+    template<typename Cmd>
+    void dispatch_command(Cmd cmd) {
         auto res = workers.dispatcher
                      .apply_update(serialize_cmd(std::move(cmd)).get())
                      .get();
         BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
+    }
+
+    void create_topic(
+      const ss::sstring& name, int partitions, int16_t replication_factor) {
+        cluster::create_topic_cmd cmd{
+          make_tp_ns(name),
+          make_tp_configuration(name, partitions, replication_factor)};
+        dispatch_command(std::move(cmd));
+    }
+
+    void create_topic(
+      const ss::sstring& name,
+      std::vector<std::vector<model::node_id>> partition_nodes) {
+        BOOST_REQUIRE(!partition_nodes.empty());
+        int16_t replication_factor = partition_nodes.front().size();
+        cluster::topic_configuration cfg(
+          test_ns,
+          model::topic{name},
+          partition_nodes.size(),
+          replication_factor);
+
+        std::vector<cluster::partition_assignment> assignments;
+        for (size_t i = 0; i < partition_nodes.size(); ++i) {
+            const auto& nodes = partition_nodes[i];
+            BOOST_REQUIRE_EQUAL(nodes.size(), replication_factor);
+            std::vector<model::broker_shard> replicas;
+            for (model::node_id n : nodes) {
+                replicas.push_back(model::broker_shard{
+                  n, random_generators::get_int<uint32_t>(0, 3)});
+            }
+            assignments.push_back(cluster::partition_assignment{
+              raft::group_id{1}, model::partition_id{i}, replicas});
+        }
+        cluster::create_topic_cmd cmd{
+          make_tp_ns(name),
+          cluster::topic_configuration_assignment{cfg, std::move(assignments)}};
+
+        dispatch_command(std::move(cmd));
     }
 
     void allocator_register_nodes(
@@ -184,17 +215,47 @@ struct partition_balancer_planner_fixture {
     void move_partition_replicas(
       const model::ntp& ntp,
       const std::vector<model::broker_shard>& new_replicas) {
-        auto cmd = make_move_partition_replicas_cmd(ntp, new_replicas);
-        auto res = workers.dispatcher
-                     .apply_update(serialize_cmd(std::move(cmd)).get())
-                     .get();
-        BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
+        dispatch_command(make_move_partition_replicas_cmd(ntp, new_replicas));
+    }
+
+    void move_partition_replicas(
+      model::ntp ntp, const std::vector<model::node_id>& new_nodes) {
+        std::vector<model::broker_shard> new_replicas;
+        for (auto n : new_nodes) {
+            new_replicas.push_back(model::broker_shard{
+              n, random_generators::get_int<uint32_t>(0, 3)});
+        }
+        move_partition_replicas(std::move(ntp), std::move(new_replicas));
     }
 
     void move_partition_replicas(cluster::ntp_reassignments& reassignment) {
         move_partition_replicas(
           reassignment.ntp,
           reassignment.allocation_units.get_assignments().front().replicas);
+    }
+
+    void cancel_partition_move(model::ntp ntp) {
+        cluster::cancel_moving_partition_replicas_cmd cmd{
+          std::move(ntp),
+          cluster::cancel_moving_partition_replicas_cmd_data{
+            cluster::force_abort_update{false}}};
+        dispatch_command(std::move(cmd));
+    }
+
+    void finish_partition_move(model::ntp ntp) {
+        auto cur_assignment = workers.table.local().get_partition_assignment(
+          ntp);
+        BOOST_REQUIRE(cur_assignment);
+
+        cluster::finish_moving_partition_replicas_cmd cmd{
+          std::move(ntp), cur_assignment->replicas};
+
+        dispatch_command(std::move(cmd));
+    }
+
+    void delete_topic(const model::topic& topic) {
+        cluster::delete_topic_cmd cmd{make_tp_ns(topic()), make_tp_ns(topic())};
+        dispatch_command(std::move(cmd));
     }
 
     std::vector<raft::follower_metrics>

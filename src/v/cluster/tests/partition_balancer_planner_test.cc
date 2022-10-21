@@ -14,6 +14,9 @@
 
 static ss::logger logger("partition_balancer_planner");
 
+// a shorthand to avoid spelling out model::node_id
+static model::node_id n(int64_t id) { return model::node_id{id}; };
+
 using namespace std::chrono_literals;
 
 void check_violations(
@@ -819,6 +822,45 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
     BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
     BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
+}
+
+FIXTURE_TEST(
+  test_state_ntps_with_broken_rack_constraint,
+  partition_balancer_planner_fixture) {
+    allocator_register_nodes(4, {"rack_A", "rack_B", "rack_B", "rack_C"});
+
+    model::topic topic{"topic-1"};
+    model::ntp ntp0{test_ns, topic, 0};
+    model::ntp ntp1{test_ns, topic, 1};
+
+    auto check_ntps = [&](absl::btree_set<model::ntp> expected) {
+        const auto& ntps
+          = workers.state.local().ntps_with_broken_rack_constraint();
+        BOOST_REQUIRE_EQUAL(
+          std::vector(ntps.begin(), ntps.end()),
+          std::vector(expected.begin(), expected.end()));
+    };
+
+    create_topic(topic(), {{n(0), n(1), n(2)}, {n(0), n(1), n(3)}});
+    check_ntps({ntp0});
+
+    move_partition_replicas(ntp1, {n(0), n(1), n(2)});
+    check_ntps({ntp0, ntp1});
+
+    move_partition_replicas(ntp0, {n(0), n(3), n(2)});
+    check_ntps({ntp1});
+
+    cancel_partition_move(ntp0);
+    check_ntps({ntp0, ntp1});
+
+    finish_partition_move(ntp1);
+    check_ntps({ntp0, ntp1});
+
+    move_partition_replicas(ntp1, {n(0), n(2), n(3)});
+    check_ntps({ntp0});
+
+    delete_topic(topic);
+    check_ntps({});
 }
 
 /*
