@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     feature_table.cc
     feature_migrator.cc
+    migrators/cloud_storage_config.cc
     logger.cc
   DEPS
     Seastar::seastar
