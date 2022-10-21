@@ -719,6 +719,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
        .sname_format = segment_name_format::v2});
     {
         auto res = m.replaced_segments();
+        std::sort(res.begin(), res.end());
         BOOST_REQUIRE(res.size() == 4);
         BOOST_REQUIRE(res[0].base_offset == model::offset{0});
         BOOST_REQUIRE(res[0].committed_offset == model::offset{9});
@@ -739,12 +740,18 @@ struct partition_manifest_accessor {
       partition_manifest* m,
       const segment_name& key,
       const partition_manifest::segment_meta& meta) {
-        auto comp = parse_segment_name(key);
-        m->_replaced.insert(std::make_pair(*comp, meta));
+        m->_replaced.push_back(meta);
     }
     static auto find(segment_name n, const partition_manifest& m) {
         auto key = parse_segment_name(n);
-        return m._replaced.equal_range(*key);
+        for (auto it = m._replaced.begin(); it != m._replaced.end(); it++) {
+            if (
+              key
+              == segment_name_components{it->base_offset, it->segment_term}) {
+                return std::make_pair(it, m._replaced.end());
+            }
+        }
+        return std::make_pair(m._replaced.end(), m._replaced.end());
     }
 };
 } // namespace cloud_storage
@@ -918,7 +925,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         auto actual = accessor::find(segment_name(expected.first), restored);
         auto res = std::any_of(
           actual.first, actual.second, [&expected](const auto& a) {
-              return expected.second == a.second;
+              return expected.second == a;
           });
         BOOST_REQUIRE(res);
     }

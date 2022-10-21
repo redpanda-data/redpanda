@@ -125,7 +125,7 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       .base_offset = model::offset(0),
       .committed_offset = model::offset(99),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
@@ -165,12 +165,12 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     m1.push_back(segment_meta{
       .base_offset = model::offset(1000),
       .committed_offset = model::offset(1999),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m1, ss::lowres_clock::now() + 10s).get();
     archival_stm->sync(10s).get();
@@ -183,7 +183,7 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     archival_stm->add_segments(m2, ss::lowres_clock::now() + 10s).get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -264,22 +264,22 @@ FIXTURE_TEST(
       .base_offset = model::offset(0),
       .committed_offset = model::offset(99),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     m.push_back(segment_meta{
       .base_offset = model::offset(100),
       .committed_offset = model::offset(199),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     m.push_back(segment_meta{
       .base_offset = model::offset(200),
       .committed_offset = model::offset(299),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     m.push_back(segment_meta{
       .base_offset = model::offset(300),
       .committed_offset = model::offset(399),
       .archiver_term = model::term_id(1),
-    });
+      .segment_term = model::term_id(1)});
     partition_manifest pm(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
     for (const auto& s : m) {
         auto name = cloud_storage::generate_local_segment_name(

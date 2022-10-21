@@ -364,12 +364,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
 }
 
 std::vector<segment_meta> partition_manifest::replaced_segments() const {
-    std::vector<segment_meta> segments;
-    segments.reserve(_replaced.size());
-    for (const auto& kv : _replaced) {
-        segments.push_back(kv.second);
-    }
-    return segments;
+    return _replaced;
 }
 
 void partition_manifest::move_aligned_offset_range(
@@ -384,7 +379,7 @@ void partition_manifest::move_aligned_offset_range(
            // offsets are covered by new segment's offset range
            && it->first.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
-        _replaced.insert(*it);
+        _replaced.push_back(it->second);
         it = _segments.erase(it);
     }
 }
@@ -763,9 +758,9 @@ struct partition_manifest_handler
                 _state = state::expect_segment_path;
             } else {
                 if (!_replaced) {
-                    _replaced = std::make_unique<segment_multimap>();
+                    _replaced = std::make_unique<replaced_segments_list>();
                 }
-                _replaced->insert(std::make_pair(_segment_key, _meta));
+                _replaced->push_back(_meta);
                 _state = state::expect_replaced_path;
             }
             clear_meta_fields();
@@ -861,7 +856,7 @@ struct partition_manifest_handler
     } _state{state::expect_manifest_start};
 
     using segment_map = partition_manifest::segment_map;
-    using segment_multimap = partition_manifest::segment_multimap;
+    using replaced_segments_list = partition_manifest::replaced_segments_list;
 
     key_string _manifest_key;
     key_string _segment_meta_key;
@@ -870,7 +865,7 @@ struct partition_manifest_handler
     partition_manifest::key _segment_key;
     partition_manifest::segment_meta _meta;
     std::unique_ptr<segment_map> _segments;
-    std::unique_ptr<segment_multimap> _replaced;
+    std::unique_ptr<replaced_segments_list> _replaced;
 
     // required manifest fields
     std::optional<int32_t> _version;
@@ -1151,7 +1146,9 @@ void partition_manifest::serialize(std::ostream& out) const {
     if (!_replaced.empty()) {
         w.Key("replaced");
         w.StartObject();
-        for (const auto& [key, meta] : _replaced) {
+        for (const auto& meta : _replaced) {
+            auto key = segment_name_components{
+              .base_offset = meta.base_offset, .term = meta.segment_term};
             serialize_meta(key, meta);
         }
         w.EndObject();

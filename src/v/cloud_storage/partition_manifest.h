@@ -17,6 +17,8 @@
 #include "model/timestamp.h"
 #include "serde/serde.h"
 
+#include <deque>
+
 namespace cloud_storage {
 
 struct partition_manifest_handler;
@@ -78,7 +80,7 @@ public:
     using key = segment_name_components;
     using value = segment_meta;
     using segment_map = absl::btree_map<key, value>;
-    using segment_multimap = absl::btree_multimap<key, value>;
+    using replaced_segments_list = std::vector<segment_meta>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
@@ -121,7 +123,7 @@ public:
               "can't parse name of the replaced segment in the manifest '{}'",
               nm.name);
             nm.meta.segment_term = key->term;
-            _replaced.insert(std::make_pair(key.value(), nm.meta));
+            _replaced.push_back(nm.meta);
         }
         for (auto nm : segments) {
             auto maybe_key = parse_segment_name(nm.name);
@@ -270,7 +272,7 @@ private:
     model::initial_revision_id _rev;
     segment_map _segments;
     /// Collection of replaced but not yet removed segments
-    segment_multimap _replaced;
+    replaced_segments_list _replaced;
     model::offset _last_offset;
     model::offset _start_offset;
     model::offset _last_uploaded_compacted_offset;
