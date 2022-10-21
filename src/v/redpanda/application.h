@@ -19,6 +19,7 @@
 #include "cluster/node_status_table.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
+#include "features/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
@@ -204,6 +205,9 @@ private:
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
     ss::lw_shared_ptr<kafka::group_metadata_migration> kafka_group_migration;
+
+    // Small helpers to execute one-time upgrade actions
+    std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 
     // run these first on destruction
     deferred_actions _deferred;
