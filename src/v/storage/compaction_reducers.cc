@@ -379,6 +379,10 @@ bool tx_reducer::handle_non_tx_control_batch(const model::record_batch& b) {
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
+    if (unlikely(_non_transactional)) {
+        co_return co_await _delegate(std::move(b));
+    }
+
     _stats._all_batches++;
     consume_aborted_txs(b.last_offset());
 

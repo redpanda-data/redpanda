@@ -184,7 +184,8 @@ public:
       compacted_index_writer* w) noexcept
       : _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
-      , _stm_mgr(stm_mgr) {
+      , _stm_mgr(stm_mgr)
+      , _non_transactional(!stm_mgr->has_tx_stm()) {
         _stats._num_aborted_txes = _aborted_txs.size();
     }
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
@@ -235,6 +236,14 @@ private:
       _ongoing_aborted_txs;
     ss::lw_shared_ptr<storage::stm_manager> _stm_mgr;
     stats _stats;
+    // Set if no transactional stm is attached to the partition of this
+    // segment. This means there are no batches of interest in this segment
+    // for this reducer and we short circuit the logic to directly delegate to
+    // the underlying reducer. This is true for internal topics like
+    // __consumer_offsets where transactional guarantees are enforced by
+    // stm implementations other than the one used for data partitions.
+    // Also true for partitions without any transactional stms attached.
+    bool _non_transactional;
 };
 
 } // namespace storage::internal
