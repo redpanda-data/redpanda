@@ -9,8 +9,10 @@
 
 #include "cluster/partition_manager.h"
 
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_recovery_manager.h"
+#include "cloud_storage/remote.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"

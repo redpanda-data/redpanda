@@ -14,7 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "s3/client.h"
+#include "s3/configuration.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 

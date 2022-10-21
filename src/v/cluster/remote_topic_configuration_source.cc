@@ -17,7 +17,7 @@
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "s3/client.h"
+#include "s3/configuration.h"
 
 namespace cluster {
 

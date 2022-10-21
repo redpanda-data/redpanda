@@ -10,6 +10,9 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 
+#include "cloud_roles/logger.h"
+#include "cloud_roles/request_response_helpers.h"
+
 namespace cloud_roles {
 
 struct ec2_response_schema {

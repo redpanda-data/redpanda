@@ -27,6 +27,7 @@
 #include "model/record.h"
 #include "rpc/connection_cache.h"
 #include "types.h"
+#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 

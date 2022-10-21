@@ -14,6 +14,7 @@
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
+#include "cloud_roles/request_response_helpers.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "model/metadata.h"
@@ -209,6 +210,22 @@ void refresh_credentials::impl::increment_retries() {
     auto sleep_ms = _retry_params.backoff_ms * (2 * _retries);
     vlog(clrl_log.info, "retry after {} ms", sleep_ms);
     _sleep_duration = sleep_ms;
+}
+
+void refresh_credentials::impl::reset_retries() {
+    if (unlikely(_retries != 0)) {
+        vlog(clrl_log.info, "resetting retry counter from {} to 0", _retries);
+        _retries = 0;
+    }
+}
+
+void refresh_credentials::impl::next_sleep_duration(
+  std::chrono::milliseconds sd) {
+    vlog(
+      clrl_log.trace,
+      "setting next sleep duration to {} seconds",
+      std::chrono::duration_cast<std::chrono::seconds>(sd).count());
+    _sleep_duration = sd;
 }
 
 api_response_parse_result
