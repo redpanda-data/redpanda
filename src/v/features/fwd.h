@@ -14,5 +14,6 @@
 namespace features {
 
 class feature_table;
+class feature_migrator;
 
 } // namespace features
