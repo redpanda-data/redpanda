@@ -315,6 +315,18 @@ void heartbeat_manager::process_reply(
         auto consensus = *it;
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
 
+        if (unlikely(
+              m.result == append_entries_reply::status::group_unavailable)) {
+            // We may see these if the responding node is still starting up and
+            // the replica has yet to bootstrap.
+            vlog(
+              hbeatlog.debug,
+              "Heartbeat request for group {} was unavailable on node {}",
+              m.group,
+              n);
+            continue;
+        }
+
         if (unlikely(m.result == append_entries_reply::status::timeout)) {
             vlog(
               hbeatlog.debug,
