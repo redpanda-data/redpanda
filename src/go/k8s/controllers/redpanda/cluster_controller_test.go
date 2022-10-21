@@ -46,6 +46,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 		replicas                  = 1
 		redpandaContainerTag      = "x"
 		redpandaContainerImage    = "vectorized/redpanda"
+
+		clusterNameWithLicense = "test-cluster-with-license"
+		licenseName            = "test-cluster-with-license"
+		licenseNamespace       = "default"
 	)
 
 	Context("When creating RedpandaCluster", func() {
@@ -691,6 +695,24 @@ var _ = Describe("RedPandaCluster controller", func() {
 				return err == nil &&
 					rc.Status.Nodes.ExternalBootstrap != nil
 			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("Should load license", func() {
+			By("Creating the license Secret")
+			licenseSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: licenseNamespace,
+					Name:      licenseName,
+				},
+				StringData: map[string]string{v1alpha1.DefaultLicenseSecretKey: "fake-license"},
+			}
+			Expect(k8sClient.Create(context.Background(), licenseSecret)).Should(Succeed())
+
+			By("Creating a Cluster")
+			key, _, redpandaCluster := getInitialTestCluster(clusterNameWithLicense)
+			redpandaCluster.Spec.LicenseRef = &v1alpha1.SecretKeyRef{Namespace: licenseNamespace, Name: licenseName}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 		})
 	})
 
