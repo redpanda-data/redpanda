@@ -238,10 +238,6 @@ func (cm *ConfigMap) genCloud() CloudConfig {
 }
 
 var (
-	// DefaultLicenseSecretKey is the default key required in secret referenced by `SecretKeyRef`.
-	// The license will be provided to console to allow enterprise features.
-	DefaultLicenseSecretKey = "license"
-
 	// DefaultJWTSecretKey is the default key required in secret referenced by `SecretKeyRef`.
 	// The secret should consist of JWT used to authenticate into google SSO.
 	DefaultJWTSecretKey = "jwt"
@@ -326,7 +322,7 @@ func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		licenseValue, err := license.GetValue(licenseSecret, DefaultLicenseSecretKey)
+		licenseValue, err := license.GetValue(licenseSecret, redpandav1alpha1.DefaultLicenseSecretKey)
 		if err != nil {
 			return "", err
 		}
