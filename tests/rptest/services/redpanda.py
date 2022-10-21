@@ -106,6 +106,12 @@ CHANGE_REPLICATION_FACTOR_ALLOW_LIST = [
         "cluster - .*Unable to allocate topic with given replication factor"),
 ]
 
+# Log errors emitted by refresh credentials system when cloud storage is enabled with IAM roles
+# without a corresponding mock service set up to return credentials
+IAM_ROLES_API_CALL_ALLOW_LIST = [
+    re.compile(r'cloud_roles - .*api request failed')
+]
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
