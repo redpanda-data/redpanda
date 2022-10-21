@@ -47,6 +47,7 @@
 #include "config/seed_server.h"
 #include "coproc/api.h"
 #include "coproc/partition_manager.h"
+#include "features/migrators.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -157,6 +158,14 @@ void application::shutdown() {
     if (controller) {
         controller->shutdown_input().get();
     }
+
+    ss::do_for_each(
+      _migrators,
+      [](std::unique_ptr<features::feature_migrator>& fm) {
+          return fm->stop();
+      })
+      .get();
+
     if (kafka_group_migration) {
         kafka_group_migration->await().get();
     }
@@ -1461,6 +1470,11 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           .invoke_on_all(
             [](features::feature_table& ft) { ft.testing_activate_all(); })
           .get();
+    } else {
+        // Only populate migrators in non-unit-test mode
+        _migrators.push_back(
+          std::make_unique<features::migrators::cloud_storage_config>(
+            *controller));
     }
 
     start_runtime_services(cd, app_signal);
@@ -1664,6 +1678,9 @@ void application::start_runtime_services(
       .invoke_on_all(&archival::upload_controller::start)
       .get();
 
+    for (const auto& m : _migrators) {
+        m->start(controller->get_abort_source().local());
+    }
     kafka_group_migration->start(app_signal.abort_source()).get();
 }
 
