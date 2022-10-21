@@ -255,8 +255,8 @@ Reading number values can have the following modifiers:
      little8     alias for byte
 
      byte        one byte number
-
      <digits>    directly specify the length as this many digits
+     bool        read "true" a 1, "false" as 0
 
 When reading number sizes, the size corresponds to the size of the encoded
 values, not the decoded values. "%T{6}%t{hex}" will read six hex bytes and
