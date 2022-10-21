@@ -466,6 +466,30 @@ class CreateTopicUpgradeTest(RedpandaTest):
         # later for checking that deletion behavior is correct on legacy topics.
         self._populate_tiered_storage_topic("test-si-topic-with-retention")
 
+        # This topic is like "test-si-topic-with-retention", but instead
+        # of settings its properties at creation time, set them via
+        # alter messages: these follow a different code path in
+        # kafka and controller, and are serialized using different structures
+        # than the structures used in topic creation.
+        self.rpk.create_topic("test-si-topic-with-retention-altered")
+        self.rpk.alter_topic_config("test-si-topic-with-retention-altered",
+                                    "retention.bytes", 10000)
+        self.rpk.alter_topic_config("test-si-topic-with-retention-altered",
+                                    "redpanda.remote.write", "true")
+
+        # Check our alter operations applied properly
+        # (see https://github.com/redpanda-data/redpanda/issues/6772)
+        after_alter = self.rpk.describe_topic_configs(
+            "test-si-topic-with-retention-altered")
+        assert after_alter['redpanda.remote.write'][0] == 'true'
+        assert after_alter['retention.bytes'][0] == '10000'
+
+        # TODO: this test currently exercises 22.2 (serde) encoding to
+        # 22.3 (newer serde) encoding.  It should be extended to also
+        # cover the case of creating topics in version 22.1, upgrading
+        # to 22.2, and then to 22.3, to check the ADL encoding of messages
+        # in the controller log.
+
         self.installer.install(
             self.redpanda.nodes,
             RedpandaInstaller.HEAD,
@@ -473,18 +497,21 @@ class CreateTopicUpgradeTest(RedpandaTest):
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
+        # Wait for any migration steps to complete
+        self.redpanda.await_feature_active('cloud_retention', timeout_sec=30)
+
         non_si_configs = self.rpk.describe_topic_configs(
             "test-topic-with-retention")
         si_configs = self.rpk.describe_topic_configs(
             "test-si-topic-with-retention")
-
-        self.logger.debug(f"test-si-topic-with-retention config: {si_configs}")
-        self.logger.debug(f"test-topic-with-retention: {non_si_configs}")
+        si_altered_configs = self.rpk.describe_topic_configs(
+            "test-si-topic-with-retention-altered")
 
         # "test-topic-with-retention" did not have remote write enabled
         # at the time of the upgrade, so retention.* configs are preserved
         # and retention.local.target.* configs are set to their default values,
         # but ignored
+        self.logger.debug(f"Checking config {non_si_configs}")
         assert non_si_configs["retention.bytes"] == ("10000",
                                                      "DYNAMIC_TOPIC_CONFIG")
         assert non_si_configs["retention.ms"][1] == "DEFAULT_CONFIG"
@@ -493,19 +520,21 @@ class CreateTopicUpgradeTest(RedpandaTest):
             "-1", "DEFAULT_CONFIG")
         assert non_si_configs["retention.local.target.ms"][
             1] == "DEFAULT_CONFIG"
-        assert non_si_configs["redpanda.remote.delete"][0] == "false"
 
         # 'test-si-topic-with-retention' was enabled from remote write
         # at the time of the upgrade, so retention.local.target.* configs
         # should be initialised from retention.* and retention.* configs should
         # be disabled.
-        assert si_configs["retention.bytes"] == ("-1", "DYNAMIC_TOPIC_CONFIG")
-        assert si_configs["retention.ms"] == ("-1", "DYNAMIC_TOPIC_CONFIG")
+        for conf in (si_configs, si_altered_configs):
+            self.logger.debug(f"Checking config: {conf}")
+            assert conf['redpanda.remote.write'][0] == 'true'
+            assert conf["retention.bytes"][0] == "-1"
+            assert conf["retention.ms"][0] == "-1"
 
-        assert si_configs["retention.local.target.bytes"] == (
-            "10000", "DYNAMIC_TOPIC_CONFIG")
-        assert si_configs["retention.local.target.ms"][1] == "DEFAULT_CONFIG"
-        assert si_configs["redpanda.remote.delete"][0] == "false"
+            assert conf["retention.local.target.bytes"] == (
+                "10000", "DYNAMIC_TOPIC_CONFIG")
+            assert conf["retention.local.target.ms"][1] == "DEFAULT_CONFIG"
+            assert conf["redpanda.remote.delete"][0] == "false"
 
         # After upgrade, newly created topics should have remote.delete
         # enabled by default, and interpret assignments to retention properties
