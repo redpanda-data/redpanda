@@ -344,18 +344,19 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
 }
 
 ss::future<std::error_code> archival_metadata_stm::add_segments(
-  const cloud_storage::partition_manifest& manifest,
+  std::vector<cloud_storage::segment_meta> segments,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto now = ss::lowres_clock::now();
     auto timeout = now < deadline ? deadline - now : 0ms;
-    return _lock.with(timeout, [this, &manifest, deadline, as] {
-        return do_add_segments(manifest, deadline, as);
-    });
+    return _lock.with(
+      timeout, [this, s = std::move(segments), deadline, as]() mutable {
+          return do_add_segments(std::move(s), deadline, as);
+      });
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
-  const cloud_storage::partition_manifest& new_manifest,
+  std::vector<cloud_storage::segment_meta> add_segments,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     {
@@ -370,16 +371,23 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         as->get().check();
     }
 
-    auto add_segments = segments_from_manifest(new_manifest);
     if (add_segments.empty()) {
         co_return errc::success;
     }
 
     storage::record_batch_builder b(
       model::record_batch_type::archival_metadata, model::offset(0));
-    for (const auto& segment : add_segments) {
+    for (auto& meta : add_segments) {
         iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
-        auto record_val = add_segment_cmd::value{segment};
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = _manifest->get_revision_id();
+        }
+        auto name = cloud_storage::generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
+        auto record_val = add_segment_cmd::value{segment{
+          .ntp_revision_deprecated = meta.ntp_revision,
+          .name = std::move(name),
+          .meta = meta}};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
@@ -390,15 +398,17 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         co_return ec;
     }
 
-    for (const auto& segment : add_segments) {
+    for (const auto& meta : add_segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
         vlog(
           _logger.info,
           "new remote segment added (name: {}, base_offset: {} last_offset: "
           "{}), "
           "remote start_offset: {}, last_offset: {}",
-          segment.name,
-          segment.meta.base_offset,
-          segment.meta.committed_offset,
+          name,
+          meta.base_offset,
+          meta.committed_offset,
           get_start_offset(),
           get_last_offset());
     }
@@ -590,7 +600,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         // ntp_revision field.
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
-    _manifest->add(segment.name, segment.meta);
+    _manifest->add(segment.name, meta);
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {

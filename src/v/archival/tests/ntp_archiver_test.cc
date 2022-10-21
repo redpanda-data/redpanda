@@ -538,13 +538,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";
 
     // Simulate pre-existing state in the snapshot
-    cloud_storage::partition_manifest old_segments(
-      manifest_ntp, manifest_revision);
+    std::vector<cloud_storage::segment_meta> old_segments;
     for (const auto& s : old_manifest) {
-        old_segments.add(
-          segment_name(cloud_storage::generate_local_segment_name(
-            s.first.base_offset, s.first.term)),
-          s.second);
+        old_segments.push_back(s.second);
     }
     part->archival_meta_stm()
       ->add_segments(old_segments, ss::lowres_clock::now() + 1s)
@@ -748,13 +744,9 @@ static void test_partial_upload_impl(
       .ntp_revision = manifest.get_revision_id()};
 
     manifest.add(s1name, segment_meta);
-    cloud_storage::partition_manifest all_segments(
-      manifest_ntp, manifest_revision);
+    std::vector<cloud_storage::segment_meta> all_segments;
     for (const auto& s : manifest) {
-        all_segments.add(
-          segment_name(cloud_storage::generate_local_segment_name(
-            s.first.base_offset, s.first.term)),
-          s.second);
+        all_segments.push_back(s.second);
     }
     part->archival_meta_stm()
       ->add_segments(all_segments, ss::lowres_clock::now() + 1s)

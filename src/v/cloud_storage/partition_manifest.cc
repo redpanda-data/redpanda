@@ -171,6 +171,7 @@ remote_segment_path generate_remote_segment_path(
 }
 
 segment_name generate_local_segment_name(model::offset o, model::term_id t) {
+    vassert(t != model::term_id{}, "Invalid term id");
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
 }
 

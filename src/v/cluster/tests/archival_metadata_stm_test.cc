@@ -120,15 +120,12 @@ using cloud_storage::segment_name;
 
 FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
-    auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
-    m.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(99),
-        .archiver_term = model::term_id(1),
-      });
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+    });
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
@@ -143,16 +140,14 @@ FIXTURE_TEST(
   test_archival_stm_update_lco_when_compacted_segment_added,
   archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
-    auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
-    m.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .is_compacted = true,
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(99),
-        .archiver_term = model::term_id(1),
-      });
+    std::vector<segment_meta> m;
+    m.push_back(segment_meta{
+      .is_compacted = true,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1),
+    });
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -165,42 +160,30 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
-    auto& ntp_cfg = _raft->log_config();
-    partition_manifest m1(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
-    m1.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(999),
-        .archiver_term = model::term_id(1),
-      });
-    m1.add(
-      segment_name("1000-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(1000),
-        .committed_offset = model::offset(1999),
-        .archiver_term = model::term_id(1),
-      });
-    m1.advance_insync_offset(model::offset{2});
+    std::vector<cloud_storage::segment_meta> m1;
+    m1.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+    });
+    m1.push_back(segment_meta{
+      .base_offset = model::offset(1000),
+      .committed_offset = model::offset(1999),
+      .archiver_term = model::term_id(1),
+    });
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m1, ss::lowres_clock::now() + 10s).get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
-    // Manifests are not stictly equal in general but here we can
-    // make them to be.
-    BOOST_REQUIRE(archival_stm->manifest() == m1);
-
     // Replace first segment
-    partition_manifest m2(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
-    m2.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .is_compacted = true,
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(999),
-        .archiver_term = model::term_id(1),
-      });
+    std::vector<cloud_storage::segment_meta> m2;
+    m2.push_back(segment_meta{
+      .is_compacted = true,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+    });
     archival_stm->add_segments(m2, ss::lowres_clock::now() + 10s).get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -276,40 +259,38 @@ FIXTURE_TEST(
   test_archival_stm_segment_truncate, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
     auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
-    m.add(
-      segment_name("0-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(99),
-        .archiver_term = model::term_id(1),
-      });
-    m.add(
-      segment_name("100-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(100),
-        .committed_offset = model::offset(199),
-        .archiver_term = model::term_id(1),
-      });
-    m.add(
-      segment_name("200-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(200),
-        .committed_offset = model::offset(299),
-        .archiver_term = model::term_id(1),
-      });
-    m.add(
-      segment_name("300-1-v1.log"),
-      segment_meta{
-        .base_offset = model::offset(300),
-        .committed_offset = model::offset(399),
-        .archiver_term = model::term_id(1),
-      });
-    m.advance_insync_offset(model::offset{4});
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+    });
+    m.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(1),
+    });
+    m.push_back(segment_meta{
+      .base_offset = model::offset(200),
+      .committed_offset = model::offset(299),
+      .archiver_term = model::term_id(1),
+    });
+    m.push_back(segment_meta{
+      .base_offset = model::offset(300),
+      .committed_offset = model::offset(399),
+      .archiver_term = model::term_id(1),
+    });
+    partition_manifest pm(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    for (const auto& s : m) {
+        auto name = cloud_storage::generate_local_segment_name(
+          s.base_offset, model::term_id{1});
+        pm.add(name, s);
+    }
+    pm.advance_insync_offset(model::offset{4});
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 4);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
-    BOOST_REQUIRE(archival_stm->manifest() == m);
+    BOOST_REQUIRE(archival_stm->manifest() == pm);
 
     // Truncate the STM, first segment should be added to the backlog
     archival_stm->truncate(model::offset(101), ss::lowres_clock::now() + 10s)
@@ -320,8 +301,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(backlog.size(), 1);
     auto name = cloud_storage::generate_local_segment_name(
       backlog[0].base_offset, backlog[0].segment_term);
-    BOOST_REQUIRE(m.get(name) != nullptr);
-    BOOST_REQUIRE(backlog[0] == *m.get(name));
+    BOOST_REQUIRE(pm.get(name) != nullptr);
+    BOOST_REQUIRE(backlog[0] == *pm.get(name));
 
     // Truncate the STM, next segment should be added to the backlog
     archival_stm->truncate(model::offset(200), ss::lowres_clock::now() + 10s)
@@ -333,8 +314,8 @@ FIXTURE_TEST(
     for (const auto& it : backlog) {
         auto name = cloud_storage::generate_local_segment_name(
           it.base_offset, it.segment_term);
-        BOOST_REQUIRE(m.get(name) != nullptr);
-        BOOST_REQUIRE(it == *m.get(name));
+        BOOST_REQUIRE(pm.get(name) != nullptr);
+        BOOST_REQUIRE(it == *pm.get(name));
     }
 }
 
