@@ -740,7 +740,8 @@ struct partition_manifest_accessor {
       partition_manifest* m,
       const segment_name& key,
       const partition_manifest::segment_meta& meta) {
-        m->_replaced.push_back(meta);
+        m->_replaced.push_back(
+          partition_manifest::lw_segment_meta::convert(meta));
     }
     static auto find(segment_name n, const partition_manifest& m) {
         auto key = parse_segment_name(n);
@@ -925,7 +926,9 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         auto actual = accessor::find(segment_name(expected.first), restored);
         auto res = std::any_of(
           actual.first, actual.second, [&expected](const auto& a) {
-              return expected.second == a;
+              return partition_manifest::lw_segment_meta::convert(
+                       expected.second)
+                     == a;
           });
         BOOST_REQUIRE(res);
     }

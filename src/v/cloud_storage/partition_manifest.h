@@ -14,6 +14,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
 #include "json/document.h"
+#include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
 
@@ -76,11 +77,32 @@ class partition_manifest final : public base_manifest {
 public:
     using segment_meta = cloud_storage::segment_meta;
 
+    /// Compact representation of the segment_meta
+    /// that can be used to generate a segment path in S3
+    struct lw_segment_meta {
+        model::initial_revision_id ntp_revision;
+        model::offset base_offset;
+        model::offset committed_offset;
+        /// Archiver term, same as in segment_meta (can be set to -inf)
+        model::term_id archiver_term;
+        /// Term of the segment itself
+        model::term_id segment_term;
+        /// Size of the segment if segment_name_format::v2 is used,
+        /// or 0 otherwise. The sname_format field is not added explicitly
+        /// but its value is encoded using size-bytes field.
+        size_t size_bytes;
+
+        auto operator<=>(const lw_segment_meta&) const = default;
+
+        static lw_segment_meta convert(const segment_meta& m);
+        static segment_meta convert(const lw_segment_meta& m);
+    };
+
     /// Segment key in the maifest
     using key = segment_name_components;
     using value = segment_meta;
     using segment_map = absl::btree_map<key, value>;
-    using replaced_segments_list = std::vector<segment_meta>;
+    using replaced_segments_list = std::vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
@@ -123,7 +145,7 @@ public:
               "can't parse name of the replaced segment in the manifest '{}'",
               nm.name);
             nm.meta.segment_term = key->term;
-            _replaced.push_back(nm.meta);
+            _replaced.push_back(lw_segment_meta::convert(nm.meta));
         }
         for (auto nm : segments) {
             auto maybe_key = parse_segment_name(nm.name);

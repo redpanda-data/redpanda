@@ -175,6 +175,33 @@ segment_name generate_local_segment_name(model::offset o, model::term_id t) {
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
 }
 
+partition_manifest::lw_segment_meta
+partition_manifest::lw_segment_meta::convert(const segment_meta& m) {
+    return lw_segment_meta{
+      .ntp_revision = m.ntp_revision,
+      .base_offset = m.base_offset,
+      .committed_offset = m.committed_offset,
+      .archiver_term = m.archiver_term,
+      .segment_term = m.segment_term,
+      .size_bytes = m.sname_format == segment_name_format::v2 ? m.size_bytes
+                                                              : 0,
+    };
+}
+
+segment_meta partition_manifest::lw_segment_meta::convert(
+  const partition_manifest::lw_segment_meta& lw) {
+    return segment_meta{
+      .size_bytes = lw.size_bytes,
+      .base_offset = lw.base_offset,
+      .committed_offset = lw.committed_offset,
+      .ntp_revision = lw.ntp_revision,
+      .archiver_term = lw.archiver_term,
+      .segment_term = lw.segment_term,
+      .sname_format = lw.size_bytes == 0 ? segment_name_format::v1
+                                         : segment_name_format::v2,
+    };
+}
+
 partition_manifest::partition_manifest()
   : _ntp()
   , _rev()
@@ -364,7 +391,11 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
 }
 
 std::vector<segment_meta> partition_manifest::replaced_segments() const {
-    return _replaced;
+    std::vector<segment_meta> res;
+    for (const auto& s : _replaced) {
+        res.push_back(lw_segment_meta::convert(s));
+    }
+    return res;
 }
 
 void partition_manifest::move_aligned_offset_range(
@@ -379,7 +410,7 @@ void partition_manifest::move_aligned_offset_range(
            // offsets are covered by new segment's offset range
            && it->first.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
-        _replaced.push_back(it->second);
+        _replaced.push_back(lw_segment_meta::convert(it->second));
         it = _segments.erase(it);
     }
 }
@@ -760,7 +791,11 @@ struct partition_manifest_handler
                 if (!_replaced) {
                     _replaced = std::make_unique<replaced_segments_list>();
                 }
-                _replaced->push_back(_meta);
+                _meta.sname_format = _meta.size_bytes != 0
+                                       ? segment_name_format::v2
+                                       : segment_name_format::v1;
+                _replaced->push_back(
+                  partition_manifest::lw_segment_meta::convert(_meta));
                 _state = state::expect_replaced_path;
             }
             clear_meta_fields();
@@ -1118,11 +1153,7 @@ void partition_manifest::serialize(std::ostream& out) const {
             w.Int64(meta.archiver_term());
         }
         w.Key("segment_term");
-        if (meta.segment_term == model::term_id::min()) {
-            w.Int64(key.term());
-        } else {
-            w.Int64(meta.segment_term());
-        }
+        w.Int64(meta.segment_term());
         if (
           meta.sname_format == segment_name_format::v2
           && meta.delta_offset_end != model::offset_delta::min()) {
@@ -1133,6 +1164,36 @@ void partition_manifest::serialize(std::ostream& out) const {
             w.Key("sname_format");
             w.Int64(static_cast<int16_t>(meta.sname_format));
         }
+        w.EndObject();
+    };
+    auto serialize_lw_meta = [this, &w](const lw_segment_meta& meta) {
+        auto sn = generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
+        w.Key(sn());
+        w.StartObject();
+        w.Key("is_compacted");
+        w.Bool(true);
+        w.Key("size_bytes");
+        w.Int64(static_cast<int64_t>(meta.size_bytes));
+        w.Key("committed_offset");
+        w.Int64(meta.committed_offset());
+        w.Key("base_offset");
+        w.Int64(meta.base_offset());
+        if (meta.ntp_revision != _rev) {
+            vassert(
+              meta.ntp_revision != model::initial_revision_id(),
+              "ntp {}: missing ntp_revision for segment {} in the manifest",
+              _ntp,
+              sn);
+            w.Key("ntp_revision");
+            w.Int64(meta.ntp_revision());
+        }
+        if (meta.archiver_term != model::term_id::min()) {
+            w.Key("archiver_term");
+            w.Int64(meta.archiver_term());
+        }
+        w.Key("segment_term");
+        w.Int64(meta.segment_term());
         w.EndObject();
     };
     if (!_segments.empty()) {
@@ -1147,9 +1208,7 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.Key("replaced");
         w.StartObject();
         for (const auto& meta : _replaced) {
-            auto key = segment_name_components{
-              .base_offset = meta.base_offset, .term = meta.segment_term};
-            serialize_meta(key, meta);
+            serialize_lw_meta(meta);
         }
         w.EndObject();
     }
