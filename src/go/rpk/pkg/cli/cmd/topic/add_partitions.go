@@ -53,7 +53,7 @@ func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 				}
 			}()
 
-			tw := out.NewTable("topic", "error")
+			tw := out.NewTable("topic", "status")
 			defer tw.Flush()
 
 			for _, resp := range resps.Sorted() {
