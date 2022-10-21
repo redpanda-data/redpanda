@@ -237,6 +237,17 @@ void transport::dispatch_send() {
                          || _requests_queue.begin()->first
                               > (_last_seq + sequence_t(1));
               },
+              // Be careful adding any scheduling points in the lambda below.
+              //
+              // If a scheduling point is added before `_requests_queue.erase`
+              // then two concurrent instances of dispatch_send could try
+              // sending the same message. Resulting in one of them throwing a
+              // seg. fault.
+              //
+              // And if a scheduling point is added after
+              // `_requests_queue.erase` the conditional for executing the
+              // lambda could succeed for two different messages concurrently
+              // resulting in incorrect ordering of the sent messages.
               [this] {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
