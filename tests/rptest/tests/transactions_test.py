@@ -192,9 +192,15 @@ class TransactionsTest(RedpandaTest):
             assert False, "send_offsetes should fail"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.UNKNOWN_MEMBER_ID
+            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
 
-        producer.abort_transaction()
+        try:
+            # if abort fails an app should recreate a producer otherwise
+            # it may continue to use the original producer
+            producer.abort_transaction()
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
 
     @cluster(num_nodes=3)
     def change_static_member_test(self):
