@@ -805,7 +805,7 @@ private:
 
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });
-        try_arm(clock_type::now() + _transactional_id_expiration);
+        try_arm(clock_type::now() + _abort_interval_ms);
     }
 
     void abort_old_txes();
@@ -906,7 +906,7 @@ private:
 
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;
-    std::chrono::milliseconds _transactional_id_expiration;
+    std::chrono::milliseconds _abort_interval_ms;
 
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
     ss::sharded<features::feature_table>& _feature_table;

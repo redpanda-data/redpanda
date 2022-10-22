@@ -1862,7 +1862,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      _ctx_log.error,
+                      _ctx_log.trace,
                       "Error \"{}\" on replicating pid:{} autoabort/commit "
                       "batch",
                       cr.error(),
@@ -1871,6 +1871,10 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 }
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
+                }
+                if (!co_await wait_no_throw(
+                      cr.value().last_offset, _sync_timeout)) {
+                    co_return;
                 }
             } else if (r.aborted) {
                 auto batch = make_tx_control_batch(
@@ -1883,7 +1887,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      _ctx_log.error,
+                      _ctx_log.trace,
                       "Error \"{}\" on replicating pid:{} autoabort/abort "
                       "batch",
                       cr.error(),
@@ -1892,6 +1896,10 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                 }
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
+                }
+                if (!co_await wait_no_throw(
+                      cr.value().last_offset, _sync_timeout)) {
+                    co_return;
                 }
             }
         }

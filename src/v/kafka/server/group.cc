@@ -70,8 +70,8 @@ group::group(
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
-  , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _abort_interval_ms(config::shard_local_cfg()
+                         .abort_timed_out_transactions_interval_ms.value())
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table) {
     if (_enable_group_metrics) {
@@ -102,8 +102,6 @@ group::group(
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
-  , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
@@ -3079,9 +3077,8 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
 void group::abort_old_txes() {
     ssx::spawn_with_gate(_gate, [this] {
-        return do_abort_old_txes().finally([this] {
-            try_arm(clock_type::now() + _transactional_id_expiration);
-        });
+        return do_abort_old_txes().finally(
+          [this] { try_arm(clock_type::now() + _abort_interval_ms); });
     });
 }
 
@@ -3097,9 +3094,8 @@ void group::maybe_rearm_timer() {
     }
 
     if (earliest_deadline) {
-        auto deadline = std::max(
-          earliest_deadline.value(),
-          clock_type::now() + _transactional_id_expiration);
+        auto deadline = std::min(
+          earliest_deadline.value(), clock_type::now() + _abort_interval_ms);
         try_arm(deadline);
     }
 }
