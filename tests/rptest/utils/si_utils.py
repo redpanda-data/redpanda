@@ -389,7 +389,7 @@ class Producer:
             self.keys.extend(keys)
 
 
-class S3View:
+class S3Snapshot:
     def __init__(self, expected_topics: Sequence[TopicSpec], client: S3Client,
                  bucket: str, logger):
         self.logger = logger
@@ -470,7 +470,23 @@ class S3View:
                                partition: int,
                                ns: str = 'kafka') -> dict:
         manifest = self.manifest_for_ntp(topic, partition, ns)
-
-        start_offset = manifest['start_offset']
         return sum(seg_meta['size_bytes']
                    for seg_meta in manifest['segments'].values())
+
+    def assert_at_least_n_uploaded_segments_compacted(self,
+                                                      topic: str,
+                                                      partition: int,
+                                                      n=1):
+        manifest_data = self.manifest_for_ntp(topic, partition)
+        segments = manifest_data['segments']
+        compacted_segments = len(
+            [meta for meta in segments.values() if meta['is_compacted']])
+        assert compacted_segments >= n, f"Could not find {n} compacted segments, " \
+                                        f"total uploaded: {len(segments)}, " \
+                                        f"total compacted: {compacted_segments}"
+
+    def assert_segments_replaced(self, topic: str, partition: int):
+        manifest_data = self.manifest_for_ntp(topic, partition)
+        assert len(
+            manifest_data['replaced']
+        ) > 0, f"No replaced segments after compacted segments uploaded"

@@ -44,7 +44,7 @@ from rptest.utils.si_utils import (
     TRANSIENT_ERRORS,
     PathMatcher,
     BLOCK_SIZE,
-    S3View,
+    S3Snapshot,
 )
 
 
@@ -650,10 +650,11 @@ class FastCheck(BaseCase):
         for differences caused because configuration batches are not written to restored data.
         """
         non_data_batches_per_ntp = defaultdict(lambda: 0)
-        s3_view = S3View(expected_topics, self._s3, self._bucket, self.logger)
+        s3_snapshot = S3Snapshot(expected_topics, self._s3, self._bucket,
+                                 self.logger)
         segments = [
             item for item in self._s3.list_objects(self._bucket)
-            if s3_view.is_segment_part_of_a_manifest(item)
+            if s3_snapshot.is_segment_part_of_a_manifest(item)
         ]
         for seg in segments:
             components = parse_s3_segment_path(seg.Key)

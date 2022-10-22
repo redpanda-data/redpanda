@@ -194,7 +194,7 @@ class EndToEndTest(Test):
     def await_consumed_offsets(self, last_acked_offsets, timeout_sec):
         def has_finished_consuming():
             for partition, offset in last_acked_offsets.items():
-                if not partition in self.last_consumed_offsets:
+                if partition not in self.last_consumed_offsets:
                     return False
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
@@ -330,8 +330,9 @@ class EndToEndTest(Test):
                 # we must check not acked state as it might have been caused
                 # by request timeout and a message might still have been consumed by consumer
                 self.logger.debug(
-                    f"Checking not acked produced messages for key: {k}, previous acked value: {acked_producer_state[consumed_key]}, consumed value: {v}"
-                )
+                    f"Checking not acked produced messages for key: {consumed_key}, "
+                    f"previous acked value: {acked_producer_state[consumed_key]}, "
+                    f"consumed value: {consumed_value}")
                 # consumed value is one of the not acked produced values
                 if consumed_key in not_acked_producer_state and consumed_value in not_acked_producer_state[
                         consumed_key]:
@@ -346,7 +347,9 @@ class EndToEndTest(Test):
         if not success:
             msg += "Invalid value detected for consumed compacted topic records. errors: ["
             for key, consumed_value, produced_acked, producer_not_acked in errors:
-                msg += f"key: {key} consumed value: {consumed_value}, produced values: (acked: {produced_acked}, not_acked: {producer_not_acked}) \n"
+                msg += f"key: {key} consumed value: {consumed_value}, " \
+                       f"produced values: (acked: {produced_acked}, " \
+                       f"not_acked: {producer_not_acked})\n"
             msg += "]"
 
         return success, msg
