@@ -87,81 +87,6 @@ class TxAdminTest(RedpandaTest):
                     assert (tx['timeout_ms'] == 60000)
 
     @cluster(num_nodes=3)
-    def test_expired_transaction(self):
-        '''
-        Problem: rm_stm contains timer to run try_abort_old_txs.
-        This timer rearm on begin_tx to smallest transaction deadline,
-        and after try_abort_old_txs to one of settings 
-        abort_timed_out_transactions_interval_ms or tx_timeout_delay_ms.
-        If we do sleep to transaction timeout and try to get expired 
-        transaction, timer can be signal before our request and after clean
-        expire transactions.
-
-        How to solve:
-        0) Run transaction
-        1) Change leader for parititons 
-        (New leader did not get requests for begin_txs,
-        so his timer is armed on one of settings)
-        2) Get expired transactions
-        '''
-        assert (len(self.redpanda.nodes) >= 2)
-
-        producer1 = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': '0',
-            'transaction.timeout.ms': '900000'
-        })
-        producer1.init_transactions()
-        producer1.begin_transaction()
-
-        for topic in self.topics:
-            for partition in range(topic.partition_count):
-                producer1.produce(topic.name, '0', '0', partition)
-
-        producer1.flush()
-
-        # We need to change leader for all partition to another node
-        for topic in self.topics:
-            for partition in range(topic.partition_count):
-                old_leader = self.admin.get_partition_leader(
-                    namespace="kafka", topic=topic, partition=partition)
-
-                self.admin.transfer_leadership_to(namespace="kafka",
-                                                  topic=topic,
-                                                  partition=partition,
-                                                  target_id=None)
-
-                def leader_is_changed():
-                    new_leader = self.admin.get_partition_leader(
-                        namespace="kafka", topic=topic, partition=partition)
-                    return (new_leader != -1) and (new_leader != old_leader)
-
-                wait_until(leader_is_changed,
-                           timeout_sec=30,
-                           backoff_sec=2,
-                           err_msg="Failed to establish current leader")
-
-        expected_pids = None
-
-        for topic in self.topics:
-            for partition in range(topic.partition_count):
-                txs_info = self.admin.get_transactions(topic.name, partition,
-                                                       "kafka")
-                assert ('active_transactions' not in txs_info)
-                if expected_pids == None:
-                    expected_pids = set(
-                        map(self.extract_pid,
-                            txs_info['expired_transactions']))
-                    assert (len(expected_pids) == 1)
-
-                assert (len(expected_pids) == len(
-                    txs_info['expired_transactions']))
-                for tx in txs_info['expired_transactions']:
-                    assert (self.extract_pid(tx) in expected_pids)
-                    assert (tx['status'] == 'ongoing')
-                    assert (tx['timeout_ms'] == -1)
-
-    @cluster(num_nodes=3)
     def test_mark_transaction_expired(self):
         producer1 = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
@@ -322,13 +247,6 @@ class TxAdminTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         topic_name = self.topics[0].name
         rpk.delete_topic(topic_name)
-
-        try:
-            producer.commit_transaction()
-            raise Exception("commit_transaction should fail")
-        except ck.cimpl.KafkaException as e:
-            kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.UNKNOWN
 
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
