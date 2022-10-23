@@ -1880,6 +1880,9 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
         {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
+          if (res[0].ec == cluster::errc::topic_already_exists) {
+              return true;
+          }
           if (res[0].ec != cluster::errc::success) {
               vlog(
                 clusterlog.warn,
