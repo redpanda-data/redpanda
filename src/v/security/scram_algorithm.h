@@ -247,6 +247,20 @@ public:
           std::move(storedkey),
           iterations);
     }
+    static scram_credential make_credentials(
+      acl_principal principal, const ss::sstring& password, int iterations) {
+        bytes salt = random_generators::get_bytes(SaltSize);
+        bytes salted_password = salt_password(password, salt, iterations);
+        auto clientkey = client_key(salted_password);
+        auto storedkey = stored_key(clientkey);
+        auto serverkey = server_key(salted_password);
+        return scram_credential(
+          std::move(salt),
+          std::move(serverkey),
+          std::move(storedkey),
+          iterations,
+          std::move(principal));
+    }
 
     static bytes client_proof(
       bytes_view salted_password,

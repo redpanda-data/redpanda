@@ -21,6 +21,8 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
+#include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
@@ -1598,6 +1600,12 @@ void application::start_runtime_services(
               _scheduling_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_partition_balancer())));
+
+          runtime_services.push_back(
+            std::make_unique<cluster::ephemeral_credential_service>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(controller->get_ephemeral_credential_frontend())));
           s.add_services(std::move(runtime_services));
       })
       .get();

@@ -49,6 +49,8 @@ std::string_view to_string_view(feature f) {
         return "node_id_assignment";
     case feature::replication_factor_change:
         return "replication_factor_change";
+    case feature::ephemeral_secrets:
+        return "ephemeral_secrets";
     case feature::test_alpha:
         return "__test_alpha";
     }

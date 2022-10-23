@@ -125,20 +125,18 @@ public:
             } else if (_sasl) {
                 return _sasl->principal();
             }
-            return ss::sstring{}; // anonymous user
+            // anonymous user
+            return security::acl_principal{security::principal_type::user, {}};
         };
         return authorized_user(get_principal(), operation, name, quiet);
     }
 
     template<typename T>
     bool authorized_user(
-      ss::sstring user,
+      security::acl_principal principal,
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet) {
-        security::acl_principal principal(
-          security::principal_type::user, std::move(user));
-
         bool authorized = _proto.authorizer().authorized(
           name, operation, principal, security::acl_host(_client_addr));
 

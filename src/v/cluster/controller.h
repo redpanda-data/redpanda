@@ -17,8 +17,7 @@
 #include "cluster/scheduling/leader_balancer.h"
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
-#include "security/authorizer.h"
-#include "security/credential_store.h"
+#include "security/fwd.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 
@@ -63,6 +62,16 @@ public:
 
     ss::sharded<security::credential_store>& get_credential_store() {
         return _credentials;
+    }
+
+    ss::sharded<security::ephemeral_credential_store>&
+    get_ephemeral_credential_store() {
+        return _ephemeral_credentials;
+    }
+
+    ss::sharded<ephemeral_credential_frontend>&
+    get_ephemeral_credential_frontend() {
+        return _ephemeral_credential_frontend;
     }
 
     ss::sharded<security_frontend>& get_security_frontend() {
@@ -165,9 +174,11 @@ private:
     ss::sharded<storage::node_api>& _storage_node; // single instance
     topic_updates_dispatcher _tp_updates_dispatcher;
     ss::sharded<security::credential_store> _credentials;
+    ss::sharded<security::ephemeral_credential_store> _ephemeral_credentials;
     security_manager _security_manager;
     data_policy_manager _data_policy_manager;
     ss::sharded<security_frontend> _security_frontend;
+    ss::sharded<ephemeral_credential_frontend> _ephemeral_credential_frontend;
     ss::sharded<data_policy_frontend> _data_policy_frontend;
     ss::sharded<security::authorizer> _authorizer;
     ss::sharded<raft::group_manager>& _raft_manager;

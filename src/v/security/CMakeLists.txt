@@ -1,6 +1,7 @@
 v_cc_library(
   NAME security
   SRCS
+    ephemeral_credential.cc
     scram_algorithm.cc
     scram_credential.cc
     scram_authenticator.cc

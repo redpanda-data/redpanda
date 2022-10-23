@@ -48,6 +48,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET ephemeral_credential_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ephemeral_credential_service_impl.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/ephemeral_credential_service_impl.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -123,6 +130,8 @@ v_cc_library(
     node_status_rpc_handler.cc
     bootstrap_service.cc
     bootstrap_backend.cc
+    ephemeral_credential_frontend.cc
+    ephemeral_credential_service.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
@@ -132,6 +141,7 @@ v_cc_library(
     tx_gateway_rpc
     partition_balancer_rpc
     node_status_rpc
+    ephemeral_credential_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map
