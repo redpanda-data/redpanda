@@ -31,6 +31,11 @@ public:
 </Error>)xml";
 
 public:
+    using request_predicate
+      = ss::noncopyable_function<bool(ss::httpd::request)>;
+
+    using predicates = std::vector<request_predicate>;
+
     http_imposter_fixture();
     virtual ~http_imposter_fixture();
 
@@ -51,12 +56,6 @@ public:
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 
-    std::vector<ss::httpd::request>& requests() { return _requests; }
-
-    std::multimap<ss::sstring, ss::httpd::request>& targets() {
-        return _targets;
-    }
-
     /// Starting point for URL registration fluent API
     /// Example usage:
     /// when().when("/foo")
@@ -66,17 +65,10 @@ public:
 
     bool has_call(std::string_view url) const;
 
-    /// Enables requests at a specific order to fail, eg to fail the third
-    /// request:
-    ///     fail_nth_request_with(2, {.body = "foo", .status = ...});
-    ///
-    /// The failing request is also added to the set of calls stored by fixture.
-    void fail_nth_request_with(size_t n, http_test_utils::response response);
-
-    const absl::flat_hash_map<size_t, http_test_utils::response>&
-    indexed_requests_to_fail() const {
-        return _fail_requests_at_index;
-    }
+    /// Enables requests with a specific condition to fail. The failing
+    /// request is also added to the set of calls stored by fixture.
+    void fail_request_if(
+      request_predicate predicate, http_test_utils::response response);
 
     void reset_http_call_state();
 
@@ -131,6 +123,7 @@ private:
     std::multimap<ss::sstring, ss::httpd::request> _targets;
 
     http_test_utils::registered_urls _urls;
-    absl::flat_hash_map<size_t, http_test_utils::response>
-      _fail_requests_at_index;
+    predicates _fail_requests_when;
+
+    absl::flat_hash_map<size_t, http_test_utils::response> _fail_responses;
 };
