@@ -41,7 +41,6 @@ static std::unique_ptr<cluster::allocation_node> create_allocation_node(
     return std::make_unique<cluster::allocation_node>(
       nid,
       cores,
-      absl::node_hash_map<ss::sstring, ss::sstring>{},
       rack_id,
       config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
       config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
