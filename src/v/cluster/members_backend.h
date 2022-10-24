@@ -97,7 +97,8 @@ private:
     void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void calculate_reallocations_after_node_added(update_meta&) const;
+    void calculate_reallocations_after_node_added(
+      update_meta&, partition_allocation_domain) const;
     void calculate_reallocations_after_decommissioned(update_meta&) const;
     void calculate_reallocations_after_recommissioned(update_meta&) const;
     std::vector<model::ntp> ntps_moving_from_node_older_than(
