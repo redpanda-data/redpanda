@@ -21,9 +21,9 @@
             "output_type": "echo_resp"
         },
         {
-            "name": "sleep_1s",
-            "input_type": "echo_req",
-            "output_type": "echo_resp"
+            "name": "sleep_for",
+            "input_type": "sleep_req",
+            "output_type": "sleep_resp"
         },
         {
             "name": "counter",

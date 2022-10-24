@@ -16,6 +16,7 @@
 #include "rpc/test/rpc_gen_types.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -71,11 +72,11 @@ struct echo_impl final : echo::echo_service_base<Codec> {
           echo::echo_resp{.str = ssx::sformat("{}_suffix", req.str)});
     }
 
-    ss::future<echo::echo_resp>
-    sleep_1s(echo::echo_req&&, rpc::streaming_context&) final {
-        using namespace std::chrono_literals;
-        return ss::sleep(1s).then(
-          []() { return echo::echo_resp{.str = "Zzz..."}; });
+    ss::future<echo::sleep_resp>
+    sleep_for(echo::sleep_req&& req, rpc::streaming_context&) final {
+        return ss::sleep(std::chrono::seconds(req.secs)).then([]() {
+            return echo::sleep_resp{.str = "Zzz..."};
+        });
     }
 
     ss::future<echo::cnt_resp>
@@ -336,12 +337,41 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
 
     rpc::client<echo::echo_client_protocol> client(client_config());
     client.connect(model::no_timeout).get();
-    info("Calling echo method");
-    auto echo_resp = client.sleep_1s(
-      echo::echo_req{.str = "testing..."},
+    info("Calling sleep for.. 1s");
+    auto echo_resp = client.sleep_for(
+      echo::sleep_req{.secs = 1},
       rpc::client_opts(rpc::clock_type::now() + 100ms));
     BOOST_REQUIRE_EQUAL(
       echo_resp.get0().error(), rpc::errc::client_request_timeout);
+    client.stop().get();
+}
+
+FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect(model::no_timeout).get();
+    using units_t = std::vector<ssx::semaphore_units>;
+    ::mutex lock;
+    units_t units;
+    units.push_back(std::move(lock.get_units().get()));
+
+    auto opts = rpc::client_opts(rpc::clock_type::now() + 1s);
+    opts.resource_units = ss::make_foreign(
+      ss::make_lw_shared(std::move(units)));
+
+    // Resources should now be owned by the client.
+    BOOST_REQUIRE(lock.try_get_units().has_value() == false);
+    auto echo_resp = client.sleep_for(
+      echo::sleep_req{.secs = 10}, std::move(opts));
+    BOOST_REQUIRE_EQUAL(
+      echo_resp.get0().error(), rpc::errc::client_request_timeout);
+    // Verify that the resources are released correctly after timeout.
+    tests::cooperative_spin_wait_with_timeout(5s, [&] {
+        return lock.try_get_units().has_value();
+    }).get();
     client.stop().get();
 }
 
