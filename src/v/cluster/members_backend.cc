@@ -294,6 +294,18 @@ void members_backend::calculate_reallocations_after_node_added(
         return lhs.left_to_move < rhs.left_to_move;
     };
 
+    if (clusterlog.is_enabled(ss::log_level::info)) {
+        for (const auto& [id, cnt] : to_move_from_node) {
+            vlog(
+              clusterlog.info,
+              "[update: {}] there are {} replicas to move from node {} in "
+              "domain {}",
+              meta.update,
+              cnt,
+              id,
+              domain);
+        }
+    }
     // 4. Pass over all partition metadata once, try to move until we reach even
     // number of partitions per core on each node
     for (auto& [tp_ns, metadata] : topics) {
