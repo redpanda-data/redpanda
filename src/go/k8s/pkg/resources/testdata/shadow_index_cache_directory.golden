@@ -11,6 +11,7 @@ redpanda:
         - address: 0.0.0.0
           port: 123
           name: kafka
+          authentication_method: none
     admin:
         - address: 0.0.0.0
           port: 345
