@@ -479,7 +479,7 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 
@@ -518,7 +518,7 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 

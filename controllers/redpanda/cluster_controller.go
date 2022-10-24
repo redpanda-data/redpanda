@@ -149,13 +149,13 @@ func (r *ClusterReconciler) Reconcile(
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.PandaproxyAPIInternal() != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.PandaproxyAPIInternal() != nil {
 		proxySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
 		proxySuKey = proxySu.Key()
 	}
 	var schemaRegistrySu *resources.SuperUsersResource
 	var schemaRegistrySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}

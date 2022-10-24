@@ -1184,3 +1184,12 @@ func defaultTLSConfig() *TLSConfig {
 		NodeSecretRef:     nil,
 	}
 }
+
+// IsSASLOnInternalEnabled replaces single check if sasl is enabled with multiple
+// check. The external kafka listener is excluded from the check as panda proxy,
+// schema registry and console should use internal kafka listener even if we have
+// external enabled.
+func (r *Cluster) IsSASLOnInternalEnabled() bool {
+	return r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
+		r.Spec.EnableSASL
+}

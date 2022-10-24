@@ -457,7 +457,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	sasl := kafka.SASLConfig{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled
 	sasl.SetDefaults()
-	if yes := cm.clusterobj.Spec.EnableSASL; yes {
+	if yes := cm.clusterobj.IsSASLOnInternalEnabled(); yes {
 		sasl = kafka.SASLConfig{
 			Enabled:   yes,
 			Username:  username,
