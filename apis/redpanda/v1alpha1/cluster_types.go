@@ -129,7 +129,19 @@ type ClusterSpec struct {
 	// List of superusers
 	Superusers []Superuser `json:"superUsers,omitempty"`
 	// SASL enablement flag
+	// +optional
+	// Deprecated: replaced by "kafkaEnableAuthorization"
 	EnableSASL bool `json:"enableSasl,omitempty"`
+	// Enable authorization for Kafka connections. Values are:
+	//
+	// - `nil`: Ignored. Authorization is enabled with `enable_sasl: true`
+	//
+	// - `true`: authorization is required
+	//
+	// - `false`: authorization is disabled;
+	//
+	// See also `enableSasl` and `configuration.kafkaApi[].authenticationMethod`
+	KafkaEnableAuthorization *bool `json:"kafkaEnableAuthorization,omitempty"`
 	// For configuration parameters not exposed, a map can be provided for string values.
 	// Such values are passed transparently to Redpanda. The key format is "<subsystem>.field", e.g.,
 	//
@@ -541,6 +553,10 @@ type KafkaAPI struct {
 	External ExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Kafka API
 	TLS KafkaAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per Kafka
+	// listener. Available options are: none, sasl, mtls_identity.
+	// https://docs.redpanda.com/docs/security/authentication/
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // PandaproxyAPI configures listener for the Pandaproxy API
