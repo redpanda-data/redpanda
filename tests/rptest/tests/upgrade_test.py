@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+import time
 from collections import defaultdict
 from packaging.version import Version
 
@@ -19,7 +20,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import wait_for_segments_removal
+from rptest.util import segments_count, wait_for_local_storage_truncate
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
 from rptest.services.kgo_verifier_services import (
@@ -357,25 +358,26 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         self.installer.install(self.redpanda.nodes, self.prev_version)
         super().setUp()
 
-    @cluster(
-        num_nodes=4,
-        log_allow_list=RESTART_LOG_ALLOW_LIST +
-        # FIXME: 22.2->22.3 manifests are incompatible and not feature-gated currently:
-        # https://github.com/redpanda-data/redpanda/issues/6837
-        [
-            "partition_manifest.cc.*Failed to parse topic manifest",
-            "Failed to create archivers"
-        ])
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rolling_upgrade(self):
+        """
+        Verify that when tiered storage writes happen during a rolling upgrade,
+        we continue to write remote content that old versions can read, until
+        the upgrade is complete.
+
+        This ensures that rollbacks remain possible.
+        """
         initial_version = Version(
             self.redpanda.get_version(self.redpanda.nodes[0]))
 
         admin = Admin(self.redpanda)
 
+        segment_bytes = 512 * 1024
+        local_retention_bytes = 2 * 512 * 1024
         topic_config = {
             # Tiny segments
-            'segment.bytes': 512 * 1024,
-            'retention.local.target.bytes': 5 * 512 * 1024,
+            'segment.bytes': segment_bytes,
+            'retention.local.target.bytes': local_retention_bytes
         }
 
         if initial_version < Version("22.3.0"):
@@ -393,7 +395,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                               config=topic_config)
 
         # For convenience, write records about the size of a segment
-        record_size = topic_config['segment.bytes']
+        record_size = segment_bytes
 
         # Track how many records we produced, so that we can validate consume afterward
         expect_records = defaultdict(int)
@@ -425,11 +427,12 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         # Wait for archiver to upload to S3
         for p in range(0, n_partitions):
-            wait_for_segments_removal(self.redpanda,
-                                      topic,
-                                      p,
-                                      6,
-                                      timeout_sec=30)
+            wait_for_local_storage_truncate(self.redpanda,
+                                            topic,
+                                            p,
+                                            local_retention_bytes +
+                                            segment_bytes,
+                                            timeout_sec=30)
 
         # Restart 2/3 nodes, leave last node on old version
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -456,11 +459,22 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         # cause the old node to try and read them to check that compatibility.
         n_records = 10
         produce(newdata_p, n_records)
-        wait_for_segments_removal(self.redpanda,
-                                  topic,
-                                  newdata_p,
-                                  6,
-                                  timeout_sec=30)
+        if initial_version < Version("22.3.0"):
+            # When we upgrade from 22.2 to 22.3, S3 PUTs are blocked during upgrade:
+            # sleep a little to give the upload a chance, then assert that it didn't
+            # happen.
+            time.sleep(10)
+            for p in segments_count(self.redpanda, topic, newdata_p):
+                assert p > 2
+        else:
+            # In the general case, S3 PUTs are permitted during upgrade, so we should
+            # see local storage getting truncated
+            wait_for_local_storage_truncate(self.redpanda,
+                                            topic,
+                                            newdata_p,
+                                            local_retention_bytes +
+                                            segment_bytes,
+                                            timeout_sec=30)
 
         # Move leadership to the old version node and check the partition is readable
         # from there.
@@ -485,3 +499,9 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         # Verify all data readable
         verify()
+
+        wait_for_local_storage_truncate(self.redpanda,
+                                        topic,
+                                        newdata_p,
+                                        local_retention_bytes + segment_bytes,
+                                        timeout_sec=30)
