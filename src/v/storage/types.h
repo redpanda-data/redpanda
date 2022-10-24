@@ -30,6 +30,7 @@
 namespace storage {
 using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
+using jitter_percents = named_type<int, struct jitter_percents_tag>;
 
 enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
 
@@ -354,4 +355,5 @@ struct compaction_result {
     size_t size_after;
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
+
 } // namespace storage

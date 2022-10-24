@@ -208,9 +208,6 @@ private:
     bool is_done();
     ss::future<> find_next_valid_iterator();
 
-    using reader_available = ss::bool_class<struct create_reader_tag>;
-    reader_available maybe_create_segment_reader();
-
 private:
     struct iterator_pair {
         iterator_pair(segment_set::iterator i)
@@ -238,5 +235,17 @@ private:
     probe& _probe;
     ss::abort_source::subscription _as_sub;
 };
+
+/**
+ * Assuming caller has already determined that this batch contains
+ * the record that should be the result to the timequery, traverse
+ * the batch to find which record matches.
+ *
+ * This is used by both storage's disk_log_impl and by cloud_storage's
+ * remote_partition, to seek to their final result after finding
+ * the batch.
+ */
+timequery_result
+batch_timequery(const model::record_batch& b, model::timestamp t);
 
 } // namespace storage

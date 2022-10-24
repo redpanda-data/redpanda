@@ -59,6 +59,8 @@ class KgoVerifierService(Service):
             if not hasattr(node, "kgo_verifier_next_port"):
                 node.kgo_verifier_next_port = REMOTE_PORT_BASE
 
+        self._status_thread = None
+
     @property
     def log_path(self):
         return f"/tmp/{self.who_am_i()}.log"
@@ -463,12 +465,14 @@ class KgoVerifierProducer(KgoVerifierService):
                  msg_size,
                  msg_count,
                  custom_node=None,
-                 batch_max_bytes=None):
+                 batch_max_bytes=None,
+                 fake_timestamp_ms=None):
         super(KgoVerifierProducer, self).__init__(context, redpanda, topic,
                                                   msg_size, custom_node)
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
+        self._fake_timestamp_ms = fake_timestamp_ms
         self._remote_port = None
 
     @property
@@ -515,6 +519,9 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._batch_max_bytes is not None:
             cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
+
+        if self._fake_timestamp_ms is not None:
+            cmd = cmd + f' --fake-timestamp-ms {self._fake_timestamp_ms}'
 
         self.spawn(cmd, node)
 

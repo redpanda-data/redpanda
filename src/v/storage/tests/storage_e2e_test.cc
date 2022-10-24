@@ -134,12 +134,21 @@ FIXTURE_TEST(test_single_record_per_segment, storage_test_fixture) {
     auto ntp = model::ntp("default", "test", 0);
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
-    auto headers = append_random_batches(log, 10, model::term_id(1), []() {
-        ss::circular_buffer<model::record_batch> batches;
-        batches.push_back(
-          model::test::make_random_batch(model::offset(0), 1, true));
-        return batches;
-    });
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(1),
+      [](std::optional<model::timestamp> ts = std::nullopt) {
+          ss::circular_buffer<model::record_batch> batches;
+          batches.push_back(model::test::make_random_batch(
+            model::offset(0),
+            1,
+            true,
+            model::record_batch_type::raft_data,
+            std::nullopt,
+            ts));
+          return batches;
+      });
     log.flush().get0();
     auto batches = read_and_validate_all_batches(log);
     info("Flushed log: {}", log);
@@ -165,10 +174,16 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
       log,
       10,
       model::term_id(1),
-      []() {
+      [](std::optional<model::timestamp> ts = std::nullopt)
+        -> ss::circular_buffer<model::record_batch> {
           ss::circular_buffer<model::record_batch> batches;
-          batches.push_back(
-            model::test::make_random_batch(model::offset(0), 1, true));
+          batches.push_back(model::test::make_random_batch(
+            model::offset(0),
+            1,
+            true,
+            model::record_batch_type::raft_data,
+            std::nullopt,
+            ts));
           return batches;
       },
       storage::log_append_config::fsync::no,
@@ -188,10 +203,15 @@ FIXTURE_TEST(test_segment_rolling, storage_test_fixture) {
       log,
       10,
       model::term_id(1),
-      []() {
+      [](std::optional<model::timestamp> ts = std::nullopt) {
           ss::circular_buffer<model::record_batch> batches;
-          batches.push_back(
-            model::test::make_random_batch(model::offset(0), 1, true));
+          batches.push_back(model::test::make_random_batch(
+            model::offset(0),
+            1,
+            true,
+            model::record_batch_type::raft_data,
+            std::nullopt,
+            ts));
           return batches;
       },
       storage::log_append_config::fsync::no,
@@ -330,7 +350,9 @@ struct custom_ts_batch_generator {
     explicit custom_ts_batch_generator(model::timestamp start_ts)
       : _start_ts(start_ts) {}
 
-    ss::circular_buffer<model::record_batch> operator()() {
+    ss::circular_buffer<model::record_batch> operator()(
+      [[maybe_unused]] std::optional<model::timestamp> ts = std::nullopt) {
+        // The input timestamp is unused, this class does its own timestamping
         auto batches = model::test::make_random_batches(
           model::offset(0), random_generators::get_int(1, 10));
 
@@ -1214,8 +1236,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       model::timestamp::min(), 60_KiB, ss::default_priority_class(), as);
 
     // Compact 10 times, with a configuration calling for 60kiB max log size.
-    // This results in approximately prefix truncating at offset 50, although
-    // this is nondeterministic due to max_segment_size jitter.
+    // This results in prefix truncating at offset 50.
     for (int i = 0; i < 10; ++i) {
         log.compact(ccfg).get0();
     }
@@ -1225,9 +1246,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto lstats_after = log.offsets();
     BOOST_REQUIRE_EQUAL(
       lstats_after.committed_offset, lstats_before.committed_offset);
-
-    // Cannot assert on lstats_after.start_offset: its value depends on
-    // the jitter applied in disk_log_impl::_max_segment_size
+    BOOST_REQUIRE_EQUAL(lstats_after.start_offset, model::offset{50});
 
     auto batches = read_and_validate_all_batches(log);
     auto total_batch_size = std::accumulate(
@@ -1252,6 +1271,10 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
 FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
+
+    // Switch on jitter: it is off by default in default_log_config because
+    // for most tests randomness is undesirable.
+    cfg.segment_size_jitter = storage::jitter_percents{5};
 
     // defaults
     cfg.max_segment_size = config::mock_binding<size_t>(100_KiB);

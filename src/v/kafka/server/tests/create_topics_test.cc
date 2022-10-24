@@ -286,7 +286,7 @@ public:
 
 // This is rougly equivalent to
 //   https://github.com/apache/kafka/blob/8e16158/core/src/test/scala/unit/kafka/server/CreateTopicsRequestTest.scala#L27
-FIXTURE_TEST_EXPECTED_FAILURES(create_topics, create_topic_fixture, 2) {
+FIXTURE_TEST(create_topics, create_topic_fixture) {
     wait_for_controller_leadership().get();
 
     test_create_topic(make_req({make_topic("topic1")}));

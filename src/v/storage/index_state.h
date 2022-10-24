@@ -86,7 +86,8 @@ struct index_state
       model::offset base_offset,
       model::offset batch_max_offset,
       model::timestamp first_timestamp,
-      model::timestamp last_timestamp);
+      model::timestamp last_timestamp,
+      bool user_data);
 
     friend bool operator==(const index_state&, const index_state&) = default;
 
@@ -96,6 +97,8 @@ struct index_state
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
 
 private:
+    bool non_data_timestamps{false};
+
     index_state(const index_state& o) noexcept
       : bitflags(o.bitflags)
       , base_offset(o.base_offset)

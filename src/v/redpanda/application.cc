@@ -560,6 +560,8 @@ manager_config_from_global_config(scheduling_groups& sgs) {
       config::shard_local_cfg().log_segment_size.bind(),
       config::shard_local_cfg().compacted_log_segment_size.bind(),
       config::shard_local_cfg().max_compacted_log_segment_size.bind(),
+      storage::jitter_percents(
+        config::shard_local_cfg().log_segment_size_jitter_percent()),
       storage::debug_sanitize_files::no,
       priority_manager::local().compaction_priority(),
       config::shard_local_cfg().retention_bytes.bind(),

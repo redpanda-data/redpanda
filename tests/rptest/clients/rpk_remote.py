@@ -69,3 +69,28 @@ class RpkRemoteTool:
 
     def _rpk_binary(self):
         return self._redpanda.find_binary('rpk')
+
+    def read_timestamps(self, topic: str, partition: int, count: int,
+                        timeout_sec: int):
+        """
+        Read all the timestamps of messages in a partition, as milliseconds
+        since epoch.
+
+        :return: generator of 2-tuples like (offset:int, timestamp:int)
+        """
+        cmd = [
+            self._rpk_binary(), "--brokers",
+            self._redpanda.brokers(), "topic", "consume", topic, "-f",
+            "\"%o %d\\n\"", "--num",
+            str(count), "-p",
+            str(partition)
+        ]
+        for line in self._node.account.ssh_capture(' '.join(cmd),
+                                                   timeout_sec=timeout_sec):
+            try:
+                offset, ts = line.split()
+            except:
+                self._redpanda.logger.error(f"Bad line: '{line}'")
+                raise
+
+            yield (int(offset), int(ts))

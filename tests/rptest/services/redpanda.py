@@ -457,6 +457,10 @@ class RedpandaService(Service):
         'default_topic_partitions': 4,
         'enable_metrics_reporter': False,
         'superusers': [SUPERUSER_CREDENTIALS[0]],
+        # Disable segment size jitter to make tests more deterministic if they rely on
+        # inspecting storage internals (e.g. number of segments after writing a certain
+        # amount of data).
+        'log_segment_size_jitter_percent': 0,
     }
 
     logs = {
@@ -562,9 +566,10 @@ class RedpandaService(Service):
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
         if si_settings is not None:
-            self._extra_rp_conf = si_settings.update_rp_conf(
-                self._extra_rp_conf)
-        self._si_settings = si_settings
+            self.set_si_settings(si_settings)
+        else:
+            self._si_settings = None
+
         self.s3_client: Optional[S3Client] = None
 
         if environment is None:
@@ -584,6 +589,9 @@ class RedpandaService(Service):
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
 
+    def set_skip_if_no_redpanda_log(self, v: bool):
+        self._skip_if_no_redpanda_log = v
+
     def set_environment(self, environment: dict[str, str]):
         self._environment = environment
 
@@ -592,6 +600,14 @@ class RedpandaService(Service):
 
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
+        if self._si_settings is not None:
+            self._extra_rp_conf = self._si_settings.update_rp_conf(
+                self._extra_rp_conf)
+
+    def set_si_settings(self, si_settings: SISettings):
+        self._si_settings = si_settings
+        self._extra_rp_conf = self._si_settings.update_rp_conf(
+            self._extra_rp_conf)
 
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
@@ -1583,6 +1599,11 @@ class RedpandaService(Service):
 
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
+
+        if self._installer.installed_version != RedpandaInstaller.HEAD:
+            # If we're running an older version, exclude some newer configs
+            del conf['log_segment_size_jitter_percent']
+
         if self._extra_rp_conf:
             self.logger.debug(
                 "Setting custom cluster configuration options: {}".format(
@@ -1763,6 +1784,10 @@ class RedpandaService(Service):
         for ns in listdir(store.data_dir, True):
             if ns == '.coprocessor_offset_checkpoints':
                 continue
+            if ns == 'cloud_storage_cache':
+                # Default cache dir is sub-path of data dir
+                continue
+
             ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
             for topic in listdir(ns.path):
                 topic = ns.add_topic(topic, os.path.join(ns.path, topic))

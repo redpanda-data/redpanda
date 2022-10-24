@@ -412,6 +412,14 @@ struct mem_log_impl final : log::impl {
           .last_term_start_offset = last_term_base_offset};
     }
 
+    model::timestamp start_timestamp() const final {
+        if (_data.size()) {
+            return _data.begin()->header().first_timestamp;
+        } else {
+            return model::timestamp{};
+        }
+    }
+
     size_t size_bytes() const override {
         return std::accumulate(
           _data.cbegin(),

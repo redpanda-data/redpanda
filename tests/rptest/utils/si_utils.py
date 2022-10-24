@@ -242,7 +242,6 @@ def is_close_size(actual_size, expected_size):
     """Checks if the log size is close to expected size.
     The actual size shouldn't be less than expected. Also, the difference
     between two values shouldn't be greater than the size of one segment.
-    It also takes into account segment size jitter.
     """
     lower_bound = expected_size
     upper_bound = expected_size + default_log_segment_size + \

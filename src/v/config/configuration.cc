@@ -34,6 +34,15 @@ configuration::configuration()
      .visibility = visibility::tunable},
     1_GiB,
     {.min = 1_MiB})
+  , log_segment_size_jitter_percent(
+      *this,
+      "log_segment_size_jitter_percent",
+      "Random variation to the segment size limit used for each partition",
+      {.needs_restart = needs_restart::yes,
+       .example = "2",
+       .visibility = visibility::tunable},
+      5,
+      {.min = 0, .max = 99})
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",

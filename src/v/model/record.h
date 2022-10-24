@@ -647,7 +647,18 @@ public:
         verify_iterable();
         iobuf_const_parser parser(_records);
         for (auto i = 0; i < _header.record_count; i++) {
-            f(model::parse_one_record_copy_from_buffer(parser));
+            if constexpr (std::is_same_v<
+                            std::invoke_result_t<Func, model::record>,
+                            void>) {
+                f(model::parse_one_record_copy_from_buffer(parser));
+
+            } else {
+                ss::stop_iteration s = f(
+                  model::parse_one_record_copy_from_buffer(parser));
+                if (s == ss::stop_iteration::yes) {
+                    return;
+                }
+            }
         }
         if (unlikely(parser.bytes_left())) {
             throw std::out_of_range(fmt::format(

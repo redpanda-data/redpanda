@@ -56,8 +56,9 @@ namespace storage {
 disk_log_impl::disk_log_impl(
   ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
   : log::impl(std::move(cfg))
-  , _segment_size_jitter(storage::internal::random_jitter())
   , _manager(manager)
+  , _segment_size_jitter(
+      internal::random_jitter(_manager.config().segment_size_jitter))
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
@@ -734,6 +735,15 @@ offset_stats disk_log_impl::offsets() const {
     };
 }
 
+model::timestamp disk_log_impl::start_timestamp() const {
+    if (_segs.empty()) {
+        return model::timestamp{};
+    }
+
+    auto& s = _segs.front();
+    return s->index().base_timestamp();
+}
+
 ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
@@ -982,10 +992,8 @@ disk_log_impl::timequery(timequery_config cfg) {
                   st);
                 if (
                   !batches.empty()
-                  && batches.front().header().first_timestamp >= cfg.time) {
-                    return ret_t(timequery_result(
-                      batches.front().base_offset(),
-                      batches.front().header().first_timestamp));
+                  && batches.front().header().max_timestamp >= cfg.time) {
+                    return ret_t(batch_timequery(batches.front(), cfg.time));
                 }
                 return ret_t();
             });
