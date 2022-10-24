@@ -258,15 +258,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	for _, tl := range r.pandaCluster.KafkaTLSListeners() {
+	kl := r.pandaCluster.KafkaTLSListeners()
+	for i := range kl {
 		tls := config.ServerTLS{
-			Name:              tl.Name,
+			Name:              kl[i].Name,
 			KeyFile:           fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: tl.TLS.RequireClientAuth,
+			RequireClientAuth: kl[i].TLS.RequireClientAuth,
 		}
-		if tl.TLS.RequireClientAuth {
+		if kl[i].TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, cmetav1.TLSCAKey)
 		}
 		cr.KafkaAPITLS = append(cr.KafkaAPITLS, tls)
