@@ -5,9 +5,13 @@ v_cc_library(
     feature_table.cc
     feature_migrator.cc
     migrators/cloud_storage_config.cc
+    migrators/group_metadata.cc
     logger.cc
   DEPS
     Seastar::seastar
     v::model
   )
+
+add_dependencies(v_features kafka_codegen_headers)
+
 add_subdirectory(tests)
