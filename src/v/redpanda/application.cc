@@ -51,7 +51,6 @@
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
-#include "kafka/server/group_metadata_migration.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/queue_depth_monitor.h"

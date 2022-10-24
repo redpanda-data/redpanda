@@ -1,4 +1,4 @@
-#include "kafka/server/group_metadata_migration.h"
+#include "features/migrators/group_metadata.h"
 
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
