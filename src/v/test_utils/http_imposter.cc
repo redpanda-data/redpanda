@@ -10,6 +10,7 @@
 
 #include "test_utils/http_imposter.h"
 
+#include "utils/uuid.h"
 #include "vlog.h"
 
 #include <seastar/http/function_handlers.hh>
@@ -20,6 +21,7 @@ static ss::logger http_imposter_log("http_imposter"); // NOLINT
 
 http_imposter_fixture::http_imposter_fixture()
   : _server_addr{ss::ipv4_addr{httpd_host_name.data(), httpd_port_number}} {
+    _id = fmt::format("{}", uuid_t::create());
     _server.start().get();
 }
 
@@ -50,6 +52,7 @@ http_imposter_fixture::get_targets() const {
 void http_imposter_fixture::listen() {
     _server.set_routes([this](ss::httpd::routes& r) { set_routes(r); }).get();
     _server.listen(_server_addr).get();
+    vlog(http_imposter_log.trace, "HTTP imposter {} started", _id);
 }
 
 static ss::sstring remove_query_params(std::string_view url) {
@@ -87,7 +90,8 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
 
           vlog(
             http_imposter_log.trace,
-            "HTTP imposter request {} - {} - {}",
+            "HTTP imposter id {} request {} - {} - {}",
+            _id,
             req._url,
             req.content_length,
             req._method);
@@ -127,4 +131,16 @@ void http_imposter_fixture::fail_request_if(
 void http_imposter_fixture::reset_http_call_state() {
     _requests.clear();
     _targets.clear();
+}
+
+void http_imposter_fixture::log_requests() const {
+    for (const auto& req : _requests) {
+        vlog(
+          http_imposter_log.info,
+          "{}: {} - {} ({} bytes)",
+          _id,
+          req._method,
+          req._url,
+          req.content_length);
+    }
 }
