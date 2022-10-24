@@ -484,9 +484,10 @@ ss::future<> members_backend::reconcile() {
 
     vlog(
       clusterlog.info,
-      "[update: {}] reconciliation loop - reallocations: {}, finished: {}",
+      "[update: {}] reconciliation loop - pending reallocation count: {}, "
+      "finished: {}",
       meta.update,
-      meta.partition_reallocations,
+      meta.partition_reallocations.size(),
       meta.finished);
 
     // calculate necessary reallocations
