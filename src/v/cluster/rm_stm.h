@@ -137,18 +137,12 @@ public:
             model::tx_seq tx_seq;
         };
 
-        struct inflight_snapshot {
-            model::producer_identity pid;
-            int64_t counter;
-        };
-
         struct expiration_snapshot {
             model::producer_identity pid;
             duration_type timeout;
         };
 
         std::vector<tx_seqs_snapshot> tx_seqs;
-        std::vector<inflight_snapshot> inflight;
         std::vector<expiration_snapshot> expiration;
     };
 
@@ -421,8 +415,6 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
-        // number of batches replicated within a transaction
-        absl::flat_hash_map<model::producer_identity, int64_t> inflight;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
     };
