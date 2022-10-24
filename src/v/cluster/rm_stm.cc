@@ -641,6 +641,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
         // begin_tx should have set a fence
+        vlog(_ctx_log.warn, "can't commit a tx: unknown pid:{}", pid);
         co_return tx_errc::request_rejected;
     }
     if (pid.get_epoch() != fence_it->second) {
@@ -652,34 +653,52 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         co_return tx_errc::fenced;
     }
 
-    std::optional<model::tx_seq> tx_seq_for_pid;
-    if (is_transaction_ga()) {
-        if (_log_state.tx_seqs.contains(pid)) {
-            if (tx_seq != _log_state.tx_seqs[pid]) {
-                co_return tx_errc::request_rejected;
-            }
+    auto tx_seqs_it = _log_state.tx_seqs.find(pid);
+    if (tx_seqs_it != _log_state.tx_seqs.end()) {
+        if (tx_seqs_it->second > tx_seq) {
+            // rare situation:
+            //   * tm_stm begins (tx_seq+1)
+            //   * request on this rm passes but then tm_stm fails and forgets
+            //   about this tx
+            //   * during recovery tm_stm recommits previous tx (tx_seq)
+            // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+            vlog(
+              _ctx_log.trace,
+              "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was "
+              "observed",
+              pid,
+              tx_seq,
+              tx_seqs_it->second);
+            co_return tx_errc::none;
+        } else if (tx_seq != tx_seqs_it->second) {
+            vlog(
+              _ctx_log.trace,
+              "can't commit pid:{} tx: passed txseq {} doesn't match local {}",
+              pid,
+              tx_seq,
+              tx_seqs_it->second);
+            co_return tx_errc::request_rejected;
         }
     } else {
         auto preparing_it = _mem_state.preparing.find(pid);
-
         if (preparing_it != _mem_state.preparing.end()) {
+            ss::sstring msg;
             if (preparing_it->second.tx_seq > tx_seq) {
                 // - tm_stm & rm_stm failed during prepare
                 // - during recovery tm_stm recommits its previous tx
                 // - that commit (we're here) collides with "next" failed
                 // prepare it may happen only if the commit passed => acking
                 co_return tx_errc::none;
-            }
-
-            ss::sstring msg;
-            if (preparing_it->second.tx_seq == tx_seq) {
+            } else if (preparing_it->second.tx_seq == tx_seq) {
                 msg = ssx::sformat(
-                  "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
+                  "can't commit pid:{} tx_seq:{} - prepare request hasn't "
+                  "completed",
                   pid,
                   tx_seq);
             } else {
                 msg = ssx::sformat(
-                  "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
+                  "can't commit pid:{} tx_seq:{} - it conflicts with observed "
+                  "tx_seq:{}",
                   pid,
                   tx_seq,
                   preparing_it->second.tx_seq);
@@ -690,53 +709,37 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
 
         auto prepare_it = _log_state.prepared.find(pid);
-
-        if (prepare_it != _log_state.prepared.end()) {
-            tx_seq_for_pid = prepare_it->second.tx_seq;
+        if (prepare_it == _log_state.prepared.end()) {
+            co_return tx_errc::none;
+        } else if (prepare_it->second.tx_seq > tx_seq) {
+            // rare situation:
+            //   * tm_stm prepares (tx_seq+1)
+            //   * prepare on this rm passes but tm_stm failed to write to disk
+            //   * during recovery tm_stm recommits (tx_seq)
+            // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+            vlog(
+              _ctx_log.trace,
+              "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was "
+              "observed",
+              pid,
+              tx_seq,
+              prepare_it->second.tx_seq);
+            co_return tx_errc::none;
+        } else if (prepare_it->second.tx_seq < tx_seq) {
+            vlog(
+              _ctx_log.error,
+              "Can't commit pid:{} tx_seq:{} - it conflicts with observed "
+              "tx_seq:{}",
+              pid,
+              tx_seq,
+              prepare_it->second.tx_seq);
+            co_return tx_errc::request_rejected;
         }
-    }
-
-    if (!tx_seq_for_pid) {
-        tx_seq_for_pid = get_tx_seq(pid);
+        _mem_state.preparing.erase(pid);
     }
 
     _mem_state.expected.erase(pid);
-    _mem_state.preparing.erase(pid);
 
-    if (!tx_seq_for_pid) {
-        vlog(
-          _ctx_log.trace,
-          "Can't find tx_seq for pid:{} => replaying already comitted "
-          "commit",
-          pid);
-        co_return tx_errc::none;
-    }
-
-    if (*tx_seq_for_pid > tx_seq) {
-        // rare situation:
-        //   * tm_stm prepares (tx_seq+1)
-        //   * prepare on this rm passes but tm_stm failed to write to disk
-        //   * during recovery tm_stm recommits (tx_seq)
-        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
-        vlog(
-          _ctx_log.trace,
-          "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
-          "already comitted commit",
-          pid,
-          *tx_seq_for_pid,
-          tx_seq);
-        co_return tx_errc::none;
-    } else if (*tx_seq_for_pid < tx_seq) {
-        std::string msg = fmt::format(
-          "Rejecting commit with tx_seq:{} since prepare with lesser tx_seq:{} "
-          "exists",
-          tx_seq,
-          *tx_seq_for_pid);
-        vlog(_ctx_log.error, "{}", msg);
-        co_return tx_errc::request_rejected;
-    }
-
-    // we commit only if a provided tx_seq matches prepared tx_seq
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -751,13 +754,20 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           "Error \"{}\" on replicating pid:{} commit batch",
           r.error(),
           pid);
-        co_return tx_errc::unknown_server_error;
-    }
-    if (_mem_state.last_end_tx < r.value().last_offset) {
-        _mem_state.last_end_tx = r.value().last_offset;
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
+        co_return tx_errc::timeout;
     }
     if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
-        co_return tx_errc::unknown_server_error;
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down();
+        }
+        co_return tx_errc::timeout;
+    }
+
+    if (_mem_state.last_end_tx < r.value().last_offset) {
+        _mem_state.last_end_tx = r.value().last_offset;
     }
 
     co_return tx_errc::none;
