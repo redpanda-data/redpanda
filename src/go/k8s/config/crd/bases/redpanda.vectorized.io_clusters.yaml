@@ -248,6 +248,11 @@ spec:
                     items:
                       description: KafkaAPI configures listener for the Kafka API
                       properties:
+                        authenticationMethod:
+                          description: 'AuthenticationMethod can enable authentication
+                            method per Kafka listener. Available options are: none,
+                            sasl, mtls_identity. https://docs.redpanda.com/docs/security/authentication/'
+                          type: string
                         external:
                           description: External enables user to expose Redpanda nodes
                             outside of a Kubernetes cluster. For more information
@@ -724,11 +729,17 @@ spec:
                   fully-qualified DNS name. http://www.dns-sd.org/trailingdotsindomainnames.html
                 type: boolean
               enableSasl:
-                description: SASL enablement flag
+                description: 'SASL enablement flag Deprecated: replaced by "kafkaEnableAuthorization"'
                 type: boolean
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string
+              kafkaEnableAuthorization:
+                description: "Enable authorization for Kafka connections. Values are:
+                  \n - `nil`: Ignored. Authorization is enabled with `enable_sasl:
+                  true` \n - `true`: authorization is required \n - `false`: authorization
+                  is disabled; \n See also `enableSasl` and `configuration.kafkaApi[].authenticationMethod`"
+                type: boolean
               licenseRef:
                 description: If key is not provided in the SecretRef, Secret data
                   should have key "license"
