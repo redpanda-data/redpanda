@@ -123,36 +123,48 @@ helm-e2e-tests: kuttl test docker-build docker-build-configurator
 	echo "~~~ Running kuttl tests :k8s:"
 	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
-# Download controller-gen locally if necessary
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen:
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+##@ Build Dependencies
 
-# Download kuttl locally if necessary
-KUTTL = $(shell pwd)/bin/kubectl-kuttl
-kuttl:
-	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.11.1)
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
 
-# Download crlfmt locally if necessary
-CRLFMT = $(shell pwd)/bin/crlfmt
-crlfmt:
-	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20210128092314-b3eff0b87c79)
+## Tool Binaries
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+KUTTL ?= $(LOCALBIN)/kubectl-kuttl
+CRLFMT ?= $(LOCALBIN)/crlfmt
 
-# Download kustomize locally if necessary
-KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize:
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+## Tool Versions
+KUSTOMIZE_VERSION ?= v3.8.7
+CONTROLLER_TOOLS_VERSION ?= v0.4.1
+CRLFMT_VERSION ?= v0.0.0-20210128092314-b3eff0b87c79
+KUTTL_VERSION ?= v0.11.1
 
-# go-get-tool will 'go get' any package $2 and install it to $1.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-define go-get-tool
-@[ -f $(1) ] || { \
-set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
-rm -rf $$TMP_DIR ;\
-}
-endef
+.PHONY: controller-gen
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+.PHONY: kustomize
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
+$(KUSTOMIZE): $(LOCALBIN)
+	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+.PHONY: crlfmt
+crlfmt: $(CRLFMT)
+$(CRLFMT): $(LOCALBIN)
+	test -s $(LOCALBIN)/crlfmt || GOBIN=$(LOCALBIN) go install github.com/cockroachdb/crlfmt@$(CRLFMT_VERSION)
+
+.PHONY: kuttl
+kuttl: $(KUTTL)
+$(KUTTL): $(LOCALBIN)
+	test -s $(LOCALBIN)/kubectl-kuttl || GOBIN=$(LOCALBIN) go install github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@$(KUTTL_VERSION)
