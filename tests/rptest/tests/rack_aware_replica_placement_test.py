@@ -136,3 +136,27 @@ class RackAwarePlacementTest(RedpandaTest):
 
         for topic in topics:
             self._validate_placement(topic, rack_layout, replication_factor)
+
+    @cluster(num_nodes=6)
+    def test_node_config_update(self):
+        """
+        * Create a cluster from nodes with no rack id configured
+        * edit node configs adding rack ids
+        * restart the nodes
+        * check that rack aware placement works
+        """
+        rack_layout = 'AABBCC'
+        replication_factor = 3
+        num_partitions = 10
+
+        self.redpanda.start()
+
+        self.redpanda.stop()
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.start_node(
+                node, override_cfg_params={"rack": rack_layout[ix]})
+
+        topic = TopicSpec(partition_count=num_partitions,
+                          replication_factor=replication_factor)
+        self._create_topic(topic)
+        self._validate_placement(topic, rack_layout, replication_factor)
