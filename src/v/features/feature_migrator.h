@@ -38,8 +38,14 @@ public:
 
 protected:
     virtual features::feature get_feature() = 0;
+
+    /**
+     * If not overriding `start` and `do_migrate`, then implement
+     * `do_mutate` to express the change that should be made to
+     * the system during upgrade.
+     */
+    virtual ss::future<> do_mutate() { return ss::now(); }
     ss::future<> do_migrate();
-    virtual ss::future<> do_mutate() = 0;
 
     ss::abort_source& abort_source() { return _as->get(); }
 

@@ -55,10 +55,6 @@ namespace cluster {
 class cluster_discovery;
 } // namespace cluster
 
-namespace kafka {
-struct group_metadata_migration;
-} // namespace kafka
-
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
     std::chrono::system_clock::now().time_since_epoch())};
@@ -132,7 +128,7 @@ private:
 
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
-    void start_runtime_services(cluster::cluster_discovery&, ::stop_signal&);
+    void start_runtime_services(cluster::cluster_discovery&);
     void start_kafka(const model::node_id&, ::stop_signal&);
 
     // All methods are calleds from Seastar thread
@@ -203,8 +199,6 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
-
-    ss::lw_shared_ptr<kafka::group_metadata_migration> kafka_group_migration;
 
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
