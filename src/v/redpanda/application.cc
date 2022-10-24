@@ -165,10 +165,6 @@ void application::shutdown() {
       })
       .get();
 
-    if (kafka_group_migration) {
-        kafka_group_migration->await().get();
-    }
-
     // Stop processing heartbeats before stopping the partition manager (and
     // the underlying Raft consensus instances). Otherwise we'd process
     // heartbeats for consensus objects that no longer exist.
@@ -1474,9 +1470,12 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         _migrators.push_back(
           std::make_unique<features::migrators::cloud_storage_config>(
             *controller));
+        _migrators.push_back(
+          std::make_unique<features::migrators::group_metadata_migration>(
+            *controller, group_router));
     }
 
-    start_runtime_services(cd, app_signal);
+    start_runtime_services(cd);
 
     if (_proxy_config) {
         _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
@@ -1502,8 +1501,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     syschecks::systemd_notify_ready().get();
 }
 
-void application::start_runtime_services(
-  cluster::cluster_discovery& cd, ::stop_signal& app_signal) {
+void application::start_runtime_services(cluster::cluster_discovery& cd) {
     ssx::background = _feature_table.invoke_on_all(
       [this](features::feature_table& ft) -> ss::future<> {
           try {
@@ -1567,9 +1565,6 @@ void application::start_runtime_services(
     }
     syschecks::systemd_message("Starting controller").get();
     controller->start(cd).get0();
-
-    kafka_group_migration = ss::make_lw_shared<kafka::group_metadata_migration>(
-      *controller, group_router);
 
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
@@ -1664,7 +1659,6 @@ void application::start_runtime_services(
             [](archival::scheduler_service& svc) { return svc.start(); })
           .get();
     }
-
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     if (!config::node().admin().empty()) {
@@ -1680,7 +1674,6 @@ void application::start_runtime_services(
     for (const auto& m : _migrators) {
         m->start(controller->get_abort_source().local());
     }
-    kafka_group_migration->start(app_signal.abort_source()).get();
 }
 
 /**

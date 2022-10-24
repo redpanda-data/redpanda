@@ -11,6 +11,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "features/feature_table.h"
+#include "features/logger.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "kafka/server/group_router.h"
@@ -35,13 +36,14 @@
 #include <algorithm>
 #include <exception>
 
-namespace kafka {
-static ss::logger mlog("group-metadata-migration");
+using namespace kafka;
+
+namespace features::migrators {
 
 group_metadata_migration::group_metadata_migration(
   cluster::controller& controller,
   ss::sharded<kafka::group_router>& group_router)
-  : _controller(controller)
+  : feature_migrator(controller)
   , _group_router(group_router) {}
 
 const cluster::feature_barrier_tag
@@ -129,7 +131,7 @@ ss::future<bool> create_consumer_offsets_topic(
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec != cluster::errc::success) {
               vlog(
-                mlog.warn,
+                featureslog.warn,
                 "can not create __consumer_offsets topic - {}",
                 res[0].ec);
               return false;
@@ -146,7 +148,10 @@ ss::future<bool> create_consumer_offsets_topic(
           return ss::make_ready_future<bool>(success);
       })
       .handle_exception([](const std::exception_ptr& e) {
-          vlog(mlog.warn, "can not create __consumer_offsets topic - {}", e);
+          vlog(
+            featureslog.warn,
+            "can not create __consumer_offsets topic - {}",
+            e);
           // various errors may returned such as a timeout, or if the
           // controller group doesn't have a leader. client will retry.
           return false;
@@ -191,7 +196,7 @@ bool are_offsets_equal(
 bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
     if (source.get_metadata() != target.get_metadata()) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "source and target group metadata does not match, source: {}, "
           "target: {}",
           source.get_metadata(),
@@ -200,7 +205,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
     }
     if (source.offsets().size() != target.offsets().size()) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "Offsets hash_maps for group_stm have a different size. Source: {}, "
           "target: {}",
           source.offsets().size(),
@@ -211,14 +216,14 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         auto it = target.offsets().find(tp);
         if (it == target.offsets().end()) {
             vlog(
-              mlog.info,
+              featureslog.info,
               "unable to find offset for {} in target group offsets",
               tp);
             return false;
         }
         if (it->second.metadata != o.metadata) {
             vlog(
-              mlog.info,
+              featureslog.info,
               "{} offsets does not match. source: {}, target: {}",
               tp,
               o.metadata,
@@ -228,13 +233,13 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
     }
 
     if (source.fences() != target.fences()) {
-        vlog(mlog.info, "group fences does not match");
+        vlog(featureslog.info, "group fences does not match");
         return false;
     }
 
     if (source.prepared_txs().size() != target.prepared_txs().size()) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "Prepared txs hash_maps have different size. Source: {}, target: {}",
           source.prepared_txs().size(),
           target.prepared_txs().size());
@@ -245,14 +250,14 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         auto it = target.prepared_txs().find(tp);
         if (it == target.prepared_txs().end()) {
             vlog(
-              mlog.info,
+              featureslog.info,
               "unable to find preppared txs for {} in target group state",
               tp);
             return false;
         }
         if (it->second.tx_seq != tx.tx_seq || tx.pid != it->second.pid) {
             vlog(
-              mlog.info,
+              featureslog.info,
               "Inconsistent states for prepared transaction. Source:(pid: {}, "
               "seq_num: {}), target(pid: {}, seq_num: {})",
               tx.pid,
@@ -263,7 +268,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
         }
         if (tx.offsets.size() != it->second.offsets.size()) {
             vlog(
-              mlog.info,
+              featureslog.info,
               "Transaction has different offsets size. Source: {}, target: {}",
               tx.offsets.size(),
               it->second.offsets.size());
@@ -274,7 +279,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
             auto oit = it->second.offsets.find(offset_tp);
             if (oit == it->second.offsets.end()) {
                 vlog(
-                  mlog.info,
+                  featureslog.info,
                   "Can not find offset for topic ({}) in target prepared "
                   "transaction",
                   offset_tp);
@@ -282,7 +287,7 @@ bool are_stms_equivalent(const group_stm& source, const group_stm& target) {
             }
             if (!are_offsets_equal(oit->second, o)) {
                 vlog(
-                  mlog.info,
+                  featureslog.info,
                   "Offsets are not equal for prepared transaction. Source: {}, "
                   "target: {}",
                   o,
@@ -300,7 +305,7 @@ bool are_states_equivalent(
   const group_recovery_consumer_state& target) {
     if (source.groups.size() != target.groups.size()) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "Groups have a different size. Source: {}, Target: {}",
           source.groups.size(),
           target.groups.size());
@@ -310,11 +315,12 @@ bool are_states_equivalent(
     for (auto& [g, stm] : source.groups) {
         auto it = target.groups.find(g);
         if (it == target.groups.end()) {
-            vlog(mlog.info, "group {} not found in target group state", g);
+            vlog(
+              featureslog.info, "group {} not found in target group state", g);
             return false;
         }
         if (!are_stms_equivalent(stm, it->second)) {
-            vlog(mlog.info, "State machines are not equivalent");
+            vlog(featureslog.info, "State machines are not equivalent");
             return false;
         }
     }
@@ -339,7 +345,7 @@ ss::future<std::error_code> replicate(
             .then([ntp](result<raft::replicate_result> res) {
                 if (res) {
                     vlog(
-                      mlog.info,
+                      featureslog.info,
                       "replicated {} data up to {} offset",
                       ntp,
                       res.value().last_offset);
@@ -352,13 +358,16 @@ ss::future<std::error_code> replicate(
 
 bool is_source_partition_ready(const ss::lw_shared_ptr<cluster::partition>& p) {
     if (!p->is_elected_leader()) {
-        vlog(mlog.info, "not yet leader for source partition: {}", p->ntp());
+        vlog(
+          featureslog.info,
+          "not yet leader for source partition: {}",
+          p->ntp());
         return false;
     }
 
     if (p->dirty_offset() > p->committed_offset()) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "partition {} dirty offset {} is greater than committed offset {}",
           p->ntp(),
           p->dirty_offset(),
@@ -389,7 +398,7 @@ ss::future<> do_dispatch_ntp_migration(
     auto target_shard = st.local().shard_for(target_ntp);
     while (!target_shard) {
         vlog(
-          mlog.info,
+          featureslog.info,
           "unable to find shard for {}, waiting for it to be present",
           target_ntp);
         co_await ss::sleep_abortable(default_wait_time, as.local());
@@ -412,7 +421,7 @@ ss::future<> do_dispatch_ntp_migration(
                   return pm.get(target_ntp)->is_elected_leader();
               });
             vlog(
-              mlog.info,
+              featureslog.info,
               "transforming data from {} to {} - is leader: {}",
               source->ntp(),
               target_ntp,
@@ -422,14 +431,14 @@ ss::future<> do_dispatch_ntp_migration(
                 // check source partition status
                 if (!is_source_partition_ready(source)) {
                     vlog(
-                      mlog.info,
+                      featureslog.info,
                       "waiting for source partition {} to become a leader",
                       source->ntp());
                     auto err = co_await source->request_leadership(
                       model::timeout_clock::now() + default_wait_time);
                     if (err) {
                         vlog(
-                          mlog.warn,
+                          featureslog.warn,
                           "error requesting leadership for {} - {}",
                           source->ntp(),
                           err.message());
@@ -447,7 +456,7 @@ ss::future<> do_dispatch_ntp_migration(
                 // no groups to migrate, return early
                 if (source_state.groups.empty()) {
                     vlog(
-                      mlog.info,
+                      featureslog.info,
                       "finished migrating {}, no groups to migrate ",
                       source->ntp());
                     co_return;
@@ -470,7 +479,7 @@ ss::future<> do_dispatch_ntp_migration(
 
                 if (err) {
                     vlog(
-                      mlog.warn,
+                      featureslog.warn,
                       "migration of {} failed with error: {}",
                       target_ntp,
                       err.message());
@@ -478,7 +487,7 @@ ss::future<> do_dispatch_ntp_migration(
                     continue;
                 } else {
                     vlog(
-                      mlog.info,
+                      featureslog.info,
                       "successfully replicated migrated data for {}",
                       target_ntp);
                 }
@@ -505,14 +514,14 @@ ss::future<> do_dispatch_ntp_migration(
 
         } catch (...) {
             vlog(
-              mlog.warn,
+              featureslog.warn,
               "error while migrating {} to {} - {}",
               source->ntp(),
               target_ntp,
               std::current_exception());
         }
     }
-    vlog(mlog.info, "finished migrating {}", source->ntp());
+    vlog(featureslog.info, "finished migrating {}", source->ntp());
 }
 
 ss::future<> dispatch_ntps_migration(
@@ -541,12 +550,12 @@ ss::future<> wait_for_stable_group_topic(
     while (result.has_error() || !are_all_finished(result.value())) {
         if (result.has_error()) {
             vlog(
-              mlog.warn,
+              featureslog.warn,
               "unable to get kafka_internal/group reconciliation status - {}",
               result.error());
         } else {
             vlog(
-              mlog.info,
+              featureslog.info,
               "waiting for partition operations to finish, current state: {}",
               result.value());
         }
@@ -570,9 +579,8 @@ ss::abort_source& group_metadata_migration::abort_source() {
 }
 
 ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
-    vlog(mlog.info, "activating consumer offsets feature");
-    while (!feature_table().is_active(features::feature::consumer_offsets)
-           && !as.abort_requested()) {
+    vlog(featureslog.info, "activating consumer offsets feature");
+    while (!feature_table().is_active(get_feature()) && !as.abort_requested()) {
         co_await do_activate_feature(as);
     }
 }
@@ -580,26 +588,22 @@ ss::future<> group_metadata_migration::activate_feature(ss::abort_source& as) {
 ss::future<>
 group_metadata_migration::do_activate_feature(ss::abort_source& as) {
     if (_controller.is_raft0_leader()) {
-        co_await feature_table().await_feature_preparing(
-          features::feature::consumer_offsets, as);
+        co_await feature_table().await_feature_preparing(get_feature(), as);
 
         auto err = co_await feature_manager().write_action(
           cluster::feature_update_action{
-            .feature_name = ss::sstring(
-              _controller.get_feature_table()
-                .local()
-                .get_state(features::feature::consumer_offsets)
-                .spec.name),
+            .feature_name = ss::sstring(_controller.get_feature_table()
+                                          .local()
+                                          .get_state(get_feature())
+                                          .spec.name),
             .action
             = cluster::feature_update_action::action_t::complete_preparing,
           });
 
-        if (
-          err
-          || !feature_table().is_active(features::feature::consumer_offsets)) {
+        if (err || !feature_table().is_active(get_feature())) {
             if (err) {
                 vlog(
-                  mlog.info,
+                  featureslog.info,
                   "error activating consumer offsets feature: {}",
                   err.message());
             }
@@ -612,40 +616,43 @@ group_metadata_migration::do_activate_feature(ss::abort_source& as) {
 
 ss::future<> group_metadata_migration::do_apply() {
     vlog(
-      mlog.info,
+      featureslog.info,
       "waiting for consumer offsets feature to be preparing - current "
       "state: {}",
       _controller.get_feature_table()
         .local()
-        .get_state(features::feature::consumer_offsets)
+        .get_state(get_feature())
         .get_state());
     co_await feature_table().await_feature_preparing(
-      features::feature::consumer_offsets, abort_source());
-    vlog(mlog.info, "disabling partition movement feature and group router");
+      get_feature(), abort_source());
+    vlog(
+      featureslog.info,
+      "disabling partition movement feature and group router");
     co_await _group_router.invoke_on_all(&group_router::disable);
-    vlog(mlog.info, "shutting down source group manager");
+    vlog(featureslog.info, "shutting down source group manager");
     co_await _group_router.local().get_group_manager().invoke_on_all(
       &group_manager::stop);
 
     co_await _controller.get_topics_frontend().invoke_on_all(
       &cluster::topics_frontend::disable_partition_movement);
-    vlog(mlog.info, "waiting for stable consumer group topic");
+    vlog(featureslog.info, "waiting for stable consumer group topic");
     co_await wait_for_stable_group_topic(
       _controller.get_api().local(), _controller.get_abort_source().local());
-    vlog(mlog.info, "applying consumer groups migrations");
+    vlog(featureslog.info, "applying consumer groups migrations");
     co_await migrate_metadata();
-    vlog(mlog.info, "waiting for all migrations to finish");
+    vlog(featureslog.info, "waiting for all migrations to finish");
     co_await feature_manager().barrier(active_barrier_tag);
-    vlog(mlog.info, "finishing migration - enabling consumer offsets feature");
+    vlog(
+      featureslog.info,
+      "finishing migration - enabling consumer offsets feature");
 
     co_await activate_feature(_controller.get_abort_source().local());
 
-    co_await feature_table().await_feature(
-      features::feature::consumer_offsets, abort_source());
+    co_await feature_table().await_feature(get_feature(), abort_source());
     co_await _group_router.invoke_on_all([](group_router& router) {
         return router.get_group_manager().local().reload_groups();
     });
-    vlog(mlog.info, "consumer offset feature enabled");
+    vlog(featureslog.info, "consumer offset feature enabled");
     co_await _group_router.invoke_on_all(&group_router::enable);
     co_await _controller.get_topics_frontend().invoke_on_all(
       &cluster::topics_frontend::enable_partition_movement);
@@ -665,7 +672,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
     while (!topics.contains(
       model::kafka_consumer_offsets_nt, model::partition_id{0})) {
         if (_controller.is_raft0_leader()) {
-            vlog(mlog.info, "creating consumer offsets topic");
+            vlog(featureslog.info, "creating consumer offsets topic");
             co_await create_consumer_offsets_topic(
               _controller, *group_topic_assignment, default_deadline());
             if (topics.contains(
@@ -678,7 +685,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
           default_timeout, _controller.get_abort_source().local());
     }
 
-    vlog(mlog.info, "waiting for preparing barrier");
+    vlog(featureslog.info, "waiting for preparing barrier");
     co_await feature_manager().barrier(preparing_barrier_tag);
 
     absl::node_hash_map<ss::shard_id, std::vector<model::ntp>> shard_ntps;
@@ -699,7 +706,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
         ssx::spawn_with_gate(
           _partitions_gate, [this, shard = shard, ntps = ntps]() mutable {
               vlog(
-                mlog.info,
+                featureslog.info,
                 "dispatching {} ntps migration on shard: {}",
                 ntps.size(),
                 shard);
@@ -716,38 +723,38 @@ ss::future<> group_metadata_migration::migrate_metadata() {
 
     co_await _partitions_gate.close();
 
-    vlog(mlog.info, "finished migrating kafka_internal/group partitions");
+    vlog(
+      featureslog.info, "finished migrating kafka_internal/group partitions");
 }
 
-ss::future<> group_metadata_migration::start(ss::abort_source& as) {
+void group_metadata_migration::start(ss::abort_source& as) {
     // if version is overriden for test purposes - skip migration
     if (
       feature_table().get_latest_logical_version()
       < cluster::cluster_version{2}) {
-        co_return;
+        return;
     }
-    if (feature_table().is_active(features::feature::consumer_offsets)) {
+    if (feature_table().is_active(get_feature())) {
         feature_manager().exit_barrier(preparing_barrier_tag);
         feature_manager().exit_barrier(active_barrier_tag);
-        co_return;
+        return;
     }
 
     _sub = as.subscribe([this]() noexcept { _as.request_abort(); });
     if (!_sub) {
         // Smbd finished redpanda
-        co_return;
+        return;
     }
 
     // Wait for feature to be preparing and execute migration
     ssx::background
       = ssx::spawn_with_gate_then(_background_gate, [this]() -> ss::future<> {
-            while (
-              !feature_table().is_active(features::feature::consumer_offsets)
-              && !_as.abort_requested()) {
+            while (!feature_table().is_active(get_feature())
+                   && !_as.abort_requested()) {
                 if (!_controller.get_topics_state().local().contains(
                       model::kafka_group_nt, model::partition_id{0})) {
                     vlog(
-                      mlog.info,
+                      featureslog.info,
                       "kafka_internal/group topic does not exists, activating "
                       "consumer_offsets feature");
                     try {
@@ -755,7 +762,7 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
                         continue;
                     } catch (const std::exception& e) {
                         vlog(
-                          mlog.warn,
+                          featureslog.warn,
                           "Got exception during activate consumer_offset "
                           "feature "
                           "{}",
@@ -767,13 +774,11 @@ ss::future<> group_metadata_migration::start(ss::abort_source& as) {
                 }
             }
         }).handle_exception_type([](ss::sleep_aborted&) {});
-
-    co_return;
 }
 
 // awaits for the migration to finish
-ss::future<> group_metadata_migration::await() {
+ss::future<> group_metadata_migration::stop() {
     return _background_gate.close();
 }
 
-} // namespace kafka
+} // namespace features::migrators
