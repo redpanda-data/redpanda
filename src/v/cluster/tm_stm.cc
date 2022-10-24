@@ -310,6 +310,9 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
+        if (r.error() == raft::errc::shutting_down) {
+            co_return tm_stm::op_status::timeout;
+        }
         co_return tm_stm::op_status::unknown;
     }
 
