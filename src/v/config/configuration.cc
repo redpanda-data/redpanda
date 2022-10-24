@@ -1250,7 +1250,12 @@ configuration::configuration()
       "batch",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5_GiB)
-
+  , partition_autobalancing_concurrent_moves(
+      *this,
+      "partition_autobalancing_concurrent_moves",
+      "Number of partitions that can be reassigned at once",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      50)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",

@@ -266,6 +266,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       partition_autobalancing_tick_interval_ms;
     property<size_t> partition_autobalancing_movement_batch_size_bytes;
+    property<size_t> partition_autobalancing_concurrent_moves;
 
     property<bool> enable_leader_balancer;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
