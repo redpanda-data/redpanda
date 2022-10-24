@@ -2067,6 +2067,12 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     }
     _log_state.abort_indexes = std::move(abort_indexes);
 
+    vlog(
+      _ctx_log.debug,
+      "Removing abort indexes {} with offset < {}",
+      expired_abort_indexes.size(),
+      start_offset);
+
     for (const auto& idx : expired_abort_indexes) {
         auto filename = abort_idx_name(idx.first, idx.last);
         co_await _abort_snapshot_mgr.remove_snapshot(filename);

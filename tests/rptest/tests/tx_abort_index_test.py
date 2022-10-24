@@ -35,7 +35,7 @@ PAYLOAD_1KB = ''.join(choice(ascii_uppercase) for i in range(1024))
 class TxAbortSnapshotTest(RedpandaTest):
     topics = [TopicSpec()]
     """
-    Basic test that upgrading software works as expected.
+    Checks that the abort indexes for deleted segment offsets are cleaned up.
     """
     def __init__(self, test_context: TestContext):
         extra_rp_conf = {
@@ -134,9 +134,18 @@ class TxAbortSnapshotTest(RedpandaTest):
         def indices_gone():
             current_idx = self.find_indexes(self.topics[0].name)
             for node in self.redpanda.nodes:
-                if len(current_idx[node.account.hostname]) != 0:
+                idxes = current_idx[node.account.hostname]
+                if len(idxes) != 0:
+                    self.logger.debug(
+                        f"node: {node.account.hostname} has non empty indexes: {idxes}"
+                    )
                     return False
 
             return True
 
-        wait_until(indices_gone, timeout_sec=30, backoff_sec=1)
+        try:
+            wait_until(indices_gone, timeout_sec=30, backoff_sec=1)
+        except TimeoutError:
+            all_indices = self.find_indexes(self.topics[0].name)
+            self.logger.error(f"All uncleaned indexes: {all_indices}")
+            raise
