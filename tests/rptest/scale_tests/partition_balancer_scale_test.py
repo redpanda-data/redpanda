@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from rptest.services import redpanda
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -33,6 +34,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 "partition_autobalancing_node_availability_timeout_sec":
                 self.NODE_AVAILABILITY_TIMEOUT,
                 "partition_autobalancing_tick_interval_ms": 5000,
+                "members_backend_retry_ms": 1000,
                 "raft_learner_recovery_rate": 1073741824,
             },
             *args,
