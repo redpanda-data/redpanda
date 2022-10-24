@@ -77,9 +77,26 @@ func NameToArgs(command string) []string {
 	return strings.Split(command, "_")
 }
 
-// UserPaths returns the user PATH list.
+// DefaultBinPath returns HOME-DIR/.local/bin where HOME-DIR is the directory
+// returned by os.UserHomeDir.
+func DefaultBinPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("unable to get your home directory: %v", err)
+	}
+	return filepath.Join(home, ".local", "bin"), nil
+}
+
+// UserPaths returns the user PATH list where the plugin may live.
 func UserPaths() []string {
-	return filepath.SplitList(os.Getenv("PATH"))
+	defaultPath, err := DefaultBinPath()
+	pathList := filepath.SplitList(os.Getenv("PATH"))
+	if err != nil {
+		// If there is an error getting the default bin path we will only look
+		// for the binary in the $PATH.
+		return pathList
+	}
+	return append([]string{defaultPath}, pathList...)
 }
 
 // ListPlugins returns all plugins found in fs across the given search

@@ -13,10 +13,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime"
 	"time"
 
@@ -39,12 +39,21 @@ func newInstallCommand(fs afero.Fs) *cobra.Command {
 		Short:   "Install an rpk plugin",
 		Long: `Install an rpk plugin.
 
-An rpk plugin must be saved in a directory that is in your $PATH. By default,
-this command installs plugins to the first directory in your $PATH. This can
-be overridden by specifying the --dir flag.
+An rpk plugin must be saved in $HOME/.local/bin or in a directory that is in 
+your $PATH. By default, this command installs plugins to $HOME/.local/bin. This 
+can be overridden by specifying the --dir flag.
+
+If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 `,
 		Args: cobra.ExactArgs(1),
-		Run: func(_ *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, args []string) {
+			// If we don't explicitly set --dir flag, then dir is the default
+			// path, so we check if the path exists.
+			if !cmd.Flags().Changed("dir") {
+				err := checkAndCreateDefaultPath(fs)
+				out.MaybeDieErr(err)
+			}
+
 			name := args[0]
 			var (
 				autoComplete bool
@@ -125,10 +134,10 @@ command %q!
 	}
 
 	var err error
-	dir, err = determineBinDir()
+	dir, err = plugin.DefaultBinPath()
 	out.MaybeDieErr(err)
 
-	cmd.Flags().StringVar(&dir, "dir", dir, "Destination directory to save the installed plugin (defaults to the first dir in $PATH)")
+	cmd.Flags().StringVar(&dir, "dir", dir, "Destination directory to save the installed plugin (defaults to $HOME/.local/bin)")
 	cmd.Flags().BoolVarP(&update, "update", "u", false, "Update a locally installed plugin if it differs from the current remote version")
 	cmd.Flags().StringVar(&version, "version", "", "Version of the plugin you wish to download")
 	cmd.Flags().MarkHidden("version")
@@ -136,12 +145,27 @@ command %q!
 	return cmd
 }
 
-func determineBinDir() (string, error) {
-	paths := plugin.UserPaths()
-	if len(paths) == 0 {
-		return "", errors.New("unable to determine where to save plugin: PATH list is empty")
+// checkAndCreateDefaultPath will verify if the plugin.DefaultBinPath exists, if
+// not, it will create the directory.
+func checkAndCreateDefaultPath(fs afero.Fs) error {
+	path, err := plugin.DefaultBinPath()
+	if err != nil {
+		return err
 	}
-	return paths[0], nil
+
+	// If we fail to check if the directory exists, then at worst, we try to
+	// recreate the directory (and then we may fail there and actually return
+	// the error).
+	if exists, _ := afero.DirExists(fs, path); !exists {
+		if os.Getuid() == 0 && os.Getenv("SUDO_UID") != "0" {
+			return fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", path)
+		}
+		err = os.MkdirAll(path, 0o755)
+		if err != nil {
+			return fmt.Errorf("unable to create the plugin bin directory: %v", err)
+		}
+	}
+	return nil
 }
 
 func tryDirectDownload(name, version string) ([]byte, error) {
