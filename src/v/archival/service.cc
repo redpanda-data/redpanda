@@ -21,6 +21,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "http/client.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -149,10 +150,12 @@ scheduler_service_impl::scheduler_service_impl(
   const configuration& conf,
   ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<cluster::topic_table>& tt)
+  ss::sharded<cluster::topic_table>& tt,
+  ss::sharded<features::feature_table>& ft)
   : _conf(conf)
   , _partition_manager(pm)
   , _topic_table(tt)
+  , _feature_table(ft)
   , _jitter(conf.reconciliation_interval, 1ms)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
@@ -165,8 +168,9 @@ scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt,
-  ss::sharded<archival::configuration>& config)
-  : scheduler_service_impl(config.local(), remote, pm, tt) {}
+  ss::sharded<archival::configuration>& config,
+  ss::sharded<features::feature_table>& ft)
+  : scheduler_service_impl(config.local(), remote, pm, tt, ft) {}
 
 void scheduler_service_impl::rearm_timer() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
@@ -272,6 +276,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
               model::topic_namespace(ntp.ns, ntp.tp.topic),
               archiver->get_revision_id());
         }
+
         _probe.start_archiving_ntp();
         archiver->run_upload_loop();
     }

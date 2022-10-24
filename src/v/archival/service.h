@@ -11,6 +11,7 @@
 #pragma once
 #include "archival/ntp_archiver_service.h"
 #include "cluster/fwd.h"
+#include "features/fwd.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
@@ -55,12 +56,14 @@ public:
       const configuration& conf,
       ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<cluster::partition_manager>& pm,
-      ss::sharded<cluster::topic_table>& tt);
+      ss::sharded<cluster::topic_table>& tt,
+      ss::sharded<features::feature_table>& ft);
     scheduler_service_impl(
       ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
-      ss::sharded<archival::configuration>& configs);
+      ss::sharded<archival::configuration>& configs,
+      ss::sharded<features::feature_table>& ft);
 
     /// \brief Configure scheduler service
     ///
@@ -125,6 +128,7 @@ private:
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::topic_table>& _topic_table;
+    ss::sharded<features::feature_table>& _feature_table;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _timer;
     ss::gate _gate;
