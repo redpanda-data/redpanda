@@ -418,7 +418,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     }
     auto tx_opt = co_await stm->get_tx(tx_id);
     if (!tx_opt) {
-        co_return try_abort_reply::make_aborted();
+        if (tx_opt.error() == tm_stm::op_status::not_found) {
+            co_return try_abort_reply::make_aborted();
+        }
+        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
     auto tx = tx_opt.value();
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
@@ -785,6 +788,9 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     if (!tx_opt.has_value()) {
         if (tx_opt.error() == tm_stm::op_status::not_leader) {
             co_return init_tm_tx_reply{tx_errc::leader_not_found};
+        }
+        if (tx_opt.error() != tm_stm::op_status::not_found) {
+            co_return init_tm_tx_reply{tx_errc::unknown_server_error};
         }
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
