@@ -53,6 +53,7 @@ class partition_balancer_state;
 class node_status_backend;
 class node_status_table;
 class ephemeral_credential_frontend;
+class self_test_backend;
 
 namespace node {
 class local_monitor;

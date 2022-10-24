@@ -137,6 +137,7 @@ v_cc_library(
     partition_balancer_rpc_handler.cc
     node_status_backend.cc
     node_status_rpc_handler.cc
+    self_test_backend.cc
     bootstrap_service.cc
     bootstrap_backend.cc
     ephemeral_credential_frontend.cc
