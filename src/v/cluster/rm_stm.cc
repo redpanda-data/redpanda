@@ -339,10 +339,21 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
             co_return tx_errc::stale;
         }
         if (ar != tx_errc::none) {
+            vlog(
+              _ctx_log.warn,
+              "can't begin a tx {}: an abort of the fenced ongoing tx {} "
+              "failed with {}",
+              pid,
+              old_pid,
+              ar);
             co_return tx_errc::unknown_server_error;
         }
 
         if (is_known_session(old_pid)) {
+            vlog(
+              _ctx_log.warn,
+              "can't begin a tx {}: an aborted tx should have disappeared",
+              pid);
             // can't begin a transaction while previous tx is in progress
             co_return tx_errc::unknown_server_error;
         }
@@ -355,6 +366,30 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           pid,
           fence_it->second);
         co_return tx_errc::fenced;
+    }
+
+    auto txseq_it = _log_state.tx_seqs.find(pid);
+    if (txseq_it != _log_state.tx_seqs.end()) {
+        if (txseq_it->second != tx_seq) {
+            vlog(
+              _ctx_log.warn,
+              "can't begin a tx {} with tx_seq {}: a producer id is already "
+              "involved in a tx with tx_seq {}",
+              pid,
+              tx_seq,
+              txseq_it->second);
+            co_return tx_errc::unknown_server_error;
+        }
+        if (_log_state.ongoing_map.contains(pid)) {
+            vlog(
+              _ctx_log.warn,
+              "can't begin a tx {} with tx_seq {}: it was already begun and "
+              "accepted writes",
+              pid,
+              tx_seq);
+            co_return tx_errc::unknown_server_error;
+        }
+        co_return synced_term;
     }
 
     auto is_txn_ga = is_transaction_ga();
@@ -375,12 +410,12 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           "Error \"{}\" on replicating pid:{} fencing batch",
           r.error(),
           pid);
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::leader_not_found;
     }
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), _sync_timeout)) {
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::leader_not_found;
     }
 
     if (_c->term() != synced_term) {
@@ -390,7 +425,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           synced_term,
           _c->term(),
           pid);
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::leader_not_found;
     }
 
     if (is_txn_ga) {
@@ -1668,9 +1703,9 @@ void rm_stm::track_tx(
         return;
     }
     _log_state.expiration[pid] = expiration_info{
-        .timeout = transaction_timeout_ms,
-        .last_update = clock_type::now(),
-        .is_expiration_requested = false};
+      .timeout = transaction_timeout_ms,
+      .last_update = clock_type::now(),
+      .is_expiration_requested = false};
     if (!_is_autoabort_enabled) {
         return;
     }
