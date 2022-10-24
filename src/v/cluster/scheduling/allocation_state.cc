@@ -106,7 +106,6 @@ void allocation_state::update_allocation_nodes(
               std::make_unique<allocation_node>(
                 b.id(),
                 b.properties().cores,
-                absl::node_hash_map<ss::sstring, ss::sstring>{},
                 b.rack(),
                 _partitions_per_shard,
                 _partitions_reserve_shard0));
