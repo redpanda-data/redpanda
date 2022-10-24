@@ -2,7 +2,7 @@ name: {{name}}
 
 topics: {{topics}}
 partitionsPerTopic: {{partitions_per_topic}}
-{% if message_size is not none %}
+{% if message_size is defined %}
 messageSize: {{message_size}}
 payloadFile: {{payload_file}}
 {% else %}

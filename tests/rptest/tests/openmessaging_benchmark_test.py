@@ -24,8 +24,7 @@ class OpenBenchmarkTest(RedpandaTest):
                                                 num_brokers=3)
 
     @cluster(num_nodes=6)
-    @matrix(driver=["SIMPLE_DRIVER", "ACK_ALL_GROUP_LINGER_1MS"],
-            workload=["SIMPLE_WORKLOAD"])
+    @matrix(driver=["SIMPLE_DRIVER"], workload=["SIMPLE_WORKLOAD"])
     def test_default_omb_configuration(self, driver, workload):
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda, driver,
                                            workload)
@@ -33,4 +32,6 @@ class OpenBenchmarkTest(RedpandaTest):
         benchmark_time_min = benchmark.benchmark_time(
         ) + OpenBenchmarkTest.BENCHMARK_WAIT_TIME_MIN
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
-        benchmark.check_succeed()
+        # docker runs have high variance in perf numbers, check only in dedicate node
+        # setup.
+        benchmark.check_succeed(validate_metrics=self.redpanda.dedicated_nodes)
