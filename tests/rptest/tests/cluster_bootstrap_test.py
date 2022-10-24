@@ -43,7 +43,8 @@ class ClusterBootstrapTest(RedpandaTest):
 
         # Restart our nodes and make sure our node IDs persist across restarts.
         self.redpanda.restart_nodes(self.redpanda.nodes,
-                                    auto_assign_node_id=auto_assign_node_ids)
+                                    auto_assign_node_id=auto_assign_node_ids,
+                                    omit_seeds_on_idx_one=False)
         for idx in node_ids_per_idx:
             n = self.redpanda.get_node(idx)
             expected_node_id = node_ids_per_idx[idx]
