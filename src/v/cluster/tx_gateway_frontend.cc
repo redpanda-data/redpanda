@@ -783,7 +783,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           "got error {} on loading tx.id={}",
           term_opt.error(),
           tx_id);
-        co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
+        co_return init_tm_tx_reply{tx_errc::not_coordinator};
     }
     auto term = term_opt.value();
     auto tx_opt = co_await stm->get_tx(tx_id);
@@ -802,7 +802,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
             vlog(txlog.warn, "allocate_id failed with {}", pid_reply.ec);
-            co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
+            co_return init_tm_tx_reply{tx_errc::not_coordinator};
         }
 
         model::producer_identity pid{pid_reply.id, 0};
@@ -941,10 +941,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.trace, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
-            request, tx_errc::invalid_txn_state));
+            request, tx_errc::not_coordinator));
     }
 
     return container().invoke_on(
@@ -1006,6 +1006,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
       term, stm, pid, request.transactional_id, timeout);
 
     if (!r.has_value()) {
+        vlog(
+          txlog.trace,
+          "got {} on getting ongoing tx for pid:{} {}",
+          r.error(),
+          pid,
+          request.transactional_id);
         co_return make_add_partitions_error_response(request, r.error());
     }
     auto tx = r.value();
@@ -1807,10 +1813,19 @@ tx_gateway_frontend::get_ongoing_tx(
         }
 
         if (ec != tx_errc::none) {
+            vlog(
+              txlog.trace,
+              "rolling previous tx failed with {}; pid:{}",
+              ec,
+              pid);
             co_return ec;
         }
 
         if (expected_term != tx.etag) {
+            vlog(
+              txlog.trace,
+              "failing a tx initiated on the previous tx coordinator pid:{}",
+              pid);
             // The tx has started on the previous term. Even though we rolled it
             // forward there is a possibility that a previous leader did the
             // same and already started the current transaction.
@@ -1820,14 +1835,26 @@ tx_gateway_frontend::get_ongoing_tx(
             // So marking it as ready. We use previous term because aborting a
             // tx in current ready state with current term means we abort a tx
             // which wasn't started and it leads to an error.
-            std::ignore = co_await stm->reset_tx_ready(
+            auto c = co_await stm->reset_tx_ready(
               expected_term, tx.id, tx.etag);
+            if (!c) {
+                vlog(
+                  txlog.trace,
+                  "resetting tx as ready failed with {} pid:{}",
+                  c.error(),
+                  pid);
+            }
             co_return tx_errc::invalid_txn_state;
         }
     }
 
     auto ongoing_tx = co_await stm->reset_tx_ongoing(tx.id, expected_term);
     if (!ongoing_tx.has_value()) {
+        vlog(
+          txlog.trace,
+          "resetting tx as ongoing failed with {} pid:{}",
+          ongoing_tx.error(),
+          pid);
         co_return tx_errc::invalid_txn_state;
     }
     co_return ongoing_tx.value();
