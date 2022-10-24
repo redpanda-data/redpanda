@@ -15,8 +15,8 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
-#include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
+#include "rpc/fwd.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/metrics_registration.hh>
