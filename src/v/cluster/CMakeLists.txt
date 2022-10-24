@@ -138,6 +138,7 @@ v_cc_library(
     node_status_backend.cc
     node_status_rpc_handler.cc
     self_test_backend.cc
+    self_test_frontend.cc
     self_test_rpc_handler.cc
     bootstrap_service.cc
     bootstrap_backend.cc
