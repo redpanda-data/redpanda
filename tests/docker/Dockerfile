@@ -76,7 +76,7 @@ RUN apt update && \
 
 # Install the OMB tool
 RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
-    cd /opt/openmessaging-benchmark && git reset --hard 43b737c357cde3b418a6aee4c95107d6ef28b8a2 && mvn package
+    cd /opt/openmessaging-benchmark && git reset --hard 6eba1030cb7c199e03f76676b6c2df9dcc3b219d && mvn clean package -DskipTests
 
 # install kafka binary dependencies, librdkafka dev, kcat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"

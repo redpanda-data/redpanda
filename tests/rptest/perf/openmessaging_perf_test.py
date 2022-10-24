@@ -16,11 +16,8 @@ from ducktape.mark import parametrize
 
 
 class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
-    # We need to be a little generous with the wait time here as the benchmark
-    # run often takes longer than the configured time. This is often the case
-    # when consumers are catching up with the produced data, when
-    # consumerBacklogSizeGB is configured (check OMB documentation for details).
-    BENCHMARK_WAIT_TIME_MIN = 30
+
+    BENCHMARK_WAIT_TIME_MIN = 10
 
     def __init__(self, ctx):
         self._ctx = ctx
@@ -29,16 +26,16 @@ class RedPandaOpenMessagingBenchmarkPerf(RedpandaTest):
 
     @cluster(num_nodes=6)
     @parametrize(driver_idx="ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-                 workload_idx="TOPIC1_PART100_1KB_4PROD_1250K_RATE")
-    def test_perf_with_idempotence_and_max_in_flight(self, driver_idx,
-                                                     workload_idx):
+                 workload_idx="RELEASE_CERT_SMOKE_LOAD_625k")
+    def test_perf(self, driver_idx, workload_idx):
         """
-        This test runs ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT driver with
-        TOPIC1_PART100_1KB_4PROD_1250K_RATE workload. Has a runtime of ~1hr.
+        This test is run as a part of nightly perf suite to detect
+        regressions.
         """
 
-        # Make sure this is running in a dedicated environment as the perf run
-        # is long running and requires significant resources.
+        # Make sure this is running in a dedicated environment as the perf
+        # run validator metrics are based on a production grade deployment.
+        # Check validator for specifics.
         assert self.redpanda.dedicated_nodes
 
         benchmark = OpenMessagingBenchmark(self._ctx, self.redpanda,
