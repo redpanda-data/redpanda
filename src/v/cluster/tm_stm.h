@@ -43,6 +43,7 @@ using use_tx_version_with_last_pid_bool
 // Includes all changes for transactions GA.
 // + last_pid field - KIP-360 support
 // + transferring - tm_stm graceful failover support
+// + partition::topic_revision - revision_id of the topic
 struct tm_transaction {
     static constexpr uint8_t version = 2;
 
@@ -59,6 +60,13 @@ struct tm_transaction {
     struct tx_partition {
         model::ntp ntp;
         model::term_id etag;
+        // Revision id associated with the topic when this partition
+        // was added to the transaction. This helps identify if a topic
+        // is deleted [+ recreated] in the middle of a transaction.
+        // Revision id of a topic is monotonically increasing and
+        // corresponds to the create command offset in the controller
+        // log.
+        model::revision_id topic_revision;
 
         bool operator==(const tx_partition& other) const = default;
     };
@@ -131,8 +139,14 @@ struct tm_transaction {
 
     std::chrono::milliseconds get_timeout() const { return timeout_ms; }
 
-    bool delete_partition(const tx_partition& ntp) {
-        return std::erase(partitions, ntp) > 0;
+    bool delete_partition(const tx_partition& part) {
+        return std::erase_if(
+                 partitions,
+                 [part](const auto& partition) {
+                     return partition.ntp == part.ntp
+                            && partition.etag == part.etag;
+                 })
+               > 0;
     }
 };
 

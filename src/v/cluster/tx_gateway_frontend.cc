@@ -1092,8 +1092,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
             should_retry = should_retry || expected_ec;
 
             if (br.ec == tx_errc::none) {
-                partitions.push_back(
-                  tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+                partitions.push_back(tm_transaction::tx_partition{
+                  .ntp = br.ntp,
+                  .etag = br.etag,
+                  .topic_revision = br.topic_revision});
             }
         }
         if (should_abort) {
