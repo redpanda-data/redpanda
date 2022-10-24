@@ -15,6 +15,7 @@ from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
 from rptest.services import tls
+from ducktape.errors import TimeoutError
 
 DEFAULT_TIMEOUT = 30
 
@@ -143,10 +144,13 @@ class RpkTool:
                     return False
                 raise e
 
-        wait_until_result(create_topic,
-                          10,
-                          0.1,
-                          err_msg="Can't create a topic within 10s")
+        try:
+            wait_until_result(create_topic,
+                              10,
+                              0.1,
+                              err_msg="Can't create a topic within 10s")
+        except TimeoutError:
+            raise RpkException("rpk couldn't create topic within 10s timeout")
 
     def add_partitions(self, topic, partitions):
         cmd = ["add-partitions", topic, "-n", str(partitions)]
