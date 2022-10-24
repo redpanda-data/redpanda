@@ -1246,7 +1246,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::generic_tx_error;
     }
 
-    if (_log_state.inflight[bid.pid] > 0) {
+    if (_log_state.ongoing_map.contains(bid.pid)) {
         // this isn't the first attempt in the tx we should try dedupe
         auto cached_offset = known_seq(bid);
         if (cached_offset) {
@@ -1976,9 +1976,10 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     // using less-or-equal to update tx_seqs on every transaction
     if (fence_it->second <= bid.pid.get_epoch()) {
         fence_it->second = bid.pid.get_epoch();
-        _log_state.inflight[bid.pid] = 0;
         if (tx_seq.has_value()) {
             _log_state.tx_seqs[bid.pid] = tx_seq.value();
+        }
+        if (transaction_timeout_ms.has_value()) {
             // with switching to log_state an active transaction may
             // survive leadership and we need to start tracking it on
             // the new leader so we can't rely on the begin_tx initi-
@@ -2030,7 +2031,6 @@ ss::future<> rm_stm::apply_control(
     if (crt == model::control_record_type::tx_abort) {
         _log_state.prepared.erase(pid);
         _log_state.tx_seqs.erase(pid);
-        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             // make a list
@@ -2051,7 +2051,6 @@ ss::future<> rm_stm::apply_control(
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
         _log_state.tx_seqs.erase(pid);
-        _log_state.inflight.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             _log_state.ongoing_set.erase(offset_it->second.first);
@@ -2118,11 +2117,6 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
         }
-
-        if (!_log_state.inflight.contains(bid.pid)) {
-            _log_state.inflight[bid.pid] = 0;
-        }
-        _log_state.inflight[bid.pid]++;
     }
 }
 
@@ -2142,13 +2136,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         data.offset = std::move(data_v2.offset);
         data.seqs = std::move(data_v2.seqs);
 
-        for (auto& entry : data_v2.ongoing) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
-        }
         for (auto& entry : data_v2.prepared) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
             data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
@@ -2189,13 +2177,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.seqs.push_back(std::move(seq));
         }
 
-        for (auto& entry : data_v1.ongoing) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
-        }
         for (auto& entry : data_v1.prepared) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
             data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
@@ -2215,13 +2197,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .last_write_timestamp = seq_v0.last_write_timestamp};
             data.seqs.push_back(std::move(seq));
         }
-        for (auto& entry : data_v0.ongoing) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
-        }
         for (auto& entry : data_v0.prepared) {
-            data.inflight.emplace_back(
-              tx_snapshot::inflight_snapshot{.pid = entry.pid, .counter = 1});
             data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
@@ -2274,10 +2250,6 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 
     for (auto& entry : data.tx_seqs) {
         _log_state.tx_seqs.emplace(entry.pid, entry.tx_seq);
-    }
-
-    for (auto& entry : data.inflight) {
-        _log_state.inflight.emplace(entry.pid, entry.counter);
     }
 
     for (auto& entry : data.expiration) {
@@ -2417,11 +2389,6 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         for (const auto& entry : _log_state.tx_seqs) {
             tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.first, .tx_seq = entry.second});
-        }
-
-        for (const auto& entry : _log_state.inflight) {
-            tx_ss.inflight.push_back(tx_snapshot::inflight_snapshot{
-              .pid = entry.first, .counter = entry.second});
         }
 
         for (const auto& entry : _log_state.expiration) {
