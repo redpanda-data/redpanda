@@ -34,7 +34,7 @@
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
-#include "s3/client.h"
+#include "s3/configuration.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>

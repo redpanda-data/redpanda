@@ -14,7 +14,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
-#include "s3/client.h"
+#include "s3/configuration.h"
 
 #include <seastar/core/abort_source.hh>
 
