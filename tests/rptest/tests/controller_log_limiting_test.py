@@ -194,21 +194,19 @@ class ControllerConfigLimitTest(RedpandaTest):
         return get_metric(self.redpanda, "requests_available_rps",
                           "configuration_operations") == capacity
 
-    @ok_to_fail
     @cluster(num_nodes=3)
     def test_alter_configs_limit_accumulate(self):
         requests_amount = OPERATIONS_LIMIT * 2
-        capacity = requests_amount * 2
         self.client().alter_broker_config(
             {
                 "controller_log_accummulation_rps_capacity_configuration_operations":
-                capacity
+                requests_amount
             },
             incremental=True)
         success_amount = 0
         quota_error_amount = 0
 
-        wait_until(lambda: self.check_capcity_is_full(capacity),
+        wait_until(lambda: self.check_capcity_is_full(requests_amount),
                    timeout_sec=10,
                    backoff_sec=1)
         for i in range(requests_amount):
