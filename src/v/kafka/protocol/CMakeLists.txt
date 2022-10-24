@@ -2,6 +2,7 @@ add_subdirectory(schemata)
 
 set(message_gen ${CMAKE_CURRENT_SOURCE_DIR}/schemata/generator.py)
 set(message_srcs)
+set(message_hdrs)
 
 foreach(schema ${schemata})
   get_filename_component(msg_name ${schema} NAME_WE)
@@ -9,6 +10,7 @@ foreach(schema ${schemata})
   set(msg_dir "${CMAKE_CURRENT_BINARY_DIR}/schemata")
   set(msg_hdr "${msg_dir}/${msg_name}.h")
   set(msg_src "${msg_dir}/${msg_name}.cc")
+  list(APPEND message_hdrs ${msg_hdr})
   list(APPEND message_srcs ${msg_hdr})
   list(APPEND message_srcs ${msg_src})
   add_custom_command(
@@ -20,6 +22,9 @@ foreach(schema ${schemata})
     VERBATIM)
 endforeach()
 
+add_custom_target(kafka_codegen_headers
+  DEPENDS ${message_hdrs}
+)
 
 v_cc_library(
   NAME kafka_protocol
