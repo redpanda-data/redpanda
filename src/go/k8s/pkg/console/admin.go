@@ -59,7 +59,7 @@ func NewKafkaAdmin(
 	ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster, store *Store,
 ) (KafkaAdminClient, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
-	if cluster.Spec.EnableSASL {
+	if cluster.IsSASLOnInternalEnabled() {
 		sasl, err := getSASLOpt(ctx, cl, cluster)
 		if err != nil {
 			return nil, err
