@@ -104,6 +104,15 @@ public:
         return _allocated_partitions;
     }
 
+    allocation_capacity
+    domain_allocated_partitions(partition_allocation_domain domain) const {
+        if (auto it = _allocated_domain_partitions.find(domain);
+            it != _allocated_domain_partitions.end()) {
+            return it->second;
+        }
+        return allocation_capacity{0};
+    }
+
     bool empty() const {
         return _allocated_partitions == allocation_capacity{0};
     }
