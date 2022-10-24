@@ -29,10 +29,10 @@ Plugins augment rpk with new commands.
 For a plugin to be used, it must be somewhere discoverable by rpk in your
 $PATH. All plugins follow a defined naming scheme:
 
-  rpk-<name>
-  rpk.ac-<name>
+  .rpk-<name>
+  .rpk.ac-<name>
 
-All plugins are prefixed with either rpk- or rpk.ac-. When rpk starts up, it
+All plugins are prefixed with either .rpk- or .rpk.ac-. When rpk starts up, it
 searches all directories in your $PATH for any executable binary that begins
 with either of those prefixes. For any binary it finds, rpk adds a command for
 that name to the rpk command space itself.
@@ -43,7 +43,7 @@ a first-seen basis. If you have two plugins rpk-foo, and the second is
 discovered later on in the $PATH directories, then only the first will be used.
 The second will be ignored.
 
-Plugins that have an rpk.ac- prefix indicate that they support the
+Plugins that have an .rpk.ac- prefix indicate that they support the
 --help-autocomplete flag. If rpk sees this, rpk will exec the plugin with that
 flag when rpk starts up, and the plugin will return all commands it supports as
 well as short and long help test for each command. Rpk uses this return to

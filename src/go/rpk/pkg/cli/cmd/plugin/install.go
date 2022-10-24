@@ -41,7 +41,7 @@ func newInstallCommand(fs afero.Fs) *cobra.Command {
 
 An rpk plugin must be saved in a directory that is in your $PATH. By default,
 this command installs plugins to the first directory in your $PATH. This can
-be overridden by specifying the --bin-dir flag.
+be overridden by specifying the --dir flag.
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {

@@ -207,7 +207,7 @@ func tryExecPlugin(h pluginHandler, args []string) (string, error) {
 // stopping when there is only one piece left.
 //
 // Pieces corresponds to the pieces of a plugin, and on the last piece, the
-// cobra.Commabd will execute execPath.
+// cobra.Command will execute execPath.
 func addPluginWithExec(
 	parentCmd *cobra.Command, pieces []string, execPath string,
 ) {
