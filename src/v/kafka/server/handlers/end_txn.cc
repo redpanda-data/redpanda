@@ -56,6 +56,9 @@ ss::future<response_ptr> end_txn_handler::handle(
               case cluster::tx_errc::invalid_txn_state:
                   data.error_code = error_code::invalid_txn_state;
                   break;
+              case cluster::tx_errc::timeout:
+                  data.error_code = error_code::request_timed_out;
+                  break;
               default:
                   data.error_code = error_code::unknown_server_error;
                   break;

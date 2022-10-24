@@ -488,6 +488,8 @@ tx_gateway_frontend::do_commit_tm_tx(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         co_return err;
     }
@@ -789,6 +791,9 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         if (tx_opt.error() == tm_stm::op_status::not_leader) {
             co_return init_tm_tx_reply{tx_errc::leader_not_found};
         }
+        if (tx_opt.error() == tm_stm::op_status::timeout) {
+            co_return init_tm_tx_reply{tx_errc::timeout};
+        }
         if (tx_opt.error() != tm_stm::op_status::not_found) {
             co_return init_tm_tx_reply{tx_errc::unknown_server_error};
         }
@@ -916,6 +921,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
         reply.ec = tx_errc::conflict;
+    } else if (op_status == tm_stm::op_status::timeout) {
+        reply.ec = tx_errc::timeout;
     } else {
         vlog(
           txlog.warn,
@@ -1347,6 +1354,8 @@ tx_gateway_frontend::do_end_txn(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         outcome->set_value(err);
         co_return err;
@@ -1446,6 +1455,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         // it exists on an older leader
         auto ready_tx = co_await stm->reset_tx_ready(expected_term, tx.id);
         if (!ready_tx.has_value()) {
+            if (ready_tx.error() == tm_stm::op_status::timeout) {
+                co_return tx_errc::timeout;
+            }
             co_return tx_errc::invalid_txn_state;
         }
         co_return ready_tx.value();
@@ -1462,6 +1474,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         if (!changed_tx.has_value()) {
             if (changed_tx.error() == tm_stm::op_status::not_leader) {
                 co_return tx_errc::not_coordinator;
+            }
+            if (changed_tx.error() == tm_stm::op_status::timeout) {
+                co_return tx_errc::timeout;
             }
             co_return tx_errc::unknown_server_error;
         }
@@ -1550,6 +1565,10 @@ tx_gateway_frontend::do_commit_tm_tx(
                         outcome->set_value(tx_errc::not_coordinator);
                         co_return tx_errc::not_coordinator;
                     }
+                    if (preparing_tx.error() == tm_stm::op_status::timeout) {
+                        outcome->set_value(tx_errc::timeout);
+                        co_return tx_errc::timeout;
+                    }
                     outcome->set_value(tx_errc::unknown_server_error);
                     co_return tx_errc::unknown_server_error;
                 }
@@ -1596,6 +1615,10 @@ tx_gateway_frontend::do_commit_tm_tx(
         if (changed_tx.error() == tm_stm::op_status::not_leader) {
             outcome->set_value(tx_errc::not_coordinator);
             co_return tx_errc::not_coordinator;
+        }
+        if (changed_tx.error() == tm_stm::op_status::timeout) {
+            outcome->set_value(tx_errc::timeout);
+            co_return tx_errc::timeout;
         }
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
@@ -1674,7 +1697,7 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::timeout;
     }
     co_return tx_errc::none;
 }
@@ -1701,7 +1724,7 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::invalid_txn_state;
+        co_return tx_errc::timeout;
     }
     co_return tx_errc::none;
 }
@@ -1722,6 +1745,8 @@ tx_gateway_frontend::get_ongoing_tx(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         co_return err;
     }

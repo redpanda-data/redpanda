@@ -73,6 +73,9 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                       case cluster::tx_errc::invalid_txn_state:
                           partition.error_code = error_code::invalid_txn_state;
                           break;
+                      case cluster::tx_errc::timeout:
+                          partition.error_code = error_code::request_timed_out;
+                          break;
                       default:
                           partition.error_code
                             = error_code::unknown_server_error;

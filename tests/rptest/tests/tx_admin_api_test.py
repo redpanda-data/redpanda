@@ -257,7 +257,7 @@ class TxAdminTest(RedpandaTest):
             raise Exception("init_transaction should fail")
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
+            assert kafka_error.code() == ck.cimpl.KafkaError.REQUEST_TIMED_OUT
 
         txs_info = self.admin.get_all_transactions()
         assert len(

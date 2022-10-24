@@ -99,6 +99,9 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                       reply.data.error_code
                         = error_code::invalid_producer_epoch;
                       break;
+                  case cluster::tx_errc::timeout:
+                      reply.data.error_code = error_code::request_timed_out;
+                      break;
                   default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
                       reply.data.error_code = error_code::broker_not_available;
