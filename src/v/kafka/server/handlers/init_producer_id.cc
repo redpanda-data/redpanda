@@ -102,6 +102,9 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                   case cluster::tx_errc::timeout:
                       reply.data.error_code = error_code::request_timed_out;
                       break;
+                  case cluster::tx_errc::shard_not_found:
+                      reply.data.error_code = error_code::not_coordinator;
+                      break;
                   default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
                       reply.data.error_code = error_code::broker_not_available;
