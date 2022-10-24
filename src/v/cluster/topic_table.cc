@@ -761,6 +761,18 @@ bool topic_table::contains(
     return false;
 }
 
+topic_table::topic_state topic_table::get_topic_state(
+  model::topic_namespace_view tp, model::revision_id id) const {
+    if (id > _last_consumed_by_notifier) {
+        // Cache is not sufficiently up to date to give a
+        // reliable result.
+        return topic_state::indeterminate;
+    }
+    const auto& topic_md = get_topic_metadata_ref(tp);
+    auto exists = topic_md && topic_md->get().get_revision() == id;
+    return exists ? topic_state::exists : topic_state::not_exists;
+}
+
 std::optional<cluster::partition_assignment>
 topic_table::get_partition_assignment(const model::ntp& ntp) const {
     auto it = _topics.find(model::topic_namespace_view(ntp));
