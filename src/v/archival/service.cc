@@ -264,11 +264,34 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
     if (!part) {
         co_return;
     }
+
     vlog(_rtclog.info, "Starting archiver for partition {}", ntp);
 
     if (part->get_ntp_config().is_read_replica_mode_enabled()) {
         archiver->run_sync_manifest_loop();
     } else {
+        /**
+         * In Redpanda 22.3 (cluster logical version 7), S3 segment naming
+         * and partition manifest format change.  Therefore we must not
+         * write anything into the new format while any nodes are still
+         * on the old version (i.e. before feature is active).  This is
+         * a simpler alternative than teaching Redpanda to conditionally
+         * write the old format.
+         */
+        if (!_feature_table.local().is_active(
+              features::feature::cloud_retention)) {
+            vlog(
+              _rtclog.info,
+              "Upgrade in progress, delaying archiver startup for partition {}",
+              ntp);
+
+            // This function is called from a reconciliation loop, so rather
+            // than sleeping on await_feature, we can simply return and let it
+            // retry later.
+            _archivers.erase(archiver->get_ntp());
+            co_return;
+        }
+
         if (ntp.tp.partition == 0) {
             // Upload manifest once per topic. GCS has strict
             // limits for single object updates.
