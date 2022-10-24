@@ -324,7 +324,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
             vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
         };
     };
-    _redpanda_enabled = config["redpanda"];
+    _redpanda_enabled = bool(config["redpanda"]);
     if (_redpanda_enabled) {
         ss::smp::invoke_on_all([&config, cfg_path] {
             config::node().load(cfg_path, config);
