@@ -1004,7 +1004,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
     add_paritions_tx_reply response;
 
-    std::vector<ss::future<begin_tx_reply>> bfs;
+    std::vector<model::ntp> new_partitions;
 
     for (auto& req_topic : request.topics) {
         add_paritions_tx_reply::topic_result res_topic;
@@ -1025,43 +1025,74 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                 res_partition.error_code = tx_errc::none;
                 res_topic.results.push_back(res_partition);
             } else {
-                bfs.push_back(_rm_partition_frontend.local().begin_tx(
-                  ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
+                new_partitions.push_back(ntp);
             }
         }
         response.results.push_back(res_topic);
     }
 
-    auto brs = co_await when_all_succeed(bfs.begin(), bfs.end());
-
     std::vector<tm_transaction::tx_partition> partitions;
-    for (auto& br : brs) {
-        auto topic_it = std::find_if(
-          response.results.begin(),
-          response.results.end(),
-          [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
-        vassert(
-          topic_it != response.results.end(),
-          "can't find expected topic {}",
-          br.ntp.tp.topic());
-        vassert(
-          std::none_of(
-            topic_it->results.begin(),
-            topic_it->results.end(),
-            [&br](const auto& r) {
-                return r.partition_index == br.ntp.tp.partition();
-            }),
-          "partition {} is already part of the response",
-          br.ntp.tp.partition());
-        if (br.ec == tx_errc::none) {
-            partitions.push_back(
-              tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+    std::vector<begin_tx_reply> brs;
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    while (0 < retries--) {
+        partitions.clear();
+        brs.clear();
+        bool should_retry = false;
+        bool should_abort = false;
+        std::vector<ss::future<begin_tx_reply>> bfs;
+        bfs.reserve(new_partitions.size());
+        for (auto& ntp : new_partitions) {
+            bfs.push_back(_rm_partition_frontend.local().begin_tx(
+              ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
         }
+        brs = co_await when_all_succeed(bfs.begin(), bfs.end());
+        for (auto& br : brs) {
+            auto topic_it = std::find_if(
+              response.results.begin(),
+              response.results.end(),
+              [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
+            vassert(
+              topic_it != response.results.end(),
+              "can't find expected topic {}",
+              br.ntp.tp.topic());
+            vassert(
+              std::none_of(
+                topic_it->results.begin(),
+                topic_it->results.end(),
+                [&br](const auto& r) {
+                    return r.partition_index == br.ntp.tp.partition();
+                }),
+              "partition {} is already part of the response",
+              br.ntp.tp.partition());
+
+            bool expected_ec = br.ec == tx_errc::leader_not_found
+                               || br.ec == tx_errc::shard_not_found;
+            should_abort = should_abort
+                           || (br.ec != tx_errc::none && !expected_ec);
+            should_retry = should_retry || expected_ec;
+
+            if (br.ec == tx_errc::none) {
+                partitions.push_back(
+                  tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+            }
+        }
+        if (should_abort) {
+            break;
+        }
+        if (should_retry) {
+            if (!co_await sleep_abortable(delay_ms, _as)) {
+                break;
+            }
+            continue;
+        }
+        break;
     }
+
     auto status = co_await stm->add_partitions(tx.id, partitions);
     auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
-        vlog(txlog.warn, "can't add partitions: {}", status);
+        vlog(txlog.warn, "adding partitions failed with {}", status);
     }
     for (auto& br : brs) {
         auto topic_it = std::find_if(
@@ -1076,7 +1107,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         } else {
             if (br.ec != tx_errc::none) {
                 vlog(
-                  txlog.warn, "begin_tx({},...) failed with {}", br.ntp, br.ec);
+                  txlog.warn,
+                  "begin_tx request to {} failed with {}",
+                  br.ntp,
+                  br.ec);
             }
             res_partition.error_code = tx_errc::invalid_txn_state;
         }

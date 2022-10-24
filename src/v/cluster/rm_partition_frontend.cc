@@ -485,7 +485,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
-        vlog(txlog.warn, "can't find a leader for {}", ntp);
+        vlog(txlog.warn, "can't find a leader for {} pid:{}", ntp, pid);
         return ss::make_ready_future<commit_tx_reply>(
           commit_tx_reply{tx_errc::leader_not_found});
     }
