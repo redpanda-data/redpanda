@@ -11,6 +11,7 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import ResourceSettings
 from rptest.services.cluster import cluster
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class ResourceLimitsTest(RedpandaTest):
@@ -67,6 +68,7 @@ class ResourceLimitsTest(RedpandaTest):
         # Growing the partition count within the limit should succeed
         rpk.add_topic_partitions("okay", 10)
 
+    @skip_debug_mode
     @cluster(num_nodes=3)
     def test_cpu_limited(self):
         """
@@ -95,16 +97,7 @@ class ResourceLimitsTest(RedpandaTest):
         else:
             assert False
 
-        try:
-            rpk.create_topic("okay", partitions=6000, replicas=3)
-        except RpkException as e:
-            # Because this many partitions will overwhelm a debug build
-            # of redpanda, we tolerate exceptions, as long as the exception
-            # isn't about the partition count specifically.
-            #
-            # It would be better to execute this part of the test conditionally
-            # on release builds only.
-            assert 'INVALID_PARTITIONS' not in e.msg
+        rpk.create_topic("okay", partitions=6000, replicas=3)
 
     @cluster(num_nodes=3)
     def test_fd_limited(self):
