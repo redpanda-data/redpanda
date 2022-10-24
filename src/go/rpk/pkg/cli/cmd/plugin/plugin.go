@@ -26,8 +26,8 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	
 Plugins augment rpk with new commands.
 
-For a plugin to be used, it must be somewhere discoverable by rpk in your
-$PATH. All plugins follow a defined naming scheme:
+For a plugin to be used, it must be in $HOME/.local/bin or somewhere 
+discoverable by rpk in your $PATH. All plugins follow a defined naming scheme:
 
   .rpk-<name>
   .rpk.ac-<name>
