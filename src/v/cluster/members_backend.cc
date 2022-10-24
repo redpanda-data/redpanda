@@ -172,7 +172,10 @@ void members_backend::calculate_reallocations(update_meta& meta) {
         calculate_reallocations_after_decommissioned(meta);
         return;
     case members_manager::node_update_type::added:
-        calculate_reallocations_after_node_added(meta);
+        calculate_reallocations_after_node_added(
+          meta, partition_allocation_domains::consumer_offsets);
+        calculate_reallocations_after_node_added(
+          meta, partition_allocation_domains::common);
         return;
     case members_manager::node_update_type::recommissioned:
         calculate_reallocations_after_recommissioned(meta);
@@ -233,7 +236,8 @@ void members_backend::calculate_reallocations_after_decommissioned(
     }
 }
 void members_backend::calculate_reallocations_after_node_added(
-  members_backend::update_meta& meta) const {
+  members_backend::update_meta& meta,
+  partition_allocation_domain domain) const {
     if (
       config::shard_local_cfg().partition_autobalancing_mode()
       == model::partition_autobalancing_mode::off) {
@@ -254,12 +258,13 @@ void members_backend::calculate_reallocations_after_node_added(
               id,
               node_info{
                 .replicas_count = 0,
-                .max_capacity = n->max_capacity(),
+                .max_capacity = n->domain_partition_capacity(domain),
               });
         }
         auto it = node_replicas.find(id);
-        it->second.replicas_count += n->allocated_partitions();
-        total_replicas += n->allocated_partitions();
+        const auto domain_allocated = n->domain_allocated_partitions(domain);
+        it->second.replicas_count += domain_allocated;
+        total_replicas += domain_allocated;
     }
 
     // 2. calculate number of replicas per node leading to even replica per
@@ -292,6 +297,10 @@ void members_backend::calculate_reallocations_after_node_added(
     // 4. Pass over all partition metadata once, try to move until we reach even
     // number of partitions per core on each node
     for (auto& [tp_ns, metadata] : topics) {
+        // skip partitions outside of current domain
+        if (get_allocation_domain(tp_ns) != domain) {
+            continue;
+        }
         // do not try to move internal partitions
         if (
           tp_ns.ns == model::kafka_internal_namespace
