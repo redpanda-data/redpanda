@@ -104,10 +104,7 @@ void allocation_state::update_allocation_nodes(
             _nodes.emplace(
               b.id(),
               std::make_unique<allocation_node>(
-                b.id(),
-                b.properties().cores,
-                absl::node_hash_map<ss::sstring, ss::sstring>{},
-                b.rack()));
+                b.id(), b.properties().cores, b.rack()));
         } else {
             it->second->update_core_count(b.properties().cores);
             it->second->update_rack(b.rack());
