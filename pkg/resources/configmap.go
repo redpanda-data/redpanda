@@ -224,18 +224,29 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cr := &cfg.NodeConfiguration.Redpanda
 
 	internalListener := r.pandaCluster.InternalListener()
+	internalAuthN := &internalListener.AuthenticationMethod
+	if *internalAuthN == "" {
+		internalAuthN = nil
+	}
 	cr.KafkaAPI = []config.NamedAuthNSocketAddress{} // we don't want to inherit default kafka port
 	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 		Address: "0.0.0.0",
 		Port:    internalListener.Port,
 		Name:    InternalListenerName,
+		AuthN:   internalAuthN,
 	})
 
-	if r.pandaCluster.ExternalListener() != nil {
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener != nil {
+		externalAuthN := &externalListener.AuthenticationMethod
+		if *externalAuthN == "" {
+			externalAuthN = nil
+		}
 		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 			Address: "0.0.0.0",
 			Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
 			Name:    ExternalListenerName,
+			AuthN:   externalAuthN,
 		})
 	}
 
@@ -307,6 +318,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	if r.pandaCluster.Spec.EnableSASL {
 		cfg.SetAdditionalRedpandaProperty("enable_sasl", true)
+	}
+	if r.pandaCluster.Spec.KafkaEnableAuthorization != nil && *r.pandaCluster.Spec.KafkaEnableAuthorization {
+		cfg.SetAdditionalRedpandaProperty("kafka_enable_authorization", true)
 	}
 
 	partitions := r.pandaCluster.Spec.Configuration.GroupTopicPartitions
