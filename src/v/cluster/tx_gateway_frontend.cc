@@ -1606,26 +1606,40 @@ tx_gateway_frontend::do_commit_tm_tx(
     outcome->set_value(tx_errc::none);
     tx = changed_tx.value();
 
-    std::vector<ss::future<commit_group_tx_reply>> gfs;
-    for (auto group : tx.groups) {
-        gfs.push_back(_rm_group_proxy->commit_group_tx(
-          group.group_id, tx.pid, tx.tx_seq, timeout));
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto done = false;
+    while (0 < retries--) {
+        std::vector<ss::future<commit_group_tx_reply>> gfs;
+        gfs.reserve(tx.groups.size());
+        for (auto group : tx.groups) {
+            gfs.push_back(_rm_group_proxy->commit_group_tx(
+              group.group_id, tx.pid, tx.tx_seq, timeout));
+        }
+        std::vector<ss::future<commit_tx_reply>> cfs;
+        cfs.reserve(tx.partitions.size());
+        for (auto rm : tx.partitions) {
+            cfs.push_back(_rm_partition_frontend.local().commit_tx(
+              rm.ntp, tx.pid, tx.tx_seq, timeout));
+        }
+        auto ok = true;
+        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
+        for (const auto& r : grs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
+        for (const auto& r : crs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        if (ok) {
+            done = true;
+            break;
+        }
+        if (!co_await sleep_abortable(delay_ms, _as)) {
+            break;
+        }
     }
-    std::vector<ss::future<commit_tx_reply>> cfs;
-    for (auto rm : tx.partitions) {
-        cfs.push_back(_rm_partition_frontend.local().commit_tx(
-          rm.ntp, tx.pid, tx.tx_seq, timeout));
-    }
-    auto ok = true;
-    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-    for (const auto& r : grs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
-    for (const auto& r : crs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    if (!ok) {
+    if (!done) {
         co_return tx_errc::unknown_server_error;
     }
     co_return tx;
