@@ -68,7 +68,7 @@ type (
 	}
 
 	// KafkaAdminClientFactory returns a KafkaAdminClient
-	KafkaAdminClientFactory func(context.Context, client.Client, *redpandav1alpha1.Cluster) (KafkaAdminClient, error)
+	KafkaAdminClientFactory func(context.Context, client.Client, *redpandav1alpha1.Cluster, *Store) (KafkaAdminClient, error)
 )
 
 // GenerateSASLUsername returns username used for Kafka SASL config
@@ -157,6 +157,7 @@ type KafkaACL struct {
 	consoleobj *redpandav1alpha1.Console
 	clusterobj *redpandav1alpha1.Cluster
 	kafkaAdmin KafkaAdminClientFactory
+	store      *Store
 	log        logr.Logger
 }
 
@@ -167,6 +168,7 @@ func NewKafkaACL(
 	consoleobj *redpandav1alpha1.Console,
 	clusterobj *redpandav1alpha1.Cluster,
 	kafkaAdmin KafkaAdminClientFactory,
+	store *Store,
 	log logr.Logger,
 ) *KafkaACL {
 	return &KafkaACL{
@@ -175,6 +177,7 @@ func NewKafkaACL(
 		consoleobj: consoleobj,
 		clusterobj: clusterobj,
 		kafkaAdmin: kafkaAdmin,
+		store:      store,
 		log:        log,
 	}
 }
@@ -191,7 +194,7 @@ func (k *KafkaACL) Ensure(ctx context.Context) error {
 	}
 	b.PrefixUserExcept()
 
-	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj)
+	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj, k.store)
 	if err != nil {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}
@@ -244,7 +247,7 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 	}
 	b.PrefixUserExcept()
 
-	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj)
+	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj, k.store)
 	if err != nil {
 		return fmt.Errorf("creating kafka admin client: %w", err)
 	}

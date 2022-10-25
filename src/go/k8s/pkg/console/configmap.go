@@ -331,30 +331,36 @@ var (
 
 	SchemaRegistryTLSDir          = "/redpanda/schema-registry"
 	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
-	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
-	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
+	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSCertKey)
+	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSPrivateKeyKey)
 
 	ConnectTLSDir          = "/redpanda/connect"
 	ConnectTLSCaFilePath   = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "ca.crt")
-	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.crt")
-	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.key")
+	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSCertKey)
+	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSPrivateKeyKey)
+
+	KafkaTLSDir          = "/redpanda/kafka"
+	KafkaTLSCaFilePath   = fmt.Sprintf("%s/%s", KafkaTLSDir, "ca.crt")
+	KafkaTLSCertFilePath = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSCertKey)
+	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSPrivateKeyKey)
 )
 
-// SchemaRegistryTLSCa handles mounting CA cert
-type SchemaRegistryTLSCa struct {
-	NodeSecretRef *corev1.ObjectReference
+// SecretTLSCa handles mounting CA cert
+type SecretTLSCa struct {
+	NodeSecretRef  *corev1.ObjectReference
+	UsePublicCerts bool
 }
 
 // FilePath returns the CA filepath mount
-func (s *SchemaRegistryTLSCa) FilePath() string {
+func (s *SecretTLSCa) FilePath(defaultCaCert string) string {
 	if s.useCaCert() {
-		return SchemaRegistryTLSCaFilePath
+		return defaultCaCert
 	}
 	return DefaultCaFilePath
 }
 
 // Volume returns mount Volume definition
-func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
+func (s *SecretTLSCa) Volume(name string) *corev1.Volume {
 	if s.useCaCert() {
 		return &corev1.Volume{
 			Name: name,
@@ -370,8 +376,8 @@ func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
 }
 
 // useCaCert checks if the CA certificate referenced by NodeSecretRef should be used
-func (s *SchemaRegistryTLSCa) useCaCert() bool {
-	return !UsePublicCerts && s.NodeSecretRef != nil
+func (s *SecretTLSCa) useCaCert() bool {
+	return !s.UsePublicCerts && s.NodeSecretRef != nil
 }
 
 func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
@@ -384,13 +390,13 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 	if y := cm.consoleobj.Spec.SchemaRegistry.Enabled; y {
 		tls := schema.TLSConfig{Enabled: false}
 		if yy := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yy {
-			ca := &SchemaRegistryTLSCa{
-				// SchemaRegistryAPITLS cannot be nil
-				cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+			ca := &SecretTLSCa{
+				NodeSecretRef:  cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+				UsePublicCerts: UsePublicCerts,
 			}
 			tls = schema.TLSConfig{
 				Enabled:    y,
-				CaFilepath: ca.FilePath(),
+				CaFilepath: ca.FilePath(SchemaRegistryTLSCaFilePath),
 			}
 			if cm.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
 				tls.CertFilepath = SchemaRegistryTLSCertFilePath
@@ -400,6 +406,18 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
 	}
 	k.Schema = schemaRegistry
+
+	tls := kafka.TLSConfig{Enabled: false}
+	if l := cm.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
+		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
+		tls = kafka.TLSConfig{
+			Enabled:      true,
+			CaFilepath:   ca.FilePath(KafkaTLSCaFilePath),
+			CertFilepath: KafkaTLSCertFilePath,
+			KeyFilepath:  KafkaTLSKeyFilePath,
+		}
+	}
+	k.TLS = tls
 
 	sasl := kafka.SASLConfig{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled
@@ -418,7 +436,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 }
 
 func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
-	if l := clusterobj.InternalListener(); l != nil {
+	if l := clusterobj.KafkaListener(); !l.External.Enabled {
 		brokers := []string{}
 		for _, host := range clusterobj.Status.Nodes.Internal {
 			port := fmt.Sprintf("%d", l.Port)
