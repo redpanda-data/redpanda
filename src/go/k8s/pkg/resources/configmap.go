@@ -459,20 +459,31 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 		return
 	}
 
+	var internalAuthN *string
+	if internal.AuthenticationMethod != "" {
+		internalAuthN = &internal.AuthenticationMethod
+	}
 	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedAuthNSocketAddress{
 		{
 			Address: "0.0.0.0",
 			Port:    internal.Port,
 			Name:    PandaproxyPortInternalName,
+			AuthN:   internalAuthN,
 		},
 	}
 
-	if r.pandaCluster.PandaproxyAPIExternal() != nil {
+	var externalAuthN *string
+	external := r.pandaCluster.PandaproxyAPIExternal()
+	if external != nil {
+		if external.AuthenticationMethod != "" {
+			externalAuthN = &external.AuthenticationMethod
+		}
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
 			config.NamedAuthNSocketAddress{
 				Address: "0.0.0.0",
 				Port:    calculateExternalPort(internal.Port, r.pandaCluster.PandaproxyAPIExternal().Port),
 				Name:    PandaproxyPortExternalName,
+				AuthN:   externalAuthN,
 			})
 	}
 }
