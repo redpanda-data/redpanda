@@ -65,7 +65,7 @@ class RackAwarePlacementTest(RedpandaTest):
                             num_replicas,
                             ids_mapping={}):
         """Validate the replica placement. The method uses provided
-        rack layout and number of replicas for the partitions. 
+        rack layout and number of replicas for the partitions.
         The validation is done by examining existing replica placemnt
         against the rack layout. The validation succedes if every replica
         is placed on a different rack or if there is not enough racks on
@@ -281,6 +281,19 @@ class RackAwarePlacementTest(RedpandaTest):
         for ix, node in enumerate(self.redpanda.nodes):
             self.redpanda.start_node(
                 node, override_cfg_params={"rack": rack_layout[ix]})
+
+        admin = Admin(self.redpanda)
+
+        def rack_ids_updated():
+            for n in self.redpanda.nodes:
+                if any('rack' not in b for b in admin.get_brokers(n)):
+                    return False
+            return True
+
+        wait_until(rack_ids_updated,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="node configurations didn't get updated")
 
         topic = TopicSpec(partition_count=num_partitions,
                           replication_factor=replication_factor)
