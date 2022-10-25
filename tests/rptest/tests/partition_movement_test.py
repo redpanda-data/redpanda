@@ -20,7 +20,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import InstallOptions
+from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.util import wait_until_result
 from rptest.services.honey_badger import HoneyBadger
@@ -816,6 +816,14 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         partitions = 1 if self.debug_mode else 10
         return throughput, records, moves, partitions
 
+    def _partial_upgrade(self, num_to_upgrade: int):
+        nodes = self.redpanda.nodes[0:num_to_upgrade]
+
+        self.redpanda._installer.install(nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
     def test_shadow_indexing(self, num_to_upgrade):
@@ -829,9 +837,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
-            install_previous_version=test_mixed_versions,
-            num_to_upgrade=num_to_upgrade)
+            install_previous_version=test_mixed_versions)
         self.start_redpanda(num_nodes=3, install_opts=install_opts)
+        installer = self.redpanda._installer
+
         spec = TopicSpec(name="topic",
                          partition_count=partitions,
                          replication_factor=3)
@@ -840,8 +849,19 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
         self.await_startup()
-        for _ in range(moves):
+
+        # We will start an upgrade halfway through the test: this ensures
+        # that a single-version cluster existed for long enough to actually
+        # upload some data to S3, before the upgrade potentially pauses
+        # PUTs, as it does in a format-changing step like a 22.2->22.3 upgrade
+        upgrade_at_step = moves // 2
+
+        for i in range(moves):
+            if i == upgrade_at_step and test_mixed_versions:
+                self._partial_upgrade(num_to_upgrade)
+
             self._move_and_verify()
+
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
@@ -857,8 +877,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
-            install_previous_version=test_mixed_versions,
-            num_to_upgrade=num_to_upgrade)
+            install_previous_version=test_mixed_versions)
         self.start_redpanda(num_nodes=3, install_opts=install_opts)
 
         spec = TopicSpec(name="topic",
@@ -874,7 +893,16 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         topic = self.topic
         partition = 0
 
-        for _ in range(moves):
+        # We will start an upgrade halfway through the test: this ensures
+        # that a single-version cluster existed for long enough to actually
+        # upload some data to S3, before the upgrade potentially pauses
+        # PUTs, as it does in a format-changing step like a 22.2->22.3 upgrade
+        upgrade_at_step = moves // 2
+
+        for i in range(moves):
+            if i == upgrade_at_step and test_mixed_versions:
+                self._partial_upgrade(num_to_upgrade)
+
             assignments = self._get_assignments(admin, topic, partition)
             for a in assignments:
                 # Bounce between core 0 and 1
