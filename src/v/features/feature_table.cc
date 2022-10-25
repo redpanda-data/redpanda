@@ -351,6 +351,7 @@ void feature_table::testing_activate_all() {
             s.transition_active();
         }
     }
+    on_update();
 }
 
 } // namespace features
