@@ -602,6 +602,9 @@ get_brokers(cluster::controller* const controller) {
               ss::httpd::broker_json::broker b;
               b.node_id = broker->id();
               b.num_cores = broker->properties().cores;
+              if (broker->rack()) {
+                  b.rack = *broker->rack();
+              }
               b.membership_status = fmt::format(
                 "{}", broker->get_membership_state());
 
@@ -1843,6 +1846,9 @@ void admin_server::register_broker_routes() {
           ss::httpd::broker_json::broker ret;
           ret.node_id = (*broker)->id();
           ret.num_cores = (*broker)->properties().cores;
+          if ((*broker)->rack()) {
+              ret.rack = *(*broker)->rack();
+          }
           ret.membership_status = fmt::format(
             "{}", (*broker)->get_membership_state());
           ret.maintenance_status = fill_maintenance_status(
