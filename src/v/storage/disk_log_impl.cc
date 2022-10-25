@@ -608,10 +608,10 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
 compaction_config
 disk_log_impl::override_retention_config(compaction_config cfg) const {
-    auto cloud_storage_enabled
-      = config::shard_local_cfg().cloud_storage_enabled();
-    auto cluster_remote_write_enabled
-      = config::shard_local_cfg().cloud_storage_enable_remote_write();
+    // cloud_retention is disabled, do not override
+    if (!is_cloud_retention_active()) {
+        return cfg;
+    }
 
     tristate<std::size_t> local_retention_bytes;
     tristate<std::chrono::milliseconds> local_retention_ms;
@@ -637,31 +637,32 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
           config::shard_local_cfg().retention_local_target_ms_default()};
     }
 
-    if (
-      cloud_storage_enabled
-      && (config().is_archival_enabled() || cluster_remote_write_enabled)) {
-        if (local_retention_bytes.is_disabled()) {
-            cfg.max_bytes = std::nullopt;
-        } else if (local_retention_bytes.has_value()) {
-            cfg.max_bytes = local_retention_bytes.value();
-        }
-
-        if (local_retention_ms.is_disabled()) {
-            cfg.eviction_time = model::timestamp::min();
-        } else if (local_retention_ms.has_value()) {
-            cfg.eviction_time = model::timestamp(
-              model::timestamp::now().value()
-              - local_retention_ms.value().count());
-        }
-
-        vlog(
-          gclog.trace,
-          "[{}] Overrode retention for topic with remote write enabled: {}",
-          config().ntp(),
-          cfg);
+    if (local_retention_bytes.is_disabled()) {
+        cfg.max_bytes = std::nullopt;
+    } else if (local_retention_bytes.has_value()) {
+        cfg.max_bytes = local_retention_bytes.value();
     }
 
+    if (local_retention_ms.is_disabled()) {
+        cfg.eviction_time = model::timestamp::min();
+    } else if (local_retention_ms.has_value()) {
+        cfg.eviction_time = model::timestamp(
+          model::timestamp::now().value() - local_retention_ms.value().count());
+    }
+
+    vlog(
+      gclog.trace,
+      "[{}] Overrode retention for topic with remote write enabled: {}",
+      config().ntp(),
+      cfg);
+
     return cfg;
+}
+
+bool disk_log_impl::is_cloud_retention_active() const {
+    return config::shard_local_cfg().cloud_storage_enabled() && 
+        (config::shard_local_cfg().cloud_storage_enable_remote_write()
+      || config().is_archival_enabled());
 }
 
 compaction_config
