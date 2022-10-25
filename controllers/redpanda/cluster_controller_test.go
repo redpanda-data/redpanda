@@ -227,11 +227,16 @@ var _ = Describe("RedPandaCluster controller", func() {
 			var crb v1.ClusterRoleBinding
 			Eventually(func() bool {
 				err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
+				found := false
+				for _, s := range crb.Subjects {
+					if key.Name == s.Name && s.Kind == "ServiceAccount" {
+						found = true
+					}
+				}
 				return err == nil &&
 					crb.RoleRef.Name == clusterRoleKey.Name &&
 					crb.RoleRef.Kind == "ClusterRole" &&
-					crb.Subjects[0].Name == key.Name &&
-					crb.Subjects[0].Kind == "ServiceAccount"
+					found
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating StatefulSet")
