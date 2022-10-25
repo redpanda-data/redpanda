@@ -8,6 +8,7 @@ seastar_generate_swagger(
 v_cc_library(
   NAME pandaproxy_rest
   SRCS
+    api.cc
     configuration.cc
     handlers.cc
     proxy.cc

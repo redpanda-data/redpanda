@@ -50,6 +50,7 @@
 #include "features/migrators.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
@@ -59,10 +60,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
-#include "pandaproxy/rest/configuration.h"
-#include "pandaproxy/rest/proxy.h"
+#include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
-#include "pandaproxy/sharded_client_cache.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
@@ -729,32 +728,15 @@ make_upload_controller_config(ss::scheduling_group sg) {
 void application::wire_up_runtime_services(model::node_id node_id) {
     wire_up_redpanda_services(node_id);
     if (_proxy_config) {
-        construct_service(
-          _proxy_client,
-          to_yaml(*_proxy_client_config, config::redact_secrets::no))
-          .get();
-
-        construct_single_service(_proxy_client_cache);
-
-        _proxy_client_cache
-          ->start(
-            smp_service_groups.proxy_smp_sg(),
-            to_yaml(*_proxy_client_config, config::redact_secrets::no),
-            _proxy_config->client_cache_max_size.value(),
-            _proxy_config->client_keep_alive.value())
-          .get();
-
-        construct_service(
+        construct_single_service(
           _proxy,
-          to_yaml(*_proxy_config, config::redact_secrets::no),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/redpanda-data/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_proxy_client),
-          std::reference_wrapper(*_proxy_client_cache),
-          controller.get())
-          .get();
+          *_proxy_client_config,
+          *_proxy_config,
+          controller.get());
     }
     if (_schema_reg_config) {
         construct_single_service(
@@ -1219,10 +1201,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 }
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
-    return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
-          p.config().get(name).set_value(val);
-      });
+    return _proxy->set_config(std::move(name), std::move(val));
 }
 
 bool application::archival_storage_enabled() {
@@ -1232,10 +1211,7 @@ bool application::archival_storage_enabled() {
 
 ss::future<>
 application::set_proxy_client_config(ss::sstring name, std::any val) {
-    return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
-          p.client_config().get(name).set_value(val);
-      });
+    return _proxy->set_client_config(std::move(name), std::move(val));
 }
 
 void application::wire_up_bootstrap_services() {
@@ -1478,7 +1454,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     start_runtime_services(cd);
 
     if (_proxy_config) {
-        _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
+        _proxy->start().get();
         vlog(
           _log.info,
           "Started Pandaproxy listening at {}",

@@ -189,9 +189,7 @@ private:
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;
     ss::sharded<net::server> _kafka_server;
-    ss::sharded<kafka::client::client> _proxy_client;
-    std::unique_ptr<pandaproxy::sharded_client_cache> _proxy_client_cache;
-    ss::sharded<pandaproxy::rest::proxy> _proxy;
+    std::unique_ptr<pandaproxy::rest::api> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
