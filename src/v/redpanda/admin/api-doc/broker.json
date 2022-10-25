@@ -231,6 +231,10 @@
                     "type": "long",
                     "description": "cores"
                 },
+                "rack": {
+                    "type": "string",
+                    "description": "rack id"
+                },
                 "membership_status": {
                     "type": "string",
                     "description": "Broker membership status"
