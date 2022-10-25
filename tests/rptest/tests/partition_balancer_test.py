@@ -9,6 +9,7 @@
 import os
 import random
 import time
+from math import ceil
 
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
@@ -407,7 +408,7 @@ class PartitionBalancerTest(EndToEndTest):
             self.test_context.cluster.alloc(ClusterSpec.simple_linux(6))
             return
 
-        disk_size = 2 * 1024 * 1024 * 1024
+        disk_size = 5 * 1024 * 1024 * 1024
         self.start_redpanda(
             num_nodes=5,
             extra_rp_conf={
@@ -420,16 +421,26 @@ class PartitionBalancerTest(EndToEndTest):
         self.topic = TopicSpec(partition_count=32)
         self.client().create_topic(self.topic)
 
-        # produce around 2GB of data, this should be enough to fill node disks
-        # to a bit more than 70% usage on average
-        msg_count = 19_000
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_size=102_400,
-                                       msg_count=msg_count)
-        producer.start(clean=False)
-        producer.wait_for_acks(msg_count, timeout_sec=120, backoff_sec=5)
+        def get_avg_disk_usage():
+            return sum([
+                self.redpanda.get_node_disk_usage(n)
+                for n in self.redpanda.nodes
+            ]) / len(self.redpanda.nodes) / disk_size
+
+        msg_size = 102_400
+        produce_batch_size = ceil(disk_size / msg_size / 30)
+        while get_avg_disk_usage() < 0.7:
+            producer = KgoVerifierProducer(self.test_context,
+                                           self.redpanda,
+                                           self.topic,
+                                           msg_size=msg_size,
+                                           msg_count=produce_batch_size)
+            producer.start(clean=False)
+            producer.wait_for_acks(produce_batch_size,
+                                   timeout_sec=120,
+                                   backoff_sec=5)
+            producer.stop()
+            producer.free()
 
         def print_disk_usage_per_node():
             for n in self.redpanda.nodes:
@@ -481,7 +492,10 @@ class PartitionBalancerTest(EndToEndTest):
             self.logger.info(
                 f"node {self.redpanda.idx(n)}: "
                 f"disk used percentage: {int(100.0 * used_ratio)}")
-            assert used_ratio < 0.8
+            # Checking that used_ratio is less than 81 instead of 80
+            # Because when we check, disk can become overfilled one more time
+            # and partition balancing is not invoked yet
+            assert used_ratio < 0.81
 
     @cluster(num_nodes=7, log_allow_list=LOG_ALLOW_LIST)
     @matrix(kill_same_node=[True, False])
