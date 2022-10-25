@@ -6,11 +6,9 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-
 package common
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,9 +18,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -40,17 +36,6 @@ const (
 
 	defaultDockerClientTimeout = 60 * time.Second
 )
-
-type NodeState struct {
-	Status        string
-	Running       bool
-	ConfigFile    string
-	HostRPCPort   uint
-	HostKafkaPort uint
-	ID            uint
-	ContainerIP   string
-	ContainerID   string
-}
 
 func HostAddr(port uint) string {
 	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
@@ -85,8 +70,8 @@ func DefaultCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultDockerClientTimeout)
 }
 
-func GetExistingNodes(c Client) ([]*NodeState, error) {
-	regExp := `^/rp-node-[\d]+`
+func GetExistingNodes(c GenericClient) ([]*NodeState, error) {
+	regExp := `^rp-node-[\d]+`
 	filters := filters.NewArgs()
 	filters.Add("name", regExp)
 	ctx, _ := DefaultCtx()
@@ -122,36 +107,38 @@ func GetExistingNodes(c Client) ([]*NodeState, error) {
 	return nodes, nil
 }
 
-func GetState(c Client, nodeID uint) (*NodeState, error) {
+func GetState(c GenericClient, nodeID uint) (*NodeState, error) {
 	ctx, _ := DefaultCtx()
-	containerJSON, err := c.ContainerInspect(ctx, Name(nodeID))
+	ci, err := c.ContainerInspect(ctx, Name(nodeID))
 	if err != nil {
 		return nil, err
 	}
 	var ipAddress string
-	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]
-	if exists {
-		ipAddress = network.IPAMConfig.IPv4Address
+	for _, net := range ci.Networks {
+		if net.Name == redpandaNetwork {
+			ipAddress = net.IPAdress
+			break
+		}
 	}
 
 	hostRPCPort, err := getHostPort(
 		config.Default().Redpanda.RPCServer.Port,
-		containerJSON,
+		ci,
 	)
 	if err != nil {
 		return nil, err
 	}
 	hostKafkaPort, err := getHostPort(
 		externalKafkaPort,
-		containerJSON,
+		ci,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &NodeState{
-		Running:       containerJSON.State.Running,
-		Status:        containerJSON.State.Status,
-		ContainerID:   containerJSON.ID,
+		Running:       ci.Running,
+		Status:        ci.Status,
+		ContainerID:   ci.ID,
 		ContainerIP:   ipAddress,
 		HostKafkaPort: hostKafkaPort,
 		HostRPCPort:   hostRPCPort,
@@ -161,41 +148,32 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 
 // Creates a network for the cluster's containers and returns its ID. If it
 // exists already, it returns the existing network's ID.
-func CreateNetwork(c Client) (string, error) {
+func CreateNetwork(c GenericClient) (string, error) {
+	log.Debug("Creating network")
 	ctx, _ := DefaultCtx()
 
-	args := filters.NewArgs()
-	args.Add("name", redpandaNetwork)
-	networks, err := c.NetworkList(
+	network, err := c.NetworkList(
 		ctx,
-		types.NetworkListOptions{Filters: args},
+		NetworkListOptions{Name: redpandaNetwork},
 	)
 	if err != nil {
 		return "", err
 	}
 
-	for _, net := range networks {
-		if net.Name == redpandaNetwork {
-			return net.ID, nil
-		}
+	if network.Name == redpandaNetwork {
+		return network.ID, nil
 	}
 
 	log.Debugf(
-		"Docker network '%s' doesn't exist, creating.",
+		"Container network '%s' doesn't exist, creating.",
 		redpandaNetwork,
 	)
+
 	resp, err := c.NetworkCreate(
-		ctx, redpandaNetwork, types.NetworkCreate{
-			Driver: "bridge",
-			IPAM: &network.IPAM{
-				Driver: "default",
-				Config: []network.IPAMConfig{
-					{
-						Subnet:  "172.24.1.0/24",
-						Gateway: "172.24.1.1",
-					},
-				},
-			},
+		ctx, redpandaNetwork, NetworkCreateOptions{
+			Driver:  StringPtr("bridge"),
+			Gateway: "172.24.1.1",
+			Subnet:  "172.24.1.0/24",
 		},
 	)
 	if err != nil {
@@ -208,7 +186,7 @@ func CreateNetwork(c Client) (string, error) {
 }
 
 // Delete the Redpanda network if it exists.
-func RemoveNetwork(c Client) error {
+func RemoveNetwork(c GenericClient) error {
 	ctx, _ := DefaultCtx()
 	err := c.NetworkRemove(ctx, redpandaNetwork)
 	if c.IsErrNotFound(err) {
@@ -218,7 +196,7 @@ func RemoveNetwork(c Client) error {
 }
 
 func CreateNode(
-	c Client,
+	c GenericClient,
 	nodeID, kafkaPort, proxyPort, schemaRegPort, rpcPort, metricsPort uint,
 	netID, image string,
 	args ...string,
@@ -284,7 +262,7 @@ func CreateNode(
 		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
 		"--mode dev-container",
 	}
-	containerConfig := container.Config{
+	containerConfig := ContainerConfig{
 		Image:    image,
 		Hostname: hostname,
 		Cmd:      append(cmd, args...),
@@ -299,7 +277,7 @@ func CreateNode(
 			"node-id":    fmt.Sprint(nodeID),
 		},
 	}
-	hostConfig := container.HostConfig{
+	hostConfig := ContainerHostConfig{
 		PortBindings: nat.PortMap{
 			rPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(rpcPort),
@@ -318,15 +296,10 @@ func CreateNode(
 			}},
 		},
 	}
-	networkConfig := network.NetworkingConfig{
-		EndpointsConfig: map[string]*network.EndpointSettings{
-			redpandaNetwork: {
-				IPAMConfig: &network.EndpointIPAMConfig{
-					IPv4Address: ip,
-				},
-				Aliases: []string{hostname},
-			},
-		},
+	networkConfig := ContainerNetwork{
+		ID:       netID,
+		IPAdress: ip,
+		Aliases:  []string{hostname},
 	}
 
 	ctx, _ := DefaultCtx()
@@ -335,7 +308,6 @@ func CreateNode(
 		&containerConfig,
 		&hostConfig,
 		&networkConfig,
-		nil,
 		hostname,
 	)
 	if err != nil {
@@ -344,35 +316,28 @@ func CreateNode(
 	return &NodeState{
 		HostKafkaPort: kafkaPort,
 		ID:            nodeID,
-		ContainerID:   container.ID,
+		ContainerID:   container,
 		ContainerIP:   ip,
 	}, nil
 }
 
-func PullImage(c Client, image string) error {
+func PullImage(c GenericClient, image string) error {
 	log.Debugf("Pulling image: %s", image)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
-	if res != nil {
-		defer res.Close()
-		buf := bytes.Buffer{}
-		buf.ReadFrom(res)
-		log.Debug(buf.String())
-	}
+
+	err := c.ImagePull(ctx, image)
 	if err != nil {
 		return err
 	}
 	return ctx.Err()
 }
 
-func CheckIfImgPresent(c Client, image string) (bool, error) {
+func CheckIfImgPresent(c GenericClient, image string) (bool, error) {
 	ctx, _ := DefaultCtx()
-	filters := filters.NewArgs(
-		filters.Arg("reference", image),
-	)
-	imgs, err := c.ImageList(ctx, types.ImageListOptions{
-		Filters: filters,
+
+	imgs, err := c.ImageList(ctx, ImageListOptions{
+		Ref: image,
 	})
 	if err != nil {
 		return false, err
@@ -381,13 +346,13 @@ func CheckIfImgPresent(c Client, image string) (bool, error) {
 }
 
 func getHostPort(
-	containerPort int, containerJSON types.ContainerJSON,
+	containerPort int, ci ContainerInspect,
 ) (uint, error) {
 	natContianerPort, err := nat.NewPort("tcp", fmt.Sprint(containerPort))
 	if err != nil {
 		return uint(0), err
 	}
-	bindings, exists := containerJSON.NetworkSettings.Ports[natContianerPort]
+	bindings, exists := ci.Ports[natContianerPort]
 	if exists {
 		if len(bindings) > 0 {
 			hostPort, err := strconv.Atoi(bindings[0].HostPort)
@@ -400,20 +365,21 @@ func getHostPort(
 	return uint(0), nil
 }
 
-func nodeIP(c Client, netID string, id uint) (string, error) {
+func nodeIP(c GenericClient, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
+	networkResource, err := c.NetworkInspect(ctx, netID)
 	if err != nil {
 		return "", err
 	}
 
-	if len(networkResource.IPAM.Config) != 1 {
+	if networkResource.Gateway == "" {
 		return "", fmt.Errorf(
 			"'%s' network config is corrupted",
 			networkResource.Name,
 		)
 	}
-	gatewayAddress := networkResource.IPAM.Config[0].Gateway
+
+	gatewayAddress := networkResource.Gateway
 	octets := strings.Split(gatewayAddress, ".")
 	if len(octets) != 4 {
 		return "", fmt.Errorf(
@@ -441,4 +407,12 @@ This can happen for a couple of reasons:
 		return errors.New(msg)
 	}
 	return err
+}
+
+func StringPtr(v string) *string {
+	return &v
+}
+
+func BoolPtr(v bool) *bool {
+	return &v
 }

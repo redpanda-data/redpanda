@@ -25,20 +25,20 @@ import (
 func TestStop(t *testing.T) {
 	tests := []struct {
 		name           string
-		client         func() (common.Client, error)
+		client         func() (common.GenericClient, error)
 		expectedErrMsg string
 		expectedOutput []string
 	}{
 		{
 			name: "it should log if the container can't be stopped",
-			client: func() (common.Client, error) {
+			client: func() (common.GenericClient, error) {
 				return &common.MockClient{
 					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
-					) ([]types.Container, error) {
-						return []types.Container{
+					) ([]common.ContainerList, error) {
+						return []common.ContainerList{
 							{
 								ID: "a",
 								Labels: map[string]string{
@@ -80,12 +80,12 @@ func TestStop(t *testing.T) {
 		},
 		{
 			name: "it should fail if the containers can't be listed",
-			client: func() (common.Client, error) {
+			client: func() (common.GenericClient, error) {
 				return &common.MockClient{
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
-					) ([]types.Container, error) {
+					) ([]common.ContainerList, error) {
 						return nil, errors.New("Can't list")
 					},
 				}, nil
@@ -94,20 +94,20 @@ func TestStop(t *testing.T) {
 		},
 		{
 			name: "it should fail if the containers can't be inspected",
-			client: func() (common.Client, error) {
+			client: func() (common.GenericClient, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
 						_ context.Context,
 						_ string,
-					) (types.ContainerJSON, error) {
-						return types.ContainerJSON{},
+					) (common.ContainerInspect, error) {
+						return common.ContainerInspect{},
 							errors.New("Can't inspect")
 					},
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
-					) ([]types.Container, error) {
-						return []types.Container{
+					) ([]common.ContainerList, error) {
+						return []common.ContainerList{
 							{
 								ID: "a",
 								Labels: map[string]string{
@@ -122,7 +122,7 @@ func TestStop(t *testing.T) {
 		},
 		{
 			name: "it should do nothing if there's no cluster",
-			client: func() (common.Client, error) {
+			client: func() (common.GenericClient, error) {
 				return &common.MockClient{}, nil
 			},
 			expectedOutput: []string{
@@ -131,14 +131,14 @@ func TestStop(t *testing.T) {
 		},
 		{
 			name: "it should stop the current cluster",
-			client: func() (common.Client, error) {
+			client: func() (common.GenericClient, error) {
 				return &common.MockClient{
 					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
-					) ([]types.Container, error) {
-						return []types.Container{
+					) ([]common.ContainerList, error) {
+						return []common.ContainerList{
 							{
 								ID: "a",
 								Labels: map[string]string{

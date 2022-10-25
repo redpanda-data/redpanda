@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
-	"github.com/docker/docker/api/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/docker"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/podman"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
@@ -52,9 +53,10 @@ func collectFlags(args []string, flag string) []string {
 
 func newStartCommand() *cobra.Command {
 	var (
-		nodes   uint
-		retries uint
-		image   string
+		nodes     uint
+		retries   uint
+		image     string
+		usepodman bool
 	)
 	command := &cobra.Command{
 		Use:   "start",
@@ -71,16 +73,20 @@ func newStartCommand() *cobra.Command {
 					"--nodes should be 1 or greater",
 				)
 			}
-			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
-			}
-			defer c.Close()
 
 			configKvs := collectFlags(os.Args, "--set")
 
+			var cli common.GenericClient
+			if usepodman {
+				cli = &podman.PodmanClient{}
+			} else {
+				cli = &docker.DockerClient{}
+			}
+			cli.SetConnection()
+			defer cli.Close()
+
 			return common.WrapIfConnErr(startCluster(
-				c,
+				cli,
 				nodes,
 				checkBrokers,
 				retries,
@@ -105,6 +111,14 @@ func newStartCommand() *cobra.Command {
 		"The amount of times to check for the cluster before"+
 			" considering it unstable and exiting.",
 	)
+
+	command.Flags().BoolVar(
+		&usepodman,
+		"podman",
+		false,
+		"Use podman instead of docker (default: docker)",
+	)
+
 	imageFlag := "image"
 	command.Flags().StringVar(
 		&image,
@@ -118,7 +132,7 @@ func newStartCommand() *cobra.Command {
 }
 
 func startCluster(
-	c common.Client,
+	c common.GenericClient,
 	n uint,
 	check func([]node) func() error,
 	retries uint,
@@ -313,7 +327,7 @@ You may also set an environment variable with the comma-separated list of broker
 }
 
 func restartCluster(
-	c common.Client, check func([]node) func() error, retries uint,
+	c common.GenericClient, check func([]node) func() error, retries uint,
 ) ([]node, error) {
 	// Check if a cluster is running
 	states, err := common.GetExistingNodes(c)
@@ -335,7 +349,6 @@ func restartCluster(
 				err = c.ContainerStart(
 					ctx,
 					state.ContainerID,
-					types.ContainerStartOptions{},
 				)
 				if err != nil {
 					return err
@@ -365,9 +378,9 @@ func restartCluster(
 	return nodes, nil
 }
 
-func startNode(c common.Client, containerID string) error {
+func startNode(c common.GenericClient, containerID string) error {
 	ctx, _ := common.DefaultCtx()
-	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	err := c.ContainerStart(ctx, containerID)
 	return err
 }
 

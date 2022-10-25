@@ -14,29 +14,43 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/docker"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/podman"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
 func newPurgeCommand() *cobra.Command {
+	var usepodman bool
+
 	command := &cobra.Command{
 		Use:   "purge",
 		Short: "Stop and remove an existing local container cluster's data",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := common.NewDockerClient()
-			if err != nil {
-				return err
+			var cli common.GenericClient
+			if usepodman {
+				cli = &podman.PodmanClient{}
+			} else {
+				cli = &docker.DockerClient{}
 			}
-			defer c.Close()
-			return common.WrapIfConnErr(purgeCluster(c))
+			cli.SetConnection()
+			defer cli.Close()
+			return common.WrapIfConnErr(purgeCluster(cli))
 		},
 	}
+
+	command.Flags().BoolVar(
+		&usepodman,
+		"podman",
+		false,
+		"Use podman instead of docker (default: docker)",
+	)
 
 	return command
 }
 
-func purgeCluster(c common.Client) error {
+func purgeCluster(c common.GenericClient) error {
 	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		return err
@@ -52,6 +66,7 @@ You may start a new local cluster with 'rpk container start'`,
 	if err != nil {
 		return err
 	}
+
 	grp, _ := errgroup.WithContext(context.Background())
 	for _, node := range nodes {
 		id := node.ID
