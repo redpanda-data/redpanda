@@ -30,7 +30,7 @@ RUN apt update && \
 # many maven dependency downloads without any parallelism.  To avoid re-running it
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
 RUN git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && git reset --hard da50fa2723840f6388f99a1dae8d58104fd7650d && \
+    cd /opt/kafka-streams-examples && git reset --hard 913d08c8351c74ee454b79f8e0c1f48ca9b562a5 && \
     mvn -DskipTests=true clean package
 
 # Install our in-tree Java test clientst
