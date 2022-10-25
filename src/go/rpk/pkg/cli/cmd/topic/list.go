@@ -72,7 +72,7 @@ information.
 				out.MaybeDie(err, "unable to filter topics by regex: %v", err)
 			}
 
-			listed, err := adm.ListInternalTopics(context.Background(), topics...)
+			listed, err := adm.ListTopicsWithInternal(context.Background(), topics...)
 			out.MaybeDie(err, "unable to request metadata: %v", err)
 			cluster.PrintTopics(listed, internal, detailed)
 		},

@@ -190,7 +190,7 @@ func seekFetch(
 	if len(topics) > 0 {
 		resps.KeepFunc(func(o kadm.OffsetResponse) bool { return topics[o.Topic] })
 	}
-	return resps.Into()
+	return resps.Offsets()
 }
 
 func seek(
@@ -247,7 +247,7 @@ func seek(
 			err = listed.Error()
 		}
 		out.MaybeDie(err, "unable to list all offsets successfully: %v", err)
-		commitTo = listed.Into()
+		commitTo = listed.Offsets()
 	}
 
 	// Finally, we commit.
