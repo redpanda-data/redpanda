@@ -202,7 +202,7 @@ public:
      * NOTE: if removal of an ntp causes the parent topic directory to become
      * empty then it is also removed. Currently topic deletion is the only
      * action that drives partition removal, so this makes sense. This must be
-     * revisted when we start removing partitions for other reasons, like
+     * revisited when we start removing partitions for other reasons, like
      * rebalancing partitions across the cluster, etc...
      */
     ss::future<> remove(model::ntp);
