@@ -18,8 +18,9 @@ import (
 )
 
 var (
-	v22_1  = mustSemVer("v22.1.0")
-	v21_11 = mustSemVer("v21.11.0")
+	v22_1   = mustSemVer("v22.1.0")
+	v21_11  = mustSemVer("v21.11.0")
+	v22_2_1 = mustSemVer("v22.2.1")
 )
 
 // ShadowIndex feature gate should be removed in 3 version starting
@@ -39,6 +40,12 @@ func CentralizedConfiguration(version string) bool {
 // will no longer support 21.x or older versions
 func MaintenanceMode(version string) bool {
 	return atLeastVersion(v22_1, version)
+}
+
+// PerListenerAuthorization feature gate should be removed when the operator
+// will no longer support 22.2.1 or older versions
+func PerListenerAuthorization(version string) bool {
+	return atLeastVersion(v22_2_1, version)
 }
 
 // atLeastVersion tells if the given version is greater or equal than the
