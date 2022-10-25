@@ -108,10 +108,7 @@ qaGyeeWSr7npaGhNfb59Mq++Cnk4IDPwNJYVFjw6qt9tSl0fJyBZw+iXvMPPlmxe
 			if test.missingAud {
 				useAud = ""
 			}
-			err = ValidateToken(string(signed), Endpoint{
-				Audience: useAud,
-				ClientID: []string{okID},
-			})
+			err = ValidateToken(string(signed), useAud, okID)
 
 			if err == nil {
 				if test.expErrPrefix != "" {
