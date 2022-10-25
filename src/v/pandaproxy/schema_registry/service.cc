@@ -10,7 +10,11 @@
 #include "pandaproxy/schema_registry/service.h"
 
 #include "cluster/controller.h"
+#include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/members_table.h"
+#include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/list_offsets.h"
@@ -23,6 +27,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "security/acl.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
@@ -30,12 +35,15 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
 #include <seastar/core/std-coroutine.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
 
 namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
+const security::acl_principal principal{
+  security::principal_type::ephemeral_user, "__schema_registry"};
 
 template<typename Handler>
 auto wrap(ss::gate& g, one_shot& os, Handler h) {
@@ -147,6 +155,42 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
+}
+
+ss::future<> service::mitigate_error(std::exception_ptr eptr) {
+    vlog(plog.warn, "mitigate_error: {}", eptr);
+    return ss::make_exception_future<>(eptr).handle_exception_type(
+      [this, eptr](kafka::client::broker_error const& ex) {
+          if (
+            ex.error == kafka::error_code::sasl_authentication_failed
+            && _has_ephemeral_credentials) {
+              return inform(ex.node_id).then([this]() {
+                  // This fully mitigates, don't rethrow.
+                  return _client.local().connect();
+              });
+          }
+          // Rethrow unhandled exceptions
+          return ss::make_exception_future<>(eptr);
+      });
+}
+
+ss::future<> service::inform(model::node_id id) {
+    vlog(plog.warn, "inform: {}", id);
+    const auto do_inform = [this](model::node_id n) -> ss::future<> {
+        auto& fe = _controller->get_ephemeral_credential_frontend().local();
+        auto ec = co_await fe.inform(n, principal);
+        vlog(plog.warn, "Informed: broker: {}, ec: {}", n, ec);
+    };
+
+    // Inform a particular node
+    if (id != kafka::client::unknown_node_id) {
+        co_return co_await do_inform(id);
+    }
+
+    // Inform all nodes
+    co_await ss::coroutine::parallel_for_each(
+      _controller->get_members_table().local().all_broker_ids(),
+      [do_inform](model::node_id n) { return do_inform(n); });
 }
 
 ss::future<> service::create_internal_topic() {
