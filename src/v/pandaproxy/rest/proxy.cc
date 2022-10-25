@@ -9,6 +9,9 @@
 
 #include "pandaproxy/rest/proxy.h"
 
+#include "cluster/controller.h"
+#include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/members_table.h"
 #include "net/unresolved_address.h"
 #include "pandaproxy/api/api-doc/rest.json.h"
 #include "pandaproxy/auth_utils.h"
@@ -27,6 +30,9 @@
 namespace pandaproxy::rest {
 
 using server = proxy::server;
+
+const security::acl_principal principal{
+  security::principal_type::ephemeral_user, "__pandaproxy"};
 
 template<typename Handler>
 auto wrap(ss::gate& g, one_shot& os, Handler h) {
@@ -104,7 +110,8 @@ proxy::proxy(
       "/definitions",
       _ctx,
       json::serialization_format::application_json)
-  , _ensure_started{[this]() { return do_start(); }} {}
+  , _ensure_started{[this]() { return do_start(); }}
+  , _controller(controller) {}
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes(_gate, _ensure_started));
@@ -126,5 +133,41 @@ kafka::client::configuration& proxy::client_config() {
 }
 
 ss::future<> proxy::do_start() { return ss::now(); }
+
+ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
+    vlog(plog.debug, "mitigate_error: {}", eptr);
+    return ss::make_exception_future<>(eptr).handle_exception_type(
+      [this, eptr](kafka::client::broker_error const& ex) {
+          if (
+            ex.error == kafka::error_code::sasl_authentication_failed
+            && _has_ephemeral_credentials) {
+              return inform(ex.node_id).then([this]() {
+                  // This fully mitigates, don't rethrow.
+                  return _client.local().connect();
+              });
+          }
+          // Rethrow unhandled exceptions
+          return ss::make_exception_future<>(eptr);
+      });
+}
+
+ss::future<> proxy::inform(model::node_id id) {
+    vlog(plog.trace, "inform: {}", id);
+    const auto do_inform = [this](model::node_id n) -> ss::future<> {
+        auto& fe = _controller->get_ephemeral_credential_frontend().local();
+        auto ec = co_await fe.inform(n, principal);
+        vlog(plog.info, "Informed: broker: {}, ec: {}", n, ec);
+    };
+
+    // Inform a particular node
+    if (id != kafka::client::unknown_node_id) {
+        co_return co_await do_inform(id);
+    }
+
+    // Inform all nodes
+    co_await seastar::parallel_for_each(
+      _controller->get_members_table().local().all_broker_ids(),
+      [do_inform](model::node_id n) { return do_inform(n); });
+}
 
 } // namespace pandaproxy::rest
