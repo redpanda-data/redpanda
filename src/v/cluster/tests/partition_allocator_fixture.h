@@ -47,7 +47,6 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{},
           std::nullopt,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
@@ -57,7 +56,6 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{},
           std::move(rack),
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
