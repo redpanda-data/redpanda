@@ -46,6 +46,7 @@ const (
 	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
 	hostPortEnvVar                                       = "HOST_PORT"
 	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
+	rackAwarenessEnvVar                                  = "RACK_AWARENESS"
 )
 
 type brokerID int
@@ -65,6 +66,7 @@ type configuratorConfig struct {
 	hostPort                                       int
 	proxyHostPort                                  int
 	hostIP                                         string
+	rackAwareness                                  bool
 }
 
 func (c *configuratorConfig) String() string {
@@ -79,7 +81,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"rackAwareness: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -90,7 +93,8 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.rackAwareness)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -147,6 +151,14 @@ func main() {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
 	}
 
+	if c.rackAwareness {
+		zone, zoneID, errZone := getZoneLabels(c.nodeName)
+		if errZone != nil {
+			log.Fatalf("%s", fmt.Errorf("unable to retrieve zone labels: %w", errZone))
+		}
+		populateRack(cfg, zone, zoneID)
+	}
+
 	cfgBytes, err := yaml.Marshal(cfg)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to marshal the configuration: %w", err))
@@ -160,6 +172,23 @@ func main() {
 }
 
 var errInternalPortMissing = errors.New("port configration is missing internal port")
+
+func getZoneLabels(nodeName string) (zone, zoneID string, err error) {
+	node, err := getNode(nodeName)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to retrieve node: %w", err)
+	}
+	zone = node.Labels["topology.kubernetes.io/zone"]
+	zoneID = node.Labels["topology.cloud.redpanda.com/zone-id"]
+	return zone, zoneID, nil
+}
+
+func populateRack(cfg *config.Config, zone, zoneID string) {
+	cfg.Redpanda.Rack = zoneID
+	if zoneID == "" {
+		cfg.Redpanda.Rack = zone
+	}
+}
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	for _, l := range cfg.Redpanda.KafkaAPI {
@@ -375,6 +404,15 @@ func checkEnvVars() (configuratorConfig, error) {
 
 	var err error
 	c.externalConnectivity, err = strconv.ParseBool(extCon)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	rackAwareness, exist := os.LookupEnv(rackAwarenessEnvVar)
+	if !exist {
+		result = multierror.Append(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
+	}
+	c.rackAwareness, err = strconv.ParseBool(rackAwareness)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
