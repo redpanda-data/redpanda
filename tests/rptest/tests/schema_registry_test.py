@@ -22,7 +22,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings, SecurityConfig
+from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig
 
 
 def create_topic_names(count):
@@ -57,6 +57,13 @@ message Test2 {
   Simple id =  1;
 }"""
 
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace'
+                           })
+
 
 class SchemaRegistryEndpoints(RedpandaTest):
     """
@@ -70,6 +77,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
             enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
+            log_config=log_config,
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
