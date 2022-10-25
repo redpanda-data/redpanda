@@ -59,15 +59,13 @@ client::client(const YAML::Node& cfg)
               }} {}
 
 ss::future<> client::do_connect(net::unresolved_address addr) {
-    return ss::try_with_gate(_gate, [this, addr]() {
-        return make_broker(unknown_node_id, addr, _config)
-          .then([this](shared_broker_t broker) {
-              return broker->dispatch(metadata_request{.list_all_topics = true})
-                .then([this, broker](metadata_response res) {
-                    return apply(std::move(res));
-                });
-          });
-    });
+    return make_broker(unknown_node_id, addr, _config)
+      .then([this](shared_broker_t broker) {
+          return broker->dispatch(metadata_request{.list_all_topics = true})
+            .then([this, broker](metadata_response res) {
+                return apply(std::move(res));
+            });
+      });
 }
 
 ss::future<> client::connect() {
@@ -75,16 +73,9 @@ ss::future<> client::connect() {
       _seeds.begin(), _seeds.end(), random_generators::internal::gen);
 
     return ss::do_with(size_t{0}, [this](size_t& retries) {
-        return retry_with_mitigation(
-          _config.retries(),
-          _config.retry_base_backoff(),
-          [this, retries]() {
-              return do_connect(_seeds[retries % _seeds.size()]);
-          },
-          [&retries](std::exception_ptr) {
-              ++retries;
-              return ss::now();
-          });
+        return gated_retry_with_mitigation([this, &retries]() {
+            return do_connect(_seeds[retries++ % _seeds.size()]);
+        });
     });
 }
 
