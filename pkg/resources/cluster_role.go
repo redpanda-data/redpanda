@@ -51,10 +51,6 @@ func NewClusterRole(
 
 // Ensure manages v1.ClusterRole that is assigned to v1.ServiceAccount used in initContainer
 func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
-	if r.pandaCluster.ExternalListener() == nil {
-		return nil
-	}
-
 	obj := r.obj()
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil || created {

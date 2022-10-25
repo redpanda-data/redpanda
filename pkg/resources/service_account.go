@@ -51,10 +51,6 @@ func NewServiceAccount(
 
 // Ensure manages ServiceAccount that is used in initContainer
 func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
-	if s.pandaCluster.ExternalListener() == nil {
-		return nil
-	}
-
 	obj, err := s.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct ServiceAccount object: %w", err)
