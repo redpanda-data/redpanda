@@ -14,16 +14,9 @@ from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import (
-    KgoVerifierProducer,
-    KgoVerifierSeqConsumer,
-    KgoVerifierRandomConsumer,
-    KgoVerifierConsumerGroupConsumer,
-)
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller, wait_for_num_versions
 
@@ -118,52 +111,34 @@ PREV_VERSION_LOG_ALLOW_LIST = [
 ]
 
 
-class UpgradeBackToBackTest(PreallocNodesTest):
+class UpgradeBackToBackTest(EndToEndTest):
     """
     Test that runs through two rolling upgrades while running through workloads.
     """
-    MSG_SIZE = 100
-    PRODUCE_COUNT = 100000
-    RANDOM_READ_COUNT = 100
-    RANDOM_READ_PARALLEL = 4
-    CONSUMER_GROUP_READERS = 4
-    topics = (TopicSpec(partition_count=3, replication_factor=3), )
+    def setUp(self):
+        super(UpgradeBackToBackTest, self).setUp()
+        # HACK: this is a part of a backport, but instead of porting over
+        # kgo-verifier that the original test depends on, this uses verifiers
+        # that exist on this branch.
 
-    def __init__(self, test_context):
-        super(UpgradeBackToBackTest, self).__init__(test_context,
-                                                    num_brokers=3,
-                                                    node_prealloc_count=1)
+        # Use a relatively low throughput to give the restarted node a chance
+        # to catch up. If the node is particularly slow compared to the others
+        # (e.g. a locally-built debug binary), catching up can take a while.
+        self.producer_msgs_per_sec = 10
+        install_opts = InstallOptions(install_prev_prev_version=True)
+        self.start_redpanda(num_nodes=3, install_opts=install_opts)
         self.installer = self.redpanda._installer
         self.intermediate_version = self.installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
         self.initial_version = self.installer.highest_from_prior_feature_version(
             self.intermediate_version)
 
-        self._producer = KgoVerifierProducer(test_context, self.redpanda,
-                                             self.topic, self.MSG_SIZE,
-                                             self.PRODUCE_COUNT,
-                                             self.preallocated_nodes)
-        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
-                                                    self.redpanda, self.topic,
-                                                    self.MSG_SIZE,
-                                                    self.preallocated_nodes)
-        self._rand_consumer = KgoVerifierRandomConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
-            self.preallocated_nodes)
-        self._cg_consumer = KgoVerifierConsumerGroupConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
+        # Start running a workload.
+        spec = TopicSpec(name="topic", partition_count=2, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
 
-        self._consumers = [
-            self._seq_consumer, self._rand_consumer, self._cg_consumer
-        ]
-
-    def setUp(self):
-        self.installer.install(self.redpanda.nodes, self.initial_version)
-        super(UpgradeBackToBackTest, self).setUp()
-
-    @cluster(num_nodes=4, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
+    @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @parametrize(single_upgrade=True)
     @parametrize(single_upgrade=False)
     def test_upgrade_with_all_workloads(self, single_upgrade):
@@ -176,15 +151,9 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             self.redpanda.restart_nodes(self.redpanda.nodes,
                                         start_timeout=90,
                                         stop_timeout=90)
-        self._producer.start(clean=False)
-        self._producer.wait_for_offset_map()
-        wrote_at_least = self._producer.produce_status.acked
-        for consumer in self._consumers:
-            consumer.start(clean=False)
-
-        def stop_producer():
-            self._producer.wait()
-            assert self._producer.produce_status.acked == self.PRODUCE_COUNT
+        self.start_producer(num_nodes=1, throughput=self.producer_msgs_per_sec)
+        self.start_consumer(num_nodes=1)
+        self.await_startup(min_records=self.producer_msgs_per_sec)
 
         def has_maintenance_supprt():
             features_resp = self.redpanda._admin.get_features()
@@ -204,7 +173,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         else:
             # If there's no maintenance mode, write workloads during the
             # restart may be affected, so stop our writes up front.
-            stop_producer()
+            self.producer.stop()
             self.installer.install(self.redpanda.nodes,
                                    self.intermediate_version)
             self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
@@ -234,13 +203,10 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             start_timeout=90,
                                             stop_timeout=90)
+        if produce_during_upgrade:
+            self.producer.stop()
 
-        for consumer in self._consumers:
-            consumer.wait()
-
-        assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
-        assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
-        assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+        self.run_consumer_validation(enable_idempotence=False)
 
 
 class UpgradeWithWorkloadTest(EndToEndTest):

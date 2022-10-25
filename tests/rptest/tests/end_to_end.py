@@ -106,6 +106,11 @@ class EndToEndTest(Test):
             if install_opts.install_previous_version:
                 version_to_install = \
                     self.redpanda._installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+            if install_opts.install_prev_prev_version:
+                prev_version = \
+                    self.redpanda._installer.highest_from_prior_feature_version(RedpandaInstaller.HEAD)
+                version_to_install = \
+                    self.redpanda._installer.highest_from_prior_feature_version(prev_version)
             if install_opts.version:
                 version_to_install = install_opts.version
 

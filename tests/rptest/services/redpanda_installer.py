@@ -61,11 +61,21 @@ class InstallOptions:
     """
     def __init__(self,
                  install_previous_version=False,
+                 install_prev_prev_version=False,
                  version=None,
                  num_to_upgrade=0):
         # If true, install the highest version of the prior feature version
         # before HEAD.
         self.install_previous_version = install_previous_version
+
+        # HACK: this is a part of a backport that requires new test infra to
+        # start Redpanda from two versions ago in EndToEndTest. Other test
+        # harnesses can just use the RedpandaInstaller directly to deduce and
+        # install the proper version.
+
+        # If true, install the highest version of the feature version two
+        # versions before HEAD.
+        self.install_prev_prev_version = install_prev_prev_version
 
         # Either RedpandaInstaller.HEAD or a numeric tuple representing the
         # version to install (e.g. (22, 1, 3)).
