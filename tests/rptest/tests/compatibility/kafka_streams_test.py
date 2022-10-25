@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.services.compatibility.example_runner import ExampleRunner
@@ -264,7 +263,6 @@ class KafkaStreamsWikipedia(RedpandaTest):
 
         self._timeout = 300
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/2889
     @cluster(num_nodes=5)
     def test_kafka_streams_wikipedia(self):
         example_jar = KafkaStreamExamples.KafkaStreamsWikipedia(
