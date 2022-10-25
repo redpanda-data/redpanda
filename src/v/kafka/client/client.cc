@@ -55,8 +55,8 @@ client::client(const YAML::Node& cfg, external_mitigate mitigater)
       return update_metadata(tag);
   }}
   , _producer{_config, _topic_cache, _brokers, [this](std::exception_ptr ex) {
-                  return mitigate_error(std::move(ex));
-              }}
+      return mitigate_error(std::move(ex));
+  }}
   , _external_mitigate(std::move(mitigater)) {}
 
 ss::future<> client::do_connect(net::unresolved_address addr) {
@@ -144,66 +144,66 @@ ss::future<> client::apply(metadata_response res) {
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return _external_mitigate(ex).handle_exception(
       [this](std::exception_ptr ex) {
-    try {
-        std::rethrow_exception(ex);
-    } catch (const broker_error& ex) {
-        // If there are no brokers, reconnect
-        if (ex.node_id == unknown_node_id) {
-            vlog(kclog.warn, "broker_error: {}", ex);
-            return connect();
-        } else {
-            vlog(kclog.debug, "broker_error: {}", ex);
-            return _brokers.erase(ex.node_id).then([this]() {
-                return _wait_or_start_update_metadata();
-            });
-        }
-    } catch (const consumer_error& ex) {
-        switch (ex.error) {
-        case error_code::coordinator_not_available:
-            vlog(kclog.debug, "consumer_error: {}", ex);
-            return _wait_or_start_update_metadata();
-        default:
-            vlog(kclog.warn, "consumer_error: {}", ex);
-            return ss::make_exception_future(ex);
-        }
-    } catch (const partition_error& ex) {
-        switch (ex.error) {
-        case error_code::unknown_topic_or_partition:
-        case error_code::not_leader_for_partition:
-        case error_code::leader_not_available: {
-            vlog(kclog.debug, "partition_error: {}", ex);
-            return _wait_or_start_update_metadata();
-        }
-        default:
-            vlog(kclog.warn, "partition_error: {}", ex);
-            return ss::make_exception_future(ex);
-        }
-    } catch (const topic_error& ex) {
-        switch (ex.error) {
-        case error_code::unknown_topic_or_partition:
-            vlog(kclog.debug, "topic_error: {}", ex);
-            return _wait_or_start_update_metadata();
-        default:
-            vlog(kclog.warn, "topic_error: {}", ex);
-            return ss::make_exception_future(ex);
-        }
-    } catch (const ss::gate_closed_exception&) {
-        vlog(kclog.debug, "gate_closed_exception");
-    } catch (const std::system_error& ex) {
-        if (
-          ex.code() == std::errc::broken_pipe
-          || ex.code() == std::errc::timed_out) {
-            vlog(kclog.debug, "system_error: {}", ex);
-            return _wait_or_start_update_metadata();
-        } else {
-            vlog(kclog.warn, "system_error: {}", ex);
-            return ss::make_exception_future(ex);
-        }
-    } catch (const std::exception& ex) {
-        // TODO(Ben): Probably vassert
-        vlog(kclog.error, "unknown exception: {}", ex);
-    }
-    return ss::make_exception_future(ex);
+          try {
+              std::rethrow_exception(ex);
+          } catch (const broker_error& ex) {
+              // If there are no brokers, reconnect
+              if (ex.node_id == unknown_node_id) {
+                  vlog(kclog.warn, "broker_error: {}", ex);
+                  return connect();
+              } else {
+                  vlog(kclog.debug, "broker_error: {}", ex);
+                  return _brokers.erase(ex.node_id).then([this]() {
+                      return _wait_or_start_update_metadata();
+                  });
+              }
+          } catch (const consumer_error& ex) {
+              switch (ex.error) {
+              case error_code::coordinator_not_available:
+                  vlog(kclog.debug, "consumer_error: {}", ex);
+                  return _wait_or_start_update_metadata();
+              default:
+                  vlog(kclog.warn, "consumer_error: {}", ex);
+                  return ss::make_exception_future(ex);
+              }
+          } catch (const partition_error& ex) {
+              switch (ex.error) {
+              case error_code::unknown_topic_or_partition:
+              case error_code::not_leader_for_partition:
+              case error_code::leader_not_available: {
+                  vlog(kclog.debug, "partition_error: {}", ex);
+                  return _wait_or_start_update_metadata();
+              }
+              default:
+                  vlog(kclog.warn, "partition_error: {}", ex);
+                  return ss::make_exception_future(ex);
+              }
+          } catch (const topic_error& ex) {
+              switch (ex.error) {
+              case error_code::unknown_topic_or_partition:
+                  vlog(kclog.debug, "topic_error: {}", ex);
+                  return _wait_or_start_update_metadata();
+              default:
+                  vlog(kclog.warn, "topic_error: {}", ex);
+                  return ss::make_exception_future(ex);
+              }
+          } catch (const ss::gate_closed_exception&) {
+              vlog(kclog.debug, "gate_closed_exception");
+          } catch (const std::system_error& ex) {
+              if (
+                ex.code() == std::errc::broken_pipe
+                || ex.code() == std::errc::timed_out) {
+                  vlog(kclog.debug, "system_error: {}", ex);
+                  return _wait_or_start_update_metadata();
+              } else {
+                  vlog(kclog.warn, "system_error: {}", ex);
+                  return ss::make_exception_future(ex);
+              }
+          } catch (const std::exception& ex) {
+              // TODO(Ben): Probably vassert
+              vlog(kclog.error, "unknown exception: {}", ex);
+          }
+          return ss::make_exception_future(ex);
       });
 }
 
