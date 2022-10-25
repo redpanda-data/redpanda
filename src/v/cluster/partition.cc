@@ -418,10 +418,7 @@ ss::future<> partition::remove_remote_persistent_state() {
     // Backward compatibility: even if remote.delete is true, only do
     // deletion if the partition is in full tiered storage mode (this
     // excludes read replica clusters from deleting data in S3)
-    bool tiered_storage
-      = get_ntp_config().is_tiered_storage()
-        || (config::shard_local_cfg().cloud_storage_enable_remote_write() &&
-            config::shard_local_cfg().cloud_storage_enable_remote_read());
+    bool tiered_storage = get_ntp_config().is_tiered_storage();
 
     if (
       _cloud_storage_partition && tiered_storage
