@@ -233,10 +233,10 @@ bool iobuf::operator==(std::string_view o) const {
  * @param limit maximum number of bytes to read.
  * @return a string populated with the following format:
  *
-00000000 | 7b 22 76 65 72 73 69 6f 6e  22 3a 31 2c 22 6e 61  | {"version":1,"na
-00000010 | 6d 65 73 70 61 63 65 22 3a  22 74 65 73 74 2d 6e  | mespace":"test-n
-00000020 | 73 22 2c 22 74 6f 70 69 63  22 3a 22 74 65 73 74  | s","topic":"test
-00000030 | 2d 74 6f 70 69 63 22 2c 22  70 61 72 74 69 74 69  | -topic","partiti
+00000000 | 7b 22 76 65 72 73 69 6f  6e 22 3a 31 2c 22 6e 61  | {"version":1,"na
+00000010 | 6d 65 73 70 61 63 65 22  3a 22 74 65 73 74 2d 6e  | mespace":"test-n
+00000020 | 73 22 2c 22 74 6f 70 69  63 22 3a 22 74 65 73 74  | s","topic":"test
+00000030 | 2d 74 6f 70 69 63 22 2c  22 70 61 72 74 69 74 69  | -topic","partiti
  */
 std::string iobuf::hexdump(size_t limit) const {
     constexpr size_t line_length = 16;
@@ -256,14 +256,15 @@ std::string iobuf::hexdump(size_t limit) const {
 
             auto c = data[i];
             result << fmt::format("{:02x} ", int(c));
-            if (trail.size() == 8) {
-                result << " ";
-            }
 
             if (std::isprint(c) && c != '\n') {
                 trail.push_back(c);
             } else {
                 trail.push_back('.');
+            }
+
+            if (trail.size() == 8) {
+                result << " ";
             }
 
             if (total >= limit) {
