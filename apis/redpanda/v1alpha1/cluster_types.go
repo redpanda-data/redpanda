@@ -911,9 +911,10 @@ func (r *Cluster) AdminAPIURLs() []string {
 
 // PandaproxyAPIInternal returns internal pandaproxy listener
 func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if !el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if !proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -921,9 +922,10 @@ func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
 
 // PandaproxyAPIExternal returns the external pandaproxy listener
 func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -932,9 +934,10 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 // PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
-	for i, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.TLS.Enabled {
-			return &r.Spec.Configuration.PandaproxyAPI[i]
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].TLS.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
