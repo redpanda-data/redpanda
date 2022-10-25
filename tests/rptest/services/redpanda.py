@@ -1777,7 +1777,8 @@ class RedpandaService(Service):
                       override_cfg_params=None,
                       start_timeout=None,
                       stop_timeout=None,
-                      auto_assign_node_id=False):
+                      auto_assign_node_id=False,
+                      omit_seeds_on_idx_one=True):
 
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         with concurrent.futures.ThreadPoolExecutor(
@@ -1789,11 +1790,12 @@ class RedpandaService(Service):
                              nodes))
             list(
                 executor.map(
-                    lambda n: self.start_node(n,
-                                              override_cfg_params,
-                                              timeout=start_timeout,
-                                              auto_assign_node_id=
-                                              auto_assign_node_id), nodes))
+                    lambda n: self.start_node(
+                        n,
+                        override_cfg_params,
+                        timeout=start_timeout,
+                        auto_assign_node_id=auto_assign_node_id,
+                        omit_seeds_on_idx_one=omit_seeds_on_idx_one), nodes))
 
     def rolling_restart_nodes(self,
                               nodes,

@@ -27,6 +27,9 @@
 #include <vector>
 
 namespace cluster {
+
+class cluster_discovery;
+
 class controller {
 public:
     controller(
@@ -132,7 +135,7 @@ public:
      * \param initial_raft0_brokers Brokers to start raft0 with. Empty for
      *      non-seeds.
      */
-    ss::future<> start(std::vector<model::broker> initial_raft0_brokers);
+    ss::future<> start(cluster_discovery&);
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();
@@ -147,7 +150,7 @@ private:
      */
     ss::future<> create_cluster();
 
-    ss::future<> cluster_creation_hook(bool local_node_is_seed_server);
+    ss::future<> cluster_creation_hook(cluster_discovery& discovery);
 
     config_manager::preload_result _config_preload;
 
