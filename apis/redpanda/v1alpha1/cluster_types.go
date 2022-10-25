@@ -585,6 +585,9 @@ type SchemaRegistryAPI struct {
 	External *SchemaRegistryExternalConnectivityConfig `json:"external,omitempty"`
 	// TLS is the configuration for schema registry
 	TLS *SchemaRegistryAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per schema registry
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // SchemaRegistryExternalConnectivityConfig defines the external connectivity
