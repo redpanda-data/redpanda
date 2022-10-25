@@ -466,10 +466,10 @@ func (r *RpkAdminAPI) UnmarshalYAML(n *yaml.Node) error {
 
 func (p *Pandaproxy) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		PandaproxyAPI           namedSocketAddresses   `yaml:"pandaproxy_api"`
-		PandaproxyAPITLS        serverTLSArray         `yaml:"pandaproxy_api_tls"`
-		AdvertisedPandaproxyAPI namedSocketAddresses   `yaml:"advertised_pandaproxy_api"`
-		Other                   map[string]interface{} `yaml:",inline"`
+		PandaproxyAPI           namedAuthNSocketAddresses `yaml:"pandaproxy_api"`
+		PandaproxyAPITLS        serverTLSArray            `yaml:"pandaproxy_api_tls"`
+		AdvertisedPandaproxyAPI namedSocketAddresses      `yaml:"advertised_pandaproxy_api"`
+		Other                   map[string]interface{}    `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err

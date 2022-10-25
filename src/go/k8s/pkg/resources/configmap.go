@@ -459,7 +459,7 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 		return
 	}
 
-	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedSocketAddress{
+	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedAuthNSocketAddress{
 		{
 			Address: "0.0.0.0",
 			Port:    internal.Port,
@@ -469,7 +469,7 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 
 	if r.pandaCluster.PandaproxyAPIExternal() != nil {
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
-			config.NamedSocketAddress{
+			config.NamedAuthNSocketAddress{
 				Address: "0.0.0.0",
 				Port:    calculateExternalPort(internal.Port, r.pandaCluster.PandaproxyAPIExternal().Port),
 				Name:    PandaproxyPortExternalName,

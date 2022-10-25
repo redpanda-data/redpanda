@@ -75,10 +75,10 @@ type RedpandaNodeConfig struct {
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           []NamedSocketAddress   `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
-	PandaproxyAPITLS        []ServerTLS            `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
-	AdvertisedPandaproxyAPI []NamedSocketAddress   `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
-	Other                   map[string]interface{} `yaml:",inline"`
+	PandaproxyAPI           []NamedAuthNSocketAddress `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
+	PandaproxyAPITLS        []ServerTLS               `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress      `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
+	Other                   map[string]interface{}    `yaml:",inline"`
 }
 
 type SchemaRegistry struct {

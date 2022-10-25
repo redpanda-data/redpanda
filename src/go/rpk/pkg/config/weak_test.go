@@ -1006,9 +1006,9 @@ rpk:
 					},
 				},
 				Pandaproxy: &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8082, "internal"},
-						{"0.0.0.0", 8083, "external"},
+					PandaproxyAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8082, "internal", nil},
+						{"0.0.0.0", 8083, "external", nil},
 					},
 					PandaproxyAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false, TruststoreFile: "truststore_file"},
@@ -1330,9 +1330,9 @@ rpk:
 					},
 				},
 				Pandaproxy: &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8082, "internal"},
-						{"0.0.0.0", 8083, "external"},
+					PandaproxyAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8082, "internal", nil},
+						{"0.0.0.0", 8083, "external", nil},
 					},
 					PandaproxyAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false, TruststoreFile: "truststore_file"},
