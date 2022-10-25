@@ -228,7 +228,7 @@ func parseSelfIP(self string) (net.IP, error) {
 }
 
 func parseSeedIPs(ips []string) ([]config.SeedServer, error) {
-	defaultRPCPort := config.Default().Redpanda.RPCServer.Port
+	defaultRPCPort := config.DevDefault().Redpanda.RPCServer.Port
 	var seeds []config.SeedServer
 
 	for _, i := range ips {

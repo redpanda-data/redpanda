@@ -248,7 +248,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 			}
 		}
 	}
-	c := Default()
+	c := DevDefault()
 
 	if err := p.readConfig(fs, c); err != nil {
 		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
