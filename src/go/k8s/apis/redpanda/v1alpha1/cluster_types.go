@@ -568,6 +568,9 @@ type PandaproxyAPI struct {
 	External PandaproxyExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Pandaproxy API
 	TLS PandaproxyAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per pandaproxy
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // SchemaRegistryAPI configures the schema registry API
