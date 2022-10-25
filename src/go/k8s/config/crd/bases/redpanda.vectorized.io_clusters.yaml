@@ -401,6 +401,11 @@ spec:
                       description: PandaproxyAPI configures listener for the Pandaproxy
                         API
                       properties:
+                        authenticationMethod:
+                          description: 'AuthenticationMethod can enable authentication
+                            method per pandaproxy listener. Available options are:
+                            none, http_basic.'
+                          type: string
                         external:
                           description: External enables user to expose Redpanda nodes
                             outside of a Kubernetes cluster. For more information
