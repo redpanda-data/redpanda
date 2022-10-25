@@ -356,7 +356,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
-		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedSocketAddress{
+		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedAuthNSocketAddress{
 			{
 				Address: "0.0.0.0",
 				Port:    sr.Port,
