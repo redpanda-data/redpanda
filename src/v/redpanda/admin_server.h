@@ -230,6 +230,7 @@ private:
     void register_hbadger_routes();
     void register_transaction_routes();
     void register_debug_routes();
+    void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
 
@@ -306,6 +307,14 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Self test routes
+    ss::future<ss::json::json_return_type>
+      self_test_start_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      self_test_stop_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      self_test_get_results_handler(std::unique_ptr<ss::httpd::request>);
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
