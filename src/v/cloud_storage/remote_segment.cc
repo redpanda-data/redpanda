@@ -91,7 +91,7 @@ static ss::sstring generate_log_prefix(
     return ssx::sformat(
       "{} [{}:{}]",
       m.get_ntp().path(),
-      key.base_offset,
+      meta->base_offset,
       meta->committed_offset);
 }
 
@@ -100,7 +100,7 @@ remote_segment::remote_segment(
   cache& c,
   s3::bucket_name bucket,
   const partition_manifest& m,
-  const partition_manifest::key& key,
+  model::offset key,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
@@ -112,9 +112,9 @@ remote_segment::remote_segment(
     auto meta = m.get(key);
     vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
 
-    _path = m.generate_segment_path(key, *meta);
+    _path = m.generate_segment_path(*meta);
 
-    _term = key.term;
+    _term = meta->segment_term;
 
     _base_rp_offset = meta->base_offset;
     _max_rp_offset = meta->committed_offset;
@@ -124,29 +124,6 @@ remote_segment::remote_segment(
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
 }
-
-// Find manifest key in the manifest using base offset of the segment.
-// Invariant: 'o' is a valid base offset inside the manifest.
-static inline segment_name_components
-find_manifest_key(const partition_manifest& m, model::offset o) {
-    auto it = m.find(o);
-    vassert(
-      it != m.end(),
-      "Can't find base offset {} in the manifest for ntp {}",
-      o,
-      m.get_ntp());
-    return it->first;
-}
-
-remote_segment::remote_segment(
-  remote& r,
-  cache& c,
-  s3::bucket_name bucket,
-  const partition_manifest& m,
-  model::offset base_offset,
-  retry_chain_node& parent)
-  : remote_segment(
-    r, c, std::move(bucket), m, find_manifest_key(m, base_offset), parent) {}
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
 

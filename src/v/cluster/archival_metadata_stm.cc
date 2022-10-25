@@ -111,8 +111,18 @@ archival_metadata_stm::segments_from_manifest(
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
+        // NOTE: manifest should have the 'segment_term' set to some
+        // meaningful value in this place. During deserialization from
+        // json it's set from the segment name (if it's not present in
+        // the segment_meta). During deserialization of the archival snapshot
+        // it's also initialized from the segment name if it's missing in
+        // metadata.
+        vassert(
+          meta.segment_term != model::term_id{},
+          "segment_term is invalid in segment with base offset {}",
+          meta.base_offset);
         auto name = cloud_storage::generate_local_segment_name(
-          key.base_offset, key.term);
+          meta.base_offset, meta.segment_term);
         segments.push_back(segment{
           .ntp_revision_deprecated = meta.ntp_revision,
           .name = std::move(name),
@@ -316,7 +326,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
     auto has_replaced_segments = !_manifest->replaced_segments().empty();
     auto has_trailing_segments = (_manifest->size() > 0
                                   && _manifest->get_start_offset())
-                                   ? _manifest->begin()->first.base_offset
+                                   ? _manifest->begin()->first
                                        < _manifest->get_start_offset()
                                    : false;
 
@@ -660,7 +670,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
     for (const auto& m : *_manifest) {
         if (m.second.committed_offset < so) {
             auto name = cloud_storage::generate_local_segment_name(
-              m.first.base_offset, m.first.term);
+              m.second.base_offset, m.second.segment_term);
             backlog.push_back(m.second);
         } else {
             break;

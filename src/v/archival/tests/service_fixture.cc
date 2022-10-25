@@ -479,7 +479,7 @@ archival::remote_segment_path get_segment_path(
     BOOST_REQUIRE(meta);
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
-    return manifest.generate_segment_path(*key, *meta);
+    return manifest.generate_segment_path(*meta);
 }
 
 void populate_log(storage::disk_log_builder& b, const log_spec& spec) {

@@ -158,22 +158,15 @@ private:
       std::vector<partition_downloader::offset_range> dloffsets,
       partition_downloader::download_part& dlpart);
 
-    struct segment {
-        partition_manifest::key manifest_key;
-        partition_manifest::segment_meta meta;
-    };
-
     /// Download segment file to the target location
     ///
     /// The downloaded file will have a custom suffix
     /// which has to be changed. The downloaded file path
     /// is returned by the futue.
-    ss::future<std::optional<offset_range>> download_segment_file(
-      const segment& segm,
-      const download_part& part,
-      remote_segment_path remote_path);
+    ss::future<std::optional<offset_range>>
+    download_segment_file(const segment_meta& segm, const download_part& part);
 
-    using offset_map_t = absl::btree_map<model::offset, segment>;
+    using offset_map_t = absl::btree_map<model::offset, segment_meta>;
 
     ss::future<offset_map_t> build_offset_map(const recovery_material& mat);
 

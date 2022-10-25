@@ -537,12 +537,12 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     // look for first segment in next term, segments are sorted by base_offset
     // and term
     for (auto const& p : _manifest) {
-        if (p.first.term > term) {
+        if (p.second.segment_term > term) {
             return get_kafka_base_offset(p.second) - kafka::offset(1);
         }
     }
     // if last segment term is equal to the one we look for return it
-    if (_manifest.rbegin()->first.term == term) {
+    if (_manifest.rbegin()->second.segment_term == term) {
         return get_kafka_max_offset(_manifest.rbegin()->second);
     }
 
@@ -639,7 +639,7 @@ void remote_partition::update_segments_incrementally() {
               _manifest.get_ntp());
             if (
               meta.second == manifest_it->second
-              || manifest_it->first.base_offset > meta.second.base_offset) {
+              || manifest_it->second.base_offset > meta.second.base_offset) {
                 // This path can be taken if we've already added the
                 // segment with data batches and the current segment
                 // that the loop is checking doesn't have any.
@@ -659,14 +659,14 @@ void remote_partition::update_segments_incrementally() {
               meta.second.base_offset,
               meta.second.committed_offset,
               meta.second.delta_offset,
-              manifest_it->first.base_offset,
+              manifest_it->second.base_offset,
               manifest_it->second.committed_offset,
               manifest_it->second.delta_offset);
 
             std::visit([this](auto&& p) { p->offload(this); }, prev_it->second);
         }
         auto res = _segments.insert_or_assign(
-          o, offloaded_segment_state(meta.first.base_offset));
+          o, offloaded_segment_state(meta.second.base_offset));
         if (res.second) {
             _probe.segment_added();
         }
@@ -1001,7 +1001,7 @@ ss::future<> remote_partition::erase() {
     if (manifest_get_result != download_result::notfound) {
         // Erase all segments
         for (const auto& i : manifest) {
-            auto path = manifest.generate_segment_path(i.first, i.second);
+            auto path = manifest.generate_segment_path(i.second);
             vlog(_ctxlog.debug, "Erasing segment {}", path);
             // On failure, we throw: this should cause controller to retry
             // the topic deletion operation that called us, until it eventually

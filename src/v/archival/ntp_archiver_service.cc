@@ -393,10 +393,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
 
 remote_segment_path
 ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
-    auto key = cloud_storage::segment_name_components{
-      .base_offset = candidate.starting_offset,
-      .term = candidate.term,
-    };
     auto front = candidate.sources.front();
     cloud_storage::partition_manifest::value val{
       .is_compacted = front->is_compacted_segment()
@@ -410,7 +406,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
       .sname_format = cloud_storage::segment_name_format::v2,
     };
 
-    return manifest().generate_segment_path(key, val);
+    return manifest().generate_segment_path(val);
 }
 
 // from offset to offset (by record batch boundary)
@@ -955,8 +951,9 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
-          key.base_offset, key.term);
-        auto spath = m.generate_segment_path(key, meta);
+          meta.base_offset, meta.segment_term);
+        auto spath = cloud_storage::generate_remote_segment_path(
+          _ntp, _rev, sname, meta.archiver_term);
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(

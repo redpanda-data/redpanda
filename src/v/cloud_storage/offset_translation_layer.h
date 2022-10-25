@@ -52,7 +52,7 @@ public:
 
     /// Get segment name adjusted for all removed offsets
     segment_name get_adjusted_segment_name(
-      const partition_manifest::key& s, retry_chain_node& fib) const;
+      const segment_meta& s, retry_chain_node& fib) const;
 
 private:
     model::offset_delta _initial_delta;

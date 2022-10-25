@@ -60,14 +60,6 @@ public:
       cache& cache,
       s3::bucket_name bucket,
       const partition_manifest& m,
-      const partition_manifest::key& name,
-      retry_chain_node& parent);
-
-    remote_segment(
-      remote& r,
-      cache& cache,
-      s3::bucket_name bucket,
-      const partition_manifest& m,
       model::offset base_offset,
       retry_chain_node& parent);
 

@@ -99,7 +99,7 @@ public:
     };
 
     /// Segment key in the maifest
-    using key = segment_name_components;
+    using key = model::offset;
     using value = segment_meta;
     using segment_map = absl::btree_map<key, value>;
     using replaced_segments_list = std::vector<lw_segment_meta>;
@@ -107,14 +107,13 @@ public:
     using const_reverse_iterator = segment_map::const_reverse_iterator;
 
     /// Generate segment name to use in the cloud
-    static segment_name
-    generate_remote_segment_name(const key& k, const value& val);
+    static segment_name generate_remote_segment_name(const value& val);
     /// Generate segment path to use in the cloud
-    static remote_segment_path generate_remote_segment_path(
-      const model::ntp& ntp, const key& k, const value& val);
+    static remote_segment_path
+    generate_remote_segment_path(const model::ntp& ntp, const value& val);
     /// Generate segment path to use locally
-    static local_segment_path generate_local_segment_path(
-      const model::ntp& ntp, const key& k, const value& val);
+    static local_segment_path
+    generate_local_segment_path(const model::ntp& ntp, const value& val);
 
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
@@ -154,7 +153,7 @@ public:
               "can't parse name of the segment in the manifest '{}'",
               nm.name);
             nm.meta.segment_term = maybe_key->term;
-            _segments.insert(std::make_pair(*maybe_key, nm.meta));
+            _segments.insert(std::make_pair(nm.meta.base_offset, nm.meta));
         }
     }
 
@@ -192,9 +191,6 @@ public:
     timequery(model::timestamp t) const;
 
     remote_segment_path generate_segment_path(const segment_meta&) const;
-
-    remote_segment_path
-    generate_segment_path(const key&, const segment_meta&) const;
 
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;

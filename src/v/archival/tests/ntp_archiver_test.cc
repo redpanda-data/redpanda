@@ -532,7 +532,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       .is_compacted = false,
       .size_bytes = 100,
       .base_offset = model::offset(2),
-      .committed_offset = segment1->offsets().dirty_offset - model::offset(1)};
+      .committed_offset = segment1->offsets().dirty_offset - model::offset(1),
+      .segment_term = model::term_id{2},
+    };
     auto oldname = archival::segment_name("2-2-v1.log");
     old_manifest.add(oldname, old_meta);
     ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";

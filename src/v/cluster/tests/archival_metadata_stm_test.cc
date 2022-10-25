@@ -201,6 +201,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(0),
         .committed_offset = model::offset(99),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("100-1-v1.log"),
@@ -208,6 +209,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(100),
         .committed_offset = model::offset(199),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("200-1-v1.log"),
@@ -215,6 +217,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(200),
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("100-1-v1.log"),
@@ -223,6 +226,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(100),
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
         .sname_format = cloud_storage::segment_name_format::v2,
       });
     m.advance_insync_offset(model::offset{42});
@@ -353,7 +357,7 @@ old_segments_from_manifest(const cloud_storage::partition_manifest& m) {
             meta.ntp_revision = m.get_revision_id();
         }
         auto name = cloud_storage::generate_local_segment_name(
-          key.base_offset, key.term);
+          meta.base_offset, meta.segment_term);
         segments.push_back(old::segment{
           .ntp_revision_deprecated = meta.ntp_revision,
           .name = std::move(name),
@@ -412,6 +416,7 @@ FIXTURE_TEST(
         .base_offset = model::offset(0),
         .committed_offset = model::offset(99),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("100-1-v1.log"),
@@ -419,6 +424,7 @@ FIXTURE_TEST(
         .base_offset = model::offset(100),
         .committed_offset = model::offset(199),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.add(
       segment_name("200-1-v1.log"),
@@ -426,6 +432,7 @@ FIXTURE_TEST(
         .base_offset = model::offset(200),
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
       });
     m.advance_insync_offset(model::offset(3));
 
