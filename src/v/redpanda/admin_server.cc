@@ -1665,6 +1665,9 @@ void admin_server::register_broker_routes() {
                     ss::httpd::broker_json::broker b;
                     b.node_id = broker->id();
                     b.num_cores = broker->properties().cores;
+                    if (broker->rack()) {
+                        b.rack = *broker->rack();
+                    }
                     b.membership_status = fmt::format(
                       "{}", broker->get_membership_state());
                     b.is_alive = true;
@@ -1739,6 +1742,9 @@ void admin_server::register_broker_routes() {
                     auto& b = res.emplace_back();
                     b.node_id = ns.id;
                     b.num_cores = (*broker)->properties().cores;
+                    if ((*broker)->rack()) {
+                        b.rack = *(*broker)->rack();
+                    }
                     b.membership_status = fmt::format(
                       "{}", ns.membership_state);
                     b.is_alive = (bool)ns.is_alive;
@@ -1797,6 +1803,9 @@ void admin_server::register_broker_routes() {
           ss::httpd::broker_json::broker ret;
           ret.node_id = (*broker)->id();
           ret.num_cores = (*broker)->properties().cores;
+          if ((*broker)->rack()) {
+              ret.rack = *(*broker)->rack();
+          }
           ret.membership_status = fmt::format(
             "{}", (*broker)->get_membership_state());
           ret.maintenance_status = fill_maintenance_status(
