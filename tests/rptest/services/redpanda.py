@@ -1269,6 +1269,31 @@ class RedpandaService(Service):
             raise AssertionError(
                 "Nodes report restart required but expect_restart is False")
 
+    def await_feature_active(self, feature_name: str, *, timeout_sec: int):
+        """
+        For use during upgrade tests, when after upgrade yo uwould like to block
+        until a particular feature is active (e.g. if it does migrations)
+        """
+        def is_active():
+            for n in self.nodes:
+                f = self._admin.get_features(node=n)
+                by_name = dict((f['name'], f) for f in f['features'])
+                try:
+                    state = by_name[feature_name]['state']
+                except KeyError:
+                    state = None
+
+                if state != 'active':
+                    self.logger.info(
+                        f"Feature {feature_name} not yet active on {n.name} (state {state})"
+                    )
+                    return False
+
+            self.logger.info(f"Feature {feature_name} is now active")
+            return True
+
+        wait_until(is_active, timeout_sec=timeout_sec, backoff_sec=1)
+
     def monitor_log(self, node):
         assert node in self.nodes, f"where node is {node.name}"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
