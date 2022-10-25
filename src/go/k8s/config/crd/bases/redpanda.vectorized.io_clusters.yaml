@@ -577,6 +577,11 @@ spec:
                     description: SchemaRegistryAPI configures the schema registry
                       API
                     properties:
+                      authenticationMethod:
+                        description: 'AuthenticationMethod can enable authentication
+                          method per schema registry listener. Available options are:
+                          none, http_basic.'
+                        type: string
                       external:
                         description: External enables user to expose Redpanda nodes
                           outside of a Kubernetes cluster. For more information please
