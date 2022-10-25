@@ -1036,9 +1036,9 @@ rpk:
 					},
 				},
 				SchemaRegistry: &SchemaRegistry{
-					SchemaRegistryAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8081, "internal"},
-						{"0.0.0.0", 18081, "external"},
+					SchemaRegistryAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8081, "internal", nil},
+						{"0.0.0.0", 18081, "external", nil},
 					},
 					SchemaRegistryAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false},
@@ -1360,9 +1360,9 @@ rpk:
 					},
 				},
 				SchemaRegistry: &SchemaRegistry{
-					SchemaRegistryAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8081, "internal"},
-						{"0.0.0.0", 18081, "external"},
+					SchemaRegistryAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8081, "internal", nil},
+						{"0.0.0.0", 18081, "external", nil},
 					},
 					SchemaRegistryAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false},

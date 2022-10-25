@@ -82,9 +82,9 @@ type Pandaproxy struct {
 }
 
 type SchemaRegistry struct {
-	SchemaRegistryAPI               []NamedSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
-	SchemaRegistryAPITLS            []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
-	SchemaRegistryReplicationFactor *int                 `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
+	SchemaRegistryAPI               []NamedAuthNSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
+	SchemaRegistryAPITLS            []ServerTLS               `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
+	SchemaRegistryReplicationFactor *int                      `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
 }
 
 type KafkaClient struct {

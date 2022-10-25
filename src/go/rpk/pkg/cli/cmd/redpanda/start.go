@@ -250,7 +250,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			schemaRegAPI, err := parseNamedAddresses(
+			schemaRegAPI, err := parseNamedAuthNAddresses(
 				schemaRegAddr,
 				config.DefaultSchemaRegPort,
 			)

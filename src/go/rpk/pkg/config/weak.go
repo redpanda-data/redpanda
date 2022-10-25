@@ -504,9 +504,9 @@ func (k *KafkaClient) UnmarshalYAML(n *yaml.Node) error {
 
 func (s *SchemaRegistry) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		SchemaRegistryAPI               namedSocketAddresses `yaml:"schema_registry_api"`
-		SchemaRegistryAPITLS            serverTLSArray       `yaml:"schema_registry_api_tls"`
-		SchemaRegistryReplicationFactor *weakInt             `yaml:"schema_registry_replication_factor"`
+		SchemaRegistryAPI               namedAuthNSocketAddresses `yaml:"schema_registry_api"`
+		SchemaRegistryAPITLS            serverTLSArray            `yaml:"schema_registry_api_tls"`
+		SchemaRegistryReplicationFactor *weakInt                  `yaml:"schema_registry_replication_factor"`
 	}
 
 	if err := n.Decode(&internal); err != nil {
