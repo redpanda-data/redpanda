@@ -18,7 +18,7 @@ require (
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20220726211426-9ad7e9d59990
 	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.7.1
-	github.com/twmb/franz-go v1.9.0
+	github.com/twmb/franz-go v1.9.2-0.20221101035527-a07b8c8a01ce
 	github.com/twmb/franz-go/pkg/kadm v1.3.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
