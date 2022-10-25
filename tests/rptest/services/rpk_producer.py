@@ -19,7 +19,9 @@ class RpkProducer(BackgroundThreadService):
                  acks: Optional[int] = None,
                  printable=False,
                  quiet: bool = False,
-                 produce_timeout: Optional[int] = None):
+                 produce_timeout: Optional[int] = None,
+                 *,
+                 partition: Optional[int] = None):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -30,6 +32,7 @@ class RpkProducer(BackgroundThreadService):
         self._stopping = Event()
         self._quiet = quiet
         self._output_line_count = 0
+        self._partition = partition
 
         if produce_timeout is None:
             produce_timeout = 10
@@ -56,6 +59,9 @@ class RpkProducer(BackgroundThreadService):
         if self._quiet:
             # Suppress default "Produced to..." output lines by setting output template to empty string
             cmd += " -o \"\""
+
+        if self._partition is not None:
+            cmd += f" -p {self._partition}"
 
         self._stopping.clear()
         try:
