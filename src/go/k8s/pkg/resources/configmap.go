@@ -356,11 +356,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
+		var authN *string
+		if sr.AuthenticationMethod != "" {
+			authN = &sr.AuthenticationMethod
+		}
 		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedAuthNSocketAddress{
 			{
 				Address: "0.0.0.0",
 				Port:    sr.Port,
 				Name:    SchemaRegistryPortName,
+				AuthN:   authN,
 			},
 		}
 	}
