@@ -55,34 +55,14 @@ struct log_config {
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority
-      = ss::default_priority_class()) noexcept
-      : stype(type)
-      , base_dir(std::move(directory))
-      , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
-      , segment_size_jitter(0) // For deterministic behavior in unit tests.
-      , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
-      , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
-      , sanitize_fileops(should)
-      , compaction_priority(compaction_priority)
-      , retention_bytes(
-          config::mock_binding<std::optional<size_t>>(std::nullopt))
-      , compaction_interval(config::mock_binding<std::chrono::milliseconds>(
-          std::chrono::minutes(10)))
-      , delete_retention(
-          config::mock_binding<std::optional<std::chrono::milliseconds>>(
-            std::chrono::minutes(10080))) {}
-
+      = ss::default_priority_class()) noexcept;
     log_config(
       storage_type type,
       ss::sstring directory,
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
-      with_cache with) noexcept
-      : log_config(type, directory, segment_size, should, compaction_priority) {
-        cache = with;
-    }
-
+      with_cache with) noexcept;
     log_config(
       storage_type type,
       ss::sstring directory,
@@ -98,22 +78,7 @@ struct log_config {
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
-      ss::scheduling_group compaction_sg) noexcept
-      : stype(type)
-      , base_dir(std::move(directory))
-      , max_segment_size(segment_size)
-      , segment_size_jitter(segment_size_jitter)
-      , compacted_segment_size(compacted_segment_size)
-      , max_compacted_segment_size(max_compacted_segment_size)
-      , sanitize_fileops(should)
-      , compaction_priority(compaction_priority)
-      , retention_bytes(ret_bytes)
-      , compaction_interval(compaction_ival)
-      , delete_retention(del_ret)
-      , cache(c)
-      , reclaim_opts(recopts)
-      , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
-      , compaction_sg(compaction_sg) {}
+      ss::scheduling_group compaction_sg) noexcept;
 
     ~log_config() noexcept = default;
     // must be enabled so that we can do ss::sharded<>.start(config);

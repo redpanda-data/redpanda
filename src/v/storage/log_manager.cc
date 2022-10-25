@@ -56,6 +56,71 @@
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  size_t segment_size,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority) noexcept
+  : stype(type)
+  , base_dir(std::move(directory))
+  , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
+  , segment_size_jitter(0) // For deterministic behavior in unit tests.
+  , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
+  , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
+  , sanitize_fileops(should)
+  , compaction_priority(compaction_priority)
+  , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
+  , compaction_interval(
+      config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
+  , delete_retention(
+      config::mock_binding<std::optional<std::chrono::milliseconds>>(
+        std::chrono::minutes(10080))) {}
+
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  size_t segment_size,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority,
+  with_cache with) noexcept
+  : log_config(
+    type, std::move(directory), segment_size, should, compaction_priority) {
+    cache = with;
+}
+
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  config::binding<size_t> segment_size,
+  config::binding<size_t> compacted_segment_size,
+  config::binding<size_t> max_compacted_segment_size,
+  jitter_percents segment_size_jitter,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority,
+  config::binding<std::optional<size_t>> ret_bytes,
+  config::binding<std::chrono::milliseconds> compaction_ival,
+  config::binding<std::optional<std::chrono::milliseconds>> del_ret,
+  with_cache c,
+  batch_cache::reclaim_options recopts,
+  std::chrono::milliseconds rdrs_cache_eviction_timeout,
+  ss::scheduling_group compaction_sg) noexcept
+  : stype(type)
+  , base_dir(std::move(directory))
+  , max_segment_size(std::move(segment_size))
+  , segment_size_jitter(segment_size_jitter)
+  , compacted_segment_size(std::move(compacted_segment_size))
+  , max_compacted_segment_size(std::move(max_compacted_segment_size))
+  , sanitize_fileops(should)
+  , compaction_priority(compaction_priority)
+  , retention_bytes(std::move(ret_bytes))
+  , compaction_interval(std::move(compaction_ival))
+  , delete_retention(std::move(del_ret))
+  , cache(c)
+  , reclaim_opts(recopts)
+  , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
+  , compaction_sg(compaction_sg) {}
+
 log_manager::log_manager(
   log_config config, kvstore& kvstore, storage_resources& resources) noexcept
   : _config(std::move(config))
