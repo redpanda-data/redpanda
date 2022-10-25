@@ -1412,13 +1412,9 @@ int64_t disk_log_impl::compaction_backlog() const {
  * exceeded a threshold.
  */
 void disk_log_impl::wrote_stm_bytes(size_t byte_size) {
-    auto take_result = _manager.resources().stm_take_bytes(byte_size);
-    if (_stm_dirty_bytes_units.count()) {
-        _stm_dirty_bytes_units.adopt(std::move(take_result.units));
-    } else {
-        _stm_dirty_bytes_units = std::move(take_result.units);
-    }
-    if (take_result.checkpoint_hint) {
+    auto checkpoint_hint = _manager.resources().stm_take_bytes(
+      byte_size, _stm_dirty_bytes_units);
+    if (checkpoint_hint) {
         _stm_manager->make_snapshot_in_background();
         _stm_dirty_bytes_units.return_all();
     }
