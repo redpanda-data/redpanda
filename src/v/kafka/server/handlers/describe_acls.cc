@@ -53,6 +53,11 @@ static void fill_response(
 
         // acl entries
         for (auto& acl : entry.second) {
+            // ignore ephemeral_users
+            auto ephemeral_user = security::principal_type::ephemeral_user;
+            if (acl.principal().type() == ephemeral_user) {
+                continue;
+            }
             acl_description desc{
               .principal = details::to_kafka_principal(acl.principal()),
               .host = details::to_kafka_host(acl.host()),
