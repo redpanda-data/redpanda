@@ -150,12 +150,11 @@ ss::future<> service::do_start() {
         co_await configure();
         co_await create_internal_topic();
         co_await fetch_internal_topic();
-        vlog(
-          plog.info, "Schema registry successfully initialized internal topic");
+        vlog(plog.info, "Schema registry successfully initialized");
     } catch (...) {
         vlog(
           plog.error,
-          "Schema registry failed to initialize internal topic: {}",
+          "Schema registry failed to initialize: {}",
           std::current_exception());
         throw;
     }
