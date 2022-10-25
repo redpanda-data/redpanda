@@ -362,7 +362,10 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         log_allow_list=RESTART_LOG_ALLOW_LIST +
         # FIXME: 22.2->22.3 manifests are incompatible and not feature-gated currently:
         # https://github.com/redpanda-data/redpanda/issues/6837
-        ["partition_manifest.cc.*Failed to parse topic manifest"])
+        [
+            "partition_manifest.cc.*Failed to parse topic manifest",
+            "Failed to create archivers"
+        ])
     def test_rolling_upgrade(self):
         initial_version = Version(
             self.redpanda.get_version(self.redpanda.nodes[0]))
