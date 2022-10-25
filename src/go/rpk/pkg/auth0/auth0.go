@@ -11,16 +11,13 @@
 package auth0
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"runtime"
 	"time"
 
 	"github.com/lestrrat-go/jwx/jwt"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 )
 
 // Endpoint groups what url, audience, and clientID to use for getting tokens.
@@ -35,7 +32,7 @@ type Endpoint struct {
 	//     of the prerequisites for this tutorial. Note that this must be URL
 	//     encoded.
 	//
-	ClientID []string
+	ClientID string
 }
 
 // ExpiredError is returned from ValidateToken if the token is already expired.
@@ -51,9 +48,9 @@ func (e *ExpiredError) Error() string {
 // the given audience, and it is for the given client ID.
 //
 // If the error is expired, this will return *ExpiredError.
-func ValidateToken(token string, endpoint Endpoint) error {
+func ValidateToken(token, audience string, clientIDs ...string) error {
 	// A missing audience is not validated when using WithAudience below.
-	if endpoint.Audience == "" {
+	if audience == "" {
 		return errors.New("invalid empty audience")
 	}
 
@@ -68,19 +65,19 @@ func ValidateToken(token string, endpoint Endpoint) error {
 	}
 
 	err = jwt.Validate(parsed,
-		jwt.WithAudience(endpoint.Audience))
+		jwt.WithAudience(audience))
 	if err != nil {
 		switch err.Error() {
 		case "exp not satisfied":
 			return &ExpiredError{parsed.Expiration()}
 		case "aud not satisfied":
-			return fmt.Errorf("token audience %v does not contain our expected audience %q", parsed.Audience(), endpoint.Audience)
+			return fmt.Errorf("token audience %v does not contain our expected audience %q", parsed.Audience(), audience)
 		default:
 			return err
 		}
 	}
 
-	for _, clientID := range endpoint.ClientID {
+	for _, clientID := range clientIDs {
 		err = jwt.Validate(parsed,
 			jwt.WithClaimValue("azp", clientID),
 		)
@@ -94,36 +91,35 @@ func ValidateToken(token string, endpoint Endpoint) error {
 			return fmt.Errorf("token validation error: %w", err)
 		}
 	}
-	return fmt.Errorf("token client id %q is not our expected client id %q", parsed.PrivateClaims()["azp"], endpoint.ClientID)
+	return fmt.Errorf("token client id %q is not our expected client id %q", parsed.PrivateClaims()["azp"], clientIDs)
 }
 
 // Client talks to auth0.
 type Client struct {
 	endpoint Endpoint
 
-	httpCl *http.Client
+	httpCl *httpapi.Client
 }
 
 // NewClient initializes and returns a client for talking to auth0.
 func NewClient(endpoint Endpoint) *Client {
-	cl := &Client{
-		endpoint: endpoint,
-		httpCl:   &http.Client{Timeout: time.Minute},
+	opts := []httpapi.Opt{
+		httpapi.Host(endpoint.URL),
+		httpapi.Err4xx(func(code int) error { return &tokenResponseError{Code: code} }),
 	}
 
-	// Our auth0 clients are typically extremely short-lived (to issue a single
-	// request), so let's be sure not to leak idle connections once the client
-	// is GC'd.
-	runtime.SetFinalizer(cl, func(cl *Client) {
-		cl.httpCl.CloseIdleConnections()
-	})
+	apiCl := httpapi.NewClient(opts...)
+	cl := &Client{
+		endpoint: endpoint,
+		httpCl:   apiCl,
+	}
 
 	return cl
 }
 
 // Login attempts to receive an auth0 token.
-func (cl *Client) Login() (token string, expiresIn int, err error) {
-	code, err := cl.getDeviceCode()
+func (cl *Client) Login(ctx context.Context) (token string, expiresIn int, err error) {
+	code, err := cl.getDeviceCode(ctx)
 	if err != nil {
 		return "", 0, fmt.Errorf("unable to login: %w", err)
 	}
@@ -138,12 +134,13 @@ func (cl *Client) Login() (token string, expiresIn int, err error) {
 	ticker := time.NewTicker(time.Duration(code.Interval+1) * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		token, err := cl.getToken(code.DeviceCode)
+		token, err := cl.getToken(ctx, code.DeviceCode)
 		if err == nil {
 			return token.AccessToken, token.ExpiresIn, nil
 		}
-		if errors.As(err, &token) {
-			switch token.Err {
+		var tokenError *tokenResponseError
+		if errors.As(err, &tokenError) {
+			switch tokenError.Err {
 			case "authorization_pending",
 				"slow_down":
 			default:
@@ -173,17 +170,15 @@ type deviceAuthorizationResponse struct {
 	Interval                int    `json:"interval"`
 }
 
-func (cl *Client) getDeviceCode() (*deviceAuthorizationResponse, error) {
-	resp := new(deviceAuthorizationResponse)
-	return resp, cl.doFormJSON(
-		"device code",
-		cl.endpoint.URL+"/oauth/device/code",
-		url.Values{
-			"client_id": {cl.endpoint.ClientID[0]},
-			"audience":  {cl.endpoint.Audience},
-		},
-		resp,
+func (cl *Client) getDeviceCode(ctx context.Context) (*deviceAuthorizationResponse, error) {
+	path := httpapi.Pathfmt("%s/oauth/device/code", cl.endpoint.URL)
+	form := httpapi.Values(
+		"client_id", cl.endpoint.ClientID,
+		"audience", cl.endpoint.Audience,
 	)
+
+	var response *deviceAuthorizationResponse
+	return response, cl.httpCl.PostForm(ctx, path, nil, form, response)
 }
 
 // tokenResponse is a response for an OAuth 2 access token request. The struct
@@ -195,84 +190,36 @@ func (cl *Client) getDeviceCode() (*deviceAuthorizationResponse, error) {
 // For a higher-level description, see:
 //
 //	https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
-type tokenResponse struct { //nolint:errname // This is used as an error once below, but primarily it is not an error.
+type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
 	Scope       string `json:"scope"`
+}
 
+// tokenResponseError is the error returned from 4xx responses.
+type tokenResponseError struct {
+	Code             int    `json:"-"`
 	Err              string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-func (t *tokenResponse) Error() string {
+// Error implements the error interface.
+func (t *tokenResponseError) Error() string {
 	if t.ErrorDescription != "" {
 		return t.Err + ": " + t.ErrorDescription
 	}
 	return t.Err
 }
 
-func (cl *Client) getToken(deviceCode string) (*tokenResponse, error) {
-	// We specifically go through doForm because a 4xx response for the
-	// token request can be JSON that signifies an important error. To us,
-	// the error can be significant, because it can say
-	// "authorization_pending" which we look for to continue polling.
-	body, code, err := cl.doForm(
-		"token",
-		cl.endpoint.URL+"/oauth/token",
-		url.Values{
-			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
-			"device_code": {deviceCode},
-			"client_id":   {cl.endpoint.ClientID[0]},
-		},
+func (cl *Client) getToken(ctx context.Context, deviceCode string) (*tokenResponse, error) {
+	path := httpapi.Pathfmt("%s/oauth/token", cl.endpoint.URL)
+	form := httpapi.Values(
+		"grant_type", "urn:ietf:params:oauth:grant-type:device_code",
+		"device_code", deviceCode,
+		"client_id", cl.endpoint.ClientID,
 	)
-	if err != nil {
-		return nil, err
-	}
 
-	switch codeBlock := code / 100; codeBlock {
-	case 2, 4:
-		resp := new(tokenResponse)
-		if err := json.Unmarshal(body, resp); err != nil {
-			return nil, fmt.Errorf("unable to decode token response body: %w", err)
-		}
-		if codeBlock == 4 {
-			return nil, resp
-		}
-		return resp, nil
-
-	default:
-		return nil, fmt.Errorf("unsuccessful token request: %s", http.StatusText(code))
-	}
-}
-
-// Issues the input request, unmarhsalling the response into `into`.
-//
-// All non-2xx responses are considered errors.
-func (cl *Client) doFormJSON(name, url string, values url.Values, into interface{}) error {
-	body, code, err := cl.doForm(name, url, values)
-	if err != nil {
-		return err
-	}
-	if code/100 != 2 {
-		return fmt.Errorf("unsuccessful %s request: %s\nbody:\n%s\n)", name, http.StatusText(code), body)
-	}
-	if err := json.Unmarshal(body, into); err != nil {
-		return fmt.Errorf("unable to decode %s response body: %w", name, err)
-	}
-	return nil
-}
-
-func (cl *Client) doForm(name, url string, values url.Values) (body []byte, statusCode int, err error) {
-	resp, err := cl.httpCl.PostForm(url, values) // nolint:noctx // There is no good replacement for PostForm, and we do not need a context here.
-	if err != nil {
-		return nil, 0, fmt.Errorf("unable to issue %s request: %w", name, err)
-	}
-	defer resp.Body.Close()
-
-	if body, err = io.ReadAll(resp.Body); err != nil {
-		return nil, 0, fmt.Errorf("unable to read %s response body: %w", name, err)
-	}
-
-	return body, resp.StatusCode, nil
+	var response *tokenResponse
+	return response, cl.httpCl.PostForm(ctx, path, nil, form, response)
 }
