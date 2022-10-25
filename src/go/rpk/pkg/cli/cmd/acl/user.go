@@ -56,7 +56,7 @@ type UserAPI interface {
 }
 
 func newCreateUserCommand(fs afero.Fs) *cobra.Command {
-	var userOld, pass, passOld, mechanism string
+	var userOld, pass, newPass, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER] -p [PASS]",
 		Short: "Create a SASL user",
@@ -97,11 +97,34 @@ acl help text for more info.
 			} else {
 				out.Die("missing required username argument")
 			}
-			if pass == "" {
-				if passOld == "" { // backcompat
-					out.Die("missing required --password")
-				}
-				pass = passOld
+
+			// Redpanda added support for using our Kafka SASL
+			// credentials for basic auth. We use --password on
+			// commands to set the Kafka SASL password, but we also
+			// use --password here to specify the new user
+			// password. Historically, this was fine.
+			//
+			// Now, we support --new-password AND --password
+			// (--new-password was the original flag), and we add
+			// the short form -p to --new-password. Previously, -p
+			// was on --password, which meant -p and --password set
+			// the same value and we could not tell.
+			//
+			// Now, if we detect --user, we require --new-password
+			// (or -p). If we only see --password (i.e. only
+			// "password" is set), we fail.
+			//
+			// See #6360.
+			//
+			// Better long term is to switch all configuration
+			// setting flags to -X.
+			userFlag := cmd.Flag(config.FlagSASLUser).Value.String()
+			if userFlag != "" && newPass == "" {
+				out.Die("unable to create user with when using basic auth, use --new-password to specify the new user's password")
+			}
+
+			if newPass != "" {
+				pass = newPass
 			}
 
 			switch strings.ToLower(mechanism) {
@@ -120,11 +143,11 @@ acl help text for more info.
 	}
 
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
-	cmd.Flags().MarkDeprecated("new-username", "The username now does not require a flag") // Oct 2021
+	cmd.Flags().MarkHidden("new-username")
 
-	cmd.Flags().StringVarP(&pass, "password", "p", "", "New user's password")
-	cmd.Flags().StringVar(&passOld, "new-password", "", "")
-	cmd.Flags().MarkDeprecated("new-password", "Renamed to --password") // Oct 2021
+	cmd.Flags().StringVar(&pass, "password", "", "New user's password (NOTE: if using --password for the admin API, use --new-password)")
+	cmd.Flags().StringVarP(&newPass, "new-password", "p", "", "")
+	cmd.Flags().MarkHidden("new-password")
 
 	cmd.Flags().StringVar(
 		&mechanism,

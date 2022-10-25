@@ -71,9 +71,7 @@ class RpkRedpandaStartTest(RedpandaTest):
         expected_cluster_properties = {
             "auto_create_topics_enabled": "true",
             "group_topic_partitions": "3",
-            # RPK returns scientific notation for large int values.
-            # https://github.com/redpanda-data/redpanda/issues/6070
-            "storage_min_free_bytes": "1.048576e+07",
+            "storage_min_free_bytes": "10485760",
             "topic_partitions_per_shard": "1000"
         }
 
