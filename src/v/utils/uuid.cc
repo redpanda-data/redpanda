@@ -32,3 +32,5 @@ uuid_t uuid_t::create() {
 std::ostream& operator<<(std::ostream& os, const uuid_t& u) {
     return os << fmt::format("{}", u._uuid);
 }
+
+uuid_t::operator ss::sstring() const { return fmt::format("{}", _uuid); }

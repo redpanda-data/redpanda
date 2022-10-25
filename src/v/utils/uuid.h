@@ -8,6 +8,10 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
+
 #include <absl/hash/hash.h>
 #include <boost/uuid/uuid.hpp>
 
@@ -36,6 +40,8 @@ public:
 
     friend std::ostream& operator<<(std::ostream& os, const uuid_t& u);
     friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
+
+    operator ss::sstring() const;
 
     template<typename H>
     friend H AbslHashValue(H h, const uuid_t& u) {
