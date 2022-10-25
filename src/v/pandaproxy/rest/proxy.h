@@ -46,9 +46,11 @@ public:
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
     sharded_client_cache& client_cache() { return _client_cache; }
+    ss::future<> mitigate_error(std::exception_ptr);
 
 private:
     ss::future<> do_start();
+    ss::future<> inform(model::node_id);
 
     configuration _config;
     ssx::semaphore _mem_sem;
@@ -58,6 +60,8 @@ private:
     server::context_t _ctx;
     server _server;
     one_shot _ensure_started;
+    cluster::controller* _controller;
+    bool _has_ephemeral_credentials{false};
 };
 
 } // namespace pandaproxy::rest

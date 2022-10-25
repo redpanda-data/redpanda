@@ -38,10 +38,14 @@ api::api(
 api::~api() noexcept = default;
 
 ss::future<> api::start() {
+    const auto mitigate_error = [this](std::exception_ptr ex) {
+        return _proxy.local().mitigate_error(ex);
+    };
+
     _client_cache = std::make_unique<sharded_client_cache>();
 
     co_await _client.start(
-      config::to_yaml(_client_cfg, config::redact_secrets::no));
+      config::to_yaml(_client_cfg, config::redact_secrets::no), mitigate_error);
 
     co_await _client_cache->start(
       _sg,
