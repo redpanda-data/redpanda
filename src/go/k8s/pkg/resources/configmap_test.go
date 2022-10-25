@@ -104,7 +104,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 			name:                    "Primitive object in additional configuration",
 			additionalConfiguration: map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000"},
 			expectedStrings:         []string{"transactional_id_expiration_ms: 25920000000"},
-			expectedHash:            "13b7ea49c811062afe2a6d275604929e",
+			expectedHash:            "3700f26a4631d5ab31e148352fdea7e0",
 		},
 		{
 			name:                    "Complex struct in additional configuration",
@@ -114,7 +114,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
         - address: 0.0.0.0
           port: 8081
           name: external`},
-			expectedHash: "4b241955a317f47a6a06960a333ed661",
+			expectedHash: "24f0b08129b48a3c8f091f13b84e1f1d",
 		},
 		{
 			name: "shadow index cache directory",
@@ -122,7 +122,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 				`cloud_storage_cache_directory: /var/lib/shadow-index-cache`,
 				`cloud_storage_cache_size: "10737418240"`,
 			},
-			expectedHash: "533227069ff8ee6791b874db60480b40",
+			expectedHash: "e3ab006a8c5db2957c16f982bc6db694",
 		},
 	}
 	for _, tc := range testcases {
