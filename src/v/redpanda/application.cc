@@ -36,6 +36,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
+#include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
@@ -644,7 +645,8 @@ void application::configure_admin_server() {
       std::ref(metadata_cache),
       std::ref(archival_scheduler),
       std::ref(_connection_cache),
-      std::ref(node_status_table))
+      std::ref(node_status_table),
+      std::ref(self_test_frontend))
       .get();
 }
 
@@ -923,6 +925,16 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(feature_table),
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
+
+    construct_single_service_sharded(self_test_backend).get();
+
+    construct_single_service_sharded(
+      self_test_frontend,
+      node_id,
+      std::ref(controller->get_members_table()),
+      std::ref(self_test_backend),
+      std::ref(_connection_cache))
+      .get();
 
     construct_service(node_status_table, node_id).get();
 
@@ -1649,6 +1661,12 @@ void application::start_runtime_services(
               _scheduling_groups.node_status(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(node_status_backend)));
+
+          runtime_services.push_back(
+            std::make_unique<cluster::self_test_rpc_handler>(
+              _scheduling_groups.node_status(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(self_test_backend)));
 
           runtime_services.push_back(
             std::make_unique<cluster::partition_balancer_rpc_handler>(

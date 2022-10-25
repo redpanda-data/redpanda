@@ -32,6 +32,7 @@
 #include "cluster/partition_balancer_rpc_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
+#include "cluster/self_test_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -110,7 +111,8 @@ admin_server::admin_server(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<archival::scheduler_service>& archival_service,
   ss::sharded<rpc::connection_cache>& connection_cache,
-  ss::sharded<cluster::node_status_table>& node_status_table)
+  ss::sharded<cluster::node_status_table>& node_status_table,
+  ss::sharded<cluster::self_test_frontend>& self_test_frontend)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -122,7 +124,8 @@ admin_server::admin_server(
   , _connection_cache(connection_cache)
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _archival_service(archival_service)
-  , _node_status_table(node_status_table) {}
+  , _node_status_table(node_status_table)
+  , _self_test_frontend(self_test_frontend) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
