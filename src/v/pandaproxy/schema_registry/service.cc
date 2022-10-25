@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
+#include "cluster/security_frontend.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/client/exceptions.h"
@@ -22,12 +23,14 @@
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
 #include "pandaproxy/auth_utils.h"
+#include "pandaproxy/config_utils.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "security/acl.h"
+#include "security/ephemeral_credential_store.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
@@ -144,6 +147,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
 ss::future<> service::do_start() {
     auto guard = gate_guard(_gate);
     try {
+        co_await configure();
         co_await create_internal_topic();
         co_await fetch_internal_topic();
         vlog(
@@ -155,6 +159,31 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
+}
+
+ss::future<> service::configure() {
+    auto config = co_await pandaproxy::create_client_credentials(
+      *_controller,
+      config::shard_local_cfg(),
+      _client.local().config(),
+      principal);
+    co_await set_client_credentials(*config, _client);
+
+    auto const& store = _controller->get_ephemeral_credential_store().local();
+    _has_ephemeral_credentials = store.has(store.find(principal));
+
+    co_await _controller->get_security_frontend().local().create_acls(
+      {security::acl_binding{
+        security::resource_pattern{
+          security::resource_type::topic,
+          model::schema_registry_internal_tp.topic,
+          security::pattern_type::literal},
+        security::acl_entry{
+          principal,
+          security::acl_host::wildcard_host(),
+          security::acl_operation::all,
+          security::acl_permission::allow}}},
+      5s);
 }
 
 ss::future<> service::mitigate_error(std::exception_ptr eptr) {
