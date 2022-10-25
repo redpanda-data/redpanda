@@ -1904,9 +1904,13 @@ class RedpandaService(Service):
 
         return None
 
-    def node_storage(self, node):
+    def node_storage(self, node, sizes: bool = False):
         """
         Retrieve a summary of storage on a node.
+
+        :param sizes: if true, stat each segment file and record its size in the
+                      `size` attribute of Segment.  This is expensive, only use it
+                      for small-ish numbers of segments.
         """
         def listdir(path, only_dirs=False):
             try:
@@ -1929,6 +1933,12 @@ class RedpandaService(Service):
 
             return [p[0] for p in paths if safe_isdir(p[1])]
 
+        def get_sizes(partition_path, segment_names, partition):
+            for s in segment_names:
+                stat = node.account.sftp_client.lstat(
+                    os.path.join(partition_path, s))
+                partition.set_segment_size(s, stat.st_size)
+
         store = NodeStorage(node.name, RedpandaService.DATA_DIR)
         for ns in listdir(store.data_dir, True):
             if ns == '.coprocessor_offset_checkpoints':
@@ -1941,12 +1951,15 @@ class RedpandaService(Service):
             for topic in listdir(ns.path):
                 topic = ns.add_topic(topic, os.path.join(ns.path, topic))
                 for num in listdir(topic.path):
-                    partition = topic.add_partition(
-                        num, node, os.path.join(topic.path, num))
-                    partition.add_files(listdir(partition.path))
+                    partition_path = os.path.join(topic.path, num)
+                    partition = topic.add_partition(num, node, partition_path)
+                    segment_names = listdir(partition.path)
+                    partition.add_files(segment_names)
+                    if sizes:
+                        get_sizes(partition_path, segment_names, partition)
         return store
 
-    def storage(self, all_nodes: bool = False):
+    def storage(self, all_nodes: bool = False, sizes: bool = False):
         """
         :param all_nodes: if true, report on all nodes, otherwise only report
                           on started nodes.
@@ -1955,7 +1968,7 @@ class RedpandaService(Service):
         """
         store = ClusterStorage()
         for node in (self.nodes if all_nodes else self._started):
-            s = self.node_storage(node)
+            s = self.node_storage(node, sizes=sizes)
             store.add_node(s)
         return store
 
