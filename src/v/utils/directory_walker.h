@@ -14,11 +14,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/file.hh>
-#include <seastar/core/seastar.hh>
-#include <seastar/core/sstring.hh>
-
-#include <memory>
-#include <utility>
+#include <seastar/core/future.hh>
 
 /// \brief map over all entries of a directory
 ///
@@ -28,13 +24,6 @@
 /// });
 struct directory_walker {
     using walker_type = std::function<ss::future<>(ss::directory_entry)>;
-
-    class stop_walk final : public std::exception {
-    public:
-        const char* what() const noexcept final {
-            return "stop directory walk signal";
-        }
-    };
 
     static ss::future<> walk(std::string_view dirname, walker_type walker_func);
     static ss::future<bool> empty(const std::filesystem::path& dir);
