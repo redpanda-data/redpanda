@@ -15,8 +15,8 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
-#include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
+#include "pandaproxy/util.h"
 #include "redpanda/request_auth.h"
 #include "seastarx.h"
 

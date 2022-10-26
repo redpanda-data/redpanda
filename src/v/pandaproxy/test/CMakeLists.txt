@@ -12,6 +12,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME pandaproxy_single_thread
   SOURCES
+    one_shot.cc
     sharded_client_cache.cc
     kafka_client_cache.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
