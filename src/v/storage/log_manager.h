@@ -59,6 +59,7 @@ struct log_config {
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
+      , segment_size_jitter(0) // For deterministic behavior in unit tests.
       , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
       , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
       , sanitize_fileops(should)
