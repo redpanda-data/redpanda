@@ -889,7 +889,7 @@ std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {
 
 float random_jitter(jitter_percents jitter_percents) {
     vassert(
-      jitter_percents >= 0 || jitter_percents <= 100,
+      jitter_percents >= 0 && jitter_percents <= 100,
       "jitter percents should be in range [0,100]. Requested {}",
       jitter_percents);
     // multiply by 10 to increase resolution
