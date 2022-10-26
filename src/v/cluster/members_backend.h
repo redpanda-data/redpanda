@@ -88,7 +88,7 @@ private:
     ss::future<> reallocate_replica_set(partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
-    void calculate_reallocations(update_meta&);
+    ss::future<> calculate_reallocations(update_meta&);
 
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
@@ -97,9 +97,10 @@ private:
     void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void calculate_reallocations_after_node_added(update_meta&) const;
-    void calculate_reallocations_after_decommissioned(update_meta&) const;
-    void calculate_reallocations_after_recommissioned(update_meta&) const;
+    ss::future<> calculate_reallocations_after_node_added(
+      update_meta&, partition_allocation_domain);
+    ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
+    ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
@@ -122,6 +123,7 @@ private:
     ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
+    config::binding<size_t> _max_concurrent_reallocations;
     /**
      * store revision of node decommissioning update, decommissioning command
      * revision is stored when node is being decommissioned, it is used to

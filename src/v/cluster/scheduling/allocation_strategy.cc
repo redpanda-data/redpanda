@@ -95,7 +95,14 @@ model::node_id find_best_fit(
           [&node = it->second](
             uint32_t score,
             const allocation_constraints::soft_constraint_ev_ptr& ev) {
-              return score + ev->score(*node);
+              const auto current_score = ev->score(*node);
+              vlog(
+                clusterlog.trace,
+                "constraint: {}, node: {}, score: {}",
+                *ev,
+                node->id(),
+                current_score);
+              return score + current_score;
           });
 
         if (score >= best_score) {
