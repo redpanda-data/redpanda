@@ -50,6 +50,7 @@ public:
 
 private:
     ss::future<> do_start();
+    ss::future<> configure();
     ss::future<> inform(model::node_id);
 
     configuration _config;

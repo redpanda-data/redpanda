@@ -183,8 +183,10 @@ class PandaProxyEndpoints(RedpandaTest):
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
-    def _base_uri(self):
-        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
+    def _base_uri(self, hostname=None):
+        hostname = hostname if hostname else self.redpanda.nodes[
+            0].account.hostname
+        return f"http://{hostname}:8082"
 
     def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS, **kwargs):
         return requests.get(f"{self._base_uri()}/brokers",
@@ -205,8 +207,11 @@ class PandaProxyEndpoints(RedpandaTest):
         assert set(names).issubset(self._get_topics().json())
         return names
 
-    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS, **kwargs):
-        return requests.get(f"{self._base_uri()}/topics",
+    def _get_topics(self,
+                    headers=HTTP_GET_TOPICS_HEADERS,
+                    hostname=None,
+                    **kwargs):
+        return requests.get(f"{self._base_uri(hostname)}/topics",
                             headers=headers,
                             **kwargs)
 
@@ -1238,3 +1243,41 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         # Put the original password back incase future changes to the
         # teardown process in RedpandaService relies on the superuser
         admin.update_user(super_username, super_password, super_algorithm)
+
+
+class PandaProxyAutoAuthTest(PandaProxyEndpoints):
+    """
+    Testpandaproxy against a redpanda cluster with Auto Auth enabled.
+    """
+    def __init__(self, context):
+        security = SecurityConfig()
+        security.kafka_enable_authorization = True
+        security.endpoint_authn_method = 'sasl'
+        security.auto_auth = True
+
+        super(PandaProxyAutoAuthTest, self).__init__(context,
+                                                     security=security)
+
+    @cluster(num_nodes=3)
+    def test_get_topics(self):
+        nodes = self.redpanda.nodes
+        node_count = len(nodes)
+        restart_node_idx = 0
+
+        def check_connection(hostname: str):
+            result_raw = self._get_topics(hostname=hostname)
+            self.logger.info(result_raw.status_code)
+            self.logger.info(result_raw.json())
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json() == []
+
+        def restart_node():
+            victim = nodes[restart_node_idx]
+            self.logger.info(f"Restarting node: {restart_node_idx}")
+            self.redpanda.restart_nodes(victim)
+
+        for _ in range(5):
+            for n in self.redpanda.nodes:
+                check_connection(n.account.hostname)
+            restart_node()
+            restart_node_idx = (restart_node_idx + 1) % node_count

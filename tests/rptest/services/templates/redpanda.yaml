@@ -76,7 +76,7 @@ pandaproxy_client:
 
   retries: 10
   retry_base_backoff_ms: 10
-  {% if sasl_enabled %}
+  {% if sasl_enabled and not auto_auth %}
   sasl_mechanism: {{superuser[2]}}
   scram_username: {{superuser[0]}}
   scram_password: {{superuser[1]}}
