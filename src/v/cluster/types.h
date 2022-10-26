@@ -1081,8 +1081,7 @@ struct topic_properties
     tristate<std::chrono::milliseconds> retention_local_target_ms{std::nullopt};
 
     // Remote deletes are enabled by default in new tiered storage topics,
-    // disabled by default in legacy topics during upgrade (the legacy path
-    // is handled during adl/serde decode).
+    // disabled by default in legacy topics during upgrade.
     // This is intentionally not an optional: all topics have a concrete value
     // one way or another.  There is no "use the cluster default".
     bool remote_delete{storage::ntp_config::default_remote_delete};
@@ -1369,13 +1368,6 @@ struct topic_configuration
         properties = read_nested<topic_properties>(in, h._bytes_left_limit);
 
         if (h._version < 1) {
-            maybe_adjust_retention_policies(
-              properties.shadow_indexing,
-              properties.retention_bytes,
-              properties.retention_duration,
-              properties.retention_local_target_bytes,
-              properties.retention_local_target_ms);
-
             // Legacy tiered storage topics do not delete data on
             // topic deletion.
             properties.remote_delete

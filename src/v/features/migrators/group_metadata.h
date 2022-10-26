@@ -12,6 +12,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_migrator.h"
 #include "features/feature_table.h"
 #include "kafka/server/fwd.h"
 #include "model/fundamental.h"
@@ -26,18 +27,22 @@
 
 #pragma once
 
-namespace kafka {
+namespace features::migrators {
 
-struct group_metadata_migration {
+struct group_metadata_migration : feature_migrator {
 public:
     group_metadata_migration(
       cluster::controller&, ss::sharded<kafka::group_router>&);
 
     // starts the migration process
-    ss::future<> start(ss::abort_source&);
+    virtual void start(ss::abort_source&) override;
 
     // awaits for the migration to finish
-    ss::future<> await();
+    virtual ss::future<> stop() override;
+
+    virtual features::feature get_feature() override {
+        return features::feature::consumer_offsets;
+    }
 
 private:
     static constexpr auto default_timeout = std::chrono::seconds(5);
@@ -60,7 +65,6 @@ private:
     cluster::feature_manager& feature_manager();
     ss::abort_source& abort_source();
 
-    cluster::controller& _controller;
     ss::sharded<kafka::group_router>& _group_router;
     ss::gate _partitions_gate;
     ss::gate _background_gate;
@@ -73,4 +77,4 @@ private:
     ss::abort_source _as;
 };
 
-} // namespace kafka
+} // namespace features::migrators

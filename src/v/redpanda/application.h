@@ -19,6 +19,7 @@
 #include "cluster/node_status_table.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
+#include "features/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
@@ -53,10 +54,6 @@ namespace po = boost::program_options; // NOLINT
 namespace cluster {
 class cluster_discovery;
 } // namespace cluster
-
-namespace kafka {
-struct group_metadata_migration;
-} // namespace kafka
 
 inline const auto redpanda_start_time{
   std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -131,7 +128,7 @@ private:
 
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
-    void start_runtime_services(cluster::cluster_discovery&, ::stop_signal&);
+    void start_runtime_services(cluster::cluster_discovery&);
     void start_kafka(const model::node_id&, ::stop_signal&);
 
     // All methods are calleds from Seastar thread
@@ -203,7 +200,8 @@ private:
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
-    ss::lw_shared_ptr<kafka::group_metadata_migration> kafka_group_migration;
+    // Small helpers to execute one-time upgrade actions
+    std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 
     // run these first on destruction
     deferred_actions _deferred;

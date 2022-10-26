@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/rpc_client_protocol.h"
 #include "resource_mgmt/io_priority.h"
 
 #include <seastar/core/scheduling.hh>

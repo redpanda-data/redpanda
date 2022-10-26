@@ -169,7 +169,7 @@ constexpr static std::array feature_schema{
     "cloud_retention",
     feature::cloud_retention,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
+    feature_spec::prepare_policy::requires_migration},
   feature_spec{
     cluster_version{7},
     "node_id_assignment",
