@@ -695,8 +695,25 @@ ss::future<storage::append_result> append_exactly(
 
     if (key) {
         key_buf = bytes_to_iobuf(*key);
-        val_sz -= key_buf.size_bytes();
     }
+
+    auto real_batch_size = sizeof(model::record_attributes::type) // attributes
+                           + vint::vint_size(0)   // timestamp delta
+                           + vint::vint_size(0)   // offset_delta
+                           + key_buf.size_bytes() // key size
+                           + vint::vint_size(0)   // headers size
+                           + 2;
+
+    if (key) {
+        real_batch_size += vint::vint_size(
+          static_cast<int32_t>(key_buf.size_bytes()));
+    } else {
+        real_batch_size += vint::vint_size(-1);
+    }
+
+    real_batch_size += vint::vint_size(val_sz - real_batch_size);
+
+    val_sz -= real_batch_size;
 
     for (int i = 0; i < batch_count; ++i) {
         storage::record_batch_builder builder(
@@ -1323,7 +1340,6 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     // Add 100 batches with one event each, all events having the same key
     static constexpr size_t batch_size = 1_KiB; // Size visible to Kafka API
-    static constexpr size_t batch_size_ondisk = 1033; // Size internally
     static constexpr size_t input_batch_count = 100;
 
     append_exactly(log, input_batch_count, batch_size, "key")
@@ -1336,7 +1352,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     // Read back and validate content of log pre-compaction.
     BOOST_REQUIRE_EQUAL(
       get_disk_log(log)->get_probe().partition_size(),
-      input_batch_count * batch_size_ondisk);
+      input_batch_count * batch_size);
     BOOST_REQUIRE_EQUAL(
       read_and_validate_all_batches(log).size(), input_batch_count);
     auto lstats_before = log.offsets();
@@ -1347,7 +1363,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     log.set_collectible_offset(log.offsets().dirty_offset);
     storage::compaction_config ccfg(
       model::timestamp::min(),
-      60_KiB,
+      50_KiB,
       model::offset::max(),
       ss::default_priority_class(),
       as);
@@ -1405,7 +1421,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
         auto ntp = model::ntp("default", ssx::sformat("test-{}", i), 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         auto log = mgr.manage(std::move(ntp_cfg)).get0();
-        append_exactly(log, 1000, 100).get0();
+        append_exactly(log, 2000, 100).get0();
         logs.push_back(log);
     }
     std::vector<size_t> sizes;
