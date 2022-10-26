@@ -64,7 +64,7 @@ namespace pandaproxy::rest {
 
 namespace {
 
-using server = ctx_server<proxy>;
+using server = proxy::server;
 
 } // namespace
 
