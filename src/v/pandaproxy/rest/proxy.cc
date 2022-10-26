@@ -15,12 +15,14 @@
 #include "net/unresolved_address.h"
 #include "pandaproxy/api/api-doc/rest.json.h"
 #include "pandaproxy/auth_utils.h"
+#include "pandaproxy/config_utils.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/parsing/from_chars.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
 #include "pandaproxy/sharded_client_cache.h"
+#include "security/ephemeral_credential_store.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
@@ -132,7 +134,52 @@ kafka::client::configuration& proxy::client_config() {
     return _client.local().config();
 }
 
-ss::future<> proxy::do_start() { return ss::now(); }
+ss::future<> proxy::do_start() {
+    auto guard = gate_guard(_gate);
+    try {
+        co_await configure();
+        vlog(plog.info, "Pandaproxy successfully initialized");
+    } catch (...) {
+        vlog(
+          plog.error,
+          "Pandaproxy failed to initialize: {}",
+          std::current_exception());
+        throw;
+    }
+}
+
+ss::future<> proxy::configure() {
+    auto config = co_await pandaproxy::create_client_credentials(
+      *_controller,
+      config::shard_local_cfg(),
+      _client.local().config(),
+      principal);
+    co_await set_client_credentials(*config, _client);
+
+    auto const& store = _controller->get_ephemeral_credential_store().local();
+    _has_ephemeral_credentials = store.has(store.find(principal));
+
+    security::acl_entry acl_entry{
+      principal,
+      security::acl_host::wildcard_host(),
+      security::acl_operation::all,
+      security::acl_permission::allow};
+
+    co_await _controller->get_security_frontend().local().create_acls(
+      {security::acl_binding{
+         security::resource_pattern{
+           security::resource_type::topic,
+           security::resource_pattern::wildcard,
+           security::pattern_type::literal},
+         acl_entry},
+       security::acl_binding{
+         security::resource_pattern{
+           security::resource_type::group,
+           security::resource_pattern::wildcard,
+           security::pattern_type::literal},
+         acl_entry}},
+      5s);
+}
 
 ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
     vlog(plog.debug, "mitigate_error: {}", eptr);
