@@ -11,6 +11,7 @@
 #include "utils/directory_walker.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <fmt/format.h>
