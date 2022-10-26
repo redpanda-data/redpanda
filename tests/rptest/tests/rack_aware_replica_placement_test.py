@@ -11,6 +11,7 @@ from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from collections import defaultdict
 
@@ -54,7 +55,7 @@ class RackAwarePlacementTest(RedpandaTest):
 
     def _validate_placement(self, topic, rack_layout, num_replicas):
         """Validate the replica placement. The method uses provided
-        rack layout and number of replicas for the partitions. 
+        rack layout and number of replicas for the partitions.
         The validation is done by examining existing replica placemnt
         against the rack layout. The validation succedes if every replica
         is placed on a different rack or if there is not enough racks on
@@ -136,3 +137,40 @@ class RackAwarePlacementTest(RedpandaTest):
 
         for topic in topics:
             self._validate_placement(topic, rack_layout, replication_factor)
+
+    @cluster(num_nodes=6)
+    def test_node_config_update(self):
+        """
+        * Create a cluster from nodes with no rack id configured
+        * edit node configs adding rack ids
+        * restart the nodes
+        * check that rack aware placement works
+        """
+        rack_layout = 'AABBCC'
+        replication_factor = 3
+        num_partitions = 10
+
+        self.redpanda.start()
+
+        self.redpanda.stop()
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.start_node(
+                node, override_cfg_params={"rack": rack_layout[ix]})
+
+        admin = Admin(self.redpanda)
+
+        def rack_ids_updated():
+            for n in self.redpanda.nodes:
+                if any('rack' not in b for b in admin.get_brokers(n)):
+                    return False
+            return True
+
+        wait_until(rack_ids_updated,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="node configurations didn't get updated")
+
+        topic = TopicSpec(partition_count=num_partitions,
+                          replication_factor=replication_factor)
+        self._create_topic(topic)
+        self._validate_placement(topic, rack_layout, replication_factor)
