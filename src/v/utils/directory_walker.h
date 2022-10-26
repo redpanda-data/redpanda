@@ -36,6 +36,6 @@ struct directory_walker {
         }
     };
 
-    static ss::future<> walk(ss::sstring dirname, walker_type walker_func);
+    static ss::future<> walk(std::string_view dirname, walker_type walker_func);
     static ss::future<bool> empty(const std::filesystem::path& dir);
 };
