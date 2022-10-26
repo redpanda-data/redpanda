@@ -133,6 +133,17 @@ ss::future<std::error_code> ephemeral_credential_frontend::inform(
     if (err) {
         co_return err;
     }
+
+    if (_self == node_id) {
+        vlog(clusterlog.debug, "Inform self: {}", e_cred_res.credential);
+        co_await put(
+          e_cred_res.credential.principal(),
+          e_cred_res.credential.user(),
+          make_scram_credential(e_cred_res.credential));
+        co_return errc::success;
+    }
+
+    vlog(clusterlog.debug, "Inform {}: {}", node_id, e_cred_res.credential);
     auto req = put_ephemeral_credential_request{
       principal,
       e_cred_res.credential.user(),

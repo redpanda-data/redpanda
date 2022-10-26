@@ -7,6 +7,7 @@ v_cc_library(
     server.cc
     kafka_client_cache.cc
     sharded_client_cache.cc
+    config_utils.cc
   DEPS
     v::pandaproxy_parsing
     v::pandaproxy_json

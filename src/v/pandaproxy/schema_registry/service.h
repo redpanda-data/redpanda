@@ -53,9 +53,12 @@ public:
     seq_writer& writer() { return _writer.local(); }
     sharded_store& schema_store() { return _store; }
     request_authenticator& authenticator() { return _auth; }
+    ss::future<> mitigate_error(std::exception_ptr);
 
 private:
     ss::future<> do_start();
+    ss::future<> configure();
+    ss::future<> inform(model::node_id);
     ss::future<> create_internal_topic();
     ss::future<> fetch_internal_topic();
     configuration _config;
@@ -70,6 +73,7 @@ private:
 
     one_shot _ensure_started;
     request_authenticator _auth;
+    bool _has_ephemeral_credentials{false};
 };
 
 } // namespace pandaproxy::schema_registry

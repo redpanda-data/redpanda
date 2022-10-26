@@ -22,7 +22,8 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings, SecurityConfig
+from rptest.services.admin import Admin
+from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig
 
 
 def create_topic_names(count):
@@ -57,6 +58,13 @@ message Test2 {
   Simple id =  1;
 }"""
 
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace'
+                           })
+
 
 class SchemaRegistryEndpoints(RedpandaTest):
     """
@@ -70,6 +78,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
             enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
+            log_config=log_config,
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
@@ -1596,3 +1605,40 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
+
+
+class SchemaRegistryAutoAuthTest(SchemaRegistryEndpoints):
+    """
+    Test schema registry against a redpanda cluster with Auto Auth enabled.
+    """
+    def __init__(self, context):
+        security = SecurityConfig()
+        security.kafka_enable_authorization = True
+        security.endpoint_authn_method = 'sasl'
+        security.auto_auth = True
+
+        super(SchemaRegistryAutoAuthTest, self).__init__(context,
+                                                         security=security)
+
+    @cluster(num_nodes=3)
+    def test_get_subjects(self):
+        admin = Admin(self.redpanda)
+
+        def check_connection(hostname: str):
+            result_raw = self._get_subjects(hostname=hostname)
+            self.logger.info(result_raw.status_code)
+            self.logger.info(result_raw.json())
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json() == []
+
+        def restart_leader():
+            leader = admin.get_partition_leader(namespace="kafka",
+                                                topic="_schemas",
+                                                partition=0)
+            self.logger.info(f"Restarting node: {leader}")
+            self.redpanda.restart_nodes(self.redpanda.get_node(leader))
+
+        for _ in range(5):
+            for n in self.redpanda.nodes:
+                check_connection(n.account.hostname)
+            restart_leader()

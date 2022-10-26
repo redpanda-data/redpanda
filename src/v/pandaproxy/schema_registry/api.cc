@@ -43,7 +43,10 @@ ss::future<> api::start() {
     _store = std::make_unique<sharded_store>();
     co_await _store->start(_sg);
     co_await _client.start(
-      config::to_yaml(_client_cfg, config::redact_secrets::no));
+      config::to_yaml(_client_cfg, config::redact_secrets::no),
+      [this](std::exception_ptr ex) {
+          return _service.local().mitigate_error(ex);
+      });
     co_await _sequencer.start(
       _node_id, _sg, std::ref(_client), std::ref(*_store));
     co_await _service.start(
