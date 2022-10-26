@@ -19,10 +19,6 @@
 #include <array>
 #include <string_view>
 
-using cluster::cluster_version;
-using cluster::feature_update_action;
-using cluster::invalid_version;
-
 // cluster classes that we will make friends of the feature_table
 namespace cluster {
 class feature_backend;
@@ -79,7 +75,7 @@ struct feature_spec {
     };
 
     constexpr feature_spec(
-      cluster_version require_version_,
+      cluster::cluster_version require_version_,
       std::string_view name_,
       feature bits_,
       available_policy apol,
@@ -92,7 +88,7 @@ struct feature_spec {
 
     feature bits{0};
     std::string_view name;
-    cluster_version require_version;
+    cluster::cluster_version require_version;
 
     available_policy available_rule;
     prepare_policy prepare_rule;
@@ -100,97 +96,97 @@ struct feature_spec {
 
 constexpr static std::array feature_schema{
   feature_spec{
-    cluster_version{1},
+    cluster::cluster_version{1},
     "central_config",
     feature::central_config,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{2},
+    cluster::cluster_version{2},
     "consumer_offsets",
     feature::consumer_offsets,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
-    cluster_version{3},
+    cluster::cluster_version{3},
     "maintenance_mode",
     feature::maintenance_mode,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{3},
+    cluster::cluster_version{3},
     "mtls_authentication",
     feature::mtls_authentication,
     feature_spec::available_policy::explicit_only,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{4},
+    cluster::cluster_version{4},
     "rm_stm_kafka_cache",
     feature::rm_stm_kafka_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{5},
+    cluster::cluster_version{5},
     "serde_raft_0",
     feature::serde_raft_0,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{5},
+    cluster::cluster_version{5},
     "license",
     feature::license,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{5},
+    cluster::cluster_version{5},
     "raft_improved_configuration",
     feature::raft_improved_configuration,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{6},
+    cluster::cluster_version{6},
     "transaction_ga",
     feature::transaction_ga,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "raftless_node_status",
     feature::raftless_node_status,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "rpc_v2_by_default",
     feature::rpc_v2_by_default,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "cloud_retention",
     feature::cloud_retention,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "node_id_assignment",
     feature::node_id_assignment,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "replication_factor_change",
     feature::replication_factor_change,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{7},
+    cluster::cluster_version{7},
     "ephemeral_secrets",
     feature::ephemeral_secrets,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
-    cluster_version{2001},
+    cluster::cluster_version{2001},
     "__test_alpha",
     feature::test_alpha,
     feature_spec::available_policy::explicit_only,
@@ -208,7 +204,7 @@ std::string_view to_string_view(feature_state::state);
  */
 class feature_table {
 public:
-    cluster_version get_active_version() const noexcept {
+    cluster::cluster_version get_active_version() const noexcept {
         return _active_version;
     }
 
@@ -257,7 +253,7 @@ public:
 
     ss::future<> stop();
 
-    static cluster_version get_latest_logical_version();
+    static cluster::cluster_version get_latest_logical_version();
 
     feature_table();
 
@@ -283,12 +279,12 @@ public:
 
 private:
     // Only for use by our friends feature backend & manager
-    void set_active_version(cluster_version);
-    void apply_action(const feature_update_action& fua);
+    void set_active_version(cluster::cluster_version);
+    void apply_action(const cluster::feature_update_action& fua);
 
     void on_update();
 
-    cluster_version _active_version{invalid_version};
+    cluster::cluster_version _active_version{cluster::invalid_version};
 
     std::vector<feature_state> _feature_state;
 
