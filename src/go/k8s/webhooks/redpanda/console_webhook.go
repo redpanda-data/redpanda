@@ -31,7 +31,8 @@ type ConsoleValidator struct {
 
 // Handle processes admission for Console
 func (v *ConsoleValidator) Handle(
-	ctx context.Context, req admission.Request, //nolint:gocritic // interface not require pointer
+	ctx context.Context,
+	req admission.Request, //nolint:gocritic // interface not require pointer
 ) admission.Response {
 	console := &redpandav1alpha1.Console{}
 
@@ -110,7 +111,8 @@ type ConsoleDefaulter struct {
 
 // Handle processes admission for Console
 func (m *ConsoleDefaulter) Handle(
-	ctx context.Context, req admission.Request, //nolint:gocritic // interface not require pointer
+	ctx context.Context,
+	req admission.Request, //nolint:gocritic // interface not require pointer
 ) admission.Response {
 	console := &redpandav1alpha1.Console{}
 
@@ -127,7 +129,9 @@ func (m *ConsoleDefaulter) Handle(
 }
 
 // Default implements admission defaulting
-func (m *ConsoleDefaulter) Default(console *redpandav1alpha1.Console) (*admission.Response, error) {
+func (m *ConsoleDefaulter) Default(
+	console *redpandav1alpha1.Console,
+) (*admission.Response, error) {
 	original, err := json.Marshal(console.DeepCopy())
 	if err != nil {
 		return nil, err

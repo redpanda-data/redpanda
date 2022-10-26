@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: update-image-cluster
 spec:
-  image: "localhost/redpanda"
-  version: "dev"
+  image: "vectorized/redpanda"
+  version: "v22.1.3"
   replicas: 2
   resources:
     requests:

@@ -1,5 +1,6 @@
 redpanda:
     data_directory: /var/lib/redpanda/data
+    empty_seed_starts_cluster: false
     seed_servers:
         - host:
             address: cluster-0.cluster.local
@@ -26,6 +27,7 @@ redpanda:
     cloud_storage_enabled: true
     cloud_storage_secret_key: XXX
     cloud_storage_segment_max_upload_interval_sec: 1800
+    enable_rack_awareness: true
     log_segment_size: 536870912
 rpk:
     tune_network: true
