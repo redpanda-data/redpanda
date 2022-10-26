@@ -29,6 +29,7 @@ namespace pandaproxy::rest {
 
 class proxy {
 public:
+    using server = auth_ctx_server<proxy>;
     proxy(
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
@@ -44,16 +45,14 @@ public:
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
     sharded_client_cache& client_cache() { return _client_cache; }
-    request_authenticator& authenticator() { return _auth; }
 
 private:
     configuration _config;
     ssx::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
     sharded_client_cache& _client_cache;
-    ctx_server<proxy>::context_t _ctx;
-    ctx_server<proxy> _server;
-    request_authenticator _auth;
+    server::context_t _ctx;
+    server _server;
 };
 
 } // namespace pandaproxy::rest

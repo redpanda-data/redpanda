@@ -26,20 +26,13 @@
 
 namespace pandaproxy::rest {
 
-using server = ctx_server<proxy>;
+using server = proxy::server;
 
 template<typename Handler>
 auto wrap(Handler h) {
     return [h{std::move(h)}](
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
-        rq.authn_method = config::get_authn_method(
-          rq.service().config().pandaproxy_api.value(),
-          rq.req->get_listener_idx());
-
-        rq.user = maybe_authenticate_request(
-          rq.authn_method, rq.service().authenticator(), *rq.req);
-
         return h(std::move(rq), std::move(rp));
     };
 }
@@ -93,7 +86,7 @@ proxy::proxy(
   , _mem_sem(max_memory, "pproxy/mem")
   , _client(client)
   , _client_cache(client_cache)
-  , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
+  , _ctx{{{{}, _mem_sem, {}, smp_sg}, *this}, {config::always_true(), controller}, _config.pandaproxy_api.value()}
   , _server(
       "pandaproxy",
       "rest_proxy",
@@ -101,8 +94,7 @@ proxy::proxy(
       "header",
       "/definitions",
       _ctx,
-      json::serialization_format::application_json)
-  , _auth{config::always_true(), controller} {}
+      json::serialization_format::application_json) {}
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes());
