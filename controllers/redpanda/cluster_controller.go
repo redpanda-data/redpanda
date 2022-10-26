@@ -158,6 +158,7 @@ func (r *ClusterReconciler) Reconcile(
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	secretResource := resources.NewSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -184,6 +185,7 @@ func (r *ClusterReconciler) Reconcile(
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
+		secretResource,
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -301,7 +303,9 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 // setLicense sets the referenced license in Redpanda.
 // If user sets the license and then removes it in the spec, the loaded license is not unset.
 // Currently don't have admin API to unset license.
-func (r *ClusterReconciler) setLicense(ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger) error {
+func (r *ClusterReconciler) setLicense(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+) error {
 	if l := rp.Spec.LicenseRef; l != nil {
 		ll, err := l.GetSecret(ctx, r.Client)
 		if err != nil {

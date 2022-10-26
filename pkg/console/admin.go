@@ -56,7 +56,10 @@ func NewAdminAPI(
 
 // NewKafkaAdmin create a franz-go admin client
 func NewKafkaAdmin(
-	ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster, store *Store,
+	ctx context.Context,
+	cl client.Client,
+	cluster *redpandav1alpha1.Cluster,
+	store *Store,
 ) (KafkaAdminClient, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
 	if cluster.IsSASLOnInternalEnabled() {
@@ -81,7 +84,9 @@ func NewKafkaAdmin(
 	return kadm.NewClient(kclient), nil
 }
 
-func getSASLOpt(ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster) (kgo.Opt, error) {
+func getSASLOpt(
+	ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster,
+) (kgo.Opt, error) {
 	// Use Cluster superuser to manage Kafka
 	// Console Kafka Service Account can't add ACLs to itself
 	su := redpandav1alpha1.SecretKeyRef{
@@ -106,7 +111,9 @@ func getSASLOpt(ctx context.Context, cl client.Client, cluster *redpandav1alpha1
 	return kgo.SASL(mech.AsSha256Mechanism()), nil
 }
 
-func getTLSConfigOpt(cluster *redpandav1alpha1.Cluster, store *Store) (kgo.Opt, error) {
+func getTLSConfigOpt(
+	cluster *redpandav1alpha1.Cluster, store *Store,
+) (kgo.Opt, error) {
 	keypair, err := clientCert(cluster, store)
 	if err != nil {
 		return nil, fmt.Errorf("getting client certificate: %w", err)
@@ -130,7 +137,9 @@ func getTLSConfigOpt(cluster *redpandav1alpha1.Cluster, store *Store) (kgo.Opt, 
 	return kgo.DialTLSConfig(config), nil
 }
 
-func clientCert(cluster *redpandav1alpha1.Cluster, store *Store) ([]tls.Certificate, error) {
+func clientCert(
+	cluster *redpandav1alpha1.Cluster, store *Store,
+) ([]tls.Certificate, error) {
 	clientcert := redpandav1alpha1.SecretKeyRef{}
 	secret, exists := store.GetKafkaClientCert(cluster)
 	if !exists {
@@ -153,7 +162,9 @@ func clientCert(cluster *redpandav1alpha1.Cluster, store *Store) ([]tls.Certific
 	return []tls.Certificate{keypair}, nil
 }
 
-func caCert(cluster *redpandav1alpha1.Cluster, store *Store) (*x509.CertPool, error) {
+func caCert(
+	cluster *redpandav1alpha1.Cluster, store *Store,
+) (*x509.CertPool, error) {
 	rootca := redpandav1alpha1.SecretKeyRef{}
 	secret, exists := store.GetKafkaNodeCert(cluster)
 	if !exists {

@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: endpoint-template
 status:
-  replicas: 2
-  readyReplicas: 2
+  replicas: 3
+  readyReplicas: 3
   restarting: false
   conditions:
   - type: ClusterConfigured
