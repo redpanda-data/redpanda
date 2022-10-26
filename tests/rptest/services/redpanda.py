@@ -555,7 +555,8 @@ class RedpandaService(Service):
                     'archival': 'debug',
                     'io': 'debug',
                     'cloud_storage': 'debug',
-                    'seastar_memory': 'debug'
+                    'seastar_memory': 'debug',
+                    'pandaproxy': 'debug'
                 })
 
         self._admin = Admin(self,
