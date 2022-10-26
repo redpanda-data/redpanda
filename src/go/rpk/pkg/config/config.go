@@ -27,7 +27,7 @@ const (
 	DefaultBallastFileSize = "1GiB"
 )
 
-func Default() *Config {
+func DevDefault() *Config {
 	return &Config{
 		fileLocation: DefaultPath,
 		Redpanda: RedpandaNodeConfig{
@@ -55,6 +55,11 @@ func Default() *Config {
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
 	}
+}
+
+func ProdDefault() *Config {
+	cfg := DevDefault()
+	return setProduction(cfg)
 }
 
 func SetMode(mode string, conf *Config) (*Config, error) {
@@ -90,7 +95,7 @@ func setDevelopment(conf *Config) *Config {
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
 		EnableUsageStats:     conf.Rpk.EnableUsageStats,
 		CoredumpDir:          conf.Rpk.CoredumpDir,
-		SMP:                  Default().Rpk.SMP,
+		SMP:                  DevDefault().Rpk.SMP,
 		BallastFilePath:      conf.Rpk.BallastFilePath,
 		BallastFileSize:      conf.Rpk.BallastFileSize,
 		Overprovisioned:      true,
@@ -150,7 +155,7 @@ func (c *Config) FileOrDefaults() *Config {
 	if c.File() != nil {
 		return c.File()
 	} else {
-		cfg := Default()
+		cfg := DevDefault()
 		// --config set but the file doesn't exist yet:
 		if c.fileLocation != "" {
 			cfg.fileLocation = c.fileLocation

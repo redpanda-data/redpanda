@@ -243,7 +243,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			if len(proxyAPI) > 0 {
 				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.Default().Pandaproxy
+					cfg.Pandaproxy = config.DevDefault().Pandaproxy
 				}
 				cfg.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
@@ -265,7 +265,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			if len(schemaRegAPI) > 0 {
 				if cfg.SchemaRegistry == nil {
-					cfg.SchemaRegistry = config.Default().SchemaRegistry
+					cfg.SchemaRegistry = config.DevDefault().SchemaRegistry
 				}
 				cfg.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
@@ -276,7 +276,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			)
 			rpcServer, err := parseAddress(
 				rpcAddr,
-				config.Default().Redpanda.RPCServer.Port,
+				config.DevDefault().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
 				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
@@ -323,7 +323,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			if advProxyAPI != nil {
 				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.Default().Pandaproxy
+					cfg.Pandaproxy = config.DevDefault().Pandaproxy
 				}
 				cfg.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
@@ -334,7 +334,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			)
 			advRPCApi, err := parseAddress(
 				advertisedRPC,
-				config.Default().Redpanda.RPCServer.Port,
+				config.DevDefault().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
 				sendEnv(fs, env, cfg, !prestartCfg.checkEnabled, err)
@@ -362,7 +362,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 
 			if cfg.Redpanda.Directory == "" {
-				cfg.Redpanda.Directory = config.Default().Redpanda.Directory
+				cfg.Redpanda.Directory = config.DevDefault().Redpanda.Directory
 			}
 
 			checkPayloads, tunerPayloads, err := prestart(
@@ -893,7 +893,7 @@ func parseFlags(flags []string) map[string]string {
 
 func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 	seedServers := []config.SeedServer{}
-	defaultPort := config.Default().Redpanda.RPCServer.Port
+	defaultPort := config.DevDefault().Redpanda.RPCServer.Port
 	for _, s := range seeds {
 		addr, err := parseAddress(s, defaultPort)
 		if err != nil {
