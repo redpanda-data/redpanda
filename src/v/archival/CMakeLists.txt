@@ -9,6 +9,7 @@ v_cc_library(
     types.cc
     upload_controller.cc
     segment_reupload.cc
+    retention_calculator.cc
   DEPS
     Seastar::seastar
     v::bytes
