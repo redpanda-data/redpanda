@@ -81,9 +81,13 @@ private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
-    void update_allocations(std::vector<partition_assignment>);
+    void update_allocations(
+      std::vector<partition_assignment>, partition_allocation_domain);
 
-    void deallocate_topic(const assignments_set&, const in_progress_map&);
+    void deallocate_topic(
+      const assignments_set&,
+      const in_progress_map&,
+      partition_allocation_domain);
 
     in_progress_map
     collect_in_progress(const model::topic_namespace&, const assignments_set&);

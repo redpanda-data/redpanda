@@ -11,6 +11,8 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include <fmt/ranges.h>
+
 namespace cluster {
 allocation_node::allocation_node(
   model::node_id id,
@@ -46,14 +48,17 @@ allocation_node::allocation_node(
     });
 }
 
-ss::shard_id allocation_node::allocate() {
+ss::shard_id
+allocation_node::allocate(const partition_allocation_domain domain) {
     auto it = std::min_element(_weights.begin(), _weights.end());
     (*it)++; // increment the weights
     _allocated_partitions++;
+    ++_allocated_domain_partitions[domain];
     return std::distance(_weights.begin(), it);
 }
 
-void allocation_node::deallocate(ss::shard_id core) {
+void allocation_node::deallocate_on(
+  ss::shard_id core, const partition_allocation_domain domain) {
     vassert(
       core < _weights.size(),
       "Tried to deallocate a non-existing core:{} - {}",
@@ -65,11 +70,23 @@ void allocation_node::deallocate(ss::shard_id core) {
       core,
       *this);
 
+    allocation_capacity& domain_partitions
+      = _allocated_domain_partitions[domain];
+    vassert(
+      domain_partitions > allocation_capacity{0}
+        && domain_partitions <= _allocated_partitions,
+      "Unable to deallocate partition from core {} in domain {} at node {}",
+      core,
+      domain,
+      *this);
+    --domain_partitions;
+
     _allocated_partitions--;
     _weights[core]--;
 }
 
-void allocation_node::allocate(ss::shard_id core) {
+void allocation_node::allocate_on(
+  ss::shard_id core, const partition_allocation_domain domain) {
     vassert(
       core < _weights.size(),
       "Tried to allocate a non-existing core:{} - {}",
@@ -77,6 +94,7 @@ void allocation_node::allocate(ss::shard_id core) {
       *this);
     _weights[core]++;
     _allocated_partitions++;
+    ++_allocated_domain_partitions[domain];
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {
@@ -119,7 +137,11 @@ std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
     for (auto w : n._weights) {
         fmt::print(o, "({})", w);
     }
-    fmt::print(o, "]}}");
+    fmt::print(
+      o,
+      "], allocated: {}({})}}",
+      n._allocated_partitions,
+      n._allocated_domain_partitions);
     return o;
 }
 
