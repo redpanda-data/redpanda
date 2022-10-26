@@ -8,12 +8,11 @@ from typing import Sequence, Optional
 
 import confluent_kafka as ck
 import xxhash
+from ducktape.utils.util import wait_until
 
 from rptest.archival.s3_client import S3ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-
-from ducktape.utils.util import wait_until
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -216,14 +215,32 @@ def gen_manifest_path(ntp, rev):
     return f"{hash}/meta/{path}/manifest.json"
 
 
-def gen_segment_path(ntp: NTP, revision: int, name: str,
-                     archiver_term: Optional[int]) -> str:
-    x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{revision}/{name}"
-    x.update(path.encode('ascii'))
-    if archiver_term is not None:
-        return f'{x.intdigest():08x}/{path}.{archiver_term}'
-    return f'{x.intdigest():08x}/{path}'
+def gen_segment_name_from_meta(meta: dict, key: Optional[str]) -> str:
+    """
+    Generates segment name using the sname_format. If v2 is supplied,
+    new segment name format is generated. If v1 is supplied, the key from
+    manifest is used.
+    :param meta: the segment meta object from manifest
+    :param key: the segment key which is also the old style path for v1
+    :return: adjusted path
+    """
+    version = meta.get('sname_format', 1)
+    if version == 2:
+        head = '-'.join([
+            str(meta[k]) for k in ('base_offset', 'committed_offset',
+                                   'size_bytes', 'segment_term')
+        ])
+        return f'{head}-v1.log'
+    else:
+        return key
+
+
+def gen_local_path_from_remote(remote_path: str) -> str:
+    head, tail = remote_path.rsplit('/', 1)
+    tokens = tail.split('-')
+    # extract base offset and term from new style path
+    adjusted = f'{tokens[0]}-{tokens[-2]}-{tokens[-1]}'
+    return f'{head}/{adjusted}'
 
 
 def get_on_disk_size_per_ntp(chk):
@@ -411,10 +428,15 @@ class S3View:
             # Filename for segment contains the archiver term, eg:
             # 4886-1-v1.log.2 -> 4886-1-v1.log and 2
             base_name, archiver_term = segment_path.name.rsplit('.', 1)
-            segment_entry = segments_in_manifest.get(base_name)
+
+            # New segment path format is base-committed-size-term-v1.log
+            base_name_tokens = base_name.split('-')
+            manifest_key = '-'.join([base_name_tokens[i] for i in (0, -2)])
+            manifest_key = f'{manifest_key}-v1.log'
+            segment_entry = segments_in_manifest.get(manifest_key)
             if not segment_entry:
                 self.logger.warn(
-                    f'no entry found for segment path {base_name} '
+                    f'no entry found for segment path {manifest_key} '
                     f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
                 )
                 return False

@@ -5,6 +5,7 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+import re
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -131,7 +132,6 @@ class SIAdminApiTest(RedpandaTest):
 
     def find_deletion_candidate(self):
         for obj in self.s3_client.list_objects(self.s3_bucket_name):
-            key = obj.Key[:-2]
-            if key.endswith("/0-1-v1.log"):
+            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.Key):
                 return obj.Key
         return None
