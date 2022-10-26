@@ -513,4 +513,32 @@ var _ = Describe("Console controller", func() {
 			Expect(envs[0].ValueFrom.SecretKeyRef.Name).Should(Equal(secretName))
 		})
 	})
+
+	Context("When ConfigMap is deleted", func() {
+		ctx := context.Background()
+		It("Should reconcile and recreate the ConfigMap", func() {
+			By("Getting Console")
+			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
+			createdConsole := &redpandav1alpha1.Console{}
+			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
+
+			By("Getting the ConfigMap")
+			createdConfigMaps := &corev1.ConfigMapList{}
+			Expect(k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(createdConsole)), client.InNamespace(ConsoleNamespace))).Should(Succeed())
+			Expect(len(createdConfigMaps.Items)).To(Equal(1))
+
+			By("Deleting the ConfigMap")
+			Expect(k8sClient.Delete(ctx, &createdConfigMaps.Items[0])).Should(Succeed())
+			Eventually(func() bool {
+				createdConfigMaps := &corev1.ConfigMapList{}
+				if err := k8sClient.List(ctx, createdConfigMaps, client.MatchingLabels(labels.ForConsole(createdConsole)), client.InNamespace(ConsoleNamespace)); err != nil {
+					return false
+				}
+				if len(createdConfigMaps.Items) != 1 {
+					return false
+				}
+				return true
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
 })
