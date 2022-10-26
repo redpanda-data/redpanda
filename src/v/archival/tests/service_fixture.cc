@@ -122,102 +122,6 @@ get_configurations() {
     return std::make_tuple(aconf, cconf);
 }
 
-s3_imposter_fixture::s3_imposter_fixture() {
-    _server = ss::make_shared<ss::httpd::http_server_control>();
-    _server->start().get();
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number};
-    _server_addr = ss::socket_address(ip_addr);
-}
-
-s3_imposter_fixture::~s3_imposter_fixture() { _server->stop().get(); }
-
-const std::vector<ss::httpd::request>&
-s3_imposter_fixture::get_requests() const {
-    return _requests;
-}
-
-const std::multimap<ss::sstring, ss::httpd::request>&
-s3_imposter_fixture::get_targets() const {
-    return _targets;
-}
-
-void s3_imposter_fixture::set_expectations_and_listen(
-  const std::vector<s3_imposter_fixture::expectation>& expectations) {
-    _server
-      ->set_routes([this, &expectations](ss::httpd::routes& r) {
-          set_routes(r, expectations);
-      })
-      .get();
-    _server->listen(_server_addr).get();
-}
-
-void s3_imposter_fixture::set_routes(
-  ss::httpd::routes& r,
-  const std::vector<s3_imposter_fixture::expectation>& expectations) {
-    using namespace ss::httpd;
-    struct content_handler {
-        content_handler(
-          const std::vector<expectation>& exp, s3_imposter_fixture& imp)
-          : fixture(imp) {
-            for (const auto& e : exp) {
-                expectations[e.url] = e;
-            }
-        }
-        ss::sstring handle(const_req request, reply& repl) {
-            static const ss::sstring error_payload
-              = R"xml(<?xml version="1.0" encoding="UTF-8"?>
-                        <Error>
-                            <Code>NoSuchKey</Code>
-                            <Message>Object not found</Message>
-                            <Resource>resource</Resource>
-                            <RequestId>requestid</RequestId>
-                        </Error>)xml";
-            fixture._requests.push_back(request);
-            fixture._targets.insert(std::make_pair(request._url, request));
-            vlog(
-              fixt_log.trace,
-              "S3 imposter request {} - {} - {}",
-              request._url,
-              request.content_length,
-              request._method);
-            if (request._method == "GET") {
-                auto it = expectations.find(request._url);
-                if (it == expectations.end() || !it->second.body.has_value()) {
-                    vlog(fixt_log.trace, "Reply GET request with error");
-                    repl.set_status(reply::status_type::not_found);
-                    return error_payload;
-                }
-                return *it->second.body;
-            } else if (request._method == "PUT") {
-                expectations[request._url] = {
-                  .url = request._url, .body = request.content};
-                return "";
-            } else if (request._method == "DELETE") {
-                auto it = expectations.find(request._url);
-                if (it == expectations.end() || !it->second.body.has_value()) {
-                    vlog(fixt_log.trace, "Reply DELETE request with error");
-                    repl.set_status(reply::status_type::not_found);
-                    return error_payload;
-                }
-                repl.set_status(reply::status_type::no_content);
-                it->second.body = std::nullopt;
-                return "";
-            }
-            BOOST_FAIL("Unexpected request");
-            return "";
-        }
-        std::map<ss::sstring, expectation> expectations;
-        s3_imposter_fixture& fixture;
-    };
-    auto hd = ss::make_shared<content_handler>(expectations, *this);
-    _handler = std::make_unique<function_handler>(
-      [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-      "txt");
-    r.add_default_handler(_handler.get());
-}
-
-// archiver service fixture
-
 std::unique_ptr<storage::disk_log_builder>
 archiver_fixture::get_started_log_builder(
   model::ntp ntp, model::revision_id rev) {
@@ -436,7 +340,7 @@ void segment_matcher<Fixture>::verify_manifest(
         auto base = s->offsets().base_offset;
         auto comm = s->offsets().committed_offset;
         auto size = s->size_bytes();
-        auto comp = s->is_compacted_segment();
+        auto comp = s->finished_self_compaction();
         auto m = man.get(sname);
         BOOST_REQUIRE(m != nullptr); // NOLINT
         BOOST_REQUIRE_EQUAL(base, m->base_offset);
@@ -496,4 +400,29 @@ archival::remote_segment_path get_segment_path(
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
     return manifest.generate_segment_path(*key, *meta);
+}
+
+void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
+    auto first = spec.segment_starts.begin();
+    auto second = std::next(first);
+    for (; second != spec.segment_starts.end(); ++first, ++second) {
+        auto num_records = *second - *first;
+        b | storage::add_segment(*first)
+          | storage::add_random_batch(*first, num_records);
+    }
+    b | storage::add_segment(*first)
+      | storage::add_random_batch(*first, spec.last_segment_num_records);
+
+    for (auto i : spec.compacted_segment_indices) {
+        b.get_segment(i).mark_as_finished_self_compaction();
+    }
+}
+
+storage::disk_log_builder make_log_builder(std::string_view data_path) {
+    return storage::disk_log_builder{storage::log_config{
+      storage::log_config::storage_type::disk,
+      {data_path.data(), data_path.size()},
+      4_KiB,
+      storage::debug_sanitize_files::yes,
+    }};
 }

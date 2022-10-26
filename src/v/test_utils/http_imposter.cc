@@ -10,6 +10,7 @@
 
 #include "test_utils/http_imposter.h"
 
+#include "utils/uuid.h"
 #include "vlog.h"
 
 #include <seastar/http/function_handlers.hh>
@@ -20,10 +21,23 @@ static ss::logger http_imposter_log("http_imposter"); // NOLINT
 
 http_imposter_fixture::http_imposter_fixture()
   : _server_addr{ss::ipv4_addr{httpd_host_name.data(), httpd_port_number}} {
+    _id = fmt::format("{}", uuid_t::create());
+    _server.start().get();
+}
+
+http_imposter_fixture::http_imposter_fixture(net::unresolved_address address)
+  : _server_addr{ss::ipv4_addr{address.host().data(), address.port()}} {
+    _id = fmt::format("{}", uuid_t::create());
     _server.start().get();
 }
 
 http_imposter_fixture::~http_imposter_fixture() { _server.stop().get(); }
+
+void http_imposter_fixture::start_request_masking(
+  http_test_utils::response canned_response,
+  ss::lowres_clock::duration duration) {
+    _masking_active = {canned_response, duration, ss::lowres_clock::now()};
+}
 
 const std::vector<ss::httpd::request>&
 http_imposter_fixture::get_requests() const {
@@ -38,6 +52,7 @@ http_imposter_fixture::get_targets() const {
 void http_imposter_fixture::listen() {
     _server.set_routes([this](ss::httpd::routes& r) { set_routes(r); }).get();
     _server.listen(_server_addr).get();
+    vlog(http_imposter_log.trace, "HTTP imposter {} started", _id);
 }
 
 static ss::sstring remove_query_params(std::string_view url) {
@@ -46,38 +61,53 @@ static ss::sstring remove_query_params(std::string_view url) {
                                            : ss::sstring{url.substr(0, q_pos)};
 }
 
-struct content_handler {
-    explicit content_handler(http_imposter_fixture& imp)
-      : fixture(imp) {}
-
-    ss::sstring
-    handle(ss::httpd::const_req request, ss::httpd::reply& repl) const {
-        fixture.requests().push_back(request);
-        fixture.targets().insert(std::make_pair(request._url, request));
-
-        vlog(
-          http_imposter_log.trace,
-          "S3 imposter request {} - {} - {}",
-          request._url,
-          request.content_length,
-          request._method);
-
-        ss::httpd::request lookup_r{request};
-        lookup_r._url = remove_query_params(request._url);
-
-        auto response = fixture.lookup(lookup_r);
-        repl.set_status(response.status);
-        return response.body;
-    }
-
-    http_imposter_fixture& fixture;
-};
-
 void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
     _handler = std::make_unique<function_handler>(
-      [this](const_req req, reply& repl) {
-          return content_handler(*this).handle(req, repl);
+      [this](const_req req, reply& repl) -> ss::sstring {
+          if (_masking_active) {
+              if (
+                ss::lowres_clock::now() - _masking_active->started
+                > _masking_active->duration) {
+                  _masking_active.reset();
+              } else {
+                  repl.set_status(_masking_active->canned_response.status);
+                  return _masking_active->canned_response.body;
+              }
+          }
+
+          _requests.push_back(req);
+          _targets.insert(std::make_pair(req._url, req));
+
+          const auto& fp = _fail_requests_when;
+          for (size_t i = 0; i < fp.size(); ++i) {
+              if (fp[i](req)) {
+                  auto response = _fail_responses[i];
+                  repl.set_status(response.status);
+                  return response.body;
+              }
+          }
+
+          vlog(
+            http_imposter_log.trace,
+            "HTTP imposter id {} request {} - {} - {}",
+            _id,
+            req._url,
+            req.content_length,
+            req._method);
+
+          if (req._method == "PUT") {
+              when().request(req._url).then_reply_with(req.content);
+              repl.set_status(ss::httpd::reply::status_type::ok);
+              return "";
+          } else {
+              ss::httpd::request lookup_r{req};
+              lookup_r._url = remove_query_params(req._url);
+
+              auto response = lookup(lookup_r);
+              repl.set_status(response.status);
+              return response.body;
+          }
       },
       "txt");
     r.add_default_handler(_handler.get());
@@ -89,4 +119,28 @@ bool http_imposter_fixture::has_call(std::string_view url) const {
              _requests.cend(),
              [&url](const auto& r) { return r._url == url; })
            != _requests.cend();
+}
+
+void http_imposter_fixture::fail_request_if(
+  http_imposter_fixture::request_predicate predicate,
+  http_test_utils::response response) {
+    _fail_requests_when.push_back(std::move(predicate));
+    _fail_responses[_fail_requests_when.size()] = std::move(response);
+}
+
+void http_imposter_fixture::reset_http_call_state() {
+    _requests.clear();
+    _targets.clear();
+}
+
+void http_imposter_fixture::log_requests() const {
+    for (const auto& req : _requests) {
+        vlog(
+          http_imposter_log.info,
+          "{}: {} - {} ({} bytes)",
+          _id,
+          req._method,
+          req._url,
+          req.content_length);
+    }
 }

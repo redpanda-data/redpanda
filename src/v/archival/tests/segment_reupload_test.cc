@@ -9,6 +9,7 @@
  */
 
 #include "archival/segment_reupload.h"
+#include "archival/tests/service_fixture.h"
 #include "cloud_storage/partition_manifest.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -85,45 +86,6 @@ ss::input_stream<char> make_manifest_stream(std::string_view json) {
     iobuf i;
     i.append(json.data(), json.size());
     return make_iobuf_input_stream(std::move(i));
-}
-
-/// Specification for the segments and data to go into the log for a test
-struct log_spec {
-    // The base offsets for all segments. The difference in adjacent base
-    // offsets is converted to how many records we will write into each segment
-    // (as a single batch)
-    std::vector<size_t> segment_starts;
-    // The indices of the segments which will be marked as compacted for the
-    // test. The segments are not actually compacted, only marked as such.
-    std::vector<size_t> compacted_segment_indices;
-    // The number of records in the final segment, required separately because
-    // there is no delta to use for the last segment.
-    size_t last_segment_num_records;
-};
-
-storage::disk_log_builder make_log_builder(std::string_view data_path) {
-    return storage::disk_log_builder{storage::log_config{
-      storage::log_config::storage_type::disk,
-      {data_path.data(), data_path.size()},
-      4_KiB,
-      storage::debug_sanitize_files::yes,
-    }};
-}
-
-static void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
-    auto first = spec.segment_starts.begin();
-    auto second = std::next(first);
-    for (; second != spec.segment_starts.end(); ++first, ++second) {
-        auto num_records = *second - *first;
-        b | storage::add_segment(*first)
-          | storage::add_random_batch(*first, num_records);
-    }
-    b | storage::add_segment(*first)
-      | storage::add_random_batch(*first, spec.last_segment_num_records);
-
-    for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).mark_as_finished_self_compaction();
-    }
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_collection) {

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "net/unresolved_address.h"
 #include "seastarx.h"
 #include "test_utils/registered_urls.h"
 #include "vassert.h"
@@ -23,7 +24,13 @@ public:
     static constexpr uint httpd_port_number = 4430;
 
 public:
+    using request_predicate
+      = ss::noncopyable_function<bool(ss::httpd::request)>;
+
+    using predicates = std::vector<request_predicate>;
+
     http_imposter_fixture();
+    http_imposter_fixture(net::unresolved_address address);
     virtual ~http_imposter_fixture();
 
     http_imposter_fixture(const http_imposter_fixture&) = delete;
@@ -43,12 +50,6 @@ public:
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 
-    std::vector<ss::httpd::request>& requests() { return _requests; }
-
-    std::multimap<ss::sstring, ss::httpd::request>& targets() {
-        return _targets;
-    }
-
     /// Starting point for URL registration fluent API
     /// Example usage:
     /// when().when("/foo")
@@ -57,6 +58,13 @@ public:
     http_test_utils::registered_urls& when() { return _urls; }
 
     bool has_call(std::string_view url) const;
+
+    /// Enables requests with a specific condition to fail. The failing
+    /// request is also added to the set of calls stored by fixture.
+    void fail_request_if(
+      request_predicate predicate, http_test_utils::response response);
+
+    void reset_http_call_state();
 
     // Helper to progress over a range and check if the current element is
     // present in it. If the element is found at a position, the range for
@@ -96,7 +104,21 @@ public:
         return _urls.lookup(req);
     }
 
+    void log_requests() const;
+
+    /// Makes the server return the canned response for duration, without
+    /// logging any incoming requests.
+    void start_request_masking(
+      http_test_utils::response canned_response,
+      ss::lowres_clock::duration duration);
+
 private:
+    struct request_masking {
+        http_test_utils::response canned_response;
+        ss::lowres_clock::duration duration;
+        ss::lowres_clock::time_point started;
+    };
+
     void set_routes(ss::httpd::routes& r);
 
     ss::socket_address _server_addr;
@@ -109,4 +131,9 @@ private:
     std::multimap<ss::sstring, ss::httpd::request> _targets;
 
     http_test_utils::registered_urls _urls;
+    predicates _fail_requests_when;
+
+    absl::flat_hash_map<size_t, http_test_utils::response> _fail_responses;
+    ss::sstring _id;
+    std::optional<request_masking> _masking_active;
 };

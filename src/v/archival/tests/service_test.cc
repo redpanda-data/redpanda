@@ -35,6 +35,15 @@ inline seastar::logger arch_svc_log("SVC-TEST");
 static const model::ns test_ns = model::ns("kafka");
 using namespace std::chrono_literals;
 
+static constexpr std::string_view error_payload
+  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchKey</Code>
+    <Message>Object not found</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
+
 FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     wait_for_controller_leadership().get();
     auto topic1 = model::topic("topic_1");
@@ -62,11 +71,13 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
             }
         }
     })json";
-    set_expectations_and_listen({
-      {.url = urls[0], .body = manifest_json},
-      {.url = urls[1], .body = std::nullopt},
-      {.url = urls[2], .body = std::nullopt},
-    });
+    when().request(urls[0]).then_reply_with(manifest_json);
+    when().request(urls[1]).then_reply_with(
+      {error_payload.data(), error_payload.size()},
+      ss::httpd::reply::status_type::not_found);
+    when().request(urls[2]).then_reply_with(
+      {error_payload.data(), error_payload.size()},
+      ss::httpd::reply::status_type::not_found);
     add_topic_with_random_data(pid0, 20);
     add_topic_with_random_data(pid1, 20);
     wait_for_partition_leadership(pid0);
@@ -88,10 +99,12 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
     const char* url = "/50000000/meta/test-namespace/topic_2/0_2/manifest.json";
     const char* topic_url
       = "/20000000/meta/test-namespace/topic_2/topic_manifest.json";
-    set_expectations_and_listen({
-      {.url = url, .body = std::nullopt},
-      {.url = topic_url, .body = std::nullopt},
-    });
+    when().request(url).then_reply_with(
+      {error_payload.data(), error_payload.size()},
+      ss::httpd::reply::status_type::not_found);
+    when().request(topic_url).then_reply_with(
+      {error_payload.data(), error_payload.size()},
+      ss::httpd::reply::status_type::not_found);
 
     add_topic_with_random_data(ntp, 20);
 
@@ -129,7 +142,8 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
 
     archival::segment_name seg000{"0-0-v1.log"};
     archival::segment_name seg100{"100-0-v1.log"};
-    set_expectations_and_listen({});
+
+    listen();
 
     auto builder = get_started_log_builder(
       ntp, model::revision_id(partition_rev));
