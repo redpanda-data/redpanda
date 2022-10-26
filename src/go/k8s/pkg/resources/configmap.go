@@ -337,15 +337,8 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cfg.SetAdditionalRedpandaProperty("log_segment_size", logSegmentSize)
 
-	replicas := r.pandaCluster.GetCurrentReplicas()
-	for i := int32(0); i < replicas; i++ {
-		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
-			Host: config.SocketAddress{
-				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-				Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
-				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
-			},
-		})
+	if err := r.PrepareSeedServerList(cr); err != nil {
+		return nil, err
 	}
 
 	r.preparePandaproxy(&cfg.NodeConfiguration)
@@ -795,6 +788,34 @@ func (r *ConfigMapResource) SetLastAppliedConfigurationInCluster(
 		}
 		existing.Annotations[LastAppliedConfigurationAnnotationKey] = string(ser)
 		return r.Update(ctx, &existing)
+	}
+	return nil
+}
+
+func (r *ConfigMapResource) PrepareSeedServerList(cr *config.RedpandaNodeConfig) error {
+	c := r.pandaCluster.Spec.Configuration
+	replicas := r.pandaCluster.GetCurrentReplicas()
+
+	// make this the default when v22.2 is no longer supported
+	if featuregates.EmptySeedStartCluster(r.pandaCluster.Spec.Version) {
+		cr.EmptySeedStartsCluster = new(bool) // default to false
+		if r.pandaCluster.Spec.Replicas != nil {
+			replicas = *r.pandaCluster.Spec.Replicas
+		}
+		if replicas == 0 {
+			//nolint:goerr113 // out of scope for this PR
+			return fmt.Errorf("cannot create seed list for cluster with 0 replicas")
+		}
+	}
+
+	for i := int32(0); i < replicas; i++ {
+		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
+			Host: config.SocketAddress{
+				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+				Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
+				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
+			},
+		})
 	}
 	return nil
 }

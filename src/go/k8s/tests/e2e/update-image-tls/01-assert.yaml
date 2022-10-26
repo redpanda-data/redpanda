@@ -18,6 +18,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
     - mountPath: /var/lib/redpanda/data
@@ -42,6 +44,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
     - mountPath: /var/lib/redpanda/data

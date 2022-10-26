@@ -16,6 +16,7 @@ import (
 	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1037,13 +1038,15 @@ func (r *Cluster) GetCurrentReplicas() int32 {
 // ComputeInitialCurrentReplicasField calculates the initial value for status.currentReplicas.
 //
 // It needs to consider the following cases:
+// - EmptySeedStartCluster is supported: we use spec.replicas as the starting point
 // - Fresh cluster: we start from 1 replicas, then upscale if needed (initialization to bypass https://github.com/redpanda-data/redpanda/issues/333)
 // - Existing clusters: we keep spec.replicas as starting point
 func (r *Cluster) ComputeInitialCurrentReplicasField() int32 {
-	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 {
+	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 || featuregates.EmptySeedStartCluster(r.Spec.Version) {
 		// A cluster seems to be already running, we start from the existing amount of replicas
 		return *r.Spec.Replicas
 	}
+
 	// Clusters start from a single replica, then upscale
 	return 1
 }
