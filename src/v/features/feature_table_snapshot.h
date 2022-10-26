@@ -12,6 +12,7 @@
 #pragma once
 
 #include "feature_state.h"
+#include "model/fundamental.h"
 #include "security/license.h"
 #include "serde/serde.h"
 
@@ -41,11 +42,14 @@ struct feature_state_snapshot
  */
 struct feature_table_snapshot
   : serde::envelope<feature_table_snapshot, serde::version<0>> {
+    model::offset applied_offset;
     cluster::cluster_version version{cluster::invalid_version};
     std::optional<security::license> license;
     std::vector<feature_state_snapshot> states;
 
-    auto serde_fields() { return std::tie(version, states, license); }
+    auto serde_fields() {
+        return std::tie(applied_offset, version, states, license);
+    }
 
     /// Create a snapshot from a live feature table
     static feature_table_snapshot from(const feature_table&);

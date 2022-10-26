@@ -279,10 +279,15 @@ public:
      */
     void testing_activate_all();
 
+    model::offset get_applied_offset() const { return _applied_offset; }
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster::cluster_version);
     void apply_action(const cluster::feature_update_action& fua);
+
+    // The controller log offset of last batch applied to this state machine
+    void set_applied_offset(model::offset o) { _applied_offset = o; }
 
     void on_update();
 
@@ -302,6 +307,8 @@ private:
 
     // Currently loaded redpanda license details
     std::optional<security::license> _license;
+
+    model::offset _applied_offset{};
 
     // feature_manager is a friend so that they can initialize
     // the active version on single-node first start.

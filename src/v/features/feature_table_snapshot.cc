@@ -29,6 +29,7 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
         fts.states.push_back(feature_state_snapshot{
           .name = ss::sstring(name), .state = state._state});
     }
+    fts.applied_offset = ft.get_applied_offset();
 
     return fts;
 }
@@ -56,6 +57,8 @@ void feature_table_snapshot::apply(feature_table& ft) const {
             snap_state._state = snap_state_iter->state;
         }
     }
+
+    ft.set_applied_offset(applied_offset);
 
     ft.on_update();
 }

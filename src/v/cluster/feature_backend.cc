@@ -22,6 +22,10 @@ ss::future<std::error_code>
 feature_backend::apply_update(model::record_batch b) {
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
+    if (b.base_offset() <= _feature_table.local().get_applied_offset()) {
+        co_return errc::success;
+    }
+
     co_await ss::visit(
       cmd,
       [this](feature_update_cmd update) -> ss::future<> {
@@ -40,6 +44,12 @@ feature_backend::apply_update(model::record_batch b) {
               features::feature_table& t) mutable {
                 t.set_license(std::move(license));
             });
+      });
+
+    auto batch_offset = b.base_offset();
+    co_await _feature_table.invoke_on_all(
+      [batch_offset](features::feature_table& t) {
+          t.set_applied_offset(batch_offset);
       });
 
     // Updates to the feature table are very infrequent, usually occurring
