@@ -38,6 +38,7 @@ type ConsoleConfig struct {
 	Enterprise Enterprise      `json:"enterprise,omitempty" yaml:"enterprise,omitempty"`
 	Login      EnterpriseLogin `json:"login,omitempty" yaml:"login,omitempty"`
 	Cloud      CloudConfig     `json:"cloud,omitempty" yaml:"cloud,omitempty"`
+	Redpanda   Redpanda        `json:"redpanda,omitempty" yaml:"redpanda,omitempty"`
 }
 
 // SetDefaults sets sane defaults
@@ -124,4 +125,25 @@ type PrometheusClientBasicAuthConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+}
+
+// Redpanda is the Console Redpanda specific config
+type Redpanda struct {
+	AdminAPI RedpandaAdmin `json:"adminApi,omitempty" yaml:"adminApi,omitempty"`
+}
+
+// RedpandaAdmin is the Console RedpandaAdmin config
+type RedpandaAdmin struct {
+	Enabled bool             `json:"enabled" yaml:"enabled"`
+	URLs    []string         `json:"urls" yaml:"urls"`
+	TLS     RedpandaAdminTLS `json:"tls" yaml:"tls"`
+}
+
+// RedpandaAdminTLS is the RedpandaAdmin TLS config
+type RedpandaAdminTLS struct {
+	Enabled               bool   `json:"enabled" yaml:"enabled"`
+	CaFilepath            string `json:"caFilepath" yaml:"caFilepath"`
+	CertFilepath          string `json:"certFilepath" yaml:"certFilepath"`
+	KeyFilepath           string `json:"keyFilepath" yaml:"keyFilepath"`
+	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify,omitempty" yaml:"insecureSkipTlsVerify,omitempty"`
 }
