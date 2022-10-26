@@ -447,6 +447,78 @@ class CreateTopicUpgradeTest(RedpandaTest):
         wait_for_segments_removal(self.redpanda, topic_name, 0, 1)
 
     @cluster(num_nodes=3)
+    def test_cloud_storage_sticky_enablement_v22_2_to_v22_3(self):
+        """
+        In Redpanda 22.3, the cluster defaults for cloud storage change
+        from being applied at runtime to being sticky at creation time,
+        or at upgrade time.
+        """
+
+        # Switch on tiered storage using cluster properties, not topic properties
+        self.redpanda.set_cluster_config(
+            {
+                'cloud_storage_enable_remote_read': True,
+                'cloud_storage_enable_remote_write': True
+            },
+            # This shouldn't require a restart, but it does in Redpanda < 22.3
+            True)
+
+        topic = "test-topic"
+        self.rpk.create_topic(topic)
+        described = self.rpk.describe_topic_configs(topic)
+        assert described['redpanda.remote.write'] == ('true', 'DEFAULT_CONFIG')
+        assert described['redpanda.remote.read'] == ('true', 'DEFAULT_CONFIG')
+
+        # Upgrade to Redpanda latest
+        self.installer.install(
+            self.redpanda.nodes,
+            RedpandaInstaller.HEAD,
+        )
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Wait for properties migration to run
+        self.redpanda.await_feature_active("cloud_retention", timeout_sec=30)
+
+        self.logger.info(
+            f"Config status after upgrade: {self.redpanda._admin.get_cluster_config_status()}"
+        )
+
+        # Properties should still be set, but migrated to topic-level
+        described = self.rpk.describe_topic_configs(topic)
+        assert described['redpanda.remote.write'] == ('true',
+                                                      'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.read'] == ('true',
+                                                     'DYNAMIC_TOPIC_CONFIG')
+
+        # A new topic picks up these properties too
+        self.rpk.create_topic("created-after-enabled")
+        described = self.rpk.describe_topic_configs("created-after-enabled")
+        assert described['redpanda.remote.write'] == ('true',
+                                                      'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.read'] == ('true',
+                                                     'DYNAMIC_TOPIC_CONFIG')
+
+        # Switching off cluster defaults shoudln't affect existing topic
+        self.redpanda.set_cluster_config(
+            {
+                'cloud_storage_enable_remote_read': False,
+                'cloud_storage_enable_remote_write': False
+            }, False)
+        described = self.rpk.describe_topic_configs(topic)
+        assert described['redpanda.remote.write'] == ('true',
+                                                      'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.read'] == ('true',
+                                                     'DYNAMIC_TOPIC_CONFIG')
+
+        # A newly created topic should have tiered storage switched off
+        self.rpk.create_topic("created-after-disabled")
+        described = self.rpk.describe_topic_configs("created-after-disabled")
+        assert described['redpanda.remote.write'] == ('false',
+                                                      'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.read'] == ('false',
+                                                     'DYNAMIC_TOPIC_CONFIG')
+
+    @cluster(num_nodes=3)
     def test_retention_config_on_upgrade_from_v22_2_to_v22_3(self):
         self.rpk.create_topic("test-topic-with-retention",
                               config={"retention.bytes": 10000})
