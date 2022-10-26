@@ -298,6 +298,8 @@ class CreateSITopicsTest(RedpandaTest):
                          replicas=1,
                          config={"redpanda.remote.write": "false"})
 
+        # Changing the defaults after creating a topic should not change
+        # the configuration of the already-created topic
         self.redpanda.set_cluster_config(
             {
                 "cloud_storage_enable_remote_read": False,
@@ -309,15 +311,16 @@ class CreateSITopicsTest(RedpandaTest):
         explicit_si_configs = rpk.describe_topic_configs(
             topic=explicit_si_topic)
 
-        # Since this topic did not specifiy an explicit remote read/write
-        # policy, the values are bound to the cluster level configs.
-        assert default_si_configs["redpanda.remote.read"] == ("false",
-                                                              "DEFAULT_CONFIG")
+        # This topic has topic-level properties set from the cluster defaults
+        # and the values should _not_ have been changed by the intervening
+        # change to those defaults.
+        assert default_si_configs["redpanda.remote.read"] == (
+            "true", "DYNAMIC_TOPIC_CONFIG")
         assert default_si_configs["redpanda.remote.write"] == (
-            "true", "DEFAULT_CONFIG")
+            "true", "DYNAMIC_TOPIC_CONFIG")
 
-        # Since this topic specified an explicit remote read/write policy,
-        # the values are not overriden by the cluster config change.
+        # This topic was created with explicit properties that differed
+        # from the defaults
         assert explicit_si_configs["redpanda.remote.read"] == (
             "true", "DYNAMIC_TOPIC_CONFIG")
         assert explicit_si_configs["redpanda.remote.write"] == (
