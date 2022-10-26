@@ -126,6 +126,8 @@ private:
     void configure_admin_server();
     void wire_up_redpanda_services(model::node_id);
 
+    void load_feature_table_snapshot();
+
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
     void start_runtime_services(cluster::cluster_discovery&);
