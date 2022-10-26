@@ -15,6 +15,7 @@
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
+#include "pandaproxy/util.h"
 #include "redpanda/request_auth.h"
 #include "seastarx.h"
 
@@ -47,12 +48,16 @@ public:
     sharded_client_cache& client_cache() { return _client_cache; }
 
 private:
+    ss::future<> do_start();
+
     configuration _config;
     ssx::semaphore _mem_sem;
+    ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     sharded_client_cache& _client_cache;
     server::context_t _ctx;
     server _server;
+    one_shot _ensure_started;
 };
 
 } // namespace pandaproxy::rest
