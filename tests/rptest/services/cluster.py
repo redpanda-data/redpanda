@@ -34,6 +34,10 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             try:
                 r = f(self, *args, **kwargs)
             except:
+                if not hasattr(self, 'redpanda') or self.redpanda is None:
+                    # We failed so early there isn't even a RedpandaService instantiated
+                    raise
+
                 self.redpanda.logger.exception(
                     "Test failed, doing failure checks...")
 
@@ -47,6 +51,11 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
 
                 raise
             else:
+                if not hasattr(self, 'redpanda') or self.redpanda is None:
+                    # We passed without instantiating a RedpandaService, for example
+                    # in a skipped test
+                    return r
+
                 self.redpanda.logger.info("Test passed, doing log checks...")
                 if check_allowed_error_logs:
                     # Only do log inspections on tests that are otherwise
