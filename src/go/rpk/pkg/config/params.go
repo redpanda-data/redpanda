@@ -546,8 +546,34 @@ func (c *Config) addUnsetDefaults() {
 		brokers = []string{"127.0.0.1:9092"}
 	}
 
-	if len(r.AdminAPI.Addresses) == 0 {
-		r.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
+	addrs := r.AdminAPI.Addresses
+	defer func() { r.AdminAPI.Addresses = addrs }()
+	if len(addrs) == 0 && len(c.Redpanda.AdminAPI) > 0 {
+		// We want to order the admin API addresses by:
+		// localhost -> loobpack -> private -> public.
+		var localhost, loopback, private, public []string
+		for _, adminAPI := range c.Redpanda.AdminAPI {
+			s := net.JoinHostPort(adminAPI.Address, strconv.Itoa(adminAPI.Port))
+			ip := net.ParseIP(adminAPI.Address)
+			switch {
+			case adminAPI.Address == "localhost":
+				localhost = append(localhost, s)
+			case ip.IsLoopback():
+				loopback = append(loopback, s)
+			case ip.IsPrivate():
+				private = append(private, s)
+			default:
+				public = append(public, s)
+			}
+		}
+		addrs = append(addrs, localhost...)
+		addrs = append(addrs, loopback...)
+		addrs = append(addrs, private...)
+		addrs = append(addrs, public...)
+	}
+
+	if len(addrs) == 0 {
+		addrs = []string{"127.0.0.1:9644"}
 	}
 }
 

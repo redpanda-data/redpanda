@@ -38,7 +38,7 @@ rpk:
             - 0.0.0.0:9092
     admin_api:
         addresses:
-            - 127.0.0.1:9644
+            - 0.0.0.0:9644
 `,
 		},
 		{
@@ -75,6 +75,32 @@ rpk:
     kafka_api:
         brokers:
             - 127.0.1.1:9647
+`,
+		},
+		{
+			name: "preserve order of admin_api.addresses",
+			inCfg: `rpk:
+    admin_api:
+        addresses:
+            - localhost:4444
+            - 127.0.0.1:4444
+            - 10.0.0.1:4444
+            - 122.65.33.12:4444
+`,
+			cfgChanges: func(c *Config) *Config {
+				c.Rpk.KafkaAPI.Brokers = []string{"127.0.1.1:9647"}
+				return c
+			},
+			exp: `rpk:
+    kafka_api:
+        brokers:
+            - 127.0.1.1:9647
+    admin_api:
+        addresses:
+            - localhost:4444
+            - 127.0.0.1:4444
+            - 10.0.0.1:4444
+            - 122.65.33.12:4444
 `,
 		},
 	}
@@ -208,4 +234,97 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `, string(file))
+}
+
+func TestAddUnsetDefaults(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		inCfg  *Config
+		expCfg *Config
+	}{
+		{
+			name:  "default kafka broker and default admin api",
+			inCfg: &Config{},
+			expCfg: &Config{
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"127.0.0.1:9092"},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"127.0.0.1:9644"},
+					},
+				},
+			},
+		}, {
+			name: "kafka broker and admin api from redpanda",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "250.12.12.12", Port: 9095},
+					},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "0.0.2.3", Port: 4444},
+					},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "250.12.12.12", Port: 9095},
+					},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "0.0.2.3", Port: 4444},
+					},
+				},
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"250.12.12.12:9095"},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"0.0.2.3:4444"},
+					},
+				},
+			},
+		}, {
+			name: "admin api sorted",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					AdminAPI: []NamedSocketAddress{
+						{Address: "10.0.0.1", Port: 4444},     // private
+						{Address: "127.0.0.1", Port: 4444},    // loopback
+						{Address: "localhost", Port: 4444},    // localhost
+						{Address: "122.65.33.12", Port: 4444}, // public
+					},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					AdminAPI: []NamedSocketAddress{
+						{Address: "10.0.0.1", Port: 4444},
+						{Address: "127.0.0.1", Port: 4444},
+						{Address: "localhost", Port: 4444},
+						{Address: "122.65.33.12", Port: 4444},
+					},
+				},
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"127.0.0.1:9092"},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{
+							"localhost:4444",    // private
+							"127.0.0.1:4444",    // loopback
+							"10.0.0.1:4444",     // private
+							"122.65.33.12:4444", // public
+						},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.inCfg.addUnsetDefaults()
+			require.Equal(t, test.expCfg, test.inCfg)
+		})
+	}
 }
