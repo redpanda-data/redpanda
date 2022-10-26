@@ -405,7 +405,7 @@ partition_downloader::download_log_with_capped_size(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}](
+      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}, &manifest](
         const segment& s) -> ss::future<> {
           auto& dloffsets{*_dloffsets};
           auto& dlpart{*_dlpart};
@@ -421,7 +421,8 @@ partition_downloader::download_log_with_capped_size(
             s.meta.size_bytes,
             dlpart.part_prefix,
             dlpart.dest_prefix);
-          auto offsets = co_await download_segment_file(s, dlpart);
+          auto offsets = co_await download_segment_file(
+            s, dlpart, manifest.generate_segment_path(s.manifest_key, s.meta));
           if (offsets) {
               dloffsets.push_back(offsets.value());
           }
@@ -500,7 +501,7 @@ partition_downloader::download_log_with_capped_time(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}](
+      [this, _dlpart{&dlpart}, _dloffsets{&dloffsets}, &manifest](
         const segment& s) -> ss::future<> {
           auto& dlpart{*_dlpart};
           auto& dloffsets{*_dloffsets};
@@ -514,7 +515,8 @@ partition_downloader::download_log_with_capped_time(
             s.manifest_key.term,
             dlpart.part_prefix,
             dlpart.dest_prefix);
-          auto offsets = co_await download_segment_file(s, dlpart);
+          auto offsets = co_await download_segment_file(
+            s, dlpart, manifest.generate_segment_path(s.manifest_key, s.meta));
           if (offsets) {
               dloffsets.push_back(offsets.value());
           }
@@ -566,11 +568,11 @@ open_output_file_stream(const std::filesystem::path& path) {
 
 ss::future<std::optional<partition_downloader::offset_range>>
 partition_downloader::download_segment_file(
-  const segment& segm, const download_part& part) {
+  const segment& segm,
+  const download_part& part,
+  remote_segment_path remote_path) {
     auto name = generate_local_segment_name(
       segm.manifest_key.base_offset, segm.manifest_key.term);
-    auto remote_path = generate_remote_segment_path(
-      _ntpc.ntp(), segm.meta.ntp_revision, name, segm.meta.archiver_term);
 
     vlog(
       _ctxlog.info,
