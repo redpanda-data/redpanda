@@ -127,6 +127,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Name = "ensure-integration-cm-cluster"
+	assert.NoError(t, c.Create(context.Background(), cluster))
 
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

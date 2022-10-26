@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -219,7 +220,9 @@ func TestConditions(t *testing.T) {
 }
 
 func TestInitialReplicas(t *testing.T) {
+	// backward compatibility. Remove when v22.2 is no longer supported.
 	cluster := v1alpha1.Cluster{}
+	cluster.Spec.Version = featuregates.V22_2_1.String()
 	cluster.Spec.Replicas = pointer.Int32(3)
 	assert.Equal(t, int32(1), cluster.GetCurrentReplicas())
 	cluster.Status.Replicas = 2
@@ -232,4 +235,19 @@ func TestInitialReplicas(t *testing.T) {
 	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
 	cluster.Status.Nodes.Internal = nil
 	assert.Equal(t, int32(1), cluster.GetCurrentReplicas())
+
+	// test with latest version
+	cluster = v1alpha1.Cluster{}
+	cluster.Spec.Replicas = pointer.Int32(3)
+	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
+	cluster.Status.Replicas = 2
+	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
+	cluster.Status.Replicas = 0
+	cluster.Status.ReadyReplicas = 2
+	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
+	cluster.Status.ReadyReplicas = 0
+	cluster.Status.Nodes.Internal = []string{"1", "2"}
+	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
+	cluster.Status.Nodes.Internal = nil
+	assert.Equal(t, int32(3), cluster.GetCurrentReplicas())
 }

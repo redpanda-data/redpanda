@@ -18,6 +18,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /etc/redpanda/.bootstrap.yaml
       name: configmap-dir
       subPath: .bootstrap.yaml
@@ -41,6 +43,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /etc/redpanda/.bootstrap.yaml
       name: configmap-dir
       subPath: .bootstrap.yaml
@@ -48,6 +52,7 @@ spec:
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
+
 status:
   phase: "Running"
 

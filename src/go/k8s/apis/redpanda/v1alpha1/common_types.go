@@ -25,7 +25,9 @@ type SecretKeyRef struct {
 }
 
 // GetSecret fetches the referenced Secret
-func (s *SecretKeyRef) GetSecret(ctx context.Context, cl client.Client) (*corev1.Secret, error) {
+func (s *SecretKeyRef) GetSecret(
+	ctx context.Context, cl client.Client,
+) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	if err := cl.Get(ctx, client.ObjectKey{Namespace: s.Namespace, Name: s.Name}, secret); err != nil {
 		return nil, fmt.Errorf("getting Secret %s/%s: %w", s.Namespace, s.Name, err)
@@ -34,7 +36,9 @@ func (s *SecretKeyRef) GetSecret(ctx context.Context, cl client.Client) (*corev1
 }
 
 // GetValue extracts the value from the specified key or default
-func (s *SecretKeyRef) GetValue(secret *corev1.Secret, defaultKey string) ([]byte, error) {
+func (s *SecretKeyRef) GetValue(
+	secret *corev1.Secret, defaultKey string,
+) ([]byte, error) {
 	key := s.Key
 	if key == "" {
 		key = defaultKey

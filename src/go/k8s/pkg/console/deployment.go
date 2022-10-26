@@ -174,7 +174,9 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 
 // ensureSyncedSecrets ensures that Secrets required by Deployment are available
 // These Secrets are synced across different namespace via the Store
-func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (map[string]string, error) {
+func (d *Deployment) ensureSyncedSecrets(
+	ctx context.Context,
+) (map[string]string, error) {
 	syncedSecrets := map[string]map[string][]byte{}
 
 	schemaRegistrySecret, err := d.syncSchemaRegistrySecret()

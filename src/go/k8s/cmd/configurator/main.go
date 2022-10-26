@@ -20,52 +20,53 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const (
-	hostNameEnvVar                                       = "HOSTNAME"
-	svcFQDNEnvVar                                        = "SERVICE_FQDN"
-	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
 	configDestinationEnvVar                              = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
-	nodeNameEnvVar                                       = "NODE_NAME"
-	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
-	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
 	externalConnectivityAddressTypeEnvVar                = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
+	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
 	externalConnectivityKafkaEndpointTemplateEnvVar      = "EXTERNAL_CONNECTIVITY_KAFKA_ENDPOINT_TEMPLATE"
 	externalConnectivityPandaProxyEndpointTemplateEnvVar = "EXTERNAL_CONNECTIVITY_PANDA_PROXY_ENDPOINT_TEMPLATE"
+	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
+	hostNameEnvVar                                       = "HOSTNAME"
 	hostPortEnvVar                                       = "HOST_PORT"
+	nodeNameEnvVar                                       = "NODE_NAME"
 	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
 	rackAwarenessEnvVar                                  = "RACK_AWARENESS"
+	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
+	svcFQDNEnvVar                                        = "SERVICE_FQDN"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName                                       string
-	svcFQDN                                        string
-	configSourceDir                                string
 	configDestination                              string
-	nodeName                                       string
-	subdomain                                      string
+	configSourceDir                                string
 	externalConnectivity                           bool
 	externalConnectivityAddressType                corev1.NodeAddressType
 	externalConnectivityKafkaEndpointTemplate      string
 	externalConnectivityPandaProxyEndpointTemplate string
-	redpandaRPCPort                                int
-	hostPort                                       int
-	proxyHostPort                                  int
 	hostIP                                         string
+	hostName                                       string
+	hostPort                                       int
+	nodeName                                       string
+	proxyHostPort                                  int
 	rackAwareness                                  bool
+	redpandaRPCPort                                int
+	subdomain                                      string
+	svcFQDN                                        string
 }
 
 func (c *configuratorConfig) String() string {
@@ -143,15 +144,21 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.ID = new(int)
-	*cfg.Redpanda.ID = int(hostIndex)
+	// New bootstrap with v22.3, if redpanda.empty_seed_starts_cluster is false redpanda automatically
+	// generated IDs and forms clusters using the full set of nodes.
+	if cfg.Redpanda.EmptySeedStartsCluster != nil && !*cfg.Redpanda.EmptySeedStartsCluster {
+		cfg.Redpanda.ID = nil
+	} else {
+		cfg.Redpanda.ID = new(int)
+		*cfg.Redpanda.ID = int(hostIndex)
 
-	// In case of a single seed server, the list should contain the current node itself.
-	// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
-	// configured to use mutual TLS on the Kafka API (see Helm test).
-	// So, we clear the list of seeds to help Redpanda.
-	if len(cfg.Redpanda.SeedServers) == 1 {
-		cfg.Redpanda.SeedServers = []config.SeedServer{}
+		// In case of a single seed server, the list should contain the current node itself.
+		// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
+		// configured to use mutual TLS on the Kafka API (see Helm test).
+		// So, we clear the list of seeds to help Redpanda.
+		if len(cfg.Redpanda.SeedServers) == 1 {
+			cfg.Redpanda.SeedServers = []config.SeedServer{}
+		}
 	}
 
 	if c.rackAwareness {

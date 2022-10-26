@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: endpoint-template
 status:
-  replicas: 2
-  readyReplicas: 2
+  replicas: 3
+  readyReplicas: 3
   restarting: false
   conditions:
     - type: ClusterConfigured
@@ -23,6 +23,14 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: endpoint-template-1
+status:
+  phase: "Running"
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: endpoint-template-2
 status:
   phase: "Running"
 ---

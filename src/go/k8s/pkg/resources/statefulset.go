@@ -54,6 +54,8 @@ const (
 	configSourceDir      = "/mnt/operator"
 	configFile           = "redpanda.yaml"
 
+	scriptMountPath = "/scripts"
+
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
@@ -352,6 +354,15 @@ func (r *StatefulSetResource) obj(
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
+						{
+							Name: "hook-scripts-dir",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  SecretKey(r.pandaCluster).Name,
+									DefaultMode: pointer.Int32(0o555),
+								},
+							},
+						},
 					}, tlsVolumes...),
 					TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
 					InitContainers: []corev1.Container{
@@ -504,6 +515,10 @@ func (r *StatefulSetResource) obj(
 									Name:      "config-dir",
 									MountPath: configDestinationDir,
 								},
+								{
+									Name:      "hook-scripts-dir",
+									MountPath: scriptMountPath,
+								},
 							}, tlsVolumeMounts...),
 						},
 					},
@@ -548,8 +563,8 @@ func (r *StatefulSetResource) obj(
 	multiReplica := r.pandaCluster.GetCurrentReplicas() > 1
 	if featuregates.MaintenanceMode(r.pandaCluster.Spec.Version) && r.pandaCluster.IsUsingMaintenanceModeHooks() && multiReplica {
 		ss.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
-			PreStop:   r.getPreStopHook(),
-			PostStart: r.getPostStartHook(),
+			PreStop:   r.getHook(preStopKey),
+			PostStart: r.getHook(postStartKey),
 		}
 	}
 
@@ -577,71 +592,14 @@ func (r *StatefulSetResource) obj(
 }
 
 // getPrestopHook creates a hook that drains the node before shutting down.
-func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
-	// TODO replace scripts with proper RPK calls
-	curlCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
-	genericMaintenancePath := "/v1/maintenance"
-	curlGetCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
-	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ]; do status=$(%s); sleep 0.5; done`, curlCommand) +
-		" && " +
-		fmt.Sprintf(`until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do res=$(%s); finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$'); draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$'); sleep 0.5; done`, curlGetCommand)
-
+func (r *StatefulSetResource) getHook(script string) *corev1.Handler {
 	return &corev1.Handler{
 		Exec: &corev1.ExecAction{
 			Command: []string{
-				"/bin/bash",
-				"-c",
-				cmd,
+				scriptMountPath + "/" + script,
 			},
 		},
 	}
-}
-
-// getPostStartHook creates a hook that removes maintenance mode after startup.
-func (r *StatefulSetResource) getPostStartHook() *corev1.Handler {
-	// TODO replace scripts with proper RPK calls
-	curlCommand := r.composeCURLMaintenanceCommand(`-X DELETE --silent -o /dev/null -w "%{http_code}"`, nil)
-	// HTTP code 400 is returned by v22 nodes during an upgrade from v21 until the new version reaches quorum and the maintenance mode feature is enabled
-	cmd := fmt.Sprintf(`until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do status=$(%s); sleep 0.5; done`, curlCommand)
-
-	return &corev1.Handler{
-		Exec: &corev1.ExecAction{
-			Command: []string{
-				"/bin/bash",
-				"-c",
-				cmd,
-			},
-		},
-	}
-}
-
-//nolint:goconst // no need
-func (r *StatefulSetResource) composeCURLMaintenanceCommand(
-	options string, urlOverwrite *string,
-) string {
-	adminAPI := r.pandaCluster.AdminAPIInternal()
-
-	cmd := fmt.Sprintf(`curl %s `, options)
-
-	tlsConfig := adminAPI.GetTLS()
-	proto := "http"
-	if tlsConfig != nil && tlsConfig.Enabled {
-		proto = "https"
-		if tlsConfig.RequireClientAuth {
-			cmd += "--cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key "
-		} else {
-			cmd += "--cacert /etc/tls/certs/admin/tls.crt "
-		}
-	}
-	cmd += fmt.Sprintf("%s://${POD_NAME}.%s.%s.svc.cluster.local:%d", proto, r.pandaCluster.Name, r.pandaCluster.Namespace, adminAPI.Port)
-
-	if urlOverwrite == nil {
-		prefixLen := len(r.pandaCluster.Name) + 1
-		cmd += fmt.Sprintf("/v1/brokers/${POD_NAME:%d}/maintenance", prefixLen)
-	} else {
-		cmd += *urlOverwrite
-	}
-	return cmd
 }
 
 // setVolumes manipulates v1.StatefulSet object in order to add cloud storage and

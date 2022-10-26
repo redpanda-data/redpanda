@@ -16,4 +16,4 @@ spec:
         - "--webhook-enabled=true"
         - "--configurator-base-image=localhost/configurator"
         - "--configurator-tag=dev"
-        - "--configurator-image-pull-policy=IfNotPresent"
+        - "--configurator-image-pull-policy=Never"

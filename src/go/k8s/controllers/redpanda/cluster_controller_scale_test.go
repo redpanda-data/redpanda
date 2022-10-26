@@ -15,14 +15,17 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 var _ = Describe("Redpanda cluster scale resource", func() {
@@ -38,6 +41,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 		It("Should wait for the first replica to come up before launching the others", func() {
 			By("Allowing creation of a new cluster with 3 replicas")
 			key, redpandaCluster := getClusterWithReplicas("startup", 3)
+			redpandaCluster.Spec.Version = featuregates.V22_2_1.String()
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Keeping the StatefulSet at single replica until initialized")
@@ -70,6 +74,9 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(2)))
+			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
+				return redpandaCluster.Status.CurrentReplicas
+			}), timeout, interval).Should(Equal(int32(2)), "CurrentReplicas should be 2, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Scaling up when replicas increase")
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
@@ -98,6 +105,9 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(3)))
+			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
+				return redpandaCluster.Status.CurrentReplicas
+			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Decommissioning the last node when scaling down by 2")
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
@@ -110,7 +120,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 					return nil
 				}
 				return *redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(Equal(int32(2)))
+			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 			Consistently(testAdminAPI.BrokerStatusGetter(1), timeoutShort, intervalShort).Should(Equal(admin.MembershipStatusActive))
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
@@ -150,6 +160,9 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(3)))
+			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
+				return redpandaCluster.Status.CurrentReplicas
+			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Start decommissioning node 2")
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
@@ -160,7 +173,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 					return nil
 				}
 				return *redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(Equal(int32(2)))
+			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 
 			By("Recommissioning the node by restoring replicas")
@@ -206,6 +219,9 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(3)))
+			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
+				return redpandaCluster.Status.CurrentReplicas
+			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Doing direct scale down of node 2")
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
@@ -235,6 +251,9 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(3)))
+			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
+				return redpandaCluster.Status.CurrentReplicas
+			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Doing direct scale down of node 2")
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {

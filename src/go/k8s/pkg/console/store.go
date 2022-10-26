@@ -47,7 +47,9 @@ func NewStore(cl client.Client, scheme *runtime.Scheme) *Store {
 }
 
 // Sync synchronizes watched resources to the store
-func (s *Store) Sync(ctx context.Context, cluster *redpandav1alpha1.Cluster) error {
+func (s *Store) Sync(
+	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+) error {
 	if err := s.syncSchemaRegistry(ctx, cluster); err != nil {
 		return err
 	}
@@ -60,7 +62,9 @@ func (s *Store) Sync(ctx context.Context, cluster *redpandav1alpha1.Cluster) err
 	return nil
 }
 
-func (s *Store) syncSchemaRegistry(ctx context.Context, cluster *redpandav1alpha1.Cluster) error {
+func (s *Store) syncSchemaRegistry(
+	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+) error {
 	if !cluster.IsSchemaRegistryTLSEnabled() {
 		return nil
 	}
@@ -100,7 +104,9 @@ func (s *Store) syncSchemaRegistry(ctx context.Context, cluster *redpandav1alpha
 	return nil
 }
 
-func (s *Store) syncKafka(ctx context.Context, cluster *redpandav1alpha1.Cluster) error {
+func (s *Store) syncKafka(
+	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+) error {
 	listener := cluster.KafkaListener()
 	if !listener.IsMutualTLSEnabled() {
 		return nil
@@ -136,7 +142,9 @@ func (s *Store) syncKafka(ctx context.Context, cluster *redpandav1alpha1.Cluster
 	return nil
 }
 
-func (s *Store) syncAdminAPI(ctx context.Context, cluster *redpandav1alpha1.Cluster) error {
+func (s *Store) syncAdminAPI(
+	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+) error {
 	listener := cluster.AdminAPIListener()
 	if !listener.TLS.Enabled {
 		return nil
@@ -219,7 +227,9 @@ func (s *Store) getKafkaNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), kafkaNodeCertSuffix)
 }
 
-func (s *Store) getAdminAPINodeCertKey(cluster *redpandav1alpha1.Cluster) string {
+func (s *Store) getAdminAPINodeCertKey(
+	cluster *redpandav1alpha1.Cluster,
+) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), adminAPINodeCertSuffix)
 }
 
