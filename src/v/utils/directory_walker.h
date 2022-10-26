@@ -16,6 +16,8 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
 
+#include <functional>
+
 /// \brief map over all entries of a directory
 ///
 /// sstring ns = de.name;
