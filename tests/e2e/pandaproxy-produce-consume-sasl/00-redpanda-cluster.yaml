@@ -13,14 +13,16 @@ spec:
     limits:
       cpu: 1
       memory: 500Mi
+  kafkaEnableAuthorization: true
   configuration:
     rpcServer:
       port: 33145
     kafkaApi:
     - port: 9092
+      authenticationMethod: sasl
     adminApi:
     - port: 9644
     pandaproxyApi:
     - port: 8082
+      authenticationMethod: http_basic
     developerMode: true
-  enableSasl: true
