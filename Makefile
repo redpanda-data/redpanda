@@ -133,7 +133,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 KUTTL ?= $(LOCALBIN)/kubectl-kuttl
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v3.8.7
+KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
 KUTTL_VERSION ?= v0.13.0
 
