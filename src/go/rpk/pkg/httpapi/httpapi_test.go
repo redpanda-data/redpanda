@@ -24,7 +24,7 @@ func TestAll(t *testing.T) {
 		name string
 
 		cl *Client
-		fn func(*Client) (any, error)
+		fn func(*Client) (interface{}, error)
 
 		respHeader int
 		resp       string
@@ -34,13 +34,13 @@ func TestAll(t *testing.T) {
 		expPath    string
 		expHeaders http.Header
 		expReqBody string
-		expResp    any
+		expResp    interface{}
 		expErr     bool
 	}{
 		{
 			name: "basic_into_string",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				var s string
 				return s, cl.Get(context.Background(), "/foo", nil, &s)
 			},
@@ -58,7 +58,7 @@ func TestAll(t *testing.T) {
 		}, {
 			name: "basic_into_bytes_with_retries",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				var b []byte
 				return b, cl.Get(context.Background(), "/foo2", nil, &b)
 			},
@@ -90,7 +90,7 @@ func TestAll(t *testing.T) {
 				),
 				UserAgent("foo"), // overrides Headers set above
 			),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				return nil, cl.Post(
 					context.Background(),
 					"/bigly",
@@ -118,7 +118,7 @@ func TestAll(t *testing.T) {
 		}, {
 			name: "post_form",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				var s struct {
 					Body string
 				}
@@ -147,7 +147,7 @@ func TestAll(t *testing.T) {
 		}, {
 			name: "put_with_iowriter_resp",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				b := new(bytes.Buffer)
 				return b, cl.Put(context.Background(), "/put", nil, true, b)
 			},
@@ -163,11 +163,11 @@ func TestAll(t *testing.T) {
 			},
 			expPath:    "/put",
 			expReqBody: "true",
-			expResp:    func() any { b := new(bytes.Buffer); b.WriteString("hello"); return b }(),
+			expResp:    func() interface{} { b := new(bytes.Buffer); b.WriteString("hello"); return b }(),
 		}, {
 			name: "delete",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				return nil, cl.Delete(context.Background(), "/del", nil, nil)
 			},
 			respHeader: 200,
@@ -182,7 +182,7 @@ func TestAll(t *testing.T) {
 		}, {
 			name: "get_pathfmt_err",
 			cl:   NewClient(Host(s.URL)),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				return nil, cl.Get(context.Background(), Pathfmt("/%s/%s", 2, "/"), nil, nil)
 			},
 			respHeader: 403,
@@ -198,22 +198,22 @@ func TestAll(t *testing.T) {
 		}, {
 			name:   "missing_host_in_path",
 			cl:     NewClient(),
-			fn:     func(cl *Client) (any, error) { return nil, cl.Get(context.Background(), "/", nil, nil) },
+			fn:     func(cl *Client) (interface{}, error) { return nil, cl.Get(context.Background(), "/", nil, nil) },
 			expErr: true,
 		}, {
 			name:   "missing_url_entirely",
 			cl:     NewClient(),
-			fn:     func(cl *Client) (any, error) { return nil, cl.Get(context.Background(), "", nil, nil) },
+			fn:     func(cl *Client) (interface{}, error) { return nil, cl.Get(context.Background(), "", nil, nil) },
 			expErr: true,
 		}, {
 			name:   "invalid_query",
 			cl:     NewClient(Host((s.URL))),
-			fn:     func(cl *Client) (any, error) { return nil, cl.Get(context.Background(), "/?;", nil, nil) },
+			fn:     func(cl *Client) (interface{}, error) { return nil, cl.Get(context.Background(), "/?;", nil, nil) },
 			expErr: true,
 		}, {
 			name: "canceled_context",
 			cl:   NewClient(Host((s.URL))),
-			fn: func(cl *Client) (any, error) {
+			fn: func(cl *Client) (interface{}, error) {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 				return nil, cl.Get(ctx, "/", nil, nil)
