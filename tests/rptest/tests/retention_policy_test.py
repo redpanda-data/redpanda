@@ -17,7 +17,7 @@ from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_segments_removal, segments_count,
@@ -333,3 +333,51 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed")
+
+    @cluster(num_nodes=1)
+    def test_cloud_retention(self):
+        """
+        Test that retention is enforced in the cloud log. The test sets the
+        cloud retention limit to 10 segments and then produces 20 segments.
+        
+        We check via the redpanda_ntp_archiver_deleted_segments that 10 segments
+        have been deleted from the cloud. This test should be expanded to query
+        the S3 snapshot and perform more complete checks.
+        """
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_enable_remote_write": True,
+                "cloud_storage_housekeeping_interval_ms": 100
+            },
+            expect_restart=True)
+
+        self.rpk.create_topic(topic=self.topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  "cleanup.policy": TopicSpec.CLEANUP_DELETE,
+                                  "retention.bytes": 10 * self.segment_size,
+                              })
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=20 * self.segment_size)
+
+        def deleted_segments_count() -> int:
+            metrics = self.redpanda.metrics_sample(
+                "deleted_segments",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+
+            assert metrics, "Deleted segments metric is missing"
+            assert len(metrics.samples) == 1
+
+            deleted = int(metrics.samples[0].value)
+            self.logger.debug(f"Samples: {metrics.samples}")
+            self.logger.debug(f"Deleted {deleted} segments from the cloud")
+            return deleted
+
+        wait_until(lambda: deleted_segments_count() == 10,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg=f"Segments were not removed from the cloud")
