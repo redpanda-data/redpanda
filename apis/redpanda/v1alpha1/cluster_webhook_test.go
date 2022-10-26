@@ -1106,7 +1106,8 @@ func TestCreation(t *testing.T) {
 			External: v1alpha1.ExternalConnectivityConfig{
 				Enabled:   true,
 				Subdomain: commonDomain,
-			}})
+			},
+		})
 		rp.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
 			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 				Enabled:   true,
@@ -1195,7 +1196,8 @@ func TestCreation(t *testing.T) {
 				Enabled:          true,
 				Subdomain:        "example.com",
 				EndpointTemplate: "{{.Index}}-broker",
-			}})
+			},
+		})
 		err := rp.ValidateCreate()
 		assert.NoError(t, err)
 	})
@@ -1224,7 +1226,8 @@ func TestCreation(t *testing.T) {
 			External: v1alpha1.ExternalConnectivityConfig{
 				Enabled:   true,
 				Subdomain: commonDomain,
-			}})
+			},
+		})
 		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			Subdomain:        commonDomain,
@@ -1242,7 +1245,8 @@ func TestCreation(t *testing.T) {
 			External: v1alpha1.ExternalConnectivityConfig{
 				Enabled:   true,
 				Subdomain: commonDomain,
-			}})
+			},
+		})
 		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{
 			ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 				Enabled:   true,
@@ -1653,13 +1657,15 @@ func TestKafkaTLSRules(t *testing.T) {
 				AuthenticationMethod: "none",
 				Port:                 30001,
 				External: v1alpha1.ExternalConnectivityConfig{
-					Enabled: true, Subdomain: "redpanda.com"}, TLS: v1alpha1.KafkaAPITLS{
+					Enabled: true, Subdomain: "redpanda.com",
+				}, TLS: v1alpha1.KafkaAPITLS{
 					Enabled: true,
 					IssuerRef: &cmmeta.ObjectReference{
 						Name: "issuer",
 						Kind: "ClusterIssuer",
 					},
-				}})
+				},
+			})
 
 		err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
@@ -1711,7 +1717,8 @@ func TestKafkaTLSRules(t *testing.T) {
 						Name:      "node",
 						Namespace: "default",
 					},
-				}})
+				},
+			})
 
 		err := newRp.ValidateUpdate(rpCluster)
 		assert.NoError(t, err)
@@ -1729,7 +1736,8 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				Port:                 30001,
 				External: v1alpha1.ExternalConnectivityConfig{
 					Enabled:   true,
-					Subdomain: "redpanda.com"},
+					Subdomain: "redpanda.com",
+				},
 			})
 
 		err := newRp.ValidateCreate()
@@ -1747,7 +1755,8 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				Port:                 30001,
 				External: v1alpha1.ExternalConnectivityConfig{
 					Enabled:   true,
-					Subdomain: "redpanda.com"},
+					Subdomain: "redpanda.com",
+				},
 			})
 
 		err := newRp.ValidateCreate()
@@ -1765,7 +1774,8 @@ func TestKafkaAuthenticationMethod(t *testing.T) {
 				Port:                 30001,
 				External: v1alpha1.ExternalConnectivityConfig{
 					Enabled:   true,
-					Subdomain: "redpanda.com"},
+					Subdomain: "redpanda.com",
+				},
 			})
 
 		err := newRp.ValidateCreate()
