@@ -297,3 +297,39 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    timeout_sec=5,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed")
+
+    @cluster(num_nodes=1)
+    @matrix(local_retention_ms=[3600000, -1])
+    def test_local_time_based_retention_is_overridden(self,
+                                                      local_retention_ms):
+        """
+        Checks if local time based retention is overridden 
+        by cloud based retention settings if cloud based retention is more strict
+        """
+        # set cloud retention to 10 seconds
+        self.redpanda.set_cluster_config({"delete_retention_ms": 10000},
+                                         expect_restart=False)
+
+        # create topic with large local retention
+        self.rpk.create_topic(topic=self.topic_name,
+                              partitions=1,
+                              replicas=1,
+                              config={
+                                  "cleanup.policy":
+                                  TopicSpec.CLEANUP_DELETE,
+                                  "redpanda.remote.write":
+                                  "true",
+                                  "retention.local.target.ms":
+                                  str(local_retention_ms)
+                              })
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=self.total_segments *
+                            self.segment_size)
+
+        wait_until(lambda: self.segments_removed(1),
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg=f"Segments were not removed")
