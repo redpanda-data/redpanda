@@ -36,7 +36,29 @@ func NewFranzClient(
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),
 		kgo.ClientID("rpk"),
-		kgo.RetryTimeout(5 * time.Second),
+
+		// We want our timeouts to be _short_ but still allow for
+		// slowness if people use rpk against a remote cluster.
+		//
+		// 3s dial timeout (overriding default 10s): dialing should be
+		// quick.
+		//
+		// 5s request timeout overhead (overriding default 10s): we
+		// want to kill requests that hang. The timeout is on top of
+		// any request's timeout field, so this only affects requests
+		// that *should* be fast. See #6317 for why we want to adjust
+		// this down.
+		//
+		// 11s retry timeout (overriding default 30s): we do not want
+		// to retry too much and keep hanging.
+		//
+		// TODO: we should lower these limits even more (2s, 4s, 9s)
+		// once we support -X and then add these as configurable
+		// options. We cannot be "aggressively" low without override
+		// options because we may affect end users.
+		kgo.DialTimeout(3 * time.Second),
+		kgo.RequestTimeoutOverhead(5 * time.Second),
+		kgo.RetryTimeout(11 * time.Second), // if updating this, update below's SetTimeoutMillis
 
 		// Redpanda may indicate one leader just before rebalancing the
 		// leader to a different server. During this rebalance,
@@ -70,7 +92,9 @@ func NewFranzClient(
 	}
 
 	if p.Verbose {
-		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, nil)))
+		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, func() string {
+			return time.Now().Format("15:04:05.000 ")
+		})))
 	}
 
 	opts = append(opts, extraOpts...)

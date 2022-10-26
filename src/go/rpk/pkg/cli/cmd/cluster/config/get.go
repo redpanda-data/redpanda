@@ -46,6 +46,13 @@ output, use the 'edit' and 'export' commands respectively.`,
 			if !exists {
 				out.Die("Property '%s' not found", key)
 			} else {
+				// currentConfig is the result of json.Unmarshal into a
+				// map[string]interface{}. Due to json rules, all numbers
+				// are float64. We do not want to print floats, especially
+				// for large numbers.
+				if f64, ok := val.(float64); ok {
+					val = int64(f64)
+				}
 				// Intentionally bare output, so that the output can be readily
 				// consumed in a script.
 				bytes, err := yaml.Marshal(val)
