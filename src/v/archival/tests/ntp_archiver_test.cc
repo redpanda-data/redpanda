@@ -75,13 +75,14 @@ static void log_segment_set(storage::log_manager& lm) {
 }
 
 void log_upload_candidate(const archival::upload_candidate& up) {
+    auto first_source = up.sources.front();
     vlog(
       test_log.info,
       "Upload candidate, exposed name: {} "
       "real offsets: {} {}",
       up.exposed_name,
-      up.sources.front()->offsets().base_offset,
-      up.sources.front()->offsets().dirty_offset);
+      first_source->offsets().base_offset,
+      first_source->offsets().dirty_offset);
 }
 
 // NOLINTNEXTLINE
@@ -119,8 +120,15 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     retry_chain_node fib;
     auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 2);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 2);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
@@ -346,7 +354,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                        start_offset, lso, *log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
-    BOOST_REQUIRE(!upload4.sources.empty());
+    BOOST_REQUIRE(upload4.sources.empty());
 
     start_offset = lso + model::offset(1);
     auto upload5 = policy
@@ -354,7 +362,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                        start_offset, lso, *log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
-    BOOST_REQUIRE(!upload5.sources.empty());
+    BOOST_REQUIRE(upload5.sources.empty());
 }
 
 FIXTURE_TEST(
@@ -557,8 +565,15 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     retry_chain_node fib;
 
     auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 2);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 2);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
@@ -787,8 +802,15 @@ static void test_partial_upload_impl(
 
     retry_chain_node fib;
     auto res = archiver.upload_next_candidates(lso).get();
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 1);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test_server.log_requests();
     BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 2);
@@ -821,8 +843,14 @@ static void test_partial_upload_impl(
     lso = last_upl2 + model::offset(1);
     res = archiver.upload_next_candidates(lso).get();
 
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 1);
-    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+    non_compacted_result = res.non_compacted_upload_result;
+    compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test_server.log_requests();
     BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 4);

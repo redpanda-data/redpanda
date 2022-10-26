@@ -35,15 +35,6 @@ inline seastar::logger arch_svc_log("SVC-TEST");
 static const model::ns test_ns = model::ns("kafka");
 using namespace std::chrono_literals;
 
-static constexpr std::string_view error_payload
-  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-    <Code>NoSuchKey</Code>
-    <Message>Object not found</Message>
-    <Resource>resource</Resource>
-    <RequestId>requestid</RequestId>
-</Error>)xml";
-
 FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     wait_for_controller_leadership().get();
     auto topic1 = model::topic("topic_1");
@@ -73,10 +64,12 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     })json";
     when().request(urls[0]).then_reply_with(manifest_json);
     when().request(urls[1]).then_reply_with(
-      {error_payload.data(), error_payload.size()},
+      {archival_tests::error_payload.data(),
+       archival_tests::error_payload.size()},
       ss::httpd::reply::status_type::not_found);
     when().request(urls[2]).then_reply_with(
-      {error_payload.data(), error_payload.size()},
+      {archival_tests::error_payload.data(),
+       archival_tests::error_payload.size()},
       ss::httpd::reply::status_type::not_found);
     add_topic_with_random_data(pid0, 20);
     add_topic_with_random_data(pid1, 20);
@@ -100,10 +93,12 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
     const char* topic_url
       = "/20000000/meta/test-namespace/topic_2/topic_manifest.json";
     when().request(url).then_reply_with(
-      {error_payload.data(), error_payload.size()},
+      {archival_tests::error_payload.data(),
+       archival_tests::error_payload.size()},
       ss::httpd::reply::status_type::not_found);
     when().request(topic_url).then_reply_with(
-      {error_payload.data(), error_payload.size()},
+      {archival_tests::error_payload.data(),
+       archival_tests::error_payload.size()},
       ss::httpd::reply::status_type::not_found);
 
     add_topic_with_random_data(ntp, 20);

@@ -82,6 +82,7 @@ static constexpr std::string_view manifest_with_gaps = R"json({
 })json";
 
 static constexpr size_t max_upload_size{4096_KiB};
+static constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
 
 SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
     cloud_storage::partition_manifest m;
@@ -716,11 +717,13 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     collector.collect_segments();
     BOOST_REQUIRE(collector.can_replace_manifest_segment());
 
-    archival::upload_candidate upload_candidate
-      = collector.make_upload_candidate(ss::default_priority_class(), 60s)
-          .get()
-          .candidate;
+    auto upload_with_locks = collector
+                               .make_upload_candidate(
+                                 ss::default_priority_class(),
+                                 segment_lock_timeout)
+                               .get();
 
+    auto upload_candidate = upload_with_locks.candidate;
     BOOST_REQUIRE(!upload_candidate.sources.empty());
     BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
     BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{29});
@@ -736,4 +739,6 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
 
     BOOST_REQUIRE_EQUAL(
       expected_content_length, upload_candidate.content_length);
+
+    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
 }
