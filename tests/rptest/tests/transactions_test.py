@@ -569,8 +569,7 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         self.installer.install(self.redpanda.nodes, (22, 1, 5))
         super(UpgradeWithMixedVeersionTransactionTest, self).setUp()
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def upgrade_test(self):
+    def do_upgrade_with_tx(self, selector):
         topic_name = self.topics[0].name
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.5" in unique_versions, unique_versions
@@ -589,18 +588,11 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
 
         self.check_consume(1)
 
-        def get_tx_manager_broker():
-            admin = Admin(self.redpanda)
-            leader_id = admin.get_partition_leader(namespace="kafka_internal",
-                                                   topic="tx",
-                                                   partition=0)
-            return self.redpanda.get_node(leader_id)
-
-        node_with_tx_manager = get_tx_manager_broker()
+        node_to_upgrade = selector()
 
         # Update node with tx manager
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.restart_nodes(node_with_tx_manager)
+        self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert "v22.1.5" in unique_versions, unique_versions
 
@@ -620,8 +612,32 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         self.check_consume(2)
 
         self.installer.install(self.redpanda.nodes, (22, 1, 5))
-        self.redpanda.restart_nodes(node_with_tx_manager)
+        self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.5" in unique_versions, unique_versions
 
         self.check_consume(2)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def upgrade_coordinator_test(self):
+        def get_tx_coordinator():
+            admin = Admin(self.redpanda)
+            leader_id = admin.get_partition_leader(namespace="kafka_internal",
+                                                   topic="tx",
+                                                   partition=0)
+            return self.redpanda.get_node(leader_id)
+
+        self.do_upgrade_with_tx(get_tx_coordinator)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def upgrade_topic_test(self):
+        topic_name = self.topics[0].name
+
+        def get_topic_leader():
+            admin = Admin(self.redpanda)
+            leader_id = admin.get_partition_leader(namespace="kafka",
+                                                   topic=topic_name,
+                                                   partition=0)
+            return self.redpanda.get_node(leader_id)
+
+        self.do_upgrade_with_tx(get_topic_leader)
