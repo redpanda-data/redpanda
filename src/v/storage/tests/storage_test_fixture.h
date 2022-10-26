@@ -238,8 +238,6 @@ public:
           storage::debug_sanitize_files::yes,
           ss::default_priority_class(),
           cache);
-
-        cfg.segment_size_jitter = storage::jitter_percents(0);
         return cfg;
     }
 
