@@ -15,7 +15,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME pandaproxy_schema_registry_single_thread
   SOURCES
-    one_shot.cc
     sharded_store.cc
     consume_to_store.cc
     compatibility_store.cc

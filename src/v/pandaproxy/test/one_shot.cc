@@ -16,7 +16,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/schema_registry/util.h"
+#include "pandaproxy/util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
@@ -32,12 +32,12 @@
 #include <chrono>
 #include <stdexcept>
 
-namespace psr = pandaproxy::schema_registry;
+namespace pp = pandaproxy;
 using namespace std::chrono_literals;
 
 SEASTAR_THREAD_TEST_CASE(test_one_shot_simple) {
     size_t count{0};
-    psr::one_shot one{[&count]() {
+    pp::one_shot one{[&count]() {
         ++count;
         return ss::now();
     }};
@@ -50,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(test_one_shot_simple) {
 
 SEASTAR_THREAD_TEST_CASE(test_one_shot_fail) {
     size_t count{0};
-    psr::one_shot one{[&count]() {
+    pp::one_shot one{[&count]() {
         ++count;
         return ss::make_exception_future<>(std::runtime_error("failed"));
     }};
@@ -63,7 +63,7 @@ SEASTAR_THREAD_TEST_CASE(test_one_shot_fail) {
 SEASTAR_THREAD_TEST_CASE(test_one_shot_multi) {
     size_t count{0};
     size_t ex_count{0};
-    psr::one_shot one{[&count]() -> ss::future<> {
+    pp::one_shot one{[&count]() -> ss::future<> {
         ++count;
         co_await ss::sleep(10ms);
         throw std::runtime_error("failed");
