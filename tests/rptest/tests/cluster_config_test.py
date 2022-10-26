@@ -918,11 +918,6 @@ class ClusterConfigTest(RedpandaTest):
 
             expect_cli_readback = yamlize(e.yamlval)
 
-            # Hack around scientific notation for large int values.
-            # This may be an RPK bug?
-            if cli_readback.find("e+") != -1:
-                cli_readback = str(int(float(cli_readback)))
-
             self.logger.info(
                 f"CLI readback '{cli_readback}' expect '{expect_cli_readback}'"
             )

@@ -99,8 +99,6 @@ func exportConfig(
 		} else {
 			scalarVal := ""
 			switch x := curValue.(type) {
-			case int:
-				scalarVal = strconv.Itoa(x)
 			case float64:
 				scalarVal = strconv.FormatFloat(x, 'f', -1, 64)
 			case string:
