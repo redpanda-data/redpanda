@@ -16,6 +16,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark import matrix
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
@@ -826,6 +827,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
+    @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
     def test_shadow_indexing(self, num_to_upgrade):
         """
         Test interaction between the shadow indexing and the partition movement.
@@ -868,6 +870,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(num_to_upgrade=[0, 2])
+    @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
     def test_cross_shard(self, num_to_upgrade):
         """
         Test interaction between the shadow indexing and the partition movement.
