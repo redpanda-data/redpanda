@@ -16,6 +16,7 @@
 namespace features {
 
 struct feature_spec;
+struct feature_table_snapshot;
 
 /**
  * Feature states
@@ -125,6 +126,8 @@ public:
 
 private:
     state _state{state::unavailable};
+
+    friend struct feature_table_snapshot;
 };
 
 } // namespace features

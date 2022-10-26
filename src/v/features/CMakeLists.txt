@@ -3,6 +3,7 @@ v_cc_library(
   NAME features
   SRCS
     feature_table.cc
+    feature_table_snapshot.cc
     feature_migrator.cc
     migrators/cloud_storage_config.cc
     migrators/group_metadata.cc

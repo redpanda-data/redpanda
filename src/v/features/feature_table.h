@@ -27,6 +27,8 @@ class feature_manager;
 
 namespace features {
 
+struct feature_table_snapshot;
+
 enum class feature : std::uint64_t {
     central_config = 0x1,
     consumer_offsets = 0x2,
@@ -311,6 +313,9 @@ private:
 
     // Unit testing hook.
     friend class feature_table_fixture;
+
+    // Permit snapshot generation to read internals
+    friend struct feature_table_snapshot;
 
     ss::gate _gate;
     ss::abort_source _as;
