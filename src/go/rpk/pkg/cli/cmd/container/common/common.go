@@ -135,7 +135,7 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	}
 
 	hostRPCPort, err := getHostPort(
-		config.Default().Redpanda.RPCServer.Port,
+		config.DevDefault().Redpanda.RPCServer.Port,
 		containerJSON,
 	)
 	if err != nil {
@@ -225,7 +225,7 @@ func CreateNode(
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.Default().Redpanda.RPCServer.Port),
+		strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port),
 	)
 	if err != nil {
 		return nil, err
@@ -275,13 +275,13 @@ func CreateNode(
 		"--schema-registry-addr",
 		net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
 		"--rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
+		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
 		"--advertise-kafka-addr",
 		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
 		"--advertise-pandaproxy-addr",
 		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--advertise-rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
+		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
 		"--mode dev-container",
 	}
 	containerConfig := container.Config{

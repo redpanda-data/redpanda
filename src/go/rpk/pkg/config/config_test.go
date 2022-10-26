@@ -18,7 +18,7 @@ import (
 )
 
 func getValidConfig() *Config {
-	conf := Default()
+	conf := DevDefault()
 	conf.Redpanda.SeedServers = []SeedServer{
 		{SocketAddress{"127.0.0.1", 33145}},
 		{SocketAddress{"127.0.0.1", 33146}},
@@ -441,8 +441,8 @@ tune_cpu: true`,
 	}
 }
 
-func TestDefault(t *testing.T) {
-	defaultConfig := Default()
+func TestDevDefault(t *testing.T) {
+	defaultConfig := DevDefault()
 	expected := &Config{
 		fileLocation:   DefaultPath,
 		Pandaproxy:     &Pandaproxy{},
@@ -465,6 +465,46 @@ func TestDefault(t *testing.T) {
 		Rpk: RpkConfig{
 			CoredumpDir:     "/var/lib/redpanda/coredump",
 			Overprovisioned: true,
+		},
+	}
+	require.Exactly(t, expected, defaultConfig)
+}
+
+func TestProdDefault(t *testing.T) {
+	defaultConfig := ProdDefault()
+	expected := &Config{
+		fileLocation:   DefaultPath,
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
+		Redpanda: RedpandaNodeConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaAPI: []NamedAuthNSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9092,
+			}},
+			AdminAPI: []NamedSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9644,
+			}},
+			ID:            nil,
+			SeedServers:   []SeedServer{},
+			DeveloperMode: false,
+		},
+		Rpk: RpkConfig{
+			CoredumpDir:        "/var/lib/redpanda/coredump",
+			Overprovisioned:    false,
+			TuneAioEvents:      true,
+			TuneBallastFile:    true,
+			TuneCPU:            true,
+			TuneClocksource:    true,
+			TuneDiskIrq:        true,
+			TuneDiskScheduler:  true,
+			TuneDiskWriteCache: true,
+			TuneFstrim:         false,
+			TuneNetwork:        true,
+			TuneNomerges:       true,
+			TuneSwappiness:     true,
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -685,7 +725,7 @@ schema_registry: {}
 func TestSetMode(t *testing.T) {
 	fillRpkConfig := func(mode string) func() *Config {
 		return func() *Config {
-			conf := Default()
+			conf := DevDefault()
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
 			conf.Rpk = RpkConfig{
@@ -747,7 +787,7 @@ func TestSetMode(t *testing.T) {
 		{
 			name: "it should preserve all the values that shouldn't be reset",
 			startingConf: func() *Config {
-				conf := Default()
+				conf := DevDefault()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}
@@ -782,7 +822,7 @@ func TestSetMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			defaultConf := Default()
+			defaultConf := DevDefault()
 			if tt.startingConf != nil {
 				defaultConf = tt.startingConf()
 			}

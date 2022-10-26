@@ -242,7 +242,7 @@ func startCluster(
 				"--seeds",
 				net.JoinHostPort(
 					seedState.ContainerIP,
-					strconv.Itoa(config.Default().Redpanda.RPCServer.Port),
+					strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port),
 				),
 			}
 			state, err := common.CreateNode(

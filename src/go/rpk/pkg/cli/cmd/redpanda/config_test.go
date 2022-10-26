@@ -23,7 +23,7 @@ import (
 )
 
 func TestBootstrap(t *testing.T) {
-	defaultRPCPort := config.Default().Redpanda.RPCServer.Port
+	defaultRPCPort := config.DevDefault().Redpanda.RPCServer.Port
 	tests := []struct {
 		name           string
 		ips            []string
@@ -159,7 +159,7 @@ func TestInitNode(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			c := config.Default()
+			c := config.DevDefault()
 			if test.prevID != "" {
 				c.NodeUUID = test.prevID
 			}

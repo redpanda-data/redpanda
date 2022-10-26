@@ -240,7 +240,7 @@ func TestStartCommand(t *testing.T) {
 				"The config should have been created at '%s'",
 				path,
 			)
-			c := config.Default()
+			c := config.DevDefault()
 			// We are adding now this cluster properties as default with
 			// redpanda.developer_mode: true.
 			c.Redpanda.Other = map[string]interface{}{
@@ -463,7 +463,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			cfg := config.Default()
+			cfg := config.DevDefault()
 			return cfg.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -493,7 +493,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, config.Default().Redpanda.ID, conf.Redpanda.ID)
+			require.Exactly(st, config.DevDefault().Redpanda.ID, conf.Redpanda.ID)
 		},
 	}, {
 		name: "it should write default data_directory if loaded config doesn't have one",
@@ -502,7 +502,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			conf := config.Default()
+			conf := config.DevDefault()
 			conf.Redpanda.Directory = ""
 			return conf.Write(fs)
 		},
@@ -514,7 +514,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, config.Default().Redpanda.Directory, conf.Redpanda.Directory)
+			require.Exactly(st, config.DevDefault().Redpanda.Directory, conf.Redpanda.Directory)
 		},
 	}, {
 		name: "it should leave redpanda.node_id untouched if --node-id wasn't passed",
@@ -589,7 +589,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			conf := config.Default()
+			conf := config.DevDefault()
 			return conf.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -598,7 +598,7 @@ func TestStartCommand(t *testing.T) {
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
-				config.Default().Rpk.Overprovisioned,
+				config.DevDefault().Rpk.Overprovisioned,
 				conf.Rpk.Overprovisioned,
 			)
 		},
