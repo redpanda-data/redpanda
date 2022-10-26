@@ -15,9 +15,11 @@ import (
 	"github.com/redpanda-data/console/backend/pkg/schema"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,9 +55,18 @@ func NewConfigMap(
 
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
-	if cm.consoleobj.Status.ConfigMapRef != nil {
+	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
 		cm.log.V(debugLogLevel).Info("config map ref still exist", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
-		return nil
+		// Check ConfigMap is present, in case it is manually deleted
+		err := cm.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &corev1.ConfigMap{})
+		if apierrors.IsNotFound(err) {
+			cm.consoleobj.Status.ConfigMapRef = nil
+			if updateErr := cm.Status().Update(ctx, cm.consoleobj); updateErr != nil {
+				return updateErr
+			}
+			return &resources.RequeueError{Msg: err.Error()}
+		}
+		return err
 	}
 
 	// If old ConfigMaps can't be deleted for any reason, it will not continue reconciliation
