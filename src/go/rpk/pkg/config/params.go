@@ -569,13 +569,26 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 	}()
 
 	tlsNames := make(map[string]bool)
+	mtlsNames := make(map[string]bool)
 	for _, t := range srcTLS {
 		if t.Enabled {
-			tlsNames[t.Name] = true
+			// redpanda uses RequireClientAuth to opt into mtls: if
+			// RequireClientAuth is true, redpanda requires a CA
+			// cert. Conversely, if RequireClientAuth is false, the
+			// broker's CA is meaningless. This is a little bit
+			// backwards, a CA should always vet against client
+			// certs, but we use the bool field to determine mTLS.
+			if t.RequireClientAuth {
+				mtlsNames[t.Name] = true
+			} else {
+				tlsNames[t.Name] = true
+			}
 		}
 	}
-	add := func(noTLS, yesTLS *[]string, hostport string, a NamedSocketAddress) {
-		if tlsNames[a.Name] {
+	add := func(noTLS, yesTLS, yesMTLS *[]string, hostport string, a NamedSocketAddress) {
+		if mtlsNames[a.Name] {
+			*yesMTLS = append(*yesTLS, hostport)
+		} else if tlsNames[a.Name] {
 			*yesTLS = append(*yesTLS, hostport)
 		} else {
 			*noTLS = append(*noTLS, hostport)
@@ -583,19 +596,20 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 	}
 
 	var localhost, loopback, private, public,
-		tlsLocalhost, tlsLoopback, tlsPrivate, tlsPublic []string
+		tlsLocalhost, tlsLoopback, tlsPrivate, tlsPublic,
+		mtlsLocalhost, mtlsLoopback, mtlsPrivate, mtlsPublic []string
 	for _, a := range src {
 		s := net.JoinHostPort(a.Address, strconv.Itoa(a.Port))
 		ip := net.ParseIP(a.Address)
 		switch {
 		case a.Address == "localhost":
-			add(&localhost, &tlsLocalhost, s, a)
+			add(&localhost, &tlsLocalhost, &mtlsLocalhost, s, a)
 		case ip.IsLoopback():
-			add(&loopback, &tlsLoopback, s, a)
+			add(&loopback, &tlsLoopback, &mtlsLoopback, s, a)
 		case ip.IsPrivate():
-			add(&private, &tlsPrivate, s, a)
+			add(&private, &tlsPrivate, &mtlsPrivate, s, a)
 		default:
-			add(&public, &tlsPublic, s, a)
+			add(&public, &tlsPublic, &mtlsPublic, s, a)
 		}
 	}
 	*dst = append(*dst, localhost...)
@@ -611,6 +625,15 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 	*dst = append(*dst, tlsLoopback...)
 	*dst = append(*dst, tlsPrivate...)
 	*dst = append(*dst, tlsPublic...)
+
+	if len(*dst) > 0 {
+		return
+	}
+
+	*dst = append(*dst, mtlsLocalhost...)
+	*dst = append(*dst, mtlsLoopback...)
+	*dst = append(*dst, mtlsPrivate...)
+	*dst = append(*dst, mtlsPublic...)
 }
 
 // Set allow to set a single configuration field by passing a key value pair
