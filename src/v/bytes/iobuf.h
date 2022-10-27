@@ -17,12 +17,11 @@
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
 #include "likely.h"
-#include "oncore.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
+#include "bytes/oncore.h"
 #include "vassert.h"
 
-#include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <cstddef>

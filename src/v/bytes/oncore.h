@@ -8,17 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
-
-#ifndef NDEBUG
-
-#include "seastarx.h"
-#include "vassert.h"
 #include "vlog.h"
 
-#include <seastar/core/smp.hh>
-
+#ifndef NDEBUG
 #define expression_in_debug_mode(x) x
 #else
 #define expression_in_debug_mode(x)
@@ -26,26 +19,24 @@
 
 class oncore final {
 public:
-    void verify_shard_source_location(
-      [[maybe_unused]] const char* file, [[maybe_unused]] int linenum) const {
-        expression_in_debug_mode(vassert(
-          _owner_shard == ss::this_shard_id(),
-          "{}:{} - Shard missmatch -  Operation on shard: {}. Owner shard:{}",
-          file,
-          linenum,
-          ss::this_shard_id(),
-          _owner_shard));
-    }
+    // allow defining this class without importing seastar/core/smp.hh. a
+    // static_assert in oncore.cc that this type is the same as ss::shard_id.
+    using shard_id_type = unsigned;
+
+    // owner shard set on construction
+    oncore();
+
+    void verify_shard_source_location(const char* file, int linenum) const;
 
 private:
-    expression_in_debug_mode(ss::shard_id _owner_shard = ss::this_shard_id();)
+    const shard_id_type _owner_shard;
 };
 
 // Next function should be replace with source_location in c++20 very soon
 // NOLINTNEXTLINE
 #define oncore_debug_verify(member)                                            \
     do {                                                                       \
-        expression_in_debug_mode(member.verify_shard_source_location(          \
+        expression_in_debug_mode((member).verify_shard_source_location(        \
           (const char*)&__FILE__[vlog_internal::log_basename_start<            \
             vlog_internal::basename_index(__FILE__)>::value],                  \
           __LINE__));                                                          \
