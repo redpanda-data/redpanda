@@ -9,6 +9,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/recursive_directory_walker.h"
 #include "seastarx.h"

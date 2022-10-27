@@ -10,6 +10,7 @@
 #include "bytes/iobuf.h"
 
 #include "bytes/details/io_allocation_size.h"
+#include "bytes/iostream.h"
 #include "vassert.h"
 
 #include <seastar/core/bitops.hh>

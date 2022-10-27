@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "bytes/utils.h"
 #include "likely.h"
 #include "model/record.h"

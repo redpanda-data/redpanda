@@ -10,6 +10,7 @@
 #include "storage/snapshot.h"
 
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "hashing/crc32c.h"
 #include "random/generators.h"
 #include "reflection/adl.h"

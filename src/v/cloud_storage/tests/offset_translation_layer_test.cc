@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iostream.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/types.h"
 #include "seastarx.h"

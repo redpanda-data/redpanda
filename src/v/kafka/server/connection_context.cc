@@ -11,6 +11,7 @@
 #include "kafka/server/connection_context.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/server/handlers/handler_interface.h"

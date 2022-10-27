@@ -13,6 +13,7 @@
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "bytes/tests/utils.h"
 #include "bytes/utils.h"
 

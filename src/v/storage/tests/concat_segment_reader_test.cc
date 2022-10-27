@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iostream.h"
 #include "model/tests/random_batch.h"
 #include "storage/directories.h"
 #include "storage/log_manager.h"

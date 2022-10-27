@@ -9,6 +9,7 @@
 
 #include "cluster/rm_stm.h"
 
+#include "bytes/iostream.h"
 #include "cluster/logger.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "kafka/protocol/request_reader.h"

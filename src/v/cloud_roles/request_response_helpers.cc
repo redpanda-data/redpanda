@@ -11,6 +11,7 @@
 #include "cloud_roles/request_response_helpers.h"
 
 #include "bytes/iobuf_istreambuf.h"
+#include "bytes/iostream.h"
 #include "json/istreamwrapper.h"
 
 namespace cloud_roles {

@@ -10,6 +10,7 @@
 #include "storage/compacted_index_chunk_reader.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "hashing/crc32c.h"
 #include "reflection/adl.h"
 #include "storage/compacted_index.h"

@@ -22,7 +22,6 @@
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
-#include <seastar/core/iostream.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -393,21 +392,10 @@ inline void iobuf::trim_back(size_t n) {
     }
 }
 
-/// \brief wraps an iobuf so it can be used as an input stream data source
-ss::input_stream<char> make_iobuf_input_stream(iobuf io);
-
-/// \brief wraps the iobuf to be used as an output stream sink
-ss::output_stream<char> make_iobuf_ref_output_stream(iobuf& io);
-
-/// \brief exactly like input_stream<char>::read_exactly but returns iobuf
-ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
-
 /// \brief keeps the iobuf in the deferred destructor of scattered_msg<char>
 /// and wraps each details::io_fragment as a scattered_message<char>::static()
 /// const char*
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
-
-ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
 namespace std {

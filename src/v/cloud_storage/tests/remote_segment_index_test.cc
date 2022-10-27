@@ -9,6 +9,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "common_def.h"
 #include "model/record_batch_types.h"

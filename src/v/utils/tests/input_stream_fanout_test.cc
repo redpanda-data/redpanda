@@ -10,6 +10,7 @@
  */
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "random/generators.h"
 #include "utils/fragmented_vector.h"
 #include "utils/stream_utils.h"

@@ -12,6 +12,7 @@
 #include "coproc/offset_storage_utils.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "coproc/logger.h"
 #include "reflection/absl/flat_hash_map.h"
 #include "reflection/absl/node_hash_map.h"

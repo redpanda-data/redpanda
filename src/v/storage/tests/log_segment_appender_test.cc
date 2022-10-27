@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "storage/segment_appender.h"

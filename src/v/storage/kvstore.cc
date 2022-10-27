@@ -10,6 +10,7 @@
 #include "storage/kvstore.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "config/configuration.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"

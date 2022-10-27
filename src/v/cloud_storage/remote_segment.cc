@@ -11,6 +11,7 @@
 #include "cloud_storage/remote_segment.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"

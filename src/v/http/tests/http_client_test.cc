@@ -9,6 +9,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "http/chunk_encoding.h"
 #include "http/client.h"
 #include "net/dns.h"
