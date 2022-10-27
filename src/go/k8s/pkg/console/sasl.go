@@ -190,27 +190,16 @@ func NewKafkaACL(
 
 // Ensure implements Resource interface
 func (k *KafkaACL) Ensure(ctx context.Context) error {
-	// Build ACL for console SASL user to access everything
-	b := kadm.NewACLs().
-		Allow(k.superUsersResource.GetUsername()).
-		Topics("*").Groups("*").Clusters().Operations(kadm.OpAll).
-		ResourcePatternType(kadm.ACLPatternLiteral)
-	if err := b.ValidateCreate(); err != nil {
-		return fmt.Errorf("validating create ACLs: %w", err)
-	}
-	b.PrefixUserExcept()
-
-	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj, k.store)
+	kadmclient, b, err := k.createAdminClient(ctx)
 	if err != nil {
-		return fmt.Errorf("creating kafka admin client: %w", err)
+		return fmt.Errorf("creating console sasl user: %w", err)
 	}
 
 	results, err := kadmclient.CreateACLs(ctx, b)
-	if err != nil {
-		return fmt.Errorf("creating kafka ACLs: %w", err)
-	}
-	// CreateACLs returns no error, check results
 	var errList []error
+	if err != nil {
+		errList = append(errList, err)
+	}
 	for _, r := range results {
 		if r.Err != nil {
 			errList = append(errList, r.Err)
@@ -243,27 +232,16 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	// Build ACL for console SASL user to access everything
-	b := kadm.NewACLs().
-		Allow(k.superUsersResource.GetUsername()).AllowHosts().
-		Topics("*").Groups("*").Clusters().Operations(kadm.OpAll).
-		ResourcePatternType(kadm.ACLPatternLiteral)
-	if err := b.ValidateCreate(); err != nil {
-		return fmt.Errorf("validating create ACLs: %w", err)
-	}
-	b.PrefixUserExcept()
-
-	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj, k.store)
+	kadmclient, b, err := k.createAdminClient(ctx)
 	if err != nil {
-		return fmt.Errorf("creating kafka admin client: %w", err)
+		return fmt.Errorf("cleaning console sasl user: %w", err)
 	}
 
 	results, err := kadmclient.DeleteACLs(ctx, b)
-	if err != nil {
-		return fmt.Errorf("deleting kafka ACLs: %w", err)
-	}
-	// DeleteACLs returns no error, check results
 	var errList []error
+	if err != nil {
+		errList = append(errList, err)
+	}
 	for _, r := range results {
 		if r.Err != nil {
 			errList = append(errList, r.Err)
@@ -275,4 +253,22 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 
 	controllerutil.RemoveFinalizer(k.consoleobj, ConsoleACLFinalizer)
 	return k.Update(ctx, k.consoleobj)
+}
+
+func (k *KafkaACL) createAdminClient(ctx context.Context) (KafkaAdminClient, *kadm.ACLBuilder, error) {
+	// Build ACL for console SASL user to access everything
+	b := kadm.NewACLs().
+		Allow(k.superUsersResource.GetUsername()).AllowHosts().
+		Topics("*").Groups("*").Clusters().Operations(kadm.OpAll).
+		ResourcePatternType(kadm.ACLPatternLiteral)
+	if err := b.ValidateCreate(); err != nil {
+		return nil, nil, fmt.Errorf("validating ACLs: %w", err)
+	}
+	b.PrefixUserExcept()
+
+	kadmclient, err := k.kafkaAdmin(ctx, k.Client, k.clusterobj, k.store)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating kafka admin client: %w", err)
+	}
+	return kadmclient, b, nil
 }
