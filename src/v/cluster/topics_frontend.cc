@@ -63,6 +63,7 @@ topics_frontend::topics_frontend(
   ss::sharded<ss::abort_source>& as,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<features::feature_table>& features,
+  ss::sharded<cluster::members_table>& members_table,
   config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
@@ -75,6 +76,7 @@ topics_frontend::topics_frontend(
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
+  , _members_table(members_table)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio) {}
 
 static bool
