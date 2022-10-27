@@ -162,7 +162,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		&ips,
 		"ips",
 		[]string{},
-		"The list of known node addresses or hostnames",
+		"Comma-separated list of the seed node addresses or hostnames. It is strongly recommended that this refers to at least three nodes",
 	)
 	c.Flags().StringVar(
 		&configPath,
@@ -253,6 +253,9 @@ func parseSeedIPs(ips []string) ([]config.SeedServer, error) {
 		}
 		seeds = append(seeds, seed)
 	}
+	if len(seeds) == 0 {
+		return nil, errors.New("must provide seed servers in --ips")
+	}
 	return seeds, nil
 }
 
@@ -313,9 +316,9 @@ func isPrivate(ip net.IP) (bool, error) {
 
 const helpBootstrap = `Initialize the configuration to bootstrap a cluster.
 
---id is mandatory. bootstrap will expect the machine it's running on
-to have only one private non-loopback IP address associated to it,
-and use it in the configuration as the node's address.
+bootstrap will expect the machine it's running on to have only one private
+non-loopback IP address associated to it, and use it in the configuration as
+the node's address.
 
 If it has multiple IPs, --self must be specified.
 In that case, the given IP will be used without checking whether it's

@@ -25,6 +25,27 @@ import (
 
 func TestBootstrap(t *testing.T) {
 	defaultRPCPort := config.DevDefault().Redpanda.RPCServer.Port
+	simpleIps := []string{"187.89.76.3", "192.168.34.5", "192.168.45.8"}
+	simpleSeeds := []config.SeedServer{
+		{
+			Host: config.SocketAddress{
+				Address: "187.89.76.3",
+				Port:    defaultRPCPort,
+			},
+		},
+		{
+			Host: config.SocketAddress{
+				Address: "192.168.34.5",
+				Port:    defaultRPCPort,
+			},
+		},
+		{
+			Host: config.SocketAddress{
+				Address: "192.168.45.8",
+				Port:    defaultRPCPort,
+			},
+		},
+	}
 	tests := []struct {
 		name           string
 		ips            []string
@@ -34,39 +55,24 @@ func TestBootstrap(t *testing.T) {
 		expectedErr    string
 	}{
 		{
-			name: "it should omit node id without errors",
-			self: "192.168.34.5",
+			name:           "it should omit node id without errors",
+			ips:            simpleIps,
+			self:           "192.168.34.5",
+			expSeedServers: simpleSeeds,
 		},
 		{
-			name: "it should set the root node config for a single node",
-			id:   "1",
-			self: "192.168.34.5",
+			name:           "it should set the root node config for a single node",
+			ips:            simpleIps,
+			id:             "1",
+			self:           "192.168.34.5",
+			expSeedServers: simpleSeeds,
 		},
 		{
-			name: "it should fill the seed servers",
-			ips:  []string{"187.89.76.3", "192.168.34.5", "192.168.45.8"},
-			expSeedServers: []config.SeedServer{
-				{
-					Host: config.SocketAddress{
-						Address: "187.89.76.3",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "192.168.34.5",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "192.168.45.8",
-						Port:    defaultRPCPort,
-					},
-				},
-			},
-			self: "192.168.34.5",
-			id:   "1",
+			name:           "it should fill the seed servers",
+			ips:            simpleIps,
+			expSeedServers: simpleSeeds,
+			self:           "192.168.34.5",
+			id:             "1",
 		},
 		{
 			name: "it should fill the seed servers with hostnames",
