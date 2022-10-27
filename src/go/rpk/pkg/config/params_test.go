@@ -290,21 +290,31 @@ func TestAddUnsetDefaults(t *testing.T) {
 			inCfg: &Config{
 				Redpanda: RedpandaNodeConfig{
 					AdminAPI: []NamedSocketAddress{
-						{Address: "10.0.0.1", Port: 4444},     // private
-						{Address: "127.0.0.1", Port: 4444},    // loopback
-						{Address: "localhost", Port: 4444},    // localhost
-						{Address: "122.65.33.12", Port: 4444}, // public
+						{Address: "10.0.0.1", Port: 4444, Name: "tls"},     // private, TLS
+						{Address: "127.0.0.1", Port: 4444, Name: "tls"},    // loopback, TLS
+						{Address: "localhost", Port: 4444, Name: "tls"},    // localhost, TLS
+						{Address: "122.65.33.12", Port: 4444, Name: "tls"}, // public, TLS
+						{Address: "10.0.2.1", Port: 7777},                  // private
+						{Address: "127.0.2.1", Port: 7777},                 // loopback
+						{Address: "localhost", Port: 7777},                 // localhost
+						{Address: "122.65.32.12", Port: 7777},              // public
 					},
+					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 				},
 			},
 			expCfg: &Config{
 				Redpanda: RedpandaNodeConfig{
 					AdminAPI: []NamedSocketAddress{
-						{Address: "10.0.0.1", Port: 4444},
-						{Address: "127.0.0.1", Port: 4444},
-						{Address: "localhost", Port: 4444},
-						{Address: "122.65.33.12", Port: 4444},
+						{Address: "10.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "127.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "localhost", Port: 4444, Name: "tls"},
+						{Address: "122.65.33.12", Port: 4444, Name: "tls"},
+						{Address: "10.0.2.1", Port: 7777},
+						{Address: "127.0.2.1", Port: 7777},
+						{Address: "localhost", Port: 7777},
+						{Address: "122.65.32.12", Port: 7777},
 					},
+					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 				},
 				Rpk: RpkConfig{
 					KafkaAPI: RpkKafkaAPI{
@@ -312,10 +322,14 @@ func TestAddUnsetDefaults(t *testing.T) {
 					},
 					AdminAPI: RpkAdminAPI{
 						Addresses: []string{
-							"localhost:4444",    // private
-							"127.0.0.1:4444",    // loopback
-							"10.0.0.1:4444",     // private
-							"122.65.33.12:4444", // public
+							"localhost:7777",    // localhost
+							"127.0.2.1:7777",    // loopback
+							"10.0.2.1:7777",     // private
+							"122.65.32.12:7777", // public
+							"localhost:4444",    // localhost, TLS
+							"127.0.0.1:4444",    // loopback, TLS
+							"10.0.0.1:4444",     // private, TLS
+							"122.65.33.12:4444", // public, TLS
 						},
 					},
 				},

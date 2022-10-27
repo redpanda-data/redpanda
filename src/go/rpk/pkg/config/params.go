@@ -546,35 +546,63 @@ func (c *Config) addUnsetDefaults() {
 		brokers = []string{"127.0.0.1:9092"}
 	}
 
+	// If we have admin addrs, or we don't and there are also no redpanda
+	// admin addrs, we quit early with our default.
 	addrs := r.AdminAPI.Addresses
-	defer func() { r.AdminAPI.Addresses = addrs }()
-	if len(addrs) == 0 && len(c.Redpanda.AdminAPI) > 0 {
-		// We want to order the admin API addresses by:
-		// localhost -> loobpack -> private -> public.
-		var localhost, loopback, private, public []string
-		for _, adminAPI := range c.Redpanda.AdminAPI {
-			s := net.JoinHostPort(adminAPI.Address, strconv.Itoa(adminAPI.Port))
-			ip := net.ParseIP(adminAPI.Address)
-			switch {
-			case adminAPI.Address == "localhost":
-				localhost = append(localhost, s)
-			case ip.IsLoopback():
-				loopback = append(loopback, s)
-			case ip.IsPrivate():
-				private = append(private, s)
-			default:
-				public = append(public, s)
-			}
+	defer func() {
+		if len(addrs) == 0 {
+			addrs = []string{"127.0.0.1:9644"}
 		}
-		addrs = append(addrs, localhost...)
-		addrs = append(addrs, loopback...)
-		addrs = append(addrs, private...)
-		addrs = append(addrs, public...)
+		r.AdminAPI.Addresses = addrs
+	}()
+	if len(addrs) != 0 || len(c.Redpanda.AdminAPI) == 0 {
+		return
 	}
 
-	if len(addrs) == 0 {
-		addrs = []string{"127.0.0.1:9644"}
+	// We want to order the admin API addresses by:
+	//
+	// 	localhost -> loopback -> private -> public
+	//
+	// We also want to favor non-TLS. To do that, we map all TLS names if
+	// they are enabled, and then following the same grouping.
+	tlsNames := make(map[string]bool)
+	for _, t := range c.Redpanda.AdminAPITLS {
+		if t.Enabled {
+			tlsNames[t.Name] = true
+		}
 	}
+	add := func(noTLS, yesTLS *[]string, hostport string, a NamedSocketAddress) {
+		if tlsNames[a.Name] {
+			*yesTLS = append(*yesTLS, hostport)
+		} else {
+			*noTLS = append(*noTLS, hostport)
+		}
+	}
+
+	var localhost, loopback, private, public,
+		tlsLocalhost, tlsLoopback, tlsPrivate, tlsPublic []string
+	for _, a := range c.Redpanda.AdminAPI {
+		s := net.JoinHostPort(a.Address, strconv.Itoa(a.Port))
+		ip := net.ParseIP(a.Address)
+		switch {
+		case a.Address == "localhost":
+			add(&localhost, &tlsLocalhost, s, a)
+		case ip.IsLoopback():
+			add(&loopback, &tlsLoopback, s, a)
+		case ip.IsPrivate():
+			add(&private, &tlsPrivate, s, a)
+		default:
+			add(&public, &tlsPublic, s, a)
+		}
+	}
+	addrs = append(addrs, localhost...)
+	addrs = append(addrs, loopback...)
+	addrs = append(addrs, private...)
+	addrs = append(addrs, public...)
+	addrs = append(addrs, tlsLocalhost...)
+	addrs = append(addrs, tlsLoopback...)
+	addrs = append(addrs, tlsPrivate...)
+	addrs = append(addrs, tlsPublic...)
 }
 
 // Set allow to set a single configuration field by passing a key value pair
