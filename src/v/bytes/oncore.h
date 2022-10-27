@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "vlog.h"
+#include "utils/source_location.h"
 
 #ifndef NDEBUG
 #define expression_in_debug_mode(x) x
@@ -37,7 +37,5 @@ private:
 #define oncore_debug_verify(member)                                            \
     do {                                                                       \
         expression_in_debug_mode((member).verify_shard_source_location(        \
-          (const char*)&__FILE__[vlog_internal::log_basename_start<            \
-            vlog_internal::basename_index(__FILE__)>::value],                  \
-          __LINE__));                                                          \
+          get_file_basename(), __LINE__));                                     \
     } while (0)
