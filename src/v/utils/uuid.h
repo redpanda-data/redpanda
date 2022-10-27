@@ -9,7 +9,6 @@
 #pragma once
 
 #include <absl/hash/hash.h>
-#include <boost/functional/hash.hpp>
 #include <boost/uuid/uuid.hpp>
 
 #include <vector>
@@ -57,12 +56,3 @@ private:
 
     underlying_t _uuid;
 };
-
-namespace std {
-template<>
-struct hash<uuid_t> {
-    size_t operator()(const uuid_t& u) const {
-        return boost::hash<uuid_t::underlying_t>()(u.uuid());
-    }
-};
-} // namespace std
