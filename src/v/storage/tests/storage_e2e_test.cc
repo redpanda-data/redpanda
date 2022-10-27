@@ -695,8 +695,25 @@ ss::future<storage::append_result> append_exactly(
 
     if (key) {
         key_buf = bytes_to_iobuf(*key);
-        val_sz -= key_buf.size_bytes();
     }
+
+    auto real_batch_size = sizeof(model::record_attributes::type) // attributes
+                           + vint::vint_size(0)   // timestamp delta
+                           + vint::vint_size(0)   // offset_delta
+                           + key_buf.size_bytes() // key size
+                           + vint::vint_size(0)   // headers size
+                           + 2;
+
+    if (key) {
+        real_batch_size += vint::vint_size(
+          static_cast<int32_t>(key_buf.size_bytes()));
+    } else {
+        real_batch_size += vint::vint_size(-1);
+    }
+
+    real_batch_size += vint::vint_size(val_sz - real_batch_size);
+
+    val_sz -= real_batch_size;
 
     for (int i = 0; i < batch_count; ++i) {
         storage::record_batch_builder builder(
@@ -1323,7 +1340,6 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     // Add 100 batches with one event each, all events having the same key
     static constexpr size_t batch_size = 1_KiB; // Size visible to Kafka API
-    static constexpr size_t batch_size_ondisk = 1033; // Size internally
     static constexpr size_t input_batch_count = 100;
 
     append_exactly(log, input_batch_count, batch_size, "key")
@@ -1336,7 +1352,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     // Read back and validate content of log pre-compaction.
     BOOST_REQUIRE_EQUAL(
       get_disk_log(log)->get_probe().partition_size(),
-      input_batch_count * batch_size_ondisk);
+      input_batch_count * batch_size);
     BOOST_REQUIRE_EQUAL(
       read_and_validate_all_batches(log).size(), input_batch_count);
     auto lstats_before = log.offsets();
@@ -1347,7 +1363,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     log.set_collectible_offset(log.offsets().dirty_offset);
     storage::compaction_config ccfg(
       model::timestamp::min(),
-      60_KiB,
+      50_KiB,
       model::offset::max(),
       ss::default_priority_class(),
       as);
@@ -1405,7 +1421,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
         auto ntp = model::ntp("default", ssx::sformat("test-{}", i), 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         auto log = mgr.manage(std::move(ntp_cfg)).get0();
-        append_exactly(log, 1000, 100).get0();
+        append_exactly(log, 2000, 100).get0();
         logs.push_back(log);
     }
     std::vector<size_t> sizes;
@@ -3051,4 +3067,199 @@ FIXTURE_TEST(test_max_compact_offset_unset, storage_test_fixture) {
        .msg_per_segment = 100,
        .segments = 3},
       *this);
+}
+
+FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
+    size_t batch_size = 128;
+    size_t segment_size = 512_KiB;
+    auto batches_per_segment = size_t(segment_size / batch_size);
+    auto batch_cnt = batches_per_segment * 10 + 1;
+    info(
+      "using batch of size {}, with {} batches per segment, total batches: {}",
+      batch_size,
+      batches_per_segment,
+      batch_cnt);
+
+    struct test_case {
+        std::optional<size_t> default_local_bytes;
+        std::optional<size_t> default_cloud_bytes;
+        tristate<size_t> topic_local_bytes;
+        tristate<size_t> topic_cloud_bytes;
+        bool cloud_storage;
+        size_t expected_bytes_left;
+    };
+    std::vector<test_case> test_cases;
+    auto retain_segments = [&](int n) { return segment_size * n + batch_size; };
+    /**
+     * Retention disabled
+     */
+    test_cases.push_back(test_case{
+      std::nullopt,                   // default local
+      std::nullopt,                   // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      false,
+      batch_size * batch_cnt,
+    });
+
+    test_cases.push_back(test_case{
+      std::nullopt,                   // default local
+      std::nullopt,                   // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      true,
+      batch_size * batch_cnt,
+    });
+    /**
+     * Local retention takes precedence over cloud retention
+     */
+    // defaults
+    test_cases.push_back(test_case{
+      retain_segments(4),             // default local
+      retain_segments(6),             // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      true,
+      segment_size * 4 + batch_size,
+    });
+
+    // per topic configuration
+    test_cases.push_back(test_case{
+      retain_segments(4),                     // default local
+      retain_segments(6),                     // default cloud
+      tristate<size_t>(segment_size * 2 + 1), // topic local
+      tristate<size_t>(segment_size * 3 + 1), // topic cloud
+      true,
+      segment_size * 2 + batch_size,
+    });
+    // /**
+    //  * Local retention is capped by cloud retention
+    //  */
+    // defaults, local retention is larger than remote one, it should be capped
+    test_cases.push_back(test_case{
+      retain_segments(5),             // default local
+      retain_segments(3),             // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      true,
+      segment_size * 3 + batch_size,
+    });
+
+    // defaults, local retention is disabled, it should be replaced by cloud one
+    test_cases.push_back(test_case{
+      std::nullopt,                   // default local
+      retain_segments(3),             // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      true,
+      segment_size * 3 + batch_size,
+    });
+
+    // topic configuration, local retention is larger than remote one, it
+    // should be capped
+    test_cases.push_back(test_case{
+      retain_segments(6),                   // default local
+      retain_segments(8),                   // default cloud
+      tristate<size_t>(retain_segments(5)), // topic local
+      tristate<size_t>(retain_segments(2)), // topic cloud
+      true,
+      segment_size * 2 + batch_size,
+    });
+    //  topic configuration, local retention is disabled, it should be
+    // replaced by cloud one
+    test_cases.push_back(test_case{
+      retain_segments(6),                   // default local
+      retain_segments(8),                   // default cloud
+      tristate<size_t>{},                   // topic local
+      tristate<size_t>(retain_segments(2)), // topic cloud
+      true,
+      segment_size * 2 + batch_size,
+    });
+
+    // cloud storage disabled, use whatever is there in cloud settings
+    test_cases.push_back(test_case{
+      retain_segments(6),                   // default local
+      retain_segments(8),                   // default cloud
+      tristate<size_t>(retain_segments(2)), // topic local
+      tristate<size_t>(retain_segments(5)), // topic cloud
+      false,
+      segment_size * 5 + batch_size,
+    });
+
+    test_cases.push_back(test_case{
+      retain_segments(2),             // default local
+      retain_segments(6),             // default cloud
+      tristate<size_t>(std::nullopt), // topic local
+      tristate<size_t>(std::nullopt), // topic cloud
+      false,
+      segment_size * 6 + batch_size,
+    });
+
+    for (auto& tc : test_cases) {
+        auto cfg = default_log_config(test_dir);
+        // enable cloud storage
+        config::shard_local_cfg().cloud_storage_enable_remote_write.set_value(
+          tc.cloud_storage);
+        config::shard_local_cfg().cloud_storage_enabled.set_value(
+          tc.cloud_storage);
+
+        cfg.max_segment_size = config::mock_binding<size_t>(
+          size_t(segment_size));
+        cfg.retention_bytes = config::mock_binding<std::optional<size_t>>(
+          std::optional<size_t>(tc.default_cloud_bytes));
+
+        config::shard_local_cfg().retention_bytes.set_value(
+          tc.default_cloud_bytes);
+        config::shard_local_cfg()
+          .retention_local_target_bytes_default.set_value(
+            tc.default_local_bytes);
+
+        cfg.stype = storage::log_config::storage_type::disk;
+        cfg.segment_size_jitter = storage::jitter_percents(0);
+        ss::abort_source as;
+        storage::log_manager mgr = make_log_manager(cfg);
+
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp(model::kafka_namespace, "test", 0);
+        storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+        storage::ntp_config::default_overrides overrides;
+        if (
+          tc.topic_cloud_bytes.has_value()
+          || tc.topic_cloud_bytes.is_disabled()) {
+            overrides.retention_bytes = tc.topic_cloud_bytes;
+            ntp_cfg.set_overrides(overrides);
+        }
+
+        if (
+          tc.topic_cloud_bytes.has_value()
+          || tc.topic_cloud_bytes.is_disabled()) {
+            overrides.retention_local_target_bytes = tc.topic_cloud_bytes;
+            ntp_cfg.set_overrides(overrides);
+        }
+
+        auto log = mgr.manage(std::move(ntp_cfg)).get0();
+        auto deferred_rm = ss::defer(
+          [&mgr, ntp]() mutable { mgr.remove(ntp).get(); });
+
+        for (int i = 0; i < batch_cnt; ++i) {
+            append_exactly(log, 1, batch_size).get();
+        }
+        auto disk_log = get_disk_log(log);
+
+        BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 11);
+        log.set_collectible_offset(model::offset::max());
+
+        log
+          .compact(storage::compaction_config(
+            model::timestamp::min(),
+            cfg.retention_bytes(),
+            model::offset::max(),
+            ss::default_priority_class(),
+            as))
+          .get();
+        // make sure we retain less than expected bytes
+        BOOST_REQUIRE_LE(disk_log->size_bytes(), tc.expected_bytes_left);
+        BOOST_REQUIRE_GT(
+          disk_log->size_bytes(), tc.expected_bytes_left - segment_size);
+    }
 }

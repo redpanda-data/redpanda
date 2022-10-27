@@ -162,6 +162,8 @@ private:
 
     compaction_config override_retention_config(compaction_config cfg) const;
 
+    bool is_cloud_retention_active() const;
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
