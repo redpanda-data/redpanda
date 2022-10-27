@@ -63,33 +63,33 @@ class NodeOperationFuzzyTest(EndToEndTest):
         decommissioned_nodes = []
         operations = []
 
-        def decommission(id):
-            active_nodes.remove(id)
-            decommissioned_nodes.append(id)
+        def decommission(idx):
+            active_nodes.remove(idx)
+            decommissioned_nodes.append(idx)
 
-        def add(id):
-            active_nodes.append(id)
-            decommissioned_nodes.remove(id)
+        def add(idx):
+            active_nodes.append(idx)
+            decommissioned_nodes.remove(idx)
 
         for _ in range(0, count):
             if len(active_nodes) <= 3:
-                id = random.choice(decommissioned_nodes)
-                operations.append((ADD, id))
-                add(id)
+                idx = random.choice(decommissioned_nodes)
+                operations.append((ADD, idx))
+                add(idx)
             elif len(decommissioned_nodes) == 0:
-                id = random.choice(active_nodes)
-                operations.append((DECOMMISSION, id))
-                decommission(id)
+                idx = random.choice(active_nodes)
+                operations.append((DECOMMISSION, idx))
+                decommission(idx)
             else:
                 op = random.choice(op_types)
                 if op == DECOMMISSION:
-                    id = random.choice(active_nodes)
-                    operations.append((DECOMMISSION, id))
-                    decommission(id)
+                    idx = random.choice(active_nodes)
+                    operations.append((DECOMMISSION, idx))
+                    decommission(idx)
                 elif op == ADD or op == ADD_NO_WAIT:
-                    id = random.choice(decommissioned_nodes)
-                    operations.append((op, id))
-                    add(id)
+                    idx = random.choice(decommissioned_nodes)
+                    operations.append((op, idx))
+                    add(idx)
 
         return operations
 
@@ -133,6 +133,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
             extra_rp_conf["enable_auto_rebalance_on_node_add"] = True
         else:
             extra_rp_conf["partition_autobalancing_mode"] = "node_add"
+
+        # Older versions don't support automatic node ID assignment.
+        self._auto_assign_node_ids = num_to_upgrade == 0
+
         self.redpanda = RedpandaService(self.test_context,
                                         5,
                                         extra_rp_conf=extra_rp_conf)
@@ -144,7 +148,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                               RedpandaInstaller.HEAD)
             self.redpanda.restart_nodes(self.redpanda.nodes[:num_to_upgrade])
         else:
-            self.redpanda.start()
+            self.redpanda.start(auto_assign_node_id=True)
         # create some topics
         topics = self._create_random_topics(10, compacted_topics)
         self.redpanda.logger.info(f"using topics: {topics}")
@@ -165,7 +169,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         # collect current mapping
         self.ids_mapping = {}
         for n in self.redpanda.nodes:
-            self.ids_mapping[self.redpanda.idx(n)] = self.redpanda.idx(n)
+            self.ids_mapping[self.redpanda.idx(n)] = self.redpanda.node_id(n)
         self.next_id = sorted(list(self.ids_mapping.keys()))[-1] + 1
         self.redpanda.logger.info(f"Initial ids mapping: {self.ids_mapping}")
         NODE_OP_TIMEOUT = 360
@@ -293,23 +297,27 @@ class NodeOperationFuzzyTest(EndToEndTest):
                     account.hostname, seeds))
 
         def add_node(idx, cleanup=True):
-            id = get_next_id()
-            self.logger.info(f"adding node: {idx} back with new id: {id}")
-            self.ids_mapping[idx] = id
+            self.logger.info(f"adding node: {idx}")
             self.redpanda.stop_node(self.redpanda.get_node(idx))
             if cleanup:
                 self.redpanda.clean_node(self.redpanda.get_node(idx),
                                          preserve_logs=True,
                                          preserve_current_install=True)
+            override_cfg_params = {"seed_servers": seed_servers_for(idx)}
+            if not self._auto_assign_node_ids:
+                override_cfg_params["node_id"] = get_next_id()
+
             # we do not reuse previous node ids and override seed server list
+            node = self.redpanda.get_node(idx)
             self.redpanda.start_node(
-                self.redpanda.get_node(idx),
+                node,
                 timeout=NodeOperationFuzzyTest.min_inter_failure_time +
                 NodeOperationFuzzyTest.max_suspend_duration_seconds + 30,
-                override_cfg_params={
-                    "node_id": id,
-                    "seed_servers": seed_servers_for(idx)
-                })
+                override_cfg_params=override_cfg_params,
+                auto_assign_node_id=self._auto_assign_node_ids)
+            id = self.redpanda.node_id(node, force_refresh=True)
+            self.ids_mapping[idx] = id
+            self.logger.info(f"added node: {idx} with id: {id}")
 
         def wait_for_new_replicas(idx):
             def has_new_replicas():
