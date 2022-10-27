@@ -10,6 +10,8 @@
 
 #include "v8_engine/data_policy.h"
 
+#include "vassert.h"
+
 namespace v8_engine {
 
 std::ostream& operator<<(std::ostream& os, const data_policy& datapolicy) {

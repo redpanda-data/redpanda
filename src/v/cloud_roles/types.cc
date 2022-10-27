@@ -10,6 +10,8 @@
 
 #include "cloud_roles/types.h"
 
+#include <seastar/util/variant_utils.hh>
+
 namespace cloud_roles {
 
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind) {
