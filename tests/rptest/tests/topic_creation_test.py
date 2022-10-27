@@ -26,7 +26,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import wait_for_segments_removal
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, parametrize, ok_to_fail
+from ducktape.mark import matrix, parametrize
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -437,7 +437,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
     def setUp(self):
         self.installer.install(
             self.redpanda.nodes,
-            (22, 2, 4),
+            (22, 2, 7),
         )
         self.redpanda.start()
 
@@ -618,13 +618,12 @@ class CreateTopicUpgradeTest(RedpandaTest):
                 f"deleted objects (should be empty): {deleted_objects}")
             assert len(deleted_objects) == 0
 
-    # Previous version of Redpanda have a bug due to which the topic
-    # level overrides are not applied for remote read/write. This causes
-    # the test to fail. Remove ok_to_fail once #6663 is merged and
-    # backported. TODO(vlad)
-    @ok_to_fail
     @cluster(num_nodes=3)
     def test_retention_upgrade_with_cluster_remote_write(self):
+        """
+        Validate how the cluster-wide cloud_storage_enable_remote_write
+        is handled on upgrades from <=22.2
+        """
         self.redpanda.set_cluster_config(
             {"cloud_storage_enable_remote_write": "true"}, expect_restart=True)
 
@@ -644,40 +643,20 @@ class CreateTopicUpgradeTest(RedpandaTest):
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
-        without_remote_write_config = self.rpk.describe_topic_configs(
-            "test-topic-without-remote-write")
-        with_remote_write_config = self.rpk.describe_topic_configs(
-            "test-topic-with-remote-write")
+        # Wait for any migration steps to complete
+        self.redpanda.await_feature_active('cloud_retention', timeout_sec=30)
 
-        self.logger.debug(
-            f"test-topic-with-remote-write config: {with_remote_write_config}")
-        self.logger.debug(
-            f"test-topic-without-remote-write config: {without_remote_write_config}"
-        )
-
-        # 'test-topic-without-remote-write' overwrites the global cluster config,
-        # so retention.* configs are preserved and retention.local.target.* configs
-        # are set to their default values, but ignored
-        assert without_remote_write_config["retention.bytes"] == (
-            "10000", "DYNAMIC_TOPIC_CONFIG")
-        assert without_remote_write_config["retention.ms"][
-            1] == "DEFAULT_CONFIG"
-
-        assert without_remote_write_config["retention.local.target.bytes"] == (
-            "-1", "DEFAULT_CONFIG")
-        assert with_remote_write_config["retention.local.target.ms"][
-            1] == "DEFAULT_CONFIG"
-
-        # "test-topic-with-remote-write-config" does not overwrite the
-        # cluster level remote write enablement, so retention.local.target.* configs
-        # should be initialised from retention.* and retention.* configs should
-        # be disabled.
-        assert with_remote_write_config["retention.bytes"] == (
-            "-1", "DYNAMIC_TOPIC_CONFIG")
-        assert with_remote_write_config["retention.ms"] == (
-            "-1", "DYNAMIC_TOPIC_CONFIG")
-
-        assert with_remote_write_config["retention.local.target.bytes"] == (
-            "10000", "DYNAMIC_TOPIC_CONFIG")
-        assert with_remote_write_config["retention.local.target.ms"][
-            1] == "DEFAULT_CONFIG"
+        # Because legacy Redpanda treated cloud_storage_enable_remote_write as
+        # an override to the topic property (even if the topic remote.write was explicitly
+        # set to false), our two topics should end up with identical config: both
+        # with SI enabled and with their retention settings transposed.
+        for topic in [
+                "test-topic-with-remote-write",
+                "test-topic-without-remote-write"
+        ]:
+            config = self.rpk.describe_topic_configs(topic)
+            assert config["retention.ms"] == ("-1", "DYNAMIC_TOPIC_CONFIG")
+            assert config["retention.bytes"] == ("-1", "DYNAMIC_TOPIC_CONFIG")
+            assert config["retention.local.target.bytes"] == (
+                "10000", "DYNAMIC_TOPIC_CONFIG")
+            assert config["retention.local.target.ms"][1] == "DEFAULT_CONFIG"
