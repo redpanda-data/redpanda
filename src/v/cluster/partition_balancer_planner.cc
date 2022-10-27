@@ -720,17 +720,20 @@ partition_balancer_planner::plan_reassignments(
     }
 
     if (
-      !result.violations.is_empty()
-      || !_state.ntps_with_broken_rack_constraint().empty()) {
-        init_ntp_sizes_from_health_report(health_report, rrs);
-        get_unavailable_nodes_reassignments(result, rrs);
-        get_rack_constraint_repair_reassignments(result, rrs);
-        get_full_node_reassignments(result, rrs);
-        if (!result.reassignments.empty()) {
-            result.status = status::movement_planned;
-        }
-
+      result.violations.is_empty()
+      && _state.ntps_with_broken_rack_constraint().empty()) {
+        result.status = status::empty;
         return result;
+    }
+
+    init_ntp_sizes_from_health_report(health_report, rrs);
+
+    get_unavailable_nodes_reassignments(result, rrs);
+    get_rack_constraint_repair_reassignments(result, rrs);
+    get_full_node_reassignments(result, rrs);
+
+    if (!result.reassignments.empty()) {
+        result.status = status::movement_planned;
     }
 
     return result;
