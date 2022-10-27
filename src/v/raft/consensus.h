@@ -44,6 +44,7 @@
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
+#include <string_view>
 
 namespace raft {
 class replicate_entries_stm;
@@ -252,21 +253,22 @@ public:
         return _configuration_manager.wait_for_change(last_seen, as);
     }
 
-    ss::future<> step_down(model::term_id term) {
-        return _op_lock.with([this, term] {
+    ss::future<> step_down(model::term_id term, std::string_view ctx) {
+        return _op_lock.with([this, term, ctx] {
             // check again under op_lock semaphore, make sure we do not move
             // term backward
             if (term > _term) {
                 _term = term;
                 _voted_for = {};
-                do_step_down("external_stepdown");
+                do_step_down(fmt::format(
+                  "external_stepdown with term {} - {}", term, ctx));
             }
         });
     }
 
-    ss::future<> step_down() {
-        return _op_lock.with([this] {
-            do_step_down("external_stepdown");
+    ss::future<> step_down(std::string_view ctx) {
+        return _op_lock.with([this, ctx] {
+            do_step_down(fmt::format("external_stepdown - {}", ctx));
             if (_leader_id) {
                 _leader_id = std::nullopt;
                 trigger_leadership_notification();

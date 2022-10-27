@@ -362,7 +362,9 @@ consensus::success_reply consensus::update_follower_index(
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _term) {
         ssx::spawn_with_gate(_bg, [this, term = reply.term] {
-            return step_down(model::term_id(term));
+            return step_down(
+              model::term_id(term),
+              "append entries response with greater term");
         });
         return success_reply::no;
     }
@@ -2645,7 +2647,7 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
 
         auto f = ss::now();
         if (r.term > _term) {
-            f = step_down(r.term);
+            f = step_down(r.term, "timeout_now");
         }
 
         return f.then([this] {

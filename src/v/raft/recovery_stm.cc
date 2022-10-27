@@ -329,8 +329,9 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
         return close_snapshot_reader();
     }
     if (reply.value().term > _ptr->_term) {
-        return close_snapshot_reader().then(
-          [this, term = reply.value().term] { return _ptr->step_down(term); });
+        return close_snapshot_reader().then([this, term = reply.value().term] {
+            return _ptr->step_down(term, "snapshot response with greater term");
+        });
     }
     _sent_snapshot_bytes = reply.value().bytes_stored;
 

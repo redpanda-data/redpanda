@@ -281,7 +281,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     // roll the term
     retry_with_leader(gr, 5, 1s, [](raft_node& leader) {
         return leader.consensus
-          ->step_down(leader.consensus->term() + model::term_id(1))
+          ->step_down(leader.consensus->term() + model::term_id(1), "test")
           .then([] { return true; });
     }).get0();
     // append some entries in next term
@@ -633,7 +633,8 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
     BOOST_REQUIRE(success);
     // step down so last entry in snapshot will be a configuration
     auto leader_raft = get_leader_raft(gr);
-    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
+    leader_raft->step_down(leader_raft->term() + model::term_id(1), "test")
+      .get0();
 
     validate_logs_replication(gr);
     tests::cooperative_spin_wait_with_timeout(2s, [&gr] {

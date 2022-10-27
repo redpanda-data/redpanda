@@ -756,13 +756,13 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           r.error(),
           pid);
         if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down();
+            co_await _c->step_down("do_commit_tx replication error");
         }
         co_return tx_errc::timeout;
     }
     if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
         if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down();
+            co_await _c->step_down("do_commit_tx wait error");
         }
         co_return tx_errc::timeout;
     }
@@ -1296,14 +1296,14 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
             _mem_state.expected.erase(bid.pid);
         }
         if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down();
+            co_await _c->step_down("replicate_tx replication error");
         }
         co_return r.error();
     }
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), _sync_timeout)) {
         if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down();
+            co_await _c->step_down("replicate_tx wait error");
         }
         co_return tx_errc::timeout;
     }
@@ -1465,7 +1465,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
             // as soon as we release the lock the leader or term will
             // be changed so the pending fibers won't pass the initial
             // checks and be rejected with not_leader
-            co_await _c->step_down();
+            co_await _c->step_down("replicate_seq replication error");
         }
         u.return_all();
         r = errc::replication_error;
@@ -1503,7 +1503,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         // it should guarantee that all follow up replication requests fail
         // too but just in case stepping down to minimize the risk
         if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down();
+            co_await _c->step_down("replicate_seq replication finished error");
         }
         co_return request->r;
     }
