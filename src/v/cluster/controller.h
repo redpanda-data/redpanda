@@ -119,6 +119,8 @@ public:
 
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
+    ss::sharded<storage::api>& get_storage() { return _storage; }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),
