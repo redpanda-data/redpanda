@@ -488,9 +488,27 @@ bool members_manager::try_register_node_id(
     const auto it = _id_by_uuid.find(requested_node_uuid);
     if (it == _id_by_uuid.end()) {
         if (_members_table.local().contains(requested_node_id)) {
-            // The cluster was likely just upgraded from a version that didn't
-            // have node UUIDs. If the node ID is already a part of the
-            // member's table, accept the requested UUID.
+            // If the node ID belongs to another registered UUID in the
+            // cluster, we can't use it.
+            for (const auto& [uuid, id] : _id_by_uuid) {
+                if (id == requested_node_id) {
+                    if (requested_node_uuid != uuid) {
+                        clusterlog.warn(
+                          "tried to register node ID {} with node UUID {} but "
+                          "already assigned {}",
+                          requested_node_id,
+                          requested_node_uuid,
+                          uuid);
+                        return false;
+                    }
+                    // The node ID exists and is alredy registered with the
+                    // right node UUID.
+                    return true;
+                }
+            }
+            // If a Raft member exists with the node ID but we haven't
+            // registered the UUID, the cluster was likely just upgraded from a
+            // version that didn't have node UUIDs. Just accept the UUID.
             clusterlog.info(
               "registering node ID that is already a member of the cluster");
         }
