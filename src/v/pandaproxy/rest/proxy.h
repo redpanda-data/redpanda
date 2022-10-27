@@ -15,6 +15,7 @@
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
+#include "pandaproxy/util.h"
 #include "redpanda/request_auth.h"
 #include "seastarx.h"
 
@@ -29,6 +30,7 @@ namespace pandaproxy::rest {
 
 class proxy {
 public:
+    using server = auth_ctx_server<proxy>;
     proxy(
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
@@ -44,16 +46,23 @@ public:
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
     sharded_client_cache& client_cache() { return _client_cache; }
-    request_authenticator& authenticator() { return _auth; }
+    ss::future<> mitigate_error(std::exception_ptr);
 
 private:
+    ss::future<> do_start();
+    ss::future<> configure();
+    ss::future<> inform(model::node_id);
+
     configuration _config;
     ssx::semaphore _mem_sem;
+    ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     sharded_client_cache& _client_cache;
-    ctx_server<proxy>::context_t _ctx;
-    ctx_server<proxy> _server;
-    request_authenticator _auth;
+    server::context_t _ctx;
+    server _server;
+    one_shot _ensure_started;
+    cluster::controller* _controller;
+    bool _has_ephemeral_credentials{false};
 };
 
 } // namespace pandaproxy::rest
