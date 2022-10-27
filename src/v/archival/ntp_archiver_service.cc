@@ -933,13 +933,13 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     vlog(ctxlog.info, "archival metadata cleanup started");
     model::offset adjusted_start_offset = model::offset::min();
-    for (const auto& [key, meta] : manifest()) {
+    const auto& m = manifest();
+    for (const auto& [key, meta] : m) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           key.base_offset, key.term);
-        auto spath = cloud_storage::generate_remote_segment_path(
-          _ntp, _rev, sname, meta.archiver_term);
+        auto spath = m.generate_segment_path(key, meta);
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
