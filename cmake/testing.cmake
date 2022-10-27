@@ -5,27 +5,23 @@ option(RP_ENABLE_TESTS "Useful for disabling all tests" ON)
 option(RP_ENABLE_FIXTURE_TESTS "control if integrations are bulit and ran" ON)
 option(RP_ENABLE_UNIT_TESTS "control if unit tests are bulit and ran" ON)
 option(RP_ENABLE_BENCHMARK_TESTS "control if benchmarks are bulit and ran" ON)
-option(RP_ENABLE_HONEY_BADGER_TESTS "control if honey_badger tests are bulit and ran" ON)
 if(NOT RP_ENABLE_TESTS)
   set(RP_ENABLE_FIXTURE_TESTS  OFF)
   set(RP_ENABLE_UNIT_TESTS  OFF)
   set(RP_ENABLE_BENCHMARK_TESTS  OFF)
-  set(RP_ENABLE_HONEY_BADGER_TESTS OFF)
 endif()
 
 set(FIXTURE_TESTS "")
 set(UNIT_TESTS "")
 set(BENCHMARK_TESTS "")
-set(HONEY_BADGER_TESTS "")
 
 message(STATUS "RP_ENABLE_FIXTURE_TESTS=${RP_ENABLE_FIXTURE_TESTS}")
 message(STATUS "RP_ENABLE_UNIT_TESTS=${RP_ENABLE_UNIT_TESTS}")
 message(STATUS "RP_ENABLE_BENCHMARK_TESTS=${RP_ENABLE_BENCHMARK_TESTS}")
-message(STATUS "RP_ENABLE_HONEY_BADGER_TESTS=${RP_ENABLE_HONEY_BADGER_TESTS}")
 
 function (rp_test)
   set(options
-    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST HBADGER_TEST)
+    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST)
   set(oneValueArgs BINARY_NAME TIMEOUT PREPARE_COMMAND POST_COMMAND)
   set(multiValueArgs
     INCLUDES
@@ -55,10 +51,6 @@ function (rp_test)
     endif()
     set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rpbench")
     set(BENCHMARK_TESTS "${BENCHMARK_TESTS} ${RP_TEST_BINARY_NAME}")
-  endif()
-  if(RP_TEST_HBADGER_TEST AND RP_ENABLE_HONEY_BADGER_TESTS)
-    set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rphbadger")
-    set(HONEY_BADGER_TESTS "${HONEY_BADGER_TESTS} ${RP_TEST_BINARY_NAME}")
   endif()
 
   set(files_to_copy_list "")
@@ -123,13 +115,4 @@ if(RP_ENABLE_TESTS)
   add_custom_target(check
     COMMAND ctest --output-on-failure
     DEPENDS "${UNIT_TESTS} ${FIXTURE_TESTS} ${BENCHMARK_TESTS}")
-
-  add_custom_target(unit-tests
-          DEPENDS "${UNIT_TESTS}")
-
-  add_custom_target(benchmark-tests
-          DEPENDS "${BENCHMARK_TESTS}")
-
-  add_custom_target(fixture-tests
-          DEPENDS "${FIXTURE_TESTS}")
 endif()
