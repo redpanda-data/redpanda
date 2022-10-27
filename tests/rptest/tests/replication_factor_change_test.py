@@ -14,7 +14,6 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
-from rptest.services.redpanda import CHANGE_REPLICATION_FACTOR_ALLOW_LIST
 
 
 class ReplicationFactorChangeTest(RedpandaTest):
@@ -56,20 +55,14 @@ class ReplicationFactorChangeTest(RedpandaTest):
                                      self.replication_factor)
         self.check_rf(self.replication_factor)
 
-    @cluster(num_nodes=4, log_allow_list=CHANGE_REPLICATION_FACTOR_ALLOW_LIST)
+    @cluster(num_nodes=4)
     def check_error_test(self):
         self.replication_factor = -1
-        try:
-            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
-                                         self.replication_factor)
-            assert False, "We can not set replication factor <= 0"
-        except:
-            assert len(self.admin.list_reconfigurations()) == 0
+        res = self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                           self.replication_factor)
+        assert len(self.admin.list_reconfigurations()) == 0
 
         self.replication_factor = 0
-        try:
-            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
-                                         self.replication_factor)
-            assert False, "We can not set replication factor <= 0"
-        except:
-            assert len(self.admin.list_reconfigurations()) == 0
+        self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                     self.replication_factor)
+        assert len(self.admin.list_reconfigurations()) == 0
