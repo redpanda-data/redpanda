@@ -126,7 +126,8 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
                       join_node_request(
                         features::feature_table::get_latest_logical_version(),
                         _node_uuid().to_vector(),
-                        self),
+                        self,
+                        join_type::register_uuid),
                       rpc::client_opts(rpc::clock_type::now() + _join_timeout))
                     .then(&rpc::get_ctx_data<join_node_reply>);
               });

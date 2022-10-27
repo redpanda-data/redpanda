@@ -446,7 +446,8 @@ void members_manager::join_raft0() {
                               features::feature_table::
                                 get_latest_logical_version(),
                               _storage.local().node_uuid()().to_vector(),
-                              _self}))
+                              _self,
+                              join_type::join}))
                      .then([this](result<join_node_reply> r) {
                          bool success = r && r.value().success;
                          // stop on success or closed gate
@@ -656,6 +657,10 @@ members_manager::handle_join_request(join_node_request const req) {
           req.node.id());
         co_return errc::invalid_request;
     }
+    if (req.join_type == join_type::join && !req_node_id) {
+        vlog(clusterlog.warn, "Got request to join cluster with no node ID");
+        co_return errc::invalid_request;
+    }
     if (
       req_has_node_uuid
       && req.node_uuid.size() != model::node_uuid::type::length) {
@@ -718,8 +723,7 @@ members_manager::handle_join_request(join_node_request const req) {
             // to assign a node ID. Just return the registered node ID.
             co_return ret_t(join_node_reply{true, it->second});
         }
-        // We've been passed a node ID. The caller expects to be added to the
-        // Raft group by the end of this function.
+        // We've been passed a node ID.
         if (it == _id_by_uuid.end()) {
             // The node ID was manually provided and this is a new attempt to
             // register the UUID.
@@ -733,6 +737,9 @@ members_manager::handle_join_request(join_node_request const req) {
                 co_return ret_t(
                   join_node_reply{false, model::unassigned_node_id});
             }
+        }
+        if (req.join_type == join_type::register_uuid) {
+            co_return ret_t(join_node_reply{true, *req_node_id});
         }
         // Proceed to adding the node ID to the controller Raft group.
         // Presumably the node that made this join request started its Raft

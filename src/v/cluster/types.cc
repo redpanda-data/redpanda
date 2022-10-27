@@ -999,6 +999,7 @@ void adl<cluster::join_node_request>::to(
     adl<cluster::cluster_version>().to(out, r.logical_version);
     adl<std::vector<uint8_t>>().to(out, r.node_uuid);
     adl<model::broker>().to(out, std::move(r.node));
+    adl<cluster::join_type>().to(out, r.join_type);
 }
 
 cluster::join_node_request adl<cluster::join_node_request>::from(iobuf io) {
@@ -1012,8 +1013,16 @@ adl<cluster::join_node_request>::from(iobuf_parser& in) {
     auto logical_version = adl<cluster::cluster_version>().from(in);
     auto node_uuid = adl<std::vector<uint8_t>>().from(in);
     auto node = adl<model::broker>().from(in);
-
-    return cluster::join_node_request{logical_version, node_uuid, node};
+    if (logical_version() < 7) {
+        // Logical versions below 7 don't supply a value, but have the
+        // semantics of type 'join', where a node ID is always supplied, and
+        // the requesting node is added to the Raft group upon success.
+        return cluster::join_node_request{
+          logical_version, node_uuid, node, cluster::join_type::join};
+    }
+    auto join_type = adl<cluster::join_type>().from(in);
+    return cluster::join_node_request{
+      logical_version, node_uuid, node, join_type};
 }
 
 void adl<cluster::configuration_update_request>::to(

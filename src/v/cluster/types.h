@@ -865,19 +865,66 @@ struct join_reply : serde::envelope<join_reply, serde::version<0>> {
 /// - Has fields for implementing auto-selection of
 ///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
 ///   in future.
+enum join_type : int8_t {
+    // The join request should add the requesting node to the Raft group,
+    // registering its UUID if it hasn't already.
+    //
+    // NOTE: 'join' is the default for backwards compatibility.
+    join = 0,
+
+    // The join request should only register the given node UUID with the given
+    // node ID, expecting a seubsequent request of type 'join'.
+    register_uuid,
+};
+inline ss::sstring join_type_as_string(join_type j) {
+    switch (j) {
+    case join:
+        return "join";
+    case register_uuid:
+        return "register_uuid";
+    default:
+        return ssx::sformat("invalid ({})", j);
+    }
+}
+
+inline ss::sstring vec_as_uuid_string(const std::vector<uint8_t>& v) {
+    if (v.empty()) {
+        return "empty UUID";
+    }
+    if (v.size() != model::node_uuid::type::length) {
+        return ssx::sformat("invalid UUID size {} ({})", v.size(), v);
+    }
+    model::node_uuid node_uuid(v);
+    return fmt::to_string(node_uuid);
+}
+
 struct join_node_request
-  : serde::envelope<join_node_request, serde::version<0>> {
+  : serde::envelope<join_node_request, serde::version<1>> {
+    // envelope version 1: add join_type
+
     join_node_request() noexcept = default;
+
+    explicit join_node_request(
+      cluster_version lv,
+      std::vector<uint8_t> nuuid,
+      model::broker b,
+      join_type j)
+      : logical_version(lv)
+      , node_uuid(nuuid)
+      , node(std::move(b))
+      , join_type(j) {}
 
     explicit join_node_request(
       cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
       : logical_version(lv)
       , node_uuid(nuuid)
-      , node(std::move(b)) {}
+      , node(std::move(b))
+      , join_type(join_type::join) {}
 
     explicit join_node_request(cluster_version lv, model::broker b)
       : logical_version(lv)
-      , node(std::move(b)) {}
+      , node(std::move(b))
+      , join_type(join_type::join) {}
 
     static constexpr int8_t current_version = 1;
     cluster_version logical_version;
@@ -888,6 +935,12 @@ struct join_node_request
     std::vector<uint8_t> node_uuid;
     model::broker node;
 
+    // This should only be 'join' when the caller is ready to have Raft traffic
+    // sent to it. Since the Raft subsystem requires a valid node ID to start
+    // up, this should only be set to 'join' if the node ID is already known in
+    // 'node'.
+    join_type join_type;
+
     friend bool operator==(const join_node_request&, const join_node_request&)
       = default;
 
@@ -895,14 +948,17 @@ struct join_node_request
     operator<<(std::ostream& o, const join_node_request& r) {
         fmt::print(
           o,
-          "logical_version {} node_uuid {} node {}",
+          "logical_version {} node_uuid {} node {} join_type {}",
           r.logical_version,
-          r.node_uuid,
-          r.node);
+          vec_as_uuid_string(r.node_uuid),
+          r.node,
+          join_type_as_string(r.join_type));
         return o;
     }
 
-    auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
+    auto serde_fields() {
+        return std::tie(logical_version, node_uuid, node, join_type);
+    }
 };
 
 struct join_node_reply : serde::envelope<join_node_reply, serde::version<0>> {
