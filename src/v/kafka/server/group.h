@@ -188,6 +188,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -198,6 +199,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -781,6 +783,11 @@ private:
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
+    bool is_transaction_ga() const { 
+      return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
+
     kafka::group_id _id;
     group_state _state;
     model::timestamp _state_timestamp;
@@ -869,6 +876,7 @@ private:
     std::chrono::milliseconds _transactional_id_expiration;
 
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;
