@@ -466,7 +466,7 @@ class RedpandaService(Service):
     RAISE_ON_ERRORS_KEY = "raise_on_error"
 
     LOG_LEVEL_KEY = "redpanda_log_level"
-    DEFAULT_LOG_LEVEL = "info"
+    DEFAULT_LOG_LEVEL = "debug"
 
     SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
         "admin", "admin", "SCRAM-SHA-256")
@@ -532,12 +532,16 @@ class RedpandaService(Service):
                  security: SecurityConfig = SecurityConfig(),
                  node_ready_timeout_s=None,
                  superuser: Optional[SaslCredentials] = None,
-                 skip_if_no_redpanda_log: bool = False):
+                 skip_if_no_redpanda_log: bool = False,
+                 pp_keep_alive: Optional[int] = None,
+                 pp_cache_max_size: Optional[int] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
+        self._pp_keep_alive = pp_keep_alive
+        self._pp_cache_max_size = pp_cache_max_size
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
 
@@ -573,7 +577,8 @@ class RedpandaService(Service):
                     'archival': 'debug',
                     'io': 'debug',
                     'cloud_storage': 'debug',
-                    'seastar_memory': 'debug'
+                    'seastar_memory': 'debug',
+                    'pandaproxy': 'debug'
                 })
 
         self._admin = Admin(self,
@@ -1747,7 +1752,9 @@ class RedpandaService(Service):
                            endpoint_authn_method=self.endpoint_authn_method(),
                            pp_authn_method=self._security.pp_authn_method,
                            sr_authn_method=self._security.sr_authn_method,
-                           auto_auth=self._security.auto_auth)
+                           auto_auth=self._security.auto_auth,
+                           pp_keep_alive=self._pp_keep_alive,
+                           pp_cache_max_size=self._pp_cache_max_size)
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)

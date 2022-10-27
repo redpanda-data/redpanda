@@ -11,14 +11,17 @@ import http.client
 import json
 import uuid
 import requests
+import threading
 from rptest.services.cluster import cluster
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, ResourceSettings
 from rptest.services.admin import Admin
 from typing import Optional, List, Dict, Union
 
@@ -1281,3 +1284,90 @@ class PandaProxyAutoAuthTest(PandaProxyEndpoints):
                 check_connection(n.account.hostname)
             restart_node()
             restart_node_idx = (restart_node_idx + 1) % node_count
+
+
+class User:
+    def __init__(self, idx: int):
+        self.username = f'user_{idx}'
+        self.password = f'secret_{self.username}'
+        self.algorithm = 'SCRAM-SHA-256'
+
+
+class GetTopics(threading.Thread):
+    def __init__(self, user: User, handle):
+        threading.Thread.__init__(self)
+        self.user = user
+        self._get_topics = handle
+        self.result_raw = None
+
+    def run(self):
+        self.result_raw = self._get_topics(auth=(self.user.username,
+                                                 self.user.password))
+
+
+class BasicAuthScaleTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, context):
+
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.pp_authn_method = 'http_basic'
+
+        super(BasicAuthScaleTest, self).__init__(
+            context,
+            security=security,
+            resource_settings=ResourceSettings(num_cpus=4),
+            pp_keep_alive=60000 * 5,  # Time in ms
+            pp_cache_max_size=10)
+
+        self.users_list = []
+
+    @cluster(num_nodes=3)
+    @matrix(num_users=[1000, 2000])
+    def test_many_users(self, num_users: int):
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        rpk = RpkTool(self.redpanda)
+
+        # First create all users and their acls
+        for idx in range(num_users):
+            user = User(idx)
+            o = rpk.sasl_create_user(user.username, user.password,
+                                     user.algorithm)
+            self.logger.debug(f'Sasl create user {o}')
+
+            # Only the super user can add ACLs
+            o = rpk.sasl_allow_principal(f'User:{user.username}', ['all'],
+                                         'topic', self.topic, super_username,
+                                         super_password, super_algorithm)
+            self.logger.debug(f'Allow all topic perms {o}')
+
+            self.users_list.append(user)
+
+        tasks = []
+
+        for idx in range(num_users):
+            user = self.users_list[idx]
+            tasks.append(GetTopics(user, self._get_topics))
+            tasks[-1].start()
+
+        for task in tasks:
+            task.join()
+
+            if task.result_raw is not None:
+                self.logger.debug(
+                    f'user: {task.user.username}, content: {task.result_raw.json()}'
+                )
+
+                if task.result_raw.status_code != requests.codes.ok:
+                    raise RuntimeError(
+                        f'Get topics failed, user: {task.user.username} -- {task.result_raw.json()}'
+                    )
+
+                if task.result_raw.json()[0] != self.topic:
+                    raise RuntimeError(
+                        f'Incorrect topic, user: {task.user.username} -- {task.result_raw.json()}'
+                    )
