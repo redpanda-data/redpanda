@@ -11,6 +11,7 @@
 
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
+#include "bytes/scattered_message.h"
 #include "config/base_property.h"
 #include "http/logger.h"
 #include "ssx/sformat.h"

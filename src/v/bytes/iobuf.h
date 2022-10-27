@@ -22,7 +22,6 @@
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
-#include <seastar/core/scattered_message.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -391,11 +390,6 @@ inline void iobuf::trim_back(size_t n) {
         pop_back();
     }
 }
-
-/// \brief keeps the iobuf in the deferred destructor of scattered_msg<char>
-/// and wraps each details::io_fragment as a scattered_message<char>::static()
-/// const char*
-ss::scattered_message<char> iobuf_as_scattered(iobuf b);
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
 namespace std {

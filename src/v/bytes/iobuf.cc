@@ -11,6 +11,7 @@
 
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iostream.h"
+#include "bytes/scattered_message.h"
 #include "vassert.h"
 
 #include <seastar/core/bitops.hh>
