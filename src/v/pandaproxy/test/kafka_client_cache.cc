@@ -29,19 +29,15 @@ using namespace std::chrono_literals;
 
 namespace pandaproxy {
 struct test_client_cache : public kafka_client_cache {
-    ss::timer<ss::lowres_clock> clean_and_evict_timer;
-    ss::gate g;
-
     explicit test_client_cache(size_t max_size)
       : kafka_client_cache(
         to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
         max_size,
-        1000ms,
-        std::reference_wrapper(clean_and_evict_timer)) {
-        clean_and_evict_timer.set_callback([this] {
-            ssx::spawn_with_gate(g, [this] { return clean_stale_clients(); });
-        });
+        1000ms) {
+        start().get();
     }
+
+    ~test_client_cache() { stop().get(); }
 };
 } // namespace pandaproxy
 
@@ -125,6 +121,4 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
     BOOST_TEST(client2->config().scram_password.value() == user2.pass);
     BOOST_TEST(client_cache.size() == s);
     BOOST_TEST(client_cache.max_size() == max_s);
-
-    client_cache.g.close().get();
 }
