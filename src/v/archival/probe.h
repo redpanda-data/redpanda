@@ -14,6 +14,7 @@
 #include "cloud_storage/probe.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -32,6 +33,10 @@ class ntp_level_probe {
 public:
     ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
 
+    void setup_ntp_metrics(const model::ntp& ntp);
+
+    void setup_public_metrics(const model::ntp& ntp);
+
     /// Register log-segment upload
     void uploaded(model::offset offset_delta) { _uploaded += offset_delta; }
 
@@ -43,6 +48,10 @@ public:
     /// Register the offset the ought to be uploaded
     void upload_lag(model::offset offset_delta) { _pending = offset_delta; }
 
+    void segments_deleted(int64_t deleted_count) {
+        _segments_deleted += deleted_count;
+    };
+
 private:
     /// Uploaded offsets
     uint64_t _uploaded = 0;
@@ -52,8 +61,12 @@ private:
     int64_t _missing = 0;
     /// Width of the offset range yet to be uploaded
     int64_t _pending = 0;
+    /// Number of segments deleted by garbage collection
+    int64_t _segments_deleted = 0;
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 /// Service level probe
