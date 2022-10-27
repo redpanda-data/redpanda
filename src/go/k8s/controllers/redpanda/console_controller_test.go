@@ -203,6 +203,9 @@ var _ = Describe("Console controller", func() {
 					return false
 				}
 				updatedRef := updatedConsole.Status.ConfigMapRef
+				if updatedRef == nil {
+					return false
+				}
 				updatedConfigmapNsn := fmt.Sprintf("%s/%s", updatedRef.Namespace, updatedRef.Name)
 				return updatedConfigmapNsn == configmapNsn
 			}, timeout, interval).Should(BeTrue())
