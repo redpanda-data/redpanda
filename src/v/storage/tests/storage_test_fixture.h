@@ -19,6 +19,7 @@
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
