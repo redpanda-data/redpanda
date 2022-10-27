@@ -137,7 +137,7 @@ func (m *ConsoleDefaulter) Default(console *redpandav1alpha1.Console) (*admissio
 		login.JWTSecretRef.Key = consolepkg.DefaultJWTSecretKey
 	}
 	if license := console.Spec.LicenseRef; license != nil && license.Key == "" {
-		license.Key = consolepkg.DefaultLicenseSecretKey
+		license.Key = redpandav1alpha1.DefaultLicenseSecretKey
 	}
 	if console.Spec.Cloud != nil &&
 		console.Spec.Cloud.PrometheusEndpoint != nil &&

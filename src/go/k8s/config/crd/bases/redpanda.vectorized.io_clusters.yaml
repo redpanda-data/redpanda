@@ -729,6 +729,23 @@ spec:
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string
+              licenseRef:
+                description: If key is not provided in the SecretRef, Secret data
+                  should have key "license"
+                properties:
+                  key:
+                    description: Key in Secret data to get value from
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
               nodeSelector:
                 additionalProperties:
                   type: string
