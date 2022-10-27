@@ -19,9 +19,7 @@
 #include "pandaproxy/types.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/core/timer.hh>
 
 #include <chrono>
 #include <utility>
@@ -57,6 +55,5 @@ private:
     ss::smp_submit_to_options _smp_opts;
     ss::gate _gate;
     ss::sharded<kafka_client_cache> _cache;
-    ss::timer<ss::lowres_clock> _clean_timer;
 };
 } // namespace pandaproxy

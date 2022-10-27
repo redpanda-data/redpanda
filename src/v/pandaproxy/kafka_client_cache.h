@@ -13,6 +13,8 @@
 #include "config/rest_authn_endpoint.h"
 #include "pandaproxy/types.h"
 
+#include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/timer.hh>
 
 #include <boost/multi_index/hashed_index.hpp>
@@ -36,8 +38,7 @@ public:
     kafka_client_cache(
       YAML::Node const& cfg,
       size_t max_size,
-      std::chrono::milliseconds keep_alive,
-      ss::timer<ss::lowres_clock>& clean_and_evict_timer);
+      std::chrono::milliseconds keep_alive);
 
     ~kafka_client_cache() = default;
 
@@ -46,6 +47,7 @@ public:
     kafka_client_cache& operator=(kafka_client_cache&&) = delete;
     kafka_client_cache& operator=(kafka_client_cache const&) = delete;
 
+    ss::future<> start();
     ss::future<> stop();
 
     client_ptr
@@ -83,6 +85,7 @@ private:
     std::chrono::milliseconds _keep_alive;
     underlying_t _cache;
     std::list<timestamped_user> _evicted_items;
-    ss::timer<ss::lowres_clock>& _clean_and_evict_timer;
+    ss::timer<ss::lowres_clock> _gc_timer;
+    ss::gate _gc_gate;
 };
 } // namespace pandaproxy

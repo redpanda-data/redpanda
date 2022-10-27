@@ -19,17 +19,27 @@
 
 #include <chrono>
 
+using namespace std::chrono_literals;
+
 namespace pandaproxy {
 
+static constexpr auto gc_timer_period = 10s;
+
 kafka_client_cache::kafka_client_cache(
-  YAML::Node const& cfg,
-  size_t max_size,
-  std::chrono::milliseconds keep_alive,
-  ss::timer<ss::lowres_clock>& clean_and_evict_timer)
+  YAML::Node const& cfg, size_t max_size, std::chrono::milliseconds keep_alive)
   : _config{cfg}
   , _cache_max_size{max_size}
-  , _keep_alive{keep_alive}
-  , _clean_and_evict_timer{clean_and_evict_timer} {}
+  , _keep_alive{keep_alive} {
+    _gc_timer.set_callback([this] {
+        ssx::spawn_with_gate(_gc_gate, [this] {
+            return clean_stale_clients().finally([this] {
+                if (!_gc_gate.is_closed()) {
+                    _gc_timer.arm(gc_timer_period);
+                }
+            });
+        });
+    });
+}
 
 client_ptr kafka_client_cache::make_client(
   credential_t user, config::rest_authn_method authn_method) {
@@ -61,8 +71,6 @@ client_ptr kafka_client_cache::fetch_or_insert(
     if (it_hash == inner_hash.end()) {
         if (_cache.size() >= _cache_max_size) {
             if (!_cache.empty()) {
-                using namespace std::chrono_literals;
-
                 auto item = inner_list.back();
                 vlog(plog.debug, "Cache size reached, evicting {}", item.key);
                 inner_list.pop_back();
@@ -74,9 +82,9 @@ client_ptr kafka_client_cache::fetch_or_insert(
                 // the timer is armed and it will run soon, then do nothing.
                 auto window = ss::lowres_clock::now() + 1s;
                 if (
-                  !_clean_and_evict_timer.armed()
-                  || (_clean_and_evict_timer.armed() && _clean_and_evict_timer.get_timeout() > window)) {
-                    _clean_and_evict_timer.rearm(window);
+                  !_gc_timer.armed()
+                  || (_gc_timer.armed() && _gc_timer.get_timeout() > window)) {
+                    _gc_timer.rearm(window);
                 }
             }
         }
@@ -153,7 +161,15 @@ ss::future<> kafka_client_cache::clean_stale_clients() {
     co_await remove_client_if(_evicted_items, always);
 }
 
+ss::future<> kafka_client_cache::start() {
+    _gc_timer.arm(gc_timer_period);
+    return ss::now();
+}
+
 ss::future<> kafka_client_cache::stop() {
+    _gc_timer.cancel();
+    co_await _gc_gate.close();
+
     constexpr auto always = [](auto&&) { return true; };
     auto& inner_list = _cache.get<underlying_list>();
     co_await remove_client_if(inner_list, always);
