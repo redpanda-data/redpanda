@@ -97,6 +97,26 @@ function (rp_test)
     endif()
   endforeach()
 
+  if(RP_TEST_UNIT_TEST)
+  if(NOT RP_TEST_ARGS)
+    # For tests that don't set some explicit args (some of them do a -c 1), set
+    # an explicit core count, to avoid unit tests running differently on machines
+    # with different core counts (this also speeds up some tests running on many-core
+    # machines.
+    set(RP_TEST_ARGS "-- -c 4")
+  endif()
+  endif()
+
+  if(RP_TEST_BENCHMARK_TEST)
+    if(NOT RP_TEST_ARGS)
+      # For tests that don't set some explicit args (some of them do a -c 1), set
+      # an explicit core count, to avoid unit tests running differently on machines
+      # with different core counts (this also speeds up some tests running on many-core
+      # machines.
+      set(RP_TEST_ARGS "-c 1")
+    endif()
+  endif()
+
   if(NOT skip_test)
     add_test (
       NAME ${RP_TEST_BINARY_NAME}
