@@ -44,7 +44,7 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
       _partition->is_read_replica_mode_enabled()
       && _partition->cloud_data_available()) {
         // No need to translate the offsets in this case since all fetch
-        // requests in read replica are served via remote_partition which
+        // requestS in read replica are served via remote_partition which
         // does its own translation.
         co_return co_await _partition->make_cloud_reader(cfg);
     }

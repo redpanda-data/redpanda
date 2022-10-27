@@ -28,8 +28,8 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME pandaproxy_schema_registry_fixture
+  FIXTURE_TEST
+  BINARY_NAME pandaproxy_schema_registry
   SOURCES
     get_schema_types.cc
     post_subjects_subject_version.cc

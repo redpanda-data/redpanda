@@ -33,8 +33,8 @@ set(srcs
   group_metadata_serialization_test.cc)
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME test_kafka_server_fixture
+  FIXTURE_TEST
+  BINARY_NAME kafka_server
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils
   ARGS "-- -c 1"
