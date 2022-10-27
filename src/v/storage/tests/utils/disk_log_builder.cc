@@ -49,6 +49,16 @@ ss::future<> disk_log_builder::add_random_batch(
     return write(std::move(buff), config, flush);
 }
 
+ss::future<> disk_log_builder::add_random_batch(
+  model::test::record_batch_spec spec,
+  log_append_config config,
+  should_flush_after flush) {
+    auto buff = ss::circular_buffer<model::record_batch>();
+    buff.push_back(model::test::make_random_batch(spec));
+    advance_time(buff.back());
+    return write(std::move(buff), config, flush);
+}
+
 ss::future<> disk_log_builder::add_random_batches(
   model::offset offset,
   int count,

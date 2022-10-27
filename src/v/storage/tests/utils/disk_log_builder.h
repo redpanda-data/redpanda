@@ -283,6 +283,10 @@ public:
       log_append_config config = append_config(),
       should_flush_after flush = should_flush_after::yes,
       std::optional<model::timestamp> base_ts = std::nullopt);
+    ss::future<> add_random_batch(
+      model::test::record_batch_spec spec,
+      log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes);
     ss::future<> add_random_batches(
       model::offset offset,
       int count,

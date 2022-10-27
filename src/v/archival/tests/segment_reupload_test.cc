@@ -19,6 +19,8 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
+inline ss::logger test_log("test");
+
 static constexpr std::string_view manifest = R"json({
     "version": 1,
     "namespace": "test-ns",
@@ -704,6 +706,88 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
 
     for (auto i : spec.compacted_segment_indices) {
         b.get_segment(i).mark_as_finished_self_compaction();
+    }
+
+    size_t max_size = b.get_segment(0).size_bytes()
+                      + b.get_segment(1).size_bytes()
+                      + b.get_segment(2).size_bytes();
+    archival::segment_collector collector{
+      model::offset{5}, m, b.get_disk_log_impl(), max_size};
+
+    collector.collect_segments();
+    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+
+    auto upload_with_locks = collector
+                               .make_upload_candidate(
+                                 ss::default_priority_class(),
+                                 segment_lock_timeout)
+                               .get();
+
+    auto upload_candidate = upload_with_locks.candidate;
+    BOOST_REQUIRE(!upload_candidate.sources.empty());
+    BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
+    BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{29});
+
+    // Start with all the segments collected
+    auto expected_content_length = collector.collected_size();
+    // Deduct the starting shift
+    expected_content_length -= upload_candidate.file_offset;
+    // Deduct the entire last segment
+    expected_content_length -= upload_candidate.sources.back()->size_bytes();
+    // Add back the portion of the last segment we included
+    expected_content_length += upload_candidate.final_file_offset;
+
+    BOOST_REQUIRE_EQUAL(
+      expected_content_length, upload_candidate.content_length);
+
+    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
+    cloud_storage::partition_manifest m;
+    m.update(make_manifest_stream(manifest)).get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    auto o = std::make_unique<ntp_config::default_overrides>();
+    o->cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    b
+      | start(
+        ntp_config{{"test_ns", "test_tpc", 0}, {data_path}, std::move(o)});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    auto spec = log_spec{
+      .segment_starts = {5, 15, 25, 35, 50, 60},
+      .compacted_segment_indices = {0, 1, 2, 3},
+      .last_segment_num_records = 20};
+
+    auto first = spec.segment_starts.begin();
+    auto second = std::next(first);
+    for (; second != spec.segment_starts.end(); ++first, ++second) {
+        b | storage::add_segment(*first);
+        for (auto curr_offset = *first; curr_offset < *second; ++curr_offset) {
+            b.add_random_batch(model::test::record_batch_spec{
+                                 .offset = model::offset{curr_offset},
+                                 .count = 1,
+                                 .max_key_cardinality = 1,
+                               })
+              .get();
+        }
+        auto seg = b.get_log_segments().back();
+        seg->appender().close().get();
+        seg->release_appender().get();
+    }
+
+    b | storage::add_segment(*first)
+      | storage::add_random_batch(*first, spec.last_segment_num_records);
+
+    // Compaction only works one segment at a time
+    for (auto i = 0; i < spec.compacted_segment_indices.size(); ++i) {
+        b.gc(model::timestamp::max(), std::nullopt).get();
     }
 
     size_t max_size = b.get_segment(0).size_bytes()

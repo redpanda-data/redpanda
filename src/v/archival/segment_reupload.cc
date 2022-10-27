@@ -346,13 +346,33 @@ segment_collector::make_upload_candidate(
     auto locks_resolved = co_await ss::when_all_succeed(
       locks.begin(), locks.end());
 
+    auto starting_offset = head_seek_result.offset;
+    if (starting_offset != _begin_inclusive) {
+        vlog(
+          archival_log.info,
+          "adjusting begin offset of upload candidate from {} to {}",
+          head_seek_result.offset,
+          _begin_inclusive);
+        starting_offset = _begin_inclusive;
+    }
+
+    auto final_offset = tail_seek_result.offset;
+    if (final_offset != _end_inclusive) {
+        vlog(
+          archival_log.info,
+          "adjusting end offset of upload candidate from {} to {}",
+          tail_seek_result.offset,
+          _end_inclusive);
+        final_offset = _end_inclusive;
+    }
+
     co_return upload_candidate_with_locks{
       upload_candidate{
         .exposed_name = adjust_segment_name(),
-        .starting_offset = head_seek_result.offset,
+        .starting_offset = starting_offset,
         .file_offset = head_seek_result.bytes,
         .content_length = content_length,
-        .final_offset = tail_seek_result.offset,
+        .final_offset = final_offset,
         .final_file_offset = tail_seek_result.bytes,
         .base_timestamp = head_seek_result.ts,
         .max_timestamp = tail_seek_result.ts,
