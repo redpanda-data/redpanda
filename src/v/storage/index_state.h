@@ -73,6 +73,9 @@ struct index_state
         relative_offset_index.pop_back();
         relative_time_index.pop_back();
         position_index.pop_back();
+        if (empty()) {
+            non_data_timestamps = false;
+        }
     }
     std::tuple<uint32_t, uint32_t, uint64_t> get_entry(size_t i) {
         return {
