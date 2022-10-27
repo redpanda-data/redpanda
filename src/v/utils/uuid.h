@@ -39,11 +39,8 @@ public:
 
     template<typename H>
     friend H AbslHashValue(H h, const uuid_t& u) {
-        for (const uint8_t byte : u._uuid) {
-            H tmp = H::combine(std::move(h), byte);
-            h = std::move(tmp);
-        }
-        return h;
+        return H::combine_contiguous(
+          std::move(h), u._uuid.begin(), underlying_t::static_size());
     }
 
     const underlying_t& uuid() const { return _uuid; }
