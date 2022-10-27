@@ -25,8 +25,6 @@
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
-#include <boost/container_hash/hash.hpp> // hash_combine
-
 #include <cstddef>
 #include <iosfwd>
 #include <string_view>
@@ -392,17 +390,3 @@ inline void iobuf::trim_back(size_t n) {
 }
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
-namespace std {
-template<>
-struct hash<::iobuf> {
-    size_t operator()(const ::iobuf& b) const {
-        size_t h = 0;
-        for (auto& f : b) {
-            boost::hash_combine(
-              h, std::hash<std::string_view>{}({f.get(), f.size()}));
-        }
-        return h;
-    }
-};
-
-} // namespace std
