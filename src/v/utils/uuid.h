@@ -8,8 +8,6 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "bytes/details/out_of_range.h"
-
 #include <absl/hash/hash.h>
 #include <boost/functional/hash.hpp>
 #include <boost/uuid/uuid.hpp>
@@ -28,14 +26,7 @@ public:
 
     static uuid_t create();
 
-    explicit uuid_t(const std::vector<uint8_t>& v)
-      : _uuid({}) {
-        if (v.size() != length) {
-            details::throw_out_of_range(
-              "Expected size of {} for UUID, got {}", length, v.size());
-        }
-        std::copy(v.begin(), v.end(), _uuid.begin());
-    }
+    explicit uuid_t(const std::vector<uint8_t>& v);
 
     uuid_t() noexcept = default;
 
