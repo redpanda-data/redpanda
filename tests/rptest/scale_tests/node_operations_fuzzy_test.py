@@ -23,7 +23,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 
@@ -114,7 +114,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
         return topics
 
     @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS)
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS +
+             PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             num_to_upgrade=[0, 3],
             compacted_topics=[True, False])
