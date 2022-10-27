@@ -8,8 +8,7 @@
 
 #include <ostream>
 
-uuid_t::uuid_t(const std::vector<uint8_t>& v)
-  : _uuid({}) {
+uuid_t::uuid_t(const std::vector<uint8_t>& v) {
     if (v.size() != length) {
         details::throw_out_of_range(
           "Expected size of {} for UUID, got {}", length, v.size());

@@ -23,6 +23,7 @@ class uuid_t {
 public:
     static constexpr auto length = 16;
     using underlying_t = boost::uuids::uuid;
+    static_assert(underlying_t::static_size() == length);
 
     static uuid_t create();
 
