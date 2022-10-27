@@ -123,4 +123,13 @@ if(RP_ENABLE_TESTS)
   add_custom_target(check
     COMMAND ctest --output-on-failure
     DEPENDS "${UNIT_TESTS} ${FIXTURE_TESTS} ${BENCHMARK_TESTS}")
+
+  add_custom_target(unit-tests
+          DEPENDS "${UNIT_TESTS}")
+
+  add_custom_target(benchmark-tests
+          DEPENDS "${BENCHMARK_TESTS}")
+
+  add_custom_target(fixture-tests
+          DEPENDS "${FIXTURE_TESTS}")
 endif()
