@@ -310,6 +310,9 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
+        if (r.error() == raft::errc::shutting_down) {
+            co_return tm_stm::op_status::timeout;
+        }
         co_return tm_stm::op_status::unknown;
     }
 
@@ -550,22 +553,25 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
         co_return tm_stm::op_status::unknown;
     }
-    bool just_started = ptx->second.partitions.size() == 0
-                        && ptx->second.groups.size() == 0;
 
-    if (just_started) {
-        tm_transaction tx = ptx->second;
-        for (auto& partition : partitions) {
-            tx.partitions.push_back(partition);
-        }
-        tx.last_update_ts = clock_type::now();
-        auto r = co_await update_tx(tx, tx.etag);
+    if (!is_transaction_ga()) {
+        bool just_started = ptx->second.partitions.size() == 0
+                            && ptx->second.groups.size() == 0;
 
-        if (!r.has_value()) {
-            co_return tm_stm::op_status::unknown;
+        if (just_started) {
+            tm_transaction tx = ptx->second;
+            for (auto& partition : partitions) {
+                tx.partitions.push_back(partition);
+            }
+            tx.last_update_ts = clock_type::now();
+            auto r = co_await update_tx(tx, tx.etag);
+
+            if (!r.has_value()) {
+                co_return tm_stm::op_status::unknown;
+            }
+            _mem_txes[tx_id] = tx;
+            co_return tm_stm::op_status::success;
         }
-        _mem_txes[tx_id] = tx;
-        co_return tm_stm::op_status::success;
     }
 
     for (auto& partition : partitions) {
@@ -587,21 +593,24 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
         co_return tm_stm::op_status::unknown;
     }
-    bool just_started = ptx->second.partitions.size() == 0
-                        && ptx->second.groups.size() == 0;
 
-    if (just_started) {
-        tm_transaction tx = ptx->second;
-        tx.groups.push_back(
-          tm_transaction::tx_group{.group_id = group_id, .etag = term});
-        tx.last_update_ts = clock_type::now();
-        auto r = co_await update_tx(tx, tx.etag);
+    if (!is_transaction_ga()) {
+        bool just_started = ptx->second.partitions.size() == 0
+                            && ptx->second.groups.size() == 0;
 
-        if (!r.has_value()) {
-            co_return tm_stm::op_status::unknown;
+        if (just_started) {
+            tm_transaction tx = ptx->second;
+            tx.groups.push_back(
+              tm_transaction::tx_group{.group_id = group_id, .etag = term});
+            tx.last_update_ts = clock_type::now();
+            auto r = co_await update_tx(tx, tx.etag);
+
+            if (!r.has_value()) {
+                co_return tm_stm::op_status::unknown;
+            }
+            _mem_txes[tx_id] = tx;
+            co_return tm_stm::op_status::success;
         }
-        _mem_txes[tx_id] = tx;
-        co_return tm_stm::op_status::success;
     }
 
     ptx->second.groups.push_back(

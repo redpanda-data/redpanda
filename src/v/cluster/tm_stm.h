@@ -158,7 +158,8 @@ public:
         conflict,
         unknown,
         not_leader,
-        partition_not_found
+        partition_not_found,
+        timeout
     };
 
     explicit tm_stm(

@@ -192,9 +192,15 @@ class TransactionsTest(RedpandaTest):
             assert False, "send_offsetes should fail"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.UNKNOWN_MEMBER_ID
+            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
 
-        producer.abort_transaction()
+        try:
+            # if abort fails an app should recreate a producer otherwise
+            # it may continue to use the original producer
+            producer.abort_transaction()
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
 
     @cluster(num_nodes=3)
     def change_static_member_test(self):
@@ -249,6 +255,89 @@ class TransactionsTest(RedpandaTest):
             assert kafka_error.code() == ck.cimpl.KafkaError.FENCED_INSTANCE_ID
 
         producer.abort_transaction()
+
+    @cluster(num_nodes=3)
+    def graceful_leadership_transfer_test(self):
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 10000,
+        })
+
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        count = 0
+        partition = 0
+        records_per_add = 10
+
+        def add_records():
+            nonlocal count
+            nonlocal partition
+            for i in range(count, count + records_per_add):
+                producer.produce(self.input_t.name,
+                                 str(i),
+                                 str(i),
+                                 partition=partition,
+                                 on_delivery=self.on_delivery)
+            producer.flush()
+            count = count + records_per_add
+
+        def graceful_transfer():
+            # Issue a graceful leadership transfer.
+            old_leader = self.admin.get_partition_leader(
+                namespace="kafka",
+                topic=self.input_t.name,
+                partition=partition)
+            self.admin.transfer_leadership_to(namespace="kafka",
+                                              topic=self.input_t.name,
+                                              partition=partition,
+                                              target_id=None)
+
+            def leader_is_changed():
+                new_leader = self.admin.get_partition_leader(
+                    namespace="kafka",
+                    topic=self.input_t.name,
+                    partition=partition)
+                return (new_leader != -1) and (new_leader != old_leader)
+
+            wait_until(leader_is_changed,
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       err_msg="Failed to establish current leader")
+
+        # Add some records
+        add_records()
+        # Issue a leadership transfer
+        graceful_transfer()
+        # Add some more records
+        add_records()
+        # Issue another leadership transfer
+        graceful_transfer()
+        # Issue a commit
+        producer.commit_transaction()
+
+        consumer = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': "test",
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+        })
+        try:
+            consumer.subscribe([self.input_t])
+            records = []
+            while len(records) != count:
+                records.extend(
+                    self.consume(consumer, max_records=count, timeout_s=10))
+            assert len(
+                records
+            ) == count, f"Not all records consumed, expected {count}"
+            keys = set([int(r.key()) for r in records])
+            assert all(i in keys
+                       for i in range(0, count)), f"Missing records {keys}"
+        finally:
+            consumer.close()
 
     @cluster(num_nodes=3)
     def graceful_leadership_transfer_tx_coordinator_test(self):
@@ -480,8 +569,7 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         self.installer.install(self.redpanda.nodes, (22, 1, 5))
         super(UpgradeWithMixedVeersionTransactionTest, self).setUp()
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def upgrade_test(self):
+    def do_upgrade_with_tx(self, selector):
         topic_name = self.topics[0].name
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.5" in unique_versions, unique_versions
@@ -500,18 +588,11 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
 
         self.check_consume(1)
 
-        def get_tx_manager_broker():
-            admin = Admin(self.redpanda)
-            leader_id = admin.get_partition_leader(namespace="kafka_internal",
-                                                   topic="tx",
-                                                   partition=0)
-            return self.redpanda.get_node(leader_id)
-
-        node_with_tx_manager = get_tx_manager_broker()
+        node_to_upgrade = selector()
 
         # Update node with tx manager
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.restart_nodes(node_with_tx_manager)
+        self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert "v22.1.5" in unique_versions, unique_versions
 
@@ -531,8 +612,32 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         self.check_consume(2)
 
         self.installer.install(self.redpanda.nodes, (22, 1, 5))
-        self.redpanda.restart_nodes(node_with_tx_manager)
+        self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert "v22.1.5" in unique_versions, unique_versions
 
         self.check_consume(2)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def upgrade_coordinator_test(self):
+        def get_tx_coordinator():
+            admin = Admin(self.redpanda)
+            leader_id = admin.get_partition_leader(namespace="kafka_internal",
+                                                   topic="tx",
+                                                   partition=0)
+            return self.redpanda.get_node(leader_id)
+
+        self.do_upgrade_with_tx(get_tx_coordinator)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def upgrade_topic_test(self):
+        topic_name = self.topics[0].name
+
+        def get_topic_leader():
+            admin = Admin(self.redpanda)
+            leader_id = admin.get_partition_leader(namespace="kafka",
+                                                   topic=topic_name,
+                                                   partition=0)
+            return self.redpanda.get_node(leader_id)
+
+        self.do_upgrade_with_tx(get_topic_leader)

@@ -125,17 +125,22 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         if (leader == _self) {
             result = co_await begin_tx_locally(
               ntp, pid, tx_seq, transaction_timeout_ms);
-            if (result.ec == tx_errc::leader_not_found) {
+            if (
+              result.ec == tx_errc::leader_not_found
+              || result.ec == tx_errc::shard_not_found) {
                 error = vformat(
-                  fmt::runtime(
-                    "local execution of begin_tx({},...) failed with 'not a "
-                    "leader'"),
-                  ntp);
+                  fmt::runtime("local execution of begin_tx pid:{} tx_seq:{} "
+                               "failed with {}"),
+                  pid,
+                  tx_seq,
+                  result.ec);
                 vlog(
                   txlog.trace,
-                  "local execution of begin_tx({},...) failed with 'not a "
-                  "leader', retries left: {}",
-                  ntp,
+                  "local execution of begin_tx pid:{} tx_seq:{} failed with "
+                  "{}, retries left: {}",
+                  pid,
+                  tx_seq,
+                  result.ec,
                   retries);
                 aborted = !co_await sleep_abortable(delay_ms, _as);
                 leader_opt = _leaders.local().get_leader(ntp);
@@ -144,8 +149,9 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
             if (result.ec != tx_errc::none) {
                 vlog(
                   txlog.warn,
-                  "local execution of begin_tx({},...) failed with {}",
-                  ntp,
+                  "local execution of begin_tx pid:{} tx_seq:{} failed with {}",
+                  pid,
+                  tx_seq,
                   result.ec);
             }
             co_return result;
@@ -485,7 +491,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
-        vlog(txlog.warn, "can't find a leader for {}", ntp);
+        vlog(txlog.warn, "can't find a leader for {} pid:{}", ntp, pid);
         return ss::make_ready_future<commit_tx_reply>(
           commit_tx_reply{tx_errc::leader_not_found});
     }

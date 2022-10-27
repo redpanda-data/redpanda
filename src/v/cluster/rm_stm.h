@@ -122,7 +122,7 @@ public:
     };
 
     struct tx_snapshot {
-        static constexpr uint8_t version = 2;
+        static constexpr uint8_t version = 3;
 
         std::vector<model::producer_identity> fenced;
         std::vector<tx_range> ongoing;
@@ -131,6 +131,19 @@ public:
         std::vector<abort_index> abort_indexes;
         model::offset offset;
         std::vector<seq_entry> seqs;
+
+        struct tx_seqs_snapshot {
+            model::producer_identity pid;
+            model::tx_seq tx_seq;
+        };
+
+        struct expiration_snapshot {
+            model::producer_identity pid;
+            duration_type timeout;
+        };
+
+        std::vector<tx_seqs_snapshot> tx_seqs;
+        std::vector<expiration_snapshot> expiration;
     };
 
     struct abort_snapshot {
@@ -144,7 +157,8 @@ public:
     };
 
     static constexpr int8_t prepare_control_record_version{0};
-    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{0};
+    static constexpr int8_t fence_control_record_version{1};
 
     explicit rm_stm(
       ss::logger&,
@@ -354,6 +368,16 @@ private:
     ss::future<> reduce_aborted_list();
     ss::future<> offload_aborted_txns();
 
+    std::optional<model::tx_seq>
+    get_tx_seq(model::producer_identity pid) const {
+        auto log_it = _log_state.tx_seqs.find(pid);
+        if (log_it != _log_state.tx_seqs.end()) {
+            return log_it->second;
+        }
+
+        return std::nullopt;
+    }
+
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
@@ -389,6 +413,10 @@ private:
         // by spec should be ready for thier commands being rejected so it's
         // ok by design to have false rejects
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
+
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
+        absl::flat_hash_map<model::producer_identity, expiration_info>
+          expiration;
     };
 
     struct mem_state {
@@ -397,31 +425,29 @@ private:
         // with this approach a combination of mem_state and log_state is
         // always up to date
         model::term_id term;
+        // before we replicate the first batch of a transaction we don't know
+        // its offset but we must prevent read_comitted fetch from getting it
+        // so we use last seen offset to estimate it
+        absl::flat_hash_map<model::producer_identity, model::offset> estimated;
+        model::offset last_end_tx{-1};
+
+        // FIELDS TO GO AFTER GA
         // a map from producer_identity (a session) to the first offset of
         // the current transaction in this session
         absl::flat_hash_map<model::producer_identity, model::offset> tx_start;
         // a heap of the first offsets of all ongoing transactions
         absl::btree_set<model::offset> tx_starts;
-        // before we replicate the first batch of a transaction we don't know
-        // its offset but we must prevent read_comitted fetch from getting it
-        // so we use last seen offset to estimate it
-        absl::flat_hash_map<model::producer_identity, model::offset> estimated;
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
         absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
-        absl::flat_hash_map<model::producer_identity, expiration_info>
-          expiration;
-        model::offset last_end_tx{-1};
-        absl::flat_hash_map<model::producer_identity, int64_t> inflight;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
             estimated.erase(pid);
             preparing.erase(pid);
-            expiration.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);
@@ -520,6 +546,11 @@ private:
 
     template<class T>
     void fill_snapshot_wo_seqs(T&);
+
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
 
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};

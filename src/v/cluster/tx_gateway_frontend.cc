@@ -419,7 +419,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     }
     auto tx_opt = co_await stm->get_tx(tx_id);
     if (!tx_opt) {
-        co_return try_abort_reply::make_aborted();
+        if (tx_opt.error() == tm_stm::op_status::not_found) {
+            co_return try_abort_reply::make_aborted();
+        }
+        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
     auto tx = tx_opt.value();
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
@@ -486,6 +489,8 @@ tx_gateway_frontend::do_commit_tm_tx(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         co_return err;
     }
@@ -778,7 +783,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           "got error {} on loading tx.id={}",
           term_opt.error(),
           tx_id);
-        co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
+        co_return init_tm_tx_reply{tx_errc::not_coordinator};
     }
     auto term = term_opt.value();
     auto tx_opt = co_await stm->get_tx(tx_id);
@@ -787,11 +792,17 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         if (tx_opt.error() == tm_stm::op_status::not_leader) {
             co_return init_tm_tx_reply{tx_errc::leader_not_found};
         }
+        if (tx_opt.error() == tm_stm::op_status::timeout) {
+            co_return init_tm_tx_reply{tx_errc::timeout};
+        }
+        if (tx_opt.error() != tm_stm::op_status::not_found) {
+            co_return init_tm_tx_reply{tx_errc::unknown_server_error};
+        }
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
             vlog(txlog.warn, "allocate_id failed with {}", pid_reply.ec);
-            co_return init_tm_tx_reply{tx_errc::invalid_txn_state};
+            co_return init_tm_tx_reply{tx_errc::not_coordinator};
         }
 
         model::producer_identity pid{pid_reply.id, 0};
@@ -911,6 +922,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
         reply.ec = tx_errc::conflict;
+    } else if (op_status == tm_stm::op_status::timeout) {
+        reply.ec = tx_errc::timeout;
     } else {
         vlog(
           txlog.warn,
@@ -928,10 +941,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.trace, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
-            request, tx_errc::invalid_txn_state));
+            request, tx_errc::not_coordinator));
     }
 
     return container().invoke_on(
@@ -993,6 +1006,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
       term, stm, pid, request.transactional_id, timeout);
 
     if (!r.has_value()) {
+        vlog(
+          txlog.trace,
+          "got {} on getting ongoing tx for pid:{} {}",
+          r.error(),
+          pid,
+          request.transactional_id);
         co_return make_add_partitions_error_response(request, r.error());
     }
     auto tx = r.value();
@@ -1004,7 +1023,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
     add_paritions_tx_reply response;
 
-    std::vector<ss::future<begin_tx_reply>> bfs;
+    std::vector<model::ntp> new_partitions;
 
     for (auto& req_topic : request.topics) {
         add_paritions_tx_reply::topic_result res_topic;
@@ -1025,43 +1044,74 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                 res_partition.error_code = tx_errc::none;
                 res_topic.results.push_back(res_partition);
             } else {
-                bfs.push_back(_rm_partition_frontend.local().begin_tx(
-                  ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
+                new_partitions.push_back(ntp);
             }
         }
         response.results.push_back(res_topic);
     }
 
-    auto brs = co_await when_all_succeed(bfs.begin(), bfs.end());
-
     std::vector<tm_transaction::tx_partition> partitions;
-    for (auto& br : brs) {
-        auto topic_it = std::find_if(
-          response.results.begin(),
-          response.results.end(),
-          [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
-        vassert(
-          topic_it != response.results.end(),
-          "can't find expected topic {}",
-          br.ntp.tp.topic());
-        vassert(
-          std::none_of(
-            topic_it->results.begin(),
-            topic_it->results.end(),
-            [&br](const auto& r) {
-                return r.partition_index == br.ntp.tp.partition();
-            }),
-          "partition {} is already part of the response",
-          br.ntp.tp.partition());
-        if (br.ec == tx_errc::none) {
-            partitions.push_back(
-              tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+    std::vector<begin_tx_reply> brs;
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    while (0 < retries--) {
+        partitions.clear();
+        brs.clear();
+        bool should_retry = false;
+        bool should_abort = false;
+        std::vector<ss::future<begin_tx_reply>> bfs;
+        bfs.reserve(new_partitions.size());
+        for (auto& ntp : new_partitions) {
+            bfs.push_back(_rm_partition_frontend.local().begin_tx(
+              ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
         }
+        brs = co_await when_all_succeed(bfs.begin(), bfs.end());
+        for (auto& br : brs) {
+            auto topic_it = std::find_if(
+              response.results.begin(),
+              response.results.end(),
+              [&br](const auto& r) { return r.name == br.ntp.tp.topic(); });
+            vassert(
+              topic_it != response.results.end(),
+              "can't find expected topic {}",
+              br.ntp.tp.topic());
+            vassert(
+              std::none_of(
+                topic_it->results.begin(),
+                topic_it->results.end(),
+                [&br](const auto& r) {
+                    return r.partition_index == br.ntp.tp.partition();
+                }),
+              "partition {} is already part of the response",
+              br.ntp.tp.partition());
+
+            bool expected_ec = br.ec == tx_errc::leader_not_found
+                               || br.ec == tx_errc::shard_not_found;
+            should_abort = should_abort
+                           || (br.ec != tx_errc::none && !expected_ec);
+            should_retry = should_retry || expected_ec;
+
+            if (br.ec == tx_errc::none) {
+                partitions.push_back(
+                  tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+            }
+        }
+        if (should_abort) {
+            break;
+        }
+        if (should_retry) {
+            if (!co_await sleep_abortable(delay_ms, _as)) {
+                break;
+            }
+            continue;
+        }
+        break;
     }
+
     auto status = co_await stm->add_partitions(tx.id, partitions);
     auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
-        vlog(txlog.warn, "can't add partitions: {}", status);
+        vlog(txlog.warn, "adding partitions failed with {}", status);
     }
     for (auto& br : brs) {
         auto topic_it = std::find_if(
@@ -1076,7 +1126,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         } else {
             if (br.ec != tx_errc::none) {
                 vlog(
-                  txlog.warn, "begin_tx({},...) failed with {}", br.ntp, br.ec);
+                  txlog.warn,
+                  "begin_tx request to {} failed with {}",
+                  br.ntp,
+                  br.ec);
             }
             res_partition.error_code = tx_errc::invalid_txn_state;
         }
@@ -1308,6 +1361,8 @@ tx_gateway_frontend::do_end_txn(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         outcome->set_value(err);
         co_return err;
@@ -1407,6 +1462,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         // it exists on an older leader
         auto ready_tx = co_await stm->reset_tx_ready(expected_term, tx.id);
         if (!ready_tx.has_value()) {
+            if (ready_tx.error() == tm_stm::op_status::timeout) {
+                co_return tx_errc::timeout;
+            }
             co_return tx_errc::invalid_txn_state;
         }
         co_return ready_tx.value();
@@ -1423,6 +1481,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         if (!changed_tx.has_value()) {
             if (changed_tx.error() == tm_stm::op_status::not_leader) {
                 co_return tx_errc::not_coordinator;
+            }
+            if (changed_tx.error() == tm_stm::op_status::timeout) {
+                co_return tx_errc::timeout;
             }
             co_return tx_errc::unknown_server_error;
         }
@@ -1481,46 +1542,53 @@ tx_gateway_frontend::do_commit_tm_tx(
             }
         }
 
-        std::vector<ss::future<prepare_tx_reply>> pfs;
-        for (auto rm : tx.partitions) {
-            pfs.push_back(_rm_partition_frontend.local().prepare_tx(
-              rm.ntp,
-              rm.etag,
-              model::tx_manager_ntp.tp.partition,
-              tx.pid,
-              tx.tx_seq,
-              timeout));
-        }
-
         std::vector<ss::future<prepare_group_tx_reply>> pgfs;
         for (auto group : tx.groups) {
             pgfs.push_back(_rm_group_proxy->prepare_group_tx(
               group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
         }
 
-        if (
-          !is_transaction_ga()
-          && tx.status == tm_transaction::tx_status::ongoing) {
-            auto preparing_tx = co_await stm->mark_tx_preparing(
-              expected_term, tx.id);
-            if (!preparing_tx.has_value()) {
-                if (preparing_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
-            }
-            tx = preparing_tx.value();
-        }
-
+        std::vector<ss::future<prepare_tx_reply>> pfs;
+        pfs.reserve(tx.partitions.size());
         auto ok = true;
         auto rejected = false;
-        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-        for (const auto& r : prs) {
-            ok = ok && (r.ec == tx_errc::none);
-            rejected = rejected || (r.ec == tx_errc::request_rejected);
+
+        if (!is_transaction_ga()) {
+            for (auto rm : tx.partitions) {
+                pfs.push_back(_rm_partition_frontend.local().prepare_tx(
+                  rm.ntp,
+                  rm.etag,
+                  model::tx_manager_ntp.tp.partition,
+                  tx.pid,
+                  tx.tx_seq,
+                  timeout));
+            }
+
+            if (tx.status == tm_transaction::tx_status::ongoing) {
+                auto preparing_tx = co_await stm->mark_tx_preparing(
+                  expected_term, tx.id);
+                if (!preparing_tx.has_value()) {
+                    if (preparing_tx.error() == tm_stm::op_status::not_leader) {
+                        outcome->set_value(tx_errc::not_coordinator);
+                        co_return tx_errc::not_coordinator;
+                    }
+                    if (preparing_tx.error() == tm_stm::op_status::timeout) {
+                        outcome->set_value(tx_errc::timeout);
+                        co_return tx_errc::timeout;
+                    }
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+                tx = preparing_tx.value();
+            }
+
+            auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+            for (const auto& r : prs) {
+                ok = ok && (r.ec == tx_errc::none);
+                rejected = rejected || (r.ec == tx_errc::request_rejected);
+            }
         }
+
         auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
         for (const auto& r : pgrs) {
             ok = ok && (r.ec == tx_errc::none);
@@ -1555,6 +1623,10 @@ tx_gateway_frontend::do_commit_tm_tx(
             outcome->set_value(tx_errc::not_coordinator);
             co_return tx_errc::not_coordinator;
         }
+        if (changed_tx.error() == tm_stm::op_status::timeout) {
+            outcome->set_value(tx_errc::timeout);
+            co_return tx_errc::timeout;
+        }
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
@@ -1570,26 +1642,40 @@ tx_gateway_frontend::do_commit_tm_tx(
     outcome->set_value(tx_errc::none);
     tx = changed_tx.value();
 
-    std::vector<ss::future<commit_group_tx_reply>> gfs;
-    for (auto group : tx.groups) {
-        gfs.push_back(_rm_group_proxy->commit_group_tx(
-          group.group_id, tx.pid, tx.tx_seq, timeout));
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto done = false;
+    while (0 < retries--) {
+        std::vector<ss::future<commit_group_tx_reply>> gfs;
+        gfs.reserve(tx.groups.size());
+        for (auto group : tx.groups) {
+            gfs.push_back(_rm_group_proxy->commit_group_tx(
+              group.group_id, tx.pid, tx.tx_seq, timeout));
+        }
+        std::vector<ss::future<commit_tx_reply>> cfs;
+        cfs.reserve(tx.partitions.size());
+        for (auto rm : tx.partitions) {
+            cfs.push_back(_rm_partition_frontend.local().commit_tx(
+              rm.ntp, tx.pid, tx.tx_seq, timeout));
+        }
+        auto ok = true;
+        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
+        for (const auto& r : grs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
+        for (const auto& r : crs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        if (ok) {
+            done = true;
+            break;
+        }
+        if (!co_await sleep_abortable(delay_ms, _as)) {
+            break;
+        }
     }
-    std::vector<ss::future<commit_tx_reply>> cfs;
-    for (auto rm : tx.partitions) {
-        cfs.push_back(_rm_partition_frontend.local().commit_tx(
-          rm.ntp, tx.pid, tx.tx_seq, timeout));
-    }
-    auto ok = true;
-    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-    for (const auto& r : grs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
-    for (const auto& r : crs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    if (!ok) {
+    if (!done) {
         co_return tx_errc::unknown_server_error;
     }
     co_return tx;
@@ -1597,28 +1683,43 @@ tx_gateway_frontend::do_commit_tm_tx(
 
 ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
   tm_transaction tx, model::timeout_clock::duration timeout) {
-    std::vector<ss::future<commit_group_tx_reply>> gfs;
-    for (auto group : tx.groups) {
-        gfs.push_back(_rm_group_proxy->commit_group_tx(
-          group.group_id, tx.pid, tx.tx_seq, timeout));
-    }
-    std::vector<ss::future<commit_tx_reply>> cfs;
-    for (auto rm : tx.partitions) {
-        cfs.push_back(_rm_partition_frontend.local().commit_tx(
-          rm.ntp, tx.pid, tx.tx_seq, timeout));
-    }
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto done = false;
 
-    auto ok = true;
-    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-    for (const auto& r : grs) {
-        ok = ok && (r.ec == tx_errc::none);
+    while (0 < retries--) {
+        std::vector<ss::future<commit_group_tx_reply>> gfs;
+        for (auto group : tx.groups) {
+            gfs.push_back(_rm_group_proxy->commit_group_tx(
+              group.group_id, tx.pid, tx.tx_seq, timeout));
+        }
+        std::vector<ss::future<commit_tx_reply>> cfs;
+        for (auto rm : tx.partitions) {
+            cfs.push_back(_rm_partition_frontend.local().commit_tx(
+              rm.ntp, tx.pid, tx.tx_seq, timeout));
+        }
+        auto ok = true;
+        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
+        for (const auto& r : grs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
+        for (const auto& r : crs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        if (ok) {
+            done = true;
+            break;
+        }
+        if (co_await sleep_abortable(delay_ms, _as)) {
+            vlog(txlog.trace, "retrying re-commit pid:{}", tx.pid);
+        } else {
+            break;
+        }
     }
-    auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
-    for (const auto& r : crs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    if (!ok) {
-        co_return tx_errc::unknown_server_error;
+    if (!done) {
+        vlog(txlog.warn, "re-commiting pid:{} failed", tx.pid);
+        co_return tx_errc::timeout;
     }
     co_return tx_errc::none;
 }
@@ -1645,7 +1746,7 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::invalid_txn_state;
+        co_return tx_errc::timeout;
     }
     co_return tx_errc::none;
 }
@@ -1666,6 +1767,8 @@ tx_gateway_frontend::get_ongoing_tx(
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
             err = tx_errc::unknown_server_error;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
         }
         co_return err;
     }
@@ -1725,10 +1828,19 @@ tx_gateway_frontend::get_ongoing_tx(
         }
 
         if (ec != tx_errc::none) {
+            vlog(
+              txlog.trace,
+              "rolling previous tx failed with {}; pid:{}",
+              ec,
+              pid);
             co_return ec;
         }
 
         if (expected_term != tx.etag) {
+            vlog(
+              txlog.trace,
+              "failing a tx initiated on the previous tx coordinator pid:{}",
+              pid);
             // The tx has started on the previous term. Even though we rolled it
             // forward there is a possibility that a previous leader did the
             // same and already started the current transaction.
@@ -1738,14 +1850,26 @@ tx_gateway_frontend::get_ongoing_tx(
             // So marking it as ready. We use previous term because aborting a
             // tx in current ready state with current term means we abort a tx
             // which wasn't started and it leads to an error.
-            std::ignore = co_await stm->reset_tx_ready(
+            auto c = co_await stm->reset_tx_ready(
               expected_term, tx.id, tx.etag);
+            if (!c) {
+                vlog(
+                  txlog.trace,
+                  "resetting tx as ready failed with {} pid:{}",
+                  c.error(),
+                  pid);
+            }
             co_return tx_errc::invalid_txn_state;
         }
     }
 
     auto ongoing_tx = co_await stm->reset_tx_ongoing(tx.id, expected_term);
     if (!ongoing_tx.has_value()) {
+        vlog(
+          txlog.trace,
+          "resetting tx as ongoing failed with {} pid:{}",
+          ongoing_tx.error(),
+          pid);
         co_return tx_errc::invalid_txn_state;
     }
     co_return ongoing_tx.value();
@@ -1771,6 +1895,9 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
         {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
+          if (res[0].ec == cluster::errc::topic_already_exists) {
+              return true;
+          }
           if (res[0].ec != cluster::errc::success) {
               vlog(
                 clusterlog.warn,
