@@ -22,6 +22,7 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <boost/functional/hash.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
@@ -259,6 +260,15 @@ void verify_uuid_map() {
         BOOST_CHECK_EQUAL(v, r_it->second);
     }
 }
+
+namespace std {
+template<>
+struct hash<uuid_t> {
+    size_t operator()(const uuid_t& u) const {
+        return boost::hash<uuid_t::underlying_t>()(u.uuid());
+    }
+};
+} // namespace std
 
 SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
     uuid_struct us;

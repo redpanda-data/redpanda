@@ -8,14 +8,8 @@
 // by the Apache License, Version 2.0
 #pragma once
 
-#include "bytes/details/out_of_range.h"
-#include "reflection/adl.h"
-
 #include <absl/hash/hash.h>
-#include <boost/functional/hash.hpp>
-#include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
 
 #include <vector>
 
@@ -28,20 +22,11 @@ class uuid_t {
 public:
     static constexpr auto length = 16;
     using underlying_t = boost::uuids::uuid;
+    static_assert(underlying_t::static_size() == length);
 
-    static uuid_t create() {
-        static thread_local boost::uuids::random_generator uuid_gen;
-        return uuid_t(uuid_gen());
-    }
+    static uuid_t create();
 
-    explicit uuid_t(const std::vector<uint8_t>& v)
-      : _uuid({}) {
-        if (v.size() != length) {
-            details::throw_out_of_range(
-              "Expected size of {} for UUID, got {}", length, v.size());
-        }
-        std::copy(v.begin(), v.end(), _uuid.begin());
-    }
+    explicit uuid_t(const std::vector<uint8_t>& v);
 
     uuid_t() noexcept = default;
 
@@ -49,19 +34,13 @@ public:
         return {_uuid.begin(), _uuid.end()};
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const uuid_t& u) {
-        return os << fmt::format("{}", u._uuid);
-    }
-
-    bool operator==(const uuid_t& u) const { return this->_uuid == u._uuid; }
+    friend std::ostream& operator<<(std::ostream& os, const uuid_t& u);
+    friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const uuid_t& u) {
-        for (const uint8_t byte : u._uuid) {
-            H tmp = H::combine(std::move(h), byte);
-            h = std::move(tmp);
-        }
-        return h;
+        return H::combine_contiguous(
+          std::move(h), u._uuid.begin(), underlying_t::static_size());
     }
 
     const underlying_t& uuid() const { return _uuid; }
@@ -74,12 +53,3 @@ private:
 
     underlying_t _uuid;
 };
-
-namespace std {
-template<>
-struct hash<uuid_t> {
-    size_t operator()(const uuid_t& u) const {
-        return boost::hash<uuid_t::underlying_t>()(u.uuid());
-    }
-};
-} // namespace std
