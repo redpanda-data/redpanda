@@ -49,11 +49,8 @@ public:
         return {_uuid.begin(), _uuid.end()};
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const uuid_t& u) {
-        return os << fmt::format("{}", u._uuid);
-    }
-
-    bool operator==(const uuid_t& u) const { return this->_uuid == u._uuid; }
+    friend std::ostream& operator<<(std::ostream& os, const uuid_t& u);
+    friend bool operator==(const uuid_t& u, const uuid_t& v) = default;
 
     template<typename H>
     friend H AbslHashValue(H h, const uuid_t& u) {
