@@ -255,7 +255,49 @@ func TestAddUnsetDefaults(t *testing.T) {
 					},
 				},
 			},
-		}, {
+		},
+
+		{
+			name: "rpk configuration left alone if present",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "250.12.12.12", Port: 9095},
+					},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "0.0.2.3", Port: 4444},
+					},
+				},
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"foo:9092"},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"bar:9644"},
+					},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "250.12.12.12", Port: 9095},
+					},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "0.0.2.3", Port: 4444},
+					},
+				},
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"foo:9092"},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"bar:9644"},
+					},
+				},
+			},
+		},
+
+		{
 			name: "kafka broker and admin api from redpanda",
 			inCfg: &Config{
 				Redpanda: RedpandaNodeConfig{
@@ -285,25 +327,49 @@ func TestAddUnsetDefaults(t *testing.T) {
 					},
 				},
 			},
-		}, {
-			name: "admin api sorted",
+		},
+
+		{
+			name: "admin api sorted, no TLS used because we have non-TLS servers",
 			inCfg: &Config{
 				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "10.1.0.1", Port: 5555, Name: "tls"},     // private, TLS
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},    // loopback, TLS
+						{Address: "localhost", Port: 5555, Name: "tls"},    // localhost, TLS
+						{Address: "122.61.33.12", Port: 5555, Name: "tls"}, // public, TLS
+						{Address: "10.1.2.1", Port: 9999},                  // private
+						{Address: "127.1.2.1", Port: 9999},                 // loopback
+						{Address: "localhost", Port: 9999},                 // localhost
+						{Address: "122.61.32.12", Port: 9999},              // public
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 					AdminAPI: []NamedSocketAddress{
-						{Address: "10.0.0.1", Port: 4444, Name: "tls"},     // private, TLS
-						{Address: "127.0.0.1", Port: 4444, Name: "tls"},    // loopback, TLS
-						{Address: "localhost", Port: 4444, Name: "tls"},    // localhost, TLS
-						{Address: "122.65.33.12", Port: 4444, Name: "tls"}, // public, TLS
-						{Address: "10.0.2.1", Port: 7777},                  // private
-						{Address: "127.0.2.1", Port: 7777},                 // loopback
-						{Address: "localhost", Port: 7777},                 // localhost
-						{Address: "122.65.32.12", Port: 7777},              // public
+						{Address: "10.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "127.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "localhost", Port: 4444, Name: "tls"},
+						{Address: "122.65.33.12", Port: 4444, Name: "tls"},
+						{Address: "10.0.2.1", Port: 7777},
+						{Address: "127.0.2.1", Port: 7777},
+						{Address: "localhost", Port: 7777},
+						{Address: "122.65.32.12", Port: 7777},
 					},
 					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 				},
 			},
 			expCfg: &Config{
 				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "10.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "localhost", Port: 5555, Name: "tls"},
+						{Address: "122.61.33.12", Port: 5555, Name: "tls"},
+						{Address: "10.1.2.1", Port: 9999},
+						{Address: "127.1.2.1", Port: 9999},
+						{Address: "localhost", Port: 9999},
+						{Address: "122.61.32.12", Port: 9999},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 					AdminAPI: []NamedSocketAddress{
 						{Address: "10.0.0.1", Port: 4444, Name: "tls"},
 						{Address: "127.0.0.1", Port: 4444, Name: "tls"},
@@ -318,7 +384,12 @@ func TestAddUnsetDefaults(t *testing.T) {
 				},
 				Rpk: RpkConfig{
 					KafkaAPI: RpkKafkaAPI{
-						Brokers: []string{"127.0.0.1:9092"},
+						Brokers: []string{
+							"localhost:9999",
+							"127.1.2.1:9999",
+							"10.1.2.1:9999",
+							"122.61.32.12:9999",
+						},
 					},
 					AdminAPI: RpkAdminAPI{
 						Addresses: []string{
@@ -326,10 +397,64 @@ func TestAddUnsetDefaults(t *testing.T) {
 							"127.0.2.1:7777",    // loopback
 							"10.0.2.1:7777",     // private
 							"122.65.32.12:7777", // public
-							"localhost:4444",    // localhost, TLS
-							"127.0.0.1:4444",    // loopback, TLS
-							"10.0.0.1:4444",     // private, TLS
-							"122.65.33.12:4444", // public, TLS
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "broker and admin api sorted with TLS",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "10.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "localhost", Port: 5555, Name: "tls"},
+						{Address: "122.61.33.12", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "10.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "127.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "localhost", Port: 4444, Name: "tls"},
+						{Address: "122.65.33.12", Port: 4444, Name: "tls"},
+					},
+					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "10.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+						{Address: "localhost", Port: 5555, Name: "tls"},
+						{Address: "122.61.33.12", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+					AdminAPI: []NamedSocketAddress{
+						{Address: "10.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "127.0.0.1", Port: 4444, Name: "tls"},
+						{Address: "localhost", Port: 4444, Name: "tls"},
+						{Address: "122.65.33.12", Port: 4444, Name: "tls"},
+					},
+					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+				Rpk: RpkConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{
+							"localhost:5555",
+							"127.1.0.1:5555",
+							"10.1.0.1:5555",
+							"122.61.33.12:5555",
+						},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{
+							"localhost:4444",
+							"127.0.0.1:4444",
+							"10.0.0.1:4444",
+							"122.65.33.12:4444",
 						},
 					},
 				},

@@ -534,39 +534,42 @@ func (p *Params) processOverrides(c *Config) error {
 // As a final step in initializing a config, we add a few defaults to some
 // specific unset values.
 func (c *Config) addUnsetDefaults() {
-	r := &c.Rpk
+	defaultFromRedpanda(
+		namedAuthnToNamed(c.Redpanda.KafkaAPI),
+		c.Redpanda.KafkaAPITLS,
+		&c.Rpk.KafkaAPI.Brokers,
+		"127.0.0.1:9092",
+	)
+	defaultFromRedpanda(
+		c.Redpanda.AdminAPI,
+		c.Redpanda.AdminAPITLS,
+		&c.Rpk.AdminAPI.Addresses,
+		"127.0.0.1:9644",
+	)
+}
 
-	brokers := r.KafkaAPI.Brokers
-	defer func() { r.KafkaAPI.Brokers = brokers }()
-	if len(brokers) == 0 && len(c.Redpanda.KafkaAPI) > 0 {
-		b0 := c.Redpanda.KafkaAPI[0]
-		brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
-	}
-	if len(brokers) == 0 {
-		brokers = []string{"127.0.0.1:9092"}
-	}
-
-	// If we have admin addrs, or we don't and there are also no redpanda
-	// admin addrs, we quit early with our default.
-	addrs := r.AdminAPI.Addresses
-	defer func() {
-		if len(addrs) == 0 {
-			addrs = []string{"127.0.0.1:9644"}
-		}
-		r.AdminAPI.Addresses = addrs
-	}()
-	if len(addrs) != 0 || len(c.Redpanda.AdminAPI) == 0 {
+// defaultFromRedpanda sets fields in our `rpk` config section if those fields
+// are left unspecified. Primarily, this benefits the workflow where we ssh
+// into hosts and then run rpk against a localhost broker. To that end, we have
+// the following preference:
+//
+//	localhost -> loopback -> private -> public -> (same order, but TLS)
+//
+// We favor no TLS. The broker likely does not have client certs, so we cannot
+// set client TLS settings. If we have any non-TLS host, we do not use TLS
+// hosts.
+func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string, fallback string) {
+	if len(*dst) != 0 {
 		return
 	}
+	defer func() {
+		if len(*dst) == 0 {
+			*dst = append(*dst, fallback)
+		}
+	}()
 
-	// We want to order the admin API addresses by:
-	//
-	// 	localhost -> loopback -> private -> public
-	//
-	// We also want to favor non-TLS. To do that, we map all TLS names if
-	// they are enabled, and then following the same grouping.
 	tlsNames := make(map[string]bool)
-	for _, t := range c.Redpanda.AdminAPITLS {
+	for _, t := range srcTLS {
 		if t.Enabled {
 			tlsNames[t.Name] = true
 		}
@@ -581,7 +584,7 @@ func (c *Config) addUnsetDefaults() {
 
 	var localhost, loopback, private, public,
 		tlsLocalhost, tlsLoopback, tlsPrivate, tlsPublic []string
-	for _, a := range c.Redpanda.AdminAPI {
+	for _, a := range src {
 		s := net.JoinHostPort(a.Address, strconv.Itoa(a.Port))
 		ip := net.ParseIP(a.Address)
 		switch {
@@ -595,14 +598,19 @@ func (c *Config) addUnsetDefaults() {
 			add(&public, &tlsPublic, s, a)
 		}
 	}
-	addrs = append(addrs, localhost...)
-	addrs = append(addrs, loopback...)
-	addrs = append(addrs, private...)
-	addrs = append(addrs, public...)
-	addrs = append(addrs, tlsLocalhost...)
-	addrs = append(addrs, tlsLoopback...)
-	addrs = append(addrs, tlsPrivate...)
-	addrs = append(addrs, tlsPublic...)
+	*dst = append(*dst, localhost...)
+	*dst = append(*dst, loopback...)
+	*dst = append(*dst, private...)
+	*dst = append(*dst, public...)
+
+	if len(*dst) > 0 {
+		return
+	}
+
+	*dst = append(*dst, tlsLocalhost...)
+	*dst = append(*dst, tlsLoopback...)
+	*dst = append(*dst, tlsPrivate...)
+	*dst = append(*dst, tlsPublic...)
 }
 
 // Set allow to set a single configuration field by passing a key value pair
