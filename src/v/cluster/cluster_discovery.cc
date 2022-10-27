@@ -53,8 +53,13 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
         // We will send it to the controller when we join the cluster.
         co_return *config::node().node_id();
     }
+    co_return co_await register_uuid_until();
+}
+
+ss::future<model::node_id>
+cluster_discovery::register_uuid_until(std::function<bool(void)> should_stop) {
     model::node_id assigned_node_id;
-    while (!_as.abort_requested()) {
+    while (!_as.abort_requested() && !should_stop()) {
         auto assigned = co_await dispatch_node_uuid_registration_to_seeds(
           assigned_node_id);
         if (assigned) {
@@ -111,8 +116,9 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
     for (const auto& s : seed_servers) {
         vlog(
           clusterlog.info,
-          "Requesting node ID for node UUID {} from {}",
+          "Registering node UUID {} with node ID {} from {}",
           _node_uuid,
+          config::node().node_id(),
           s.addr);
         result<join_node_reply> r(join_node_reply{});
         try {

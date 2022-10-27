@@ -346,11 +346,12 @@ members_manager::get_node_updates() {
     return ss::make_ready_future<std::vector<node_update>>(std::move(ret));
 }
 
-model::node_id members_manager::get_node_id(const model::node_uuid& node_uuid) {
+std::optional<model::node_id>
+members_manager::get_node_id(const model::node_uuid& node_uuid) {
     const auto it = _id_by_uuid.find(node_uuid);
-    vassert(
-      it != _id_by_uuid.end(),
-      "Node registration must be completed before calling");
+    if (it == _id_by_uuid.end()) {
+        return std::nullopt;
+    }
     return it->second;
 }
 
@@ -617,7 +618,10 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
         co_return errc;
     }
     const auto assigned_node_id = get_node_id(node_uuid);
-    if (node_id && assigned_node_id != *node_id) {
+    vassert(
+      assigned_node_id != std::nullopt,
+      "Registration should have added node UUID");
+    if (node_id && *assigned_node_id != *node_id) {
         vlog(
           clusterlog.warn,
           "Node registration for UUID {} as {} completed but already already "

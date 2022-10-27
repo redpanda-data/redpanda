@@ -174,7 +174,7 @@ public:
 
     // Returns the node ID for the given node UUID. Callers must have a
     // guarantee that the UUID has already been registered before calling.
-    model::node_id get_node_id(const model::node_uuid&);
+    std::optional<model::node_id> get_node_id(const model::node_uuid&);
 
 private:
     using uuid_map_t = absl::flat_hash_map<model::node_uuid, model::node_id>;

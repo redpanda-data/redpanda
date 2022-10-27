@@ -83,6 +83,9 @@ public:
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
+    ss::future<> maybe_register_node_uuid(
+      std::unique_ptr<cluster::cluster_discovery>, ss::abort_source&);
+
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;

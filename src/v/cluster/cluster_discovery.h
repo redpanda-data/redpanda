@@ -103,6 +103,12 @@ public:
     // will be set with an ID agreed upon by all seeds.
     ss::future<bool> is_cluster_founder();
 
+    // Repeatedly dispatches registration attempts to the seed servers until
+    // success, until 'should_stop' returns true, or until the abort source
+    // kicks in.
+    ss::future<model::node_id> register_uuid_until(
+      std::function<bool(void)> should_stop = [] { return false; });
+
 private:
     // Sends requests to each seed server to register the local node UUID until
     // one succeeds. Upon success, sets `node_id` to the assigned node ID and

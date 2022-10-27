@@ -1424,6 +1424,46 @@ void application::start_bootstrap_services() {
       config::node().rpc_server());
 }
 
+ss::future<> application::maybe_register_node_uuid(
+  std::unique_ptr<cluster::cluster_discovery> cd, ss::abort_source& as) {
+    const auto node_uuid = storage.local().node_uuid();
+    if (
+      as.abort_requested()
+      || controller->get_members_manager().local().get_node_id(node_uuid)
+           != std::nullopt) {
+        vlog(_log.trace, "Skipping background node UUID registration");
+        co_return;
+    }
+    vlog(
+      _log.info,
+      "Background registration of node UUID {} for node ID {}",
+      node_uuid,
+      config::node().node_id());
+    try {
+        co_await _feature_table.local().await_feature(
+          features::feature::node_id_assignment, as);
+    } catch (ss::abort_requested_exception&) {
+        // Shutting down
+        co_return;
+    } catch (...) {
+        vlog(
+          _log.error,
+          "Unexpected error awaiting node ID assignment feature: {} {}",
+          std::current_exception(),
+          ss::current_backtrace());
+        co_return;
+    }
+    vlog(
+      _log.info,
+      "Registering node UUID {} with node ID {}",
+      node_uuid,
+      config::node().node_id());
+    co_await cd->register_uuid_until([&] {
+        return controller->get_members_manager().local().get_node_id(node_uuid)
+               != std::nullopt;
+    });
+}
+
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     wire_up_bootstrap_services();
     start_bootstrap_services();
@@ -1432,9 +1472,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     // ID. A valid node ID is required before we can initialize the rest of our
     // subsystems.
     const auto& node_uuid = storage.local().node_uuid();
-    cluster::cluster_discovery cd(
+    auto cd = std::make_unique<cluster::cluster_discovery>(
       node_uuid, storage.local(), app_signal.abort_source());
-    auto node_id = cd.determine_node_id().get();
+    auto node_id = cd->determine_node_id().get();
     if (config::node().node_id() == std::nullopt) {
         // If we previously didn't have a node ID, set it in the config. We
         // will persist it in the kvstore when the controller starts up.
@@ -1463,7 +1503,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           .get();
     }
 
-    start_runtime_services(cd, app_signal);
+    start_runtime_services(*cd, app_signal);
 
     if (_proxy_config) {
         _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
@@ -1482,6 +1522,12 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     }
 
     start_kafka(node_id, app_signal);
+
+    // At this point, we've called await_membership(), but this node may not
+    // have registered its UUID if e.g. this node joined a cluster that
+    // previously did not support node UUIDs was subsequently upgraded.
+    ssx::background = maybe_register_node_uuid(
+      std::move(cd), app_signal.abort_source());
 
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
