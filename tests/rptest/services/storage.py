@@ -20,6 +20,7 @@ class Segment:
         self.data_file = None
         self.base_index = None
         self.compaction_index = None
+        self.size = None
 
     def add_file(self, fn, ext):
         assert fn
@@ -43,6 +44,9 @@ class Segment:
         paths = map(lambda fn: os.path.join(self.partition.path, fn), files)
         return all(
             map(lambda path: self.partition.node.account.isfile(path), paths))
+
+    def set_size(self, s: int):
+        self.size = s
 
     def __repr__(self):
         return "{}:{}{}{}".format(self.name, "D" if self.data_file else "d",
@@ -69,6 +73,12 @@ class Partition:
                 self.segments[seg] = Segment(self, seg)
             seg = self.segments[seg]
             seg.add_file(fn, ext)
+
+    def set_segment_size(self, segment_name: str, size: int):
+        seg, _ = os.path.splitext(segment_name)
+        if not re.match(r"^\d+\-\d+\-v\d+$", seg):
+            return
+        self.segments[seg].set_size(size)
 
     def delete_indices(self, allow_fail=False):
         for _, segment in self.segments.items():

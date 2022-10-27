@@ -21,6 +21,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "http/client.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -149,10 +150,12 @@ scheduler_service_impl::scheduler_service_impl(
   const configuration& conf,
   ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<cluster::topic_table>& tt)
+  ss::sharded<cluster::topic_table>& tt,
+  ss::sharded<features::feature_table>& ft)
   : _conf(conf)
   , _partition_manager(pm)
   , _topic_table(tt)
+  , _feature_table(ft)
   , _jitter(conf.reconciliation_interval, 1ms)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
@@ -165,8 +168,9 @@ scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt,
-  ss::sharded<archival::configuration>& config)
-  : scheduler_service_impl(config.local(), remote, pm, tt) {}
+  ss::sharded<archival::configuration>& config,
+  ss::sharded<features::feature_table>& ft)
+  : scheduler_service_impl(config.local(), remote, pm, tt, ft) {}
 
 void scheduler_service_impl::rearm_timer() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
@@ -260,11 +264,34 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
     if (!part) {
         co_return;
     }
+
     vlog(_rtclog.info, "Starting archiver for partition {}", ntp);
 
     if (part->get_ntp_config().is_read_replica_mode_enabled()) {
         archiver->run_sync_manifest_loop();
     } else {
+        /**
+         * In Redpanda 22.3 (cluster logical version 7), S3 segment naming
+         * and partition manifest format change.  Therefore we must not
+         * write anything into the new format while any nodes are still
+         * on the old version (i.e. before feature is active).  This is
+         * a simpler alternative than teaching Redpanda to conditionally
+         * write the old format.
+         */
+        if (!_feature_table.local().is_active(
+              features::feature::cloud_retention)) {
+            vlog(
+              _rtclog.info,
+              "Upgrade in progress, delaying archiver startup for partition {}",
+              ntp);
+
+            // This function is called from a reconciliation loop, so rather
+            // than sleeping on await_feature, we can simply return and let it
+            // retry later.
+            _archivers.erase(archiver->get_ntp());
+            co_return;
+        }
+
         if (ntp.tp.partition == 0) {
             // Upload manifest once per topic. GCS has strict
             // limits for single object updates.
@@ -272,6 +299,7 @@ ss::future<> scheduler_service_impl::add_ntp_archiver(
               model::topic_namespace(ntp.ns, ntp.tp.topic),
               archiver->get_revision_id());
         }
+
         _probe.start_archiving_ntp();
         archiver->run_upload_loop();
     }

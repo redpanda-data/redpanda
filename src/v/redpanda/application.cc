@@ -943,7 +943,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           std::ref(cloud_storage_api),
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
-          std::ref(arch_configs))
+          std::ref(arch_configs),
+          std::ref(_feature_table))
           .get();
         arch_configs.stop().get();
 
