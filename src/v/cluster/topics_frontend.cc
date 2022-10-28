@@ -18,6 +18,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
@@ -1143,6 +1144,17 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
   cluster::replication_factor new_replication_factor,
   model::timeout_clock::time_point timeout) {
     std::vector<move_topic_replicas_data> new_assignments;
+
+    if (
+      static_cast<size_t>(new_replication_factor)
+      > _members_table.local().all_brokers_count()) {
+        vlog(
+          clusterlog.warn,
+          "New replication factor({}) is greater than number of brokers({})",
+          new_replication_factor,
+          _members_table.local().all_brokers_count());
+        co_return errc::topic_invalid_replication_factor;
+    }
 
     auto tp_metadata = _topics.local().get_topic_metadata(topic);
     if (!tp_metadata.has_value()) {

@@ -66,3 +66,8 @@ class ReplicationFactorChangeTest(RedpandaTest):
         self._rpk.alter_topic_config(self.topic_name, self.rf_property,
                                      self.replication_factor)
         assert len(self.admin.list_reconfigurations()) == 0
+
+        self.replication_factor = 10000
+        self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                     self.replication_factor)
+        assert len(self.admin.list_reconfigurations()) == 0
