@@ -13,10 +13,11 @@
 
 #include "config/config_store.h"
 #include "config/rest_authn_endpoint.h"
+#include "hashing/jump_consistent_hash.h"
+#include "hashing/xx.h"
 #include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/kafka_client_cache.h"
-#include "pandaproxy/sharded_client_cache.h"
 #include "pandaproxy/types.h"
 #include "redpanda/request_auth.h"
 #include "seastarx.h"
@@ -38,6 +39,11 @@
 #include <type_traits>
 
 namespace pandaproxy {
+
+inline ss::shard_id user_shard(const ss::sstring& name) {
+    auto hash = xxhash_64(name.data(), name.length());
+    return jump_consistent_hash(hash, ss::smp::count);
+}
 
 namespace impl {
 

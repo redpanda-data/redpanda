@@ -15,7 +15,6 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/rest/proxy.h"
-#include "pandaproxy/sharded_client_cache.h"
 
 #include <seastar/core/coroutine.hh>
 
