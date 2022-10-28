@@ -289,12 +289,14 @@ class PandaProxyEndpoints(RedpandaTest):
         return res
 
 
-class PandaProxyTest(PandaProxyEndpoints):
+class PandaProxyTestMethods(PandaProxyEndpoints):
     """
-    Test pandaproxy against a redpanda cluster.
+    Base class for testing pandaproxy against a redpanda cluster.
+
+    Inherit from this to run the tests.
     """
-    def __init__(self, context):
-        super(PandaProxyTest, self).__init__(context)
+    def __init__(self, context, **kwargs):
+        super(PandaProxyTestMethods, self).__init__(context, **kwargs)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -944,6 +946,16 @@ class PandaProxySASLTest(PandaProxyEndpoints):
                    err_msg="Timeout waiting for topics to appear.")
 
 
+class PandaProxyTest(PandaProxyTestMethods):
+    """
+    Test pandaproxy against a redpanda cluster without auth.
+
+    This derived class inherits all the tests from PandaProxyTestMethods.
+    """
+    def __init__(self, context):
+        super(PandaProxyTest, self).__init__(context)
+
+
 class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     username = 'red'
     password = 'panda'
@@ -1262,9 +1274,11 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         admin.update_user(super_username, super_password, super_algorithm)
 
 
-class PandaProxyAutoAuthTest(PandaProxyEndpoints):
+class PandaProxyAutoAuthTest(PandaProxyTestMethods):
     """
-    Testpandaproxy against a redpanda cluster with Auto Auth enabled.
+    Test pandaproxy against a redpanda cluster with Auto Auth enabled.
+
+    This derived class inherits all the tests from PandaProxyTestMethods.
     """
     def __init__(self, context):
         security = SecurityConfig()
@@ -1276,7 +1290,7 @@ class PandaProxyAutoAuthTest(PandaProxyEndpoints):
                                                      security=security)
 
     @cluster(num_nodes=3)
-    def test_get_topics(self):
+    def test_restarts(self):
         nodes = self.redpanda.nodes
         node_count = len(nodes)
         restart_node_idx = 0
