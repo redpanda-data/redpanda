@@ -141,7 +141,7 @@ CRLFMT ?= $(LOCALBIN)/crlfmt
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
 CRLFMT_VERSION ?= v0.0.0-20210128092314-b3eff0b87c79
-KUTTL_VERSION ?= v0.11.1
+KUTTL_VERSION ?= v0.13.0
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
