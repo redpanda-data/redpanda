@@ -20,7 +20,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, LoggingConfig
 from rptest.services.admin import Admin
 from typing import Optional, List, Dict, Union
 
@@ -88,6 +88,13 @@ HTTP_CONSUMER_SET_OFFSETS_HEADERS = {
     "Accept": "application/vnd.kafka.v2+json",
     "Content-Type": "application/vnd.kafka.v2+json"
 }
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace'
+                           })
 
 
 class Consumer:
@@ -180,6 +187,7 @@ class PandaProxyEndpoints(RedpandaTest):
             num_brokers=3,
             enable_pp=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
+            log_config=log_config,
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
