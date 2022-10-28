@@ -36,7 +36,7 @@ public:
       ss::smp_service_group smp_sg,
       size_t max_memory,
       ss::sharded<kafka::client::client>& client,
-      sharded_client_cache& client_cache,
+      ss::sharded<kafka_client_cache>& client_cache,
       cluster::controller* controller);
 
     ss::future<> start();
@@ -45,7 +45,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
-    sharded_client_cache& client_cache() { return _client_cache; }
+    ss::sharded<kafka_client_cache>& client_cache() { return _client_cache; }
     ss::future<> mitigate_error(std::exception_ptr);
 
 private:
@@ -58,7 +58,7 @@ private:
     ssx::semaphore _mem_sem;
     ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
-    sharded_client_cache& _client_cache;
+    ss::sharded<kafka_client_cache>& _client_cache;
     server::context_t _ctx;
     server _server;
     one_shot _ensure_started;

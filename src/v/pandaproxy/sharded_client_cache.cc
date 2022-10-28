@@ -26,9 +26,6 @@ ss::future<> sharded_client_cache::start(
       proxy_client_cfg, client_cache_max_size, client_keep_alive);
 }
 
-ss::future<> sharded_client_cache::stop() {
-    co_await _gate.close();
-    co_await _cache.stop();
-}
+ss::future<> sharded_client_cache::stop() { co_await _cache.stop(); }
 
 } // namespace pandaproxy

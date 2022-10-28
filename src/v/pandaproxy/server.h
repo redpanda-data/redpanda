@@ -182,8 +182,14 @@ public:
 
         template<std::invocable<kafka_client_cache&> Func>
         auto dispatch(Func&& func) {
-            return service().client_cache().invoke_on_cache(
-              user, std::forward<Func>(func));
+            // Access the cache on the appropriate shard.
+            return service().client_cache().invoke_on(
+              user_shard(user.name),
+              ss::smp_submit_to_options{context().smp_sg},
+              [func{std::forward<Func>(func)}](
+                kafka_client_cache& cache) mutable {
+                  return std::invoke(std::move(func), cache);
+              });
         }
 
         template<std::invocable<kafka::client::client&> Func>

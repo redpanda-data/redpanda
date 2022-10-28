@@ -12,6 +12,7 @@
 #pragma once
 #include "config/rest_authn_endpoint.h"
 #include "pandaproxy/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
