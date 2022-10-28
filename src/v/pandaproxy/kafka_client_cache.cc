@@ -76,10 +76,11 @@ client_ptr kafka_client_cache::fetch_or_insert(
                 inner_list.pop_back();
                 _evicted_items.push_back(std::move(item));
 
-                // If the timer is not armed, then trigger it for a few seconds
-                // from now. If the timer is armed and it won't run until far
-                // into the future, then trigger it a few seconds from now. If
-                // the timer is armed and it will run soon, then do nothing.
+                // If the timer is not armed, then trigger it for a few
+                // seconds from now. If the timer is armed and it won't run
+                // until far into the future, then trigger it a few seconds
+                // from now. If the timer is armed and it will run soon,
+                // then do nothing.
                 auto window = ss::lowres_clock::now() + 1s;
                 if (
                   !_gc_timer.armed()

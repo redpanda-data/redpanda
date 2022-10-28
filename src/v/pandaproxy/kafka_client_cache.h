@@ -12,6 +12,7 @@
 #pragma once
 #include "config/rest_authn_endpoint.h"
 #include "pandaproxy/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -61,6 +62,14 @@ public:
     size_t size() const;
     size_t max_size() const;
 
+    template<std::invocable<kafka_client_cache&> Func>
+    auto invoke_on_cache(Func&& func) {
+        return ss::try_with_gate(_gc_gate, [this, &func] {
+            return _gc_lock.with(
+              [this, &func] { return std::forward<Func>(func)(*this); });
+        });
+    }
+
 private:
     // Tags used for indexing
     struct underlying_list {};
@@ -87,5 +96,6 @@ private:
     std::list<timestamped_user> _evicted_items;
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gc_gate;
+    mutex _gc_lock;
 };
 } // namespace pandaproxy
