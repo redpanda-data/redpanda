@@ -798,7 +798,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(_connection_cache),
         std::ref(storage),
         std::ref(recovery_throttle),
-        std::ref(_feature_table))
+        std::ref(feature_table))
       .get();
 
     // custom handling for recovery_throttle and raft group manager shutdown.
@@ -842,7 +842,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
-      std::ref(_feature_table))
+      std::ref(feature_table))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -864,7 +864,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       storage_node,
       std::ref(raft_group_manager),
       data_policies,
-      std::ref(_feature_table),
+      std::ref(feature_table),
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
 
@@ -874,7 +874,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       node_status_backend,
       node_id,
       std::ref(controller->get_members_table()),
-      std::ref(_feature_table),
+      std::ref(feature_table),
       std::ref(node_status_table),
       ss::sharded_parameter(
         [] { return config::shard_local_cfg().node_status_interval.bind(); }))
@@ -942,7 +942,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
           std::ref(arch_configs),
-          std::ref(_feature_table))
+          std::ref(feature_table))
           .get();
         arch_configs.stop().get();
 
@@ -1082,7 +1082,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(id_allocator_frontend),
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
-      std::ref(_feature_table))
+      std::ref(feature_table))
       .get();
     _kafka_conn_quotas
       .start([]() {
@@ -1233,7 +1233,7 @@ void application::wire_up_bootstrap_services() {
 
     // Start empty, populated from snapshot in start_bootstrap_services
     syschecks::systemd_message("Creating feature table").get();
-    construct_service(_feature_table).get();
+    construct_service(feature_table).get();
 
     // Wire up the internal RPC server.
     ss::sharded<net::server_configuration> rpc_cfg;
@@ -1446,10 +1446,10 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         // to commit some state to its log.
         vlog(_log.warn, "Running in unit test mode");
         if (
-          _feature_table.local().get_active_version()
+          feature_table.local().get_active_version()
           == cluster::invalid_version) {
             vlog(_log.info, "Switching on all features");
-            _feature_table
+            feature_table
               .invoke_on_all(
                 [](features::feature_table& ft) { ft.testing_activate_all(); })
               .get();
@@ -1491,7 +1491,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 }
 
 void application::start_runtime_services(cluster::cluster_discovery& cd) {
-    ssx::background = _feature_table.invoke_on_all(
+    ssx::background = feature_table.invoke_on_all(
       [this](features::feature_table& ft) -> ss::future<> {
           try {
               co_await ft.await_feature(features::feature::rpc_v2_by_default);
@@ -1793,7 +1793,7 @@ void application::load_feature_table_snapshot() {
           my_version);
     }
 
-    _feature_table
+    feature_table
       .invoke_on_all([snap](features::feature_table& ft) { snap.apply(ft); })
       .get();
 }
