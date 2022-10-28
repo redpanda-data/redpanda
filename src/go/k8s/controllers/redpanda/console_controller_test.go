@@ -91,12 +91,9 @@ var _ = Describe("Console controller", func() {
 			By("Having a Secret for SASL user")
 			secretLookupKey := types.NamespacedName{Name: fmt.Sprintf("%s-%s", ConsoleName, resources.ConsoleSuffix), Namespace: ConsoleNamespace}
 			createdSecret := &corev1.Secret{}
-			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, secretLookupKey, createdSecret); err != nil {
-					return false
-				}
-				return true
-			}, timeout, interval).Should(BeTrue())
+			Eventually(func() error {
+				return k8sClient.Get(ctx, secretLookupKey, createdSecret)
+			}, timeout, interval).Should(Succeed())
 
 			// Not checking if ACLs are created, KafkaAdmin is mocked
 
@@ -192,23 +189,50 @@ var _ = Describe("Console controller", func() {
 				console.SetLabels(map[string]string{"test.redpanda.vectorized.io/name": "updating-console"})
 			}), timeout, interval).Should(Succeed())
 
-			By("Checking ConfigMapRef did not change")
+			By("Checking updated console label exist")
 			Eventually(func() bool {
 				updatedConsole := &redpandav1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return false
 				}
 				labels := updatedConsole.GetLabels()
-				if newLabel, ok := labels["test.redpanda.vectorized.io/name"]; !ok || newLabel != "updating-console" {
+				_, ok := labels["test.redpanda.vectorized.io/name"]
+				return ok
+			}, timeout, interval).Should(BeTrue())
+
+			By("Checking updated console label content")
+			Eventually(func() string {
+				updatedConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
+					return ""
+				}
+				labels := updatedConsole.GetLabels()
+				return labels["test.redpanda.vectorized.io/name"]
+			}, timeout, interval).Should(Equal("updating-console"))
+
+			By("Checking ConfigMapRef exist in status")
+			Eventually(func() bool {
+				updatedConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return false
+				}
+
+				updatedRef := updatedConsole.Status.ConfigMapRef
+				return updatedRef != nil
+			}, timeout, interval).Should(BeTrue())
+
+			By("Checking ConfigMapRef did not change")
+			Eventually(func() string {
+				updatedConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
+					return "console not found"
 				}
 				updatedRef := updatedConsole.Status.ConfigMapRef
 				if updatedRef == nil {
-					return false
+					return "missing config map reference"
 				}
-				updatedConfigmapNsn := fmt.Sprintf("%s/%s", updatedRef.Namespace, updatedRef.Name)
-				return updatedConfigmapNsn == configmapNsn
-			}, timeout, interval).Should(BeTrue())
+				return fmt.Sprintf("%s/%s", updatedRef.Namespace, updatedRef.Name)
+			}, timeout, interval).Should(Equal(configmapNsn))
 		})
 	})
 
