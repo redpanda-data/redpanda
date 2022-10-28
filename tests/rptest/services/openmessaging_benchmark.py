@@ -58,6 +58,7 @@ class OpenMessagingBenchmarkWorkers(Service):
         node.account.mkdirs(OpenMessagingBenchmarkWorkers.PERSISTENT_ROOT)
 
         start_cmd = f"cd /opt/openmessaging-benchmark; \
+                      HEAP_OPTS=\" \" \
                       bin/benchmark-worker \
                       --port {OpenMessagingBenchmarkWorkers.PORT} \
                       --stats-port {OpenMessagingBenchmarkWorkers.STATS_PORT} \
