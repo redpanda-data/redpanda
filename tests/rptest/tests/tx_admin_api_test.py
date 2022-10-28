@@ -20,7 +20,8 @@ import re
 import requests
 
 NON_EXISTENT_TID_LOG_ALLOW_LIST = [
-    re.compile(r".*Unexpected tx_error error: Unknown server error.*")
+    re.compile(
+        r".*Unexpected tx_error error: {tx_errc::unknown_server_error}.*")
 ]
 
 
@@ -344,7 +345,7 @@ class TxAdminTest(RedpandaTest):
                         error_tx_id, partition["ns"], partition["topic"],
                         partition["partition_id"], partition["etag"])
                 except requests.exceptions.HTTPError as e:
-                    assert e.response.text == '{"message": "Unexpected tx_error error: Unknown server error", "code": 500}'
+                    assert e.response.text == '{"message": "Unexpected tx_error error: {tx_errc::unknown_server_error}", "code": 500}'
 
         producer.commit_transaction()
 

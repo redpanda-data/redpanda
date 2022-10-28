@@ -126,53 +126,13 @@ enum class tx_errc {
     invalid_txn_state,
     invalid_producer_epoch
 };
+
+std::ostream& operator<<(std::ostream&, const tx_errc&);
+
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
 
-    std::string message(int c) const final {
-        switch (static_cast<tx_errc>(c)) {
-        case tx_errc::none:
-            return "None";
-        case tx_errc::leader_not_found:
-            return "Leader not found";
-        case tx_errc::shard_not_found:
-            return "Shard not found";
-        case tx_errc::partition_not_found:
-            return "Partition not found";
-        case tx_errc::stm_not_found:
-            return "Stm not found";
-        case tx_errc::partition_not_exists:
-            return "Partition not exists";
-        case tx_errc::pid_not_found:
-            return "Pid not found";
-        case tx_errc::timeout:
-            return "Timeout";
-        case tx_errc::conflict:
-            return "Conflict";
-        case tx_errc::fenced:
-            return "Fenced";
-        case tx_errc::stale:
-            return "Stale";
-        case tx_errc::not_coordinator:
-            return "Not coordinator";
-        case tx_errc::coordinator_not_available:
-            return "Coordinator not available";
-        case tx_errc::preparing_rebalance:
-            return "Preparing rebalance";
-        case tx_errc::rebalance_in_progress:
-            return "Rebalance in progress";
-        case tx_errc::coordinator_load_in_progress:
-            return "Coordinator load in progress";
-        case tx_errc::unknown_server_error:
-            return "Unknown server error";
-        case tx_errc::request_rejected:
-            return "Request rejected";
-        case tx_errc::invalid_producer_epoch:
-            return "Invalid producer epoch";
-        default:
-            return "cluster::tx_errc::unknown";
-        }
-    }
+    std::string message(int) const final;
 };
 inline const std::error_category& tx_error_category() noexcept {
     static tx_errc_category e;
