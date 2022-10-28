@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "bytes/iostream.h"
+#include "bytes/scattered_message.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"

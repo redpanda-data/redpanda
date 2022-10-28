@@ -9,6 +9,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cache_test_fixture.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"

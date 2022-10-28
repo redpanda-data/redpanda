@@ -14,6 +14,7 @@
 #include "compression/logger.h"
 #include "likely.h"
 #include "units.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/aligned_buffer.hh>

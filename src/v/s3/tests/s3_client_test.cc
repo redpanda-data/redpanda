@@ -10,6 +10,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "cloud_roles/signature.h"
 #include "net/dns.h"
 #include "net/types.h"

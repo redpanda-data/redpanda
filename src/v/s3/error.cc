@@ -12,6 +12,8 @@
 
 #include <boost/lexical_cast.hpp>
 
+#include <map>
+
 namespace s3 {
 
 struct s3_error_category final : std::error_category {

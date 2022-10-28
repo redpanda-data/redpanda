@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "bytes/scattered_message.h"
 #include "compression/stream_zstd.h"
 #include "hashing/xx.h"
 #include "reflection/adl.h"

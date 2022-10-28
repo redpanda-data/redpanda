@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     "bytes.cc"
     "iobuf.cc"
+    oncore.cc
   DEPS
     Seastar::seastar
   )

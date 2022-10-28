@@ -10,6 +10,8 @@
 #include "bytes/iobuf.h"
 
 #include "bytes/details/io_allocation_size.h"
+#include "bytes/iostream.h"
+#include "bytes/scattered_message.h"
 #include "vassert.h"
 
 #include <seastar/core/bitops.hh>
@@ -280,4 +282,26 @@ std::string iobuf::hexdump(size_t limit) const {
     }
 
     return result.str();
+}
+
+void details::io_fragment::trim_front(size_t pos) {
+    // required by input_stream<char> converter
+    vassert(
+      pos <= _used_bytes,
+      "trim_front requested {} bytes but io_fragment have only {}",
+      pos,
+      _used_bytes);
+    _used_bytes -= pos;
+    _buf.trim_front(pos);
+}
+
+iobuf::placeholder iobuf::reserve(size_t sz) {
+    oncore_debug_verify(_verify_shard);
+    vassert(sz, "zero length reservations are unsupported");
+    reserve_memory(sz);
+    _size += sz;
+    auto it = std::prev(_frags.end());
+    placeholder p(it, it->size(), sz);
+    it->reserve(sz);
+    return p;
 }

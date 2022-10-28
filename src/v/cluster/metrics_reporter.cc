@@ -12,6 +12,7 @@
 #include "cluster/metrics_reporter.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cluster/config_frontend.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"

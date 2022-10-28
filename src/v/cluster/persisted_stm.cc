@@ -9,6 +9,7 @@
 
 #include "cluster/persisted_stm.h"
 
+#include "bytes/iostream.h"
 #include "cluster/logger.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
