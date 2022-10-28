@@ -27,6 +27,8 @@
 
 using namespace std::chrono_literals;
 
+static constexpr auto clean_timer_period = 10s;
+
 namespace pandaproxy {
 struct test_client_cache : public kafka_client_cache {
     explicit test_client_cache(size_t max_size)
@@ -34,6 +36,14 @@ struct test_client_cache : public kafka_client_cache {
         to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
         max_size,
         1000ms) {
+        start().get();
+    }
+
+    test_client_cache(size_t max_size, std::chrono::milliseconds keep_alive)
+      : kafka_client_cache(
+        to_yaml(kafka::client::configuration{}, config::redact_secrets::no),
+        max_size,
+        keep_alive) {
         start().get();
     }
 
@@ -121,4 +131,23 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
     BOOST_TEST(client2->config().scram_password.value() == user2.pass);
     BOOST_TEST(client_cache.size() == s);
     BOOST_TEST(client_cache.max_size() == max_s);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_keep_alive) {
+    pp::credential_t user{"red", "panda"};
+    size_t cache_max_size = 5;
+    std::chrono::milliseconds keep_alive{50ms};
+
+    pp::test_client_cache client_cache{cache_max_size, keep_alive};
+
+    // This will insert a client into the cache. The client is keyed by the user
+    // name.
+    client_cache.fetch_or_insert(user, config::rest_authn_method::none);
+
+    size_t s = client_cache.size();
+    BOOST_CHECK(s == 1);
+    ss::sleep(ss::lowres_clock::duration(clean_timer_period + keep_alive))
+      .get();
+    s = client_cache.size();
+    BOOST_CHECK(s == 0);
 }
