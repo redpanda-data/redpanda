@@ -193,6 +193,13 @@ class PandaProxyEndpoints(RedpandaTest):
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
+    def _get_kafka_cli_tools(self):
+        sasl_enabled = self.redpanda.sasl_enabled()
+        cfg = self.redpanda.security_config() if sasl_enabled else {}
+        return KafkaCliTools(self.redpanda,
+                             user=cfg.get('sasl_plain_username'),
+                             passwd=cfg.get('sasl_plain_password'))
+
     def _base_uri(self, hostname=None):
         hostname = hostname if hostname else self.redpanda.nodes[
             0].account.hostname
@@ -208,7 +215,7 @@ class PandaProxyEndpoints(RedpandaTest):
                        partitions=1,
                        replicas=1):
         self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools = self._get_kafka_cli_tools()
         for name in names:
             kafka_tools.create_topic(
                 TopicSpec(name=name,
