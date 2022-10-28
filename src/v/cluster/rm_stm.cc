@@ -1344,7 +1344,9 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     if (bid.first_seq > bid.last_seq) {
         vlog(
           _ctx_log.warn,
-          "first_seq={} of the batch should be less or equal to last_seq={}",
+          "[pid: {}] first_seq: {} of the batch should be less or equal to "
+          "last_seq: {}",
+          bid.pid,
           bid.first_seq,
           bid.last_seq);
         co_return errc::invalid_request;
@@ -1367,6 +1369,10 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     auto u = co_await session->lock.get_units();
 
     if (!_c->is_leader() || _c->term() != synced_term) {
+        vlog(
+          _ctx_log.debug,
+          "[pid: {}] resource manager sync failed, not leader",
+          bid.pid);
         co_return errc::not_leader;
     }
 
@@ -1380,6 +1386,12 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     }
 
     if (session->term > synced_term) {
+        vlog(
+          _ctx_log.debug,
+          "[pid: {}] session term {} is greater than synced term {}",
+          bid.pid,
+          session->term,
+          synced_term);
         co_return errc::not_leader;
     }
 
@@ -1387,17 +1399,34 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     // checking among the pending requests
     auto cached_r = session->known_seq(bid.last_seq);
     if (cached_r) {
+        vlog(
+          _ctx_log.trace,
+          "[pid: {}] request with last sequence: {}, already resolved",
+          bid.pid,
+          bid.last_seq);
         co_return cached_r.value();
     }
     // checking among the responded requests
     auto cached_offset = known_seq(bid);
     if (cached_offset) {
+        vlog(
+          _ctx_log.trace,
+          "[pid: {}] request with last sequence: {}, already resolved in "
+          "log_state",
+          bid.pid,
+          bid.last_seq);
         co_return kafka_result{.last_offset = cached_offset.value()};
     }
 
     // checking if the request is already being processed
     for (auto& inflight : session->cache) {
         if (inflight->last_seq == bid.last_seq && inflight->is_processing) {
+            vlog(
+              _ctx_log.trace,
+              "[pid: {}] request with last sequence: {}, already resolved "
+              "being processed",
+              bid.pid,
+              bid.last_seq);
             // found an inflight request, parking the current request
             // until the former is resolved
             auto promise
@@ -1416,18 +1445,36 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         auto tail = tail_seq(bid.pid);
         if (tail) {
             if (!is_sequence(tail.value(), bid.first_seq)) {
+                vlog(
+                  _ctx_log.warn,
+                  "[pid: {}] sequence number gap detected. batch first "
+                  "sequence: {}, last sequence: {}",
+                  bid.pid,
+                  bid.first_seq,
+                  tail.value());
                 // there is a gap between the request'ss seq number
                 // and the seq number of the latest processed request
                 co_return errc::sequence_out_of_order;
             }
         } else {
             if (bid.first_seq != 0) {
+                vlog(
+                  _ctx_log.warn,
+                  "[pid: {}] firs sequence in session must be zero, current "
+                  "seq: {}",
+                  bid.pid,
+                  bid.first_seq);
                 // first request in a session should have seq=0
                 co_return errc::sequence_out_of_order;
             }
         }
     } else {
         if (!is_sequence(session->tail_seq, bid.first_seq)) {
+            vlog(
+              _ctx_log.debug,
+              "[pid: {}] replication failed with {}",
+              bid.pid,
+              std::current_exception());
             // there is a gap between the request'ss seq number
             // and the seq number of the latest inflight request
             co_return errc::sequence_out_of_order;
@@ -1452,7 +1499,8 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     } catch (...) {
         vlog(
           _ctx_log.warn,
-          "replication failed with {}",
+          "[pid: {}] replication failed with {}",
+          bid.pid,
           std::current_exception());
         has_failed = true;
     }
@@ -1477,7 +1525,8 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         } catch (...) {
             vlog(
               _ctx_log.warn,
-              "replication failed with {}",
+              "[pid: {}] replication failed with {}",
+              bid.pid,
               std::current_exception());
             r = errc::replication_error;
         }
@@ -1499,6 +1548,13 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     request->parked.clear();
 
     if (!request->r) {
+        vlog(
+          _ctx_log.warn,
+          "[pid: {}] replication of batch with first seq: {} failed at "
+          "consensus level - error: {}",
+          bid.pid,
+          bid.first_seq,
+          request->r.error().message());
         // if r was failed at the consensus level (not because has_failed)
         // it should guarantee that all follow up replication requests fail
         // too but just in case stepping down to minimize the risk
@@ -1515,6 +1571,11 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     while (!session->cache.empty() && !session->cache.front()->is_processing) {
         auto front = session->cache.front();
         if (!front->r) {
+            vlog(
+              _ctx_log.debug,
+              "[pid: {}] session cache front failed - error: {}",
+              bid.pid,
+              front->r.error().message());
             // just encountered a failed request it but when a request
             // fails it causes a step down so we may not care about
             // updating seq_table and stop doing it; the next leader's
