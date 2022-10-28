@@ -2359,6 +2359,10 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
 
     for (const auto& idx : expired_abort_indexes) {
         auto filename = abort_idx_name(idx.first, idx.last);
+        vlog(
+          _ctx_log.debug,
+          "removing aborted transactions {} snapshot file",
+          filename);
         co_await _abort_snapshot_mgr.remove_snapshot(filename);
     }
 
