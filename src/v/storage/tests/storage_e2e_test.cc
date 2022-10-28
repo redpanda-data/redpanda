@@ -3195,11 +3195,11 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
       segment_size * 6 + batch_size,
     });
 
+    size_t i = 0;
     for (auto& tc : test_cases) {
+        info("Running case {}", i++);
         auto cfg = default_log_config(test_dir);
         // enable cloud storage
-        config::shard_local_cfg().cloud_storage_enable_remote_write.set_value(
-          tc.cloud_storage);
         config::shard_local_cfg().cloud_storage_enabled.set_value(
           tc.cloud_storage);
 
@@ -3223,17 +3223,28 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         auto ntp = model::ntp(model::kafka_namespace, "test", 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         storage::ntp_config::default_overrides overrides;
-        if (
-          tc.topic_cloud_bytes.has_value()
-          || tc.topic_cloud_bytes.is_disabled()) {
-            overrides.retention_bytes = tc.topic_cloud_bytes;
-            ntp_cfg.set_overrides(overrides);
+
+        bool have_overrides = false;
+        if (tc.cloud_storage) {
+            have_overrides = true;
+            overrides.shadow_indexing_mode = model::shadow_indexing_mode::full;
         }
 
         if (
           tc.topic_cloud_bytes.has_value()
           || tc.topic_cloud_bytes.is_disabled()) {
+            have_overrides = true;
+            overrides.retention_bytes = tc.topic_cloud_bytes;
+        }
+
+        if (
+          tc.topic_cloud_bytes.has_value()
+          || tc.topic_cloud_bytes.is_disabled()) {
+            have_overrides = true;
             overrides.retention_local_target_bytes = tc.topic_cloud_bytes;
+        }
+
+        if (have_overrides) {
             ntp_cfg.set_overrides(overrides);
         }
 
