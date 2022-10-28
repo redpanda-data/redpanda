@@ -121,7 +121,8 @@ public:
     using duration_type = clock_type::duration;
     using time_point_type = clock_type::time_point;
 
-    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{0};
+    static constexpr int8_t fence_control_record_version{1};
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
@@ -188,6 +189,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -198,6 +200,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -565,8 +568,39 @@ public:
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second < epoch) {
+        if (fence_it->second <= epoch) {
             fence_it->second = epoch;
+        }
+    }
+
+    void try_set_tx_seq(model::producer_identity id, model::tx_seq txseq) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            return;
+        }
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [ongoing_it, _] = _tx_seqs.try_emplace(id.get_id(), txseq);
+        if (ongoing_it->second < txseq) {
+            ongoing_it->second = txseq;
+        }
+    }
+
+    void try_set_timeout(
+      model::producer_identity id,
+      model::timeout_clock::duration transaction_timeout_ms) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            return;
+        }
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [info_it, inserted] = _expiration_info.try_emplace(
+          id, expiration_info(transaction_timeout_ms));
+        if (inserted) {
+            try_arm(info_it->second.deadline());
         }
     }
 
@@ -771,7 +805,7 @@ private:
 
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });
-        try_arm(clock_type::now() + _transactional_id_expiration);
+        try_arm(clock_type::now() + _abort_interval_ms);
     }
 
     void abort_old_txes();
@@ -780,6 +814,11 @@ private:
     ss::future<> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
     void maybe_rearm_timer();
+
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
 
     kafka::group_id _id;
     group_state _state;
@@ -822,6 +861,7 @@ private:
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
+    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
@@ -840,7 +880,7 @@ private:
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
 
     struct expiration_info {
-        explicit expiration_info(model::timeout_clock::duration timeout)
+        expiration_info(model::timeout_clock::duration timeout)
           : timeout(timeout)
           , last_update(model::timeout_clock::now()) {}
 
@@ -866,9 +906,10 @@ private:
 
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;
-    std::chrono::milliseconds _transactional_id_expiration;
+    std::chrono::milliseconds _abort_interval_ms;
 
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

@@ -38,6 +38,7 @@ group_manager::group_manager(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& topic_table,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+  ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer_factory serializer_factory,
   config::configuration& conf,
   enable_group_metrics enable_metrics)
@@ -46,6 +47,7 @@ group_manager::group_manager(
   , _pm(pm)
   , _topic_table(topic_table)
   , _tx_frontend(tx_frontend)
+  , _feature_table(feature_table)
   , _serializer_factory(std::move(serializer_factory))
   , _conf(conf)
   , _self(cluster::make_self_broker(config::node()))
@@ -432,6 +434,7 @@ ss::future<> group_manager::recover_partition(
                   _conf,
                   p->partition,
                   _tx_frontend,
+                  _feature_table,
                   _serializer_factory(),
                   _enable_group_metrics);
                 group->reset_tx_state(term);
@@ -452,6 +455,14 @@ ss::future<> group_manager::recover_partition(
             for (auto& [id, epoch] : group_stm.fences()) {
                 group->try_set_fence(id, epoch);
             }
+
+            for (auto& [id, txseq] : group_stm.tx_seqs()) {
+                group->try_set_tx_seq(id, txseq);
+            }
+
+            for (auto& [id, timeout] : group_stm.timeouts()) {
+                group->try_set_timeout(id, timeout);
+            }
         }
     }
 
@@ -467,6 +478,7 @@ ss::future<> group_manager::recover_partition(
               _conf,
               p->partition,
               _tx_frontend,
+              _feature_table,
               _serializer_factory(),
               _enable_group_metrics);
             group->reset_tx_state(term);
@@ -477,6 +489,12 @@ ss::future<> group_manager::recover_partition(
         }
         for (auto& [id, epoch] : group_stm.fences()) {
             group->try_set_fence(id, epoch);
+        }
+        for (auto& [id, txseq] : group_stm.tx_seqs()) {
+            group->try_set_tx_seq(id, txseq);
+        }
+        for (auto& [id, timeout] : group_stm.timeouts()) {
+            group->try_set_timeout(id, timeout);
         }
     }
 
@@ -566,6 +584,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
           _conf,
           p,
           _tx_frontend,
+          _feature_table,
           _serializer_factory(),
           _enable_group_metrics);
         group->reset_tx_state(it->second->term);
@@ -713,6 +732,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
                 _conf,
                 p->partition,
                 _tx_frontend,
+                _feature_table,
                 _serializer_factory(),
                 _enable_group_metrics);
               group->reset_tx_state(p->term);
@@ -798,6 +818,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 _conf,
                 p->partition,
                 _tx_frontend,
+                _feature_table,
                 _serializer_factory(),
                 _enable_group_metrics);
               group->reset_tx_state(p->term);
@@ -905,6 +926,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
               _conf,
               p->partition,
               _tx_frontend,
+              _feature_table,
               _serializer_factory(),
               _enable_group_metrics);
             group->reset_tx_state(p->term);

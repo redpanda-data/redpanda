@@ -52,6 +52,7 @@ group::group(
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+  ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -69,9 +70,10 @@ group::group(
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
-  , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _tx_frontend(tx_frontend) {
+  , _abort_interval_ms(config::shard_local_cfg()
+                         .abort_timed_out_transactions_interval_ms.value())
+  , _tx_frontend(tx_frontend)
+  , _feature_table(feature_table) {
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
@@ -85,6 +87,7 @@ group::group(
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+  ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
@@ -99,9 +102,8 @@ group::group(
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
   , _enable_group_metrics(group_metrics)
-  , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _tx_frontend(tx_frontend) {
+  , _tx_frontend(tx_frontend)
+  , _feature_table(feature_table) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
@@ -167,6 +169,24 @@ static model::record_batch make_tx_batch(
     builder.add_raw_kv(std::move(key), std::move(value));
 
     return std::move(builder).build();
+}
+
+static model::record_batch make_tx_fence_batch(
+  const model::producer_identity& pid, group_log_fencing_v0 cmd) {
+    return make_tx_batch(
+      model::record_batch_type::tx_fence,
+      group::fence_control_record_v0_version,
+      pid,
+      cmd);
+}
+
+static model::record_batch make_tx_fence_batch(
+  const model::producer_identity& pid, group_log_fencing cmd) {
+    return make_tx_batch(
+      model::record_batch_type::tx_fence,
+      group::fence_control_record_version,
+      pid,
+      cmd);
 }
 
 group_state group::set_state(group_state s) {
@@ -1634,16 +1654,76 @@ void group::reset_tx_state(model::term_id term) {
 
 void group::insert_prepared(prepared_tx tx) {
     auto pid = tx.pid;
+
+    auto [txseq_it, inserted] = _tx_seqs.try_emplace(pid.get_id(), tx.tx_seq);
+    if (!inserted) {
+        if (txseq_it->second != tx.tx_seq) {
+            vlog(
+              _ctx_txlog.warn,
+              "prepared_tx of pid {} has tx_seq {} while {} expected",
+              tx.pid,
+              tx.tx_seq,
+              txseq_it->second);
+        }
+    }
+
     _prepared_txs[pid] = std::move(tx);
 }
 
 ss::future<cluster::commit_group_tx_reply>
 group::commit_tx(cluster::commit_group_tx_request r) {
-    // doesn't make sense to fence off a commit because transaction
-    // manager has already decided to commit and acked to a client
-
     if (_partition->term() != _term) {
         co_return make_commit_tx_reply(cluster::tx_errc::stale);
+    }
+
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        if (is_transaction_ga()) {
+            vlog(
+              _ctx_txlog.trace,
+              "can't find a tx {}, probably already comitted",
+              r.pid);
+            co_return make_commit_tx_reply(cluster::tx_errc::none);
+        }
+    } else if (txseq_it->second > r.tx_seq) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm recommits previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+        vlog(
+          _ctx_txlog.trace,
+          "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
+    } else if (txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't commit pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     auto prepare_it = _prepared_txs.find(r.pid);
@@ -1654,7 +1734,6 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
-
     if (prepare_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm prepares (tx_seq+1)
@@ -1670,26 +1749,10 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           r.tx_seq);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     } else if (prepare_it->second.tx_seq < r.tx_seq) {
-        if (_recovery_policy == violation_recovery_policy::best_effort) {
-            vlog(
-              _ctx_txlog.error,
-              "Rejecting commit with tx_seq:{} since prepare with lesser "
-              "tx_seq:{} exists",
-              r.tx_seq,
-              prepare_it->second.tx_seq);
-            co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
-        } else {
-            vassert(
-              false,
-              "Received commit with tx_seq:{} while prepare with lesser "
-              "tx_seq:{} exists",
-              r.tx_seq,
-              prepare_it->second.tx_seq);
-        }
+        co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
-
     co_return co_await do_commit(r.group_id, r.pid);
 }
 
@@ -1724,66 +1787,79 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     }
 
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (
-      fence_it != _fence_pid_epoch.end()
-      && r.pid.get_epoch() < fence_it->second) {
+    if (fence_it == _fence_pid_epoch.end()) {
+        // intentionally empty
+    } else if (r.pid.get_epoch() < fence_it->second) {
         vlog(
           _ctx_txlog.error,
           "pid {} fenced out by epoch {}",
           r.pid,
           fence_it->second);
         co_return make_begin_tx_reply(cluster::tx_errc::fenced);
+    } else if (r.pid.get_epoch() > fence_it->second) {
+        // TODO: proactively cancel an ongoing txn
     }
 
-    if (
-      fence_it == _fence_pid_epoch.end()
-      || r.pid.get_epoch() > fence_it->second) {
-        group_log_fencing fence{.group_id = id()};
-
-        // TODO: https://app.clubhouse.io/vectorized/story/2200
-        // include producer_id into key to make it unique-ish
-        // to prevent being GCed by the compaction
-        auto batch = make_tx_batch(
-          model::record_batch_type::tx_fence,
-          fence_control_record_version,
-          r.pid,
-          std::move(fence));
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto e = co_await _partition->raft()->replicate(
-          _term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
-
-        if (!e) {
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it != _tx_seqs.end()) {
+        if (r.tx_seq != txseq_it->second) {
             vlog(
-              _ctx_txlog.error,
-              "Error \"{}\" on replicating pid:{} fencing batch",
-              e.error(),
-              r.pid);
+              _ctx_txlog.warn,
+              "can't begin a tx {} with tx_seq {}: a producer id is already "
+              "involved in a tx with tx_seq {}",
+              r.pid,
+              r.tx_seq,
+              txseq_it->second);
             co_return make_begin_tx_reply(
               cluster::tx_errc::unknown_server_error);
         }
-
-        // _fence_pid_epoch may change while the method waits for the
-        //  replicate coroutine to finish so the fence_it may become
-        //  invalidated and we need to grab it again
-        fence_it = _fence_pid_epoch.find(r.pid.get_id());
-        if (fence_it == _fence_pid_epoch.end()) {
-            _fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
-        } else {
-            fence_it->second = r.pid.get_epoch();
+        if (_prepared_txs.contains(r.pid)) {
+            vlog(
+              _ctx_txlog.warn,
+              "can't begin a tx {} with tx_seq {}: it was already begun and it "
+              "accepted writes",
+              r.pid,
+              r.tx_seq);
+            co_return make_begin_tx_reply(
+              cluster::tx_errc::unknown_server_error);
         }
+        co_return cluster::begin_group_tx_reply(_term, cluster::tx_errc::none);
     }
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2194
-    // (auto-abort txes with the the same producer_id but older epoch)
-    auto [_, inserted] = _volatile_txs.try_emplace(
-      r.pid, volatile_tx{.tx_seq = r.tx_seq});
+    auto is_txn_ga = is_transaction_ga();
+    std::optional<model::record_batch> batch{};
+    if (is_txn_ga) {
+        group_log_fencing fence{
+          .group_id = id(),
+          .tx_seq = r.tx_seq,
+          .transaction_timeout_ms = r.timeout};
+        batch = make_tx_fence_batch(r.pid, std::move(fence));
+    } else {
+        group_log_fencing_v0 fence{.group_id = id()};
+        batch = make_tx_fence_batch(r.pid, std::move(fence));
+    }
 
-    if (!inserted) {
-        // TODO: https://app.clubhouse.io/vectorized/story/2194
-        // (auto-abort txes with the the same producer_id but older epoch)
-        co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
+    auto reader = model::make_memory_record_batch_reader(
+      std::move(batch.value()));
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} fencing batch",
+          e.error(),
+          r.pid);
+        co_return make_begin_tx_reply(cluster::tx_errc::leader_not_found);
+    }
+
+    _fence_pid_epoch[r.pid.get_id()] = r.pid.get_epoch();
+    _tx_seqs[r.pid.get_id()] = r.tx_seq;
+
+    if (!is_txn_ga) {
+        _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
     }
 
     auto res = _expiration_info.insert_or_assign(
@@ -1802,121 +1878,110 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::stale);
     }
 
-    auto prepared_it = _prepared_txs.find(r.pid);
-    if (prepared_it != _prepared_txs.end()) {
-        if (prepared_it->second.tx_seq != r.tx_seq) {
+    auto is_txn_ga = is_transaction_ga();
+    if (!is_txn_ga) {
+        auto tx_it = _volatile_txs.find(r.pid);
+        if (tx_it == _volatile_txs.end()) {
+            // impossible situation, a transaction coordinator tries
+            // to prepare a transaction which wasn't started
+            vlog(
+              _ctx_txlog.error,
+              "Can't prepare pid:{} - unknown session",
+              r.pid);
+            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+        }
+        if (tx_it->second.tx_seq != r.tx_seq) {
             // current prepare_tx call is stale, rejecting
             co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
         }
-        // a tx was already prepared
-        co_return make_prepare_tx_reply(cluster::tx_errc::none);
+        if (r.etag != _term) {
+            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+        }
     }
 
     // checking fencing
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (fence_it != _fence_pid_epoch.end()) {
-        if (r.pid.get_epoch() < fence_it->second) {
-            vlog(
-              _ctx_txlog.trace,
-              "Can't prepare pid:{} - fenced out by epoch {}",
-              r.pid,
-              fence_it->second);
-            co_return make_prepare_tx_reply(cluster::tx_errc::fenced);
-        }
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
-
-    if (r.etag != _term) {
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto tx_it = _volatile_txs.find(r.pid);
-    if (tx_it == _volatile_txs.end()) {
-        // impossible situation, a transaction coordinator tries
-        // to prepare a transaction which wasn't started
-        vlog(_ctx_txlog.error, "Can't prepare pid:{} - unknown session", r.pid);
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it != _tx_seqs.end() && txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    if (tx_it->second.tx_seq != r.tx_seq) {
-        // current prepare_tx call is stale, rejecting
+    auto prepared_it = _prepared_txs.find(r.pid);
+    if (prepared_it == _prepared_txs.end()) {
+        vlog(
+          _ctx_txlog.warn, "Can't prepare tx with pid {}: unknown tx", r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (prepared_it->second.tx_seq != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't prepare pid {}: passed txseq {} doesn't match known {}",
+          r.pid,
+          r.tx_seq,
+          prepared_it->second.tx_seq);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto tx_entry = group_log_prepared_tx{
-      .group_id = r.group_id, .pid = r.pid, .tx_seq = r.tx_seq};
-
-    for (const auto& [tp, offset] : tx_it->second.offsets) {
-        group_log_prepared_tx_offset tx_offset;
-
-        tx_offset.tp = tp;
-        tx_offset.offset = offset.offset;
-        tx_offset.leader_epoch = offset.leader_epoch;
-        tx_offset.metadata = offset.metadata;
-        tx_entry.offsets.push_back(tx_offset);
-    }
-
-    volatile_tx tx = tx_it->second;
-
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
-    auto batch = make_tx_batch(
-      model::record_batch_type::group_prepare_tx,
-      prepared_tx_record_version,
-      r.pid,
-      std::move(tx_entry));
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
-    auto e = co_await _partition->raft()->replicate(
-      _term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!e) {
-        // Situation: replication has passed but the replicate method returns
-        // error - _volatile_txs is empty, _prepared_txs is empty so when a
-        // fetch happens the group thinks there is no active transaction and
-        // doesn't block while it should. So we do step_down to give next leader
-        // reply log and understand status of transaction
-        co_await _partition->raft()->step_down();
-
+    if (!is_txn_ga) {
         _volatile_txs.erase(r.pid);
-        _expiration_info.erase(r.pid);
-
-        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
-
-    // We move deletion tx from volatile after replication, because
-    // fetch_offset can see internal state when redpanda has ongoing tx, but it
-    // is not inside internal maps. So we need do moving tx between maps in
-    // atomic section
-    _volatile_txs.erase(r.pid);
-
-    prepared_tx ptx;
-    ptx.tx_seq = r.tx_seq;
-    for (const auto& [tp, offset] : tx.offsets) {
-        offset_metadata md{
-          .log_offset = e.value().last_offset,
-          .offset = offset.offset,
-          .metadata = offset.metadata.value_or(""),
-          .committed_leader_epoch = offset.leader_epoch};
-        ptx.offsets[tp] = md;
-    }
-    _prepared_txs[r.pid] = ptx;
 
     auto exp_it = _expiration_info.find(r.pid);
-    if (exp_it == _expiration_info.end()) {
-        vlog(
-          _ctx_txlog.error, "pid({}) should be inside _expiration_info", r.pid);
-        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
+    if (exp_it != _expiration_info.end()) {
+        exp_it->second.update_last_update_time();
     }
-    exp_it->second.update_last_update_time();
 
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
 cluster::abort_origin group::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
+    if (is_transaction_ga()) {
+        auto it = _tx_seqs.find(pid.get_id());
+        if (it != _tx_seqs.end()) {
+            if (tx_seq < it->second) {
+                return cluster::abort_origin::past;
+            }
+            if (it->second < tx_seq) {
+                return cluster::abort_origin::future;
+            }
+        }
+
+        return cluster::abort_origin::present;
+    }
+
+    auto txseq_it = _tx_seqs.find(pid.get_id());
+    if (txseq_it != _tx_seqs.end()) {
+        if (tx_seq < txseq_it->second) {
+            return cluster::abort_origin::past;
+        }
+        if (txseq_it->second < tx_seq) {
+            return cluster::abort_origin::future;
+        }
+    }
+
     auto expected_it = _volatile_txs.find(pid);
     if (expected_it != _volatile_txs.end()) {
         if (tx_seq < expected_it->second.tx_seq) {
@@ -1947,6 +2012,56 @@ group::abort_tx(cluster::abort_group_tx_request r) {
 
     if (_partition->term() != _term) {
         co_return make_abort_tx_reply(cluster::tx_errc::stale);
+    }
+
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't abort tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't abort tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        if (is_transaction_ga()) {
+            vlog(
+              _ctx_txlog.trace,
+              "can't find a tx {}, probably already aborted",
+              r.pid);
+            co_return make_abort_tx_reply(cluster::tx_errc::none);
+        }
+    } else if (txseq_it->second > r.tx_seq) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm reaborts previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is aborted
+        vlog(
+          _ctx_txlog.trace,
+          "Already aborted pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::none);
+    } else if (txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't abort pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     auto origin = get_abort_origin(r.pid, r.tx_seq);
@@ -1982,37 +2097,127 @@ group::abort_tx(cluster::abort_group_tx_request r) {
 
 ss::future<txn_offset_commit_response>
 group::store_txn_offsets(txn_offset_commit_request r) {
+    // replaying the log, the term isn't set yet
+    // we should use replay or not a leader error
     if (_partition->term() != _term) {
+        vlog(
+          _ctx_txlog.warn,
+          "Last known term {} doesn't match partition term {}",
+          _term,
+          _partition->term());
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
 
     model::producer_identity pid{r.data.producer_id, r.data.producer_epoch};
 
-    auto tx_it = _volatile_txs.find(pid);
-
-    if (tx_it == _volatile_txs.end()) {
+    // checking fencing
+    auto fence_it = _fence_pid_epoch.find(pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't store txn offsets: fence with pid {} isn't set",
+          pid);
         co_return txn_offset_commit_response(
-          r, error_code::unknown_server_error);
+          r, error_code::invalid_producer_epoch);
+    }
+    if (r.data.producer_epoch != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't store txn offsets with pid {} - the fence doesn't match {}",
+          pid,
+          fence_it->second);
+        co_return txn_offset_commit_response(
+          r, error_code::invalid_producer_epoch);
+    }
+
+    auto txseq_it = _tx_seqs.find(pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't store txn offsets: current tx with pid {} isn't ongoing",
+          pid);
+        co_return txn_offset_commit_response(
+          r, error_code::invalid_producer_epoch);
+    }
+    auto tx_seq = txseq_it->second;
+
+    if (!is_transaction_ga()) {
+        auto tx_it = _volatile_txs.find(pid);
+        if (tx_it == _volatile_txs.end()) {
+            co_return txn_offset_commit_response(
+              r, error_code::unknown_server_error);
+        }
+    }
+
+    absl::node_hash_map<model::topic_partition, group_log_prepared_tx_offset>
+      offsets;
+
+    auto prepare_it = _prepared_txs.find(pid);
+    if (prepare_it != _prepared_txs.end()) {
+        for (const auto& [tp, offset] : prepare_it->second.offsets) {
+            group_log_prepared_tx_offset md{
+              .tp = tp,
+              .offset = offset.offset,
+              .leader_epoch = offset.committed_leader_epoch,
+              .metadata = offset.metadata};
+            offsets[tp] = md;
+        }
     }
 
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
             model::topic_partition tp(t.name, p.partition_index);
-            volatile_offset md{
+            group_log_prepared_tx_offset md{
+              .tp = tp,
               .offset = p.committed_offset,
               .leader_epoch = p.committed_leader_epoch,
               .metadata = p.committed_metadata};
-            tx_it->second.offsets[tp] = md;
+            offsets[tp] = md;
         }
     }
+
+    auto tx_entry = group_log_prepared_tx{
+      .group_id = r.data.group_id, .pid = pid, .tx_seq = tx_seq};
+
+    for (const auto& [tp, offset] : offsets) {
+        tx_entry.offsets.push_back(offset);
+    }
+
+    auto batch = make_tx_batch(
+      model::record_batch_type::group_prepare_tx,
+      prepared_tx_record_version,
+      pid,
+      std::move(tx_entry));
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->raft()->replicate(
+      _term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    prepared_tx ptx;
+    ptx.tx_seq = tx_seq;
+    for (const auto& [tp, offset] : offsets) {
+        offset_metadata md{
+          .log_offset = e.value().last_offset,
+          .offset = offset.offset,
+          .metadata = offset.metadata.value_or(""),
+          .committed_leader_epoch = kafka::leader_epoch(offset.leader_epoch)};
+        ptx.offsets[tp] = md;
+    }
+    _prepared_txs[pid] = ptx;
 
     auto it = _expiration_info.find(pid);
     if (it != _expiration_info.end()) {
         it->second.update_last_update_time();
     } else {
-        vlog(
-          _ctx_txlog.error, "pid({}) should be inside _expiration_info", pid);
+        vlog(_ctx_txlog.warn, "pid {} should be in _expiration_info", pid);
     }
 
     co_return txn_offset_commit_response(r, error_code::none);
@@ -2746,15 +2951,8 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     // know we're going to abort tx and abandon pid
     _volatile_txs.erase(pid);
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2197
-    // (check for tx_seq to prevent old abort requests aborting
-    // new transactions in the same session)
-
     auto tx = group_log_aborted_tx{.group_id = group_id, .tx_seq = tx_seq};
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
       model::record_batch_type::group_abort_tx,
       aborted_tx_record_version,
@@ -2768,10 +2966,21 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} abort batch",
+          e.error(),
+          pid);
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down();
+        }
+        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
     }
 
     _prepared_txs.erase(pid);
+    _tx_seqs.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);
@@ -2817,9 +3026,6 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
     group_log_commit_tx commit_tx;
     commit_tx.group_id = group_id;
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
       model::record_batch_type::group_commit_tx,
       commit_tx_record_version,
@@ -2836,7 +3042,17 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} commit batch",
+          e.error(),
+          pid);
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down();
+        }
+        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 
     prepare_it = _prepared_txs.find(pid);
@@ -2853,6 +3069,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     }
 
     _prepared_txs.erase(prepare_it);
+    _tx_seqs.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
@@ -2860,9 +3077,8 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
 
 void group::abort_old_txes() {
     ssx::spawn_with_gate(_gate, [this] {
-        return do_abort_old_txes().finally([this] {
-            try_arm(clock_type::now() + _transactional_id_expiration);
-        });
+        return do_abort_old_txes().finally(
+          [this] { try_arm(clock_type::now() + _abort_interval_ms); });
     });
 }
 
@@ -2878,9 +3094,8 @@ void group::maybe_rearm_timer() {
     }
 
     if (earliest_deadline) {
-        auto deadline = std::max(
-          earliest_deadline.value(),
-          clock_type::now() + _transactional_id_expiration);
+        auto deadline = std::min(
+          earliest_deadline.value(), clock_type::now() + _abort_interval_ms);
         try_arm(deadline);
     }
 }
@@ -2892,6 +3107,12 @@ ss::future<> group::do_abort_old_txes() {
     }
     for (auto& [id, _] : _volatile_txs) {
         pids.push_back(id);
+    }
+    for (auto& [id, _] : _tx_seqs) {
+        auto it = _fence_pid_epoch.find(id);
+        if (it != _fence_pid_epoch.end()) {
+            pids.push_back(model::producer_identity(id(), it->second));
+        }
     }
 
     absl::btree_set<model::producer_identity> expired;
