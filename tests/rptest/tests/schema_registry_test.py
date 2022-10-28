@@ -328,12 +328,14 @@ class SchemaRegistryEndpoints(RedpandaTest):
             **kwargs)
 
 
-class SchemaRegistryTest(SchemaRegistryEndpoints):
+class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     """
-    Test schema registry against a redpanda cluster.
+    Base class for testing schema registry against a redpanda cluster.
+
+    Inherit from this to run the tests.
     """
-    def __init__(self, context):
-        super(SchemaRegistryTest, self).__init__(context)
+    def __init__(self, context, **kwargs):
+        super(SchemaRegistryTestMethods, self).__init__(context, **kwargs)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
@@ -1621,9 +1623,21 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.json() == [2]
 
 
-class SchemaRegistryAutoAuthTest(SchemaRegistryEndpoints):
+class SchemaRegistryTest(SchemaRegistryTestMethods):
+    """
+    Test schema registry against a redpanda cluster without auth.
+
+    This derived class inherits all the tests from SchemaRegistryTestMethods.
+    """
+    def __init__(self, context):
+        super(SchemaRegistryTest, self).__init__(context)
+
+
+class SchemaRegistryAutoAuthTest(SchemaRegistryTestMethods):
     """
     Test schema registry against a redpanda cluster with Auto Auth enabled.
+
+    This derived class inherits all the tests from SchemaRegistryTestMethods.
     """
     def __init__(self, context):
         security = SecurityConfig()
@@ -1635,7 +1649,7 @@ class SchemaRegistryAutoAuthTest(SchemaRegistryEndpoints):
                                                          security=security)
 
     @cluster(num_nodes=3)
-    def test_get_subjects(self):
+    def test_restarts(self):
         admin = Admin(self.redpanda)
 
         def check_connection(hostname: str):
