@@ -99,7 +99,12 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
 
 ss::future<> snapshot_manager::remove_snapshot(ss::sstring target) {
     if (co_await ss::file_exists(snapshot_path(target).string())) {
-        co_await ss::remove_file(snapshot_path(target).string());
+        const auto path = snapshot_path(target).string();
+        vlog(
+          stlog.info,
+          "removing snapshot file: {}",
+          snapshot_path(target).string());
+        co_await ss::remove_file(path);
     }
 
     co_return;
