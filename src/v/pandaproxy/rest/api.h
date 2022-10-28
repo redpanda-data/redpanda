@@ -52,7 +52,7 @@ private:
     cluster::controller* _controller;
 
     ss::sharded<kafka::client::client> _client;
-    std::unique_ptr<pandaproxy::sharded_client_cache> _client_cache;
+    ss::sharded<kafka_client_cache> _client_cache;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
 };
 
