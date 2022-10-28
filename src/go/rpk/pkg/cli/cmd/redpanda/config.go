@@ -117,8 +117,22 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "bootstrap [--self <ip>] [--ips <ip1,ip2,...>]",
 		Short: "Initialize the configuration to bootstrap a cluster",
-		Long:  helpBootstrap,
-		Args:  cobra.ExactArgs(0),
+		Long: `Initialize the configuration to bootstrap a cluster.
+
+This command generates a redpanda.yaml configuration file to bootstrap a
+cluster. If you are modifying the configuration file further, it is recommended
+to first bootstrap and then modify. If the file already exists, this command
+will set fields as requested by flags, and this may undo some of your earlier
+edits.
+
+The --ips flag specifies seed servers (ips, ip:ports, or hostnames) that this
+broker will use to form a cluster.
+
+By default, redpanda expects your machine to have one private IP address, and
+redpanda will listen on it. If your machine has multiple private IP addresses,
+you must use the --self flag to specify which ip redpanda should listen on.
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -155,7 +169,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		&ips,
 		"ips",
 		[]string{},
-		"The list of known node addresses or hostnames",
+		"Comma-separated list of the seed node addresses or hostnames; at least three are recommended",
 	)
 	c.Flags().StringVar(
 		&configPath,
@@ -167,13 +181,13 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		&self,
 		"self",
 		"",
-		"Hint at this node's IP address from within the list passed in --ips",
+		"Optional IP address for redpanda to listen on; if empty, defaults to a private address",
 	)
 	c.Flags().IntVar(
 		&id,
 		"id",
 		-1,
-		"This node's ID. If unset, Redpanda will assign one automatically.",
+		"This node's ID. If unset, redpanda will assign one automatically",
 	)
 	c.Flags().MarkHidden("id")
 	return c
@@ -303,19 +317,3 @@ func isPrivate(ip net.IP) (bool, error) {
 	}
 	return false, nil
 }
-
-const helpBootstrap = `Initialize the configuration to bootstrap a cluster.
-
---id is mandatory. bootstrap will expect the machine it's running on
-to have only one private non-loopback IP address associated to it,
-and use it in the configuration as the node's address.
-
-If it has multiple IPs, --self must be specified.
-In that case, the given IP will be used without checking whether it's
-among the machine's addresses or not.
-
-The elements in --ips must be separated by a comma, no spaces.
-
-If omitted, the node will be configured as a root node, that other
-ones can join later.
-`
