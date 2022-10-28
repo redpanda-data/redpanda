@@ -118,6 +118,18 @@ type NamedAuthNSocketAddress struct {
 	AuthN   *string `yaml:"authentication_method,omitempty" json:"authentication_method,omitempty"`
 }
 
+func namedAuthnToNamed(src []NamedAuthNSocketAddress) []NamedSocketAddress {
+	dst := make([]NamedSocketAddress, 0, len(src))
+	for _, a := range src {
+		dst = append(dst, NamedSocketAddress{
+			Address: a.Address,
+			Port:    a.Port,
+			Name:    a.Name,
+		})
+	}
+	return dst
+}
+
 type TLS struct {
 	KeyFile        string `yaml:"key_file,omitempty" json:"key_file"`
 	CertFile       string `yaml:"cert_file,omitempty" json:"cert_file"`

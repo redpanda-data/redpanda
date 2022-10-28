@@ -60,7 +60,13 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			admin, err := admin.NewClient(fs, cfg)
+			// We use NewHostClient because we want to talk to
+			// localhost, and some of out API requests require
+			// choosing the host to talk to. With params of
+			// rpk.admin_api preferring localhost first IF no
+			// rpk.admin_api is actually in the underlying file, we
+			// can always just pick the first host.
+			admin, err := admin.NewHostClient(fs, cfg, "0")
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p, cfg)
