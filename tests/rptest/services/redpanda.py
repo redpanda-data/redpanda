@@ -114,6 +114,24 @@ IAM_ROLES_API_CALL_ALLOW_LIST = [
     re.compile(r'cloud_roles - .*api request failed')
 ]
 
+# Log errors are used in node_operation_fuzzy_test and partition_movement_test
+PREV_VERSION_LOG_ALLOW_LIST = [
+    # e.g. cluster - controller_backend.cc:400 - Error while reconciling topics - seastar::abort_requested_exception (abort requested)
+    "cluster - .*Error while reconciling topic.*",
+    # Typo fixed in recent versions.
+    # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
+    "raft - .*raft group does not exists on target broker",
+    # e.g. rpc - Service handler thrown an exception - seastar::gate_closed_exception (gate closed)
+    "rpc - .*gate_closed_exception.*",
+    # Tests on mixed versions will start out with an unclean restart before
+    # starting a workload.
+    "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)",
+    # e.g.  raft - [group_id:3, {kafka/topic/2}] consensus.cc:2317 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
+    "raft - .*unable to replicate updated configuration: .*",
+    # e.g. recovery_stm.cc:432 - recovery append entries error: rpc::errc::client_request_timeout"
+    "raft - .*recovery append entries error.*client_request_timeout"
+]
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
