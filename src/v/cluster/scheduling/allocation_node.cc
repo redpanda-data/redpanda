@@ -13,14 +13,10 @@
 
 namespace cluster {
 allocation_node::allocation_node(
-  model::node_id id,
-  uint32_t cpus,
-  absl::node_hash_map<ss::sstring, ss::sstring> labels,
-  std::optional<model::rack_id> rack)
+  model::node_id id, uint32_t cpus, std::optional<model::rack_id> rack)
   : _id(id)
   , _weights(cpus)
   , _max_capacity((cpus * max_allocations_per_core) - core0_extra_weight)
-  , _machine_labels(std::move(labels))
   , _rack(std::move(rack)) {
     // add extra weights to core 0
     _weights[0] = core0_extra_weight;
@@ -57,11 +53,6 @@ void allocation_node::allocate(ss::shard_id core) {
       *this);
     _weights[core]++;
     _allocated_partitions++;
-}
-
-const absl::node_hash_map<ss::sstring, ss::sstring>&
-allocation_node::machine_labels() const {
-    return _machine_labels;
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {
