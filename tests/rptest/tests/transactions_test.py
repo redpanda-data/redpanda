@@ -22,6 +22,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.clients.rpk import RpkTool
 
 
 class TransactionsTest(RedpandaTest):
@@ -430,6 +431,63 @@ class TransactionsTest(RedpandaTest):
                        for i in range(0, count)), f"Missing records {keys}"
         finally:
             consumer.close()
+
+    @cluster(num_nodes=3)
+    def delete_topic_with_active_txns_test(self):
+
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic("t1")
+        rpk.create_topic("t2")
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+        })
+
+        # Non transactional
+        producer_nt = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+        })
+
+        consumer = ck.Consumer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+            'group.id': 'test1',
+            'isolation.level': 'read_committed',
+        })
+
+        consumer.subscribe([TopicSpec(name='t2')])
+
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        def add_records(topic, producer):
+            for i in range(0, 100):
+                producer.produce(topic,
+                                 str(i),
+                                 str(i),
+                                 partition=0,
+                                 on_delivery=self.on_delivery)
+            producer.flush()
+
+        add_records("t1", producer)
+        add_records("t2", producer)
+
+        # To make sure LSO is not blocked.
+        add_records("t2", producer_nt)
+
+        rpk.delete_topic("t1")
+
+        # Should not throw
+        producer.commit_transaction()
+
+        def consume_records(consumer, count):
+            total = 0
+            while total != count:
+                total += len(self.consume(consumer))
+
+        consume_records(consumer, 200)
 
 
 class UpgradeTransactionTest(RedpandaTest):
