@@ -35,10 +35,10 @@ func TestParams_Write(t *testing.T) {
 rpk:
     kafka_api:
         brokers:
-            - 0.0.0.0:9092
+            - 127.0.0.1:9092
     admin_api:
         addresses:
-            - 0.0.0.0:9644
+            - 127.0.0.1:9644
 `,
 		},
 		{
@@ -342,6 +342,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Address: "127.1.2.1", Port: 9999},                 // loopback
 						{Address: "localhost", Port: 9999},                 // localhost
 						{Address: "122.61.32.12", Port: 9999},              // public
+						{Address: "0.0.0.0", Port: 9999},                   // rewritten to 127.0.0.1
 					},
 					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 					AdminAPI: []NamedSocketAddress{
@@ -368,6 +369,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Address: "127.1.2.1", Port: 9999},
 						{Address: "localhost", Port: 9999},
 						{Address: "122.61.32.12", Port: 9999},
+						{Address: "0.0.0.0", Port: 9999},
 					},
 					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 					AdminAPI: []NamedSocketAddress{
@@ -387,6 +389,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						Brokers: []string{
 							"localhost:9999",
 							"127.1.2.1:9999",
+							"127.0.0.1:9999",
 							"10.1.2.1:9999",
 							"122.61.32.12:9999",
 						},

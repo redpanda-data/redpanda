@@ -606,6 +606,17 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 			add(&localhost, &tlsLocalhost, &mtlsLocalhost, s, a)
 		case ip.IsLoopback():
 			add(&loopback, &tlsLoopback, &mtlsLoopback, s, a)
+		case ip.IsUnspecified():
+			// An unspecified address ("0.0.0.0") tells the server
+			// to listen on all available interfaces. We cannot
+			// dial 0.0.0.0, but we can dial 127.0.0.1 which is an
+			// available interface. Also see:
+			//
+			// 	https://stackoverflow.com/a/20778887
+			//
+			// So, we add a loopback hostport.
+			s = net.JoinHostPort("127.0.0.1", strconv.Itoa(a.Port))
+			add(&loopback, &tlsLoopback, &mtlsLoopback, s, a)
 		case ip.IsPrivate():
 			add(&private, &tlsPrivate, &mtlsPrivate, s, a)
 		default:
