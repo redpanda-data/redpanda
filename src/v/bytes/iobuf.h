@@ -16,11 +16,10 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/details/io_placeholder.h"
 #include "bytes/details/out_of_range.h"
+#include "bytes/oncore.h"
 #include "likely.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
-#include "bytes/oncore.h"
-#include "vassert.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -235,16 +234,6 @@ inline void iobuf::create_new_fragment(size_t sz) {
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     auto f = new fragment(ss::temporary_buffer<char>(asz), fragment::empty{});
     append_take_ownership(f);
-}
-inline iobuf::placeholder iobuf::reserve(size_t sz) {
-    oncore_debug_verify(_verify_shard);
-    vassert(sz, "zero length reservations are unsupported");
-    reserve_memory(sz);
-    _size += sz;
-    auto it = std::prev(_frags.end());
-    placeholder p(it, it->size(), sz);
-    it->reserve(sz);
-    return p;
 }
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
