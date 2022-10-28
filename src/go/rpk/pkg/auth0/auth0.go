@@ -148,7 +148,7 @@ func (t *tokenResponseError) Error() string {
 	return t.Err
 }
 
-func (cl *Client) GetToken(ctx context.Context, clientID, clientSecret string) (*tokenResponse, error) {
+func (cl *Client) GetToken(ctx context.Context, clientID, clientSecret string) (tokenResponse, error) {
 	path := "/oauth/token"
 	form := httpapi.Values(
 		"grant_type", "client_credentials",
@@ -157,6 +157,6 @@ func (cl *Client) GetToken(ctx context.Context, clientID, clientSecret string) (
 		"audience", cl.endpoint.Audience,
 	)
 
-	var response *tokenResponse
-	return response, cl.httpCl.PostForm(ctx, path, nil, form, response)
+	var response tokenResponse
+	return response, cl.httpCl.PostForm(ctx, path, nil, form, &response)
 }

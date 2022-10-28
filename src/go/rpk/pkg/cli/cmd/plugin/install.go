@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"time"
 
+	os2 "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
@@ -157,7 +158,7 @@ func checkAndCreateDefaultPath(fs afero.Fs) error {
 	// recreate the directory (and then we may fail there and actually return
 	// the error).
 	if exists, _ := afero.DirExists(fs, path); !exists {
-		if os.Getuid() == 0 && os.Getenv("SUDO_UID") != "0" {
+		if os2.IsRunningSudo() {
 			return fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", path)
 		}
 		err = os.MkdirAll(path, 0o755)
