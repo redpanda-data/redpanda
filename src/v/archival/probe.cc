@@ -20,9 +20,16 @@ namespace archival {
 
 ntp_level_probe::ntp_level_probe(
   per_ntp_metrics_disabled disabled, const model::ntp& ntp) {
-    if (disabled) {
-        return;
+    if (!disabled) {
+        setup_ntp_metrics(ntp);
     }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        setup_public_metrics(ntp);
+    }
+}
+
+void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
     auto ns_label = sm::label("namespace");
@@ -65,6 +72,40 @@ ntp_level_probe::ntp_level_probe(
           labels)
           .aggregate(aggregate_labels),
       });
+}
+
+void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
+    namespace sm = ss::metrics;
+
+    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
+    auto topic_label = ssx::metrics::make_namespaced_label("topic");
+    auto partition_label = ssx::metrics::make_namespaced_label("partition");
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, partition_label};
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_storage"),
+      {sm::make_total_bytes(
+         "uploaded_bytes",
+         [this] { return _uploaded_bytes; },
+         sm::description("Total number of uploaded bytes for the topic"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "deleted_segments",
+         [this] { return _segments_deleted; },
+         sm::description(
+           "Number of segments that have been deleted from S3 for the topic. "
+           "This may grow due to retention or non compacted segments being "
+           "replaced with their compacted equivalent."),
+         labels)
+         .aggregate(aggregate_labels)});
 }
 
 service_probe::service_probe(service_metrics_disabled disabled) {

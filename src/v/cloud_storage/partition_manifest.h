@@ -172,6 +172,11 @@ public:
     const_reverse_iterator rend() const;
     size_t size() const;
 
+    // Computes the size in bytes of all segments available to clients
+    // (i.e. all segments after and including the segment that starts at
+    // the current _start_offset).
+    uint64_t cloud_log_size() const;
+
     /// Check if the manifest contains particular segment
     bool contains(const key& key) const;
     bool contains(const segment_name& name) const;

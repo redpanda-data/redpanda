@@ -72,12 +72,17 @@ static void write_batches(
 }
 
 static segment_layout write_random_batches(
-  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches = 1) { // NOLINT
+  ss::lw_shared_ptr<storage::segment> seg,
+  size_t num_batches = 1,
+  std::optional<model::timestamp> timestamp = std::nullopt) { // NOLINT
     segment_layout layout{
       .base_offset = seg->offsets().base_offset,
     };
     auto batches = model::test::make_random_batches(
-      seg->offsets().base_offset, num_batches);
+      seg->offsets().base_offset,
+      num_batches,
+      true /* allow_compression */,
+      timestamp);
 
     vlog(fixt_log.debug, "Generated {} random batches", batches.size());
     for (const auto& batch : batches) {
@@ -229,7 +234,8 @@ void archiver_fixture::initialize_shard(
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
         auto layout = write_random_batches(
-          seg, d.num_batches ? d.num_batches.value() : 1);
+          seg, d.num_batches ? d.num_batches.value() : 1, d.timestamp);
+
         layouts[d.ntp].push_back(std::move(layout));
         vlog(fixt_log.trace, "segment close");
         seg->close().get();

@@ -301,6 +301,20 @@ partition_manifest::const_reverse_iterator partition_manifest::rend() const {
 
 size_t partition_manifest::size() const { return _segments.size(); }
 
+uint64_t partition_manifest::cloud_log_size() const {
+    auto start_iter = find(_start_offset);
+
+    // No addresable segments
+    if (start_iter == end()) {
+        return 0;
+    }
+
+    return std::transform_reduce(
+      start_iter, end(), uint64_t{0}, std::plus{}, [](const auto& seg) {
+          return seg.second.size_bytes;
+      });
+}
+
 bool partition_manifest::contains(const partition_manifest::key& key) const {
     return _segments.contains(key);
 }

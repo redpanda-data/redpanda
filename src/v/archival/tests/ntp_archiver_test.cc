@@ -169,6 +169,107 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 }
 
 // NOLINTNEXTLINE
+FIXTURE_TEST(test_retention, archiver_fixture) {
+    /*
+     * Test that segments are removed from cloud storage as indicated
+     * by the retention policy. Four segments are created, two of which
+     * are older than the retention policy set by the test. After,
+     * retention was applied and garbage collection has run, we should
+     * see DELETE requests for the old segments being made.
+     */
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    cloud_storage::remote remote(
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
+
+    auto old_stamp = model::timestamp{
+      model::timestamp::now().value()
+      - std::chrono::milliseconds{10min}.count()};
+
+    std::vector<segment_desc> segments = {
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(1000),
+       .term = model::term_id(2),
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(2000),
+       .term = model::term_id(3)},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(3000),
+       .term = model::term_id(4)}};
+
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->high_watermark() >= model::offset(1);
+    }).get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, HW {}, CO {}, partition: {}",
+      part->high_watermark(),
+      part->committed_offset(),
+      *part);
+
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    retry_chain_node fib;
+    auto res = archiver.upload_next_candidates().get();
+    BOOST_REQUIRE_EQUAL(res.num_succeded, 4);
+    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+
+    // We generate the path here as we need the segment to be in the
+    // manifest for this. After retention is applied (i.e.
+    // apply_retention has run) that's not the case anymore.
+    std::vector<std::pair<remote_segment_path, bool>> segment_urls;
+    for (const auto& seg : segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          seg.base_offset, seg.term);
+        auto path = get_segment_path(
+          part->archival_meta_stm()->manifest(), name);
+
+        bool deletion_expected = seg.timestamp == old_stamp;
+        segment_urls.emplace_back(path, deletion_expected);
+    }
+
+    config::shard_local_cfg().delete_retention_ms.set_value(
+      std::chrono::milliseconds{1min});
+    archiver.apply_retention().get();
+    archiver.garbage_collect().get();
+    config::shard_local_cfg().delete_retention_ms.reset();
+
+    for (auto [url, req] : get_targets()) {
+        vlog(test_log.info, "{} {}", req._method, req._url);
+    }
+
+    for (const auto& [url, deletion_expected] : segment_urls) {
+        auto [req_begin, req_end] = get_targets().equal_range(
+          "/" + url().string());
+        auto segment_deleted = std::find_if(
+                                 req_begin,
+                                 req_end,
+                                 [](auto entry) {
+                                     return entry.second._method == "DELETE";
+                                 })
+                               != req_end;
+
+        BOOST_REQUIRE(segment_deleted == deletion_expected);
+    }
+}
+
+// NOLINTNEXTLINE
 FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     model::offset lso{9999};
     const auto offset1 = model::offset(0000);

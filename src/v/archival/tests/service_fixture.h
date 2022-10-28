@@ -38,6 +38,7 @@ struct segment_desc {
     model::offset base_offset;
     model::term_id term;
     std::optional<size_t> num_batches;
+    std::optional<model::timestamp> timestamp;
 };
 
 struct offset_range {

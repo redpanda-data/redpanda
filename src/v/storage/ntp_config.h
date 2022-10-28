@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -153,6 +154,22 @@ public:
 
     void set_overrides(default_overrides o) {
         _overrides = std::make_unique<default_overrides>(o);
+    }
+
+    std::optional<size_t> retention_bytes() const {
+        if (!_overrides || !_overrides->retention_bytes.has_value()) {
+            return config::shard_local_cfg().retention_bytes();
+        }
+
+        return _overrides->retention_bytes.value();
+    }
+
+    std::optional<std::chrono::milliseconds> retention_duration() const {
+        if (!_overrides || !_overrides->retention_time.has_value()) {
+            return config::shard_local_cfg().delete_retention_ms();
+        }
+
+        return _overrides->retention_time.value();
     }
 
     bool is_archival_enabled() const {

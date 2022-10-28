@@ -100,6 +100,10 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               when().request(req._url).then_reply_with(req.content);
               repl.set_status(ss::httpd::reply::status_type::ok);
               return "";
+          }
+          if (req._method == "DELETE") {
+              repl.set_status(reply::status_type::no_content);
+              return "";
           } else {
               ss::httpd::request lookup_r{req};
               lookup_r._url = remove_query_params(req._url);

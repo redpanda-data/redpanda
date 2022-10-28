@@ -231,6 +231,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_readreplica_manifest_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
+    property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;
 
     // Archival upload controller
     property<std::chrono::milliseconds>

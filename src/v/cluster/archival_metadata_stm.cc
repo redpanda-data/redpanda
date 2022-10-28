@@ -277,7 +277,7 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
     auto batch = std::move(b).build();
 
     auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
-    if (!ec) {
+    if (ec) {
         co_return ec;
     }
 
@@ -308,9 +308,15 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
         as->get().check();
     }
 
-    auto segments_to_remove = _manifest->replaced_segments();
+    auto has_replaced_segments = !_manifest->replaced_segments().empty();
+    auto has_trailing_segments = (_manifest->size() > 0
+                                  && _manifest->get_start_offset())
+                                   ? _manifest->begin()->first.base_offset
+                                       < _manifest->get_start_offset()
+                                   : false;
 
-    if (segments_to_remove.empty()) {
+    if (!has_replaced_segments && !has_trailing_segments) {
+        vlog(_logger.debug, "no metadata to clean up");
         co_return errc::success;
     }
 
@@ -323,7 +329,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
     auto batch = std::move(b).build();
 
     auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
-    if (!ec) {
+    if (ec) {
         co_return ec;
     }
 

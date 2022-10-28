@@ -13,6 +13,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "test_utils/archival.h"
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -81,12 +82,6 @@ static constexpr std::string_view manifest_with_gaps = R"json({
 })json";
 
 static constexpr size_t max_upload_size{4096_KiB};
-
-ss::input_stream<char> make_manifest_stream(std::string_view json) {
-    iobuf i;
-    i.append(json.data(), json.size());
-    return make_iobuf_input_stream(std::move(i));
-}
 
 SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
     cloud_storage::partition_manifest m;
