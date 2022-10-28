@@ -141,6 +141,24 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
+    def _get_kafka_cli_tools(self):
+        sasl_enabled = self.redpanda.sasl_enabled()
+        cfg = self.redpanda.security_config() if sasl_enabled else {}
+        return KafkaCliTools(self.redpanda,
+                             user=cfg.get('sasl_plain_username'),
+                             passwd=cfg.get('sasl_plain_password'))
+
+    def _get_serde_client(self, schema_type: SchemaType, topic: str):
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        sasl_enabled = self.redpanda.sasl_enabled()
+        sec_cfg = self.redpanda.security_config() if sasl_enabled else None
+        return SerdeClient(self.redpanda.brokers(),
+                           schema_reg,
+                           schema_type,
+                           topic=topic,
+                           logger=self.logger,
+                           security_config=sec_cfg)
+
     def _get_topics(self):
         return requests.get(
             f"http://{self.redpanda.nodes[0].account.hostname}:8082/topics")
@@ -151,7 +169,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
                        replicas=1,
                        cleanup_policy=TopicSpec.CLEANUP_DELETE):
         self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools = self._get_kafka_cli_tools()
         for name in names:
             kafka_tools.create_topic(
                 TopicSpec(name=name,
@@ -1108,11 +1126,7 @@ class SchemaRegistryTest(SchemaRegistryEndpoints):
             self.logger.info(
                 f"Connecting to redpanda: {self.redpanda.brokers()} schema_reg: {schema_reg}"
             )
-            client = SerdeClient(self.redpanda.brokers(),
-                                 schema_reg,
-                                 protocols[i],
-                                 topic=topics[i],
-                                 logger=self.logger)
+            client = self._get_serde_client(protocols[i], topics[i])
             client.run(2)
             schema = self._get_subjects_subject_versions_version(
                 f"{topics[i]}-value", "latest")
