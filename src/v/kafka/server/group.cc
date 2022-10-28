@@ -2016,6 +2016,56 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx_errc::stale);
     }
 
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (fence_it == _fence_pid_epoch.end()) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't abort tx: fence with pid {} isn't set",
+          r.pid);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (r.pid.get_epoch() != fence_it->second) {
+        vlog(
+          _ctx_txlog.trace,
+          "Can't abort tx with pid {} - the fence doesn't match {}",
+          r.pid,
+          fence_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    auto txseq_it = _tx_seqs.find(r.pid.get_id());
+    if (txseq_it == _tx_seqs.end()) {
+        if (is_transaction_ga()) {
+            vlog(
+              _ctx_txlog.trace,
+              "can't find a tx {}, probably already aborted",
+              r.pid);
+            co_return make_abort_tx_reply(cluster::tx_errc::none);
+        }
+    } else if (txseq_it->second > r.tx_seq) {
+        // rare situation:
+        //   * tm_stm begins (tx_seq+1)
+        //   * request on this group passes but then tm_stm fails and forgets
+        //   about this tx
+        //   * during recovery tm_stm reaborts previous tx (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is aborted
+        vlog(
+          _ctx_txlog.trace,
+          "Already aborted pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::none);
+    } else if (txseq_it->second != r.tx_seq) {
+        vlog(
+          _ctx_txlog.warn,
+          "Can't abort pid {}: passed txseq {} doesn't match ongoing {}",
+          r.pid,
+          r.tx_seq,
+          txseq_it->second);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
     auto origin = get_abort_origin(r.pid, r.tx_seq);
     if (origin == cluster::abort_origin::past) {
         // rejecting a delayed abort command to prevent aborting
@@ -2903,15 +2953,8 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     // know we're going to abort tx and abandon pid
     _volatile_txs.erase(pid);
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2197
-    // (check for tx_seq to prevent old abort requests aborting
-    // new transactions in the same session)
-
     auto tx = group_log_aborted_tx{.group_id = group_id, .tx_seq = tx_seq};
 
-    // TODO: https://app.clubhouse.io/vectorized/story/2200
-    // include producer_id+type into key to make it unique-ish
-    // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
       model::record_batch_type::group_abort_tx,
       aborted_tx_record_version,
@@ -2925,7 +2968,17 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
+        vlog(
+          _ctx_txlog.warn,
+          "Error \"{}\" on replicating pid:{} abort batch",
+          e.error(),
+          pid);
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down();
+        }
+        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
     }
 
     _prepared_txs.erase(pid);
