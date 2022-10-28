@@ -60,6 +60,14 @@ class KafkaCat:
 
     def _cmd_raw(self, cmd, input=None):
         for retry in reversed(range(10)):
+            if getattr(self._redpanda, "sasl_enabled", lambda: False)():
+                cfg = self._redpanda.security_config()
+                cmd += [
+                    "-X", f"security.protocol={cfg['security_protocol']}", "-X"
+                    f"sasl.mechanism={cfg['sasl_mechanism']}", "-X",
+                    f"sasl.username={cfg['sasl_plain_username']}", "-X",
+                    f"sasl.password={cfg['sasl_plain_password']}"
+                ]
             try:
                 res = subprocess.check_output(
                     ["kcat", "-b", self._redpanda.brokers()] + cmd,
