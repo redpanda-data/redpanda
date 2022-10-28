@@ -21,7 +21,7 @@ from rptest.util import (segments_count, wait_for_segments_removal)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
-from ducktape.mark import parametrize
+from ducktape.mark import (parametrize, ok_to_fail)
 
 from rptest.services.kafka import KafkaServiceAdapter
 from kafkatest.services.kafka import KafkaService
@@ -209,12 +209,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         # test parameter to set cluster configs before starting.
         pass
 
-    @cluster(num_nodes=4)
-    @parametrize(cloud_storage=True, batch_cache=False)
-    @parametrize(cloud_storage=False, batch_cache=True)
-    @parametrize(cloud_storage=False, batch_cache=False)
-    @skip_debug_mode
-    def test_timequery(self, cloud_storage: bool, batch_cache: bool):
+    def _do_test_timequery(self, cloud_storage: bool, batch_cache: bool):
         self.redpanda.set_extra_rp_conf({
             # Testing with batch cache disabled is important, because otherwise
             # we won't touch the path in skipping_consumer that applies
@@ -243,6 +238,22 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         return self._test_timequery(cluster=self.redpanda,
                                     cloud_storage=cloud_storage,
                                     batch_cache=batch_cache)
+
+    @cluster(num_nodes=4)
+    @parametrize(cloud_storage=True, batch_cache=False)
+    @parametrize(cloud_storage=False, batch_cache=True)
+    @parametrize(cloud_storage=False, batch_cache=False)
+    @skip_debug_mode
+    def test_timequery(self, cloud_storage: bool, batch_cache: bool):
+        return self._do_test_timequery(cloud_storage, batch_cache)
+
+    @ok_to_fail
+    @cluster(num_nodes=4)
+    @parametrize(cloud_storage=True, batch_cache=False)
+    @parametrize(cloud_storage=False, batch_cache=True)
+    @parametrize(cloud_storage=False, batch_cache=False)
+    def test_timequery_debug(self, cloud_storage: bool, batch_cache: bool):
+        return self._do_test_timequery(cloud_storage, batch_cache)
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):
