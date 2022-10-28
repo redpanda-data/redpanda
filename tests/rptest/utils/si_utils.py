@@ -442,3 +442,13 @@ class S3View:
         manifest_data = self.partition_manifests[ntp]
         self.logger.debug(f'manifest: {pprint.pformat(manifest_data)}')
         return manifest_data
+
+    def cloud_log_size_for_ntp(self,
+                               topic: str,
+                               partition: int,
+                               ns: str = 'kafka') -> dict:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+
+        start_offset = manifest['start_offset']
+        return sum(seg_meta['size_bytes']
+                   for seg_meta in manifest['segments'].values())
