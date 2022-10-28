@@ -251,7 +251,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _base_uri{std::move(base_uri)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
@@ -307,7 +307,7 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _member_id{std::move(member_id)},
        _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
@@ -343,7 +343,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _member_id{std::move(member_id)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
@@ -385,7 +385,7 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _name{std::move(name)},
        _timeout{timeout},
        _max_bytes{max_bytes},
@@ -437,7 +437,7 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _member_id{std::move(member_id)},
        _res_fmt{res_fmt},
        _req_data{std::move(req_data)},
@@ -487,7 +487,7 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{std::move(group_id)},
+      [_group_id{group_id},
        _member_id{std::move(member_id)},
        _req_data{std::move(req_data)},
        _rp{std::move(rp)}](

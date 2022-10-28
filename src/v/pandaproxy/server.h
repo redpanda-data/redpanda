@@ -193,7 +193,8 @@ public:
                 return std::forward<Func>(func)(service().client().local());
             }
             case config::rest_authn_method::http_basic: {
-                return dispatch([this, &func](kafka_client_cache& cache) {
+                return dispatch([this, func{std::forward<Func>(func)}](
+                                  kafka_client_cache& cache) mutable {
                     auto client = cache.fetch_or_insert(user, authn_method);
                     return std::forward<Func>(func)(*client).finally(
                       [client] {});
@@ -207,12 +208,11 @@ public:
             switch (authn_method) {
             case config::rest_authn_method::none: {
                 return service().client().invoke_on(
-                  impl::consumer_shard(group_id), [&func](auto& client) {
-                      return std::forward<Func>(func)(client);
-                  });
+                  impl::consumer_shard(group_id), std::forward<Func>(func));
             }
             case config::rest_authn_method::http_basic: {
-                return dispatch([this, &func](kafka_client_cache& cache) {
+                return dispatch([this, func{std::forward<Func>(func)}](
+                                  kafka_client_cache& cache) mutable {
                     auto client = cache.fetch_or_insert(user, authn_method);
                     return std::forward<Func>(func)(*client).finally(
                       [client] {});
@@ -223,7 +223,8 @@ public:
 
         template<impl::KafkaRequestFactory Func>
         auto dispatch(Func&& func) {
-            return dispatch([&func](kafka::client::client& client) {
+            return dispatch([func{std::forward<Func>(func)}](
+                              kafka::client::client& client) mutable {
                 return client.dispatch(std::forward<Func>(func));
             });
         }
