@@ -21,7 +21,6 @@
 #include "pandaproxy/parsing/from_chars.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
-#include "pandaproxy/sharded_client_cache.h"
 #include "security/ephemeral_credential_store.h"
 #include "utils/gate_guard.h"
 
