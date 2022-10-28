@@ -29,9 +29,8 @@ public:
     partition_balancer_backend(
       consensus_ptr raft0,
       ss::sharded<controller_stm>&,
-      ss::sharded<topic_table>&,
+      ss::sharded<partition_balancer_state>&,
       ss::sharded<health_monitor_frontend>&,
-      ss::sharded<members_table>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
@@ -70,9 +69,8 @@ private:
     consensus_ptr _raft0;
 
     controller_stm& _controller_stm;
-    topic_table& _topic_table;
+    partition_balancer_state& _state;
     health_monitor_frontend& _health_monitor;
-    members_table& _members_table;
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
 

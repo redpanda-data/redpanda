@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
@@ -28,10 +29,12 @@ namespace cluster {
 topic_updates_dispatcher::topic_updates_dispatcher(
   ss::sharded<partition_allocator>& pal,
   ss::sharded<topic_table>& table,
-  ss::sharded<partition_leaders_table>& leaders)
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<partition_balancer_state>& pb_state)
   : _partition_allocator(pal)
   , _topic_table(table)
-  , _partition_leaders_table(leaders) {}
+  , _partition_leaders_table(leaders)
+  , _partition_balancer_state(pb_state) {}
 
 ss::future<std::error_code>
 topic_updates_dispatcher::apply_update(model::record_batch b) {
@@ -41,7 +44,6 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
           return ss::visit(
             std::move(cmd),
             [this, base_offset](delete_topic_cmd del_cmd) {
-                auto tp_ns = del_cmd.key;
                 auto topic_assignments
                   = _topic_table.local().get_topic_assignments(del_cmd.value);
                 in_progress_map in_progress;
@@ -52,6 +54,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 }
                 return dispatch_updates_to_cores(del_cmd, base_offset)
                   .then([this,
+                         tp_ns = std::move(del_cmd.key),
                          topic_assignments = std::move(topic_assignments),
                          in_progress = std::move(in_progress),
                          allocation_domain = get_allocation_domain(
@@ -62,6 +65,16 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                             "Topic had to exist before successful delete");
                           deallocate_topic(
                             *topic_assignments, in_progress, allocation_domain);
+
+                          for (const auto& p_as : *topic_assignments) {
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  tp_ns.ns,
+                                  tp_ns.tp,
+                                  p_as.id,
+                                  p_as.replicas,
+                                  {});
+                          }
                       }
 
                       return ec;
@@ -71,9 +84,21 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
                   .then([this, create_cmd](std::error_code ec) {
                       if (ec == errc::success) {
+                          const auto& tp_ns = create_cmd.key;
                           update_allocations(
                             create_cmd.value.assignments,
-                            get_allocation_domain(create_cmd.key));
+                            get_allocation_domain(tp_ns));
+
+                          for (const auto& p_as :
+                               create_cmd.value.assignments) {
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  tp_ns.ns,
+                                  tp_ns.tp,
+                                  p_as.id,
+                                  {},
+                                  p_as.replicas);
+                          }
                       }
                       return ec;
                   })
@@ -103,15 +128,23 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                   .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
                           std::error_code ec) {
                       if (!ec) {
+                          const auto& ntp = cmd.key;
                           vassert(
                             p_as.has_value(),
                             "Partition {} have to exist before successful "
                             "partition reallocation",
-                            cmd.key);
+                            ntp);
                           auto to_add = subtract_replica_sets(
                             cmd.value, p_as->replicas);
                           _partition_allocator.local().add_allocations(
-                            to_add, get_allocation_domain(cmd.key));
+                            to_add, get_allocation_domain(ntp));
+
+                          _partition_balancer_state.local().handle_ntp_update(
+                            ntp.ns,
+                            ntp.tp.topic,
+                            ntp.tp.partition,
+                            p_as->replicas,
+                            cmd.value);
                       }
                       return ec;
                   });
@@ -143,6 +176,12 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                         current_assignment->replicas, *new_target_replicas);
                       _partition_allocator.local().remove_allocations(
                         to_delete, get_allocation_domain(ntp));
+                      _partition_balancer_state.local().handle_ntp_update(
+                        ntp.ns,
+                        ntp.tp.topic,
+                        ntp.tp.partition,
+                        current_assignment->replicas,
+                        *new_target_replicas);
                       return ec;
                   });
             },
@@ -179,9 +218,20 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this, cmd](std::error_code ec) {
                       if (ec == errc::success) {
+                          const auto& tp_ns = cmd.key;
                           update_allocations(
                             cmd.value.assignments,
-                            get_allocation_domain(cmd.key));
+                            get_allocation_domain(tp_ns));
+
+                          for (const auto& p_as : cmd.value.assignments) {
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  tp_ns.ns,
+                                  tp_ns.tp,
+                                  p_as.id,
+                                  {},
+                                  p_as.replicas);
+                          }
                       }
                       return ec;
                   });
@@ -234,6 +284,13 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                                 replicas, assigment_it->replicas);
                               _partition_allocator.local().add_allocations(
                                 to_add, get_allocation_domain(ntp));
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  ntp.ns,
+                                  ntp.tp.topic,
+                                  ntp.tp.partition,
+                                  assigment_it->replicas,
+                                  replicas);
                           }
                       }
                       return ec;

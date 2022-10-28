@@ -158,6 +158,8 @@ private:
     ss::sharded<partition_allocator> _partition_allocator; // single instance
     ss::sharded<topic_table> _tp_state;                    // instance per core
     ss::sharded<members_table> _members_table;             // instance per core
+    ss::sharded<partition_balancer_state>
+      _partition_balancer_state; // single instance
     ss::sharded<partition_leaders_table>
       _partition_leaders;                            // instance per core
     ss::sharded<drain_manager> _drain_manager;       // instance per core
