@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "random/generators.h"
 #include "utils/vint.h"
+#include "utils/vint_iostream.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
