@@ -354,6 +354,25 @@ struct_renames = {
     ("IncrementalAlterConfigsResponseData", "Responses"):
         ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
 }
+
+# extra header per type name
+extra_headers = {
+    "std::optional": dict(
+        header = ("<optional>",),
+    ),
+    "std::vector": dict(
+        header = "<vector>",
+    ),
+    "kafka::produce_request_record_data": dict(
+        header = "kafka/protocol/kafka_batch_adapter.h",
+    ),
+    "kafka::batch_reader": dict(
+        header = "kafka/protocol/batch_reader.h",
+    ),
+    "model::timestamp": dict(
+        header = "model/timestamp.h",
+    ),
+}
 # yapf: enable
 
 
@@ -653,6 +672,42 @@ class StructType(FieldType):
                 res.append(t)
         return res
 
+    def headers(self, which):
+        """
+        calculate extra headers needed to support this struct
+        """
+        whiches = set(("header", "source"))
+        assert which in whiches
+
+        def type_iterator(fields):
+            for field in fields:
+                yield from field.type_name_parts()
+                t = field.type()
+                if isinstance(t, ArrayType):
+                    t = t.value_type()  # unwrap value type
+                if isinstance(t, StructType):
+                    yield from type_iterator(t.fields)
+
+        types = set(type_iterator(self.fields))
+
+        def maybe_strings(s):
+            if isinstance(s, str):
+                yield s
+            else:
+                assert isinstance(s, tuple)
+                yield from s
+
+        def type_headers(t):
+            h = extra_headers.get(t, None)
+            if h is None:
+                return
+            assert isinstance(h, dict)
+            assert set(h.keys()) <= whiches
+            h = h.get(which, ())
+            yield from maybe_strings(h)
+
+        return set(h for t in types for h in type_headers(t))
+
     @property
     def is_default_comparable(self):
         return all(field.is_default_comparable for field in self.fields)
@@ -866,6 +921,19 @@ class Field:
             return f"std::optional<{name}>", None
         return name, default_value
 
+    def type_name_parts(self):
+        """
+        yield normalized types required by this field
+        """
+        name, default_value = self._redpanda_type()
+        yield name
+        if isinstance(self._type, ArrayType):
+            assert default_value is None  # not supported
+            yield "std::vector"
+        if self.nullable():
+            assert default_value is None  # not supported
+            yield "std::optional"
+
     @property
     def value_type(self):
         assert self.is_array
@@ -883,21 +951,19 @@ class Field:
 
 HEADER_TEMPLATE = """
 #pragma once
-#include "kafka/types.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
-#include "model/timestamp.h"
 #include "seastarx.h"
 
-#include <seastar/core/sstring.hh>
-
-#include <chrono>
-#include <cstdint>
-#include <optional>
-#include <vector>
+{%- for header in struct.headers("header") %}
+{%- if header.startswith("<") %}
+#include {{ header }}
+{%- else %}
+#include "{{ header }}"
+{%- endif %}
+{%- endfor %}
 
 {% macro render_struct(struct) %}
 {{ render_struct_comment(struct) }}
@@ -998,6 +1064,14 @@ SOURCE_TEMPLATE = """
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+
+{%- for header in struct.headers("source") %}
+{%- if header.startswith("<") %}
+#include {{ header }}
+{%- else %}
+#include "{{ header }}"
+{%- endif %}
+{%- endfor %}
 
 {% macro version_guard(field, flex) %}
 {%- set guard_enum = field.versions().guard_enum %}
