@@ -219,6 +219,7 @@ struct reupload_fixture : public archiver_fixture {
           std::plus<size_t>{},
           [&m](const auto& name) {
               auto meta = m.get(cloud_storage::segment_name{name});
+              BOOST_REQUIRE(meta);
               return meta->size_bytes;
           });
         composite_meta.size_bytes = total_size;
@@ -830,4 +831,101 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     config::shard_local_cfg()
       .get("cloud_storage_enable_compacted_topic_reupload")
       .set_value(true);
+}
+
+FIXTURE_TEST(test_upload_limit, reupload_fixture) {
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(0), model::term_id(1), 10},
+      {manifest_ntp, model::offset(10), model::term_id(1), 10},
+      {manifest_ntp, model::offset(20), model::term_id(1), 10},
+      {manifest_ntp, model::offset(30), model::term_id(1), 10},
+      {manifest_ntp, model::offset(40), model::term_id(1), 10},
+    };
+
+    initialize(segments);
+    auto action = ss::defer([this] { archiver->stop().get(); });
+
+    listen();
+
+    // 4 out of 5 segments uploaded due to archiver limit of 4
+    archival::ntp_archiver::batch_result expected{{4, 0, 0}, {0, 0, 0}};
+    auto res = archiver->upload_next_candidates().get();
+    BOOST_REQUIRE(res == expected);
+
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+
+    auto manifest = load_manifest(
+      get_targets().find(manifest_url)->second.content);
+
+    verify_segment_request("0-1-v1.log", manifest);
+    verify_segment_request("10-1-v1.log", manifest);
+    verify_segment_request("20-1-v1.log", manifest);
+    verify_segment_request("30-1-v1.log", manifest);
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const cloud_storage::partition_manifest& stm_manifest
+      = part->archival_meta_stm()->manifest();
+
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
+
+    // Create four non-compacted segments to starve out the upload limit.
+    for (auto i = 0; i < 3; ++i) {
+        auto& last_segment = disk_log_impl()->segments().back();
+        write_random_batches_with_single_record(last_segment, 10);
+        last_segment->appender().close().get();
+        last_segment->release_appender();
+
+        create_segment(
+          {manifest_ntp,
+           last_segment->offsets().committed_offset + model::offset{1},
+           model::term_id{2},
+           10});
+    }
+
+    reset_http_call_state();
+
+    // Mark four segments as compacted, so they are valid for upload
+    auto seg = mark_segments_as_compacted({0, 1, 2, 3});
+    expected = archival::ntp_archiver::batch_result{{4, 0, 0}, {0, 0, 0}};
+    res = archiver->upload_next_candidates(model::offset::max()).get();
+    BOOST_REQUIRE(res == expected);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+
+    manifest = part->archival_meta_stm()->manifest();
+    verify_segment_request("40-1-v1.log", manifest);
+    verify_segment_request("50-2-v1.log", manifest);
+    verify_segment_request("60-2-v1.log", manifest);
+    verify_segment_request("70-2-v1.log", manifest);
+
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
+
+    auto replaced = stm_manifest.replaced_segments();
+    BOOST_REQUIRE(replaced.empty());
+
+    reset_http_call_state();
+    expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
+
+    res = archiver->upload_next_candidates(model::offset::max()).get();
+    BOOST_REQUIRE(res == expected);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
+
+    verify_concat_segment_request(
+      {
+        "0-1-v1.log",
+        "10-1-v1.log",
+        "20-1-v1.log",
+        "30-1-v1.log",
+      },
+      manifest);
+
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_last_uploaded_compacted_offset(),
+      seg->offsets().committed_offset);
+
+    replaced = stm_manifest.replaced_segments();
+    BOOST_REQUIRE_EQUAL(replaced.size(), 4);
 }

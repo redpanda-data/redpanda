@@ -204,8 +204,6 @@ private:
     struct upload_context {
         /// The kind of segment being uploaded
         segment_upload_kind upload_kind;
-        /// The share of concurrency this context can use
-        double concurrency_ratio;
         /// The next scheduled upload will start from this offset
         model::offset start_offset;
         /// Uploads will stop at this offset
@@ -223,7 +221,6 @@ private:
 
         upload_context(
           segment_upload_kind upload_kind,
-          double concurrency_ratio,
           model::offset start_offset,
           model::offset last_offset,
           allow_reuploads_t allow_reuploads);
