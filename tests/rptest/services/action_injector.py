@@ -203,7 +203,14 @@ class ActionInjectorThread(Thread):
         while not self._stop_requested.is_set():
             if self.disruptive_action.action():
                 self.action_triggered = True
-            time.sleep(self.config.time_between_actions())
+            sleep_interval = self.config.time_between_actions()
+
+            # If we have processed all nodes once, increase the sleep interval
+            # just for this iteration. This avoids the case where the last node
+            # in the previous cycle is restarted again in the next cycle.
+            if self.disruptive_action.node_cycle_complete:
+                sleep_interval *= 3
+            time.sleep(sleep_interval)
             if self.disruptive_action.reverse():
                 self.reverse_action_triggered = True
 
