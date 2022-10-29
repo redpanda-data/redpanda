@@ -80,6 +80,9 @@ class Partition:
             return
         self.segments[seg].set_size(size)
 
+    def delete_segment(self, segment_name: str):
+        del self.segments[segment_name]
+
     def delete_indices(self, allow_fail=False):
         for _, segment in self.segments.items():
             segment.delete_indices(allow_fail)

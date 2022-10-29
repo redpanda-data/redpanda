@@ -1980,9 +1980,15 @@ class RedpandaService(Service):
 
         def get_sizes(partition_path, segment_names, partition):
             for s in segment_names:
-                stat = node.account.sftp_client.lstat(
-                    os.path.join(partition_path, s))
-                partition.set_segment_size(s, stat.st_size)
+                try:
+                    stat = node.account.sftp_client.lstat(
+                        os.path.join(partition_path, s))
+                    partition.set_segment_size(s, stat.st_size)
+                except FileNotFoundError:
+                    # It is legal for a file to be deleted between a listdir
+                    # and a stat: update the partition object to reflect this,
+                    # rather than leaving a None size that could trip up sum()
+                    partition.delete_segment(s)
 
         store = NodeStorage(node.name, RedpandaService.DATA_DIR)
         for ns in listdir(store.data_dir, True):
