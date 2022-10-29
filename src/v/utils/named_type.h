@@ -8,13 +8,10 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
-#include <seastar/core/sstring.hh>
-
 #include <cstdint>
-#include <functional> // needed for std::hash
 #include <limits>
+#include <ostream>
 #include <type_traits>
 #include <utility>
 
