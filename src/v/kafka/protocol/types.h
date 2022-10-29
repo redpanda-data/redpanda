@@ -13,7 +13,6 @@
 #include "bytes/bytes.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/types.h"
-#include "model/metadata.h"
 #include "utils/named_type.h"
 
 namespace kafka {
@@ -32,8 +31,6 @@ using tagged_fields
 /// The only request that is never flexible is sasl_handshake_request - 17.
 /// Older versions of schemas may also contain values of 'none' that map to -1
 static constexpr api_version never_flexible = api_version(-1);
-
-static constexpr model::node_id consumer_replica_id{-1};
 
 template<typename T>
 concept KafkaApi = requires(T request) {
