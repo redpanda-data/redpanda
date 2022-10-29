@@ -31,17 +31,17 @@ all: manager
 
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: generate fmt vet manifests
+test: generate vet manifests
 	mkdir -p ${ENVTEST_ASSETS_DIR}
 	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
 	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test --race -v ./... -coverprofile cover.out
 
 # Build manager binary
-manager: generate fmt vet
+manager: generate vet
 	go build -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
-run: generate fmt vet manifests
+run: generate vet manifests
 	go run ./main.go
 
 # Install CRDs into a cluster
@@ -68,10 +68,6 @@ undeploy:
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-
-# Run crlfmt against code
-fmt: crlfmt
-	$(CRLFMT) -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
 
 # Run go vet against code
 vet:
@@ -135,12 +131,10 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 KUTTL ?= $(LOCALBIN)/kubectl-kuttl
-CRLFMT ?= $(LOCALBIN)/crlfmt
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v3.8.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
-CRLFMT_VERSION ?= v0.0.0-20210128092314-b3eff0b87c79
 KUTTL_VERSION ?= v0.13.0
 
 .PHONY: controller-gen
@@ -158,11 +152,6 @@ $(KUSTOMIZE): $(LOCALBIN)
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
-.PHONY: crlfmt
-crlfmt: $(CRLFMT)
-$(CRLFMT): $(LOCALBIN)
-	test -s $(LOCALBIN)/crlfmt || GOBIN=$(LOCALBIN) go install github.com/cockroachdb/crlfmt@$(CRLFMT_VERSION)
 
 .PHONY: kuttl
 kuttl: $(KUTTL)
