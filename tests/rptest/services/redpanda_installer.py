@@ -347,8 +347,29 @@ class RedpandaInstaller:
                 ssh_download_per_node[
                     node] = self._async_download_on_node_unlocked(
                         node, version)
-        self.wait_for_async_ssh(self._redpanda.logger, ssh_download_per_node,
-                                "Finished downloading binaries")
+
+        try:
+            self.wait_for_async_ssh(self._redpanda.logger,
+                                    ssh_download_per_node,
+                                    "Finished downloading binaries")
+        except Exception as e:
+            self._redpanda.logger.error(
+                f"Exception while downloading to {version_root}, cleaning up: {str(e)}"
+            )
+            # TODO: make failure handling more fine-grained. If deploying on
+            # dedicated nodes, we only need to clean up the node that failed.
+            for node in ssh_download_per_node:
+                ssh_iter = ssh_download_per_node[node]
+                if ssh_iter.has_next():
+                    # Drain the iterator to make sure we wait for on-going
+                    # downloads to finish before cleaning up.
+                    try:
+                        [l for l in ssh_iter]
+                    except:
+                        pass
+                # Be permissive so we can clean everything.
+                node.account.remove(version_root, allow_fail=True)
+            raise e
 
         # Regardless of whether we downloaded anything, adjust the
         # /opt/redpanda link to point to the appropriate version on all nodes.
