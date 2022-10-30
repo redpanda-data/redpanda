@@ -142,6 +142,19 @@ void persisted_stm::make_snapshot_in_background() {
 }
 
 ss::future<> persisted_stm::make_snapshot() {
+    // squash resquests to prevent accumulation of identical snapshot requests
+    // see https://github.com/redpanda-data/redpanda/issues/6856
+    //
+    // Possible states:
+    //  * No snapshot requests are being processed
+    //  * A single active snapshot request
+    //  * An active request and one awaiting to be picked up (waiter queue
+    //  length == 1)
+    //
+    // Snapshots taken in close succession will contain the same offsets; if the
+    // request queue is not empty, subsequent requests can be squashed.
+    if _op_lock
+        .waiters() > 1 { return ss::make_ready_future<>(); }
     return _op_lock.with([this]() {
         auto f = wait_for_snapshot_hydrated();
         return f.then([this] { return do_make_snapshot(); });
