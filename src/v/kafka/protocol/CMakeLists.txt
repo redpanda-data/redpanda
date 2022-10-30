@@ -33,6 +33,7 @@ v_cc_library(
     logger.cc
     flex_versions.cc
     ${message_srcs}
+    types.cc
   DEPS
     Seastar::seastar
     v::bytes
