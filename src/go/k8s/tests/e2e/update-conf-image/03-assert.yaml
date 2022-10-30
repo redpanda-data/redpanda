@@ -6,7 +6,11 @@ spec:
   template:
     spec:
       initContainers:
-        - image: "vectorized/configurator:latest"
+        - name: redpanda-configurator
+          image: "localhost/configurator:dev"
+      containers:
+        - name: redpanda
+          image: "localhost/redpanda:dev"
 status:
   readyReplicas: 2
 
@@ -19,7 +23,7 @@ metadata:
 spec:
   initContainers:
     - name: redpanda-configurator
-      image: "vectorized/configurator:latest"
+      image: "localhost/configurator:dev"
 status:
   phase: "Running"
 
@@ -29,6 +33,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: update-image-cluster-1
+spec:
+  initContainers:
+    - name: redpanda-configurator
+      image: "localhost/configurator:dev"
 status:
   phase: "Running"
 
