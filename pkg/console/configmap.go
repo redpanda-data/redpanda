@@ -52,6 +52,7 @@ func NewConfigMap(
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	if cm.consoleobj.Status.ConfigMapRef != nil {
+		cm.log.V(debugLogLevel).Info("config map ref still exist", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
 		return nil
 	}
 
@@ -108,6 +109,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	// Other Resources may set Console status if they are also watching GenerationMatchesObserved()
 	cm.consoleobj.Status.ConfigMapRef = &corev1.ObjectReference{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 
+	cm.log.Info("config map ref updated", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
 	return nil
 }
 
@@ -552,6 +554,7 @@ func (cm *ConfigMap) buildConfigCluster(
 // ConfigMaps are recreated upon Console update, old ones should be cleaned up
 func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
 	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
+		cm.log.Info("delete unused config map reference", "config map name", ref.Name, "config map namespace", ref.Namespace)
 		if err := cm.delete(ctx, ref.Name); err != nil {
 			return err
 		}
