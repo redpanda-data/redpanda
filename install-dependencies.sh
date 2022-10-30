@@ -27,6 +27,7 @@ fi
 deb_deps=(
   ccache
   clang
+  clang-format
   curl
   git
   golang-go
@@ -46,6 +47,7 @@ deb_deps=(
 fedora_deps=(
   ccache
   clang
+  clang-tools-extra 
   curl
   git
   golang
