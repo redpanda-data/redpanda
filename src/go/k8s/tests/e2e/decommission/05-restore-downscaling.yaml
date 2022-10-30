@@ -2,4 +2,4 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
 # Downscaling will be set to the default value
-- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"remove", "path":"/spec/template/spec/containers/1/args/4"}]'
+- command: "sh -c 'kustomize build ../../../config/e2e-tests | kubectl apply -f -'"
