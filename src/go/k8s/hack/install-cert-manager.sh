@@ -21,4 +21,4 @@ else
 fi
 
 kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.4.4/cert-manager.yaml
-./bin/cm-verifier
+./bin/cm-verifier --timeout 5m
