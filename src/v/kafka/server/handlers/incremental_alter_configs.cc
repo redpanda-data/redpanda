@@ -146,8 +146,7 @@ static void parse_and_set_topic_replication_factor(
   config_resource_operation op) {
     // set property value
     if (op == config_resource_operation::set) {
-        property.value = cluster::replication_factor(
-          boost::lexical_cast<cluster::replication_factor::type>(*value));
+        property.value = cluster::parsing_replication_factor(value);
         property.op = cluster::incremental_update_operation::set;
     }
     return;
