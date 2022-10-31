@@ -11,11 +11,7 @@
 
 #include "pandaproxy/kafka_client_cache.h"
 
-#include "pandaproxy/logger.h"
-#include "random/generators.h"
 #include "ssx/future-util.h"
-
-#include <seastar/core/loop.hh>
 
 #include <chrono>
 
@@ -34,7 +30,7 @@ kafka_client_cache::kafka_client_cache(
         ssx::spawn_with_gate(_gc_gate, [this] {
             return clean_stale_clients().finally([this] {
                 if (!_gc_gate.is_closed()) {
-                    _gc_timer.arm(gc_timer_period);
+                    _gc_timer.rearm(ss::lowres_clock::now() + gc_timer_period);
                 }
             });
         });
@@ -119,34 +115,6 @@ client_ptr kafka_client_cache::fetch_or_insert(
 
     return client;
 }
-
-namespace {
-template<typename List, typename Pred>
-ss::future<> remove_client_if(List& list, Pred pred) {
-    std::list<typename List::value_type> remove;
-    auto first = list.begin();
-    auto last = list.end();
-    while (first != last) {
-        if (pred(*first)) {
-            remove.push_back(std::move(*first));
-            list.erase(first++);
-        } else {
-            ++first;
-        }
-    }
-    for (auto& item : remove) {
-        co_await item.client->stop().handle_exception(
-          [&item](std::exception_ptr ex) {
-              // The stop failed
-              vlog(
-                plog.debug,
-                "Stale client {} stop already happened {}",
-                item.key,
-                ex);
-          });
-    }
-}
-} // namespace
 
 ss::future<> kafka_client_cache::clean_stale_clients() {
     constexpr auto is_expired = [](std::chrono::milliseconds keep_alive) {

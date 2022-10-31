@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/rest_authn_endpoint.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/types.h"
 #include "utils/mutex.h"
 
@@ -97,5 +98,33 @@ private:
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gc_gate;
     mutex _gc_lock;
+
+    template<typename List, typename Pred>
+    ss::future<> remove_client_if(List& list, Pred pred) {
+        std::list<typename List::value_type> remove;
+        auto first = list.begin();
+        auto last = list.end();
+        while (first != last) {
+            if (pred(*first)) {
+                remove.push_back(std::move(*first));
+                list.erase(first++);
+            } else {
+                ++first;
+            }
+        }
+        for (auto item : remove) {
+            co_await _gc_lock.with([item] {
+                return item.client->stop().handle_exception(
+                  [k{item.key}](std::exception_ptr ex) {
+                      // The stop failed
+                      vlog(
+                        plog.debug,
+                        "Stale client {} stop already happened {}",
+                        k,
+                        ex);
+                  });
+            });
+        }
+    }
 };
 } // namespace pandaproxy
