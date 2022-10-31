@@ -128,23 +128,57 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			seeds, err := parseSeedIPs(ips)
 			out.MaybeDieErr(err)
 
-			ownIP, err := parseSelfIP(self)
+			selfIP, err := parseSelfIP(self)
 			out.MaybeDieErr(err)
 
 			if id >= 0 {
 				cfg.Redpanda.ID = &id
 			}
-			cfg.Redpanda.RPCServer.Address = ownIP.String()
-			cfg.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
-				Address: ownIP.String(),
-				Port:    config.DefaultKafkaPort,
-			}}
 
-			cfg.Redpanda.AdminAPI = []config.NamedSocketAddress{{
-				Address: ownIP.String(),
-				Port:    config.DefaultAdminPort,
-			}}
-			cfg.Redpanda.SeedServers = []config.SeedServer{}
+			// Defaults returns one RPC, one KafkaAPI, and one
+			// AdminAPI. We only override values in a configuration
+			// file if the current values are defaults, or if an
+			// address array is empty. If an address array has
+			// multiple elements, we trust that user modifications
+			// were intentional.
+			//
+			// For addresses, we expect this to be fine: the
+			// defaults are 0.0.0.0, which we do not expect people
+			// to deliberately try to use. We change the address
+			// even if the user has set a custom port--being
+			// explicit is better than 0.0.0.0.
+			defaults := config.DevDefault()
+
+			// Sanity check: we only want to change defaults, and
+			// we rely on exactly one element in our defaults. We
+			// panic here to catch any changes in tests.
+			if len(defaults.Redpanda.KafkaAPI) != 1 || len(defaults.Redpanda.AdminAPI) != 1 {
+				panic("defaults now have more than one kafka / admin api address, bug!")
+			}
+
+			if a := &cfg.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
+				*a = selfIP
+			}
+			if a := &cfg.Redpanda.KafkaAPI; len(*a) == 1 {
+				if first := &((*a)[0].Address); *first == config.DefaultListenAddress {
+					*first = selfIP
+				}
+			} else if len(*a) == 0 {
+				*a = []config.NamedAuthNSocketAddress{{
+					Address: selfIP,
+					Port:    config.DefaultKafkaPort,
+				}}
+			}
+			if a := &cfg.Redpanda.AdminAPI; len(*a) == 1 {
+				if first := &((*a)[0]).Address; *first == config.DefaultListenAddress {
+					*first = selfIP
+				}
+			} else if len(*a) == 0 {
+				*a = []config.NamedSocketAddress{{
+					Address: selfIP,
+					Port:    config.DefaultAdminPort,
+				}}
+			}
 			cfg.Redpanda.SeedServers = seeds
 
 			err = cfg.Write(fs)
@@ -211,19 +245,19 @@ func initNode(fs afero.Fs) *cobra.Command {
 	return c
 }
 
-func parseSelfIP(self string) (net.IP, error) {
+func parseSelfIP(self string) (string, error) {
 	if self != "" {
-		ownIP := net.ParseIP(self)
-		if ownIP == nil {
-			return nil, fmt.Errorf("%s is not a valid IP", self)
+		selfIP := net.ParseIP(self)
+		if selfIP == nil {
+			return "", fmt.Errorf("%s is not a valid IP", self)
 		}
-		return ownIP, nil
+		return selfIP.String(), nil
 	} else {
-		ownIP, err := getOwnIP()
+		selfIP, err := getOwnIP()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		return ownIP, nil
+		return selfIP.String(), nil
 	}
 }
 
