@@ -359,6 +359,7 @@ struct_renames = {
 extra_headers = {
     "std::optional": dict(
         header = ("<optional>",),
+        source = "utils/to_string.h"
     ),
     "std::vector": dict(
         header = "<vector>",
@@ -371,6 +372,9 @@ extra_headers = {
     ),
     "model::timestamp": dict(
         header = "model/timestamp.h",
+    ),
+    "std::chrono::milliseconds": dict(
+        source = "utils/to_string.h",
     ),
 }
 # yapf: enable
@@ -1059,7 +1063,6 @@ COMBINED_SOURCE_TEMPLATE = """
 #include "kafka/protocol/schemata/{{ header }}"
 {%- endfor %}
 
-#include "cluster/types.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/request_reader.h"
 
