@@ -258,6 +258,7 @@ ss::future<> controller::start(cluster_discovery& discovery) {
             std::ref(_as),
             std::ref(_cloud_storage_api),
             std::ref(_feature_table),
+            std::ref(_members_table),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .storage_space_alert_free_threshold_percent.bind();

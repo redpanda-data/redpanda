@@ -81,6 +81,17 @@ void parse_and_set_tristate(
     }
 }
 
+static void parse_and_set_topic_replication_factor(
+  cluster::property_update<std::optional<cluster::replication_factor>>&
+    property,
+  const std::optional<ss::sstring>& value) {
+    if (!value) {
+        property.value = std::nullopt;
+    }
+
+    property.value = cluster::parsing_replication_factor(value);
+}
+
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>&
     property_update,
@@ -219,7 +230,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
                 continue;
             }
             if (cfg.name == topic_property_replication_factor) {
-                parse_and_set_optional(
+                parse_and_set_topic_replication_factor(
                   update.custom_properties.replication_factor, cfg.value);
                 continue;
             }
