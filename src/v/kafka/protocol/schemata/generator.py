@@ -1054,8 +1054,10 @@ struct {{ request_name }}_api final {
 }
 """
 
-SOURCE_TEMPLATE = """
+COMBINED_SOURCE_TEMPLATE = """
+{%- for header in schema_headers %}
 #include "kafka/protocol/schemata/{{ header }}"
+{%- endfor %}
 
 #include "cluster/types.h"
 #include "kafka/protocol/response_writer.h"
@@ -1065,7 +1067,7 @@ SOURCE_TEMPLATE = """
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
-{%- for header in struct.headers("source") %}
+{%- for header in extra_headers %}
 {%- if header.startswith("<") %}
 #include {{ header }}
 {%- else %}
@@ -1073,6 +1075,15 @@ SOURCE_TEMPLATE = """
 {%- endif %}
 {%- endfor %}
 
+{%- for name, source in sources %}
+/*
+ * begin: {{ name }}
+ */
+{{ source }}
+{%- endfor %}
+"""
+
+SOURCE_TEMPLATE = """
 {% macro version_guard(field, flex) %}
 {%- set guard_enum = field.versions().guard_enum %}
 {%- set e, cond = field.versions().guard(flex, first_flex) %}
@@ -1596,12 +1607,7 @@ def parse_flexible_versions(flex_version):
     return r.min
 
 
-if __name__ == "__main__":
-    assert len(sys.argv) == 4
-    schema_path = pathlib.Path(sys.argv[1])
-    hdr = pathlib.Path(sys.argv[2])
-    src = pathlib.Path(sys.argv[3])
-
+def codegen(schema_path):
     # remove comments from the json file. comments are a non-standard json
     # extension that is not supported by the python json parser.
     schema = io.StringIO()
@@ -1642,21 +1648,56 @@ if __name__ == "__main__":
     def fail(msg):
         assert False, msg
 
-    with open(hdr, 'w') as f:
-        f.write(
-            jinja2.Template(HEADER_TEMPLATE).render(
-                struct=struct,
-                render_struct_comment=render_struct_comment,
-                op_type=op_type,
-                fail=fail,
-                api_key=api_key,
-                request_name=request_name,
-                first_flex=first_flex))
+    hdr = jinja2.Template(HEADER_TEMPLATE).render(
+        struct=struct,
+        render_struct_comment=render_struct_comment,
+        op_type=op_type,
+        fail=fail,
+        api_key=api_key,
+        request_name=request_name,
+        first_flex=first_flex)
 
-    with open(src, 'w') as f:
-        f.write(
-            jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
-                                                    header=hdr.name,
-                                                    op_type=op_type,
-                                                    fail=fail,
-                                                    first_flex=first_flex))
+    src = jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
+                                                  op_type=op_type,
+                                                  fail=fail,
+                                                  first_flex=first_flex)
+
+    return hdr, src, struct.headers("source")
+
+
+if __name__ == "__main__":
+    schemata = []
+    headers = []
+    source = None
+
+    for arg in sys.argv[1:]:
+        path = pathlib.Path(arg)
+        if path.suffix == ".json":
+            schemata.append(path)
+        elif path.suffix == ".h":
+            headers.append(path)
+        elif path.suffix == ".cc":
+            assert source is None
+            source = path
+        else:
+            assert False, f"unknown arg {arg}"
+
+    assert len(schemata) == len(headers)
+    assert source is not None
+
+    sources = []
+    extra_schema_headers = set()
+    for schema, hdr_path in zip(schemata, headers):
+        hdr, src, extra = codegen(schema)
+        sources.append((schema.name, src))
+        extra_schema_headers.update(extra)
+        with open(hdr_path, 'w') as f:
+            f.write(hdr)
+
+    src = jinja2.Template(COMBINED_SOURCE_TEMPLATE).render(
+        schema_headers=map(lambda p: p.name, headers),
+        extra_headers=extra_schema_headers,
+        sources=sources)
+
+    with open(source, 'w') as f:
+        f.write(src)
