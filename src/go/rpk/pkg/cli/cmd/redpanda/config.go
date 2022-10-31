@@ -252,90 +252,54 @@ func parseSelfIP(self string) (string, error) {
 			return "", fmt.Errorf("%s is not a valid IP", self)
 		}
 		return selfIP.String(), nil
-	} else {
-		selfIP, err := getOwnIP()
-		if err != nil {
-			return "", err
-		}
-		return selfIP.String(), nil
 	}
+	selfIP, err := getSelfIP()
+	if err != nil {
+		return "", err
+	}
+	return selfIP.String(), nil
 }
 
 func parseSeedIPs(ips []string) ([]config.SeedServer, error) {
-	defaultRPCPort := config.DevDefault().Redpanda.RPCServer.Port
 	var seeds []config.SeedServer
-
 	for _, i := range ips {
 		_, hostport, err := vnet.ParseHostMaybeScheme(i)
 		if err != nil {
 			return nil, err
 		}
 
-		host, port := vnet.SplitHostPortDefault(hostport, defaultRPCPort)
-		seed := config.SeedServer{
-			Host: config.SocketAddress{
-				Address: host,
-				Port:    port,
-			},
-		}
-		seeds = append(seeds, seed)
+		host, port := vnet.SplitHostPortDefault(hostport, config.DefaultRPCPort)
+		seeds = append(seeds, config.SeedServer{Host: config.SocketAddress{
+			Address: host,
+			Port:    port,
+		}})
 	}
 	return seeds, nil
 }
 
-func getOwnIP() (net.IP, error) {
+func getSelfIP() (net.IP, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
 	}
-
-	filtered := []net.IP{}
+	var v4private []net.IP
 	for _, a := range addrs {
 		ipnet, ok := a.(*net.IPNet)
 		if !ok {
 			continue
 		}
-		isV4 := ipnet.IP.To4() != nil
-		private, err := isPrivate(ipnet.IP)
-		if err != nil {
-			return nil, err
-		}
-
-		if isV4 && private && !ipnet.IP.IsLoopback() {
-			filtered = append(filtered, ipnet.IP)
+		if ip := ipnet.IP; ip.IsPrivate() && ip.To4() != nil {
+			v4private = append(v4private, ipnet.IP)
 		}
 	}
-	if len(filtered) > 1 {
-		return nil, errors.New(
-			"found multiple private non-loopback v4 IPs for the" +
-				" current node. Please set one with --self",
-		)
+	switch len(v4private) {
+	case 0:
+		return nil, errors.New("unable to find private v4 IP for current node")
+	case 1:
+		return v4private[0], nil
+	default:
+		return nil, errors.New("multiple private v4 IPs found, please select one with --self")
 	}
-	if len(filtered) == 0 {
-		return nil, errors.New(
-			"couldn't find any non-loopback IPs for the current node",
-		)
-	}
-	return filtered[0], nil
-}
-
-func isPrivate(ip net.IP) (bool, error) {
-	// The standard private subnet CIDRS
-	privateCIDRs := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-	}
-	for _, cidr := range privateCIDRs {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return false, err
-		}
-		if ipNet.Contains(ip) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 const helpBootstrap = `Initialize the configuration to bootstrap a cluster.
