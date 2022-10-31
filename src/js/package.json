@@ -23,7 +23,7 @@
   "requires": true,
   "dependencies": {
     "@types/mocha": "7.0.2",
-    "@types/node": "14.0.23",
+    "@types/node": "14.18.29",
     "chokidar": "^3.4.3",
     "fast-crc32c": "2.0.0",
     "js-yaml": "^3.14.0",
