@@ -1285,6 +1285,10 @@ partition_manifest::timequery(model::timestamp t) const {
         return segment_iter->second;
     }
 }
+remote_segment_path
+partition_manifest::generate_segment_path(const segment_meta& meta) const {
+    return generate_segment_path({meta.base_offset, meta.segment_term}, meta);
+}
 
 std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
     o << generate_local_segment_name(k.base_offset, k.term);

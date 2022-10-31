@@ -162,6 +162,8 @@ public:
     std::optional<std::reference_wrapper<const segment_meta>>
     timequery(model::timestamp t) const;
 
+    remote_segment_path generate_segment_path(const segment_meta&) const;
+
     remote_segment_path
     generate_segment_path(const key&, const segment_meta&) const;
 
