@@ -10,6 +10,7 @@
 
 #include "cloud_storage/segment_state.h"
 
+#include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "utils/retry_chain_node.h"
@@ -20,9 +21,9 @@ offloaded_segment_state
 materialized_segment_state::offload(remote_partition* partition) {
     _hook.unlink();
     for (auto&& rs : readers) {
-        partition->evict_reader(std::move(rs));
+        partition->materialized().evict_reader(std::move(rs));
     }
-    partition->evict_segment(std::move(segment));
+    partition->materialized().evict_segment(std::move(segment));
     partition->_probe.segment_offloaded();
     return offloaded_segment_state(base_rp_offset);
 }
@@ -35,7 +36,7 @@ materialized_segment_state::materialized_segment_state(
       p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
   , atime(ss::lowres_clock::now())
   , parent(p.weak_from_this()) {
-    p._materialized.push_back(*this);
+    p.materialized().register_segment(*this);
 }
 
 void materialized_segment_state::return_reader(

@@ -174,9 +174,6 @@ class remote_partition
   , public ss::weakly_referencable<remote_partition> {
     friend class partition_record_batch_reader_impl;
 
-    static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
-    static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
-
 public:
     /// C-tor
     ///
@@ -238,14 +235,15 @@ public:
     /// Remove objects from S3
     ss::future<> erase();
 
+    /// Hook for materialized_segment to notify us when a segment is evicted
+    void offload_segment(kafka::offset);
+
 private:
     /// Create new remote_segment instances for all new
     /// items in the manifest.
     void maybe_sync_with_manifest();
 
     ss::future<> run_eviction_loop();
-
-    void gc_stale_materialized_segments(bool force_collection);
 
     friend struct offloaded_segment_state;
     friend struct materialized_segment_state;
@@ -262,6 +260,10 @@ private:
     using iterator
       = details::btree_map_stable_iterator<kafka::offset, segment_state>;
 
+    /// This is exposed for the benefit of offloaded_segment_state and
+    /// materialized_segment_state
+    materialized_segments& materialized();
+
     /// Materialize segment if needed and create a reader
     ///
     /// \param config is a reader config
@@ -276,17 +278,6 @@ private:
     void return_reader(
       std::unique_ptr<remote_segment_batch_reader>, segment_state& st);
 
-    /// Put reader into the eviction list which will
-    /// eventually lead to it being closed and deallocated
-    void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader) {
-        _eviction_list.push_back(std::move(reader));
-        _cvar.signal();
-    }
-    void evict_segment(ss::lw_shared_ptr<remote_segment> segment) {
-        _eviction_list.push_back(std::move(segment));
-        _cvar.signal();
-    }
-
     /// Iterators used by the partition_record_batch_reader_impl class
     iterator begin();
     iterator end();
@@ -294,11 +285,6 @@ private:
     iterator seek_by_timestamp(model::timestamp);
 
     using segment_map_t = absl::btree_map<kafka::offset, segment_state>;
-    using evicted_resource_t = std::variant<
-      std::unique_ptr<remote_segment_batch_reader>,
-      ss::lw_shared_ptr<remote_segment>>;
-
-    using eviction_list_t = std::deque<evicted_resource_t>;
 
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
@@ -313,16 +299,6 @@ private:
     // absl::btree_map doesn't provide a pointer stabilty. We are
     // using remote_partition::btree_map_stable_iterator to work around this.
     segment_map_t _segments;
-    eviction_list_t _eviction_list;
-    intrusive_list<
-      materialized_segment_state,
-      &materialized_segment_state::_hook>
-      _materialized;
-    ss::condition_variable _cvar;
-
-    /// Timer use to periodically evict stale readers
-    ss::timer<ss::lowres_clock> _stm_timer;
-    simple_time_jitter<ss::lowres_clock> _stm_jitter;
     partition_probe _probe;
 };
 

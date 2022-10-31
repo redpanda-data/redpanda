@@ -11,6 +11,8 @@
 #include "cloud_storage/remote.h"
 
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
 #include "s3/client.h"
 #include "ssx/sformat.h"
@@ -190,7 +192,8 @@ remote::remote(
   , _probe(
       remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)),
       remote_metrics_disabled(static_cast<bool>(conf.disable_public_metrics)))
-  , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source} {
+  , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
+  , _materialized(std::make_unique<materialized_segments>()) {
     // If the credentials source is from config file, bypass the background op
     // to refresh credentials periodically, and load pool with static
     // credentials right now.
@@ -205,6 +208,11 @@ remote::remote(ss::sharded<configuration>& conf)
     conf.local().client_config,
     conf.local().cloud_credentials_source) {}
 
+remote::~remote() {
+    // This is declared in the .cc to avoid header trying to
+    // link with destructors for unique_ptr wrapped members
+}
+
 ss::future<> remote::start() {
     if (!_auth_refresh_bg_op.is_static_config()) {
         // Launch background operation to fetch credentials on
@@ -216,11 +224,13 @@ ss::future<> remote::start() {
               return propagate_credentials(credentials);
           });
     }
-    return ss::now();
+
+    co_await _materialized->start();
 }
 
 ss::future<> remote::stop() {
     _as.request_abort();
+    co_await _materialized->stop();
     co_await _pool.stop();
     co_await _gate.close();
 }

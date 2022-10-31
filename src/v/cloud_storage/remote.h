@@ -12,6 +12,7 @@
 
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
 #include "random/simple_time_jitter.h"
@@ -26,6 +27,8 @@
 #include <utility>
 
 namespace cloud_storage {
+
+class materialized_segments;
 
 /// \brief Predicate required to continue operation
 ///
@@ -129,6 +132,8 @@ public:
       s3_connection_limit limit,
       const s3::configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
+
+    ~remote();
 
     /// \brief Initialize 'remote'
     ///
@@ -247,6 +252,8 @@ public:
       retry_chain_node& parent,
       bool expect_missing = false);
 
+    materialized_segments& materialized() { return *_materialized; }
+
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
     s3::client_pool _pool;
@@ -254,6 +261,7 @@ private:
     ss::abort_source _as;
     remote_probe _probe;
     auth_refresh_bg_op _auth_refresh_bg_op;
+    std::unique_ptr<materialized_segments> _materialized;
 };
 
 } // namespace cloud_storage
