@@ -229,64 +229,6 @@ class TxAdminTest(RedpandaTest):
         producer.commit_transaction()
 
     @cluster(num_nodes=3)
-    def test_delete_topic_from_prepared_tx(self):
-        tx_id = "0"
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': tx_id,
-        })
-        producer.init_transactions()
-        producer.begin_transaction()
-
-        for topic in self.topics:
-            for partition in range(topic.partition_count):
-                producer.produce(topic.name, '0', '0', partition)
-
-        producer.flush()
-
-        rpk = RpkTool(self.redpanda)
-        topic_name = self.topics[0].name
-        rpk.delete_topic(topic_name)
-
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': tx_id,
-        })
-        try:
-            producer.init_transactions()
-            raise Exception("init_transaction should fail")
-        except ck.cimpl.KafkaException as e:
-            kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.REQUEST_TIMED_OUT
-
-        txs_info = self.admin.get_all_transactions()
-        assert len(
-            txs_info) == 1, "Should be only one transaction in current time"
-        tx = txs_info[0]
-
-        for partition in tx["partitions"]:
-            assert (partition["ns"] == "kafka")
-            if partition["topic"] == topic_name:
-                self.admin.delete_partition_from_transaction(
-                    tx["transactional_id"], partition["ns"],
-                    partition["topic"], partition["partition_id"],
-                    partition["etag"])
-
-        producer = ck.Producer({
-            'bootstrap.servers': self.redpanda.brokers(),
-            'transactional.id': tx_id,
-        })
-        producer.init_transactions()
-        producer.begin_transaction()
-
-        for topic in self.topics:
-            if topic.name is not topic_name:
-                for partition in range(topic.partition_count):
-                    producer.produce(topic.name, '0', '0', partition)
-
-        producer.commit_transaction()
-
-    @cluster(num_nodes=3)
     def test_delete_non_existent_topic(self):
         tx_id = "0"
         producer = ck.Producer({
