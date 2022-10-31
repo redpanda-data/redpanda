@@ -99,7 +99,8 @@ class RpkRedpandaStartTest(RedpandaTest):
             "auto_create_topics_enabled": "true",
             "group_topic_partitions": "3",
             "storage_min_free_bytes": "10485760",
-            "topic_partitions_per_shard": "1000"
+            "topic_partitions_per_shard": "1000",
+            "fetch_reads_debounce_timeout": "10"
         }
 
         for p in expected_cluster_properties:
