@@ -431,3 +431,24 @@ class S3View:
         except Exception as e:
             self.logger.info(f'error {e} while checking if {o} is a segment')
             return False
+
+    def manifest_for_ntp(self,
+                         topic: str,
+                         partition: int,
+                         ns: str = 'kafka') -> dict:
+        ntp = NTP(ns, topic, partition)
+        assert ntp in self.partition_manifests, f'NTP {ntp} not in manifests in S3: ' \
+                                                f'{pprint.pformat(self.partition_manifests)}'
+        manifest_data = self.partition_manifests[ntp]
+        self.logger.debug(f'manifest: {pprint.pformat(manifest_data)}')
+        return manifest_data
+
+    def cloud_log_size_for_ntp(self,
+                               topic: str,
+                               partition: int,
+                               ns: str = 'kafka') -> dict:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+
+        start_offset = manifest['start_offset']
+        return sum(seg_meta['size_bytes']
+                   for seg_meta in manifest['segments'].values())

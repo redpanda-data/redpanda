@@ -22,6 +22,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_segments_removal, segments_count,
                          expect_exception)
+from rptest.utils.si_utils import S3View
 
 
 def bytes_for_segments(want_segments, segment_size):
@@ -201,14 +202,16 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                              retention_local_target_bytes_default=self.
                              default_retention_segments * self.segment_size)
 
-        super(ShadowIndexingRetentionTest, self).__init__(
-            test_context=test_context,
-            num_brokers=1,
-            si_settings=SISettings(log_segment_size=self.segment_size),
-            extra_rp_conf=extra_rp_conf,
-            log_level="trace")
+        si_settings = SISettings(log_segment_size=self.segment_size)
+        super(ShadowIndexingRetentionTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=1,
+                             si_settings=si_settings,
+                             extra_rp_conf=extra_rp_conf,
+                             log_level="trace")
 
         self.rpk = RpkTool(self.redpanda)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
 
     def segments_removed(self, limit: int):
         segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
@@ -335,14 +338,13 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    err_msg=f"Segments were not removed")
 
     @cluster(num_nodes=1)
-    def test_cloud_retention(self):
+    def test_cloud_retention_deleted_segments_count(self):
         """
-        Test that retention is enforced in the cloud log. The test sets the
+        Test that retention deletes the right number of segments. The test sets the
         cloud retention limit to 10 segments and then produces 20 segments.
         
-        We check via the redpanda_ntp_archiver_deleted_segments that 10 segments
-        have been deleted from the cloud. This test should be expanded to query
-        the S3 snapshot and perform more complete checks.
+        We check via the redpanda_cloud_storage_deleted_segments that 10 segments
+        have been deleted from the cloud.
         """
         self.redpanda.set_cluster_config(
             {
@@ -381,3 +383,61 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed from the cloud")
+
+    @cluster(num_nodes=1)
+    def test_cloud_size_based_retention(self):
+        """
+        Test that retention is enforced in the cloud log by checking
+        the total size of segments in the manifest.
+        """
+        retention_bytes = 10 * self.segment_size
+        total_bytes = 20 * self.segment_size
+
+        topic = TopicSpec(name=self.topic_name,
+                          partition_count=1,
+                          replication_factor=1,
+                          cleanup_policy=TopicSpec.CLEANUP_DELETE)
+
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_enable_remote_write": True,
+                "cloud_storage_housekeeping_interval_ms": 100
+            },
+            expect_restart=True)
+
+        self.rpk.create_topic(topic=topic.name,
+                              partitions=topic.partition_count,
+                              replicas=topic.replication_factor,
+                              config={
+                                  "cleanup.policy": topic.cleanup_policy,
+                              })
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=total_bytes)
+
+        def cloud_log_size() -> int:
+            s3_snapshot = S3View([topic], self.redpanda.s3_client,
+                                 self.s3_bucket_name, self.logger)
+            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
+            self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
+            return cloud_log_size
+
+        # Wait for everything to be uploaded to the cloud.
+        wait_until(lambda: cloud_log_size() >= total_bytes,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg=f"Segments not uploaded")
+
+        # Alter the topic's retention.bytes config to trigger removal of
+        # segments in the cloud.
+        self.client().alter_topic_configs(
+            topic.name, {TopicSpec.PROPERTY_RETENTION_BYTES: retention_bytes})
+
+        # Test that the size of the cloud log is below the retention threshold
+        # by querying the manifest.
+        wait_until(lambda: cloud_log_size() <= retention_bytes,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg=f"Too many bytes in the cloud")

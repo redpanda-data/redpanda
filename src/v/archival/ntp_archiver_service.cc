@@ -877,6 +877,10 @@ ss::future<> ntp_archiver::housekeeping() {
             co_await apply_retention();
             co_await garbage_collect();
         }
+
+        if (housekeeping_can_continue()) {
+            co_await upload_manifest();
+        }
     } catch (std::exception& e) {
         vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
     }
