@@ -206,7 +206,8 @@ public:
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,
-      partition_probe& probe) noexcept;
+      partition_probe& probe,
+      ssx::semaphore_units) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
@@ -259,6 +260,10 @@ private:
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};
+
+    /// Units for limiting concurrently-instantiated readers, they belong
+    /// to materialized_segments.
+    ssx::semaphore_units _units;
 };
 
 } // namespace cloud_storage

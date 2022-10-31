@@ -67,7 +67,13 @@ materialized_segment_state::borrow_reader(
         }
     }
     vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
-    return std::make_unique<remote_segment_batch_reader>(segment, cfg, probe);
+
+    // Obey budget for concurrent readers: call into materialized_segments
+    // to give it an opportunity to free state and make way for us.
+    auto units = parent->materialized().get_reader_units();
+
+    return std::make_unique<remote_segment_batch_reader>(
+      segment, cfg, probe, std::move(units));
 }
 
 ss::future<> materialized_segment_state::stop() {

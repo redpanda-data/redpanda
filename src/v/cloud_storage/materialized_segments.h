@@ -11,8 +11,11 @@
 #pragma once
 
 #include "cloud_storage/segment_state.h"
+#include "config/property.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
+#include "ssx/semaphore.h"
+#include "utils/adjustable_semaphore.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -58,13 +61,17 @@ public:
     void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader);
     void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
 
-    /// Before materializing a segment, consider trimmign to release resources
-    void maybe_trim();
+    ssx::semaphore_units get_reader_units();
 
 private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
+
+    config::binding<uint32_t> _max_partitions_per_shard;
+    config::binding<std::optional<uint32_t>> _max_readers_per_shard;
+
+    size_t max_readers() const;
 
     /// List of segments and readers waiting to have their stop() method
     /// called before destruction
@@ -85,12 +92,20 @@ private:
     /// Gate for background eviction
     ss::gate _gate;
 
+    /// Concurrency limit on how many remote_segment_batch_reader may be
+    /// instantiated at once on one shard.
+    adjustable_semaphore _reader_units;
+
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
 
+    /// Try to evict readers until `target_free` units are available in
+    /// _reader_units, i.e. available for new readers to be created.
+    void trim_readers(size_t target_free);
+
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
-    void gc_stale_materialized_segments(bool force_collection);
+    void trim_segments();
 };
 
 } // namespace cloud_storage

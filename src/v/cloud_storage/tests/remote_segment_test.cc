@@ -185,7 +185,8 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, cache.local(), bucket, m, key, fib);
     partition_probe probe(manifest_ntp);
-    remote_segment_batch_reader reader(segment, reader_config, probe);
+    remote_segment_batch_reader reader(
+      segment, reader_config, probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();
@@ -275,7 +276,8 @@ void test_remote_segment_batch_reader(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, fixture.cache.local(), bucket, m, key, fib);
     partition_probe probe(manifest_ntp);
-    remote_segment_batch_reader reader(segment, reader_config, probe);
+    remote_segment_batch_reader reader(
+      segment, reader_config, probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     size_t batch_ix = 0;
@@ -386,7 +388,8 @@ FIXTURE_TEST(
         headers.at(0).base_offset,
         headers.at(0).last_offset(),
         ss::default_priority_class()),
-      probe);
+      probe,
+      ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();

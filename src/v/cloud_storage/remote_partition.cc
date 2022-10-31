@@ -680,9 +680,6 @@ void remote_partition::maybe_sync_with_manifest() {
 /// Materialize segment if needed and create a reader
 std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
   storage::log_reader_config config, kafka::offset key, segment_state& st) {
-    if (std::holds_alternative<offloaded_segment_state>(st)) {
-        materialized().maybe_trim();
-    }
     return ss::visit(
       st,
       [this, &config, offset_key = key, &st](
