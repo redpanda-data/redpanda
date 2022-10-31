@@ -46,7 +46,7 @@ using use_tx_version_with_last_pid_bool
 struct tm_transaction {
     static constexpr uint8_t version = 2;
 
-    enum tx_status {
+    enum tx_status : int32_t {
         ongoing,
         preparing,
         prepared,
@@ -318,7 +318,7 @@ private:
 struct tm_transaction_v1 {
     static constexpr uint8_t version = 1;
 
-    enum tx_status {
+    enum tx_status : int32_t {
         ongoing,
         preparing,
         prepared,
@@ -408,7 +408,7 @@ struct tm_transaction_v1 {
 struct tm_transaction_v0 {
     static constexpr uint8_t version = 0;
 
-    enum tx_status {
+    enum tx_status : int32_t {
         ongoing,
         preparing,
         prepared,
