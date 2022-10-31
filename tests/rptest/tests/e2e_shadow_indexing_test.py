@@ -296,9 +296,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         msg_count = 500000 if self.redpanda.dedicated_nodes else 100000
         timeout = 600
 
-        # This must be very low to avoid hitting bad_allocs:
-        # https://github.com/redpanda-data/redpanda/issues/6111
-        random_parallelism = 10 if self.redpanda.dedicated_nodes else 2
+        random_parallelism = 100 if self.redpanda.dedicated_nodes else 20
 
         producer = KgoVerifierProducer(self.test_context, self.redpanda,
                                        self.topic, msg_size, msg_count,
