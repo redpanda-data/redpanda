@@ -169,7 +169,9 @@ private:
 /// won't conflict frequently. The conflict will result
 /// in rescan of the segment (since we don't have indexes
 /// for remote segments).
-class remote_partition : public ss::enable_shared_from_this<remote_partition> {
+class remote_partition
+  : public ss::enable_shared_from_this<remote_partition>
+  , public ss::weakly_referencable<remote_partition> {
     friend class partition_record_batch_reader_impl;
 
     static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;

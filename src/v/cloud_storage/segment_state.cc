@@ -33,7 +33,8 @@ materialized_segment_state::materialized_segment_state(
   , offset_key(off_key)
   , segment(ss::make_lw_shared<remote_segment>(
       p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
-  , atime(ss::lowres_clock::now()) {
+  , atime(ss::lowres_clock::now())
+  , parent(p.weak_from_this()) {
     p._materialized.push_back(*this);
 }
 
@@ -73,6 +74,18 @@ ss::future<> materialized_segment_state::stop() {
         co_await rs->stop();
     }
     co_await segment->stop();
+}
+
+const model::ntp& materialized_segment_state::ntp() const {
+    if (parent) {
+        return parent->get_ntp();
+    } else {
+        // The corner case where a materialized_segment_state somehow
+        // outlived a remote_partition: debug messages related to this
+        // object will show a blank ntp.
+        static model::ntp blank;
+        return blank;
+    }
 }
 
 offloaded_segment_state::offloaded_segment_state(model::offset base_offset)

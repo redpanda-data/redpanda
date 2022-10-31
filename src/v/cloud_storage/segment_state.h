@@ -64,6 +64,8 @@ struct materialized_segment_state {
 
     offloaded_segment_state offload(remote_partition* partition);
 
+    const model::ntp& ntp() const;
+
     /// Base offsetof the segment
     model::offset base_rp_offset;
     /// Key of the segment in _segments collection of the remote_partition
@@ -75,6 +77,12 @@ struct materialized_segment_state {
     ss::lowres_clock::time_point atime;
     /// List hook for the list of all materalized segments
     intrusive_list_hook _hook;
+
+    /// Record which partition this segment relates to.  This weak_ptr should
+    /// never be broken, because our lifetime is shorter than our parent, but
+    /// a weak_ptr is preferable to a reference (crash on bug) or a shared_ptr
+    /// (prevent parent deallocation on bug).
+    ss::weak_ptr<remote_partition> parent;
 };
 
 } // namespace cloud_storage
