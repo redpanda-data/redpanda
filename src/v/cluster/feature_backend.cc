@@ -11,13 +11,20 @@
 
 #include "feature_backend.h"
 
+#include "features/feature_table.h"
+#include "features/feature_table_snapshot.h"
 #include "seastar/core/coroutine.hh"
+#include "storage/api.h"
 
 namespace cluster {
 
 ss::future<std::error_code>
 feature_backend::apply_update(model::record_batch b) {
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
+
+    if (b.base_offset() <= _feature_table.local().get_applied_offset()) {
+        co_return errc::success;
+    }
 
     co_await ss::visit(
       cmd,
@@ -39,7 +46,37 @@ feature_backend::apply_update(model::record_batch b) {
             });
       });
 
+    auto batch_offset = b.base_offset();
+    co_await _feature_table.invoke_on_all(
+      [batch_offset](features::feature_table& t) {
+          t.set_applied_offset(batch_offset);
+      });
+
+    // Updates to the feature table are very infrequent, usually occurring
+    // once during an upgrade.  Snapshot on every write, so that as soon
+    // as a feature has gone live, we can expect that on subsequent startup
+    // it will be live from early in startup (as soon as storage subsystem
+    // loads and snapshot can be loaded)
+    co_await save_snapshot();
+
     co_return errc::success;
+}
+
+ss::future<> feature_backend::save_snapshot() {
+    // kvstore is shard-local: must be on a consistent shard every
+    // time for snapshot storage to work.
+    vassert(ss::this_shard_id() == ss::shard_id{0}, "wrong shard");
+
+    auto snapshot = features::feature_table_snapshot::from(
+      _feature_table.local());
+
+    auto val_bytes = serde::to_iobuf(snapshot);
+    auto key_bytes = serde::to_iobuf(ss::sstring("feature_table"));
+
+    co_await _storage.local().kvs().put(
+      storage::kvstore::key_space::controller,
+      features::feature_table_snapshot::kvstore_key(),
+      std::move(val_bytes));
 }
 
 } // namespace cluster

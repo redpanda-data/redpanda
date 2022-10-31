@@ -153,7 +153,8 @@ ss::future<> controller::start(cluster_discovery& discovery) {
           return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
-          return _feature_backend.start_single(std::ref(_feature_table));
+          return _feature_backend.start_single(
+            std::ref(_feature_table), std::ref(_storage));
       })
       .then([this] {
           return _bootstrap_backend.start_single(

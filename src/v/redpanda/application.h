@@ -80,6 +80,7 @@ public:
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
+    ss::sharded<features::feature_table> feature_table;
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
@@ -125,6 +126,8 @@ private:
     void wire_up_runtime_services(model::node_id node_id);
     void configure_admin_server();
     void wire_up_redpanda_services(model::node_id);
+
+    void load_feature_table_snapshot();
 
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
@@ -182,7 +185,6 @@ private:
     ss::logger _log;
 
     ss::sharded<rpc::connection_cache> _connection_cache;
-    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<kafka::group_manager> _co_group_manager;
     ss::sharded<rpc::rpc_server> _rpc;

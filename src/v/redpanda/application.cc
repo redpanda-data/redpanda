@@ -47,6 +47,7 @@
 #include "config/seed_server.h"
 #include "coproc/api.h"
 #include "coproc/partition_manager.h"
+#include "features/feature_table_snapshot.h"
 #include "features/migrators.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -758,9 +759,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         return storage::internal::chunks().start();
     }).get();
 
-    syschecks::systemd_message("Creating feature table").get();
-    construct_service(_feature_table).get();
-
     // cluster
     syschecks::systemd_message("Initializing connection cache").get();
     construct_service(_connection_cache).get();
@@ -800,7 +798,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(_connection_cache),
         std::ref(storage),
         std::ref(recovery_throttle),
-        std::ref(_feature_table))
+        std::ref(feature_table))
       .get();
 
     // custom handling for recovery_throttle and raft group manager shutdown.
@@ -844,7 +842,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
-      std::ref(_feature_table))
+      std::ref(feature_table))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -866,7 +864,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       storage_node,
       std::ref(raft_group_manager),
       data_policies,
-      std::ref(_feature_table),
+      std::ref(feature_table),
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
 
@@ -876,7 +874,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       node_status_backend,
       node_id,
       std::ref(controller->get_members_table()),
-      std::ref(_feature_table),
+      std::ref(feature_table),
       std::ref(node_status_table),
       ss::sharded_parameter(
         [] { return config::shard_local_cfg().node_status_interval.bind(); }))
@@ -944,7 +942,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
           std::ref(arch_configs),
-          std::ref(_feature_table))
+          std::ref(feature_table))
           .get();
         arch_configs.stop().get();
 
@@ -1086,7 +1084,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(id_allocator_frontend),
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
-      std::ref(_feature_table))
+      std::ref(feature_table))
       .get();
     _kafka_conn_quotas
       .start([]() {
@@ -1235,6 +1233,10 @@ void application::wire_up_bootstrap_services() {
       })
       .get();
 
+    // Start empty, populated from snapshot in start_bootstrap_services
+    syschecks::systemd_message("Creating feature table").get();
+    construct_service(feature_table).get();
+
     // Wire up the internal RPC server.
     ss::sharded<net::server_configuration> rpc_cfg;
     rpc_cfg.start(ss::sstring("internal_rpc")).get();
@@ -1321,6 +1323,11 @@ void application::start_bootstrap_services() {
       .get();
 
     storage.invoke_on_all(&storage::api::start).get();
+
+    // As soon as storage is up, load our feature_table snapshot, if any,
+    // so that all other services may rely on having features activated as soon
+    // as they start.
+    load_feature_table_snapshot();
 
     // Before we start up our bootstrapping RPC service, load any relevant
     // on-disk state we may need: existing cluster UUID, node ID, etc.
@@ -1440,10 +1447,15 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         // some of initialization that would usually wait for the controller
         // to commit some state to its log.
         vlog(_log.warn, "Running in unit test mode");
-        _feature_table
-          .invoke_on_all(
-            [](features::feature_table& ft) { ft.testing_activate_all(); })
-          .get();
+        if (
+          feature_table.local().get_active_version()
+          == cluster::invalid_version) {
+            vlog(_log.info, "Switching on all features");
+            feature_table
+              .invoke_on_all(
+                [](features::feature_table& ft) { ft.testing_activate_all(); })
+              .get();
+        }
     } else {
         // Only populate migrators in non-unit-test mode
         _migrators.push_back(
@@ -1481,7 +1493,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 }
 
 void application::start_runtime_services(cluster::cluster_discovery& cd) {
-    ssx::background = _feature_table.invoke_on_all(
+    ssx::background = feature_table.invoke_on_all(
       [this](features::feature_table& ft) -> ss::future<> {
           try {
               co_await ft.await_feature(features::feature::rpc_v2_by_default);
@@ -1718,4 +1730,72 @@ void application::start_kafka(
       _log.info,
       "Started Kafka API server listening at {}",
       config::node().kafka_api());
+}
+
+/**
+ * Feature table is generally updated via controller, but we need it to
+ * be initialized very early in startup so that other subsystems (including
+ * e.g. the controller raft group) may rely on up to date knowledge of which
+ * feature bits are enabled.
+ */
+void application::load_feature_table_snapshot() {
+    auto val_bytes_opt = storage.local().kvs().get(
+      storage::kvstore::key_space::controller,
+      features::feature_table_snapshot::kvstore_key());
+
+    if (!val_bytes_opt) {
+        // No snapshot?  Probably we are yet to join cluster.
+        return;
+    }
+
+    features::feature_table_snapshot snap;
+    try {
+        snap = serde::from_iobuf<features::feature_table_snapshot>(
+          std::move(*val_bytes_opt));
+    } catch (...) {
+        // Do not block redpanda from starting if there is something invalid
+        // here: the feature table should get replayed eventually via
+        // the controller.
+        vlog(
+          _log.error,
+          "Exception decoding feature table snapshot: {}",
+          std::current_exception());
+#ifndef NDEBUG
+        vassert(false, "Snapshot decode failed");
+#endif
+        return;
+    }
+
+    auto my_version = features::feature_table::get_latest_logical_version();
+    if (my_version < snap.version) {
+        vlog(
+          _log.error,
+          "Incompatible downgrade detected!  My version {}, feature table {} "
+          "indicates that all nodes in cluster were previously >= that version",
+          my_version,
+          snap.version);
+        // From this point, it is undefined to whether this process will be able
+        // to decode anything it sees on the network or on disk.
+#ifndef NDEBUG
+        vassert(my_version >= snap.version, "Incompatible downgrade detected");
+#endif
+    } else if (my_version > snap.version) {
+        vlog(
+          _log.info,
+          "Upgrade in progress!  This binary logical version {}, last feature "
+          "table snapshot version {}",
+          my_version,
+          snap.version);
+    } else {
+        vlog(
+          _log.debug,
+          "Loaded feature table snapshot at cluster version {} (vs my binary "
+          "{})",
+          snap.version,
+          my_version);
+    }
+
+    feature_table
+      .invoke_on_all([snap](features::feature_table& ft) { snap.apply(ft); })
+      .get();
 }

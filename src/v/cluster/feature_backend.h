@@ -14,7 +14,8 @@
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "features/feature_table.h"
+#include "features/fwd.h"
+#include "storage/fwd.h"
 
 namespace cluster {
 
@@ -26,10 +27,15 @@ namespace cluster {
  */
 class feature_backend {
 public:
-    feature_backend(ss::sharded<features::feature_table>& table)
-      : _feature_table(table) {}
+    feature_backend(
+      ss::sharded<features::feature_table>& table,
+      ss::sharded<storage::api>& storage)
+      : _feature_table(table)
+      , _storage(storage) {}
 
     ss::future<std::error_code> apply_update(model::record_batch);
+
+    ss::future<> save_snapshot();
 
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::feature_update;
@@ -41,5 +47,6 @@ private:
       feature_update_license_update_cmd>();
 
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<storage::api>& _storage;
 };
 } // namespace cluster
