@@ -250,6 +250,7 @@ struct configuration final : public config_store {
     // Archival cache
     property<size_t> cloud_storage_cache_size;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
+    property<std::optional<uint32_t>> cloud_storage_max_readers_per_shard;
 
     one_or_many_property<ss::sstring> superusers;
 

@@ -1180,6 +1180,14 @@ configuration::configuration()
       "Timeout to check if cache eviction should be triggered",
       {.visibility = visibility::tunable},
       30s)
+  , cloud_storage_max_readers_per_shard(
+      *this,
+      "cloud_storage_max_readers_per_shard",
+      "Maximum concurrent readers of remote data per CPU core.  If unset, "
+      "value of `topic_partitions_per_shard` is used, i.e. one reader per "
+      "partition if the shard is at its maximum partition capacity.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , superusers(
       *this,
       "superusers",
