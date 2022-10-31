@@ -148,13 +148,16 @@ class EndToEndTest(Test):
     def start_consumer(self,
                        num_nodes=1,
                        group_id="test_group",
-                       verify_offsets=True):
-        assert self.redpanda
+                       verify_offsets=True,
+                       redpanda_cluster=None):
+        if redpanda_cluster is None:
+            assert self.redpanda
+            redpanda_cluster = self.redpanda
         assert self.topic
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=num_nodes,
-            redpanda=self.redpanda,
+            redpanda=redpanda_cluster,
             topic=self.topic,
             group_id=group_id,
             on_record_consumed=self.on_record_consumed,
