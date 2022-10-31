@@ -230,6 +230,11 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 		*out = make([]Superuser, len(*in))
 		copy(*out, *in)
 	}
+	if in.KafkaEnableAuthorization != nil {
+		in, out := &in.KafkaEnableAuthorization, &out.KafkaEnableAuthorization
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AdditionalConfiguration != nil {
 		in, out := &in.AdditionalConfiguration, &out.AdditionalConfiguration
 		*out = make(map[string]string, len(*in))

@@ -6,9 +6,11 @@ spec:
   template:
     spec:
       initContainers:
-        - image: "vectorized/configurator:v22.1.3"
+      - name: redpanda-configurator
+        image: "vectorized/configurator:v22.1.3"
       containers:
-        - image: "localhost/redpanda:dev"
+      - name: redpanda
+        image: "localhost/redpanda:dev"
 status:
   readyReplicas: 2
 

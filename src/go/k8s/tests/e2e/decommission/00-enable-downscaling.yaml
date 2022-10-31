@@ -2,5 +2,5 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
 # Set the --allow-downscaling=true parameter in the controller manager
-- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"add", "path":"/spec/template/spec/containers/1/args/-", "value":"--allow-downscaling=true"}]'
+- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"add", "path":"/spec/template/spec/containers/0/args/-", "value":"--allow-downscaling=true"}]'
 - command: kubectl get deployment redpanda-controller-manager -n redpanda-system -o json

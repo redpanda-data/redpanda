@@ -224,18 +224,29 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cr := &cfg.NodeConfiguration.Redpanda
 
 	internalListener := r.pandaCluster.InternalListener()
+	internalAuthN := &internalListener.AuthenticationMethod
+	if *internalAuthN == "" {
+		internalAuthN = nil
+	}
 	cr.KafkaAPI = []config.NamedAuthNSocketAddress{} // we don't want to inherit default kafka port
 	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 		Address: "0.0.0.0",
 		Port:    internalListener.Port,
 		Name:    InternalListenerName,
+		AuthN:   internalAuthN,
 	})
 
-	if r.pandaCluster.ExternalListener() != nil {
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener != nil {
+		externalAuthN := &externalListener.AuthenticationMethod
+		if *externalAuthN == "" {
+			externalAuthN = nil
+		}
 		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 			Address: "0.0.0.0",
 			Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
 			Name:    ExternalListenerName,
+			AuthN:   externalAuthN,
 		})
 	}
 
@@ -258,15 +269,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	for _, tl := range r.pandaCluster.KafkaTLSListeners() {
+	kl := r.pandaCluster.KafkaTLSListeners()
+	for i := range kl {
 		tls := config.ServerTLS{
-			Name:              tl.Name,
+			Name:              kl[i].Name,
 			KeyFile:           fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: tl.TLS.RequireClientAuth,
+			RequireClientAuth: kl[i].TLS.RequireClientAuth,
 		}
-		if tl.TLS.RequireClientAuth {
+		if kl[i].TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, cmetav1.TLSCAKey)
 		}
 		cr.KafkaAPITLS = append(cr.KafkaAPITLS, tls)
@@ -307,6 +319,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 	if r.pandaCluster.Spec.EnableSASL {
 		cfg.SetAdditionalRedpandaProperty("enable_sasl", true)
 	}
+	if r.pandaCluster.Spec.KafkaEnableAuthorization != nil && *r.pandaCluster.Spec.KafkaEnableAuthorization {
+		cfg.SetAdditionalRedpandaProperty("kafka_enable_authorization", true)
+	}
 
 	partitions := r.pandaCluster.Spec.Configuration.GroupTopicPartitions
 	if partitions != 0 {
@@ -341,11 +356,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
-		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedSocketAddress{
+		var authN *string
+		if sr.AuthenticationMethod != "" {
+			authN = &sr.AuthenticationMethod
+		}
+		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedAuthNSocketAddress{
 			{
 				Address: "0.0.0.0",
 				Port:    sr.Port,
 				Name:    SchemaRegistryPortName,
+				AuthN:   authN,
 			},
 		}
 	}
@@ -444,20 +464,31 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 		return
 	}
 
-	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedSocketAddress{
+	var internalAuthN *string
+	if internal.AuthenticationMethod != "" {
+		internalAuthN = &internal.AuthenticationMethod
+	}
+	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedAuthNSocketAddress{
 		{
 			Address: "0.0.0.0",
 			Port:    internal.Port,
 			Name:    PandaproxyPortInternalName,
+			AuthN:   internalAuthN,
 		},
 	}
 
-	if r.pandaCluster.PandaproxyAPIExternal() != nil {
+	var externalAuthN *string
+	external := r.pandaCluster.PandaproxyAPIExternal()
+	if external != nil {
+		if external.AuthenticationMethod != "" {
+			externalAuthN = &external.AuthenticationMethod
+		}
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
-			config.NamedSocketAddress{
+			config.NamedAuthNSocketAddress{
 				Address: "0.0.0.0",
 				Port:    calculateExternalPort(internal.Port, r.pandaCluster.PandaproxyAPIExternal().Port),
 				Name:    PandaproxyPortExternalName,
+				AuthN:   externalAuthN,
 			})
 	}
 }
@@ -478,7 +509,7 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 
@@ -517,7 +548,7 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 

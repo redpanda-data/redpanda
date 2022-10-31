@@ -65,9 +65,9 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
@@ -149,13 +149,13 @@ func (r *ClusterReconciler) Reconcile(
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.PandaproxyAPIInternal() != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.PandaproxyAPIInternal() != nil {
 		proxySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
 		proxySuKey = proxySu.Key()
 	}
 	var schemaRegistrySu *resources.SuperUsersResource
 	var schemaRegistrySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}

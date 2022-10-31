@@ -129,7 +129,19 @@ type ClusterSpec struct {
 	// List of superusers
 	Superusers []Superuser `json:"superUsers,omitempty"`
 	// SASL enablement flag
+	// +optional
+	// Deprecated: replaced by "kafkaEnableAuthorization"
 	EnableSASL bool `json:"enableSasl,omitempty"`
+	// Enable authorization for Kafka connections. Values are:
+	//
+	// - `nil`: Ignored. Authorization is enabled with `enable_sasl: true`
+	//
+	// - `true`: authorization is required
+	//
+	// - `false`: authorization is disabled;
+	//
+	// See also `enableSasl` and `configuration.kafkaApi[].authenticationMethod`
+	KafkaEnableAuthorization *bool `json:"kafkaEnableAuthorization,omitempty"`
 	// For configuration parameters not exposed, a map can be provided for string values.
 	// Such values are passed transparently to Redpanda. The key format is "<subsystem>.field", e.g.,
 	//
@@ -541,6 +553,10 @@ type KafkaAPI struct {
 	External ExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Kafka API
 	TLS KafkaAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per Kafka
+	// listener. Available options are: none, sasl, mtls_identity.
+	// https://docs.redpanda.com/docs/security/authentication/
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // PandaproxyAPI configures listener for the Pandaproxy API
@@ -552,6 +568,9 @@ type PandaproxyAPI struct {
 	External PandaproxyExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Pandaproxy API
 	TLS PandaproxyAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per pandaproxy
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // SchemaRegistryAPI configures the schema registry API
@@ -566,6 +585,9 @@ type SchemaRegistryAPI struct {
 	External *SchemaRegistryExternalConnectivityConfig `json:"external,omitempty"`
 	// TLS is the configuration for schema registry
 	TLS *SchemaRegistryAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per schema registry
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // SchemaRegistryExternalConnectivityConfig defines the external connectivity
@@ -889,9 +911,10 @@ func (r *Cluster) AdminAPIURLs() []string {
 
 // PandaproxyAPIInternal returns internal pandaproxy listener
 func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if !el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if !proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -899,9 +922,10 @@ func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
 
 // PandaproxyAPIExternal returns the external pandaproxy listener
 func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -910,9 +934,10 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 // PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
-	for i, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.TLS.Enabled {
-			return &r.Spec.Configuration.PandaproxyAPI[i]
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].TLS.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -1167,4 +1192,13 @@ func defaultTLSConfig() *TLSConfig {
 		IssuerRef:         nil,
 		NodeSecretRef:     nil,
 	}
+}
+
+// IsSASLOnInternalEnabled replaces single check if sasl is enabled with multiple
+// check. The external kafka listener is excluded from the check as panda proxy,
+// schema registry and console should use internal kafka listener even if we have
+// external enabled.
+func (r *Cluster) IsSASLOnInternalEnabled() bool {
+	return r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
+		r.Spec.EnableSASL
 }

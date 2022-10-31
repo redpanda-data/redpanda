@@ -30,7 +30,7 @@ import (
 func TestEnsureConfigMap(t *testing.T) {
 	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
 	clusterWithExternal := pandaCluster().DeepCopy()
-	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{AuthenticationMethod: "sasl", Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
 	clusterWithMultipleKafkaTLS := pandaCluster().DeepCopy()
 	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{Enabled: true}
 	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, TLS: redpandav1alpha1.KafkaAPITLS{Enabled: true}, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
@@ -105,7 +105,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 			name:                    "Primitive object in additional configuration",
 			additionalConfiguration: map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000", "rpk.overprovisioned": "true"},
 			expectedStrings:         []string{"transactional_id_expiration_ms: 25920000000"},
-			expectedHash:            "5a3cf863cd61e3cfda0c586fad11c13c",
+			expectedHash:            "1bb3d2cecc19b8e2ecc5872b1c5964da",
 		},
 		{
 			name:                    "Complex struct in additional configuration",
@@ -115,7 +115,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
         - address: 0.0.0.0
           port: 8081
           name: external`},
-			expectedHash: "24f0b08129b48a3c8f091f13b84e1f1d",
+			expectedHash: "8452040fd894a74dbbdedff300162dc0",
 		},
 		{
 			name: "shadow index cache directory",
@@ -123,7 +123,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 				`cloud_storage_cache_directory: /var/lib/shadow-index-cache`,
 				`cloud_storage_cache_size: "10737418240"`,
 			},
-			expectedHash: "e3ab006a8c5db2957c16f982bc6db694",
+			expectedHash: "a971c1871fd690525231074448daf077",
 		},
 	}
 	for _, tc := range testcases {

@@ -75,16 +75,16 @@ type RedpandaNodeConfig struct {
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           []NamedSocketAddress   `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
-	PandaproxyAPITLS        []ServerTLS            `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
-	AdvertisedPandaproxyAPI []NamedSocketAddress   `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
-	Other                   map[string]interface{} `yaml:",inline"`
+	PandaproxyAPI           []NamedAuthNSocketAddress `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
+	PandaproxyAPITLS        []ServerTLS               `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress      `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
+	Other                   map[string]interface{}    `yaml:",inline"`
 }
 
 type SchemaRegistry struct {
-	SchemaRegistryAPI               []NamedSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
-	SchemaRegistryAPITLS            []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
-	SchemaRegistryReplicationFactor *int                 `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
+	SchemaRegistryAPI               []NamedAuthNSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
+	SchemaRegistryAPITLS            []ServerTLS               `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
+	SchemaRegistryReplicationFactor *int                      `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
 }
 
 type KafkaClient struct {

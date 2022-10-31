@@ -73,6 +73,7 @@ rules:
   - configmaps
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
@@ -103,6 +104,7 @@ rules:
   - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - ""

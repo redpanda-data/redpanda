@@ -87,8 +87,9 @@ func schemaRegistryAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 // PandaProxyAPIListeners returns all PandaProxyAPI listeners
 func pandaProxyAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 	listeners := []APIListener{}
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		listeners = append(listeners, el)
+	pp := r.Spec.Configuration.PandaproxyAPI
+	for i := range r.Spec.Configuration.PandaproxyAPI {
+		listeners = append(listeners, pp[i])
 	}
 	return listeners
 }

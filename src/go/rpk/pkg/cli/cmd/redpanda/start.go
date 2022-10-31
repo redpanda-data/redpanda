@@ -229,7 +229,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			proxyAPI, err := parseNamedAddresses(
+			proxyAPI, err := parseNamedAuthNAddresses(
 				proxyAddr,
 				config.DefaultProxyPort,
 			)
@@ -250,7 +250,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			schemaRegAPI, err := parseNamedAddresses(
+			schemaRegAPI, err := parseNamedAuthNAddresses(
 				schemaRegAddr,
 				config.DefaultSchemaRegPort,
 			)

@@ -44,6 +44,10 @@ const (
 	transactionCoordinatorReplicationKey = "redpanda.transaction_coordinator_replication"
 	idAllocatorReplicationKey            = "redpanda.id_allocator_replication"
 
+	noneAuthorizationMechanism         = "none"
+	saslAuthorizationMechanism         = "sasl"
+	mTLSIdentityAuthorizationMechanism = "mtls_identity"
+
 	defaultSchemaRegistryPort = 8081
 )
 
@@ -125,6 +129,12 @@ func (r *Cluster) Default() {
 
 	if r.Spec.LicenseRef != nil && r.Spec.LicenseRef.Key == "" {
 		r.Spec.LicenseRef.Key = DefaultLicenseSecretKey
+	}
+
+	for i := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod == "" {
+			r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod = noneAuthorizationMechanism
+		}
 	}
 }
 
@@ -359,6 +369,18 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 			&p.External,
 			field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("external"))
 		allErrs = append(allErrs, tlsErrs...)
+
+		switch r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod {
+		case noneAuthorizationMechanism:
+		case saslAuthorizationMechanism:
+		case mTLSIdentityAuthorizationMechanism:
+			break
+		default:
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("authenticationMethod"),
+					r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod,
+					"authentication method is invalid. Valid options are: none, sasl, mtls_identity"))
+		}
 	}
 
 	allErrs = append(allErrs,
@@ -422,8 +444,9 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	var allErrs field.ErrorList
 	var proxyExternal *PandaproxyAPI
 	kafkaExternal := r.ExternalListener()
-	for i, p := range r.Spec.Configuration.PandaproxyAPI {
-		if !p.External.Enabled {
+	p := r.Spec.Configuration.PandaproxyAPI
+	for i := range r.Spec.Configuration.PandaproxyAPI {
+		if !p[i].External.Enabled {
 			continue
 		}
 		if proxyExternal != nil {
@@ -499,8 +522,8 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 
 	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
 	foundListenerWithTLS := false
-	for i, p := range r.Spec.Configuration.PandaproxyAPI {
-		if p.TLS.Enabled {
+	for i := range r.Spec.Configuration.PandaproxyAPI {
+		if p[i].TLS.Enabled {
 			if foundListenerWithTLS {
 				allErrs = append(allErrs,
 					field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("tls"),
@@ -510,12 +533,12 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 			foundListenerWithTLS = true
 		}
 		tlsErrs := validateListener(
-			p.TLS.Enabled,
-			p.TLS.RequireClientAuth,
-			p.TLS.IssuerRef,
-			p.TLS.NodeSecretRef,
+			p[i].TLS.Enabled,
+			p[i].TLS.RequireClientAuth,
+			p[i].TLS.IssuerRef,
+			p[i].TLS.NodeSecretRef,
 			field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("tls"),
-			&p.External.ExternalConnectivityConfig,
+			&p[i].External.ExternalConnectivityConfig,
 			field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("external"),
 		)
 		allErrs = append(allErrs, tlsErrs...)
