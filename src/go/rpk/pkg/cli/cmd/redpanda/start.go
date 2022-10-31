@@ -1042,6 +1042,7 @@ func setContainerModeCfgFields(cfg *config.Config) {
 	cfg.Redpanda.Other["group_topic_partitions"] = 3
 	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
 	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
+	cfg.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
 }
 
 func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
