@@ -52,6 +52,7 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <numeric>
 #include <random>
 #include <system_error>
@@ -60,6 +61,9 @@ using namespace std::chrono_literals;
 using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
+
+static cloud_storage::lazy_abort_source always_continue{
+  "no-op", [](auto&) { return false; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
@@ -95,6 +99,7 @@ struct in_memory_segment {
     segment_name sname;
     int num_config_batches{0};
     int num_config_records{0};
+    bool do_not_reupload{false};
 };
 
 static in_memory_segment make_segment(model::offset base, int num_batches) {
@@ -230,6 +235,60 @@ make_imposter_expectations(
       .url = "/" + m.get_manifest_path()().string(),
       .body = ss::sstring(ostr.str())});
     return results;
+}
+
+static void reupload_compacted_segments(
+  cloud_storage_fixture& fixture,
+  cloud_storage::partition_manifest& m,
+  const std::vector<in_memory_segment>& segments,
+  cloud_storage::remote& api,
+  bool truncate_segments = false) {
+    model::offset delta{0};
+    for (const auto& s : segments) {
+        auto body = s.bytes;
+        if (truncate_segments) {
+            body = s.bytes.substr(0, s.bytes.size() / 2);
+        }
+
+        cloud_storage::partition_manifest::segment_meta meta{
+          .is_compacted = true,
+          .size_bytes = s.bytes.size(),
+          .base_offset = s.base_offset,
+          .committed_offset = s.max_offset,
+          .base_timestamp = {},
+          .max_timestamp = {},
+          .delta_offset = model::offset_delta(delta),
+          .ntp_revision = m.get_revision_id(),
+          .sname_format = segment_name_format::v2,
+        };
+
+        delta = delta + model::offset(s.num_config_records);
+
+        if (!s.do_not_reupload) {
+            m.add(s.sname, meta);
+            auto url = m.generate_segment_path(*m.get(meta.base_offset));
+            vlog(test_log.debug, "reuploading segment {}", url);
+            retry_chain_node rtc(10s, 1s);
+            bytes bb;
+            bb.resize(body.size());
+            std::memcpy(bb.data(), body.data(), body.size());
+            auto reset_stream = [body = std::move(bb)]()
+              -> ss::future<std::unique_ptr<storage::stream_provider>> {
+                co_return std::make_unique<storage::segment_reader_handle>(
+                  make_iobuf_input_stream(bytes_to_iobuf(body)));
+            };
+            api
+              .upload_segment(
+                s3::bucket_name("bucket"),
+                url,
+                meta.size_bytes,
+                std::move(reset_stream),
+                rtc,
+                always_continue)
+              .get();
+        }
+    }
+    m.advance_insync_offset(m.get_last_offset());
 }
 
 /// Return vector<bool> which have a value for every recrod_batch_header in
@@ -1269,4 +1328,304 @@ FIXTURE_TEST(
 
         BOOST_REQUIRE(headers_read.size() == 0);
     }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_compacted_segments_reupload, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> non_compacted_layout = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, non_compacted_layout);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    const std::vector<std::vector<batch_t>> compacted_layout = {
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto compacted_segments = make_segments(compacted_layout);
+
+    // create a reader that consumes segments one by one
+    auto conf = get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    // No re-uploads yet
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(1000), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE(headers_read.size() == 100);
+        BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
+    }
+
+    // Re-upload some of the segments
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(50), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 50);
+        BOOST_REQUIRE_EQUAL(headers_read.front().base_offset, model::offset(0));
+        BOOST_REQUIRE_EQUAL(
+          headers_read.back().base_offset, model::offset(490));
+
+        for (int i = 0; i < 10; i++) {
+            const int batches_per_segment = 100;
+            remove_segment_from_s3(
+              manifest, model::offset(i * batches_per_segment), api, bucket);
+        }
+        reupload_compacted_segments(*this, manifest, compacted_segments, api);
+        manifest.advance_insync_offset(model::offset(10000));
+
+        headers_read
+          = reader.consume(counting_batch_consumer(50), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 50);
+        BOOST_REQUIRE_EQUAL(
+          headers_read.front().base_offset, model::offset(500));
+        BOOST_REQUIRE_EQUAL(
+          headers_read.back().base_offset, model::offset(990));
+    }
+}
+
+static std::vector<model::record_batch_header>
+scan_remote_partition_incrementally_with_reuploads(
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  std::vector<in_memory_segment> segments) {
+    auto conf = imposter.get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&api] { api.stop().get(); });
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
+      manifest_ntp, manifest_revision);
+
+    auto manifest = hydrate_manifest(api, bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, imposter.cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    std::vector<model::record_batch_header> headers;
+
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
+
+    // starting max_bytes
+    constexpr size_t max_bytes_limit = 4_KiB;
+    reader_config.max_bytes = max_bytes_limit;
+
+    auto next = base;
+    auto next_insync_offset = model::next_offset(manifest.get_insync_offset());
+    auto drop_reupload_flag = [&segments] {
+        for (auto& s : segments) {
+            s.do_not_reupload = true;
+        }
+    };
+    auto maybe_reupload_range = [&imposter,
+                                 &manifest,
+                                 &next_insync_offset,
+                                 &segments,
+                                 &api](model::offset begin) {
+        // if this is true, start from prev segment, not the one which is
+        // the closest to 'begin'
+        auto shift_one_back = random_generators::get_int(0, 4) == 0;
+        auto ix = 0;
+        for (auto& s : segments) {
+            if (s.base_offset > begin) {
+                break;
+            }
+            if (!shift_one_back) {
+                ix++;
+            } else {
+                shift_one_back = false;
+            }
+        }
+        // choose how many segments to merge together
+        auto n = random_generators::get_int(0, 4);
+        vlog(
+          test_log.debug,
+          "reuploading {} segments starting from offset {}, insync_offset: {}, "
+          "num segments: {}",
+          n,
+          segments[ix].base_offset,
+          next_insync_offset,
+          segments.size());
+        auto merge_segments = [&segments, &manifest](int begin, int end) {
+            auto meta_ptr = manifest.get(segments[begin].base_offset);
+            if (meta_ptr->is_compacted) {
+                vlog(
+                  test_log.debug,
+                  "segment {}-{} is already compacted, skipping",
+                  meta_ptr->base_offset,
+                  meta_ptr->committed_offset);
+                return;
+            }
+            BOOST_REQUIRE(end - begin > 1);
+            end = std::clamp(end, end, static_cast<int>(segments.size()));
+            in_memory_segment& first = segments[begin];
+            const in_memory_segment& last = segments[end - 1];
+            vlog(
+              test_log.debug,
+              "merging segments {}-{} and {}-{}",
+              first.base_offset,
+              first.max_offset,
+              last.base_offset,
+              last.max_offset);
+            for (int i = 1 + begin; i < end; i++) {
+                auto& s = segments[i];
+                first.base_offset = std::min(first.base_offset, s.base_offset);
+                first.max_offset = std::max(first.max_offset, s.max_offset);
+                first.do_not_reupload = false;
+                first.num_config_batches += s.num_config_batches;
+                first.num_config_records += s.num_config_records;
+                std::copy(
+                  std::make_move_iterator(s.records.begin()),
+                  std::make_move_iterator(s.records.end()),
+                  std::back_inserter(first.records));
+                first.bytes.append(s.bytes.data(), s.bytes.size());
+                std::copy(
+                  s.headers.begin(),
+                  s.headers.end(),
+                  std::back_inserter(first.headers));
+                std::copy(
+                  s.file_offsets.begin(),
+                  s.file_offsets.end(),
+                  std::back_inserter(first.file_offsets));
+            }
+            segments.erase(
+              segments.begin() + 1 + begin, segments.begin() + end);
+        };
+        if (n > 1) {
+            merge_segments(ix, ix + n);
+            reupload_compacted_segments(imposter, manifest, segments, api);
+            manifest.advance_insync_offset(next_insync_offset);
+            next_insync_offset = model::next_offset(next_insync_offset);
+        } else if (n == 1) {
+            segments[ix].do_not_reupload = false;
+            reupload_compacted_segments(imposter, manifest, segments, api);
+            manifest.advance_insync_offset(next_insync_offset);
+            next_insync_offset = model::next_offset(next_insync_offset);
+        }
+        vlog(
+          test_log.debug,
+          "completed reuploading {} segments, num segments: {}",
+          n,
+          segments.size());
+    };
+
+    int num_fetches = 0;
+    while (next < max) {
+        reader_config.start_offset = next;
+        reader_config.max_bytes = random_generators::get_int(
+          max_bytes_limit - 1);
+        drop_reupload_flag();
+        maybe_reupload_range(next);
+        vlog(test_log.info, "reader_config {}", reader_config);
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(test_consumer(), model::no_timeout).get();
+        if (headers_read.empty()) {
+            break;
+        }
+        for (const auto& header : headers_read) {
+            vlog(test_log.info, "header {}", header);
+        }
+        next = headers_read.back().last_offset() + model::offset(1);
+        std::copy(
+          headers_read.begin(),
+          headers_read.end(),
+          std::back_inserter(headers));
+        num_fetches++;
+    }
+
+    BOOST_REQUIRE(num_fetches > 0);
+    vlog(test_log.info, "{} fetch operations performed", num_fetches);
+    return headers;
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_incrementally_random_with_reuploads,
+  cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [batch_types, num_data_batches] = generate_segment_layout(
+      num_segments, 42);
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "full offset range: {}-{}", base, max);
+    auto headers_read = scan_remote_partition_incrementally_with_reuploads(
+      *this, base, max, std::move(segments));
+    model::offset expected_offset{0};
+    for (const auto& header : headers_read) {
+        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+        expected_offset = header.last_offset() + model::offset(1);
+    }
+    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
 }
