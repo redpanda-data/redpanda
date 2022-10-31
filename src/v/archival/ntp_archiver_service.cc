@@ -940,12 +940,10 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     std::atomic<size_t> successful_deletes{0};
     co_await ss::max_concurrent_for_each(
-      to_remove, _concurrency, [this, &successful_deletes](const auto& meta) {
-          auto segment_name = cloud_storage::generate_local_segment_name(
-            meta.base_offset, meta.segment_term);
-          auto path = cloud_storage::generate_remote_segment_path(
-            _ntp, meta.ntp_revision, segment_name, meta.archiver_term);
-
+      to_remove,
+      _concurrency,
+      [this, &successful_deletes](const cloud_storage::segment_meta& meta) {
+          auto path = manifest().generate_segment_path(meta);
           return ss::do_with(
             std::move(path), [this, &successful_deletes](auto& path) {
                 return delete_segment(path).then(
