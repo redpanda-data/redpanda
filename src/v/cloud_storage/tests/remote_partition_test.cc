@@ -20,11 +20,13 @@
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "s3/client.h"
+#include "s3/configuration.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -221,6 +223,7 @@ make_imposter_expectations(
         results.push_back(cloud_storage_fixture::expectation{
           .url = "/" + url().string(), .body = body});
     }
+    m.advance_insync_offset(m.get_last_offset());
     std::stringstream ostr;
     m.serialize(ostr);
     results.push_back(cloud_storage_fixture::expectation{
@@ -279,6 +282,30 @@ public:
         return std::move(headers);
     }
 
+    std::vector<model::record_batch_header> headers;
+};
+
+/// Consumer that accepts fixed number of record
+/// batches.
+class counting_batch_consumer final {
+public:
+    explicit counting_batch_consumer(size_t count)
+      : _count(count) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        vlog(test_log.debug, "record batch #{}: {}", headers.size(), b);
+        headers.push_back(b.header());
+        if (headers.size() == _count) {
+            co_return ss::stop_iteration::yes;
+        }
+        co_return ss::stop_iteration::no;
+    }
+
+    std::vector<model::record_batch_header> end_of_stream() {
+        return std::move(headers);
+    }
+
+    size_t _count;
     std::vector<model::record_batch_header> headers;
 };
 
@@ -1051,5 +1078,195 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         BOOST_REQUIRE(!headers_read.empty());
+    }
+}
+
+static void remove_segment_from_s3(
+  const cloud_storage::partition_manifest& m,
+  model::offset o,
+  cloud_storage::remote& api,
+  const s3::bucket_name& bucket) {
+    auto meta = m.get(o);
+    BOOST_REQUIRE(meta != nullptr);
+    auto path = m.generate_segment_path(*meta);
+    retry_chain_node fib(10s, 1s);
+    auto res = api.delete_object(bucket, s3::object_key(path()), fib).get();
+    BOOST_REQUIRE(res == cloud_storage::upload_result::success);
+}
+
+/// This test scans the entire range of offsets
+FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // create a reader that consumes segments one by one
+    auto conf = get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(1), model::no_timeout).get();
+
+        BOOST_REQUIRE(headers_read.size() == 1);
+        BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
+
+        remove_segment_from_s3(manifest, model::offset(0), api, bucket);
+        BOOST_REQUIRE(manifest.advance_start_offset(model::offset(400)));
+        manifest.truncate();
+        manifest.advance_insync_offset(model::offset(10000));
+        vlog(
+          test_log.debug,
+          "cloud_storage truncate manifest to {}",
+          manifest.get_start_offset().value());
+
+        // Try to consume remaining 99 batches. This reader should only be able
+        // to consume from the cached segment, so only 9 batches will be present
+        // in the list.
+        headers_read
+          = reader.consume(counting_batch_consumer(99), model::no_timeout)
+              .get();
+        std::move(reader).release();
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 9);
+    }
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        vlog(test_log.debug, "Creating new reader {}", reader_config);
+
+        // After truncation reading from the old end should be impossible
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(100), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE(headers_read.size() == 60);
+        BOOST_REQUIRE(headers_read.front().base_offset == model::offset(400));
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_query_below_cutoff_point, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // create a reader that consumes segments one by one
+    auto conf = get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf, config_file);
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    model::offset cutoff_offset(500);
+
+    remove_segment_from_s3(manifest, model::offset(0), api, bucket);
+    BOOST_REQUIRE(manifest.advance_start_offset(cutoff_offset));
+    manifest.truncate();
+    manifest.advance_insync_offset(model::offset(10000));
+    vlog(
+      test_log.debug,
+      "cloud_storage truncate manifest to {}",
+      manifest.get_start_offset().value());
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          model::offset(200),
+          model::offset(299),
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        vlog(test_log.debug, "Creating new reader {}", reader_config);
+
+        // After truncation reading from the old end should be impossible
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(100), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE(headers_read.size() == 0);
     }
 }
