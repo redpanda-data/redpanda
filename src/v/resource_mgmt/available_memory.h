@@ -51,7 +51,7 @@ public:
     using deregister_holder = std::unique_ptr<reporter>;
 
     // does not make sense to move or cpoy this object
-    available_memory() = default;
+    available_memory();
     available_memory(available_memory&) = delete;
     available_memory& operator=(const available_memory&) = delete;
 
@@ -86,6 +86,36 @@ public:
      * its API to callers, but no metrics are created.
      */
     void register_metrics();
+
+    /**
+     * @brief The low-water mark for available memory.
+     *
+     * This returns the lowest available memory value observed by this object.
+     * This object only observes the available memory when
+     * update_low_water_mark() is called, either implicitly (e.g., by calling
+     * this method) or explicitly.
+     *
+     *
+     * This call makes a call to update_low_water_mark() immediately before
+     * returning its result, so this always includes the current memory state
+     * in the LWM calculatoin.
+     *
+     * @return size_t the available low-water mark as described above
+     */
+    size_t available_low_water_mark();
+
+    /**
+     * @brief Update the low-water mark if applicable.
+     *
+     * Samples the currently available memory (as-if by calling available() and
+     * update the low-water mark if the currnet value is lower than any seen so
+     * far.
+     *
+     * Calls to this method should be inserted at places where memory is likely
+     * to reach new lows: inside the reclaimer (if one is registered) would be
+     * a suitable place.
+     */
+    void update_low_water_mark();
 
     /**
      * @brief Register an available memory reporter.
@@ -125,6 +155,7 @@ private:
 
     intrusive_list<reporter, &reporter::hook> _reporters;
     std::optional<ssx::metrics::public_metrics_group> _metrics;
+    size_t _lwm;
 };
 
 } // namespace resources

@@ -21,11 +21,15 @@
 #include <fmt/core.h>
 
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
 
 namespace resources {
+
+available_memory::available_memory()
+  : _lwm(std::numeric_limits<decltype(_lwm)>::max()) {}
 
 available_memory::deregister_holder
 available_memory::inner_register(const ss::sstring& name, afn&& fn) {
@@ -44,6 +48,15 @@ size_t available_memory::reclaimable() const {
         reclaimable += r.avail_fn();
     }
     return reclaimable;
+}
+
+size_t available_memory::available_low_water_mark() {
+    update_low_water_mark();
+    return _lwm;
+}
+
+void available_memory::update_low_water_mark() {
+    _lwm = std::min(_lwm, available());
 }
 
 void available_memory::register_metrics() {
