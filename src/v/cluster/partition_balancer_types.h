@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
+#include "utils/to_string.h"
 
 namespace cluster {
 
