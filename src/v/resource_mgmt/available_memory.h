@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/future.hh>
@@ -119,10 +120,11 @@ public:
 private:
     deregister_holder inner_register(const ss::sstring& name, afn&& fn);
 
-    static thread_local available_memory _local_instance;
+    static thread_local available_memory
+      _local_instance; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
     intrusive_list<reporter, &reporter::hook> _reporters;
-    std::optional<ss::metrics::metric_groups> _metrics;
+    std::optional<ssx::metrics::public_metrics_group> _metrics;
 };
 
 } // namespace resources

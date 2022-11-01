@@ -16,6 +16,7 @@
 
 #include <seastar/core/memory.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 #include <fmt/core.h>
 
@@ -50,11 +51,13 @@ void available_memory::register_metrics() {
         // already initialized
         return;
     }
-    _metrics.emplace().add_group(
+
+    auto& m = _metrics.emplace();
+    m.groups.add_group(
       prometheus_sanitize::metrics_name("memory"),
       {ss::metrics::make_gauge(
         "available_memory",
-        [this] { return get_available(); },
+        [this] { return available(); },
         ss::metrics::description(
           "Total shard memory potentially available in bytes "
           "(free_memory plus reclaimable)"))});
