@@ -145,11 +145,13 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
 }
 
 ss::future<> service::do_start() {
+    if (_is_started) {
+        co_return;
+    }
     auto guard = gate_guard(_gate);
     try {
         co_await configure();
         co_await create_internal_topic();
-        co_await fetch_internal_topic();
         vlog(plog.info, "Schema registry successfully initialized");
     } catch (...) {
         vlog(
@@ -158,6 +160,10 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
+    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
+        s._is_started = true;
+        return s.fetch_internal_topic();
+    });
 }
 
 ss::future<> service::configure() {
@@ -169,8 +175,11 @@ ss::future<> service::configure() {
     co_await set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
-    _has_ephemeral_credentials = store.has(store.find(principal));
-
+    bool has_ephemeral_credentials = store.has(store.find(principal));
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
+          s._has_ephemeral_credentials = has_ephemeral_credentials;
+      });
     co_await _controller->get_security_frontend().local().create_acls(
       {security::acl_binding{
         security::resource_pattern{
