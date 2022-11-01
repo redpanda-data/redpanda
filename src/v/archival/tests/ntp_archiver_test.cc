@@ -47,6 +47,8 @@ static const ss::sstring manifest_url = ssx::sformat(                // NOLINT
   manifest_ntp.path(),
   manifest_revision());
 
+static constexpr ss::lowres_clock::duration segment_read_lock_timeout{60s};
+
 static storage::ntp_config get_ntp_conf() {
     return storage::ntp_config(manifest_ntp, "base-dir");
 }
@@ -73,13 +75,14 @@ static void log_segment_set(storage::log_manager& lm) {
 }
 
 void log_upload_candidate(const archival::upload_candidate& up) {
+    auto first_source = up.sources.front();
     vlog(
       test_log.info,
       "Upload candidate, exposed name: {} "
       "real offsets: {} {}",
       up.exposed_name,
-      up.source->offsets().base_offset,
-      up.source->offsets().dirty_offset);
+      first_source->offsets().base_offset,
+      first_source->offsets().dirty_offset);
 }
 
 // NOLINTNEXTLINE
@@ -117,8 +120,15 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     retry_chain_node fib;
     auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
-    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 2);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
@@ -227,8 +237,8 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
 
     retry_chain_node fib;
     auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(res.num_succeded, 4);
-    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
     // We generate the path here as we need the segment to be in the
     // manifest for this. After retention is applied (i.e.
@@ -298,38 +308,61 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     // Starting offset is lower than offset1
     auto upload1
-      = policy.get_next_candidate(model::offset(0), lso, *log, tr).get();
+      = policy
+          .get_next_candidate(
+            model::offset(0), lso, *log, tr, segment_read_lock_timeout)
+          .get()
+          .candidate;
     log_upload_candidate(upload1);
-    BOOST_REQUIRE(upload1.source.get() != nullptr);
+    BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
     model::offset start_offset;
 
-    start_offset = upload1.source->offsets().dirty_offset + model::offset(1);
-    auto upload2 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
+    start_offset = upload1.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload2 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
     log_upload_candidate(upload2);
-    BOOST_REQUIRE(upload2.source.get() != nullptr);
+    BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
-    BOOST_REQUIRE(upload2.source != upload1.source);
-    BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
+    BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
+    BOOST_REQUIRE(upload2.sources.front()->offsets().base_offset == offset2);
 
-    start_offset = upload2.source->offsets().dirty_offset + model::offset(1);
-    auto upload3 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
+    start_offset = upload2.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload3 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
     log_upload_candidate(upload3);
-    BOOST_REQUIRE(upload3.source.get() != nullptr);
+    BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
-    BOOST_REQUIRE(upload3.source != upload2.source);
-    BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
+    BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
+    BOOST_REQUIRE(upload3.sources.front()->offsets().base_offset == offset3);
 
-    start_offset = upload3.source->offsets().dirty_offset + model::offset(1);
-    auto upload4 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
-    BOOST_REQUIRE(upload4.source.get() == nullptr);
+    start_offset = upload3.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload4 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
+    BOOST_REQUIRE(upload4.sources.empty());
 
     start_offset = lso + model::offset(1);
-    auto upload5 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
-    BOOST_REQUIRE(upload5.source.get() == nullptr);
+    auto upload5 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
+    BOOST_REQUIRE(upload5.sources.empty());
 }
 
 FIXTURE_TEST(
@@ -376,14 +409,17 @@ FIXTURE_TEST(
                          model::offset(0),
                          lso,
                          *log,
-                         *partition->get_offset_translator_state())
-                       .get();
+                         *partition->get_offset_translator_state(),
+                         segment_read_lock_timeout)
+                       .get()
+                       .candidate;
 
     // The search is expected to find the next segment after the compacted
     // segment, skipping the compacted one.
-    BOOST_REQUIRE_NE(candidate.source.get(), nullptr);
+    BOOST_REQUIRE(!candidate.sources.empty());
     BOOST_REQUIRE_GT(candidate.starting_offset(), 0);
-    BOOST_REQUIRE_GT(candidate.source->offsets().base_offset, model::offset{0});
+    BOOST_REQUIRE_GT(
+      candidate.sources.front()->offsets().base_offset, model::offset{0});
 }
 
 // NOLINTNEXTLINE
@@ -420,9 +456,14 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
     auto upload1 = policy
                      .get_next_candidate(
-                       start_offset, last_stable_offset, log, tr_state)
-                     .get();
-    BOOST_REQUIRE(upload1.source);
+                       start_offset,
+                       last_stable_offset,
+                       log,
+                       tr_state,
+                       segment_read_lock_timeout)
+                     .get()
+                     .candidate;
+    BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE_EQUAL(upload1.exposed_name, "0-0-v1.log");
     BOOST_REQUIRE_EQUAL(upload1.starting_offset, start_offset);
     BOOST_REQUIRE_EQUAL(upload1.final_offset, log.offsets().dirty_offset);
@@ -440,165 +481,16 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     last_stable_offset = log.offsets().dirty_offset + model::offset{1};
     auto upload2 = policy
                      .get_next_candidate(
-                       start_offset, last_stable_offset, log, tr_state)
-                     .get();
-    BOOST_REQUIRE(!upload2.source);
+                       start_offset,
+                       last_stable_offset,
+                       log,
+                       tr_state,
+                       segment_read_lock_timeout)
+                     .get()
+                     .candidate;
+    BOOST_REQUIRE(upload2.sources.empty());
 
     b.stop().get();
-}
-
-FIXTURE_TEST(
-  test_archival_policy_compacted_segment_search_when_no_segment_is_compacted,
-  archiver_fixture) {
-    model::offset lso{9999};
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset{0}, model::term_id(1)},
-    };
-
-    init_storage_api_local(segments);
-    auto& lm = get_local_storage_api().log_mgr();
-    log_segment_set(lm);
-
-    auto log = lm.get(manifest_ntp);
-    BOOST_REQUIRE(log);
-
-    auto partition = app.partition_manager.local().get(manifest_ntp);
-    BOOST_REQUIRE(partition);
-
-    auto candidate
-      = archival_policy{manifest_ntp}
-          .get_next_candidate(
-            model::offset(0),
-            lso,
-            *log,
-            *partition->get_offset_translator_state(),
-            archival::archival_policy::search_for_compacted_segments::yes)
-          .get();
-    BOOST_REQUIRE_EQUAL(candidate.source.get(), nullptr);
-}
-
-FIXTURE_TEST(
-  test_archival_policy_compacted_segment_search_when_a_segment_is_compacted,
-  archiver_fixture) {
-    model::offset lso{9999};
-
-    // We need two segments here because compaction only works if we have more
-    // than one segment in the log
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset{0}, model::term_id(1)},
-      {manifest_ntp, model::offset{1000}, model::term_id(1)},
-    };
-
-    storage::ntp_config::default_overrides o;
-    o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
-
-    init_storage_api_local(segments, o);
-    auto& lm = get_local_storage_api().log_mgr();
-
-    log_segment_set(lm);
-
-    auto log = lm.get(manifest_ntp);
-    BOOST_REQUIRE(log);
-
-    ss::abort_source as{};
-    log
-      ->compact(storage::compaction_config(
-        model::timestamp::now(),
-        std::nullopt,
-        model::offset::max(),
-        ss::default_priority_class(),
-        as))
-      .get0();
-
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
-
-    auto seg = plog->segments().begin();
-
-    BOOST_REQUIRE((*seg)->finished_self_compaction());
-
-    auto partition = app.partition_manager.local().get(manifest_ntp);
-    BOOST_REQUIRE(partition);
-
-    auto candidate
-      = archival::archival_policy{manifest_ntp}
-          .get_next_candidate(
-            model::offset(0),
-            lso,
-            *log,
-            *partition->get_offset_translator_state(),
-            archival::archival_policy::search_for_compacted_segments::yes)
-          .get();
-    BOOST_REQUIRE_NE(candidate.source.get(), nullptr);
-    BOOST_REQUIRE_EQUAL(candidate.starting_offset(), 0);
-    BOOST_REQUIRE_EQUAL(
-      candidate.source->offsets().base_offset, model::offset{0});
-
-    // Search after the first compacted segment returns nothing
-    auto second
-      = archival::archival_policy{manifest_ntp}
-          .get_next_candidate(
-            model::next_offset(candidate.final_offset),
-            lso,
-            *log,
-            *partition->get_offset_translator_state(),
-            archival::archival_policy::search_for_compacted_segments::yes)
-          .get();
-    BOOST_REQUIRE_EQUAL(second.source.get(), nullptr);
-}
-
-FIXTURE_TEST(
-  test_archival_policy_compacted_segment_search_offset_inside_segment,
-  archiver_fixture) {
-    model::offset lso{9999};
-
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset{0}, model::term_id(1), 100},
-      {manifest_ntp, model::offset{1000}, model::term_id(1)},
-    };
-
-    storage::ntp_config::default_overrides o;
-    o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
-
-    init_storage_api_local(segments, o);
-    auto& lm = get_local_storage_api().log_mgr();
-
-    log_segment_set(lm);
-
-    auto log = lm.get(manifest_ntp);
-    BOOST_REQUIRE(log);
-
-    ss::abort_source as{};
-    log
-      ->compact(storage::compaction_config(
-        model::timestamp::now(),
-        std::nullopt,
-        model::offset::max(),
-        ss::default_priority_class(),
-        as))
-      .get0();
-
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
-    auto seg = plog->segments().begin();
-    BOOST_REQUIRE((*seg)->finished_self_compaction());
-
-    auto partition = app.partition_manager.local().get(manifest_ntp);
-    BOOST_REQUIRE(partition);
-
-    auto candidate
-      = archival::archival_policy{manifest_ntp}
-          .get_next_candidate(
-            // TODO (abhijat) we should read into the segment and get an offset
-            //  ahead of first batch instead of guessing a value
-            model::offset(500),
-            lso,
-            *log,
-            *partition->get_offset_translator_state(),
-            archival::archival_policy::search_for_compacted_segments::yes)
-          .get();
-    BOOST_REQUIRE_NE(candidate.source.get(), nullptr);
-    BOOST_REQUIRE_GT(candidate.starting_offset(), 0);
-    BOOST_REQUIRE_EQUAL(
-      candidate.source->offsets().base_offset, model::offset{0});
 }
 
 // NOLINTNEXTLINE
@@ -673,8 +565,15 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     retry_chain_node fib;
 
     auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
-    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 2);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req._method, req._url);
@@ -903,8 +802,15 @@ static void test_partial_upload_impl(
 
     retry_chain_node fib;
     auto res = archiver.upload_next_candidates(lso).get();
-    BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
-    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+
+    auto non_compacted_result = res.non_compacted_upload_result;
+    auto compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test_server.log_requests();
     BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 2);
@@ -937,8 +843,14 @@ static void test_partial_upload_impl(
     lso = last_upl2 + model::offset(1);
     res = archiver.upload_next_candidates(lso).get();
 
-    BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
-    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+    non_compacted_result = res.non_compacted_upload_result;
+    compacted_result = res.compacted_upload_result;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test_server.log_requests();
     BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 4);
@@ -1053,30 +965,49 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     model::offset start_offset{0};
     model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
+    auto upload1 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
     log_upload_candidate(upload1);
-    BOOST_REQUIRE(upload1.source.get() != nullptr);
+    BOOST_REQUIRE(!upload1.sources.empty());
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    start_offset = upload1.source->offsets().dirty_offset + model::offset(1);
-    auto upload2 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
+    start_offset = upload1.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload2 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
     log_upload_candidate(upload2);
-    BOOST_REQUIRE(upload2.source.get() != nullptr);
+    BOOST_REQUIRE(!upload2.sources.empty());
     BOOST_REQUIRE(upload2.starting_offset == offset2);
     BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
-    BOOST_REQUIRE(upload2.source != upload1.source);
-    BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
+    BOOST_REQUIRE(upload2.sources.front() != upload1.sources.front());
+    BOOST_REQUIRE(upload2.sources.front()->offsets().base_offset == offset2);
 
-    start_offset = upload2.source->offsets().dirty_offset + model::offset(1);
-    auto upload3 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
+    start_offset = upload2.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload3 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
     log_upload_candidate(upload3);
-    BOOST_REQUIRE(upload3.source.get() != nullptr);
+    BOOST_REQUIRE(!upload3.sources.empty());
     BOOST_REQUIRE(upload3.starting_offset == offset3);
     BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
-    BOOST_REQUIRE(upload3.source != upload2.source);
-    BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
+    BOOST_REQUIRE(upload3.sources.front() != upload2.sources.front());
+    BOOST_REQUIRE(upload3.sources.front()->offsets().base_offset == offset3);
 
-    start_offset = upload3.source->offsets().dirty_offset + model::offset(1);
-    auto upload4 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
-    BOOST_REQUIRE(upload4.source.get() == nullptr);
+    start_offset = upload3.sources.front()->offsets().dirty_offset
+                   + model::offset(1);
+    auto upload4 = policy
+                     .get_next_candidate(
+                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                     .get()
+                     .candidate;
+    BOOST_REQUIRE(upload4.sources.empty());
 }

@@ -51,6 +51,18 @@ struct segment_layout {
     std::vector<offset_range> ranges;
 };
 
+namespace archival_tests {
+static constexpr std::string_view error_payload
+  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchKey</Code>
+    <Message>Object not found</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
+
+}
+
 /// This utility can be used to match content of the log
 /// with manifest and request content. It's also can be
 /// used to retrieve individual segments or iterate over
@@ -84,6 +96,15 @@ public:
       const model::ntp& ntp,
       const archival::segment_name& name,
       const ss::sstring& expected);
+
+    /// Given a set of segments, verifies that a concatenated segment composed
+    /// of the set was uploaded, by concatenating segments from disk log and
+    /// comparing the content with request content.
+    void verify_segments(
+      const model::ntp& ntp,
+      const std::vector<archival::segment_name>& names,
+      const ss::sstring& expected,
+      size_t expected_size);
 
     /// Verify manifest using log_manager's state,
     /// find matching segments and check the fields.
@@ -132,7 +153,8 @@ public:
     void init_storage_api_local(
       const std::vector<segment_desc>& segm,
       std::optional<storage::ntp_config::default_overrides> overrides
-      = std::nullopt);
+      = std::nullopt,
+      bool fit_segments = false);
 
     std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
         return layouts.find(ntp)->second;
@@ -155,7 +177,8 @@ private:
     void initialize_shard(
       storage::api& api,
       const std::vector<segment_desc>& segm,
-      std::optional<storage::ntp_config::default_overrides> overrides);
+      std::optional<storage::ntp_config::default_overrides> overrides,
+      bool fit_segments);
 
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
@@ -186,8 +209,7 @@ storage::disk_log_builder make_log_builder(std::string_view data_path);
 
 void populate_log(storage::disk_log_builder& b, const log_spec& spec);
 
-void manage_ntp(
-  archiver_fixture& a,
-  ss::sstring data_path,
-  model::ntp ntp,
-  std::optional<storage::ntp_config::default_overrides> overrides);
+/// Creates num_batches with a single record each, used to fit segments close to
+/// each other without gaps.
+segment_layout write_random_batches_with_single_record(
+  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches);

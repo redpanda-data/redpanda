@@ -12,6 +12,7 @@
 
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/partition_manifest.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log_manager.h"
@@ -23,7 +24,6 @@
 namespace archival {
 
 struct upload_candidate {
-    ss::lw_shared_ptr<storage::segment> source;
     segment_name exposed_name;
     model::offset starting_offset;
     size_t file_offset;
@@ -32,9 +32,34 @@ struct upload_candidate {
     size_t final_file_offset;
     model::timestamp base_timestamp;
     model::timestamp max_timestamp;
+    model::term_id term;
+    std::vector<ss::lw_shared_ptr<storage::segment>> sources;
 
     friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 };
+
+struct upload_candidate_with_locks {
+    upload_candidate candidate;
+    std::vector<ss::rwlock::holder> read_locks;
+};
+
+struct offset_to_file_pos_result {
+    model::offset offset;
+    size_t bytes;
+    model::timestamp ts;
+};
+
+ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
+  model::offset begin_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp base_timestamp,
+  ss::io_priority_class io_priority);
+
+ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
+  model::offset end_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp max_timestamp,
+  ss::io_priority_class io_priority);
 
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.
@@ -48,21 +73,24 @@ public:
       std::optional<segment_time_limit> limit = std::nullopt,
       ss::io_priority_class io_priority = ss::default_priority_class());
 
-    using search_for_compacted_segments
-      = ss::bool_class<struct search_for_compacted_segments_tag>;
-
     /// \brief regurn next upload candidate
     ///
     /// \param begin_inclusive is an inclusive begining of the range
     /// \param end_exclusive is an exclusive end of the range
     /// \param lm is a log manager
     /// \return initializd struct on success, empty struct on failure
-    ss::future<upload_candidate> get_next_candidate(
+    ss::future<upload_candidate_with_locks> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
       storage::log,
       const storage::offset_translator_state&,
-      search_for_compacted_segments = search_for_compacted_segments::no);
+      ss::lowres_clock::duration segment_lock_duration);
+
+    ss::future<upload_candidate_with_locks> get_next_compacted_segment(
+      model::offset begin_inclusive,
+      storage::log log,
+      const cloud_storage::partition_manifest& manifest,
+      ss::lowres_clock::duration segment_lock_duration);
 
 private:
     /// Check if the upload have to be forced due to timeout
@@ -83,9 +111,6 @@ private:
       model::offset adjusted_lso,
       storage::log,
       const storage::offset_translator_state&);
-
-    lookup_result
-    find_compacted_segment(model::offset start_offset, storage::log log);
 
     model::ntp _ntp;
     std::optional<segment_time_limit> _upload_limit;

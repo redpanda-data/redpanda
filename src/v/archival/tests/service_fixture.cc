@@ -96,6 +96,38 @@ static segment_layout write_random_batches(
     return layout;
 }
 
+segment_layout write_random_batches_with_single_record(
+  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches) {
+    segment_layout layout{
+      .base_offset = seg->offsets().base_offset,
+    };
+
+    ss::circular_buffer<model::record_batch> batches;
+    batches.reserve(num_batches);
+
+    auto ts = model::timestamp::now();
+    auto o = seg->offsets().base_offset;
+
+    for (int i = 0; i < num_batches; i++) {
+        auto b = model::test::make_random_batch(
+          o, 1, true, model::record_batch_type::raft_data, std::nullopt, ts);
+        o = b.last_offset() + model::offset(1);
+        b.set_term(model::term_id(0));
+        batches.push_back(std::move(b));
+    }
+
+    vlog(fixt_log.debug, "Generated {} random batches", batches.size());
+    for (const auto& batch : batches) {
+        vlog(fixt_log.debug, "Generated random batch {}", batch);
+        layout.ranges.push_back({
+          .base_offset = batch.base_offset(),
+          .last_offset = batch.last_offset(),
+        });
+    }
+    write_batches(seg, std::move(batches));
+    return layout;
+}
+
 std::tuple<archival::configuration, cloud_storage::configuration>
 get_configurations() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
@@ -104,7 +136,8 @@ get_configurations() {
       .access_key = cloud_roles::public_key_str("acess-key"),
       .secret_key = cloud_roles::private_key_str("secret-key"),
       .region = cloud_roles::aws_region_name("us-east-1"),
-    };
+      ._probe = ss::make_shared(
+        s3::client_probe(net::metrics_disabled::yes, "", ""))};
     s3conf.server_addr = server_addr;
     archival::configuration aconf;
     aconf.bucket_name = s3::bucket_name("test-bucket");
@@ -210,14 +243,16 @@ storage::api& archiver_fixture::get_local_storage_api() {
 
 void archiver_fixture::init_storage_api_local(
   const std::vector<segment_desc>& segm,
-  std::optional<storage::ntp_config::default_overrides> overrides) {
-    initialize_shard(get_local_storage_api(), segm, overrides);
+  std::optional<storage::ntp_config::default_overrides> overrides,
+  bool fit_segments) {
+    initialize_shard(get_local_storage_api(), segm, overrides, fit_segments);
 }
 
 void archiver_fixture::initialize_shard(
   storage::api& api,
   const std::vector<segment_desc>& segm,
-  std::optional<storage::ntp_config::default_overrides> overrides) {
+  std::optional<storage::ntp_config::default_overrides> overrides,
+  bool fit_segments) {
     absl::flat_hash_map<model::ntp, size_t> all_ntp;
     for (const auto& d : segm) {
         storage::ntp_config ntpc(d.ntp, data_dir.string());
@@ -233,8 +268,15 @@ void archiver_fixture::initialize_shard(
                        10)
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
-        auto layout = write_random_batches(
-          seg, d.num_batches ? d.num_batches.value() : 1, d.timestamp);
+
+        segment_layout layout;
+        if (fit_segments) {
+            layout = write_random_batches_with_single_record(
+              seg, d.num_batches.value());
+        } else {
+            layout = write_random_batches(
+              seg, d.num_batches.value_or(1), d.timestamp);
+        }
 
         layouts[d.ntp].push_back(std::move(layout));
         vlog(fixt_log.trace, "segment close");
@@ -333,6 +375,38 @@ void segment_matcher<Fixture>::verify_segment(
       expected.size(),
       actual.size());
     BOOST_REQUIRE(actual == expected); // NOLINT
+}
+
+template<class Fixture>
+void segment_matcher<Fixture>::verify_segments(
+  const model::ntp& ntp,
+  const std::vector<archival::segment_name>& names,
+  const seastar::sstring& expected,
+  size_t expected_size) {
+    std::vector<ss::lw_shared_ptr<storage::segment>> segments;
+    segments.reserve(names.size());
+    std::transform(
+      names.begin(),
+      names.end(),
+      std::back_inserter(segments),
+      [this, &ntp](auto n) { return get_segment(ntp, n); });
+
+    storage::concat_segment_reader_view v{
+      segments, 0, segments.back()->size_bytes(), ss::default_priority_class()};
+
+    auto stream = v.take_stream();
+    auto data = stream.read_exactly(expected_size).get0();
+
+    v.close().get();
+    stream.close().get();
+
+    ss::sstring actual = {data.get(), data.size()};
+    vlog(
+      fixt_log.info,
+      "expected {} bytes, got {}",
+      expected.size(),
+      actual.size());
+    BOOST_REQUIRE(actual == expected);
 }
 
 template<class Fixture>

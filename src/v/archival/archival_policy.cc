@@ -11,6 +11,7 @@
 #include "archival/archival_policy.h"
 
 #include "archival/logger.h"
+#include "archival/segment_reupload.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_translator_state.h"
@@ -26,6 +27,8 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
+#include <utility>
+
 namespace {
 
 std::optional<storage::disk_log_impl*> get_concrete_log_impl(storage::log log) {
@@ -39,6 +42,8 @@ std::optional<storage::disk_log_impl*> get_concrete_log_impl(storage::log log) {
     return plog;
 }
 
+constexpr size_t compacted_segment_size_multiplier{3};
+
 } // namespace
 
 namespace archival {
@@ -46,23 +51,33 @@ namespace archival {
 using namespace std::chrono_literals;
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
-    if (!c.source) {
+    if (c.sources.empty()) {
         s << "{empty}";
         return s;
     }
+
+    std::vector<ss::sstring> source_names;
+    source_names.reserve(c.sources.size());
+    std::transform(
+      c.sources.begin(),
+      c.sources.end(),
+      std::back_inserter(source_names),
+      [](const auto& src) { return src->filename(); });
 
     fmt::print(
       s,
       "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
       "file_offset: {}, content_length: {}, final_offset: {}, "
-      "final_file_offset: {}}}",
-      c.source->offsets(),
+      "final_file_offset: {}, term: {}, source names: {}}}",
+      c.sources.front()->offsets(),
       c.exposed_name,
       c.starting_offset,
       c.file_offset,
       c.content_length,
       c.final_offset,
-      c.final_file_offset);
+      c.final_file_offset,
+      c.term,
+      source_names);
     return s;
 }
 
@@ -88,74 +103,6 @@ bool archival_policy::upload_deadline_reached() {
         _upload_deadline = now + (*_upload_limit)();
     }
     return _upload_deadline < now;
-}
-
-archival_policy::lookup_result archival_policy::find_compacted_segment(
-  model::offset start_offset, storage::log log) {
-    vlog(
-      archival_log.debug,
-      "Finding next compacted segment for {} , start_offset: {}",
-      _ntp,
-      start_offset);
-
-    auto maybe_plog = get_concrete_log_impl(std::move(log));
-    if (!maybe_plog) {
-        vlog(
-          archival_log.debug,
-          "Finding next compacted segment for {}: can't find candidate, no "
-          "segments or "
-          "in-memory log",
-          _ntp);
-        return {};
-    }
-
-    auto plog = maybe_plog.value();
-    const auto& set = plog->segments();
-    auto it = set.lower_bound(start_offset);
-
-    // iterator can reach end for two reasons, either all segments are behind
-    // start_offset or all segments are ahead of start_offset,
-    // which can happen in case of prefix truncation. In the second case, we
-    // want to find the first segment ahead of the start_offset.
-    if (it == set.end() && start_offset < plog->offsets().start_offset) {
-        it = set.begin();
-    }
-
-    if (it == set.end()) {
-        vlog(
-          archival_log.debug,
-          "Finding next compacted segment for {}: can't find candidate, "
-          "all "
-          "segment offsets are "
-          "less than start_offset: {}",
-          _ntp,
-          start_offset);
-        return {};
-    }
-
-    // it now points to either a real segment containing start_offset or the
-    // first segment ahead of start_offset.
-    const auto& segment = *it;
-
-    // This check may incorrectly fail after a node starts up, because even a
-    // compacted segment will have `finished_self_compaction()` to false by
-    // default. The first invocation of housekeeping scan by log manager will
-    // mark all compacted segments as `finished_self_compaction()`, by checking
-    // `.compaction_index` file state.
-    if (segment->finished_self_compaction()) {
-        return {
-          .segment = segment, .ntp_conf = &plog->config(), .forced = false};
-    }
-
-    // The segment we found is non-compacted. We will not find any compacted
-    // segments after a non-compacted segment, so we can stop the search.
-    vlog(
-      archival_log.debug,
-      "Finding next compacted segment for {}: no compacted "
-      "segments after start_offset: {}",
-      _ntp,
-      start_offset);
-    return {};
 }
 
 archival_policy::lookup_result archival_policy::find_segment(
@@ -287,6 +234,136 @@ static ss::output_stream<char> make_null_output_stream() {
     return ostr;
 }
 
+ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
+  model::offset begin_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp base_timestamp,
+  ss::io_priority_class io_priority) {
+    auto ix_begin = segment->index().find_nearest(begin_inclusive);
+    size_t scan_from = ix_begin ? ix_begin->filepos : 0;
+    model::offset sto = ix_begin ? ix_begin->offset
+                                 : segment->offsets().base_offset;
+    auto reader_handle = co_await segment->reader().data_stream(
+      scan_from, io_priority);
+    auto ostr = make_null_output_stream();
+
+    size_t bytes_to_skip = 0;
+    model::timestamp ts = base_timestamp;
+    auto res = co_await storage::transform_stream(
+      reader_handle.take_stream(),
+      std::move(ostr),
+      [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
+          if (hdr.last_offset() < begin_inclusive) {
+              // The current record batch is accepted and will contribute to
+              // skipped length. This means that if we will read segment
+              // file starting from the 'scan_from' + 'res' we will be
+              // looking at the next record batch. We might not see the
+              // offset that we're looking for in this segment. This is why
+              // we need to update 'sto' per batch.
+              sto = hdr.last_offset() + model::offset(1);
+              // TODO: update base_timestamp
+              return storage::batch_consumer::consume_result::accept_batch;
+          }
+          ts = hdr.first_timestamp;
+          return storage::batch_consumer::consume_result::stop_parser;
+      });
+    co_await reader_handle.close();
+    if (res.has_error()) {
+        vlog(
+          archival_log.error,
+          "Can't read segment file, error: {}",
+          res.error());
+        throw std::system_error(res.error());
+    } else {
+        bytes_to_skip = scan_from + res.value();
+        vlog(
+          archival_log.debug,
+          "Scanned {} bytes starting from {}, total {}. Adjusted starting "
+          "offset: {}",
+          res.value(),
+          scan_from,
+          bytes_to_skip,
+          sto);
+    }
+    // Adjust content length and offsets at the begining of the file
+    co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
+}
+ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
+  model::offset end_inclusive,
+  const ss::lw_shared_ptr<storage::segment>& segment,
+  model::timestamp max_timestamp,
+  ss::io_priority_class io_priority) {
+    // Handle truncated segment upload (if the upload was triggered by time
+    // limit). Note that the upload is not necessarily started at the beginning
+    // of the segment.
+    // Lookup the index, if the index is available and some value is found
+    // use it as a starting point otherwise, start from the beginning.
+    auto ix_end = segment->index().find_nearest(end_inclusive);
+    size_t fsize = segment->reader().file_size();
+
+    // NOTE: Index lookup might return an offset which isn't committed yet.
+    // Subsequent call to segment_reader::data_stream will fail in this
+    // case. In order to avoid this we need to make another index lookup
+    // to find a lower offset which is committed.
+    while (ix_end && ix_end->filepos >= fsize) {
+        vlog(archival_log.debug, "The position is not flushed {}", *ix_end);
+        auto lookup_offset = ix_end->offset - model::offset(1);
+        ix_end = segment->index().find_nearest(lookup_offset);
+        vlog(archival_log.debug, "Re-adjusted position {}", *ix_end);
+    }
+
+    size_t scan_from = ix_end ? ix_end->filepos : 0;
+    model::offset fo = ix_end ? ix_end->offset : segment->offsets().base_offset;
+    vlog(
+      archival_log.debug,
+      "Segment index lookup returned: {}, scanning from pos {} - offset {}",
+      ix_end,
+      scan_from,
+      fo);
+
+    auto reader_handle = co_await segment->reader().data_stream(
+      scan_from, io_priority);
+    auto ostr = make_null_output_stream();
+    model::timestamp ts = max_timestamp;
+    size_t stop_at = 0;
+    auto res = co_await storage::transform_stream(
+      reader_handle.take_stream(),
+      std::move(ostr),
+      [off_end = end_inclusive, &fo, &ts](model::record_batch_header& hdr) {
+          if (hdr.last_offset() <= off_end) {
+              // If last offset of the record batch is within the range
+              // we need to add it to the output stream (to calculate the
+              // total size).
+              fo = hdr.last_offset();
+              // TODO: update max_timestamp
+              return storage::batch_consumer::consume_result::accept_batch;
+          }
+          ts = hdr.max_timestamp;
+          return storage::batch_consumer::consume_result::stop_parser;
+      });
+    co_await reader_handle.close();
+
+    if (res.has_error()) {
+        vlog(
+          archival_log.error,
+          "Can't read segment file, error: {}",
+          res.error());
+        throw std::system_error(res.error());
+    } else {
+        stop_at = scan_from + res.value();
+        vlog(
+          archival_log.debug,
+          "Scanned {} bytes starting from {}, total {}. Adjusted final "
+          "offset: {}",
+          res.value(),
+          scan_from,
+          stop_at,
+          fo);
+    }
+
+    co_return offset_to_file_pos_result{fo, stop_at, ts};
+}
+
 /// This function computes offsets for the upload (inc. file offets)
 /// If the full segment is uploaded the segment is not scanned.
 /// If the upload is partial, the partial scan will be performed if
@@ -319,140 +396,18 @@ static ss::future<> get_file_range(
         co_return;
     }
     if (begin_inclusive != segment->offsets().base_offset) {
-        // The upload is not started at the begining of the segment.
-        // The segment may or may not be sealed and the final offset
-        // may or may not be the last offset of the segment. This code
-        // path only deals with the starting point.
-        //
-        // Note that the offset can be inside the record batch. We can
-        // only start the upload on record batch boundary. The implementation
-        // below tries to find out real starting offset of the upload
-        // as well as file offset.
-        // Lookup the index, if the index is available and some value is found
-        // use it as a starting point otherwise, start from the begining.
-        auto ix_begin = segment->index().find_nearest(begin_inclusive);
-        size_t scan_from = ix_begin ? ix_begin->filepos : 0;
-        model::offset sto = ix_begin ? ix_begin->offset
-                                     : segment->offsets().base_offset;
-        auto reader_handle = co_await segment->reader().data_stream(
-          scan_from, io_priority);
-        auto ostr = make_null_output_stream();
-
-        size_t bytes_to_skip = 0;
-        model::timestamp ts = upl.base_timestamp;
-        auto res = co_await storage::transform_stream(
-          reader_handle.take_stream(),
-          std::move(ostr),
-          [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
-              if (hdr.last_offset() < begin_inclusive) {
-                  // The current record batch is accepted and will contribute to
-                  // skipped length. This means that if we will read segment
-                  // file starting from the 'scan_from' + 'res' we will be
-                  // looking at the next record batch. We might not see the
-                  // offset that we're looking for in this segment. This is why
-                  // we need to update 'sto' per batch.
-                  sto = hdr.last_offset() + model::offset(1);
-                  // TODO: update base_timestamp
-                  return storage::batch_consumer::consume_result::accept_batch;
-              }
-              ts = hdr.first_timestamp;
-              return storage::batch_consumer::consume_result::stop_parser;
-          });
-        co_await reader_handle.close();
-        if (res.has_error()) {
-            vlog(
-              archival_log.error,
-              "Can't read segment file, error: {}",
-              res.error());
-            throw std::system_error(res.error());
-        } else {
-            bytes_to_skip = scan_from + res.value();
-            vlog(
-              archival_log.debug,
-              "Scanned {} bytes starting from {}, total {}. Adjusted starting "
-              "offset: {}",
-              res.value(),
-              scan_from,
-              bytes_to_skip,
-              sto);
-        }
-        // Adjust content lenght and offsets at the begining of the file
-        upl.starting_offset = sto;
-        upl.file_offset = bytes_to_skip;
-        upl.base_timestamp = ts;
+        auto seek = co_await convert_begin_offset_to_file_pos(
+          begin_inclusive, segment, upl.base_timestamp, io_priority);
+        upl.starting_offset = seek.offset;
+        upl.file_offset = seek.bytes;
+        upl.base_timestamp = seek.ts;
     }
     if (end_inclusive) {
-        // Handle truncated segment upload (if the upload was triggered by time
-        // limit). Note that the upload is not necessary started at the begining
-        // of the segment.
-        // Lookup the index, if the index is available and some value is found
-        // use it as a starting point otherwise, start from the begining.
-        auto ix_end = segment->index().find_nearest(end_inclusive.value());
-
-        // NOTE: Index lookup might return an offset which isn't committed yet.
-        // Subsequent call to segment_reader::data_stream will fail in this
-        // case. In order to avoid this we need to make another index lookup
-        // to find a lower offset which is committed.
-        while (ix_end && ix_end->filepos >= fsize) {
-            vlog(archival_log.debug, "The position is not flushed {}", *ix_end);
-            auto lookup_offset = ix_end->offset - model::offset(1);
-            ix_end = segment->index().find_nearest(lookup_offset);
-            vlog(archival_log.debug, "Re-adjusted position {}", *ix_end);
-        }
-
-        size_t scan_from = ix_end ? ix_end->filepos : 0;
-        model::offset fo = ix_end ? ix_end->offset
-                                  : segment->offsets().base_offset;
-        vlog(
-          archival_log.debug,
-          "Segment index lookup returned: {}, scanning from pos {} - offset {}",
-          ix_end,
-          scan_from,
-          fo);
-
-        auto reader_handle = co_await segment->reader().data_stream(
-          scan_from, io_priority);
-        auto ostr = make_null_output_stream();
-        model::timestamp ts = upl.max_timestamp;
-        size_t stop_at = 0;
-        auto res = co_await storage::transform_stream(
-          reader_handle.take_stream(),
-          std::move(ostr),
-          [off_end = end_inclusive.value(), &fo, &ts](
-            model::record_batch_header& hdr) {
-              if (hdr.last_offset() <= off_end) {
-                  // If last offset of the record batch is within the range
-                  // we need to add it to the output stream (to calculate the
-                  // total size).
-                  fo = hdr.last_offset();
-                  // TODO: update max_timestamp
-                  return storage::batch_consumer::consume_result::accept_batch;
-              }
-              ts = hdr.max_timestamp;
-              return storage::batch_consumer::consume_result::stop_parser;
-          });
-        co_await reader_handle.close();
-
-        if (res.has_error()) {
-            vlog(
-              archival_log.error,
-              "Can't read segment file, error: {}",
-              res.error());
-            throw std::system_error(res.error());
-        } else {
-            stop_at = scan_from + res.value();
-            vlog(
-              archival_log.debug,
-              "Scanned {} bytes starting from {}, total {}. Adjusted final "
-              "offset: {}",
-              res.value(),
-              scan_from,
-              stop_at,
-              fo);
-        }
-        upl.final_offset = fo;
-        upl.final_file_offset = stop_at;
-        upl.max_timestamp = ts;
+        auto seek = co_await convert_end_offset_to_file_pos(
+          end_inclusive.value(), segment, upl.max_timestamp, io_priority);
+        upl.final_offset = seek.offset;
+        upl.final_file_offset = seek.bytes;
+        upl.max_timestamp = seek.ts;
     }
     // Recompute content_length based on file offsets
     vassert(
@@ -495,12 +450,13 @@ static ss::future<> get_file_range(
 ///       a name '1000-1-v1.log'. If we were only able to find offset
 ///       990 instead of 1000, we will upload starting from it and
 ///       the name will be '990-1-v1.log'.
-static ss::future<upload_candidate> create_upload_candidate(
+static ss::future<upload_candidate_with_locks> create_upload_candidate(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   const ss::lw_shared_ptr<storage::segment>& segment,
   const storage::ntp_config* ntp_conf,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  ss::lowres_clock::duration segment_lock_duration) {
     auto term = segment->offsets().term;
     auto version = storage::record_version_type::v1;
     auto meta = storage::segment_path::parse_segment_filename(
@@ -509,7 +465,11 @@ static ss::future<upload_candidate> create_upload_candidate(
         version = meta->version;
     }
 
-    upload_candidate result{.source = segment};
+    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
+    std::vector<ss::rwlock::holder> locks;
+    locks.emplace_back(co_await segment->read_lock(deadline));
+    upload_candidate result{.term = term, .sources = {segment}};
+
     co_await get_file_range(
       begin_inclusive, end_inclusive, segment, result, io_priority);
     if (result.starting_offset != segment->offsets().base_offset) {
@@ -529,51 +489,77 @@ static ss::future<upload_candidate> create_upload_candidate(
           "Using original segment name: {}",
           result.exposed_name);
     }
-    co_return result;
+
+    co_return upload_candidate_with_locks{result, std::move(locks)};
 }
 
-ss::future<upload_candidate> archival_policy::get_next_candidate(
+ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   storage::log log,
   const storage::offset_translator_state& ot_state,
-  search_for_compacted_segments search_compacted) {
+  ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
-
-    lookup_result result;
-    std::optional<model::offset> last;
-    if (search_compacted) {
-        result = find_compacted_segment(begin_inclusive, std::move(log));
-    } else {
-        result = find_segment(
-          begin_inclusive, adjusted_lso, std::move(log), ot_state);
-        // We need to adjust LSO since it points to the first
-        // recordbatch with uncommitted transactions data
-        if (result.forced) {
-            last = adjusted_lso;
-        }
+    auto [segment, ntp_conf, forced] = find_segment(
+      begin_inclusive, adjusted_lso, std::move(log), ot_state);
+    if (segment.get() == nullptr || ntp_conf == nullptr) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
-
-    if (result.segment.get() == nullptr || result.ntp_conf == nullptr) {
-        co_return upload_candidate{};
-    }
-
+    // We need to adjust LSO since it points to the first
+    // recordbatch with uncommitted transactions data
+    auto last = forced ? std::make_optional(adjusted_lso) : std::nullopt;
     vlog(
       archival_log.debug,
       "Upload policy for {}, creating upload candidate: start_offset {}, "
       "segment offsets {}, adjusted LSO {}",
       _ntp,
       begin_inclusive,
-      result.segment->offsets(),
+      segment->offsets(),
       adjusted_lso);
     auto upload = co_await create_upload_candidate(
-      begin_inclusive, last, result.segment, result.ntp_conf, _io_priority);
-    if (upload.content_length == 0) {
-        co_return upload_candidate{};
+      begin_inclusive,
+      last,
+      segment,
+      ntp_conf,
+      _io_priority,
+      segment_lock_duration);
+    if (upload.candidate.content_length == 0) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     co_return upload;
+}
+
+ss::future<upload_candidate_with_locks>
+archival_policy::get_next_compacted_segment(
+  model::offset begin_inclusive,
+  storage::log log,
+  const cloud_storage::partition_manifest& manifest,
+  ss::lowres_clock::duration segment_lock_duration) {
+    auto plog = get_concrete_log_impl(std::move(log));
+    if (!plog) {
+        vlog(
+          archival_log.warn,
+          "Upload policy find next compacted segment: cannot find log for ntp: "
+          "{}",
+          _ntp);
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
+    segment_collector compacted_segment_collector{
+      begin_inclusive,
+      manifest,
+      **plog,
+      config::shard_local_cfg().compacted_log_segment_size
+        * compacted_segment_size_multiplier};
+
+    compacted_segment_collector.collect_segments();
+    if (!compacted_segment_collector.can_replace_manifest_segment()) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
+
+    co_return co_await compacted_segment_collector.make_upload_candidate(
+      _io_priority, segment_lock_duration);
 }
 
 } // namespace archival

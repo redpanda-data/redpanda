@@ -6,23 +6,22 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import itertools
 
-from rptest.services.cluster import cluster
+from ducktape.errors import TimeoutError
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from ducktape.errors import TimeoutError
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.rpk import RpkTool
 
-from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings, MetricsEndpoint
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings, MetricsEndpoint
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_segments_removal, segments_count,
                          expect_exception)
-from rptest.utils.si_utils import S3View
+from rptest.utils.si_utils import S3Snapshot
 
 
 def bytes_for_segments(want_segments, segment_size):
@@ -418,8 +417,8 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                             bytes_to_produce=total_bytes)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3View([topic], self.redpanda.s3_client,
-                                 self.s3_bucket_name, self.logger)
+            s3_snapshot = S3Snapshot([topic], self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
             return cloud_log_size

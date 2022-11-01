@@ -96,6 +96,9 @@ struct archival_metadata_stm::snapshot
     /// using older version (snapshot v0) and we need to rebuild the offset from
     /// segments)
     model::offset last_offset;
+    /// Last uploaded offset belonging to a compacted segment. If set to
+    /// default, the next upload attempt will align this with start of manifest.
+    model::offset last_uploaded_compacted_offset;
 };
 
 std::vector<archival_metadata_stm::segment>
@@ -152,7 +155,9 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .segments = std::move(segments),
       .replaced = std::move(replaced),
       .start_offset = m.get_start_offset().value_or(model::offset{}),
-      .last_offset = m.get_last_offset()});
+      .last_offset = m.get_last_offset(),
+      .last_uploaded_compacted_offset
+      = m.get_last_uploaded_compacted_offset()});
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -524,6 +529,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       _raft->log_config().get_initial_revision(),
       snap.start_offset,
       snap.last_offset,
+      snap.last_uploaded_compacted_offset,
       header.offset,
       snap.segments,
       snap.replaced);
@@ -548,7 +554,9 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       .segments = std::move(segments),
       .replaced = std::move(replaced),
       .start_offset = _manifest->get_start_offset().value_or(model::offset()),
-      .last_offset = _manifest->get_last_offset()});
+      .last_offset = _manifest->get_last_offset(),
+      .last_uploaded_compacted_offset
+      = _manifest->get_last_uploaded_compacted_offset()});
 
     vlog(
       _logger.debug,

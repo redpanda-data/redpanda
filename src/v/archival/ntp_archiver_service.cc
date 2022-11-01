@@ -196,28 +196,31 @@ ss::future<> ntp_archiver::upload_loop() {
                               .cloud_storage_metadata_sync_timeout_ms.value();
         co_await _partition->archival_meta_stm()->sync(sync_timeout);
 
-        auto result = co_await upload_next_candidates();
-        if (result.num_failed != 0) {
+        auto [non_compacted_upload_result, compacted_upload_result]
+          = co_await upload_next_candidates();
+        if (non_compacted_upload_result.num_failed != 0) {
             // The logic in class `remote` already does retries: if we get here,
             // it means the upload failed after several retries, indicating
             // something non-transient may be wrong.  Hence error severity.
             vlog(
               _rtclog.error,
               "Failed to upload {} segments out of {}",
-              result.num_failed,
-              result.num_succeded + result.num_failed + result.num_cancelled);
-        } else if (result.num_succeded != 0) {
+              non_compacted_upload_result.num_failed,
+              non_compacted_upload_result.num_succeeded
+                + non_compacted_upload_result.num_failed
+                + non_compacted_upload_result.num_cancelled);
+        } else if (non_compacted_upload_result.num_succeeded != 0) {
             vlog(
               _rtclog.debug,
               "Successfuly uploaded {} segments",
-              result.num_succeded);
+              non_compacted_upload_result.num_succeeded);
         }
 
-        if (result.num_cancelled != 0) {
+        if (non_compacted_upload_result.num_cancelled != 0) {
             vlog(
               _rtclog.debug,
               "Cancelled upload of {} segments",
-              result.num_cancelled);
+              non_compacted_upload_result.num_cancelled);
         }
 
         if (ss::lowres_clock::now() >= _next_housekeeping) {
@@ -229,7 +232,7 @@ ss::future<> ntp_archiver::upload_loop() {
             break;
         }
 
-        if (result.num_succeded == 0) {
+        if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU
             // utilization when redpanda is not receiving any data and there
             // is nothing to update. Also, we want to limit amount of
@@ -391,6 +394,28 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     co_return co_await _remote.upload_manifest(_bucket, manifest(), fib);
 }
 
+remote_segment_path
+ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
+    auto key = cloud_storage::segment_name_components{
+      .base_offset = candidate.starting_offset,
+      .term = candidate.term,
+    };
+    auto front = candidate.sources.front();
+    cloud_storage::partition_manifest::value val{
+      .is_compacted = front->is_compacted_segment()
+                      && front->finished_self_compaction(),
+      .size_bytes = candidate.content_length,
+      .base_offset = candidate.starting_offset,
+      .committed_offset = candidate.final_offset,
+      .ntp_revision = _rev,
+      .archiver_term = _start_term,
+      .segment_term = candidate.term,
+      .sname_format = cloud_storage::segment_name_format::v2,
+    };
+
+    return manifest().generate_segment_path(key, val);
+}
+
 // from offset to offset (by record batch boundary)
 ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_segment(upload_candidate candidate) {
@@ -399,19 +424,8 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
-    auto path = cloud_storage::generate_remote_segment_path(
-      _ntp, _rev, candidate.exposed_name, _start_term);
-
+    auto path = segment_path_for_candidate(candidate);
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
-
-    auto reset_func =
-      [this,
-       candidate]() -> ss::future<std::unique_ptr<storage::stream_provider>> {
-        auto handle = co_await candidate.source->reader().data_stream(
-          candidate.file_offset, candidate.final_file_offset, _io_priority);
-        co_return std::make_unique<storage::segment_reader_handle>(
-          std::move(handle));
-    };
 
     auto original_term = _partition->term();
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
@@ -433,6 +447,17 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
           return lost_leadership;
       },
     };
+
+    auto reset_func =
+      [this,
+       candidate]() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+        co_return std::make_unique<storage::concat_segment_reader_view>(
+          candidate.sources,
+          candidate.file_offset,
+          candidate.final_file_offset,
+          _io_priority);
+    };
+
     co_return co_await _remote.upload_segment(
       _bucket,
       path,
@@ -462,29 +487,44 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
         co_return cloud_storage::upload_result::success;
     }
 
-    auto path = cloud_storage::generate_remote_segment_path(
-      _ntp, _rev, candidate.exposed_name, _start_term);
+    auto path = segment_path_for_candidate(candidate);
 
     cloud_storage::tx_range_manifest manifest(path, tx_range);
 
     co_return co_await _remote.upload_manifest(_bucket, manifest, fib);
 }
 
-ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
-  model::offset start_upload_offset, model::offset last_stable_offset) {
+ss::future<ntp_archiver::scheduled_upload>
+ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
+    auto start_upload_offset = upload_ctx.start_offset;
+    auto last_stable_offset = upload_ctx.last_offset;
     std::optional<storage::log> log = _partition_manager.log(_ntp);
     if (!log) {
         vlog(_rtclog.warn, "couldn't find log in log manager");
         co_return scheduled_upload{.stop = ss::stop_iteration::yes};
     }
 
-    auto upload = co_await _policy.get_next_candidate(
-      start_upload_offset,
-      last_stable_offset,
-      *log,
-      *_partition->get_offset_translator_state());
+    upload_candidate_with_locks upload_with_locks;
+    switch (upload_ctx.upload_kind) {
+    case segment_upload_kind::non_compacted:
+        upload_with_locks = co_await _policy.get_next_candidate(
+          start_upload_offset,
+          last_stable_offset,
+          *log,
+          *_partition->get_offset_translator_state(),
+          _segment_upload_timeout);
+        break;
+    case segment_upload_kind::compacted:
+        const auto& m = manifest();
+        upload_with_locks = co_await _policy.get_next_compacted_segment(
+          start_upload_offset, *log, m, _segment_upload_timeout);
+        break;
+    }
 
-    if (upload.source.get() == nullptr) {
+    auto upload = upload_with_locks.candidate;
+    auto locks = std::move(upload_with_locks.read_locks);
+
+    if (upload.sources.empty()) {
         vlog(
           _rtclog.debug,
           "upload candidate not found, start_upload_offset: {}, "
@@ -499,10 +539,13 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
           .name = std::nullopt,
           .delta = std::nullopt,
           .stop = ss::stop_iteration::yes,
-          .segment_read_lock = std::nullopt,
+          .segment_read_locks = {},
         };
     }
-    if (manifest().contains(upload.exposed_name)) {
+
+    auto first_source = upload.sources.front();
+    if (
+      manifest().contains(upload.exposed_name) && !upload_ctx.allow_reuploads) {
         // If the manifest already contains the name we have the following
         // cases
         //
@@ -526,7 +569,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         //   - Same as previoius. We need to log error and continue with the
         //   largest offset.
         const auto& meta = manifest().get(upload.exposed_name);
-        auto dirty_offset = upload.source->offsets().dirty_offset;
+        auto dirty_offset = first_source->offsets().dirty_offset;
         if (meta->committed_offset < dirty_offset) {
             vlog(
               _rtclog.info,
@@ -551,20 +594,19 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
               .name = std::nullopt,
               .delta = std::nullopt,
               .stop = ss::stop_iteration::no,
-              .segment_read_lock = std::nullopt,
+              .segment_read_locks = {},
             };
         }
     }
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     start_upload_offset = offset + model::offset(1);
-    auto delta = base
-                 - model::offset_cast(
-                   _partition->get_offset_translator_state()->from_log_offset(
-                     base));
+    auto ot_state = _partition->get_offset_translator_state();
+    auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
+    auto delta_offset_end = upload.final_offset
+                            - model::offset_cast(
+                              ot_state->from_log_offset(upload.final_offset));
 
-    auto segment_lock_deadline = std::chrono::steady_clock::now()
-                                 + _segment_upload_timeout;
     // The upload is successful only if both segment and tx_range are uploaded.
     auto upl_fut
       = ss::when_all(upload_segment(upload), upload_tx(upload))
@@ -581,11 +623,13 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
               }
               return rtx;
           });
+    auto is_compacted = first_source->is_compacted_segment()
+                        && first_source->finished_self_compaction();
     co_return scheduled_upload{
       .result = std::move(upl_fut),
       .inclusive_last_offset = offset,
       .meta = cloud_storage::partition_manifest::segment_meta{
-        .is_compacted = upload.source->is_compacted_segment(),
+        .is_compacted = is_compacted,
         .size_bytes = upload.content_length,
         .base_offset = upload.starting_offset,
         .committed_offset = offset,
@@ -594,10 +638,13 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .delta_offset = delta,
         .ntp_revision = _rev,
         .archiver_term = _start_term,
+        .segment_term = upload.term,
+        .delta_offset_end = delta_offset_end,
+        .sname_format = cloud_storage::segment_name_format::v2,
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
-      .segment_read_lock = co_await upload.source->read_lock(segment_lock_deadline),
+      .segment_read_locks = std::move(locks),
     };
 }
 
@@ -612,59 +659,99 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
                                                      + model::offset(1)
                                                  : model::offset(0);
 
-    vlog(
-      _rtclog.debug,
-      "scheduling uploads, start_upload_offset: {}, last_stable_offset: {}",
+    auto compacted_segments_upload_start = model::next_offset(
+      manifest().get_last_uploaded_compacted_offset());
+
+    std::vector<upload_context> params;
+
+    params.emplace_back(
+      segment_upload_kind::non_compacted,
       start_upload_offset,
-      last_stable_offset);
-    _probe.upload_lag(last_stable_offset - start_upload_offset);
+      last_stable_offset,
+      allow_reuploads_t::no);
 
-    return ss::do_with(
-      std::vector<scheduled_upload>(),
-      size_t(0),
-      start_upload_offset,
-      [this, last_stable_offset](
-        std::vector<scheduled_upload>& scheduled,
-        size_t& ix,
-        model::offset& start_upload_offset) {
-          return ss::repeat([this,
-                             &start_upload_offset,
-                             last_stable_offset,
-                             &scheduled,
-                             &ix] {
-                     if (ix == _concurrency) {
-                         return ss::make_ready_future<ss::stop_iteration>(
-                           ss::stop_iteration::yes);
-                     }
+    if (
+      config::shard_local_cfg().cloud_storage_enable_compacted_topic_reupload()
+      && _partition->get_ntp_config().is_compacted()) {
+        params.emplace_back(
+          segment_upload_kind::compacted,
+          compacted_segments_upload_start,
+          model::offset::max(),
+          allow_reuploads_t::yes);
+    }
 
-                     if (!upload_loop_can_continue()) {
-                         return ss::make_ready_future<ss::stop_iteration>(
-                           ss::stop_iteration::yes);
-                     }
-
-                     ++ix;
-                     return schedule_single_upload(
-                              start_upload_offset, last_stable_offset)
-                       .then([&scheduled,
-                              &start_upload_offset](scheduled_upload upload) {
-                           auto res = upload.stop;
-                           start_upload_offset = upload.inclusive_last_offset
-                                                 + model::offset(1);
-                           scheduled.push_back(std::move(upload));
-                           return ss::make_ready_future<ss::stop_iteration>(
-                             res);
-                       });
-                 })
-            .then([&scheduled] {
-                return ss::make_ready_future<std::vector<scheduled_upload>>(
-                  std::move(scheduled));
-            });
-      });
+    co_return co_await schedule_uploads(std::move(params));
 }
 
-ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
-  std::vector<ntp_archiver::scheduled_upload> scheduled) {
-    ntp_archiver::batch_result total{};
+ss::future<std::vector<ntp_archiver::scheduled_upload>>
+ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
+    std::vector<scheduled_upload> scheduled_uploads;
+    auto uploads_remaining = _concurrency;
+    for (auto& ctx : loop_contexts) {
+        if (uploads_remaining <= 0) {
+            vlog(
+              _rtclog.info,
+              "no more upload slots remaining, skipping upload kind: {}, start "
+              "offset: {}, last offset: {}, uploads remaining: {}",
+              ctx.upload_kind,
+              ctx.start_offset,
+              ctx.last_offset,
+              uploads_remaining);
+            break;
+        }
+
+        vlog(
+          _rtclog.debug,
+          "scheduling uploads, start offset: {}, last offset: {}, upload kind: "
+          "{}, uploads remaining: {}",
+          ctx.start_offset,
+          ctx.last_offset,
+          ctx.upload_kind,
+          uploads_remaining);
+
+        // this metric is only relevant for non compacted uploads.
+        if (ctx.upload_kind == segment_upload_kind::non_compacted) {
+            _probe.upload_lag(ctx.last_offset - ctx.start_offset);
+        }
+
+        co_await ss::repeat(
+          [this, &ctx, &uploads_remaining]() -> ss::future<ss::stop_iteration> {
+              if (uploads_remaining <= 0 || !upload_loop_can_continue()) {
+                  co_return ss::stop_iteration::yes;
+              }
+
+              auto should_stop = co_await ctx.schedule_single_upload(*this);
+
+              // At the end of each context is an upload with should_stop=yes,
+              // which does not upload anything but signals the end of the
+              // uploads. Do not decrement remaining uploads for this type of
+              // return value. When should_stop=no, we have a real upload and
+              // decrement the counter.
+              if (should_stop == ss::stop_iteration::no) {
+                  uploads_remaining -= 1;
+              }
+              co_return should_stop;
+          });
+
+        vlog(
+          _rtclog.debug,
+          "scheduled {} uploads for upload kind: {}, uploads remaining: {}",
+          ctx.uploads.size(),
+          ctx.upload_kind,
+          uploads_remaining);
+
+        scheduled_uploads.insert(
+          scheduled_uploads.end(),
+          std::make_move_iterator(ctx.uploads.begin()),
+          std::make_move_iterator(ctx.uploads.end()));
+    }
+
+    co_return scheduled_uploads;
+}
+
+ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
+  std::vector<scheduled_upload> scheduled, segment_upload_kind segment_kind) {
+    ntp_archiver::upload_group_result total{};
     std::vector<ss::future<cloud_storage::upload_result>> flist;
     std::vector<size_t> ixupload;
     for (size_t ix = 0; ix < scheduled.size(); ix++) {
@@ -683,7 +770,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         // We exit early even if we have successfully uploaded some segments to
         // avoid interfering with an archiver that could have started on another
         // node.
-        co_return batch_result{};
+        co_return upload_group_result{};
     }
 
     absl::flat_hash_map<cloud_storage::upload_result, size_t> upload_results;
@@ -691,11 +778,11 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         ++upload_results[result];
     }
 
-    total.num_succeded = upload_results[cloud_storage::upload_result::success];
+    total.num_succeeded = upload_results[cloud_storage::upload_result::success];
     total.num_cancelled
       = upload_results[cloud_storage::upload_result::cancelled];
     total.num_failed = results.size()
-                       - (total.num_succeded + total.num_cancelled);
+                       - (total.num_succeeded + total.num_cancelled);
 
     cloud_storage::partition_manifest mdiff(_ntp, _rev);
     for (size_t i = 0; i < results.size(); i++) {
@@ -704,24 +791,27 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         }
         const auto& upload = scheduled[ixupload[i]];
 
-        _probe.uploaded(*upload.delta);
-        _probe.uploaded_bytes(upload.meta->size_bytes);
-        model::offset expected_base_offset;
-        if (manifest().get_last_offset() < model::offset{0}) {
-            expected_base_offset = model::offset{0};
-        } else {
-            expected_base_offset = manifest().get_last_offset()
-                                   + model::offset{1};
-        }
-        if (upload.meta->base_offset > expected_base_offset) {
-            _probe.gap_detected(
-              upload.meta->base_offset - expected_base_offset);
+        if (segment_kind == segment_upload_kind::non_compacted) {
+            _probe.uploaded(*upload.delta);
+            _probe.uploaded_bytes(upload.meta->size_bytes);
+
+            model::offset expected_base_offset;
+            if (manifest().get_last_offset() < model::offset{0}) {
+                expected_base_offset = model::offset{0};
+            } else {
+                expected_base_offset = manifest().get_last_offset()
+                                       + model::offset{1};
+            }
+            if (upload.meta->base_offset > expected_base_offset) {
+                _probe.gap_detected(
+                  upload.meta->base_offset - expected_base_offset);
+            }
         }
 
         mdiff.add(segment_name(*upload.name), *upload.meta);
     }
 
-    if (total.num_succeded != 0) {
+    if (total.num_succeeded != 0) {
         vassert(
           _partition, "Partition is not set for {} archiver", _ntp.path());
         vassert(
@@ -740,13 +830,56 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 
         vlog(
           _rtclog.debug,
-          "successfully uploaded {} segments (failed {} uploads), "
-          "re-uploading manifest file",
-          total.num_succeded,
+          "successfully uploaded {} segments (failed {} uploads)",
+          total.num_succeeded,
           total.num_failed);
+    }
 
-        auto res = co_await upload_manifest();
-        if (res != cloud_storage::upload_result::success) {
+    co_return total;
+}
+
+ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
+  std::vector<ntp_archiver::scheduled_upload> scheduled) {
+    // Split the set of scheduled uploads into compacted and non compacted
+    // uploads, and then wait for them separately. They can also be waited on
+    // together, but in the wait function we stop on the first failed upload.
+    // If we wait on them together, a failed upload during compacted schedule
+    // will stop any subsequent non-compacted uploads from being processed, and
+    // as a result the upload offset will not be advanced for non-compacted
+    // uploads.
+    // Because the set of uploads advance two different offsets, this is
+    // not ideal. A failed compacted segment upload should only stop the
+    // compacted offset advance, so we split and wait on them separately.
+    std::vector<ntp_archiver::scheduled_upload> non_compacted_uploads;
+    std::vector<ntp_archiver::scheduled_upload> compacted_uploads;
+    non_compacted_uploads.reserve(scheduled.size());
+    compacted_uploads.reserve(scheduled.size());
+
+    std::partition_copy(
+      std::make_move_iterator(scheduled.begin()),
+      std::make_move_iterator(scheduled.end()),
+      std::back_inserter(non_compacted_uploads),
+      std::back_inserter(compacted_uploads),
+      [](const scheduled_upload& s) {
+          return s.upload_kind == segment_upload_kind::non_compacted;
+      });
+
+    auto [non_compacted_result, compacted_result]
+      = co_await ss::when_all_succeed(
+        wait_uploads(
+          std::move(non_compacted_uploads), segment_upload_kind::non_compacted),
+        wait_uploads(
+          std::move(compacted_uploads), segment_upload_kind::compacted));
+
+    auto total_successful_uploads = non_compacted_result.num_succeeded
+                                    + compacted_result.num_succeeded;
+    if (total_successful_uploads != 0) {
+        vlog(
+          _rtclog.debug,
+          "total successful uploads: {}, re-uploading manifest file",
+          total_successful_uploads);
+        if (auto res = co_await upload_manifest();
+            res != cloud_storage::upload_result::success) {
             vlog(
               _rtclog.warn,
               "manifest upload to {} failed",
@@ -755,7 +888,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 
         _last_upload_time = ss::lowres_clock::now();
     }
-    co_return total;
+
+    co_return batch_result{
+      .non_compacted_upload_result = non_compacted_result,
+      .compacted_upload_result = compacted_result};
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
@@ -767,19 +903,22 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
              _gate,
              [this, last_stable_offset] {
                  return ss::with_semaphore(
-                   _mutex, 1, [this, last_stable_offset] {
-                       return schedule_uploads(last_stable_offset)
-                         .then([this](std::vector<scheduled_upload> scheduled) {
-                             return wait_all_scheduled_uploads(
-                               std::move(scheduled));
-                         });
+                   _mutex,
+                   1,
+                   [this, last_stable_offset]() -> ss::future<batch_result> {
+                       auto scheduled_uploads = co_await schedule_uploads(
+                         last_stable_offset);
+                       co_return co_await wait_all_scheduled_uploads(
+                         std::move(scheduled_uploads));
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {
-          return ss::make_ready_future<batch_result>(batch_result{});
+          return ss::make_ready_future<batch_result>(batch_result{
+            .non_compacted_upload_result = {}, .compacted_upload_result = {}});
       })
       .handle_exception_type([](const ss::abort_requested_exception&) {
-          return ss::make_ready_future<batch_result>(batch_result{});
+          return ss::make_ready_future<batch_result>(batch_result{
+            .non_compacted_upload_result = {}, .compacted_upload_result = {}});
       });
 }
 
@@ -814,13 +953,13 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     vlog(ctxlog.info, "archival metadata cleanup started");
     model::offset adjusted_start_offset = model::offset::min();
-    for (const auto& [key, meta] : manifest()) {
+    const auto& m = manifest();
+    for (const auto& [key, meta] : m) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           key.base_offset, key.term);
-        auto spath = cloud_storage::generate_remote_segment_path(
-          _ntp, _rev, sname, meta.archiver_term);
+        auto spath = m.generate_segment_path(key, meta);
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
@@ -869,6 +1008,41 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
           "archival metadata cleanup completed, nothing to clean up");
     }
     co_return result;
+}
+
+ss::future<ss::stop_iteration>
+ntp_archiver::upload_context::schedule_single_upload(ntp_archiver& archiver) {
+    scheduled_upload f = co_await archiver.schedule_single_upload(*this);
+
+    start_offset = f.inclusive_last_offset + model::offset(1);
+    f.upload_kind = upload_kind;
+    auto should_stop = f.stop;
+
+    uploads.push_back(std::move(f));
+    co_return should_stop;
+}
+
+ntp_archiver::upload_context::upload_context(
+  segment_upload_kind upload_kind,
+  model::offset start_offset,
+  model::offset last_offset,
+  allow_reuploads_t allow_reuploads)
+  : upload_kind{upload_kind}
+  , start_offset{start_offset}
+  , last_offset{last_offset}
+  , allow_reuploads{allow_reuploads}
+  , uploads{} {}
+
+std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
+    switch (upload_kind) {
+    case segment_upload_kind::non_compacted:
+        fmt::print(os, "non-compacted");
+        break;
+    case segment_upload_kind::compacted:
+        fmt::print(os, "compacted");
+        break;
+    }
+    return os;
 }
 
 ss::future<> ntp_archiver::housekeeping() {
@@ -940,12 +1114,10 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     std::atomic<size_t> successful_deletes{0};
     co_await ss::max_concurrent_for_each(
-      to_remove, _concurrency, [this, &successful_deletes](const auto& meta) {
-          auto segment_name = cloud_storage::generate_local_segment_name(
-            meta.base_offset, meta.segment_term);
-          auto path = cloud_storage::generate_remote_segment_path(
-            _ntp, meta.ntp_revision, segment_name, meta.archiver_term);
-
+      to_remove,
+      _concurrency,
+      [this, &successful_deletes](const cloud_storage::segment_meta& meta) {
+          auto path = manifest().generate_segment_path(meta);
           return ss::do_with(
             std::move(path), [this, &successful_deletes](auto& path) {
                 return delete_segment(path).then(

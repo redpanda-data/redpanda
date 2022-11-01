@@ -139,6 +139,30 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       == model::offset(99));
 }
 
+FIXTURE_TEST(
+  test_archival_stm_update_lco_when_compacted_segment_added,
+  archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    auto& ntp_cfg = _raft->log_config();
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .is_compacted = true,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+      });
+    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
+    BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_last_uploaded_compacted_offset(),
+      model::offset{99});
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().begin()->second.committed_offset,
+      model::offset(99));
+}
+
 FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
     auto& ntp_cfg = _raft->log_config();
@@ -223,6 +247,9 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     BOOST_REQUIRE(m.advance_start_offset(model::offset{100}));
     BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), model::offset(100));
     BOOST_REQUIRE_EQUAL(m.get_insync_offset(), model::offset(42));
+    BOOST_REQUIRE_EQUAL(
+      m.get_last_uploaded_compacted_offset(), model::offset{299});
+
     cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{42})
       .get();
 

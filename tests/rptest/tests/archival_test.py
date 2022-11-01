@@ -32,6 +32,8 @@ import uuid
 import sys
 import re
 
+from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
+
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
 
 # Log errors expected when connectivity between redpanda and the S3
@@ -109,18 +111,20 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
     last_offset = manifest["last_offset"]
     committed_offset = meta["committed_offset"]
     size_bytes = meta["size_bytes"]
-    normalized_path = f"{ns}/{topic}/{partition}_{revision}/{sname}"
+    segment_name = gen_segment_name_from_meta(meta, sname)
+    normalized_path = f"{ns}/{topic}/{partition}_{revision}/{segment_name}"
     md5 = None
     for r, (m, sz) in remote_set.items():
         if normalized_path == r:
             md5 = m
             if sz != size_bytes:
                 logger.warning(
-                    f"segment {sname} has unexpected size, size {size_bytes} expected {sz} found"
+                    f"segment {segment_name} has unexpected size, size {size_bytes} expected {sz} found"
                 )
     if md5 is None:
-        logger.debug(f"Can't parse manifest segment {sname} over {remote_set}")
-    assert not md5 is None
+        logger.debug(
+            f"Can't parse manifest segment {segment_name} over {remote_set}")
+    assert md5 is not None
     sm = _parse_normalized_segment_path(normalized_path, md5, size_bytes)
     return ManifestRecord(ntp=sm.ntp,
                           base_offset=sm.base_offset,
@@ -464,12 +468,13 @@ class ArchivalTest(RedpandaTest):
     def _verify_manifest(self, ntp, manifest, remote):
         """Check that all segments that present in manifest are available
         in remote storage"""
-        for sname, _ in manifest['segments'].items():
-            spath = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{ntp.revision}/{sname}"
+        for key, meta in manifest['segments'].items():
+            segment_name = gen_segment_name_from_meta(meta, key=key)
+            spath = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{ntp.revision}/{segment_name}"
             self.logger.info(f"validating manifest path {spath}")
             assert spath in remote
         ranges = [(int(m['base_offset']), int(m['committed_offset']))
-                  for _, m in manifest['segments'].items()]
+                  for m in manifest['segments'].values()]
         ranges = sorted(ranges, key=lambda x: x[0])
         last_offset = -1
         num_gaps = 0
@@ -667,20 +672,23 @@ class ArchivalTest(RedpandaTest):
         md5fails = 0
         lookup_fails = 0
         for path, csum in remote.items():
-            self.logger.info(f"checking remote path: {path} csum: {csum}")
-            if path not in local:
+            adjusted = gen_local_path_from_remote(path)
+            self.logger.info(
+                f"checking remote path: {path} csum: {csum} adjusted: {adjusted}"
+            )
+            if adjusted not in local:
                 self.logger.debug(
-                    f"remote path {path} can't be found in any of the local storages"
+                    f"remote path {adjusted} can't be found in any of the local storages"
                 )
                 lookup_fails += 1
             else:
-                if len(local[path]) != 1:
+                if len(local[adjusted]) != 1:
                     self.logger.info(
-                        f"remote segment {path} have more than one variant {local[path]}"
+                        f"remote segment {path} have more than one variant {local[adjusted]}"
                     )
-                if not csum in local[path]:
+                if not csum in local[adjusted]:
                     self.logger.debug(
-                        f"remote md5 {csum} doesn't match any local {local[path]}"
+                        f"remote md5 {csum} doesn't match any local {local[adjusted]}"
                     )
                     md5fails += 1
         if md5fails != 0:

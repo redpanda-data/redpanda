@@ -84,6 +84,15 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               if (fp[i](req)) {
                   auto response = _fail_responses[i];
                   repl.set_status(response.status);
+                  vlog(
+                    http_imposter_log.trace,
+                    "HTTP imposter id {} failing request {} - {} - {} with "
+                    "response: {}",
+                    _id,
+                    req._url,
+                    req.content_length,
+                    req._method,
+                    response);
                   return response.body;
               }
           }
@@ -129,7 +138,7 @@ void http_imposter_fixture::fail_request_if(
   http_imposter_fixture::request_predicate predicate,
   http_test_utils::response response) {
     _fail_requests_when.push_back(std::move(predicate));
-    _fail_responses[_fail_requests_when.size()] = std::move(response);
+    _fail_responses[_fail_requests_when.size() - 1] = response;
 }
 
 void http_imposter_fixture::reset_http_call_state() {

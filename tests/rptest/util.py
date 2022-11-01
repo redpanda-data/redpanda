@@ -8,16 +8,16 @@
 # by the Apache License, Version 2.0
 
 import os
+import pprint
 import time
+from contextlib import contextmanager
 from typing import Optional
 
-from contextlib import contextmanager
+from ducktape.errors import TimeoutError
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
-
-from ducktape.errors import TimeoutError
 
 
 class Scale:
@@ -170,6 +170,25 @@ def produce_until_segments(redpanda,
                err_msg="Segments were not created")
 
 
+def wait_until_segments(redpanda,
+                        topic,
+                        partition_idx,
+                        count,
+                        timeout_sec=180):
+    def done():
+        topic_partitions = segments_count(redpanda, topic, partition_idx)
+        redpanda.logger.debug(
+            f'wait_until_segments: '
+            f'segment count: {list(segments_count(redpanda, topic, partition_idx))}'
+        )
+        return all([p >= count for p in topic_partitions])
+
+    wait_until(done,
+               timeout_sec=timeout_sec,
+               backoff_sec=2,
+               err_msg=f"{count} segments were not created")
+
+
 def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
                                    n: int,
                                    original_snapshot: dict[str,
@@ -186,10 +205,11 @@ def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
     """
     def segments_removed():
         current_snapshot = redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", topic, 0)
+            "kafka", topic, partition_idx)
 
         redpanda.logger.debug(
-            f"Current segment snapshot for topic {topic}: {current_snapshot}")
+            f"Current segment snapshot for topic {topic}: {pprint.pformat(current_snapshot, indent=1)}"
+        )
 
         # Check how many of the original segments were removed
         # for each of the nodes in the provided snapshot.

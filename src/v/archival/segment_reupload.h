@@ -10,8 +10,11 @@
 
 #pragma once
 
+#include "archival/archival_policy.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/io_priority_class.hh>
 
 namespace cloud_storage {
 class partition_manifest;
@@ -31,8 +34,8 @@ public:
 
     segment_collector(
       model::offset begin_inclusive,
-      const cloud_storage::partition_manifest* manifest,
-      const storage::disk_log_impl* log,
+      const cloud_storage::partition_manifest& manifest,
+      const storage::disk_log_impl& log,
       size_t max_uploaded_segment_size);
 
     void collect_segments();
@@ -55,6 +58,14 @@ public:
     const storage::ntp_config* ntp_cfg() const;
 
     cloud_storage::segment_name adjust_segment_name() const;
+
+    /// Creates upload candidate by computing file offsets and timestamps from
+    /// the collected segments.
+    ss::future<upload_candidate_with_locks> make_upload_candidate(
+      ss::io_priority_class io_priority_class,
+      ss::lowres_clock::duration segment_lock_duration);
+
+    size_t collected_size() const;
 
 private:
     struct lookup_result {
@@ -90,12 +101,14 @@ private:
     model::offset _begin_inclusive;
     model::offset _end_inclusive;
 
-    const cloud_storage::partition_manifest* _manifest;
-    const storage::disk_log_impl* _log;
+    const cloud_storage::partition_manifest& _manifest;
+    const storage::disk_log_impl& _log;
     const storage::ntp_config* _ntp_cfg{};
     segment_seq _segments;
     bool _can_replace_manifest_segment{false};
+
     size_t _max_uploaded_segment_size;
+    size_t _collected_size;
 };
 
 } // namespace archival
