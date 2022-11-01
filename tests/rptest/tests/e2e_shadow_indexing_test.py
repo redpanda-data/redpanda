@@ -258,6 +258,10 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
                              num_brokers=7,
                              si_settings=si_settings)
 
+        if not self.redpanda.dedicated_nodes:
+            self.redpanda.set_extra_rp_conf(
+                {'cloud_storage_max_readers_per_shard': 10})
+
     def setUp(self):
         # Dedicated nodes refers to non-container nodes such as EC2 instances
         self.topics[
