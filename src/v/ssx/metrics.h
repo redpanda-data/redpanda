@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "ssx/sformat.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/future.hh>
