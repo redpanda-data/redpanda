@@ -79,6 +79,17 @@ std::string_view to_string_view(feature_state::state s) {
 
 // The version that this redpanda node will report: increment this
 // on protocol changes to raft0 structures, like adding new services.
+//
+// For your convenience, a rough guide to the history of how logical
+// versions mapped to redpanda release versions:
+//  22.1.1 -> 3  (22.1.5 was version 4)
+//  22.2.1 -> 5  (22.2.6 later proceeds to version 6)
+//  22.3.1 -> 7
+//
+// Although some previous stable branches have included feature version
+// bumps, this is _not_ the intended usage, as stable branches are
+// meant to be safely downgradable within the branch, and new features
+// imply that new data formats may be written.
 static constexpr cluster_version latest_version = cluster_version{7};
 
 feature_table::feature_table() {
