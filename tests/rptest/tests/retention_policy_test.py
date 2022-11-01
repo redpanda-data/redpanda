@@ -250,7 +250,10 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                                   "redpanda.remote.write": topic_remote_write
                               })
 
-        expect_deletion = cluster_remote_write or topic_remote_write == "true"
+        if topic_remote_write != "-1":
+            expect_deletion = topic_remote_write == "true"
+        else:
+            expect_deletion = cluster_remote_write
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
