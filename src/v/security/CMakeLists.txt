@@ -5,7 +5,7 @@ v_cc_library(
     scram_algorithm.cc
     scram_credential.cc
     scram_authenticator.cc
-    acl_store.cc
+    acl.cc
     mtls.cc
     license.cc
   DEPS
