@@ -89,6 +89,7 @@ public:
     }
 
     size_t current() const noexcept { return _sem.current(); }
+    ssize_t available_units() const noexcept { return _sem.available_units(); }
 
 private:
     ssx::semaphore _sem;
