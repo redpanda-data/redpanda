@@ -459,6 +459,8 @@ class RedpandaService(Service):
 
     RAISE_ON_ERRORS_KEY = "raise_on_error"
 
+    TRIM_LOGS_KEY = "trim_logs"
+
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
 
@@ -585,6 +587,8 @@ class RedpandaService(Service):
 
         self._dedicated_nodes = self._context.globals.get(
             self.DEDICATED_NODE_KEY, False)
+
+        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
         if resource_settings is None:
             resource_settings = ResourceSettings()
@@ -1703,6 +1707,9 @@ class RedpandaService(Service):
             self._installer.reset_current_install([node])
 
     def trim_logs(self):
+        if not self._trim_logs:
+            return
+
         # Excessive logging may cause disks to fill up quickly.
         # Call this method to removes TRACE and DEBUG log lines from redpanda logs
         # Ensure this is only done on tests that have passed
