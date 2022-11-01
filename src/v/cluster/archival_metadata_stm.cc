@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -166,12 +167,16 @@ ss::future<> archival_metadata_stm::make_snapshot(
 }
 
 archival_metadata_stm::archival_metadata_stm(
-  raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
+  raft::consensus* raft,
+  cloud_storage::remote& remote,
+  features::feature_table& ft,
+  ss::logger& logger)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
       raft->ntp(), raft->log_config().get_initial_revision()))
-  , _cloud_storage_api(remote) {}
+  , _cloud_storage_api(remote)
+  , _feature_table(ft) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,

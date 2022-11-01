@@ -85,7 +85,10 @@ partition::partition(
           && _raft->ntp().ns == model::kafka_namespace) {
             _archival_meta_stm
               = ss::make_shared<cluster::archival_metadata_stm>(
-                _raft.get(), cloud_storage_api.local(), clusterlog);
+                _raft.get(),
+                cloud_storage_api.local(),
+                _feature_table.local(),
+                clusterlog);
             stm_manager->add_stm(_archival_meta_stm);
 
             if (cloud_storage_cache.local_is_initialized()) {

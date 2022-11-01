@@ -14,6 +14,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/types.h"
 #include "cluster/persisted_stm.h"
+#include "features/fwd.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "utils/mutex.h"
@@ -40,7 +41,10 @@ class archival_metadata_stm final : public persisted_stm {
 
 public:
     explicit archival_metadata_stm(
-      raft::consensus*, cloud_storage::remote& remote, ss::logger& logger);
+      raft::consensus*,
+      cloud_storage::remote& remote,
+      features::feature_table&,
+      ss::logger& logger);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
@@ -141,6 +145,7 @@ private:
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
     cloud_storage::remote& _cloud_storage_api;
+    features::feature_table& _feature_table;
     ss::abort_source _download_as;
 };
 
