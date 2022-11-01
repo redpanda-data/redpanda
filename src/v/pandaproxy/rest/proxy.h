@@ -28,7 +28,7 @@
 
 namespace pandaproxy::rest {
 
-class proxy {
+class proxy : public ss::peering_sharded_service<proxy> {
 public:
     using server = auth_ctx_server<proxy>;
     proxy(
@@ -63,6 +63,7 @@ private:
     one_shot _ensure_started;
     cluster::controller* _controller;
     bool _has_ephemeral_credentials{false};
+    bool _is_started{false};
 };
 
 } // namespace pandaproxy::rest

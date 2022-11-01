@@ -135,6 +135,9 @@ kafka::client::configuration& proxy::client_config() {
 }
 
 ss::future<> proxy::do_start() {
+    if (_is_started) {
+        co_return;
+    }
     auto guard = gate_guard(_gate);
     try {
         co_await configure();
@@ -146,6 +149,8 @@ ss::future<> proxy::do_start() {
           std::current_exception());
         throw;
     }
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [](proxy& p) { p._is_started = true; });
 }
 
 ss::future<> proxy::configure() {
@@ -157,7 +162,11 @@ ss::future<> proxy::configure() {
     co_await set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
-    _has_ephemeral_credentials = store.has(store.find(principal));
+    bool has_ephemeral_credentials = store.has(store.find(principal));
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [has_ephemeral_credentials](proxy& p) {
+          p._has_ephemeral_credentials = has_ephemeral_credentials;
+      });
 
     security::acl_entry acl_entry{
       principal,
