@@ -14,88 +14,11 @@
 #include "config/property.h"
 #include "ssx/semaphore.h"
 #include "units.h"
+#include "utils/adjustable_semaphore.h"
 
 #include <cstdint>
 
 namespace storage {
-
-/**
- * This class is extension of ss::semaphore to fit the needs
- * of the storage_resources class's tracking of byte/concurrency
- * allowances.
- *
- * Callers may use this class as either a soft or hard quota.  In
- * the hard case, regular async-waiting semaphore calls (ss::get_units)
- * may be used.  In the soft case, the take() function will allow the
- * semaphore count to go negative, but return a `checkpoint_hint` field
- * that prompts the holder of the units to release some.
- *
- * This is 'adjustable' in that:
- * - Regular sempahores are just a counter: they have no
- *   memory of their intended capacity.  In order to enable runtime
- *   changes to the max units in a semaphore, we must keep an extra
- *   record of the capacity.
- * - This enables runtime configuration changes to parameters that
- *   control the capacity of a semaphore.
- */
-class adjustable_allowance {
-public:
-    explicit adjustable_allowance(uint64_t capacity)
-      : adjustable_allowance(capacity, "s/allowance") {}
-    adjustable_allowance(uint64_t capacity, const ss::sstring& sem_name)
-      : _sem(capacity, sem_name)
-      , _capacity(capacity) {}
-
-    void set_capacity(uint64_t capacity) noexcept {
-        if (capacity > _capacity) {
-            _sem.signal(capacity - _capacity);
-        } else if (capacity < _capacity) {
-            _sem.consume(_capacity - capacity);
-        }
-
-        _capacity = capacity;
-    }
-
-    /**
-     * When a consumer wants some units, it gets them unconditionally, but
-     * gets a hint as to whether it exceeded the capacity.  That is the hint
-     * to e.g. the offset translator that now is the time to checkpoint
-     * because there are too many dirty bytes.
-     */
-    struct take_result {
-        ssx::semaphore_units units;
-        bool checkpoint_hint{false};
-    };
-
-    /**
-     * Non-blocking consume of units, may send the semaphore negative.
-     *
-     * Includes a hint in the response if the semaphore has gone negative,
-     * to induce the caller to release some units when they can.
-     */
-    take_result take(size_t units) {
-        take_result result = {
-          .units = ss::consume_units(_sem, units),
-          .checkpoint_hint = _sem.current() <= 0};
-
-        return result;
-    }
-
-    /**
-     * Blocking get units: will block until units are available.
-     */
-    ss::future<ssx::semaphore_units> get_units(size_t units) {
-        return ss::get_units(_sem, units);
-    }
-
-    size_t current() const noexcept { return _sem.current(); }
-    ssize_t available_units() const noexcept { return _sem.available_units(); }
-
-private:
-    ssx::semaphore _sem;
-
-    uint64_t _capacity;
-};
 
 /**
  * This class is used by various storage components to control consumption
@@ -141,7 +64,7 @@ public:
 
     bool stm_take_bytes(size_t bytes, ssx::semaphore_units& units);
 
-    adjustable_allowance::take_result compaction_index_take_bytes(size_t bytes);
+    adjustable_semaphore::take_result compaction_index_take_bytes(size_t bytes);
     bool compaction_index_bytes_available() {
         return _compaction_index_bytes.current() > 0;
     }
@@ -155,7 +78,7 @@ public:
     }
 
     /**
-     * An adjustable_allowance will set checkpoint_hint whenever its units
+     * An adjustable_semaphore will set checkpoint_hint whenever its units
      * are exhausted, but this can happen with pathological frequency if
      * many units are hogged by partitions that have written a lot of
      * data then stopped.
@@ -166,7 +89,7 @@ public:
      * under this unpleasant state, we will instead violate target_replay_bytes
      */
     bool filter_checkpoints(
-      adjustable_allowance::take_result&&, ssx::semaphore_units&);
+      adjustable_semaphore::take_result&&, ssx::semaphore_units&);
 
     /**
      * Call this when the partition count or the target replay bytes changes
@@ -201,27 +124,27 @@ private:
 
     // How many bytes may all logs on this shard advance before
     // the offset translator must checkpoint to the kvstore?
-    adjustable_allowance _offset_translator_dirty_bytes{0};
+    adjustable_semaphore _offset_translator_dirty_bytes{0};
 
     // How many bytes may logs write between checkpoints of the
     // configuration_manager?
-    adjustable_allowance _configuration_manager_dirty_bytes{0};
+    adjustable_semaphore _configuration_manager_dirty_bytes{0};
 
     // How many bytes may all consensus instances write before
     // we ask them to start snapshotting their state machines?
-    adjustable_allowance _stm_dirty_bytes{0};
+    adjustable_semaphore _stm_dirty_bytes{0};
 
     // How much memory may all compacted partitions on this shard
     // use for their spill_key_index objects
-    adjustable_allowance _compaction_index_bytes{0};
+    adjustable_semaphore _compaction_index_bytes{0};
 
     // How many logs may be recovered (via log_manager::manage)
     // concurrently?
-    adjustable_allowance _inflight_recovery{0};
+    adjustable_semaphore _inflight_recovery{0};
 
     // How many logs may be flushed during segment close concurrently?
     // (e.g. when we shut down and ask everyone to flush)
-    adjustable_allowance _inflight_close_flush{0};
+    adjustable_semaphore _inflight_close_flush{0};
 };
 
 } // namespace storage
