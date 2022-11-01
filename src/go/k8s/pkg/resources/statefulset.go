@@ -418,6 +418,10 @@ func (r *StatefulSetResource) obj(
 									Name:  "HOST_PORT",
 									Value: r.getNodePort(ExternalListenerName),
 								},
+								{
+									Name:  "RACK_AWARENESS",
+									Value: strconv.FormatBool(featuregates.RackAwareness(r.pandaCluster.Spec.Version)),
+								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  pointer.Int64Ptr(userID),
