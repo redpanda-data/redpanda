@@ -116,7 +116,8 @@ public:
       const ss::sstring& header,
       const ss::sstring& definitions,
       context_t& ctx,
-      json::serialization_format exceptional_mime_type);
+      json::serialization_format exceptional_mime_type,
+      ss::logger& log);
 
     void route(route_t route);
     void routes(routes_t&& routes);
@@ -135,6 +136,7 @@ private:
     bool _has_routes;
     context_t& _ctx;
     json::serialization_format _exceptional_mime_type;
+    ss::logger& _log;
 };
 
 template<typename service_t>
