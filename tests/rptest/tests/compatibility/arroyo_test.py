@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -23,12 +22,18 @@ class ArroyoTest(PreallocNodesTest):
     TEST_SUITE_PATH = "/root/external_test_suites/arroyo"
 
     def __init__(self, ctx, *args, **kwargs):
-        super().__init__(test_context=ctx,
-                         node_prealloc_count=1,
-                         *args,
-                         **kwargs)
+        super().__init__(
+            test_context=ctx,
+            node_prealloc_count=1,
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer since arroyo test suite
+                # does not refresh group information on reciept of
+                # not_coordinator error_code
+                "enable_leader_balancer": False
+            },
+            **kwargs)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6826
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
         test_node = self.preallocated_nodes[0]
