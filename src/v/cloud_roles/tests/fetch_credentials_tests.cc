@@ -322,3 +322,31 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
 
     BOOST_REQUIRE(has_calls_in_order("/", "/"));
 }
+
+FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
+    fail_request_if(
+      [](const auto&) { return true; },
+      http_test_utils::response{
+        "not found", ss::httpd::reply::status_type::not_found});
+
+    listen();
+
+    ss::abort_source as;
+    ss::gate gate;
+    std::optional<cloud_roles::credentials> c;
+
+    one_shot_fetch s(c, as);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      gate,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+
+    refresh.start();
+    gate.close().get();
+
+    BOOST_REQUIRE(has_call(cloud_role_tests::aws_role_query_url));
+}
