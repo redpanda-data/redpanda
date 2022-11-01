@@ -22,6 +22,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/optimized_optional.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <memory>
 #include <variant>

@@ -11,6 +11,7 @@
 
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/handlers.h"
+#include "utils/vint_iostream.h"
 namespace kafka {
 
 /// Not every value from 0 -> max_api_key is a valid request, non-supported

@@ -14,6 +14,8 @@
 #include "outcome.h"
 #include "reflection/type_traits.h"
 
+#include <seastar/core/sstring.hh>
+
 #include <cctype>
 #include <charconv>
 #include <chrono>

@@ -12,9 +12,6 @@
 #pragma once
 #include "bytes/bytes.h"
 
-#include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
-
 #include <cstdint>
 
 namespace unsigned_vint {
@@ -87,9 +84,6 @@ inline size_t serialize(uint64_t value, uint8_t* out) noexcept {
     out[bytes_used++] = static_cast<uint8_t>(value);
     return bytes_used;
 }
-
-ss::future<std::pair<uint32_t, size_t>>
-stream_deserialize(ss::input_stream<char>&);
 
 template<typename Range>
 inline std::pair<uint32_t, size_t> deserialize(Range&& r) noexcept {

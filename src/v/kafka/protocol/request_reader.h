@@ -28,6 +28,11 @@
 #include <optional>
 #include <type_traits>
 
+namespace seastar {
+template<typename T>
+class input_stream;
+}
+
 namespace kafka {
 
 class request_reader {
