@@ -177,6 +177,8 @@ private:
 
     friend resources;
     ss::future<> accept(listener&);
+    ss::future<ss::stop_iteration>
+      accept_finish(ss::sstring, ss::future<ss::accept_result>);
     void setup_metrics();
     void setup_public_metrics();
 

@@ -19,7 +19,7 @@
 
 namespace net {
 
-conn_quota::units::~units() {
+conn_quota::units::~units() noexcept {
     if (_quotas) {
         (*_quotas).get().put(_addr);
     }

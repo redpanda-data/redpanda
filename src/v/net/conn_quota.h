@@ -52,24 +52,25 @@ public:
      */
     class [[nodiscard]] units {
     public:
-        units() {}
+        units() = default;
 
         units(conn_quota& quotas, ss::net::inet_address const& addr)
           : _quotas(std::ref(quotas))
           , _addr(addr) {}
 
         units(units const&) = delete;
+        units& operator=(units const&) = delete;
         units(units&& rhs) noexcept
-          : _addr(std::move(rhs._addr)) {
+          : _addr(rhs._addr) {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
         }
-        units& operator=(units&& rhs) {
+        units& operator=(units&& rhs) noexcept {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
-            _addr = std::move(rhs._addr);
+            _addr = rhs._addr;
             return *this;
         }
 
-        ~units();
+        ~units() noexcept;
 
         /**
          * A default-constructed `units` is not live, i.e.
@@ -77,7 +78,7 @@ public:
          * it is constructed with a reference to a `conn_quota`
          * it becomes live.
          */
-        bool live() { return _quotas.has_value(); }
+        bool live() const { return _quotas.has_value(); }
 
     private:
         std::optional<std::reference_wrapper<conn_quota>> _quotas;
