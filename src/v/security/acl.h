@@ -376,53 +376,9 @@ public:
     friend void read_nested(
       iobuf_parser& in,
       resource_pattern_filter& filter,
-      size_t const bytes_left_limit) {
-        using serde::read_nested;
+      size_t const bytes_left_limit);
 
-        read_nested(in, filter._resource, bytes_left_limit);
-        read_nested(in, filter._name, bytes_left_limit);
-
-        auto pattern = read_nested<std::optional<serialized_pattern_type>>(
-          in, bytes_left_limit);
-
-        if (!pattern) {
-            filter._pattern = std::nullopt;
-            return;
-        }
-
-        switch (*pattern) {
-        case serialized_pattern_type::literal:
-            filter._pattern = security::pattern_type::literal;
-            break;
-
-        case serialized_pattern_type::prefixed:
-            filter._pattern = security::pattern_type::prefixed;
-            break;
-        case serialized_pattern_type::match:
-            filter._pattern
-              = security::resource_pattern_filter::pattern_match{};
-            break;
-        }
-    }
-
-    friend void write(iobuf& out, resource_pattern_filter filter) {
-        using serde::write;
-        std::optional<serialized_pattern_type> pattern;
-        if (filter.pattern()) {
-            if (std::holds_alternative<
-                  security::resource_pattern_filter::pattern_match>(
-                  *filter.pattern())) {
-                pattern = serialized_pattern_type::match;
-            } else {
-                auto source_pattern = std::get<security::pattern_type>(
-                  *filter.pattern());
-                pattern = to_pattern(source_pattern);
-            }
-        }
-        write(out, filter._resource);
-        write(out, filter._name);
-        write(out, pattern);
-    }
+    friend void write(iobuf& out, resource_pattern_filter filter);
 
     friend bool
     operator==(const resource_pattern_filter&, const resource_pattern_filter&)
