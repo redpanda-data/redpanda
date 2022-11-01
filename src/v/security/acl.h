@@ -53,7 +53,7 @@ enum class resource_type : int8_t {
 };
 
 template<typename T>
-inline resource_type get_resource_type() {
+consteval resource_type get_resource_type() {
     if constexpr (std::is_same_v<T, model::topic>) {
         return resource_type::topic;
     } else if constexpr (std::is_same_v<T, kafka::group_id>) {
