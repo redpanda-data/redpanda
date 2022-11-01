@@ -566,7 +566,19 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
-    if (!_raft->log_config().is_archival_enabled()) {
+    // From Redpanda 22.3 up, the ntp_config's impression of whether archival
+    // is enabled is authoritative.
+    bool collect_all = !_raft->log_config().is_archival_enabled();
+
+    // In earlier versions, we should assume every topic is archival enabled
+    // if the global cloud_storage_enable_remote_write is true.
+    if (
+      !_feature_table.is_active(features::feature::cloud_retention)
+      && config::shard_local_cfg().cloud_storage_enable_remote_write()) {
+        collect_all = false;
+    }
+
+    if (collect_all) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
         return model::offset::max();
