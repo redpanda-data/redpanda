@@ -18,6 +18,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
 
@@ -118,12 +119,16 @@ uint32_t batch_cache::range::add(const model::record_batch& b) {
 
 batch_cache::entry
 batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
+    // notify no matter what the exit path
+    auto notify_guard = ss::defer([this] { _background_reclaimer.notify(); });
+
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     static const size_t threshold = ss::memory::stats().total_memory() * .2;
     while (_size_bytes > threshold) {
         reclaim(1);
     }
 #endif
+
     // we must copy memory to prevent holding onto bigger memory from
     // temporary buffers
 
@@ -153,7 +158,6 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     int64_t diff = (int64_t)index._small_batches_range->memory_size()
                    - initial_sz;
     _size_bytes += diff;
-    _background_reclaimer.notify();
     return entry(offset, index._small_batches_range->weak_from_this());
 }
 
