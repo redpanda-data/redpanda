@@ -31,6 +31,10 @@ class RollingRestarter:
         the given configs.
         """
         admin = self.redpanda._admin
+        if start_timeout is None:
+            start_timeout = self.redpanda.node_ready_timeout_s
+        if stop_timeout is None:
+            stop_timeout = self.redpanda.node_ready_timeout_s
 
         def has_drained_leaders(node):
             try:
