@@ -202,6 +202,12 @@ void batch_cache::evict(range_ptr&& e) {
 }
 
 size_t batch_cache::reclaim(size_t size) {
+    // update the available_memory low-water mark: this is a good place to do
+    // this because under memory pressure the reclaimer will be called
+    // frequently so we expect the LWM to track closely the true LWM if we
+    // update it here
+    resources::available_memory().update_low_water_mark();
+
     if (is_memory_reclaiming()) {
         return 0;
     }
