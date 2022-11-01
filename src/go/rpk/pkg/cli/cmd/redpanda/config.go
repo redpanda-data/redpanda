@@ -142,23 +142,57 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			seeds, err := parseSeedIPs(ips)
 			out.MaybeDieErr(err)
 
-			ownIP, err := parseSelfIP(self)
+			selfIP, err := parseSelfIP(self)
 			out.MaybeDieErr(err)
 
 			if id >= 0 {
 				cfg.Redpanda.ID = &id
 			}
-			cfg.Redpanda.RPCServer.Address = ownIP.String()
-			cfg.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
-				Address: ownIP.String(),
-				Port:    config.DefaultKafkaPort,
-			}}
 
-			cfg.Redpanda.AdminAPI = []config.NamedSocketAddress{{
-				Address: ownIP.String(),
-				Port:    config.DefaultAdminPort,
-			}}
-			cfg.Redpanda.SeedServers = []config.SeedServer{}
+			// Defaults returns one RPC, one KafkaAPI, and one
+			// AdminAPI. We only override values in a configuration
+			// file if the current values are defaults, or if an
+			// address array is empty. If an address array has
+			// multiple elements, we trust that user modifications
+			// were intentional.
+			//
+			// For addresses, we expect this to be fine: the
+			// defaults are 0.0.0.0, which we do not expect people
+			// to deliberately try to use. We change the address
+			// even if the user has set a custom port--being
+			// explicit is better than 0.0.0.0.
+			defaults := config.DevDefault()
+
+			// Sanity check: we only want to change defaults, and
+			// we rely on exactly one element in our defaults. We
+			// panic here to catch any changes in tests.
+			if len(defaults.Redpanda.KafkaAPI) != 1 || len(defaults.Redpanda.AdminAPI) != 1 {
+				panic("defaults now have more than one kafka / admin api address, bug!")
+			}
+
+			if a := &cfg.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
+				*a = selfIP
+			}
+			if a := &cfg.Redpanda.KafkaAPI; len(*a) == 1 {
+				if first := &((*a)[0].Address); *first == config.DefaultListenAddress {
+					*first = selfIP
+				}
+			} else if len(*a) == 0 {
+				*a = []config.NamedAuthNSocketAddress{{
+					Address: selfIP,
+					Port:    config.DefaultKafkaPort,
+				}}
+			}
+			if a := &cfg.Redpanda.AdminAPI; len(*a) == 1 {
+				if first := &((*a)[0]).Address; *first == config.DefaultListenAddress {
+					*first = selfIP
+				}
+			} else if len(*a) == 0 {
+				*a = []config.NamedSocketAddress{{
+					Address: selfIP,
+					Port:    config.DefaultAdminPort,
+				}}
+			}
 			cfg.Redpanda.SeedServers = seeds
 
 			err = cfg.Write(fs)
@@ -225,95 +259,59 @@ func initNode(fs afero.Fs) *cobra.Command {
 	return c
 }
 
-func parseSelfIP(self string) (net.IP, error) {
+func parseSelfIP(self string) (string, error) {
 	if self != "" {
-		ownIP := net.ParseIP(self)
-		if ownIP == nil {
-			return nil, fmt.Errorf("%s is not a valid IP", self)
+		selfIP := net.ParseIP(self)
+		if selfIP == nil {
+			return "", fmt.Errorf("%s is not a valid IP", self)
 		}
-		return ownIP, nil
-	} else {
-		ownIP, err := getOwnIP()
-		if err != nil {
-			return nil, err
-		}
-		return ownIP, nil
+		return selfIP.String(), nil
 	}
+	selfIP, err := getSelfIP()
+	if err != nil {
+		return "", err
+	}
+	return selfIP.String(), nil
 }
 
 func parseSeedIPs(ips []string) ([]config.SeedServer, error) {
-	defaultRPCPort := config.DevDefault().Redpanda.RPCServer.Port
 	var seeds []config.SeedServer
-
 	for _, i := range ips {
 		_, hostport, err := vnet.ParseHostMaybeScheme(i)
 		if err != nil {
 			return nil, err
 		}
 
-		host, port := vnet.SplitHostPortDefault(hostport, defaultRPCPort)
-		seed := config.SeedServer{
-			Host: config.SocketAddress{
-				Address: host,
-				Port:    port,
-			},
-		}
-		seeds = append(seeds, seed)
+		host, port := vnet.SplitHostPortDefault(hostport, config.DefaultRPCPort)
+		seeds = append(seeds, config.SeedServer{Host: config.SocketAddress{
+			Address: host,
+			Port:    port,
+		}})
 	}
 	return seeds, nil
 }
 
-func getOwnIP() (net.IP, error) {
+func getSelfIP() (net.IP, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
 	}
-
-	filtered := []net.IP{}
+	var v4private []net.IP
 	for _, a := range addrs {
 		ipnet, ok := a.(*net.IPNet)
 		if !ok {
 			continue
 		}
-		isV4 := ipnet.IP.To4() != nil
-		private, err := isPrivate(ipnet.IP)
-		if err != nil {
-			return nil, err
-		}
-
-		if isV4 && private && !ipnet.IP.IsLoopback() {
-			filtered = append(filtered, ipnet.IP)
+		if ip := ipnet.IP; ip.IsPrivate() && ip.To4() != nil {
+			v4private = append(v4private, ipnet.IP)
 		}
 	}
-	if len(filtered) > 1 {
-		return nil, errors.New(
-			"found multiple private non-loopback v4 IPs for the" +
-				" current node. Please set one with --self",
-		)
+	switch len(v4private) {
+	case 0:
+		return nil, errors.New("unable to find private v4 IP for current node")
+	case 1:
+		return v4private[0], nil
+	default:
+		return nil, errors.New("multiple private v4 IPs found, please select one with --self")
 	}
-	if len(filtered) == 0 {
-		return nil, errors.New(
-			"couldn't find any non-loopback IPs for the current node",
-		)
-	}
-	return filtered[0], nil
-}
-
-func isPrivate(ip net.IP) (bool, error) {
-	// The standard private subnet CIDRS
-	privateCIDRs := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-	}
-	for _, cidr := range privateCIDRs {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return false, err
-		}
-		if ipNet.Contains(ip) {
-			return true, nil
-		}
-	}
-	return false, nil
 }

@@ -22,6 +22,8 @@ const (
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
 	DefaultAdminPort     = 9644
+	DefaultRPCPort       = 33145
+	DefaultListenAddress = "0.0.0.0"
 
 	DefaultBallastFilePath = "/var/lib/redpanda/data/ballast"
 	DefaultBallastFileSize = "1GiB"
@@ -33,16 +35,16 @@ func DevDefault() *Config {
 		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
-				Address: "0.0.0.0",
-				Port:    33145,
+				Address: DefaultListenAddress,
+				Port:    DefaultRPCPort,
 			},
 			KafkaAPI: []NamedAuthNSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9092,
+				Address: DefaultListenAddress,
+				Port:    DefaultKafkaPort,
 			}},
 			AdminAPI: []NamedSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9644,
+				Address: DefaultListenAddress,
+				Port:    DefaultAdminPort,
 			}},
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
