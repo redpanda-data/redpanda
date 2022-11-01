@@ -128,7 +128,16 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
 
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
-    return cfg.is_remote_fetch_enabled();
+    if (_feature_table.local().is_active(features::feature::cloud_retention)) {
+        // Since 22.3, the ntp_config is authoritative.
+        return cfg.is_remote_fetch_enabled();
+    } else {
+        // We are in the process of an upgrade: apply <22.3 behavior of acting
+        // as if every partition has remote read enabled if the cluster
+        // default is true.
+        return cfg.is_remote_fetch_enabled()
+               || config::shard_local_cfg().cloud_storage_enable_remote_read();
+    }
 }
 
 bool partition::cloud_data_available() const {
