@@ -374,4 +374,103 @@ std::ostream& operator<<(std::ostream& o, const acl_binding_filter& f) {
     return o;
 }
 
+std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
+    switch (operation) {
+    case acl_operation::describe:
+        return {
+          acl_operation::describe,
+          acl_operation::read,
+          acl_operation::write,
+          acl_operation::remove,
+          acl_operation::alter,
+        };
+    case acl_operation::describe_configs:
+        return {
+          acl_operation::describe_configs,
+          acl_operation::alter_configs,
+        };
+    default:
+        return {operation};
+    }
+}
+
+bool acl_entry_filter::matches(const acl_entry& other) const {
+    if (_principal && _principal != other.principal()) {
+        return false;
+    }
+
+    if (_host && _host != other.host()) {
+        return false;
+    }
+
+    if (_operation && *_operation != other.operation()) {
+        return false;
+    }
+
+    return !_permission || *_permission == other.permission();
+}
+
+std::vector<resource_pattern>
+resource_pattern_filter::to_resource_patterns() const {
+    if (!_resource || !_name) {
+        return {};
+    }
+
+    if (
+      _pattern
+      && std::holds_alternative<resource_pattern_filter::pattern_match>(
+        *_pattern)) {
+        return {};
+    }
+
+    if (_pattern) {
+        if (std::holds_alternative<resource_pattern_filter::pattern_match>(
+              *_pattern)) {
+            return {};
+        }
+        return {
+          resource_pattern(
+            *_resource, *_name, std::get<pattern_type>(*_pattern)),
+        };
+    } else {
+        return {
+          resource_pattern(*_resource, *_name, pattern_type::literal),
+          resource_pattern(*_resource, *_name, pattern_type::prefixed),
+        };
+    }
+}
+
+bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
+    if (_resource && *_resource != pattern.resource()) {
+        return false;
+    }
+
+    if (
+      _pattern && std::holds_alternative<pattern_type>(*_pattern)
+      && std::get<pattern_type>(*_pattern) != pattern.pattern()) {
+        return false;
+    }
+
+    if (!_name) {
+        return true;
+    }
+
+    if (
+      !_pattern || (std::holds_alternative<pattern_type>(*_pattern)
+      && std::get<pattern_type>(*_pattern) == pattern.pattern())) {
+        return _name == pattern.name();
+    }
+
+    switch (pattern.pattern()) {
+    case pattern_type::literal:
+        return _name == pattern.name()
+               || pattern.name() == resource_pattern::wildcard;
+
+    case pattern_type::prefixed:
+        return std::string_view(*_name).starts_with(pattern.name());
+    }
+
+    __builtin_unreachable();
+}
+
 } // namespace security
