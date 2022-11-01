@@ -165,7 +165,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
         rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
-        rpk.alter_topic_config(self.topic, 'retention.bytes',
+        rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
                                str(segment_size))
 
         self._producer.start(clean=False)
