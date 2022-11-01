@@ -47,7 +47,7 @@ deb_deps=(
 fedora_deps=(
   ccache
   clang
-  clang-tools-extra 
+  clang-tools-extra
   curl
   git
   golang
