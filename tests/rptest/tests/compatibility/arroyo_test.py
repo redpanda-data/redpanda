@@ -9,7 +9,6 @@
 
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from ducktape.cluster.remoteaccount import RemoteCommandError
 
 
 class ArroyoTest(PreallocNodesTest):
