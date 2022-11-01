@@ -19,6 +19,8 @@
 
 namespace security {
 
+seastar::logger seclog("security");
+
 std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
   acl_operation operation,
   const acl_principal& principal,
