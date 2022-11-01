@@ -195,6 +195,10 @@ ss::future<> service::configure() {
 }
 
 ss::future<> service::mitigate_error(std::exception_ptr eptr) {
+    if (_gate.is_closed()) {
+        // Return so that the client doesn't try to mitigate.
+        return ss::now();
+    }
     vlog(plog.warn, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr).handle_exception_type(
       [this, eptr](kafka::client::broker_error const& ex) {
