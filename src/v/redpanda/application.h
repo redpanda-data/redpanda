@@ -72,7 +72,7 @@ public:
     void check_environment();
     void wire_up_and_start(::stop_signal&, bool test_mode = false);
 
-    explicit application(ss::sstring = "redpanda::main");
+    explicit application(ss::sstring = "main");
     ~application();
 
     void shutdown();
