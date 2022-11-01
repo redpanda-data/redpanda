@@ -119,6 +119,10 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
+    const remote_segment_path& get_segment_path() const noexcept {
+        return _path;
+    }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available

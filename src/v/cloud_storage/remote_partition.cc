@@ -12,6 +12,7 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/offset_translation_layer.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
@@ -688,26 +689,32 @@ void remote_partition::maybe_sync_with_manifest() {
       _insync_offset,
       _manifest.get_insync_offset());
 
-    // This will force recreation of all segments (materialized or not).
-    // All readers will be evicted but the segments will still be hydrated in
-    // cache.
+    // Algorithm outline
+    // - If the segment is offloaded we can just re-create it
+    // - If the segment is materialized we need to check if the
+    //   underlying segment was replaced by looking at its remote path
+    absl::btree_map<remote_segment_path, materialized_segment_ptr>
+      materialized_segments;
     for (auto& it : _segments) {
         if (std::holds_alternative<materialized_segment_ptr>(it.second)) {
             auto& st = std::get<materialized_segment_ptr>(it.second);
-            it.second = st->offload(this);
+            auto path = st->segment->get_segment_path();
+            materialized_segments.insert(
+              std::make_pair(std::move(path), std::move(st)));
         }
     }
     _segments.clear();
 
-    // find new segments
+    // Rebuild the _segments collection using the
+    // prevoiusly materialized segments stored in
+    // materialized_segments collection.
     for (const auto& meta : _manifest) {
         auto o = get_kafka_base_offset(meta.second);
         auto prev_it = _segments.find(o);
         if (prev_it != _segments.end()) {
-            // The key can be in the map in two cases:
-            // - we've already added the segment to the map
-            // - the key that we've added previously doesn't have data batches
-            //   in this case it can be safely replaced by the new one
+            // The key can be in the map if the previous segment doesn't have
+            // data batches. In this case it can be safely replaced by the new
+            // one.
             auto prev_off = std::visit(
               [](auto&& p) { return p->base_rp_offset; }, prev_it->second);
             auto manifest_it = _manifest.find(prev_off);
@@ -744,13 +751,31 @@ void remote_partition::maybe_sync_with_manifest() {
 
             std::visit([this](auto&& p) { p->offload(this); }, prev_it->second);
         }
-        auto res = _segments.insert_or_assign(
-          o, offloaded_segment_state(meta.second.base_offset));
-        if (res.second) {
-            _probe.segment_added();
+        auto spath = _manifest.generate_segment_path(meta.second);
+        if (auto it = materialized_segments.find(spath);
+            it != materialized_segments.end()) {
+            auto ms = std::move(it->second);
+            _segments.insert_or_assign(o, std::move(ms));
+            materialized_segments.erase(it);
+        } else {
+            auto res = _segments.insert_or_assign(
+              o, offloaded_segment_state(meta.second.base_offset));
+            // With offloaded segments we can't distinguish between compacted
+            // and non compacted segments with the same base offset. Because of
+            // that all offloaded segments has to be recreated every time. It
+            // makes this metric useless but future update will make it
+            // completely obsolete since we will no longer have segments in
+            // offloaded state.
+            if (res.second) {
+                _probe.segment_added();
+            }
         }
     }
     _insync_offset = _manifest.get_insync_offset();
+
+    for (auto& kv : materialized_segments) {
+        kv.second->offload(this);
+    }
 }
 
 /// Materialize segment if needed and create a reader
