@@ -13,15 +13,14 @@
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
-#include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
 
+#include <iosfwd>
 #include <variant>
 
 namespace security {
@@ -120,33 +119,7 @@ inline std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
     }
 }
 
-inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
-    switch (op) {
-    case acl_operation::all:
-        return os << "all";
-    case acl_operation::read:
-        return os << "read";
-    case acl_operation::write:
-        return os << "write";
-    case acl_operation::create:
-        return os << "create";
-    case acl_operation::remove:
-        return os << "remove";
-    case acl_operation::alter:
-        return os << "alter";
-    case acl_operation::describe:
-        return os << "describe";
-    case acl_operation::cluster_action:
-        return os << "cluster_action";
-    case acl_operation::describe_configs:
-        return os << "describe_configs";
-    case acl_operation::alter_configs:
-        return os << "alter_configs";
-    case acl_operation::idempotent_write:
-        return os << "idempotent_write";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, acl_operation);
 
 /*
  * Grant or deny access.
@@ -158,15 +131,7 @@ enum class acl_permission : int8_t {
     allow = 1,
 };
 
-inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
-    switch (perm) {
-    case acl_permission::deny:
-        return os << "deny";
-    case acl_permission::allow:
-        return os << "allow";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, acl_permission);
 
 /*
  * Principal type
@@ -181,39 +146,9 @@ enum class principal_type : int8_t {
     ephemeral_user = 1,
 };
 
-inline std::ostream& operator<<(std::ostream& os, resource_type type) {
-    switch (type) {
-    case resource_type::topic:
-        return os << "topic";
-    case resource_type::group:
-        return os << "group";
-    case resource_type::cluster:
-        return os << "cluster";
-    case resource_type::transactional_id:
-        return os << "transactional_id";
-    }
-    __builtin_unreachable();
-}
-
-inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
-    switch (type) {
-    case pattern_type::literal:
-        return os << "literal";
-    case pattern_type::prefixed:
-        return os << "prefixed";
-    }
-    __builtin_unreachable();
-}
-
-inline std::ostream& operator<<(std::ostream& os, principal_type type) {
-    switch (type) {
-    case principal_type::user:
-        return os << "user";
-    case principal_type::ephemeral_user:
-        return os << "ephemeral user";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, resource_type);
+std::ostream& operator<<(std::ostream&, pattern_type);
+std::ostream& operator<<(std::ostream&, principal_type);
 
 /*
  * Kafka principal is (principal-type, principal)
@@ -233,11 +168,7 @@ public:
         return H::combine(std::move(h), e._type, e._name);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const acl_principal& principal) {
-        fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_principal&);
 
     const ss::sstring& name() const { return _name; }
     principal_type type() const { return _type; }
@@ -274,16 +205,7 @@ public:
         return H::combine(std::move(h), e._resource, e._name, e._pattern);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const resource_pattern& r) {
-        fmt::print(
-          os,
-          "type {{{}}} name {{{}}} pattern {{{}}}",
-          r._resource,
-          r._name,
-          r._pattern);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const resource_pattern&);
 
     resource_type resource() const { return _resource; }
     const ss::sstring& name() const { return _name; }
@@ -322,16 +244,7 @@ public:
         }
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const acl_host& host) {
-        if (host._addr) {
-            fmt::print(os, "{{{}}}", *host._addr);
-        } else {
-            // we can log whatever representation we want for a wildcard host,
-            // but kafka expects "*" as the wildcard representation.
-            os << "{{any_host}}";
-        }
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_host&);
 
     std::optional<ss::net::inet_address> address() const { return _addr; }
 
@@ -369,16 +282,7 @@ public:
           std::move(h), e._principal, e._host, e._operation, e._permission);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
-        fmt::print(
-          os,
-          "{{principal {} host {} op {} perm {}}}",
-          entry._principal,
-          entry._host,
-          entry._operation,
-          entry._permission);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_entry&);
 
     const acl_principal& principal() const { return _principal; }
     const acl_host& host() const { return _host; }
@@ -414,12 +318,7 @@ public:
         return H::combine(std::move(h), e._pattern, e._entry);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const acl_binding& binding) {
-        fmt::print(
-          os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_binding&);
 
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
@@ -457,11 +356,7 @@ public:
         friend bool operator==(const pattern_match&, const pattern_match&)
           = default;
 
-        friend std::ostream&
-        operator<<(std::ostream& os, const pattern_match&) {
-            fmt::print(os, "{{}}");
-            return os;
-        }
+        friend std::ostream& operator<<(std::ostream&, const pattern_match&);
     };
     using pattern_filter_type = std::variant<pattern_type, pattern_match>;
 
@@ -552,15 +447,7 @@ public:
       = default;
 
     friend std::ostream&
-    operator<<(std::ostream& o, const resource_pattern_filter& f) {
-        fmt::print(
-          o,
-          "{{ resource: {} name: {} pattern: {} }}",
-          f._resource,
-          f._name,
-          f._pattern);
-        return o;
-    }
+    operator<<(std::ostream&, const resource_pattern_filter&);
 
 private:
     std::optional<resource_type> _resource;
@@ -568,19 +455,8 @@ private:
     std::optional<pattern_filter_type> _pattern;
 };
 
-inline std::ostream& operator<<(
-  std::ostream& os, resource_pattern_filter::serialized_pattern_type type) {
-    using pattern_type = resource_pattern_filter::serialized_pattern_type;
-    switch (type) {
-    case pattern_type::literal:
-        return os << "literal";
-    case pattern_type::match:
-        return os << "match";
-    case pattern_type::prefixed:
-        return os << "prefixed";
-    }
-    __builtin_unreachable();
-}
+std::ostream&
+operator<<(std::ostream&, resource_pattern_filter::serialized_pattern_type);
 
 inline bool
 resource_pattern_filter::matches(const resource_pattern& pattern) const {
@@ -694,17 +570,7 @@ public:
     friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const acl_entry_filter& f) {
-        fmt::print(
-          o,
-          "{{ pattern: {} host: {} operation: {}, permission: {} }}",
-          f._principal,
-          f._host,
-          f._operation,
-          f._permission);
-        return o;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_entry_filter&);
 
 private:
     std::optional<acl_principal> _principal;
@@ -760,11 +626,7 @@ public:
     friend bool operator==(const acl_binding_filter&, const acl_binding_filter&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const acl_binding_filter& f) {
-        fmt::print(o, "{{ pattern: {} acl: {} }}", f._pattern, f._acl);
-        return o;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_binding_filter&);
 
     auto serde_fields() { return std::tie(_pattern, _acl); }
 
