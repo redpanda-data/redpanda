@@ -119,11 +119,15 @@ FIXTURE_TEST(test_feature_table_snapshots, cluster_test_fixture) {
     wait_for_controller_leadership(id0).get();
     wait_for_all_members(3s).get();
 
-    // Peek at storage, see that it created a snapshot
-    auto snap_opt = app->storage.local().kvs().get(
-      storage::kvstore::key_space::controller,
-      features::feature_table_snapshot::kvstore_key());
-    BOOST_REQUIRE(snap_opt.has_value());
+    // Wait til it creates a snapshot: this requires a wait because the feature
+    // manager progress is asynchronous when translating a node version update
+    // into an update to the feature table to update the cluster version.
+    tests::cooperative_spin_wait_with_timeout(5000ms, [app] {
+        auto snap_opt = app->storage.local().kvs().get(
+          storage::kvstore::key_space::controller,
+          features::feature_table_snapshot::kvstore_key());
+        return snap_opt.has_value();
+    }).get();
 
     auto active_version = app->feature_table.local().get_active_version();
 
