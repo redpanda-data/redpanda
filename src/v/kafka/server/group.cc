@@ -2974,7 +2974,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
         if (
           _partition->raft()->is_leader()
           && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down();
+            co_await _partition->raft()->step_down("group do abort failed");
         }
         co_return make_abort_tx_reply(cluster::tx_errc::timeout);
     }
@@ -3050,7 +3050,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
         if (
           _partition->raft()->is_leader()
           && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down();
+            co_await _partition->raft()->step_down("group tx commit failed");
         }
         co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }

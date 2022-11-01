@@ -19,7 +19,7 @@ from rptest.services.cluster import cluster
 from rptest.util import segments_count
 
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.utils.mode_checks import cleanup_on_early_exit
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 
 
 class CompactionEndToEndTest(EndToEndTest):
@@ -75,6 +75,7 @@ class CompactionEndToEndTest(EndToEndTest):
             ],
             transactions=[True, False],
             tx_inject_aborts=[True, False])
+    @skip_debug_mode
     def test_basic_compaction(self, key_set_cardinality,
                               initial_cleanup_policy, transactions,
                               tx_inject_aborts):
