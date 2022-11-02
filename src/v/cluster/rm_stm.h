@@ -352,6 +352,7 @@ private:
         is_known |= _mem_state.estimated.contains(pid);
         is_known |= _mem_state.tx_start.contains(pid);
         is_known |= _log_state.ongoing_map.contains(pid);
+        is_known |= _log_state.tx_seqs.contains(pid);
         return is_known;
     }
 
