@@ -17,6 +17,7 @@ from requests.packages.urllib3.util.retry import Retry
 from ducktape.cluster.cluster import ClusterNode
 from typing import Optional, Callable, NamedTuple
 from rptest.util import wait_until_result
+from requests.exceptions import HTTPError
 
 DEFAULT_TIMEOUT = 30
 
@@ -757,3 +758,13 @@ class Admin:
     def get_peer_status(self, node, peer_id):
         return self._request("GET", f"debug/peer_status/{peer_id}",
                              node=node).json()
+
+    def get_cluster_uuid(self, node):
+        try:
+            r = self._request("GET", "cluster/uuid", node=node)
+        except HTTPError as ex:
+            if ex.response.status_code == 404:
+                return
+            raise
+        if len(r.text) > 0:
+            return r.json()["cluster_uuid"]

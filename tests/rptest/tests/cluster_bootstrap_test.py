@@ -7,10 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import ducktape.errors
 from ducktape.mark import matrix
-from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.utils.util import wait_until
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import (RedpandaInstaller,
+                                                wait_for_num_versions)
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 def set_seeds_for_cluster(redpanda, num_seeds):
@@ -18,9 +23,12 @@ def set_seeds_for_cluster(redpanda, num_seeds):
     redpanda.set_seed_servers(seeds)
 
 
-class ClusterBootstrapTest(RedpandaTest):
+class ClusterBootstrapNew(RedpandaTest):
+    """
+    Tests verifying new cluster bootstrap in Seed Driven Cluster Bootstrap mode
+    """
     def __init__(self, test_context):
-        super(ClusterBootstrapTest,
+        super(ClusterBootstrapNew,
               self).__init__(test_context=test_context,
                              num_brokers=3,
                              extra_node_conf={
@@ -57,18 +65,26 @@ class ClusterBootstrapTest(RedpandaTest):
             assert expected_node_id == node_id, f"Expected {expected_node_id} but got {node_id}"
 
 
-class ClusterBootstrapUpgradeTest(RedpandaTest):
+class ClusterBootstrapUpgrade(RedpandaTest):
+    """
+    Tests verifying upgrade of cluster from a pre-Seed-Driven-Bootstrap version
+    """
+
+    OLDVER = (22, 2, 7)
+    OLDVER_STR = 'v' + '.'.join(str(k) for k in OLDVER)
+
     def __init__(self, test_context):
-        super(ClusterBootstrapUpgradeTest,
+        super(ClusterBootstrapUpgrade,
               self).__init__(test_context=test_context, num_brokers=3)
         self.installer = self.redpanda._installer
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        # Start out on a version that did not have seeds-driven bootstrap.
-        self.installer.install(self.redpanda.nodes, (22, 2, 1))
+        # NOTE: `rpk redpanda admin brokers list` requires versions v22.1.x and
+        # above.
+        self.installer.install(self.redpanda.nodes, self.OLDVER)
         set_seeds_for_cluster(self.redpanda, 3)
-        super(ClusterBootstrapUpgradeTest, self).setUp()
+        super(ClusterBootstrapUpgrade, self).setUp()
 
     @cluster(num_nodes=3)
     def test_change_bootstrap_configs_after_upgrade(self):
@@ -91,3 +107,47 @@ class ClusterBootstrapUpgradeTest(RedpandaTest):
             self.redpanda.nodes,
             override_cfg_params={"empty_seed_starts_cluster": False},
             omit_seeds_on_idx_one=False)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_cluster_uuid_upgrade(self):
+        """
+        Check that cluster_uuid is not available until the entire cluster is
+        upgraded, and after the upgrade is complete that cluster_uuid is here
+        """
+        def get_cluster_uuid():
+            u_prev = None
+            for n in self.redpanda.nodes:
+                u = self.admin.get_cluster_uuid(n)
+                if u is None:
+                    self.redpanda.logger.debug(f"No cluster UUID in {n.name}")
+                    return None
+                if u_prev is not None:
+                    assert u == u_prev, f"Different cluster UUID values:"\
+                        " {u} of {n.name}, and {u_prev} of the previous node"
+                u_prev = u
+            return u_prev
+
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert self.OLDVER_STR in unique_versions, unique_versions
+
+        # Upgrade all but 1 node, verify cluster UUID is not created in 10s
+        one_node = [self.redpanda.nodes[0]]
+        but_one_node = self.redpanda.nodes[1:]
+        self.installer.install(but_one_node, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes(but_one_node)
+        unique_versions = wait_for_num_versions(self.redpanda, 2)
+        assert self.OLDVER_STR in unique_versions, unique_versions
+        try:
+            wait_until(lambda: get_cluster_uuid() is not None,
+                       timeout_sec=10,
+                       backoff_sec=1)
+            assert False, "Cluster UUID created before the cluster has completed an upgrade"
+        except ducktape.errors.TimeoutError:
+            pass
+
+        # Upgrade all nodes, verify the cluster has a UUID now
+        self.installer.install(one_node, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes(one_node)
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert self.OLDVER_STR not in unique_versions, unique_versions
+        wait_until(lambda: get_cluster_uuid() is not None, timeout_sec=30)
