@@ -42,6 +42,8 @@ public:
         cancel_requested,
         force_cancel_requested
     };
+
+    enum class topic_state { exists, not_exists, indeterminate };
     /**
      * Replicas revision map is used to track revision of brokers in a replica
      * set. When a node is added into replica set its gets the revision assigned
@@ -292,6 +294,23 @@ public:
     bool contains(model::topic_namespace_view tp) const {
         return _topics.contains(tp);
     }
+    /// contains() check with stronger validation on the topic revision/offset.
+    /// Just looking up in the cache can yield false negatives if the cache is
+    /// not warmed up because controller replay can be in progress. This variant
+    /// of contains factors in such false negatives by incorporating a check on
+    /// the topic revision. Topic revision is the topic creation command offset
+    /// in
+    //  the controller log.
+    ///
+    /// There are 3 possibilities.
+    /// 1. id > last applied offset, not enough information
+    /// 2. id <= last_applied offset && not in cache
+    /// 3. id <= last_applied offset && in cache.
+    ///
+    /// Callers must note that false positives are still possible because of any
+    /// inflight pending deltas (yet to be applied) that delete the topic.
+    topic_state
+    get_topic_state(model::topic_namespace_view, model::revision_id id) const;
 
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp&) const;

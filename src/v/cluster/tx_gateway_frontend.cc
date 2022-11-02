@@ -860,11 +860,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     } else {
         tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(tx, timeout);
+            ec = co_await recommit_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::killed) {
-            ec = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
         }
@@ -1092,8 +1092,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
             should_retry = should_retry || expected_ec;
 
             if (br.ec == tx_errc::none) {
-                partitions.push_back(
-                  tm_transaction::tx_partition{.ntp = br.ntp, .etag = br.etag});
+                partitions.push_back(tm_transaction::tx_partition{
+                  .ntp = br.ntp,
+                  .etag = br.etag,
+                  .topic_revision = br.topic_revision});
             }
         }
         if (should_abort) {
@@ -1440,6 +1442,44 @@ tx_gateway_frontend::do_end_txn(
     co_return ongoing_tx.value();
 }
 
+ss::future<tm_transaction>
+tx_gateway_frontend::remove_deleted_partitions_from_tx(
+  ss::shared_ptr<tm_stm> stm, model::term_id term, cluster::tm_transaction tx) {
+    std::deque<tm_transaction::tx_partition> deleted_partitions;
+    std::copy_if(
+      tx.partitions.begin(),
+      tx.partitions.end(),
+      std::back_inserter(deleted_partitions),
+      [this](const tm_transaction::tx_partition& part) {
+          return part.topic_revision() >= 0
+                 && _metadata_cache.local().get_topic_state(
+                      model::topic_namespace_view(part.ntp),
+                      part.topic_revision)
+                      == topic_table::topic_state::not_exists;
+      });
+
+    for (auto& part : deleted_partitions) {
+        auto result = co_await stm->delete_partition_from_tx(term, tx.id, part);
+        if (result) {
+            vlog(
+              txlog.info,
+              "Deleted non existent partition {} from tx {}",
+              part.ntp,
+              tx);
+            tx = result.value();
+        } else {
+            vlog(
+              txlog.debug,
+              "Error {} deleting partition {} from tx {}",
+              result.error(),
+              part.ntp,
+              tx);
+            break;
+        }
+    }
+    co_return tx;
+}
+
 ss::future<checked<cluster::tm_transaction, tx_errc>>
 tx_gateway_frontend::do_abort_tm_tx(
   model::term_id expected_term,
@@ -1490,26 +1530,39 @@ tx_gateway_frontend::do_abort_tm_tx(
         tx = changed_tx.value();
     }
 
-    std::vector<ss::future<abort_tx_reply>> pfs;
-    for (auto rm : tx.partitions) {
-        pfs.push_back(_rm_partition_frontend.local().abort_tx(
-          rm.ntp, tx.pid, tx.tx_seq, timeout));
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto done = false;
+    while (0 < retries--) {
+        std::vector<ss::future<abort_tx_reply>> pfs;
+        for (auto rm : tx.partitions) {
+            pfs.push_back(_rm_partition_frontend.local().abort_tx(
+              rm.ntp, tx.pid, tx.tx_seq, timeout));
+        }
+        std::vector<ss::future<abort_group_tx_reply>> gfs;
+        for (auto group : tx.groups) {
+            gfs.push_back(_rm_group_proxy->abort_group_tx(
+              group.group_id, tx.pid, tx.tx_seq, timeout));
+        }
+        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
+        bool ok = true;
+        for (const auto& r : prs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        for (const auto& r : grs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        if (ok) {
+            done = true;
+            break;
+        }
+        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
+        if (!co_await sleep_abortable(delay_ms, _as)) {
+            break;
+        }
     }
-    std::vector<ss::future<abort_group_tx_reply>> gfs;
-    for (auto group : tx.groups) {
-        gfs.push_back(_rm_group_proxy->abort_group_tx(
-          group.group_id, tx.pid, tx.tx_seq, timeout));
-    }
-    auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-    bool ok = true;
-    for (const auto& r : prs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    for (const auto& r : grs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    if (!ok) {
+    if (!done) {
         co_return tx_errc::unknown_server_error;
     }
     co_return tx;
@@ -1672,6 +1725,7 @@ tx_gateway_frontend::do_commit_tm_tx(
             done = true;
             break;
         }
+        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
         if (!co_await sleep_abortable(delay_ms, _as)) {
             break;
         }
@@ -1683,7 +1737,10 @@ tx_gateway_frontend::do_commit_tm_tx(
 }
 
 ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
-  tm_transaction tx, model::timeout_clock::duration timeout) {
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id expected_term,
+  tm_transaction tx,
+  model::timeout_clock::duration timeout) {
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto done = false;
@@ -1712,6 +1769,7 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
             done = true;
             break;
         }
+        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
         if (co_await sleep_abortable(delay_ms, _as)) {
             vlog(txlog.trace, "retrying re-commit pid:{}", tx.pid);
         } else {
@@ -1726,28 +1784,45 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
 }
 
 ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
-  tm_transaction tx, model::timeout_clock::duration timeout) {
-    std::vector<ss::future<abort_tx_reply>> pfs;
-    for (auto rm : tx.partitions) {
-        pfs.push_back(_rm_partition_frontend.local().abort_tx(
-          rm.ntp, tx.pid, tx.tx_seq, timeout));
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id expected_term,
+  tm_transaction tx,
+  model::timeout_clock::duration timeout) {
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto done = false;
+
+    while (0 < retries--) {
+        std::vector<ss::future<abort_tx_reply>> pfs;
+        for (auto rm : tx.partitions) {
+            pfs.push_back(_rm_partition_frontend.local().abort_tx(
+              rm.ntp, tx.pid, tx.tx_seq, timeout));
+        }
+        std::vector<ss::future<abort_group_tx_reply>> gfs;
+        for (auto group : tx.groups) {
+            gfs.push_back(_rm_group_proxy->abort_group_tx(
+              group.group_id, tx.pid, tx.tx_seq, timeout));
+        }
+        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
+        auto ok = true;
+        for (const auto& r : prs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        for (const auto& r : grs) {
+            ok = ok && (r.ec == tx_errc::none);
+        }
+        if (ok) {
+            done = true;
+            break;
+        }
+        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
+        if (!co_await sleep_abortable(delay_ms, _as)) {
+            break;
+        }
     }
-    std::vector<ss::future<abort_group_tx_reply>> gfs;
-    for (auto group : tx.groups) {
-        gfs.push_back(_rm_group_proxy->abort_group_tx(
-          group.group_id, tx.pid, tx.tx_seq, timeout));
-    }
-    auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-    auto ok = true;
-    for (const auto& r : prs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    for (const auto& r : grs) {
-        ok = ok && (r.ec == tx_errc::none);
-    }
-    if (!ok) {
-        co_return tx_errc::timeout;
+    if (!done) {
+        co_return tx_errc::unknown_server_error;
     }
     co_return tx_errc::none;
 }
@@ -1821,9 +1896,9 @@ tx_gateway_frontend::get_ongoing_tx(
         // decided, rolling it forward.
         tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(tx, timeout);
+            ec = co_await recommit_tm_tx(stm, expected_term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(stm, expected_term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
         }
@@ -2005,11 +2080,11 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     } else {
         tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(tx, timeout);
+            ec = co_await recommit_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::killed) {
-            ec = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
         }

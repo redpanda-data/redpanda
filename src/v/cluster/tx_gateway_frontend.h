@@ -181,10 +181,16 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<tx_errc>
-      recommit_tm_tx(tm_transaction, model::timeout_clock::duration);
-    ss::future<tx_errc>
-      reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
+    ss::future<tx_errc> recommit_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      model::term_id,
+      tm_transaction,
+      model::timeout_clock::duration);
+    ss::future<tx_errc> reabort_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      model::term_id,
+      tm_transaction,
+      model::timeout_clock::duration);
 
     template<typename Func>
     auto with_stm(Func&& func);
@@ -202,6 +208,9 @@ private:
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
       tm_transaction::tx_partition);
+
+    ss::future<tm_transaction> remove_deleted_partitions_from_tx(
+      ss::shared_ptr<tm_stm>, model::term_id term, cluster::tm_transaction tx);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);

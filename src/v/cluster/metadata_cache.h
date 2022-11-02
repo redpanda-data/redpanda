@@ -121,6 +121,8 @@ public:
 
     bool contains(model::topic_namespace_view, model::partition_id) const;
     bool contains(model::topic_namespace_view) const;
+    topic_table::topic_state
+      get_topic_state(model::topic_namespace_view, model::revision_id) const;
 
     bool contains(const model::ntp& ntp) const {
         return contains(model::topic_namespace_view(ntp), ntp.tp.partition);

@@ -169,6 +169,11 @@ bool metadata_cache::contains(model::topic_namespace_view tp) const {
     return _topics_state.local().contains(tp);
 }
 
+topic_table::topic_state metadata_cache::get_topic_state(
+  model::topic_namespace_view tp, model::revision_id id) const {
+    return _topics_state.local().get_topic_state(tp, id);
+}
+
 ss::future<model::node_id> metadata_cache::get_leader(
   const model::ntp& ntp,
   ss::lowres_clock::time_point tout,

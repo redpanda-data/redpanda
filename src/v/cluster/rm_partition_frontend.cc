@@ -283,7 +283,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
     return _partition_manager.invoke_on(
       *shard,
       _ssg,
-      [ntp, pid, tx_seq, transaction_timeout_ms](
+      [ntp, pid, tx_seq, transaction_timeout_ms, this](
         cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
@@ -299,8 +299,16 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
                 begin_tx_reply{ntp, tx_errc::stm_not_found});
           }
 
+          auto topic_md = _metadata_cache.local().get_topic_metadata(
+            model::topic_namespace_view(ntp));
+          if (!topic_md) {
+              return ss::make_ready_future<begin_tx_reply>(
+                begin_tx_reply{ntp, tx_errc::partition_not_exists});
+          }
+          auto topic_revision = topic_md->get_revision();
+
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
-            .then([ntp](checked<model::term_id, tx_errc> etag) {
+            .then([ntp, topic_revision](checked<model::term_id, tx_errc> etag) {
                 if (!etag.has_value()) {
                     vlog(
                       txlog.warn,
@@ -312,8 +320,8 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
                     }
                     return begin_tx_reply{ntp, tx_errc::unknown_server_error};
                 }
-
-                return begin_tx_reply{ntp, etag.value(), tx_errc::none};
+                return begin_tx_reply{
+                  ntp, etag.value(), tx_errc::none, topic_revision};
             });
       });
 }
