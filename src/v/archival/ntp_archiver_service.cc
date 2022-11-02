@@ -714,28 +714,19 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
             _probe.upload_lag(ctx.last_offset - ctx.start_offset);
         }
 
-        co_await ss::repeat(
-          [this, &ctx, &uploads_remaining]() -> ss::future<ss::stop_iteration> {
-              if (uploads_remaining <= 0 || !upload_loop_can_continue()) {
-                  co_return ss::stop_iteration::yes;
-              }
+        while (uploads_remaining > 0 && upload_loop_can_continue()) {
+            auto should_stop = co_await ctx.schedule_single_upload(*this);
+            if (should_stop == ss::stop_iteration::yes) {
+                break;
+            }
 
-              auto should_stop = co_await ctx.schedule_single_upload(*this);
-
-              // At the end of each context is an upload with should_stop=yes,
-              // which does not upload anything but signals the end of the
-              // uploads. Do not decrement remaining uploads for this type of
-              // return value. When should_stop=no, we have a real upload and
-              // decrement the counter.
-              if (should_stop == ss::stop_iteration::no) {
-                  uploads_remaining -= 1;
-              }
-              co_return should_stop;
-          });
+            uploads_remaining -= 1;
+        }
 
         vlog(
           _rtclog.debug,
-          "scheduled {} uploads for upload kind: {}, uploads remaining: {}",
+          "scheduled {} uploads for upload kind: {}, uploads remaining: "
+          "{}",
           ctx.uploads.size(),
           ctx.upload_kind,
           uploads_remaining);
