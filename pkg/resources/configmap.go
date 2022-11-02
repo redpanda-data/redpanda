@@ -375,6 +375,10 @@ func (r *ConfigMapResource) CreateConfiguration(
 		return nil, err
 	}
 
+	if featuregates.RackAwareness(r.pandaCluster.Spec.Version) {
+		cfg.SetAdditionalRedpandaProperty("enable_rack_awareness", true)
+	}
+
 	if err := cfg.SetAdditionalFlatProperties(r.pandaCluster.Spec.AdditionalConfiguration); err != nil {
 		return nil, err
 	}

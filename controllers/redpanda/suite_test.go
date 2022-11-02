@@ -167,12 +167,14 @@ var _ = BeforeEach(func() {
 	testAdminAPI.RegisterPropertySchema("auto_create_topics_enabled", admin.ConfigPropertyMetadata{NeedsRestart: false})
 	testAdminAPI.RegisterPropertySchema("cloud_storage_segment_max_upload_interval_sec", admin.ConfigPropertyMetadata{NeedsRestart: true})
 	testAdminAPI.RegisterPropertySchema("log_segment_size", admin.ConfigPropertyMetadata{NeedsRestart: true})
+	testAdminAPI.RegisterPropertySchema("enable_rack_awareness", admin.ConfigPropertyMetadata{NeedsRestart: false})
 
 	// By default we set the following properties and they'll be loaded by redpanda from the .bootstrap.yaml
 	// So we initialize the test admin API with those
 	testAdminAPI.SetProperty("auto_create_topics_enabled", false)
 	testAdminAPI.SetProperty("cloud_storage_segment_max_upload_interval_sec", 1800)
 	testAdminAPI.SetProperty("log_segment_size", 536870912)
+	testAdminAPI.SetProperty("enable_rack_awareness", true)
 })
 
 var _ = AfterSuite(func() {

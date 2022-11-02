@@ -48,6 +48,12 @@ func PerListenerAuthorization(version string) bool {
 	return atLeastVersion(v22_2_1, version)
 }
 
+// RackAwareness feature gate prevents enabling rack awareness
+// or setting the rack id on redpanda versions older than 22.1
+func RackAwareness(version string) bool {
+	return atLeastVersion(v22_1, version)
+}
+
 // atLeastVersion tells if the given version is greater or equal than the
 // minVersion.
 // All semver incompatible versions (such as "dev" or "latest") and non-version
