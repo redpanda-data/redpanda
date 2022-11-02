@@ -441,6 +441,14 @@ ss::future<> controller::start(cluster_discovery& discovery) {
       });
 }
 
+ss::future<> controller::set_ready() {
+    if (_is_ready) {
+        return ss::now();
+    }
+    _is_ready = true;
+    return _raft_manager.invoke_on_all(&raft::group_manager::set_ready);
+}
+
 ss::future<> controller::shutdown_input() {
     if (_raft0) {
         _raft0->shutdown_input();
