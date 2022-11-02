@@ -2663,4 +2663,28 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
       as.aborted.size());
     return o;
 }
+
+ss::future<> rm_stm::clear_old_tx_pids() {
+    std::vector<model::producer_identity> pids_for_delete;
+    for (auto [id, epoch] : _log_state.fence_pid_epoch) {
+        auto pid = model::producer_identity(id, epoch);
+        // If pid is not inside tx_seqs it means we do not have transaction for
+        // it right now
+        if (!_log_state.tx_seqs.contains(pid)) {
+            pids_for_delete.push_back(pid);
+        }
+    }
+
+    co_await ss::max_concurrent_for_each(
+      pids_for_delete, 32, [this](auto pid) -> ss::future<> {
+          // We have transaction for this pid
+          if (_log_state.tx_seqs.contains(pid)) {
+              return ss::now();
+          }
+          _mem_state.forget(pid);
+          _log_state.forget(pid);
+          return ss::now();
+      });
+}
+
 } // namespace cluster
