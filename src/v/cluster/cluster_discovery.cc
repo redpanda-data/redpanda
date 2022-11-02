@@ -370,9 +370,7 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
     // The other seeds will likely mostly all have -1 as their node_id if their
     // node_id was not set explicitly. Have the returned seed broker node_id
     // populated with indices, relying on the fact that all seed broker's have
-    // identical configuration. Note that the order is preserved from
-    // seed_servers to seed_brokers, but the latter is missing one item for
-    // self.
+    // identical configuration.
     model::node_id::type idx = 0;
     absl::flat_hash_set<model::node_id> unique_node_ids;
     for (auto& broker : seed_brokers) {

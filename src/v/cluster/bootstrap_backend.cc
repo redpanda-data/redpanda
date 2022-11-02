@@ -66,7 +66,7 @@ ss::future<std::error_code>
 bootstrap_backend::apply_update(model::record_batch b) {
     vlog(clusterlog.info, "Applying update to bootstrap_manager");
 
-    // handle node managements command
+    // handle the bootstrap command
     static constexpr auto accepted_commands
       = make_commands_list<bootstrap_cluster_cmd>();
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);

@@ -29,9 +29,9 @@ class credential_store;
 namespace cluster {
 
 /**
- * This class applies the cluster intitalization message to
- * - itself, storing the cluster UUID value, also duplicating it to the kvstore
- * - credintial_store, to initialize the bootstrap user
+ * This class applies the cluster initialization message to
+ * - storage, persisting the cluster UUID to the kvstore,
+ * - credential_store, to initialize the bootstrap user
  * - TODO: apply the initial licence
  */
 class bootstrap_backend final {
