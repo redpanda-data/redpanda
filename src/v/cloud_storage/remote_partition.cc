@@ -758,17 +758,8 @@ void remote_partition::maybe_sync_with_manifest() {
             _segments.insert_or_assign(o, std::move(ms));
             materialized_segments.erase(it);
         } else {
-            auto res = _segments.insert_or_assign(
+            _segments.insert_or_assign(
               o, offloaded_segment_state(meta.second.base_offset));
-            // With offloaded segments we can't distinguish between compacted
-            // and non compacted segments with the same base offset. Because of
-            // that all offloaded segments has to be recreated every time. It
-            // makes this metric useless but future update will make it
-            // completely obsolete since we will no longer have segments in
-            // offloaded state.
-            if (res.second) {
-                _probe.segment_added();
-            }
         }
     }
     _insync_offset = _manifest.get_insync_offset();
