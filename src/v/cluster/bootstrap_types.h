@@ -54,8 +54,8 @@ struct cluster_bootstrap_info_reply
     operator<<(std::ostream& o, const cluster_bootstrap_info_reply& v) {
         fmt::print(
           o,
-          "{{broker: {}, version: {}, seed_servers: {}, ESCB: {}, "
-          "cluster_UUID: {}}}",
+          "{{broker: {}, version: {}, seed_servers: {}, "
+          "empty_seed_starts_cluster: {}, cluster_uuid: {}}}",
           v.broker,
           v.version,
           v.seed_servers,
