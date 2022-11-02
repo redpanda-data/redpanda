@@ -60,9 +60,19 @@ public:
         using api_t = typename T::api_type;
         return _gated_mutex
           .with([this, r{std::move(r)}]() mutable {
-              vlog(kclog.debug, "Dispatch: {} req: {}", api_t::name, r);
-              return _client.dispatch(std::move(r)).then([](Ret res) {
-                  vlog(kclog.debug, "Dispatch: {} res: {}", api_t::name, res);
+              vlog(
+                kclog.debug,
+                "Dispatch to node {}: {} req: {}",
+                _node_id,
+                api_t::name,
+                r);
+              return _client.dispatch(std::move(r)).then([this](Ret res) {
+                  vlog(
+                    kclog.debug,
+                    "Dispatch from node {}: {} res: {}",
+                    _node_id,
+                    api_t::name,
+                    res);
                   return res;
               });
           })
