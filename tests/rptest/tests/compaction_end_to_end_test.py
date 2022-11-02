@@ -102,53 +102,59 @@ class CompactionEndToEndTest(EndToEndTest):
             cleanup_on_early_exit(self)
             return
 
-        self.start_workload(key_set_cardinality, initial_cleanup_policy,
-                            transactions, tx_inject_aborts)
-        rpk = RpkTool(self.redpanda)
-        cfgs = rpk.describe_topic_configs(self.topic)
-        self.logger.debug(f"Initial topic {self.topic} configuration: {cfgs}")
-
-        # make sure that segments will not be compacted when we populate
-        # topic partitions with data
-        rpk.cluster_config_set("log_compaction_interval_ms", str(3600 * 1000))
-
-        def segment_number_matches(predicate):
-            segments_per_partition = self.topic_segments()
+        try:
+            self.start_workload(key_set_cardinality, initial_cleanup_policy,
+                                transactions, tx_inject_aborts)
+            rpk = RpkTool(self.redpanda)
+            cfgs = rpk.describe_topic_configs(self.topic)
             self.logger.debug(
-                f"Topic {self.topic} segments per partition: {segments_per_partition}"
+                f"Initial topic {self.topic} configuration: {cfgs}")
+
+            # make sure that segments will not be compacted when we populate
+            # topic partitions with data
+            rpk.cluster_config_set("log_compaction_interval_ms",
+                                   str(3600 * 1000))
+
+            def segment_number_matches(predicate):
+                segments_per_partition = self.topic_segments()
+                self.logger.debug(
+                    f"Topic {self.topic} segments per partition: {segments_per_partition}"
+                )
+
+                return all([predicate(n) for n in segments_per_partition])
+
+            # wait for multiple segments to appear in topic partitions
+            wait_until(lambda: segment_number_matches(lambda s: s >= 5),
+                       timeout_sec=180,
+                       backoff_sec=2)
+
+            # enable compaction, if topic isn't compacted
+            if initial_cleanup_policy == TopicSpec.CLEANUP_DELETE:
+                rpk.alter_topic_config(self.topic,
+                                       set_key="cleanup.policy",
+                                       set_value=TopicSpec.CLEANUP_COMPACT)
+            # stop producer
+            self.logger.info("Stopping producer after writing up to offsets %s" %\
+                            str(self.producer.last_acked_offsets))
+            self.producer.stop()
+            current_segments_per_partition = self.topic_segments()
+            self.logger.info(
+                f"Stopped producer, segments per partition: {current_segments_per_partition}"
             )
+            # make compaction frequent
+            rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
 
-            return all([predicate(n) for n in segments_per_partition])
+            # wait for compaction to merge some adjacent segments
+            wait_until(lambda: segment_number_matches(lambda s: s < 5),
+                       timeout_sec=180,
+                       backoff_sec=2)
 
-        # wait for multiple segments to appear in topic partitions
-        wait_until(lambda: segment_number_matches(lambda s: s >= 5),
-                   timeout_sec=180,
-                   backoff_sec=2)
-
-        # enable compaction, if topic isn't compacted
-        if initial_cleanup_policy == TopicSpec.CLEANUP_DELETE:
-            rpk.alter_topic_config(self.topic,
-                                   set_key="cleanup.policy",
-                                   set_value=TopicSpec.CLEANUP_COMPACT)
-        # stop producer
-        self.logger.info("Stopping producer after writing up to offsets %s" %\
-                         str(self.producer.last_acked_offsets))
-        self.producer.stop()
-        current_segments_per_partition = self.topic_segments()
-        self.logger.info(
-            f"Stopped producer, segments per partition: {current_segments_per_partition}"
-        )
-        # make compaction frequent
-        rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
-
-        # wait for compaction to merge some adjacent segments
-        wait_until(lambda: segment_number_matches(lambda s: s < 5),
-                   timeout_sec=180,
-                   backoff_sec=2)
-
-        # enable consumer and validate consumed records
-        self.start_consumer(num_nodes=1, verify_offsets=False)
-        consumer_timeout = 180 if self.debug_mode else 90
-        self.run_validation(enable_compaction=True,
-                            enable_transactions=transactions,
-                            consumer_timeout_sec=consumer_timeout)
+            # enable consumer and validate consumed records
+            self.start_consumer(num_nodes=1, verify_offsets=False)
+            consumer_timeout = 180 if self.debug_mode else 90
+            self.run_validation(enable_compaction=True,
+                                enable_transactions=transactions,
+                                consumer_timeout_sec=consumer_timeout)
+        except BaseException:
+            self._collect_segment_data()
+            raise
