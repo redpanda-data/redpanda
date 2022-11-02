@@ -1852,14 +1852,16 @@ class RedpandaService(Service):
                               override_cfg_params=None,
                               start_timeout=None,
                               stop_timeout=None,
-                              use_maintenance_mode=True):
+                              use_maintenance_mode=True,
+                              omit_seeds_on_idx_one=True):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         restarter = RollingRestarter(self)
         restarter.restart_nodes(nodes,
                                 override_cfg_params=override_cfg_params,
                                 start_timeout=start_timeout,
                                 stop_timeout=stop_timeout,
-                                use_maintenance_mode=use_maintenance_mode)
+                                use_maintenance_mode=use_maintenance_mode,
+                                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
 
     def registered(self, node):
         """

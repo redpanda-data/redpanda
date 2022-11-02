@@ -24,12 +24,17 @@ class RollingRestarter:
                       override_cfg_params=None,
                       start_timeout=None,
                       stop_timeout=None,
-                      use_maintenance_mode=True):
+                      use_maintenance_mode=True,
+                      omit_seeds_on_idx_one=True):
         """
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
         """
         admin = self.redpanda._admin
+        if start_timeout is None:
+            start_timeout = self.redpanda.node_ready_timeout_s
+        if stop_timeout is None:
+            stop_timeout = self.redpanda.node_ready_timeout_s
 
         def has_drained_leaders(node):
             try:
@@ -83,9 +88,11 @@ class RollingRestarter:
 
             self.redpanda.stop_node(node, timeout=stop_timeout)
 
-            self.redpanda.start_node(node,
-                                     override_cfg_params,
-                                     timeout=start_timeout)
+            self.redpanda.start_node(
+                node,
+                override_cfg_params,
+                timeout=start_timeout,
+                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
 
             controller_leader = wait_until_cluster_healthy(start_timeout)
 

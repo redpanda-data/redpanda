@@ -20,6 +20,9 @@
 #include "model/metadata.h"
 #include "seastarx.h"
 #include "storage/kvstore.h"
+#include "utils/directory_walker.h"
+
+#include <seastar/core/seastar.hh>
 
 #include <chrono>
 
@@ -79,6 +82,25 @@ cluster_discovery::brokers cluster_discovery::founding_brokers() const {
 ss::future<bool> cluster_discovery::is_cluster_founder() {
     if (_is_cluster_founder.has_value()) {
         co_return *_is_cluster_founder;
+    }
+    // If there's anything in the controller directory, assume this node has
+    // previously joined a cluster.
+    auto controller_ntp_cfg = storage::ntp_config(
+      model::controller_ntp, config::node().data_directory().as_sstring());
+    const auto controller_dir = controller_ntp_cfg.work_directory();
+    auto controller_dir_exists = co_await ss::file_exists(controller_dir);
+    if (controller_dir_exists) {
+        const auto controller_empty = co_await directory_walker::empty(
+          std::filesystem::path(controller_dir));
+        if (!controller_empty) {
+            vlog(
+              clusterlog.info,
+              "Controller directory {} not empty; assuming existing cluster "
+              "exists",
+              controller_dir);
+            _is_cluster_founder = false;
+            co_return *_is_cluster_founder;
+        }
     }
     if (config::node().empty_seed_starts_cluster()) {
         // When using root-driven bootstrap, only the node with the empty seed
