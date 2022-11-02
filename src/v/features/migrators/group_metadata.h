@@ -57,6 +57,7 @@ private:
     ss::future<> do_apply();
     ss::future<> migrate_metadata();
     ss::future<> activate_feature(ss::abort_source&);
+    ss::future<> prepare_and_run_migrations();
     ss::future<> do_activate_feature(ss::abort_source&);
 
     void dispatch_ntp_migration(model::ntp);

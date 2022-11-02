@@ -753,7 +753,12 @@ void group_metadata_migration::start(ss::abort_source& as) {
 
     // Wait for feature to be preparing and execute migration
     ssx::background
-      = ssx::spawn_with_gate_then(_background_gate, [this]() -> ss::future<> {
+      = ssx::spawn_with_gate_then(_background_gate, [this] {
+              return prepare_and_run_migrations();
+        }).handle_exception_type([](ss::sleep_aborted&) {});
+}
+
+ss::future<> group_metadata_migration::prepare_and_run_migrations() {
             while (!feature_table().is_active(get_feature())
                    && !_as.abort_requested()) {
                 if (!_controller.get_topics_state().local().contains(
@@ -778,7 +783,6 @@ void group_metadata_migration::start(ss::abort_source& as) {
                     co_return co_await do_apply();
                 }
             }
-        }).handle_exception_type([](ss::sleep_aborted&) {});
 }
 
 // awaits for the migration to finish
