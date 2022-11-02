@@ -56,6 +56,13 @@ func (c *Config) Exists() bool { return c.exists }
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (c *Config) HasClientCredentials() bool { return c.ClientID != "" && c.ClientSecret != "" }
 
+// ClearCredentials sets the in-memory credentials to it's zero value.
+func (c *Config) ClearCredentials() {
+	c.ClientID = ""
+	c.ClientSecret = ""
+	c.AuthToken = ""
+}
+
 // Pretty returns a string with the configuration formatted in a human-readable
 // form.
 func (c *Config) Pretty() string {

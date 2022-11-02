@@ -20,7 +20,10 @@ import (
 )
 
 func newLogoutCommand(fs afero.Fs) *cobra.Command {
-	var params cloudcfg.Params
+	var (
+		params cloudcfg.Params
+		clear  bool
+	)
 	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Log out from the Redpanda cloud",
@@ -32,16 +35,22 @@ func newLogoutCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := params.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			if cfg.AuthToken == "" {
+			if cfg.AuthToken == "" && !clear {
 				fmt.Println("You are not logged in.")
 				return
 			}
-			cfg.AuthToken = ""
-			err = cfg.SaveToken(fs)
+			if clear {
+				cfg.ClearCredentials()
+				err = cfg.SaveAll(fs)
+			} else {
+				cfg.AuthToken = ""
+				err = cfg.SaveToken(fs)
+			}
 			out.MaybeDie(err, "unable to save the cloud configuration :%v", err)
 			fmt.Println("You are now logged out.")
 		},
 	}
 
+	cmd.Flags().BoolVarP(&clear, "clear-credentials", "c", false, "Clear the client ID and client secret in addition to the auth token")
 	return cmd
 }
