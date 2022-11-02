@@ -286,18 +286,19 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
         }
         replies.emplace(seed_server.addr, cluster_bootstrap_info_reply{});
     }
-    co_await ss::parallel_for_each(replies, [this](auto& iter) -> ss::future<> {
-        auto& [addr, reply] = iter;
-        reply = co_await request_cluster_bootstrap_info_single(addr);
-        if (reply.cluster_uuid.has_value()) {
-            vlog(
-              clusterlog.info,
-              "Cluster presence detected in other seed servers: {}",
-              *reply.cluster_uuid);
-            _is_cluster_founder = false;
-            co_return;
-        }
-    });
+    co_await ss::parallel_for_each(
+      replies, ss::coroutine::lambda([this](auto& iter) -> ss::future<> {
+          auto& [addr, reply] = iter;
+          reply = co_await request_cluster_bootstrap_info_single(addr);
+          if (reply.cluster_uuid.has_value()) {
+              vlog(
+                clusterlog.info,
+                "Cluster presence detected in other seed servers: {}",
+                *reply.cluster_uuid);
+              _is_cluster_founder = false;
+              co_return;
+          }
+      }));
     if (_is_cluster_founder.has_value()) {
         vassert(
           !*_is_cluster_founder,
