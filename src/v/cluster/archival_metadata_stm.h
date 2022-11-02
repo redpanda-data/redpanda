@@ -122,6 +122,8 @@ private:
     struct cleanup_metadata_cmd;
     struct snapshot;
 
+    friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
+
     static std::vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
