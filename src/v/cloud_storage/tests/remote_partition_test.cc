@@ -408,6 +408,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto conf = fixture.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -438,6 +439,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -967,6 +969,7 @@ scan_remote_partition_incrementally(
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -1088,6 +1091,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -1182,6 +1186,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
     auto conf = get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
     auto manifest = hydrate_manifest(api, bucket);
@@ -1285,6 +1290,7 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
     auto manifest = hydrate_manifest(api, bucket);
@@ -1373,6 +1379,7 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
     auto manifest = hydrate_manifest(api, bucket);
@@ -1461,6 +1468,7 @@ scan_remote_partition_incrementally_with_reuploads(
     auto conf = imposter.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
+    api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
