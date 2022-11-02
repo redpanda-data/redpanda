@@ -75,7 +75,6 @@ class CompactionEndToEndTest(EndToEndTest):
             ],
             transactions=[True, False],
             tx_inject_aborts=[True, False])
-    @skip_debug_mode
     def test_basic_compaction(self, key_set_cardinality,
                               initial_cleanup_policy, transactions,
                               tx_inject_aborts):
