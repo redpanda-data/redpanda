@@ -76,7 +76,7 @@ func Execute() {
 
 	root.AddCommand(
 		acl.NewCommand(fs),
-		cloud.NewCommand(),
+		cloud.NewCommand(fs),
 		cluster.NewCommand(fs),
 		container.NewCommand(),
 		debug.NewCommand(fs),

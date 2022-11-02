@@ -12,28 +12,34 @@ package cloud
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/auth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newLogoutCommand() *cobra.Command {
+func newLogoutCommand(fs afero.Fs) *cobra.Command {
+	var params cloudcfg.Params
 	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Log out from the Redpanda cloud",
+		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := auth.LoadConfig()
-			out.MaybeDie(err, "unable to load the cloud configuration: %v", err)
+			if rpkos.IsRunningSudo() {
+				out.Die("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
+			}
+			cfg, err := params.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 
-			if cfg == nil || cfg.AuthToken == "" {
-				fmt.Println("You are not logged in")
+			if cfg.AuthToken == "" {
+				fmt.Println("You are not logged in.")
 				return
 			}
-
 			cfg.AuthToken = ""
-			err = cfg.Save()
+			err = cfg.SaveToken(fs)
 			out.MaybeDie(err, "unable to save the cloud configuration :%v", err)
-			fmt.Println("You are now logged out")
+			fmt.Println("You are now logged out.")
 		},
 	}
 

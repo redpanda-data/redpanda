@@ -10,18 +10,22 @@
 package cloud
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/auth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newLoginCommand() *cobra.Command {
-	var params auth.Params
+func newLoginCommand(fs afero.Fs) *cobra.Command {
+	var params cloudcfg.Params
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Login to the Redpanda cloud",
+		Args:  cobra.ExactArgs(0),
 		Long: `Login to the Redpanda cloud
 
 This command checks for an existing token and, if present, ensures it is still
@@ -30,39 +34,39 @@ login and save your token.
 
 You may use any of the following methods to pass the cloud credentials to rpk:
 
-CONFIG FILE
+Logging in requires cloud credentials, which can be created in the Clients
+tab of the Users section in the Redpanda Cloud online interface. Client
+credentials can be provided in three ways, in order of preference:
 
-Store them in '$HOME/.config/rpk/__cloud.yaml' :
-  client_id:
-  client_secret
+* In $HOME/.config/rpk/__cloud.yaml, in 'client_id' and 'client_secret' fields
+* Through RPK_CLOUD_CLIENT_ID and RPK_CLOUD_CLIENT_SECRET environment variables
+* Through the --client-id and --client-secret flags
 
-FLAGS
-
-Use --client-id and --client-secret flags:
-
-  rpk cloud login --client-id <id> --client-secret <secret>
-
-ENVIRONMENT VARIABLES
-
-Use CLOUD_CLIENT_ID and CLOUD_CLIENT_SECRET environment flags
-
-  CLOUD_CLIENT_ID=<id> CLOUD_CLIENT_SECRET=<secret> rpk cloud login
-
-If neither of the above methods are used, rpk prompts for the credentials and
-store them in $HOME/.config/rpk/__cloud.yaml once the login succeeds.
-
-All commands in the cloud plugin check for / load / refresh a token as
-necessary, so this command is not really necessary to run directly.
+If none of these are provided, login will prompt you for the client ID and
+client secret and will save them to the __cloud.yaml file. If you specify
+environment variables or flags, they will not be synced to the __cloud.yaml
+file. The cloud authorization token is always synced.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
-			err := auth.LoadFlow(cmd.Context(), params)
-			out.MaybeDie(err, "unable to login into Redpanda cloud: %v", err)
-			fmt.Println("Successfully logged in")
+			cfg, err := params.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			_, err = auth.LoadFlow(cmd.Context(), fs, cfg)
+			if e := (*auth.BadClientTokenError)(nil); errors.As(err, &e) {
+				out.Die(`
+Unable to login into Redpanda Cloud: %v.
+
+You may need to clear your client ID and secret with 'rpk cloud logout --clear-credentials',
+and then re-specify the client credentials next time you log in.
+`, err)
+			}
+			out.MaybeDie(err, "unable to login into Redpanda Cloud: %v", err)
+			fmt.Println("Successfully logged in.")
 		},
 	}
 
-	cmd.Flags().StringVar(&params.ClientID, auth.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
-	cmd.Flags().StringVar(&params.ClientSecret, auth.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
-	cmd.MarkFlagsRequiredTogether(auth.FlagClientID, auth.FlagClientSecret)
+	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
+	cmd.Flags().StringVar(&params.ClientSecret, cloudcfg.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
+	cmd.MarkFlagsRequiredTogether(cloudcfg.FlagClientID, cloudcfg.FlagClientSecret)
 	return cmd
 }

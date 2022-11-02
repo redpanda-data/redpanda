@@ -10,18 +10,19 @@
 package cloud
 
 import (
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand() *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cloud",
 		Short: "Interact with Redpanda cloud",
 	}
 
 	cmd.AddCommand(
-		newLoginCommand(),
-		newLogoutCommand(),
+		newLoginCommand(fs),
+		newLogoutCommand(fs),
 	)
 
 	return cmd

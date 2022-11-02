@@ -15,128 +15,121 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/auth0"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/spf13/afero"
 )
 
 // The auth0 endpoint information to get dev tokens from.
-var auth0Endpoint = auth0.Endpoint{
+var prodAuth0Endpoint = auth0.Endpoint{
 	URL:      "https://prod-cloudv2.us.auth0.com",
 	Audience: "cloudv2-production.redpanda.cloud",
+}
+
+// BadClientTokenError is returned when the client ID is invalid or some other
+// error occurs. This can be used as a hint that the client ID needs to be
+// cleared as well.
+type BadClientTokenError struct {
+	Err error
+}
+
+func (e *BadClientTokenError) Error() string {
+	return fmt.Sprintf("invalid client token: %v", e.Err)
 }
 
 // LoadFlow loads or creates a config at default path, and validates and
 // refreshes or creates an auth0 token using the given auth0 parameters.
 //
 // This function is expected to be called at the start of most commands.
-func LoadFlow(ctx context.Context, params Params) error {
-	var (
-		id        string
-		prompt    bool
-		save      bool
-		secret    string
-		useParams bool
+func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (string, error) {
+	auth0Endpoint := auth0.Endpoint{
+		URL:      cfg.AuthURL,
+		Audience: cfg.AuthAudience,
+	}
 
-		cfg, err = LoadConfig()
-	)
+	if auth0Endpoint.URL == "" {
+		auth0Endpoint = prodAuth0Endpoint
+	}
 
-	switch {
-	case err == nil: // loaded
-		if cfg.ClientID == "" || cfg.ClientSecret == "" {
-			fmt.Println("No client config found.")
-			prompt = true
+	// We want to avoid creating a root owned file. If the file exists, we
+	// just chmod with rpkos.ReplaceFile and keep old perms even with sudo.
+	// If the file does not exist, we will always be creating it to write
+	// the token, so we fail if we are running with sudo.
+	if !cfg.Exists() && rpkos.IsRunningSudo() {
+		return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
+	}
+
+	// If we have to prompt, then we will save the client id and secret to
+	// the file as well: we do not want the user to repeat input when they
+	// run this flow again.
+	prompt := !cfg.HasClientCredentials()
+	if prompt {
+		var err error
+		if cfg.ClientID, cfg.ClientSecret, err = promptClientCfg(); err != nil {
+			return "", err
 		}
-		id = cfg.ClientID
-		secret = cfg.ClientSecret
-	case errors.Is(err, os.ErrNotExist): // missing file: prompt, auth and create
-		fmt.Println("No configuration found.")
-		cfg = &Config{}
-		prompt = true
-	default:
-		return fmt.Errorf("unable to load your configuration: %v", err)
 	}
-
-	// We check if the flags or the environment variables were set, if that's
-	// the case then we will use those values instead of the cfg file, but at
-	// the end we will only save the token but not the Client ID/Secret.
-	params.EnvOverride()
-	if params.ClientID != "" || params.ClientSecret != "" {
-		useParams = true
-		id = params.ClientID
-		secret = params.ClientSecret
-	}
-
-	if prompt && !useParams {
-		err = promptClientCfg(cfg)
-		if err != nil {
-			return err
-		}
-		save = true
-		id = cfg.ClientID
-		secret = cfg.ClientSecret
-	}
-
+	var save bool
 	defer func() {
 		if save {
-			err = cfg.Save()
-			if err != nil {
-				fmt.Printf("Unable to store your configuration: %v \nConfiguration: %v", err, cfg.Pretty())
+			if prompt { // see above
+				cfg.SaveAll(fs)
+			} else {
+				cfg.SaveToken(fs)
 			}
 		}
 	}()
 
 	if cfg.AuthToken != "" {
-		doRefresh, err := validateToken(cfg.AuthToken, id) //nolint:contextcheck // jwx/jwt package uses ctx.Background in a function down the stream
-		if err != nil || !doRefresh {
-			return err
+		expired, err := validateToken(auth0Endpoint, cfg.AuthToken, cfg.ClientID) //nolint:contextcheck // jwx/jwt package uses ctx.Background in a function down the stream
+		if err != nil {
+			return "", &BadClientTokenError{err}
+		}
+		if !expired {
+			save = true
+			return cfg.AuthToken, nil
 		}
 	}
-	resp, err := auth0.NewClient(auth0Endpoint).GetToken(ctx, id, secret)
-	if err != nil {
-		save = false
-		return fmt.Errorf("unable to retrieve the token: %v", err)
-	}
 
+	resp, err := auth0.NewClient(auth0Endpoint).GetToken(ctx, cfg.ClientID, cfg.ClientSecret)
+	if err != nil {
+		return "", fmt.Errorf("unable to retrieve a cloud token: %v", err)
+	}
 	cfg.AuthToken = resp.AccessToken
 	save = true
-	return nil
+
+	return cfg.AuthToken, nil
 }
 
 // validateToken validates a token and returns whether a refresh is needed and
 // notifies the user if it does.
-func validateToken(token, clientID string) (doRefresh bool, err error) {
+func validateToken(auth0Endpoint auth0.Endpoint, token, clientID string) (expired bool, err error) {
 	err = auth0.ValidateToken(token, auth0Endpoint.Audience, clientID)
 	if err == nil {
 		return false, nil
 	}
-	if exp := new(auth0.ExpiredError); errors.As(err, &exp) {
-		fmt.Println("Your token is expired, refreshing...")
+	if ee := (*auth0.ExpiredError)(nil); errors.As(err, &ee) {
 		return true, nil
 	}
-	return true, nil
+	return false, err
 }
 
-// promptClientCfg prompts users for the Client ID and Client secret and stores
-// the answer in cfg.
-func promptClientCfg(cfg *Config) error {
-	fmt.Println("To retrieve your client configuration go to your organization's configuration page in the Redpanda cloud UI")
-	qs := []*survey.Question{
-		{
-			Name:     "ClientID",
-			Prompt:   &survey.Input{Message: "Client ID:"},
-			Validate: survey.Required,
-		},
-		{
-			Name:     "ClientSecret",
-			Prompt:   &survey.Input{Message: "Client Secret:"},
-			Validate: survey.Required,
-		},
+func promptClientCfg() (clientID, clientSecret string, err error) {
+	fmt.Println("What is your client ID and secret? You can retrieve these in the Redpanda Cloud UI user panel.")
+	for _, prompt := range []struct {
+		name string
+		dst  *string
+	}{
+		{"Client ID", &clientID},
+		{"Client secret", &clientSecret},
+	} {
+		input := &survey.Input{Message: prompt.name + ":"}
+		if err := survey.AskOne(input, prompt.dst, survey.WithValidator(survey.Required)); err != nil {
+			return "", "", fmt.Errorf("failed to retrieve %s: %w", prompt.name, err)
+		}
 	}
-	err := survey.Ask(qs, cfg)
-	if err != nil {
-		return err
-	}
-	return nil
+	return clientID, clientSecret, nil
 }
