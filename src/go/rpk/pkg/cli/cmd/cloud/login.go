@@ -24,9 +24,9 @@ func newLoginCommand(fs afero.Fs) *cobra.Command {
 	var params cloudcfg.Params
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Login to the Redpanda cloud",
+		Short: "Log in to the Redpanda cloud",
 		Args:  cobra.ExactArgs(0),
-		Long: `Login to the Redpanda cloud
+		Long: `Log in to the Redpanda cloud
 
 This command checks for an existing token and, if present, ensures it is still
 valid. If no token is found or the token is no longer valid, this command will

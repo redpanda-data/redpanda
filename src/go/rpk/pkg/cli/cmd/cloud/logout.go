@@ -26,8 +26,14 @@ func newLogoutCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Log out from the Redpanda cloud",
-		Args:  cobra.ExactArgs(0),
+		Short: "Log out from Redpanda cloud",
+		Long: `Log out from Redpanda cloud
+
+This command deletes your cloud auth token. If you want to log out entirely and
+switch to a different organization, you can use the --clear-credentials flag to
+additionally clear your client ID and client secret.
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			if rpkos.IsRunningSudo() {
 				out.Die("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
