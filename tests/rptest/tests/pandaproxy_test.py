@@ -1371,3 +1371,107 @@ class BasicAuthScaleTest(PandaProxyEndpoints):
                     raise RuntimeError(
                         f'Incorrect topic, user: {task.user.username} -- {task.result_raw.json()}'
                     )
+
+
+class PandaProxySecurityFeatureMigrationTest(PandaProxyEndpoints):
+    username = 'red'
+    password = 'panda'
+
+    topics = [TopicSpec()]
+
+    def __init__(self, context):
+        super(PandaProxySecurityFeatureMigrationTest, self).__init__(context)
+
+    def setUp(self):
+        # Do not call super's setUp yet because redpanda
+        # is manually started in the test methods
+        pass
+
+    def _start_cluster(self, security: Optional[SecurityConfig] = None):
+        if security is not None:
+            self.redpanda.set_security_settings(security)
+
+        self.redpanda.start()
+        self._create_initial_topics()
+
+    def check_usage(self, security_feature: Optional[str] = None):
+        auth = None
+        if security_feature is not None and security_feature == 'http_basic':
+            super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+            auth = (super_username, super_password)
+
+        result_raw = self._get_topics(auth=auth)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result[0] == self.topic
+
+    @cluster(num_nodes=3)
+    @matrix(security_feature=['http_basic', 'mtls', 'basic+mtls'])
+    def test_cluster_without_auth(self, security_feature: str):
+        self._start_cluster()
+        self.check_usage()
+
+        # Ignore these security features until we can manually confirm
+        # they work as expected.
+        if security_feature == 'mtls' or security_feature == 'basic+mtls':
+            return
+
+        security = SecurityConfig()
+        if security_feature == 'mtls' or security_feature == 'basic+mtls':
+            security.endpoint_authn_method = 'mtls_identity'
+        else:
+            security.enable_sasl = True
+            security.endpoint_authn_method = 'sasl'
+            security.pp_authn_method = 'http_basic'
+
+        self.redpanda.set_security_settings(security)
+        self.logger.debug('Initiating rolling restart')
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        # Check that http_basic is set for all PP instances
+        pattern = 'Started Pandaproxy.*:http_basic}}'
+        assert self.redpanda.search_log_all(pattern)
+
+        # Once restart is complete, recheck usage
+        self.check_usage(security_feature='http_basic')
+
+    @cluster(num_nodes=3)
+    @matrix(security_feature=['http_basic', None])
+    def test_cluster_with_mtls(self, security_feature: str):
+        # Ignore this test until we can manually confirm
+        # that mtls works as expected.
+        self._start_cluster()
+        self.check_usage()
+
+    @cluster(num_nodes=3)
+    @matrix(security_feature=['mtls', None])
+    def test_cluster_with_basic_auth(self, security_feature: str):
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.pp_authn_method = 'http_basic'
+
+        self._start_cluster(security)
+
+        # Ignore these security features until we can manually confirm
+        # they work as expected.
+        if security_feature == 'mtls':
+            return
+
+        self.check_usage(security_feature='http_basic')
+
+        # Migrate security feature
+        self.redpanda.set_security_settings(SecurityConfig())
+        self.logger.debug('Initiating rolling restart')
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+        # Check that http_basic is set for all PP instances
+        pattern = 'Started Pandaproxy.*:<nullopt>}}'
+        assert self.redpanda.search_log_all(pattern)
+
+        # Once restart is complete, recheck usage
+        self.check_usage()
