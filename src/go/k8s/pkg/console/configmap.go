@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/cloudhut/common/rest"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/console/backend/pkg/connect"
 	"github.com/redpanda-data/console/backend/pkg/kafka"
+	"github.com/redpanda-data/console/backend/pkg/proto"
 	"github.com/redpanda-data/console/backend/pkg/schema"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
@@ -441,6 +443,16 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 			}
 		}
 		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
+
+		// Default protobuf values to enable decoding in SchemaRegistry
+		// REF https://app.zenhub.com/workspaces/cloud-62684e2c6635e100149514fd/issues/redpanda-data/cloud/2834
+		k.Protobuf = proto.Config{
+			Enabled: y,
+			SchemaRegistry: proto.SchemaRegistryConfig{
+				Enabled:         y,
+				RefreshInterval: time.Second * 10,
+			},
+		}
 	}
 	k.Schema = schemaRegistry
 
