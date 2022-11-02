@@ -467,6 +467,8 @@ private:
         }
     };
 
+    ss::future<> clear_old_tx_pids();
+
     // When a request is retried while the first appempt is still
     // being replicated the retried request is parked until the
     // original request is replicated.
