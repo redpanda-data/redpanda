@@ -17,6 +17,7 @@ import random
 from rptest.util import inject_remote_script
 from rptest.services.cluster import cluster
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -175,7 +176,19 @@ class SchemaRegistryEndpoints(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        assert set(names).issubset(self._get_topics().json())
+
+        def has_topics():
+            self_topics = self._get_topics()
+            self.logger.info(
+                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+            )
+            return set(names).issubset(self_topics.json())
+
+        wait_until(has_topics,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Timeout waiting for topics: {names}")
+
         return names
 
     def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):

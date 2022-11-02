@@ -221,7 +221,19 @@ class PandaProxyEndpoints(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        assert set(names).issubset(self._get_topics().json())
+
+        def has_topics():
+            self_topics = self._get_topics()
+            self.logger.info(
+                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+            )
+            return set(names).issubset(self_topics.json())
+
+        wait_until(has_topics,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Timeout waiting for topics: {names}")
+
         return names
 
     def _get_topics(self,
