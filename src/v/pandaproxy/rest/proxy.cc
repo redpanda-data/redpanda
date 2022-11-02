@@ -27,6 +27,7 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 
 namespace pandaproxy::rest {
@@ -213,21 +214,22 @@ ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
 
 ss::future<> proxy::inform(model::node_id id) {
     vlog(plog.trace, "inform: {}", id);
-    const auto do_inform = [this](model::node_id n) -> ss::future<> {
-        auto& fe = _controller->get_ephemeral_credential_frontend().local();
-        auto ec = co_await fe.inform(n, principal);
-        vlog(plog.info, "Informed: broker: {}, ec: {}", n, ec);
-    };
 
     // Inform a particular node
     if (id != kafka::client::unknown_node_id) {
-        co_return co_await do_inform(id);
+        return do_inform(id);
     }
 
     // Inform all nodes
-    co_await seastar::parallel_for_each(
+    return seastar::parallel_for_each(
       _controller->get_members_table().local().all_broker_ids(),
-      [do_inform](model::node_id n) { return do_inform(n); });
+      [this](model::node_id id) { return do_inform(id); });
+}
+
+ss::future<> proxy::do_inform(model::node_id id) {
+    auto& fe = _controller->get_ephemeral_credential_frontend().local();
+    auto ec = co_await fe.inform(id, principal);
+    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 } // namespace pandaproxy::rest

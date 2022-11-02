@@ -59,6 +59,7 @@ private:
     ss::future<> do_start();
     ss::future<> configure();
     ss::future<> inform(model::node_id);
+    ss::future<> do_inform(model::node_id);
     ss::future<> create_internal_topic();
     ss::future<> fetch_internal_topic();
     configuration _config;

@@ -216,22 +216,23 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
 }
 
 ss::future<> service::inform(model::node_id id) {
-    vlog(plog.warn, "inform: {}", id);
-    const auto do_inform = [this](model::node_id n) -> ss::future<> {
-        auto& fe = _controller->get_ephemeral_credential_frontend().local();
-        auto ec = co_await fe.inform(n, principal);
-        vlog(plog.warn, "Informed: broker: {}, ec: {}", n, ec);
-    };
+    vlog(plog.trace, "inform: {}", id);
 
     // Inform a particular node
     if (id != kafka::client::unknown_node_id) {
-        co_return co_await do_inform(id);
+        return do_inform(id);
     }
 
     // Inform all nodes
-    co_await ss::coroutine::parallel_for_each(
+    return seastar::parallel_for_each(
       _controller->get_members_table().local().all_broker_ids(),
-      [do_inform](model::node_id n) { return do_inform(n); });
+      [this](model::node_id id) { return do_inform(id); });
+}
+
+ss::future<> service::do_inform(model::node_id id) {
+    auto& fe = _controller->get_ephemeral_credential_frontend().local();
+    auto ec = co_await fe.inform(id, principal);
+    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 ss::future<> service::create_internal_topic() {
