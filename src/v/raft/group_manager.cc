@@ -93,7 +93,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _storage,
       _recovery_throttle,
       _recovery_mem_quota,
-      _feature_table);
+      _feature_table,
+      std::nullopt);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {
