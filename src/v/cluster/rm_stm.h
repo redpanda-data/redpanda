@@ -419,6 +419,15 @@ private:
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
+
+        void forget(const model::producer_identity& pid) {
+            fence_pid_epoch.erase(pid.get_id());
+            ongoing_map.erase(pid);
+            prepared.erase(pid);
+            seq_table.erase(pid);
+            tx_seqs.erase(pid);
+            expiration.erase(pid);
+        }
     };
 
     struct mem_state {
