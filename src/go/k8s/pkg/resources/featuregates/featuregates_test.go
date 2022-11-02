@@ -23,6 +23,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 		centralizedConfiguration bool
 		maintenanceMode          bool
 		perListenerAuthorization bool
+		rackAwareness            bool
 	}{
 		{
 			version:                  "v21.1.1",
@@ -30,6 +31,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: false,
 			maintenanceMode:          false,
 			perListenerAuthorization: false,
+			rackAwareness:            false,
 		},
 		{
 			version:                  "v21.11.1",
@@ -37,6 +39,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: false,
 			maintenanceMode:          false,
 			perListenerAuthorization: false,
+			rackAwareness:            false,
 		},
 		{
 			version:                  "v21.12.1",
@@ -44,6 +47,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: false,
 			maintenanceMode:          false,
 			perListenerAuthorization: false,
+			rackAwareness:            false,
 		},
 		{
 			version:                  "v22.1.1",
@@ -51,6 +55,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: false,
+			rackAwareness:            true,
 		},
 		{
 			version:                  "v22.1.2",
@@ -58,6 +63,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: false,
+			rackAwareness:            true,
 		},
 		{
 			version:                  "v22.2.1",
@@ -65,6 +71,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: true,
+			rackAwareness:            true,
 		},
 		{
 			version:                  "dev",
@@ -72,6 +79,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: true,
+			rackAwareness:            true,
 		},
 		// Versions from: https://hub.docker.com/r/vectorized/redpanda/tags
 		{
@@ -80,6 +88,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: true,
+			rackAwareness:            true,
 		},
 		{
 			version:                  "v21.11.20-beta2",
@@ -87,6 +96,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: false,
 			maintenanceMode:          false,
 			perListenerAuthorization: false,
+			rackAwareness:            false,
 		},
 		{
 			version:                  "v21.11.20-beta2-amd64",
@@ -94,6 +104,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: false,
 			maintenanceMode:          false,
 			perListenerAuthorization: false,
+			rackAwareness:            false,
 		},
 		{
 			version:                  "v22.2.3-arm64",
@@ -101,6 +112,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: true,
+			rackAwareness:            true,
 		},
 		// Versions from: https://hub.docker.com/r/vectorized/redpanda-nightly/tags
 		{
@@ -109,6 +121,7 @@ func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be long
 			centralizedConfiguration: true,
 			maintenanceMode:          true,
 			perListenerAuthorization: true,
+			rackAwareness:            true,
 		},
 	}
 
