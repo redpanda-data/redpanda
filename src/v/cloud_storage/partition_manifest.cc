@@ -383,6 +383,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
 
 std::vector<segment_meta> partition_manifest::replaced_segments() const {
     std::vector<segment_meta> res;
+    res.reserve(_replaced.size());
     for (const auto& s : _replaced) {
         res.push_back(lw_segment_meta::convert(s));
     }
@@ -778,6 +779,13 @@ struct partition_manifest_handler
                 if (!_replaced) {
                     _replaced = std::make_unique<replaced_segments_list>();
                 }
+                // In lw_segment_meta the sname_format field is encoded using
+                // the size_bytes field. For v1 name format we don't need
+                // size_bytes so we can set it to 0 to represent the
+                // sname_format field. For v2 we actually need to use both
+                // size_bytes and committed_offset. This code uses segment_meta
+                // to represent decoded elements from both 'segments' and
+                // 'replaced' fields. Because of that we need to do this trick.
                 _meta.sname_format = _meta.size_bytes != 0
                                        ? segment_name_format::v2
                                        : segment_name_format::v1;
@@ -1158,6 +1166,9 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.EndObject();
     };
     auto serialize_lw_meta = [this, &w](const lw_segment_meta& meta) {
+        // Here we are serializing all fields stored in 'lw_segment_meta'.
+        // The remaining fields are also added but they values are not
+        // significant.
         vassert(
           meta.segment_term != model::term_id{},
           "Term id is not initialized, base offset {}",
