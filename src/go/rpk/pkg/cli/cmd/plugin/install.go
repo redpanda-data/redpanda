@@ -10,15 +10,10 @@
 package plugin
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -112,7 +107,7 @@ Remote sha256: %s
 			}
 
 			fmt.Println("Downloaded! Writing plugin to disk...")
-			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete)
+			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete, false)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Success! Plugin %q has been saved to %q and is now ready to use!\n", name, dst)
@@ -172,43 +167,5 @@ func checkAndCreateDefaultPath(fs afero.Fs) error {
 func tryDirectDownload(name, version string) ([]byte, error) {
 	u := fmt.Sprintf("https://dl.redpanda.com/public/rpk-plugins/raw/names/%[1]s-%[2]s-%[3]s/versions/%[4]s/%[1]s.tgz", name, runtime.GOOS, runtime.GOARCH, version)
 	fmt.Printf("Searching for plugin %q in %s...\n", name, u)
-
-	client := &http.Client{Timeout: 100 * time.Second}
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		u,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create request %s: %v", u, err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("unable to issue request to %s: %v", u, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("unsuccessful plugin response from %s, status: %s", u, http.StatusText(resp.StatusCode))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read response from %s: %v", u, err)
-	}
-
-	gzr, err := gzip.NewReader(bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("unable to create gzip reader: %w", err)
-	}
-	if body, err = io.ReadAll(gzr); err != nil {
-		return nil, fmt.Errorf("unable to gzip decompress plugin: %w", err)
-	}
-	if err = gzr.Close(); err != nil {
-		return nil, fmt.Errorf("unable to close gzip reader: %w", err)
-	}
-
-	return body, nil
+	return plugin.Download(context.Background(), u, "")
 }

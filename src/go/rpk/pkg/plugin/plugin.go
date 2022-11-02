@@ -1,17 +1,32 @@
+// Copyright 2022 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 // Package plugin contains functions to load plugin information from a
 // filesystem.
 package plugin
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/spf13/afero"
 )
@@ -24,6 +39,10 @@ const (
 	// NamePrefixAutoComplete is the expected prefix of the basename of
 	// plugins that support the --help-autocomplete flag.
 	NamePrefixAutoComplete = ".rpk.ac-"
+
+	// NamePrefixManaged is the expected prefix of the basename of plugins
+	// that are managed by rpk itself (rpk cloud byoc).
+	NamePrefixManaged = ".rpk.managed-"
 
 	// FlagAutoComplete is the expected flag if a plugin has the rpk.ac-
 	// name prefix.
@@ -49,6 +68,10 @@ type Plugin struct {
 	// ShadowedPaths are other plugin filepaths that are shadowed by this
 	// plugin.
 	ShadowedPaths []string
+
+	// Managed returns whether this is an rpk internally managed plugin
+	// and should not auto-install any help.
+	Managed bool
 }
 
 // Name returns the name of the plugin, which is simply the plugin's first
@@ -126,12 +149,16 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 
 			name := info.Name()
 			originalName := name
+			var managed bool
 
 			switch {
 			case strings.HasPrefix(name, NamePrefix):
 				name = strings.TrimPrefix(name, NamePrefix)
 			case strings.HasPrefix(name, NamePrefixAutoComplete):
 				name = strings.TrimPrefix(name, NamePrefixAutoComplete)
+			case strings.HasPrefix(name, NamePrefixManaged):
+				name = strings.TrimPrefix(name, NamePrefixManaged)
+				managed = true
 			default:
 				continue // missing required name prefix; skip
 			}
@@ -157,6 +184,7 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 			plugins = append(plugins, Plugin{
 				Path:      fullPath,
 				Arguments: arguments,
+				Managed:   managed,
 			})
 		}
 	}
@@ -206,13 +234,64 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 // This returns the filepath that was written, or an error if any step of the
 // process fails. If the process fails after the binary has been written to a
 // temporary directory, the file is left on disk for user inspection.
-func WriteBinary(
-	fs afero.Fs, name, dstDir string, contents []byte, autocomplete bool,
-) (string, error) {
+func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, autocomplete, managed bool) (string, error) {
 	dstBase := NamePrefix + name
 	if autocomplete {
 		dstBase = NamePrefixAutoComplete + name
+	} else if managed {
+		dstBase = NamePrefixManaged + name
 	}
 	dst := filepath.Join(dstDir, dstBase)
 	return dst, rpkos.ReplaceFile(fs, dst, contents, 0o755)
+}
+
+// Download downloads a plugin at the given URL and ensures that the shasum of
+// the binary has the given prefix (which can be empty to not check shasum's).
+//
+// If the url ends in ".gz", this unzips the binary before shasumming. If the
+// url ends in ".tar.gz", this unzips, then untars ONE file, then shasums.
+func Download(ctx context.Context, url, shaPrefix string) ([]byte, error) {
+	cl := httpapi.NewClient(
+		httpapi.HTTPClient(&http.Client{
+			Timeout: 100 * time.Second,
+		}),
+	)
+
+	var plugin io.Reader
+	if err := cl.Get(ctx, url, nil, &plugin); err != nil {
+		return nil, fmt.Errorf("unable to download plugin: %w", err)
+	}
+
+	if strings.HasSuffix(url, ".gz") {
+		gzr, err := gzip.NewReader(plugin)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create gzip reader: %w", err)
+		}
+		defer gzr.Close()
+		plugin = gzr
+		url = strings.TrimSuffix(url, ".gz")
+	}
+	if strings.HasSuffix(url, ".tar") {
+		untar := tar.NewReader(plugin)
+		if _, err := untar.Next(); err != nil {
+			return nil, fmt.Errorf("unable to advance to first tar file: %w", err)
+		}
+		plugin = untar
+	}
+
+	var raw []byte
+	var err error
+	if raw, err = io.ReadAll(plugin); err != nil {
+		return nil, fmt.Errorf("unable to read plugin: %w", err)
+	}
+
+	shasum := sha256.Sum256(raw)
+	shaGot := strings.ToLower(hex.EncodeToString(shasum[:]))
+	shaPrefix = strings.ToLower(shaPrefix)
+
+	if !strings.HasPrefix(shaGot, shaPrefix) {
+		return nil, fmt.Errorf("checksum of plugin does not contain expected prefix (downloaded sha256sum: %s, expected prefix: %s)", shaGot, shaPrefix)
+	}
+
+	return raw, nil
 }
