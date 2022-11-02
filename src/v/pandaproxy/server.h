@@ -190,14 +190,15 @@ public:
         auto dispatch(Func&& func) {
             switch (authn_method) {
             case config::rest_authn_method::none: {
-                return std::forward<Func>(func)(service().client().local());
+                return std::invoke(
+                  std::forward<Func>(func), service().client().local());
             }
             case config::rest_authn_method::http_basic: {
                 return dispatch([this, func{std::forward<Func>(func)}](
                                   kafka_client_cache& cache) mutable {
                     auto client = cache.fetch_or_insert(user, authn_method);
-                    return std::forward<Func>(func)(*client).finally(
-                      [client] {});
+                    return std::invoke(std::forward<Func>(func), *client)
+                      .finally([client] {});
                 });
             }
             }
@@ -214,8 +215,8 @@ public:
                 return dispatch([this, func{std::forward<Func>(func)}](
                                   kafka_client_cache& cache) mutable {
                     auto client = cache.fetch_or_insert(user, authn_method);
-                    return std::forward<Func>(func)(*client).finally(
-                      [client] {});
+                    return std::invoke(std::forward<Func>(func), *client)
+                      .finally([client] {});
                 });
             }
             }
