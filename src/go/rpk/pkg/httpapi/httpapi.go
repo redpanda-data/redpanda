@@ -109,6 +109,11 @@ func Authorization(auth string) Opt {
 	return func(cl *Client) { cl.setHeader("Authorization", auth) }
 }
 
+// BearerAuth sets a bearer token authorization header for the request.
+func BearerAuth(token string) Opt {
+	return func(cl *Client) { cl.setHeader("Authorization", "Bearer "+token) }
+}
+
 // HTTPClient sets the http client to use for requests, overriding the default
 // that has a 15s timeout.
 func HTTPClient(httpCl *http.Client) Opt { return func(cl *Client) { cl.httpCl = httpCl } }
