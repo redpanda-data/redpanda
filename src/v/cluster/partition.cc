@@ -85,7 +85,10 @@ partition::partition(
           && _raft->ntp().ns == model::kafka_namespace) {
             _archival_meta_stm
               = ss::make_shared<cluster::archival_metadata_stm>(
-                _raft.get(), cloud_storage_api.local(), clusterlog);
+                _raft.get(),
+                cloud_storage_api.local(),
+                _feature_table.local(),
+                clusterlog);
             stm_manager->add_stm(_archival_meta_stm);
 
             if (cloud_storage_cache.local_is_initialized()) {
@@ -125,9 +128,16 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
 
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
-    return cfg.is_remote_fetch_enabled()
-           || config::shard_local_cfg()
-                .cloud_storage_enable_remote_read.value();
+    if (_feature_table.local().is_active(features::feature::cloud_retention)) {
+        // Since 22.3, the ntp_config is authoritative.
+        return cfg.is_remote_fetch_enabled();
+    } else {
+        // We are in the process of an upgrade: apply <22.3 behavior of acting
+        // as if every partition has remote read enabled if the cluster
+        // default is true.
+        return cfg.is_remote_fetch_enabled()
+               || config::shard_local_cfg().cloud_storage_enable_remote_read();
+    }
 }
 
 bool partition::cloud_data_available() const {
@@ -420,10 +430,7 @@ ss::future<> partition::remove_remote_persistent_state() {
     // Backward compatibility: even if remote.delete is true, only do
     // deletion if the partition is in full tiered storage mode (this
     // excludes read replica clusters from deleting data in S3)
-    bool tiered_storage
-      = get_ntp_config().is_tiered_storage()
-        || (config::shard_local_cfg().cloud_storage_enable_remote_write() &&
-            config::shard_local_cfg().cloud_storage_enable_remote_read());
+    bool tiered_storage = get_ntp_config().is_tiered_storage();
 
     if (
       _cloud_storage_partition && tiered_storage

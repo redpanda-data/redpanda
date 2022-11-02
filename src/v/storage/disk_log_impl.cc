@@ -664,9 +664,8 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
 }
 
 bool disk_log_impl::is_cloud_retention_active() const {
-    return config::shard_local_cfg().cloud_storage_enabled() && 
-        (config::shard_local_cfg().cloud_storage_enable_remote_write()
-      || config().is_archival_enabled());
+    return config::shard_local_cfg().cloud_storage_enabled()
+           && (config().is_archival_enabled());
 }
 
 compaction_config

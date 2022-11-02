@@ -1267,21 +1267,24 @@ class RedpandaService(Service):
         patch_result = self._admin.patch_cluster_config(upsert=values)
         new_version = patch_result['config_version']
 
+        def is_ready():
+            status = self._admin.get_cluster_config_status(
+                node=self.controller())
+            ready = all([n['config_version'] >= new_version for n in status])
+
+            return ready, status
+
         # The version check is >= to permit other config writes to happen in
         # the background, including the write to cluster_id that happens
         # early in the cluster's lifetime
-        wait_until(
-            lambda: all([
-                n['config_version'] >= new_version for n in self._admin.
-                get_cluster_config_status(node=self.controller())
-            ]),
+        config_status = wait_until_result(
+            is_ready,
             timeout_sec=10,
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {new_version}"
         )
 
-        any_restarts = any(n['restart']
-                           for n in self._admin.get_cluster_config_status())
+        any_restarts = any(n['restart'] for n in config_status)
         if any_restarts and expect_restart:
             self.restart_nodes(self.nodes)
         elif any_restarts:

@@ -971,14 +971,14 @@ configuration::configuration()
   , cloud_storage_enable_remote_read(
       *this,
       "cloud_storage_enable_remote_read",
-      "Enable remote read for all topics",
-      {.visibility = visibility::tunable},
+      "Default remote read config value for new topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
   , cloud_storage_enable_remote_write(
       *this,
       "cloud_storage_enable_remote_write",
-      "Enable remote write for all topics",
-      {.visibility = visibility::tunable},
+      "Default remote write value for new topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
   , cloud_storage_access_key(
       *this,

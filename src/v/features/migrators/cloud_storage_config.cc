@@ -87,6 +87,54 @@ ss::future<> cloud_storage_config::do_mutate() {
             // deletion: preserve this behavior for legacy topics.
             update.properties.remote_delete = make_property_set(false);
 
+            // Prior to Redpanda 22.3, cluster default properties were
+            // applied at runtime and not applied persistently to newly
+            // created topics.
+            auto topic_remote_write = false;
+            auto topic_remote_read = false;
+
+            if (props.shadow_indexing) {
+                switch (props.shadow_indexing.value()) {
+                case model::shadow_indexing_mode::disabled:
+                    break;
+                case model::shadow_indexing_mode::archival:
+                    topic_remote_write = true;
+                    break;
+                case model::shadow_indexing_mode::fetch:
+                    topic_remote_read = true;
+                    break;
+                case model::shadow_indexing_mode::full:
+                    topic_remote_write = true;
+                    topic_remote_read = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            auto remote_write
+              = config::shard_local_cfg().cloud_storage_enable_remote_write()
+                || topic_remote_write;
+            auto remote_read
+              = config::shard_local_cfg().cloud_storage_enable_remote_read()
+                || topic_remote_read;
+
+            model::shadow_indexing_mode mode
+              = model::shadow_indexing_mode::disabled;
+
+            if (remote_write) {
+                mode = model::shadow_indexing_mode::archival;
+            }
+
+            if (remote_read) {
+                mode = mode == model::shadow_indexing_mode::archival
+                         ? model::shadow_indexing_mode::full
+                         : model::shadow_indexing_mode::fetch;
+            }
+
+            update.properties.shadow_indexing = make_property_set(
+              std::make_optional(mode));
+
             vlog(
               featureslog.info, "Updating tiered storage topic {}", i.first.tp);
 

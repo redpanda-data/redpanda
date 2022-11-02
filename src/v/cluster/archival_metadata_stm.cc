@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -171,12 +172,16 @@ ss::future<> archival_metadata_stm::make_snapshot(
 }
 
 archival_metadata_stm::archival_metadata_stm(
-  raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
+  raft::consensus* raft,
+  cloud_storage::remote& remote,
+  features::feature_table& ft,
+  ss::logger& logger)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
       raft->ntp(), raft->log_config().get_initial_revision()))
-  , _cloud_storage_api(remote) {}
+  , _cloud_storage_api(remote)
+  , _feature_table(ft) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
@@ -569,9 +574,19 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
+    // From Redpanda 22.3 up, the ntp_config's impression of whether archival
+    // is enabled is authoritative.
+    bool collect_all = !_raft->log_config().is_archival_enabled();
+
+    // In earlier versions, we should assume every topic is archival enabled
+    // if the global cloud_storage_enable_remote_write is true.
     if (
-      !_raft->log_config().is_archival_enabled()
-      && !config::shard_local_cfg().cloud_storage_enable_remote_write.value()) {
+      !_feature_table.is_active(features::feature::cloud_retention)
+      && config::shard_local_cfg().cloud_storage_enable_remote_write()) {
+        collect_all = false;
+    }
+
+    if (collect_all) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
         return model::offset::max();

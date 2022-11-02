@@ -13,6 +13,7 @@
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -71,6 +72,8 @@ struct archival_metadata_stm_base_fixture
     }
 
     archival_metadata_stm_base_fixture() {
+        // Blank feature table to satisfy constructor interface
+        feature_table.start().get();
         // Cloud storage config
         cloud_cfg.start().get();
         cloud_cfg
@@ -92,8 +95,10 @@ struct archival_metadata_stm_base_fixture
     ~archival_metadata_stm_base_fixture() override {
         cloud_api.stop().get();
         cloud_cfg.stop().get();
+        feature_table.stop().get();
     }
 
+    ss::sharded<features::feature_table> feature_table;
     ss::sharded<cloud_storage::configuration> cloud_cfg;
     ss::sharded<cloud_storage::remote> cloud_api;
     ss::logger logger{"archival_metadata_stm_test"};
@@ -104,7 +109,7 @@ struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
         // Archival metadata STM
         start_raft();
         archival_stm = std::make_unique<cluster::archival_metadata_stm>(
-          _raft.get(), cloud_api.local(), logger);
+          _raft.get(), cloud_api.local(), feature_table.local(), logger);
 
         archival_stm->start().get();
     }
@@ -254,7 +259,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
       .get();
 
     cluster::archival_metadata_stm archival_stm(
-      _raft.get(), cloud_api.local(), logger);
+      _raft.get(), cloud_api.local(), feature_table.local(), logger);
 
     archival_stm.start().get();
     wait_for_confirmed_leader();
@@ -451,7 +456,7 @@ FIXTURE_TEST(
     make_old_snapshot(ntp_cfg, m, model::offset{3}).get();
 
     cluster::archival_metadata_stm archival_stm(
-      _raft.get(), cloud_api.local(), logger);
+      _raft.get(), cloud_api.local(), feature_table.local(), logger);
 
     archival_stm.start().get();
     wait_for_confirmed_leader();
