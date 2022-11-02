@@ -31,7 +31,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.1
 	github.com/tklauser/go-sysconf v0.3.10
-	github.com/twmb/franz-go v1.9.0
+	github.com/twmb/franz-go v1.9.2-0.20221101035527-a07b8c8a01ce
 	github.com/twmb/franz-go/pkg/kadm v1.3.0
 	github.com/twmb/franz-go/pkg/kmsg v1.2.0
 	github.com/twmb/tlscfg v1.2.0
