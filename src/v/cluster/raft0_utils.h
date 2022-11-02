@@ -26,13 +26,8 @@ static ss::future<consensus_ptr> create_raft0(
   ss::sharded<shard_table>& st,
   const ss::sstring& data_directory,
   std::vector<model::broker> initial_brokers) {
-    // non-empty initial_brokers mean root (in root-driven bootstrap) or seed
-    // (in seeds-driven bootstrap), otherwise it will use one of the seed
-    // servers to join the cluster
-    if (initial_brokers.size() == 1) {
-        vlog(clusterlog.info, "Current node is cluster root");
-    } else if (!initial_brokers.empty()) {
-        vlog(clusterlog.info, "Current node is a cluster seed broker");
+    if (!initial_brokers.empty()) {
+        vlog(clusterlog.info, "Current node is a cluster founder");
     }
 
     return pm.local()

@@ -286,18 +286,19 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
         }
         replies.emplace(seed_server.addr, cluster_bootstrap_info_reply{});
     }
-    co_await ss::parallel_for_each(replies, [this](auto& iter) -> ss::future<> {
-        auto& [addr, reply] = iter;
-        reply = co_await request_cluster_bootstrap_info_single(addr);
-        if (reply.cluster_uuid.has_value()) {
-            vlog(
-              clusterlog.info,
-              "Cluster presence detected in other seed servers: {}",
-              *reply.cluster_uuid);
-            _is_cluster_founder = false;
-            co_return;
-        }
-    });
+    co_await ss::parallel_for_each(
+      replies, ss::coroutine::lambda([this](auto& iter) -> ss::future<> {
+          auto& [addr, reply] = iter;
+          reply = co_await request_cluster_bootstrap_info_single(addr);
+          if (reply.cluster_uuid.has_value()) {
+              vlog(
+                clusterlog.info,
+                "Cluster presence detected in other seed servers: {}",
+                *reply.cluster_uuid);
+              _is_cluster_founder = false;
+              co_return;
+          }
+      }));
     if (_is_cluster_founder.has_value()) {
         vassert(
           !*_is_cluster_founder,
@@ -370,9 +371,7 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
     // The other seeds will likely mostly all have -1 as their node_id if their
     // node_id was not set explicitly. Have the returned seed broker node_id
     // populated with indices, relying on the fact that all seed broker's have
-    // identical configuration. Note that the order is preserved from
-    // seed_servers to seed_brokers, but the latter is missing one item for
-    // self.
+    // identical configuration.
     model::node_id::type idx = 0;
     absl::flat_hash_set<model::node_id> unique_node_ids;
     for (auto& broker : seed_brokers) {
