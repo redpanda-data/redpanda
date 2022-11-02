@@ -63,17 +63,6 @@ func (c *Config) ClearCredentials() {
 	c.AuthToken = ""
 }
 
-// Pretty returns a string with the configuration formatted in a human-readable
-// form.
-func (c *Config) Pretty() string {
-	format := `
-Client ID:            %s 
-Client Secret:        %s
-Authorization Token:  %s
-`
-	return fmt.Sprintf(format, c.ClientID, c.ClientSecret, c.AuthToken)
-}
-
 // defaultCfgPath returns the default path where the cloud configuration will
 // live, normally: '$HOME/.config/rpk/__cloud.yaml'.
 func defaultCfgPath() (string, error) {
