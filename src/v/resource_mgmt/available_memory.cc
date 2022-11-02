@@ -69,11 +69,16 @@ void available_memory::register_metrics() {
     m.groups.add_group(
       prometheus_sanitize::metrics_name("memory"),
       {ss::metrics::make_gauge(
-        "available_memory",
-        [this] { return available(); },
-        ss::metrics::description(
-          "Total shard memory potentially available in bytes "
-          "(free_memory plus reclaimable)"))});
+         "available_memory",
+         [this] { return available(); },
+         ss::metrics::description(
+           "Total shard memory potentially available in bytes "
+           "(free_memory plus reclaimable)")),
+       ss::metrics::make_gauge(
+         "available_memory_low_water_mark",
+         [this] { return available_low_water_mark(); },
+         ss::metrics::description(
+           "The low-water mark for available_memory from process start"))});
 }
 
 thread_local available_memory available_memory::_local_instance;
