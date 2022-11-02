@@ -750,7 +750,7 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_key:
             check_that_required_meta_fields_are_present();
             _meta = {
-              .is_compacted = _is_compacted.value(),
+              .is_compacted = _is_compacted.value_or(false),
               .size_bytes = _size_bytes.value(),
               .base_offset = _base_offset.value(),
               .committed_offset = _committed_offset.value(),
@@ -925,12 +925,6 @@ struct partition_manifest_handler
     std::optional<segment_name_format> _meta_sname_format;
 
     void check_that_required_meta_fields_are_present() {
-        if (!_is_compacted) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Missing is_compacted value in {} segment meta",
-              _segment_name));
-        }
         if (!_size_bytes) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
@@ -953,12 +947,12 @@ struct partition_manifest_handler
 
     void clear_meta_fields() {
         // required fields
-        _is_compacted = std::nullopt;
         _size_bytes = std::nullopt;
         _base_offset = std::nullopt;
         _committed_offset = std::nullopt;
 
         // optional segment meta fields
+        _is_compacted = std::nullopt;
         _base_timestamp = std::nullopt;
         _max_timestamp = std::nullopt;
         _delta_offset = std::nullopt;
@@ -1177,8 +1171,6 @@ void partition_manifest::serialize(std::ostream& out) const {
           meta.base_offset, meta.segment_term);
         w.Key(sn());
         w.StartObject();
-        w.Key("is_compacted");
-        w.Bool(true);
         w.Key("size_bytes");
         w.Int64(static_cast<int64_t>(meta.size_bytes));
         w.Key("committed_offset");
