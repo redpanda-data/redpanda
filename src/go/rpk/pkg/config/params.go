@@ -20,7 +20,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
+
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -283,50 +284,7 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 		return fmt.Errorf("marshal error in loaded config, err: %s", err)
 	}
 
-	// Create a temp file.
-	layout := "20060102150405" // year-month-day-hour-min-sec
-	bFilename := "redpanda-" + time.Now().Format(layout) + ".yaml"
-	temp := filepath.Join(filepath.Dir(location), bFilename)
-
-	err = afero.WriteFile(fs, temp, b, 0o644) // default permissions 644
-	if err != nil {
-		return fmt.Errorf("error writing to temporary file: %v", err)
-	}
-	defer func() {
-		if rerr != nil {
-			if removeErr := fs.Remove(temp); removeErr != nil {
-				rerr = fmt.Errorf("%s, unable to remove temp file: %v", rerr, removeErr)
-			} else {
-				rerr = fmt.Errorf("%s, temp file removed from disk", rerr)
-			}
-		}
-	}()
-
-	// If we have a loaded file we keep permission and ownership of the
-	// original config file.
-	if exists, _ := afero.Exists(fs, location); location != "" && exists {
-		stat, err := fs.Stat(location)
-		if err != nil {
-			return fmt.Errorf("unable to stat existing file: %v", err)
-		}
-
-		err = fs.Chmod(temp, stat.Mode())
-		if err != nil {
-			return fmt.Errorf("unable to chmod temp config file: %v", err)
-		}
-
-		err = PreserveUnixOwnership(fs, stat, temp)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = fs.Rename(temp, location)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return rpkos.ReplaceFile(fs, location, b, 0o644)
 }
 
 func (p *Params) LocateConfig(fs afero.Fs) (string, error) {

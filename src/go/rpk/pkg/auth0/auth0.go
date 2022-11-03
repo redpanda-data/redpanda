@@ -117,70 +117,6 @@ func NewClient(endpoint Endpoint) *Client {
 	return cl
 }
 
-// Login attempts to receive an auth0 token.
-func (cl *Client) Login(ctx context.Context) (token string, expiresIn int, err error) {
-	code, err := cl.getDeviceCode(ctx)
-	if err != nil {
-		return "", 0, fmt.Errorf("unable to login: %w", err)
-	}
-	fmt.Printf("Please visit the following link to complete your login:\n\n    %s\n",
-		code.VerificationURIComplete,
-	)
-
-	expiresAt := time.Now().Add(time.Duration(code.ExpiresIn) * time.Second)
-	// We add 1 to the interval because, due to clocks and processing and
-	// timing, if we tick at the exact interval, we may re-request faster
-	// than auth0 updates their systems, and we will get a "slow_down".
-	ticker := time.NewTicker(time.Duration(code.Interval+1) * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		token, err := cl.getToken(ctx, code.DeviceCode)
-		if err == nil {
-			return token.AccessToken, token.ExpiresIn, nil
-		}
-		var tokenError *tokenResponseError
-		if errors.As(err, &tokenError) {
-			switch tokenError.Err {
-			case "authorization_pending",
-				"slow_down":
-			default:
-				return "", 0, err
-			}
-		}
-		if time.Now().After(expiresAt) {
-			return "", 0, err
-		}
-	}
-	return "",
-		0,
-		errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
-}
-
-// deviceAuthorizationResponse is a response for an OAuth 2 device
-// authorization request. The struct follows the RFC8628 definition, for
-// documentation on fields, refer to the following link:
-//
-//	https://datatracker.ietf.org/doc/html/rfc8628#section-3.2
-type deviceAuthorizationResponse struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int    `json:"expires_in"`
-	Interval                int    `json:"interval"`
-}
-
-func (cl *Client) getDeviceCode(ctx context.Context) (*deviceAuthorizationResponse, error) {
-	path := httpapi.Pathfmt("%s/oauth/device/code", cl.endpoint.URL)
-	form := httpapi.Values(
-		"client_id", cl.endpoint.ClientID,
-		"audience", cl.endpoint.Audience,
-	)
-
-	var response *deviceAuthorizationResponse
-	return response, cl.httpCl.PostForm(ctx, path, nil, form, response)
-}
-
 // tokenResponse is a response for an OAuth 2 access token request. The struct
 // follows the RFC6749 definition, for documentation on fields, see sections
 // 4.2.2 and 4.2.2.1:
@@ -212,14 +148,15 @@ func (t *tokenResponseError) Error() string {
 	return t.Err
 }
 
-func (cl *Client) getToken(ctx context.Context, deviceCode string) (*tokenResponse, error) {
-	path := httpapi.Pathfmt("%s/oauth/token", cl.endpoint.URL)
+func (cl *Client) GetToken(ctx context.Context, clientID, clientSecret string) (tokenResponse, error) {
+	path := "/oauth/token"
 	form := httpapi.Values(
-		"grant_type", "urn:ietf:params:oauth:grant-type:device_code",
-		"device_code", deviceCode,
-		"client_id", cl.endpoint.ClientID,
+		"grant_type", "client_credentials",
+		"client_id", clientID,
+		"client_secret", clientSecret,
+		"audience", cl.endpoint.Audience,
 	)
 
-	var response *tokenResponse
-	return response, cl.httpCl.PostForm(ctx, path, nil, form, response)
+	var response tokenResponse
+	return response, cl.httpCl.PostForm(ctx, path, nil, form, &response)
 }

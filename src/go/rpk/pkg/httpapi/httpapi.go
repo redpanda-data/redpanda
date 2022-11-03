@@ -14,6 +14,8 @@
 //   - If into is nil, the response is discarded.
 //   - If into is a *[]byte, the raw response body is put into 'into'.
 //   - If into is a *string, the response is placed into 'into' as a string.
+//   - If into is an *io.Reader, the raw response body is put into 'into' as a
+//     bytes.Reader
 //   - If into is an io.Writer, the response is copied directly to the writer.
 //   - Otherwise, this attempts to json decode the response into 'into' and
 //     returns any json unmarshaling error.
@@ -107,6 +109,11 @@ func BasicAuth(user, pass string) Opt {
 // non-empty. Setting empty auth strips any authorization header.
 func Authorization(auth string) Opt {
 	return func(cl *Client) { cl.setHeader("Authorization", auth) }
+}
+
+// BearerAuth sets a bearer token authorization header for the request.
+func BearerAuth(token string) Opt {
+	return func(cl *Client) { cl.setHeader("Authorization", "Bearer "+token) }
 }
 
 // HTTPClient sets the http client to use for requests, overriding the default
@@ -329,6 +336,8 @@ func maybeUnmarshalRespBodyInto(r io.Reader, into interface{}) error {
 		return fmt.Errorf("unable to read entire response body: %w", err)
 	}
 	switch t := into.(type) {
+	case *io.Reader:
+		*t = bytes.NewReader(body)
 	case *[]byte:
 		*t = body
 	case *string:

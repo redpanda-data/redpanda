@@ -9,7 +9,7 @@
 
 //go:build windows
 
-package config
+package os
 
 import (
 	"os"
@@ -17,8 +17,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-// In windows this is a no-op.
-
+// PreserveUnixOwnership does nothing on Windows.
 func PreserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
 	return nil
 }

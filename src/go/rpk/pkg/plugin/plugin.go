@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/spf13/afero"
 )
 
@@ -208,32 +209,10 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 func WriteBinary(
 	fs afero.Fs, name, dstDir string, contents []byte, autocomplete bool,
 ) (string, error) {
-	tmp, err := afero.TempFile(fs, dstDir, fmt.Sprintf("rpk-plugin-part-%s-*", name))
-	if err != nil {
-		return "", fmt.Errorf("unable to create temp file for plugin %q: %v", name, err)
-	}
-	_, err = tmp.Write(contents)
-	tmp.Close()
-	if err != nil {
-		if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
-			return "", fmt.Errorf("unable to write plugin %q: %v; unable to remove temporary file %s: %v", name, err, tmp.Name(), removeErr)
-		}
-		return "", fmt.Errorf("unable to write plugin %q: %v; temporary file has been removed", name, err)
-	}
-
 	dstBase := NamePrefix + name
 	if autocomplete {
 		dstBase = NamePrefixAutoComplete + name
 	}
 	dst := filepath.Join(dstDir, dstBase)
-
-	if err = fs.Chmod(tmp.Name(), 0o755); err != nil {
-		return "", fmt.Errorf("unable to add executable permissions to plugin file %s: %w; plugin remains on disk", tmp.Name(), err)
-	}
-
-	if err = fs.Rename(tmp.Name(), dst); err != nil {
-		return "", fmt.Errorf("unable to rename temporary plugin file %s to %s: %w; plugin renames on disk", tmp.Name(), dst, err)
-	}
-
-	return dst, nil
+	return dst, rpkos.ReplaceFile(fs, dst, contents, 0o755)
 }

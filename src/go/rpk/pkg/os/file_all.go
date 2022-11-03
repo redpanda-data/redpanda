@@ -9,7 +9,7 @@
 
 //go:build !windows
 
-package config
+package os
 
 import (
 	"fmt"
@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/afero"
 )
 
+// PreserveUnixOwnership chowns a file to the perms in stat.
 func PreserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
 	// Stat_t is only valid in unix not on Windows.
 	if stat, ok := stat.Sys().(*syscall.Stat_t); ok {
