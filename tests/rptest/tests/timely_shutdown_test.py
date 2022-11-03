@@ -16,9 +16,20 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.util import wait_until_result
 
 
 class ShutdownTest(EndToEndTest):
+    def __init__(self, test_context):
+        super().__init__(test_context)
+        self.stopped = False
+        self.background_failures = None
+
+    def teardown(self):
+        self.stopped = True
+        if self.background_failures:
+            self.background_failures.join()  # Wait for ip tables rules reset.
+
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_timely_shutdown_with_failures(self):
         '''
@@ -41,11 +52,12 @@ class ShutdownTest(EndToEndTest):
                 leader = admin.get_partition_leader(namespace="kafka",
                                                     topic=self.topic.name,
                                                     partition=0)
-                return next(
-                    filter(lambda n: self.redpanda.idx(n) == leader,
-                           self.redpanda.nodes))
+                return (True,
+                        next(
+                            filter(lambda n: self.redpanda.idx(n) == leader,
+                                   self.redpanda.nodes)))
             except:
-                return None
+                return False
 
         self.redpanda.start()
         # Background load generation
@@ -56,14 +68,12 @@ class ShutdownTest(EndToEndTest):
                    backoff_sec=2,
                    err_msg=f"Leader not found for ntp: {self.topic}/0")
 
-        stopped = False
-
         def pause_non_leader_node():
             """Picks a non leader node for the ntp and isolates it repeatedly"""
             with FailureInjector(self.redpanda) as finjector:
                 timeout_s = 5
                 failure = FailureSpec.FAILURE_ISOLATE
-                while not stopped:
+                while not self.stopped:
                     node = random.choice(self.redpanda.nodes)
                     assert node
                     if node == checked_get_leader():
@@ -73,18 +83,18 @@ class ShutdownTest(EndToEndTest):
                         FailureSpec(node=node, type=failure, length=timeout_s))
 
         # Inject failures in the background.
-        background_failures = threading.Thread(target=pause_non_leader_node,
-                                               args=(),
-                                               daemon=True)
-        background_failures.start()
+        self.background_failures = threading.Thread(
+            target=pause_non_leader_node, args=(), daemon=True)
+        self.background_failures.start()
         pending_attempts = 5
         while pending_attempts != 0:
             # Pick the current leader and restart it, repeat
-            wait_until(lambda: checked_get_leader,
-                       timeout_sec=30,
-                       backoff_sec=2,
-                       err_msg=f"Leader not found for ntp: {self.topic}/0")
-            leader = checked_get_leader()
+            leader = wait_until_result(
+                lambda: checked_get_leader(),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg=f"Leader not found for ntp: {self.topic}/0")
+
             assert leader
             self.redpanda.logger.info(
                 f"Restarting leader node {leader.account.hostname}")
@@ -92,7 +102,5 @@ class ShutdownTest(EndToEndTest):
             pending_attempts -= 1
 
         # Stop the finjector
-        stopped = True
-        background_failures.join()  # Wait for ip tables rules reset.
-        assert not background_failures.is_alive()
+        self.stopped = True
         self.producer.stop()

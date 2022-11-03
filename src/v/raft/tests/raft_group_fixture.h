@@ -170,7 +170,8 @@ struct raft_node {
           storage.local(),
           recovery_throttle.local(),
           recovery_mem_quota,
-          feature_table.local());
+          feature_table.local(),
+          std::nullopt);
 
         // create connections to initial nodes
         consensus->config().for_each_broker(

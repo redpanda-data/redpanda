@@ -1466,6 +1466,10 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             *controller, group_router));
     }
 
+    if (cd.is_cluster_founder().get()) {
+        controller->set_ready().get();
+    }
+
     start_runtime_services(cd);
 
     if (_proxy_config) {
@@ -1485,7 +1489,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     }
 
     start_kafka(node_id, app_signal);
-
+    controller->set_ready().get();
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
     vlog(_log.info, "Successfully started Redpanda!");

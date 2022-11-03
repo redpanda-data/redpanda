@@ -97,7 +97,8 @@ public:
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
-      features::feature_table&);
+      features::feature_table&,
+      std::optional<voter_priority> = std::nullopt);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -368,6 +369,14 @@ public:
         _node_priority_override = raft::zero_voter_priority;
     }
 
+    /**
+     * Resets node priority only if it was not blocked
+     */
+    void reset_node_priority() {
+        if (_node_priority_override == raft::min_voter_priority) {
+            unblock_new_leadership();
+        }
+    }
     /*
      * Allow the current node to become a leader for this group.
      */

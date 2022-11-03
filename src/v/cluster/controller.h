@@ -141,6 +141,11 @@ public:
     ss::future<> shutdown_input();
     ss::future<> stop();
 
+    /**
+     * Called when the node is ready to become a leader
+     */
+    ss::future<> set_ready();
+
 private:
     friend controller_probe;
 
@@ -201,6 +206,7 @@ private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     controller_probe _probe;
     ss::sharded<bootstrap_backend> _bootstrap_backend; // single instance
+    bool _is_ready = false;
 };
 
 } // namespace cluster

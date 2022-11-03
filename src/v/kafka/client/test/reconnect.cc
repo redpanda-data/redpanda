@@ -20,6 +20,8 @@
 #include "net/unresolved_address.h"
 #include "pandaproxy/test/utils.h"
 
+#include <seastar/util/defer.hh>
+
 #include <chrono>
 
 namespace kc = kafka::client;
@@ -86,12 +88,16 @@ FIXTURE_TEST(password_change_live_client, kafka_client_fixture) {
     ss::sstring username{"admin"};
     ss::sstring userpass{"foopar"};
 
-    info("Waiting for leadership");
-    wait_for_controller_leadership().get();
-
     info("Enable SASL and restart");
     enable_sasl_and_restart(username);
-
+    auto disable_sasl = ss::defer([this] {
+        // This is necessary or else subsequent fixture tests will also have
+        // SASL enabled
+        info("Disable SASL and restart");
+        disable_sasl_and_restart();
+    });
+    info("Waiting for leadership");
+    wait_for_controller_leadership().get();
     ss::sstring user_body = fmt::format(
       R"({{"username": "{}", "password": "{}","algorithm": "SCRAM-SHA-256"}})",
       username,
@@ -145,9 +151,4 @@ FIXTURE_TEST(password_change_live_client, kafka_client_fixture) {
 
     info("Stopping kafka client");
     kafka_client.stop().get();
-
-    // This is necessary or else subsequent fixture tests will also have SASL
-    // enabled
-    info("Disable SASL and restart");
-    disable_sasl_and_restart();
 }

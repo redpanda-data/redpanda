@@ -55,6 +55,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    void set_ready();
     ss::future<> stop_heartbeats();
 
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
@@ -108,6 +109,7 @@ private:
     recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
     features::feature_table& _feature_table;
+    bool _is_ready;
 };
 
 } // namespace raft

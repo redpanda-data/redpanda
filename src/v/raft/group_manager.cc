@@ -64,6 +64,13 @@ ss::future<> group_manager::stop() {
           [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
     });
 }
+void group_manager::set_ready() {
+    _is_ready = true;
+    std::for_each(
+      _groups.begin(), _groups.end(), [](ss::lw_shared_ptr<consensus>& c) {
+          c->reset_node_priority();
+      });
+}
 
 ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 
@@ -93,7 +100,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _storage,
       _recovery_throttle,
       _recovery_mem_quota,
-      _feature_table);
+      _feature_table,
+      _is_ready ? std::nullopt : std::make_optional(min_voter_priority));
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {

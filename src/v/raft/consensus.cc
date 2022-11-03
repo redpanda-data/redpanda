@@ -96,7 +96,8 @@ consensus::consensus(
   storage::api& storage,
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
-  features::feature_table& ft)
+  features::feature_table& ft,
+  std::optional<voter_priority> voter_priority_override)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -132,6 +133,7 @@ consensus::consensus(
       storage::simple_snapshot_manager::default_snapshot_filename,
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
+  , _node_priority_override(voter_priority_override)
   , _append_requests_buffer(*this, 256) {
     setup_metrics();
     update_follower_stats(_configuration_manager.get_latest());
