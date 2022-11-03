@@ -73,9 +73,10 @@ replicate_batcher::cache_and_wait_for_result(
          *
          */
         ssx::background
-          = ssx::spawn_with_gate_then(_bg, [this]() -> ss::future<> {
-                auto units = co_await _lock.get_units();
-                co_await flush(std::move(units), false);
+          = ssx::spawn_with_gate_then(_bg, [this]() {
+                return _lock.get_units().then([this](auto units) {
+                    return flush(std::move(units), false);
+                });
             }).handle_exception([item](const std::exception_ptr& e) {
                 item->set_exception(e);
             });

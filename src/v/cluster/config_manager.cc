@@ -86,54 +86,51 @@ config_manager::config_manager(
  */
 void config_manager::start_bootstrap() {
     // Detach fiber
-    ssx::background
-      = ssx::spawn_with_gate_then(_gate, [this] {
-            return ss::do_until(
-              [this] {
-                  return _as.local().abort_requested() || _bootstrap_complete;
-              },
-              [this]() -> ss::future<> {
-                  if (_seen_version != config_version_unset) {
-                      vlog(
-                        clusterlog.info,
-                        "Bootstrap complete (version {})",
-                        _seen_version);
-                      _bootstrap_complete = true;
-                      co_return;
-                  } else {
-                      auto leader = co_await _leaders.local().wait_for_leader(
-                        model::controller_ntp,
-                        model::timeout_clock::now() + bootstrap_retry,
-                        _as.local());
-                      if (leader == _self) {
-                          // We are the leader.  Proceed to bootstrap cluster
-                          // configuration from our local configuration.
-                          if (!_feature_table.local().is_active(
-                                features::feature::central_config)) {
-                              vlog(
-                                clusterlog.trace,
-                                "Central config feature not active, waiting");
-                              co_await _feature_table.local().await_feature(
-                                features::feature::central_config, _as.local());
-                          }
-                          co_await do_bootstrap();
-                          vlog(
-                            clusterlog.info, "Completed bootstrap as leader");
-                      } else {
-                          // Someone else got leadership.  Maybe they
-                          // successfully bootstrap config, maybe they don't.
-                          // Wait a short time before checking again.
-                          co_await ss::sleep_abortable(
-                            bootstrap_retry, _as.local());
-                      }
-                  }
-              });
-        }).handle_exception([](const std::exception_ptr& e) {
-            // Explicitly handle exception so that we do not risk an
-            // 'ignored exceptional future' error.  The only exceptions
-            // we expect here are things like sleep_aborted during shutdown.
-            vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
-        });
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          return ss::do_until(
+                            [this] {
+                                return _as.local().abort_requested()
+                                       || _bootstrap_complete;
+                            },
+                            [this] { return wait_for_bootstrap(); });
+                      }).handle_exception([](const std::exception_ptr& e) {
+        // Explicitly handle exception so that we do not risk an
+        // 'ignored exceptional future' error.  The only exceptions
+        // we expect here are things like sleep_aborted during shutdown.
+        vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
+    });
+}
+
+ss::future<> config_manager::wait_for_bootstrap() {
+    if (_seen_version != config_version_unset) {
+        vlog(clusterlog.info, "Bootstrap complete (version {})", _seen_version);
+        _bootstrap_complete = true;
+        co_return;
+    } else {
+        auto leader = co_await _leaders.local().wait_for_leader(
+          model::controller_ntp,
+          model::timeout_clock::now() + bootstrap_retry,
+          _as.local());
+        if (leader == _self) {
+            // We are the leader.  Proceed to bootstrap cluster
+            // configuration from our local configuration.
+            if (!_feature_table.local().is_active(
+                  features::feature::central_config)) {
+                vlog(
+                  clusterlog.trace,
+                  "Central config feature not active, waiting");
+                co_await _feature_table.local().await_feature(
+                  features::feature::central_config, _as.local());
+            }
+            co_await do_bootstrap();
+            vlog(clusterlog.info, "Completed bootstrap as leader");
+        } else {
+            // Someone else got leadership.  Maybe they
+            // successfully bootstrap config, maybe they don't.
+            // Wait a short time before checking again.
+            co_await ss::sleep_abortable(bootstrap_retry, _as.local());
+        }
+    }
 }
 
 /**

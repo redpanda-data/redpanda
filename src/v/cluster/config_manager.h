@@ -106,6 +106,7 @@ private:
 
     static std::filesystem::path bootstrap_path();
     static std::filesystem::path cache_path();
+    ss::future<> wait_for_bootstrap();
 
     config_status my_latest_status;
     status_map status;

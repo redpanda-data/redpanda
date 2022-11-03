@@ -1050,20 +1050,21 @@ consensus::cancel_configuration_change(model::revision_id revision) {
                  cfg.cancel_configuration_change(revision);
                  return cfg;
              })
-      .then([this](std::error_code ec) -> ss::future<std::error_code> {
+      .then([this](std::error_code ec) {
           if (!ec) {
               // current leader is not a voter, step down
               if (!config().is_voter(_self)) {
-                  ssx::semaphore_units u;
-                  try {
-                      u = co_await _op_lock.get_units();
-                  } catch (const ss::broken_semaphore&) {
-                      co_return errc::shutting_down;
-                  }
-                  do_step_down("current leader is not voter");
+                  return _op_lock
+                    .with([this, ec] {
+                        do_step_down("current leader is not voter");
+                        return ec;
+                    })
+                    .handle_exception_type([](const ss::broken_semaphore&) {
+                        return make_error_code(errc::shutting_down);
+                    });
               }
           }
-          co_return ec;
+          return ss::make_ready_future<std::error_code>(ec);
       });
 }
 
@@ -3041,32 +3042,34 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                 .timeout_now(
                   target_rni.id(), std::move(req), rpc::client_opts(timeout))
 
-                .then(
-                  [this](result<timeout_now_reply> reply)
-                    -> ss::future<std::error_code> {
-                      if (!reply) {
-                          co_return reply.error();
-                      } else {
-                          // Step down before setting _transferring_leadership
-                          // to false, to ensure we do not accept any more
-                          // writes in the gap between new leader acking timeout
-                          // now and new leader sending a vote for its new term.
-                          // (If we accepted more writes, our log could get
-                          //  ahead of new leader, and it could lose election)
-                          try {
-                              auto units = co_await _op_lock.get_units();
+                .then([this](result<timeout_now_reply> reply) {
+                    if (!reply) {
+                        return ss::make_ready_future<std::error_code>(
+                          reply.error());
+                    } else {
+                        // Step down before setting _transferring_leadership
+                        // to false, to ensure we do not accept any more
+                        // writes in the gap between new leader acking timeout
+                        // now and new leader sending a vote for its new term.
+                        // (If we accepted more writes, our log could get
+                        //  ahead of new leader, and it could lose election)
+
+                        return _op_lock
+                          .with([this] {
                               do_step_down("leadership_transfer");
                               if (_leader_id) {
                                   _leader_id = std::nullopt;
                                   trigger_leadership_notification();
                               }
 
-                              co_return make_error_code(errc::success);
-                          } catch (const ss::broken_semaphore&) {
-                              co_return errc::shutting_down;
-                          }
-                      }
-                  });
+                              return make_error_code(errc::success);
+                          })
+                          .handle_exception_type(
+                            [](const ss::broken_semaphore&) {
+                                return make_error_code(errc::shutting_down);
+                            });
+                    }
+                });
           });
     });
 

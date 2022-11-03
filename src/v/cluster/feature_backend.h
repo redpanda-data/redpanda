@@ -17,6 +17,10 @@
 #include "features/fwd.h"
 #include "storage/fwd.h"
 
+#include <seastar/core/future.hh>
+
+#include <system_error>
+
 namespace cluster {
 
 /**
@@ -42,6 +46,7 @@ public:
     }
 
 private:
+    ss::future<> apply_feature_update_command(feature_update_cmd);
     static constexpr auto accepted_commands = make_commands_list<
       feature_update_cmd,
       feature_update_license_update_cmd>();

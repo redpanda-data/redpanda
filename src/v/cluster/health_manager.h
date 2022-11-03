@@ -51,6 +51,7 @@ private:
     ss::future<bool> ensure_topic_replication(model::topic_namespace_view);
     ss::future<bool> ensure_partition_replication(model::ntp);
     void tick();
+    ss::future<> do_tick();
 
     model::node_id _self;
     size_t _target_replication_factor;

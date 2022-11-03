@@ -29,6 +29,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 
 namespace kafka {
 
@@ -122,44 +123,46 @@ ss::future<> group_manager::stop() {
         e.second->as.request_abort();
     }
 
-    return _gate.close().then([this]() -> ss::future<> {
+    return _gate.close().then([this]() {
         /**
          * cancel all pending group opeartions
          */
-        for (auto& [_, group] : _groups) {
-            co_await group->shutdown();
-        }
-        _partitions.clear();
+        return ss::do_for_each(
+                 _groups, [](auto& p) { return p.second->shutdown(); })
+          .then([this] { _partitions.clear(); });
     });
 }
 
 void group_manager::detach_partition(const model::ntp& ntp) {
     klog.debug("detaching group metadata partition {}", ntp);
-    ssx::spawn_with_gate(_gate, [this, _ntp{ntp}]() -> ss::future<> {
-        auto ntp(_ntp);
-        auto it = _partitions.find(ntp);
-        if (it == _partitions.end()) {
-            co_return;
-        }
-        auto p = it->second;
-        auto units = co_await p->catchup_lock.hold_write_lock();
-
-        // Becasue shutdown group is async operation we should run it after
-        // rehash for groups map
-        std::vector<group_ptr> groups_for_shutdown;
-        for (auto g_it = _groups.begin(); g_it != _groups.end();) {
-            if (g_it->second->partition()->ntp() == p->partition->ntp()) {
-                groups_for_shutdown.push_back(g_it->second);
-                _groups.erase(g_it++);
-                continue;
-            }
-            ++g_it;
-        }
-        _partitions.erase(ntp);
-        _partitions.rehash(0);
-
-        co_await shutdown_groups(std::move(groups_for_shutdown));
+    ssx::spawn_with_gate(_gate, [this, _ntp{ntp}]() mutable {
+        return do_detach_partition(std::move(_ntp));
     });
+}
+
+ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
+    auto it = _partitions.find(ntp);
+    if (it == _partitions.end()) {
+        co_return;
+    }
+    auto p = it->second;
+    auto units = co_await p->catchup_lock.hold_write_lock();
+
+    // Becasue shutdown group is async operation we should run it after
+    // rehash for groups map
+    std::vector<group_ptr> groups_for_shutdown;
+    for (auto g_it = _groups.begin(); g_it != _groups.end();) {
+        if (g_it->second->partition()->ntp() == p->partition->ntp()) {
+            groups_for_shutdown.push_back(g_it->second);
+            _groups.erase(g_it++);
+            continue;
+        }
+        ++g_it;
+    }
+    _partitions.erase(ntp);
+    _partitions.rehash(0);
+
+    co_await shutdown_groups(std::move(groups_for_shutdown));
 }
 
 void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {

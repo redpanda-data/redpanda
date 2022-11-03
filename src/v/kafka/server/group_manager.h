@@ -196,6 +196,7 @@ private:
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
     void detach_partition(const model::ntp&);
+    ss::future<> do_detach_partition(model::ntp);
 
     struct attached_partition {
         bool loading;

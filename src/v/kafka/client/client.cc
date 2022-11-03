@@ -267,7 +267,7 @@ ss::future<produce_response> client::produce_records(
       std::move(partitions),
       [this, topic](kafka::produce_request::partition p) mutable
       -> ss::future<produce_response::partition> {
-          co_return co_await produce_record_batch(
+          return produce_record_batch(
             model::topic_partition(topic, p.partition_index),
             std::move(*p.records->adapter.batch));
       });
