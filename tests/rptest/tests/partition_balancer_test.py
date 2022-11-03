@@ -13,7 +13,7 @@ import time
 from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.util import wait_until, wait_until_result
+from rptest.util import wait_until_result
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -25,6 +25,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 
 # We inject failures which might cause consumer groups
 # to re-negotiate, so it is necessary to have a longer
