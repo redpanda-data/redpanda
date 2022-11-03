@@ -76,7 +76,7 @@ ss::future<> materialized_segments::start() {
 
     // Timer to invoke TTL eviction of segments
     _stm_timer.set_callback([this] {
-        trim_segments();
+        trim_segments(std::nullopt);
         _stm_timer.rearm(_stm_jitter());
     });
     _stm_timer.rearm(_stm_jitter());
@@ -141,15 +141,16 @@ ssx::semaphore_units materialized_segments::get_reader_units() {
 }
 
 ssx::semaphore_units materialized_segments::get_segment_units() {
-    // TOOD: make this function async so that it can wait until we succeed
-    // in evicting some readers: trim_readers is not
-    // guaranteed to do this, if all readers are in use.
+    if (_segment_units.available_units() <= 0) {
+        trim_segments(max_segments() / 2);
+    }
+
     vlog(
       cst_log.debug,
       "get_segment_units: taking 1 from {}",
-      _reader_units.available_units());
+      _segment_units.available_units());
 
-    return _reader_units.take(1).units;
+    return _segment_units.take(1).units;
 }
 
 void materialized_segments::trim_readers(size_t target_free) {
@@ -220,8 +221,16 @@ void materialized_segments::trim_readers(size_t target_free) {
  * This method does not guarantee to free any resources: it will not do
  * anything if no segments have an atime older than the TTL.  Ssee trim_readers
  * for how to trim the reader population back to a specific size
+ *
+ * @param target_free: if set, the trim will remove segments until the
+ *        number of units available in segments_semaphore reaches the
+ *        target, or until it runs out of candidates for eviction.  This
+ *        is not a guarantee that units will be freed (segments may be
+ *        pinned by active readers or ongoing downloads).  In this mode,
+ *        TTL is not relevant.
+ *
  */
-void materialized_segments::trim_segments() {
+void materialized_segments::trim_segments(std::optional<size_t> target_free) {
     vlog(
       cst_log.debug,
       "collecting stale materialized segments, {} segments materialized",
@@ -229,56 +238,19 @@ void materialized_segments::trim_segments() {
 
     auto now = ss::lowres_clock::now();
 
-    // These pointers are safe because there are no scheduling points
-    // between here and the ultimate eviction at end of function.
-    std::vector<std::pair<materialized_segment_state*, kafka::offset>>
-      to_offload;
-
+    // The pointers in offload_list_t are safe because there are no scheduling
+    // points between here and the ultimate eviction at end of function.
+    offload_list_t to_offload;
     for (auto& st : _materialized) {
         auto deadline = st.atime + stm_max_idle_time;
-        if (now >= deadline && !st.segment->download_in_progress()) {
-            if (st.segment.owned()) {
-                // This segment is not referred to by any readers, we may
-                // enqueue it for eviction.
-                vlog(
-                  cst_log.debug,
-                  "Materialized segment with base offset {} is stale",
-                  st.offset_key);
-                // this will delete and unlink the object from
-                // _materialized collection
-                if (st.parent) {
-                    to_offload.push_back(std::make_pair(&st, st.offset_key));
-                } else {
-                    // This cannot happen, because materialized_segment_state
-                    // is only instantiated by remote_partition and will
-                    // be disposed before the remote_partition it points to.
-                    vassert(
-                      false,
-                      "materialized_segment_state outlived remote_partition");
-                }
-            } else {
-                // We would like to trim this segment, but cannot right now
-                // because it has some readers referring to it.  Enqueue these
-                // readers for eviction, in the expectation that on the next
-                // periodic pass through this function, the segment will be
-                // eligible for eviction, if it does not create any new readers
-                // in the meantime.
-                vlog(
-                  cst_log.debug,
-                  "Materialized segment {} base-offset {} is not stale: {} "
-                  "readers={}",
-                  st.ntp(),
-                  st.base_rp_offset,
-                  st.segment.use_count(),
-                  st.readers.size());
 
-                // Readers hold a reference to the segment, so for the
-                // segment.owned() check to pass, we need to clear them out.
-                while (!st.readers.empty()) {
-                    evict_reader(std::move(st.readers.front()));
-                    st.readers.pop_front();
-                }
-            }
+        // We freed enough, drop out of iterating over segments
+        if (target_free && _segment_units.current() >= target_free) {
+            break;
+        }
+
+        if (target_free || (now >= deadline)) {
+            maybe_trim_segment(st, to_offload);
         }
     }
 
@@ -291,6 +263,60 @@ void materialized_segments::trim_segments() {
         vassert(p, "Unexpected orphan segment!");
 
         p->offload_segment(i.second);
+    }
+} // namespace cloud_storage
+
+/**
+ * Inner part of trim_segments, that decides whether a segment can be
+ * trimmed, and if so pushes to the to_offload list for the caller
+ * to later call offload_segment on the list's contents.
+ */
+void materialized_segments::maybe_trim_segment(
+  materialized_segment_state& st, offload_list_t& to_offload) {
+    if (st.segment->download_in_progress()) {
+        return;
+    }
+
+    if (st.segment.owned()) {
+        // This segment is not referred to by any readers, we may
+        // enqueue it for eviction.
+        vlog(
+          cst_log.debug,
+          "Materialized segment with base offset {} is stale",
+          st.offset_key);
+        // this will delete and unlink the object from
+        // _materialized collection
+        if (st.parent) {
+            to_offload.push_back(std::make_pair(&st, st.offset_key));
+        } else {
+            // This cannot happen, because materialized_segment_state
+            // is only instantiated by remote_partition and will
+            // be disposed before the remote_partition it points to.
+            vassert(
+              false, "materialized_segment_state outlived remote_partition");
+        }
+    } else {
+        // We would like to trim this segment, but cannot right now
+        // because it has some readers referring to it.  Enqueue these
+        // readers for eviction, in the expectation that on the next
+        // periodic pass through this function, the segment will be
+        // eligible for eviction, if it does not create any new readers
+        // in the meantime.
+        vlog(
+          cst_log.debug,
+          "Materialized segment {} base-offset {} is not stale: {} "
+          "readers={}",
+          st.ntp(),
+          st.base_rp_offset,
+          st.segment.use_count(),
+          st.readers.size());
+
+        // Readers hold a reference to the segment, so for the
+        // segment.owned() check to pass, we need to clear them out.
+        while (!st.readers.empty()) {
+            evict_reader(std::move(st.readers.front()));
+            st.readers.pop_front();
+        }
     }
 }
 

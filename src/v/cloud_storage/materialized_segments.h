@@ -120,7 +120,13 @@ private:
 
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
-    void trim_segments();
+    void trim_segments(std::optional<size_t>);
+
+    // List of segments to offload, accumulated during trim_segments
+    using offload_list_t
+      = std::vector<std::pair<materialized_segment_state*, kafka::offset>>;
+
+    void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
 
     // Permit probe to query object counts
     friend class remote_probe;
