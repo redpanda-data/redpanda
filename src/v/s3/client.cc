@@ -606,14 +606,21 @@ ss::future<> client::put_object(
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size, tags);
     if (!header) {
-        return ss::make_exception_future<>(std::system_error(header.error()));
+        return body.close().then([&header] {
+            return ss::make_exception_future<>(
+              std::system_error(header.error()));
+        });
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return ss::do_with(
       std::move(body),
       [this, timeout, header = std::move(header)](
         ss::input_stream<char>& body) mutable {
-          return _client.request(std::move(header.value()), body, timeout)
+          auto make_request = [this, &header, &body, &timeout]() {
+              return _client.request(std::move(header.value()), body, timeout);
+          };
+
+          return ss::futurize_invoke(make_request)
             .then([](const http::client::response_stream_ref& ref) {
                 return drain_response_stream(ref).then([ref](iobuf&& res) {
                     auto status = ref->get_headers().result();
@@ -633,6 +640,10 @@ ss::future<> client::put_object(
             .handle_exception_type([this](const rest_error_response& err) {
                 _probe->register_failure(err.code());
                 return ss::make_exception_future<>(err);
+            })
+            .handle_exception([](std::exception_ptr eptr) {
+                vlog(s3_log.warn, "S3 request failed with error: {}", eptr);
+                return ss::make_exception_future<>(eptr);
             })
             .finally([&body]() { return body.close(); });
       });
