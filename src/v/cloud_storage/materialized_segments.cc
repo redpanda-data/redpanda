@@ -33,15 +33,26 @@ static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
 // on average).
 static constexpr uint32_t default_reader_factor = 1;
 
+// If no materialized segment limit is set, permit the per-shard partition count
+// limit, multiplied by this factor (i.e. each partition gets this many segments
+// on average).
+static constexpr uint32_t default_segment_factor = 2;
+
 materialized_segments::materialized_segments()
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
       config::shard_local_cfg().topic_partitions_per_shard.bind())
   , _max_readers_per_shard(
       config::shard_local_cfg().cloud_storage_max_readers_per_shard.bind())
-  , _reader_units(max_readers(), "cst_reader") {
+  , _max_segments_per_shard(
+      config::shard_local_cfg()
+        .cloud_storage_max_materialized_segments_per_shard.bind())
+  , _reader_units(max_readers(), "cst_reader")
+  , _segment_units(max_segments(), "cst_segment") {
     _max_readers_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
+    _max_segments_per_shard.watch(
+      [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
 }
@@ -78,6 +89,11 @@ size_t materialized_segments::max_readers() const {
       _max_partitions_per_shard() * default_reader_factor));
 }
 
+size_t materialized_segments::max_segments() const {
+    return static_cast<size_t>(_max_segments_per_shard().value_or(
+      _max_partitions_per_shard() * default_segment_factor));
+}
+
 void materialized_segments::evict_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     _eviction_list.push_back(std::move(reader));
@@ -112,6 +128,18 @@ ssx::semaphore_units materialized_segments::get_reader_units() {
     // TOOD: make this function async so that it can wait until we succeed
     // in evicting some readers: trim_readers is not
     // guaranteed to do this, if all readers are in use.
+
+    return _reader_units.take(1).units;
+}
+
+ssx::semaphore_units materialized_segments::get_segment_units() {
+    // TOOD: make this function async so that it can wait until we succeed
+    // in evicting some readers: trim_readers is not
+    // guaranteed to do this, if all readers are in use.
+    vlog(
+      cst_log.debug,
+      "get_segment_units: taking 1 from {}",
+      _reader_units.available_units());
 
     return _reader_units.take(1).units;
 }

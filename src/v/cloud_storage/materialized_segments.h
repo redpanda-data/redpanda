@@ -63,6 +63,8 @@ public:
 
     ssx::semaphore_units get_reader_units();
 
+    ssx::semaphore_units get_segment_units();
+
 private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
@@ -70,8 +72,10 @@ private:
 
     config::binding<uint32_t> _max_partitions_per_shard;
     config::binding<std::optional<uint32_t>> _max_readers_per_shard;
+    config::binding<std::optional<uint32_t>> _max_segments_per_shard;
 
     size_t max_readers() const;
+    size_t max_segments() const;
 
     /// List of segments and readers waiting to have their stop() method
     /// called before destruction
@@ -95,6 +99,10 @@ private:
     /// Concurrency limit on how many remote_segment_batch_reader may be
     /// instantiated at once on one shard.
     adjustable_semaphore _reader_units;
+
+    /// Concurrency limit on how many segments may be materialized at
+    /// once: this will trigger faster trimming under pressure.
+    adjustable_semaphore _segment_units;
 
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
