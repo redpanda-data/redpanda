@@ -51,13 +51,13 @@ struct offset_to_file_pos_result {
 
 ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
+  ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp base_timestamp,
   ss::io_priority_class io_priority);
 
 ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
+  ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority);
 

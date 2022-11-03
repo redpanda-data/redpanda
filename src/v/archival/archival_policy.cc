@@ -236,7 +236,7 @@ static ss::output_stream<char> make_null_output_stream() {
 
 ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
+  ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp base_timestamp,
   ss::io_priority_class io_priority) {
     auto ix_begin = segment->index().find_nearest(begin_inclusive);
@@ -288,9 +288,10 @@ ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
     // Adjust content length and offsets at the begining of the file
     co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
 }
+
 ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
+  ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority) {
     // Handle truncated segment upload (if the upload was triggered by time
@@ -371,20 +372,20 @@ ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
 static ss::future<> get_file_range(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
-  upload_candidate& upl,
+  ss::lw_shared_ptr<storage::segment> segment,
+  ss::lw_shared_ptr<upload_candidate> upl,
   ss::io_priority_class io_priority) {
     size_t fsize = segment->reader().file_size();
     // These are default values for full segment upload.
     // We start with these values and refine them further
     // down the code path.
-    upl.starting_offset = segment->offsets().base_offset;
-    upl.file_offset = 0;
-    upl.content_length = fsize;
-    upl.final_offset = segment->offsets().dirty_offset;
-    upl.final_file_offset = fsize;
-    upl.base_timestamp = segment->index().base_timestamp();
-    upl.max_timestamp = segment->index().max_timestamp();
+    upl->starting_offset = segment->offsets().base_offset;
+    upl->file_offset = 0;
+    upl->content_length = fsize;
+    upl->final_offset = segment->offsets().dirty_offset;
+    upl->final_file_offset = fsize;
+    upl->base_timestamp = segment->index().base_timestamp();
+    upl->max_timestamp = segment->index().max_timestamp();
     if (!end_inclusive && segment->offsets().base_offset == begin_inclusive) {
         // Fast path, the upload is started at the begining of the segment
         // and not truncted at the end.
@@ -397,26 +398,26 @@ static ss::future<> get_file_range(
     }
     if (begin_inclusive != segment->offsets().base_offset) {
         auto seek = co_await convert_begin_offset_to_file_pos(
-          begin_inclusive, segment, upl.base_timestamp, io_priority);
-        upl.starting_offset = seek.offset;
-        upl.file_offset = seek.bytes;
-        upl.base_timestamp = seek.ts;
+          begin_inclusive, segment, upl->base_timestamp, io_priority);
+        upl->starting_offset = seek.offset;
+        upl->file_offset = seek.bytes;
+        upl->base_timestamp = seek.ts;
     }
     if (end_inclusive) {
         auto seek = co_await convert_end_offset_to_file_pos(
-          end_inclusive.value(), segment, upl.max_timestamp, io_priority);
-        upl.final_offset = seek.offset;
-        upl.final_file_offset = seek.bytes;
-        upl.max_timestamp = seek.ts;
+          end_inclusive.value(), segment, upl->max_timestamp, io_priority);
+        upl->final_offset = seek.offset;
+        upl->final_file_offset = seek.bytes;
+        upl->max_timestamp = seek.ts;
     }
     // Recompute content_length based on file offsets
     vassert(
-      upl.file_offset <= upl.final_file_offset,
+      upl->file_offset <= upl->final_file_offset,
       "Invalid upload candidate {}",
       upl);
-    upl.content_length = upl.final_file_offset - upl.file_offset;
+    upl->content_length = upl->final_file_offset - upl->file_offset;
     vassert(
-      upl.content_length <= segment->reader().file_size(),
+      upl->content_length <= segment->reader().file_size(),
       "Incorrect content length in {}, file size {}",
       upl,
       fsize);
@@ -453,7 +454,7 @@ static ss::future<> get_file_range(
 static ss::future<upload_candidate_with_locks> create_upload_candidate(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
-  const ss::lw_shared_ptr<storage::segment>& segment,
+  ss::lw_shared_ptr<storage::segment> segment,
   const storage::ntp_config* ntp_conf,
   ss::io_priority_class io_priority,
   ss::lowres_clock::duration segment_lock_duration) {
@@ -468,29 +469,30 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
     std::vector<ss::rwlock::holder> locks;
     locks.emplace_back(co_await segment->read_lock(deadline));
-    upload_candidate result{.term = term, .sources = {segment}};
+    auto result = ss::make_lw_shared<upload_candidate>(
+      {.term = term, .sources = {segment}});
 
     co_await get_file_range(
       begin_inclusive, end_inclusive, segment, result, io_priority);
-    if (result.starting_offset != segment->offsets().base_offset) {
+    if (result->starting_offset != segment->offsets().base_offset) {
         // We need to generate new name for the segment
         auto path = storage::segment_path::make_segment_path(
-          *ntp_conf, result.starting_offset, term, version);
-        result.exposed_name = segment_name(path.filename().string());
+          *ntp_conf, result->starting_offset, term, version);
+        result->exposed_name = segment_name(path.filename().string());
         vlog(
           archival_log.debug,
           "Using adjusted segment name: {}",
-          result.exposed_name);
+          result->exposed_name);
     } else {
         auto orig_path = std::filesystem::path(segment->filename());
-        result.exposed_name = segment_name(orig_path.filename().string());
+        result->exposed_name = segment_name(orig_path.filename().string());
         vlog(
           archival_log.debug,
           "Using original segment name: {}",
-          result.exposed_name);
+          result->exposed_name);
     }
 
-    co_return upload_candidate_with_locks{result, std::move(locks)};
+    co_return upload_candidate_with_locks{*result, std::move(locks)};
 }
 
 ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
