@@ -129,11 +129,14 @@ class FailureInjector:
         node.account.ssh(cmd)
 
     def _heal(self, node):
-        self.redpanda.logger.info(f"healing node {node.account.hostname}")
-        cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
-        node.account.ssh(cmd)
-        cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
-        node.account.ssh(cmd)
+        try:
+            self.redpanda.logger.info(f"healing node {node.account.hostname}")
+            cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
+            node.account.ssh(cmd)
+            cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
+            node.account.ssh(cmd)
+        except:
+            pass
 
     def _delete_netem(self, node):
         tc_netem.tc_netem_delete(node)
@@ -141,12 +144,12 @@ class FailureInjector:
     def _heal_all(self):
         self.redpanda.logger.info(f"healling all network failures")
         for n in self.redpanda.nodes:
-            n.account.ssh("iptables -P INPUT ACCEPT")
-            n.account.ssh("iptables -P FORWARD ACCEPT")
-            n.account.ssh("iptables -P OUTPUT ACCEPT")
-            n.account.ssh("iptables -F")
-            n.account.ssh("iptables -X")
             try:
+                n.account.ssh("iptables -P INPUT ACCEPT")
+                n.account.ssh("iptables -P FORWARD ACCEPT")
+                n.account.ssh("iptables -P OUTPUT ACCEPT")
+                n.account.ssh("iptables -F")
+                n.account.ssh("iptables -X")
                 self._delete_netem(n)
             except:
                 # skip error as deleting netem may fail if there are no rules applied
