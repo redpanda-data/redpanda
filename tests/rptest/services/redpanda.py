@@ -1151,7 +1151,7 @@ class RedpandaService(Service):
 
         for line in node.account.ssh_capture("ps aux"):
             self.logger.debug(line.strip())
-        for line in node.account.ssh_capture("netstat -ant"):
+        for line in node.account.ssh_capture("netstat -panelot"):
             self.logger.debug(line.strip())
 
     def start_service(self, node, start):
