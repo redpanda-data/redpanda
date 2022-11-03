@@ -286,17 +286,14 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
     } else {
         vlog(
           _rtclog.debug, "Updating the archival_meta_stm in read-replica mode");
-        cloud_storage::partition_manifest mdiff(_ntp, _rev);
+        std::vector<cloud_storage::segment_meta> mdiff;
         auto offset
           = _partition->archival_meta_stm()->manifest().get_last_offset()
             + model::offset(1);
         // TODO: this code needs to be updated when the compacted segment
         // uploads are merged.
         for (auto it = m.segment_containing(offset); it != m.end(); it++) {
-            mdiff.add(
-              segment_name(cloud_storage::generate_local_segment_name(
-                it->first.base_offset, it->first.term)),
-              it->second);
+            mdiff.push_back(it->second);
         }
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
@@ -396,10 +393,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
 
 remote_segment_path
 ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
-    auto key = cloud_storage::segment_name_components{
-      .base_offset = candidate.starting_offset,
-      .term = candidate.term,
-    };
     auto front = candidate.sources.front();
     cloud_storage::partition_manifest::value val{
       .is_compacted = front->is_compacted_segment()
@@ -413,7 +406,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
       .sname_format = cloud_storage::segment_name_format::v2,
     };
 
-    return manifest().generate_segment_path(key, val);
+    return manifest().generate_segment_path(val);
 }
 
 // from offset to offset (by record batch boundary)
@@ -775,7 +768,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
     total.num_failed = results.size()
                        - (total.num_succeeded + total.num_cancelled);
 
-    cloud_storage::partition_manifest mdiff(_ntp, _rev);
+    std::vector<cloud_storage::segment_meta> mdiff;
     for (size_t i = 0; i < results.size(); i++) {
         if (results[i] != cloud_storage::upload_result::success) {
             break;
@@ -799,7 +792,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
             }
         }
 
-        mdiff.add(segment_name(*upload.name), *upload.meta);
+        mdiff.push_back(*upload.meta);
     }
 
     if (total.num_succeeded != 0) {
@@ -949,8 +942,8 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
         retry_chain_node fib(
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
-          key.base_offset, key.term);
-        auto spath = m.generate_segment_path(key, meta);
+          meta.base_offset, meta.segment_term);
+        auto spath = m.generate_segment_path(meta);
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(

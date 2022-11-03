@@ -78,10 +78,10 @@ ss::future<offset_translator::stream_stats> offset_translator::copy_stream(
 }
 
 segment_name offset_translator::get_adjusted_segment_name(
-  const partition_manifest::key& key, retry_chain_node& fib) const {
+  const segment_meta& meta, retry_chain_node& fib) const {
     retry_chain_logger ctxlog(cst_log, fib);
-    auto base_offset = key.base_offset;
-    auto term_id = key.term;
+    auto base_offset = meta.base_offset;
+    auto term_id = meta.segment_term;
     auto new_base = base_offset - _initial_delta;
     auto new_name = segment_name{
       ssx::sformat("{}-{}-v1.log", new_base(), term_id())};
@@ -89,8 +89,8 @@ segment_name offset_translator::get_adjusted_segment_name(
       ctxlog.debug,
       "Segment: {}-{}-v1.log, base-offset: {}, term-id: {}, "
       "adjusted-base-offset: {}, adjusted-name: {}",
-      key.base_offset,
-      key.term,
+      base_offset,
+      term_id,
       base_offset,
       term_id,
       new_base,

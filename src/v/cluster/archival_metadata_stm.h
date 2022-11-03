@@ -49,7 +49,7 @@ public:
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
     ss::future<std::error_code> add_segments(
-      const cloud_storage::partition_manifest&,
+      std::vector<cloud_storage::segment_meta>,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
@@ -93,7 +93,7 @@ public:
 
 private:
     ss::future<std::error_code> do_add_segments(
-      const cloud_storage::partition_manifest&,
+      std::vector<cloud_storage::segment_meta>,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
@@ -125,6 +125,8 @@ private:
     struct update_start_offset_cmd;
     struct cleanup_metadata_cmd;
     struct snapshot;
+
+    friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
 
     static std::vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);

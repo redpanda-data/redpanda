@@ -12,6 +12,7 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/offset_translation_layer.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
@@ -116,7 +117,7 @@ public:
               "destruction");
 
             try {
-                _partition->return_reader(std::move(_reader), _it->second);
+                dispose_current_reader();
             } catch (...) {
                 // Failure to return the reader causes the reader destructor
                 // to execute synchronously inside this function.  That might
@@ -160,7 +161,7 @@ public:
                 // it on next itertaion
 
                 // The existing state have to be rebuilt
-                _partition->return_reader(std::move(_reader), _it->second);
+                dispose_current_reader();
                 _it = _end;
                 co_return storage_t{};
             }
@@ -227,8 +228,25 @@ public:
     }
 
 private:
+    /// Return or evict currently referenced reader
+    ///
+    /// If the reader belongs to existing segment it will be returned
+    /// back to the materialized segment.
+    /// If it belongs to evicted segment the reader itself wil be evicted.
+    void dispose_current_reader() {
+        if (!_it.is_invalidated()) {
+            _partition->return_reader(std::move(_reader), _it->second);
+        } else {
+            // The segment was evicted or replaced by the compacted
+            // segment. In this case we can't return the reader back
+            // to the materialized segment and have to remove it.
+            _partition->evict_reader(std::move(_reader));
+        }
+    }
+
     // Initialize object using remote_partition as a source
     void initialize_reader_state(const storage::log_reader_config& config) {
+        _partition->maybe_sync_with_manifest();
         vlog(
           _ctxlog.debug,
           "partition_record_batch_reader_impl initialize reader state");
@@ -285,10 +303,15 @@ private:
               ->segment;
         vlog(
           _ctxlog.debug,
-          "segment offset range {}-{}, delta: {}",
+          "segment offset range {}-{}, delta: {}, log reader config: {}",
           segment->get_base_rp_offset(),
           segment->get_max_rp_offset(),
-          segment->get_base_offset_delta());
+          segment->get_base_offset_delta(),
+          config);
+        if (it->first > config.max_offset) {
+            _partition->evict_reader(std::move(reader));
+            return std::nullopt;
+        }
         return {{.reader = std::move(reader), .iter = it}};
     }
 
@@ -321,6 +344,7 @@ private:
           _reader->max_rp_offset());
         if (_reader->is_eof()) {
             // move to the next segment
+            _partition->maybe_sync_with_manifest();
             vlog(_ctxlog.debug, "maybe_reset_stream condition triggered");
             _it++;
             // We're comparing to the cached _end instead of
@@ -336,12 +360,44 @@ private:
             // base_offset and proceed with the next one. The client will see a
             // gap. The caching of the _segments.end() prevents this.
             if (_it == _end) {
+                // This branch might be taken if the last segment was merged
+                // with the previous one. (TODO: fix this)
                 co_await set_end_of_stream();
             } else {
                 // reuse config but replace the reader
                 auto config = _reader->config();
                 _partition->evict_reader(std::move(_reader));
                 vlog(_ctxlog.debug, "initializing new segment reader");
+                // It's safe to dereference '_it' since we just incremented it.
+                // If the underlying segment was deleted the _it will be equal
+                // to _end. But just in case if anyone will insert an
+                // asynchronous operation in between the increment and
+                // dereferencing we're checking the state of the iterator.
+                vassert(
+                  !_it.is_invalidated(),
+                  "race condition detedted, ntp: {}, config: {}",
+                  _partition->get_ntp(),
+                  config);
+                vlog(
+                  _ctxlog.debug,
+                  "initializing new segment reader {} {}",
+                  config.start_offset,
+                  _it->first);
+                if (model::offset_cast(config.start_offset) < _it->first) {
+                    // Invariant: we got here by incrementing _it so it's safe
+                    // to decrement it This branch will be taken if the
+                    // underlying segments was merged and the manifest has
+                    // changed. For instance, let's say that originally we had
+                    // three segments [100-199], [200-299], and [300-399] and
+                    // _it pointed to the first one. Then, the manifest was
+                    // updated and segmets were merged to [100-299],[300, 399].
+                    // After the increment the iterator will be pointing to
+                    // [300, 399] (because it caches the key internally and
+                    // doing a map lookup on increment). This mean that we will
+                    // have a gap in offsets that reader sees. To avoid this we
+                    // need to be able to detect this situation.
+                    _it = std::prev(_it);
+                }
                 _reader = _partition->borrow_reader(
                   config, _it->first, _it->second);
             }
@@ -391,7 +447,7 @@ remote_partition::remote_partition(
   , _probe(m.get_ntp()) {}
 
 ss::future<> remote_partition::start() {
-    update_segments_incrementally();
+    maybe_sync_with_manifest();
     (void)run_eviction_loop();
 
     _stm_timer.set_callback([this] {
@@ -484,6 +540,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
+    maybe_sync_with_manifest();
     try {
         // Invariant: _manifest has at least one segment so start offset is
         // guaranteed to not to be nullopt.
@@ -511,6 +568,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
 }
 
 model::offset remote_partition::last_uploaded_offset() {
+    maybe_sync_with_manifest();
     vassert(
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
@@ -537,12 +595,12 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     // look for first segment in next term, segments are sorted by base_offset
     // and term
     for (auto const& p : _manifest) {
-        if (p.first.term > term) {
+        if (p.second.segment_term > term) {
             return get_kafka_base_offset(p.second) - kafka::offset(1);
         }
     }
     // if last segment term is equal to the one we look for return it
-    if (_manifest.rbegin()->first.term == term) {
+    if (_manifest.rbegin()->second.segment_term == term) {
         return get_kafka_max_offset(_manifest.rbegin()->second);
     }
 
@@ -551,6 +609,7 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
+    maybe_sync_with_manifest();
     gate_guard guard(_gate);
     // Here we have to use kafka offsets to locate the segments and
     // redpanda offsets to extract aborted transactions metadata because
@@ -618,17 +677,44 @@ ss::future<> remote_partition::stop() {
     }
 }
 
-void remote_partition::update_segments_incrementally() {
-    vlog(_ctxlog.debug, "remote partition update segments incrementally");
-    // find new segments
+void remote_partition::maybe_sync_with_manifest() {
+    if (_insync_offset == _manifest.get_insync_offset()) {
+        // Fast path, the manifest is not expected to be updated frequently
+        // and most of the time the call is a no-op.
+        return;
+    }
+    vlog(
+      _ctxlog.debug,
+      "updating remote_partition from {} to {}",
+      _insync_offset,
+      _manifest.get_insync_offset());
+
+    // Algorithm outline
+    // - If the segment is offloaded we can just re-create it
+    // - If the segment is materialized we need to check if the
+    //   underlying segment was replaced by looking at its remote path
+    absl::btree_map<remote_segment_path, materialized_segment_ptr>
+      materialized_segments;
+    for (auto& it : _segments) {
+        if (std::holds_alternative<materialized_segment_ptr>(it.second)) {
+            auto& st = std::get<materialized_segment_ptr>(it.second);
+            auto path = st->segment->get_segment_path();
+            materialized_segments.insert(
+              std::make_pair(std::move(path), std::move(st)));
+        }
+    }
+    _segments.clear();
+
+    // Rebuild the _segments collection using the
+    // prevoiusly materialized segments stored in
+    // materialized_segments collection.
     for (const auto& meta : _manifest) {
         auto o = get_kafka_base_offset(meta.second);
         auto prev_it = _segments.find(o);
         if (prev_it != _segments.end()) {
-            // The key can be in the map in two cases:
-            // - we've already added the segment to the map
-            // - the key that we've added previously doesn't have data batches
-            //   in this case it can be safely replaced by the new one
+            // The key can be in the map if the previous segment doesn't have
+            // data batches. In this case it can be safely replaced by the new
+            // one.
             auto prev_off = std::visit(
               [](auto&& p) { return p->base_rp_offset; }, prev_it->second);
             auto manifest_it = _manifest.find(prev_off);
@@ -639,7 +725,7 @@ void remote_partition::update_segments_incrementally() {
               _manifest.get_ntp());
             if (
               meta.second == manifest_it->second
-              || manifest_it->first.base_offset > meta.second.base_offset) {
+              || manifest_it->second.base_offset > meta.second.base_offset) {
                 // This path can be taken if we've already added the
                 // segment with data batches and the current segment
                 // that the loop is checking doesn't have any.
@@ -659,17 +745,27 @@ void remote_partition::update_segments_incrementally() {
               meta.second.base_offset,
               meta.second.committed_offset,
               meta.second.delta_offset,
-              manifest_it->first.base_offset,
+              manifest_it->second.base_offset,
               manifest_it->second.committed_offset,
               manifest_it->second.delta_offset);
 
             std::visit([this](auto&& p) { p->offload(this); }, prev_it->second);
         }
-        auto res = _segments.insert_or_assign(
-          o, offloaded_segment_state(meta.first.base_offset));
-        if (res.second) {
-            _probe.segment_added();
+        auto spath = _manifest.generate_segment_path(meta.second);
+        if (auto it = materialized_segments.find(spath);
+            it != materialized_segments.end()) {
+            auto ms = std::move(it->second);
+            _segments.insert_or_assign(o, std::move(ms));
+            materialized_segments.erase(it);
+        } else {
+            _segments.insert_or_assign(
+              o, offloaded_segment_state(meta.second.base_offset));
         }
+    }
+    _insync_offset = _manifest.get_insync_offset();
+
+    for (auto& kv : materialized_segments) {
+        kv.second->offload(this);
     }
 }
 
@@ -715,9 +811,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       "remote partition make_reader invoked, config: {}, num segments {}",
       config,
       _segments.size());
-    if (_segments.size() < _manifest.size()) {
-        update_segments_incrementally();
-    }
+    maybe_sync_with_manifest();
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
@@ -728,9 +822,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
 
 ss::future<std::optional<storage::timequery_result>>
 remote_partition::timequery(storage::timequery_config cfg) {
-    if (_segments.size() < _manifest.size()) {
-        update_segments_incrementally();
-    }
+    maybe_sync_with_manifest();
 
     if (_segments.empty()) {
         vlog(_ctxlog.debug, "timequery: no segments");
@@ -1001,7 +1093,7 @@ ss::future<> remote_partition::erase() {
     if (manifest_get_result != download_result::notfound) {
         // Erase all segments
         for (const auto& i : manifest) {
-            auto path = manifest.generate_segment_path(i.first, i.second);
+            auto path = manifest.generate_segment_path(i.second);
             vlog(_ctxlog.debug, "Erasing segment {}", path);
             // On failure, we throw: this should cause controller to retry
             // the topic deletion operation that called us, until it eventually

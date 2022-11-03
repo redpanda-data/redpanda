@@ -68,9 +68,8 @@ inline void populate_local_log(
 inline void populate_manifest(
   cloud_storage::partition_manifest& m, const std::vector<segment_spec>& segs) {
     for (const auto& spec : segs) {
-        cloud_storage::partition_manifest::key key{
-          .base_offset = model::offset{spec.start_offset},
-          .term = model::term_id{0}};
+        cloud_storage::partition_manifest::key key = model::offset{
+          spec.start_offset};
 
         cloud_storage::partition_manifest::value value{
           .size_bytes = spec.size_bytes,

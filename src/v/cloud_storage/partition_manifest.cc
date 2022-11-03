@@ -171,7 +171,35 @@ remote_segment_path generate_remote_segment_path(
 }
 
 segment_name generate_local_segment_name(model::offset o, model::term_id t) {
+    vassert(t != model::term_id{}, "Invalid term id");
     return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
+}
+
+partition_manifest::lw_segment_meta
+partition_manifest::lw_segment_meta::convert(const segment_meta& m) {
+    return lw_segment_meta{
+      .ntp_revision = m.ntp_revision,
+      .base_offset = m.base_offset,
+      .committed_offset = m.committed_offset,
+      .archiver_term = m.archiver_term,
+      .segment_term = m.segment_term,
+      .size_bytes = m.sname_format == segment_name_format::v2 ? m.size_bytes
+                                                              : 0,
+    };
+}
+
+segment_meta partition_manifest::lw_segment_meta::convert(
+  const partition_manifest::lw_segment_meta& lw) {
+    return segment_meta{
+      .size_bytes = lw.size_bytes,
+      .base_offset = lw.base_offset,
+      .committed_offset = lw.committed_offset,
+      .ntp_revision = lw.ntp_revision,
+      .archiver_term = lw.archiver_term,
+      .segment_term = lw.segment_term,
+      .sname_format = lw.size_bytes == 0 ? segment_name_format::v1
+                                         : segment_name_format::v2,
+    };
 }
 
 partition_manifest::partition_manifest()
@@ -243,46 +271,42 @@ model::initial_revision_id partition_manifest::get_revision_id() const {
     return _rev;
 }
 
-remote_segment_path partition_manifest::generate_segment_path(
-  const partition_manifest::key& key, const segment_meta& meta) const {
-    auto name = generate_remote_segment_name(key, meta);
+remote_segment_path
+partition_manifest::generate_segment_path(const segment_meta& meta) const {
+    auto name = generate_remote_segment_name(meta);
     return cloud_storage::generate_remote_segment_path(
       _ntp, meta.ntp_revision, name, meta.archiver_term);
 }
 
 segment_name partition_manifest::generate_remote_segment_name(
-  const partition_manifest::key& k, const partition_manifest::value& val) {
+  const partition_manifest::value& val) {
     switch (val.sname_format) {
     case segment_name_format::v1:
         return segment_name(
-          ssx::sformat("{}-{}-v1.log", k.base_offset(), k.term()));
+          ssx::sformat("{}-{}-v1.log", val.base_offset(), val.segment_term()));
     case segment_name_format::v2:
         // Use new stlyle format ".../base-committed-term-size-v1.log"
         return segment_name(ssx::sformat(
           "{}-{}-{}-{}-v1.log",
-          k.base_offset(),
+          val.base_offset(),
           val.committed_offset(),
           val.size_bytes,
-          k.term()));
+          val.segment_term()));
     }
     __builtin_unreachable();
 }
 
 remote_segment_path partition_manifest::generate_remote_segment_path(
-  const model::ntp& ntp,
-  const partition_manifest::key& k,
-  const partition_manifest::value& val) {
-    auto name = generate_remote_segment_name(k, val);
+  const model::ntp& ntp, const partition_manifest::value& val) {
+    auto name = generate_remote_segment_name(val);
     return cloud_storage::generate_remote_segment_path(
       ntp, val.ntp_revision, name, val.archiver_term);
 }
 
 local_segment_path partition_manifest::generate_local_segment_path(
-  const model::ntp& ntp,
-  const partition_manifest::key& k,
-  const partition_manifest::value& val) {
+  const model::ntp& ntp, const partition_manifest::value& val) {
     auto name = cloud_storage::generate_local_segment_name(
-      k.base_offset, k.term);
+      val.base_offset, val.segment_term);
     return local_segment_path(
       fmt::format("{}_{}/{}", ntp.path(), val.ntp_revision, name()));
 }
@@ -329,19 +353,14 @@ bool partition_manifest::contains(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
-    return _segments.contains(key);
+    return _segments.contains(maybe_key->base_offset);
 }
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     if (new_start_offset > _start_offset && !_segments.empty()) {
-        key k = {
-          .base_offset = new_start_offset,
-          .term = model::term_id::max(),
-        };
-        auto it = _segments.upper_bound(k);
+        auto it = _segments.upper_bound(new_start_offset);
         if (it == _segments.begin()) {
             return false;
         }
@@ -363,27 +382,23 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
 }
 
 std::vector<segment_meta> partition_manifest::replaced_segments() const {
-    std::vector<segment_meta> segments;
-    segments.reserve(_replaced.size());
-    for (const auto& kv : _replaced) {
-        segments.push_back(kv.second);
+    std::vector<segment_meta> res;
+    res.reserve(_replaced.size());
+    for (const auto& s : _replaced) {
+        res.push_back(lw_segment_meta::convert(s));
     }
-    return segments;
+    return res;
 }
 
 void partition_manifest::move_aligned_offset_range(
   model::offset begin_inclusive, model::offset end_inclusive) {
-    auto k = key{
-      .base_offset = begin_inclusive,
-      .term = model::term_id::min(),
-    };
-    auto it = _segments.lower_bound(k);
+    auto it = _segments.lower_bound(begin_inclusive);
     while (it != _segments.end()
            // The segment is considered replaced only if all its
            // offsets are covered by new segment's offset range
-           && it->first.base_offset >= begin_inclusive
+           && it->second.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
-        _replaced.insert(*it);
+        _replaced.push_back(lw_segment_meta::convert(it->second));
         it = _segments.erase(it);
     }
 }
@@ -400,9 +415,6 @@ bool partition_manifest::add(
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
     }
-    if (ok && it->second.segment_term == model::term_id{}) {
-        it->second.segment_term = key.term;
-    }
     _last_offset = std::max(meta.committed_offset, _last_offset);
     if (meta.is_compacted) {
         _last_uploaded_compacted_offset = std::max(
@@ -413,13 +425,17 @@ bool partition_manifest::add(
 
 bool partition_manifest::add(
   const segment_name& name, const segment_meta& meta) {
+    if (meta.segment_term != model::term_id{}) {
+        return add(meta.base_offset, meta);
+    }
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
-    return add(key, meta);
+    auto m = meta;
+    m.segment_term = maybe_key->term;
+    return add(meta.base_offset, m);
 }
 
 partition_manifest
@@ -467,15 +483,13 @@ partition_manifest::get(const segment_name& name) const {
         throw std::runtime_error(
           fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
     }
-    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
-    return get(key);
+    return get(maybe_key->base_offset);
 }
 
 partition_manifest::const_iterator
 partition_manifest::find(model::offset o) const {
-    auto it = _segments.lower_bound(
-      {.base_offset = o, .term = model::term_id(0)});
-    if (it == _segments.end() || it->first.base_offset != o) {
+    auto it = _segments.lower_bound(o);
+    if (it == _segments.end() || it->second.base_offset != o) {
         return end();
     }
     return it;
@@ -736,7 +750,7 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_key:
             check_that_required_meta_fields_are_present();
             _meta = {
-              .is_compacted = _is_compacted.value(),
+              .is_compacted = _is_compacted.value_or(false),
               .size_bytes = _size_bytes.value(),
               .base_offset = _base_offset.value(),
               .committed_offset = _committed_offset.value(),
@@ -758,13 +772,25 @@ struct partition_manifest_handler
                 if (!_segments) {
                     _segments = std::make_unique<segment_map>();
                 }
-                _segments->insert(std::make_pair(_segment_key, _meta));
+                _segments->insert(
+                  std::make_pair(_segment_key.base_offset, _meta));
                 _state = state::expect_segment_path;
             } else {
                 if (!_replaced) {
-                    _replaced = std::make_unique<segment_multimap>();
+                    _replaced = std::make_unique<replaced_segments_list>();
                 }
-                _replaced->insert(std::make_pair(_segment_key, _meta));
+                // In lw_segment_meta the sname_format field is encoded using
+                // the size_bytes field. For v1 name format we don't need
+                // size_bytes so we can set it to 0 to represent the
+                // sname_format field. For v2 we actually need to use both
+                // size_bytes and committed_offset. This code uses segment_meta
+                // to represent decoded elements from both 'segments' and
+                // 'replaced' fields. Because of that we need to do this trick.
+                _meta.sname_format = _meta.size_bytes != 0
+                                       ? segment_name_format::v2
+                                       : segment_name_format::v1;
+                _replaced->push_back(
+                  partition_manifest::lw_segment_meta::convert(_meta));
                 _state = state::expect_replaced_path;
             }
             clear_meta_fields();
@@ -860,16 +886,16 @@ struct partition_manifest_handler
     } _state{state::expect_manifest_start};
 
     using segment_map = partition_manifest::segment_map;
-    using segment_multimap = partition_manifest::segment_multimap;
+    using replaced_segments_list = partition_manifest::replaced_segments_list;
 
     key_string _manifest_key;
     key_string _segment_meta_key;
     segment_name _segment_name;
     std::optional<segment_name_components> _parsed_segment_key;
-    partition_manifest::key _segment_key;
+    segment_name_components _segment_key;
     partition_manifest::segment_meta _meta;
     std::unique_ptr<segment_map> _segments;
-    std::unique_ptr<segment_multimap> _replaced;
+    std::unique_ptr<replaced_segments_list> _replaced;
 
     // required manifest fields
     std::optional<int32_t> _version;
@@ -899,12 +925,6 @@ struct partition_manifest_handler
     std::optional<segment_name_format> _meta_sname_format;
 
     void check_that_required_meta_fields_are_present() {
-        if (!_is_compacted) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Missing is_compacted value in {} segment meta",
-              _segment_name));
-        }
         if (!_size_bytes) {
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
@@ -927,12 +947,12 @@ struct partition_manifest_handler
 
     void clear_meta_fields() {
         // required fields
-        _is_compacted = std::nullopt;
         _size_bytes = std::nullopt;
         _base_offset = std::nullopt;
         _committed_offset = std::nullopt;
 
         // optional segment meta fields
+        _is_compacted = std::nullopt;
         _base_timestamp = std::nullopt;
         _max_timestamp = std::nullopt;
         _delta_offset = std::nullopt;
@@ -1030,7 +1050,7 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
         if (handler._start_offset == std::nullopt && !_segments.empty()) {
             // Backward compatibility. Old manifest format doesn't have
             // start_offset field. In this case we need to set it implicitly.
-            _start_offset = _segments.begin()->first.base_offset;
+            _start_offset = _segments.begin()->second.base_offset;
         }
     }
     if (handler._replaced) {
@@ -1079,13 +1099,17 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.Key("start_offset");
         w.Int64(_start_offset());
     }
-
     if (_last_uploaded_compacted_offset != model::offset{}) {
         w.Key("last_uploaded_compacted_offset");
         w.Int64(_last_uploaded_compacted_offset());
     }
-    auto serialize_meta = [this, &w](const key& key, const segment_meta& meta) {
-        auto sn = generate_local_segment_name(key.base_offset, key.term);
+    auto serialize_meta = [this, &w](const segment_meta& meta) {
+        vassert(
+          meta.segment_term != model::term_id{},
+          "Term id is not initialized, base offset {}",
+          meta.base_offset);
+        auto sn = generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
         w.Key(sn());
         w.StartObject();
         w.Key("is_compacted");
@@ -1122,11 +1146,7 @@ void partition_manifest::serialize(std::ostream& out) const {
             w.Int64(meta.archiver_term());
         }
         w.Key("segment_term");
-        if (meta.segment_term == model::term_id::min()) {
-            w.Int64(key.term());
-        } else {
-            w.Int64(meta.segment_term());
-        }
+        w.Int64(meta.segment_term());
         if (
           meta.sname_format == segment_name_format::v2
           && meta.delta_offset_end != model::offset_delta::min()) {
@@ -1139,19 +1159,54 @@ void partition_manifest::serialize(std::ostream& out) const {
         }
         w.EndObject();
     };
+    auto serialize_lw_meta = [this, &w](const lw_segment_meta& meta) {
+        // Here we are serializing all fields stored in 'lw_segment_meta'.
+        // The remaining fields are also added but they values are not
+        // significant.
+        vassert(
+          meta.segment_term != model::term_id{},
+          "Term id is not initialized, base offset {}",
+          meta.base_offset);
+        auto sn = generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
+        w.Key(sn());
+        w.StartObject();
+        w.Key("size_bytes");
+        w.Int64(static_cast<int64_t>(meta.size_bytes));
+        w.Key("committed_offset");
+        w.Int64(meta.committed_offset());
+        w.Key("base_offset");
+        w.Int64(meta.base_offset());
+        if (meta.ntp_revision != _rev) {
+            vassert(
+              meta.ntp_revision != model::initial_revision_id(),
+              "ntp {}: missing ntp_revision for segment {} in the manifest",
+              _ntp,
+              sn);
+            w.Key("ntp_revision");
+            w.Int64(meta.ntp_revision());
+        }
+        if (meta.archiver_term != model::term_id::min()) {
+            w.Key("archiver_term");
+            w.Int64(meta.archiver_term());
+        }
+        w.Key("segment_term");
+        w.Int64(meta.segment_term());
+        w.EndObject();
+    };
     if (!_segments.empty()) {
         w.Key("segments");
         w.StartObject();
         for (const auto& [key, meta] : _segments) {
-            serialize_meta(key, meta);
+            serialize_meta(meta);
         }
         w.EndObject();
     }
     if (!_replaced.empty()) {
         w.Key("replaced");
         w.StartObject();
-        for (const auto& [key, meta] : _replaced) {
-            serialize_meta(key, meta);
+        for (const auto& meta : _replaced) {
+            serialize_lw_meta(meta);
         }
         w.EndObject();
     }
@@ -1175,14 +1230,13 @@ partition_manifest::segment_containing(model::offset o) const {
     }
 
     // Make sure to only compare based on the offset and not the term.
-    auto it = _segments.upper_bound(
-      key{.base_offset = o, .term = model::term_id::max()});
+    auto it = _segments.upper_bound(o);
     if (it == _segments.begin()) {
         return end();
     }
 
     it = std::prev(it);
-    if (it->first.base_offset <= o && it->second.committed_offset >= o) {
+    if (it->second.base_offset <= o && it->second.committed_offset >= o) {
         return it;
     }
 
@@ -1254,8 +1308,7 @@ partition_manifest::timequery(model::timestamp t) const {
 
     // 2. Convert offset guess into segment guess.  This is not a strictly
     // correct offset lookup, we just want something close.
-    auto segment_iter = _segments.lower_bound(
-      key{interpolated_offset, model::term_id{-1}});
+    auto segment_iter = _segments.lower_bound(interpolated_offset);
     if (segment_iter == _segments.end()) {
         segment_iter = --_segments.end();
     }
@@ -1306,13 +1359,5 @@ partition_manifest::timequery(model::timestamp t) const {
         return segment_iter->second;
     }
 }
-remote_segment_path
-partition_manifest::generate_segment_path(const segment_meta& meta) const {
-    return generate_segment_path({meta.base_offset, meta.segment_term}, meta);
-}
 
-std::ostream& operator<<(std::ostream& o, const partition_manifest::key& k) {
-    o << generate_local_segment_name(k.base_offset, k.term);
-    return o;
-}
 } // namespace cloud_storage

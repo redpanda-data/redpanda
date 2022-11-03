@@ -102,6 +102,16 @@ struct archival_metadata_stm::snapshot
     model::offset last_uploaded_compacted_offset;
 };
 
+inline archival_metadata_stm::segment
+segment_from_meta(const cloud_storage::segment_meta& meta) {
+    auto name = cloud_storage::generate_local_segment_name(
+      meta.base_offset, meta.segment_term);
+    return archival_metadata_stm::segment{
+      .ntp_revision_deprecated = meta.ntp_revision,
+      .name = std::move(name),
+      .meta = meta};
+}
+
 std::vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
@@ -112,12 +122,17 @@ archival_metadata_stm::segments_from_manifest(
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
-        auto name = cloud_storage::generate_local_segment_name(
-          key.base_offset, key.term);
-        segments.push_back(segment{
-          .ntp_revision_deprecated = meta.ntp_revision,
-          .name = std::move(name),
-          .meta = meta});
+        // NOTE: manifest should have the 'segment_term' set to some
+        // meaningful value in this place. During deserialization from
+        // json it's set from the segment name (if it's not present in
+        // the segment_meta). During deserialization of the archival snapshot
+        // it's also initialized from the segment name if it's missing in
+        // metadata.
+        vassert(
+          meta.segment_term != model::term_id{},
+          "segment_term is invalid in segment with base offset {}",
+          meta.base_offset);
+        segments.push_back(segment_from_meta(meta));
     }
 
     return segments;
@@ -129,17 +144,11 @@ archival_metadata_stm::replaced_segments_from_manifest(
     auto replaced = manifest.replaced_segments();
     std::vector<segment> segments;
     segments.reserve(replaced.size());
-
     for (auto meta : replaced) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
-        auto name = cloud_storage::generate_local_segment_name(
-          meta.base_offset, meta.segment_term);
-        segments.push_back(segment{
-          .ntp_revision_deprecated = meta.ntp_revision,
-          .name = std::move(name),
-          .meta = meta});
+        segments.push_back(segment_from_meta(meta));
     }
 
     return segments;
@@ -321,7 +330,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
     auto has_replaced_segments = !_manifest->replaced_segments().empty();
     auto has_trailing_segments = (_manifest->size() > 0
                                   && _manifest->get_start_offset())
-                                   ? _manifest->begin()->first.base_offset
+                                   ? _manifest->begin()->first
                                        < _manifest->get_start_offset()
                                    : false;
 
@@ -349,18 +358,19 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
 }
 
 ss::future<std::error_code> archival_metadata_stm::add_segments(
-  const cloud_storage::partition_manifest& manifest,
+  std::vector<cloud_storage::segment_meta> segments,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto now = ss::lowres_clock::now();
     auto timeout = now < deadline ? deadline - now : 0ms;
-    return _lock.with(timeout, [this, &manifest, deadline, as] {
-        return do_add_segments(manifest, deadline, as);
-    });
+    return _lock.with(
+      timeout, [this, s = std::move(segments), deadline, as]() mutable {
+          return do_add_segments(std::move(s), deadline, as);
+      });
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
-  const cloud_storage::partition_manifest& new_manifest,
+  std::vector<cloud_storage::segment_meta> add_segments,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     {
@@ -375,16 +385,18 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         as->get().check();
     }
 
-    auto add_segments = segments_from_manifest(new_manifest);
     if (add_segments.empty()) {
         co_return errc::success;
     }
 
     storage::record_batch_builder b(
       model::record_batch_type::archival_metadata, model::offset(0));
-    for (const auto& segment : add_segments) {
+    for (auto& meta : add_segments) {
         iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
-        auto record_val = add_segment_cmd::value{segment};
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = _manifest->get_revision_id();
+        }
+        auto record_val = add_segment_cmd::value{segment_from_meta(meta)};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
@@ -395,15 +407,18 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         co_return ec;
     }
 
-    for (const auto& segment : add_segments) {
+    for (const auto& meta : add_segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          meta.base_offset, meta.segment_term);
         vlog(
           _logger.info,
-          "new remote segment added (name: {}, base_offset: {} last_offset: "
+          "new remote segment added (name: {}, base_offset: {} "
+          "last_offset: "
           "{}), "
           "remote start_offset: {}, last_offset: {}",
-          segment.name,
-          segment.meta.base_offset,
-          segment.meta.committed_offset,
+          name,
+          meta.base_offset,
+          meta.committed_offset,
           get_start_offset(),
           get_last_offset());
     }
@@ -523,7 +538,8 @@ ss::future<> archival_metadata_stm::apply_snapshot(
     }
     vlog(
       _logger.info,
-      "applying snapshot, so: {}, lo: {}, num segments: {}, num replaced: {}",
+      "applying snapshot, so: {}, lo: {}, num segments: {}, num replaced: "
+      "{}",
       snap.start_offset,
       snap.last_offset,
       snap.segments.size(),
@@ -541,7 +557,8 @@ ss::future<> archival_metadata_stm::apply_snapshot(
 
     vlog(
       _logger.info,
-      "applied snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "applied snapshot at offset: {}, remote start_offset: {}, "
+      "last_offset: "
       "{}",
       header.offset,
       get_start_offset(),
@@ -565,7 +582,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
 
     vlog(
       _logger.debug,
-      "creating snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "creating snapshot at offset: {}, remote start_offset: {}, "
+      "last_offset: "
       "{}",
       _insync_offset,
       get_start_offset(),
@@ -605,16 +623,17 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         // ntp_revision field.
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
-    _manifest->add(segment.name, segment.meta);
+    _manifest->add(segment.name, meta);
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {
-            // To ensure forward progress, we print a warning and skip over the
-            // hole.
+            // To ensure forward progress, we print a warning and skip over
+            // the hole.
 
             vlog(
               _logger.warn,
-              "hole in the remote offset range detected! previous last offset: "
+              "hole in the remote offset range detected! previous last "
+              "offset: "
               "{}, new segment base offset: {}",
               get_last_offset(),
               meta.base_offset);
@@ -665,7 +684,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
     for (const auto& m : *_manifest) {
         if (m.second.committed_offset < so) {
             auto name = cloud_storage::generate_local_segment_name(
-              m.first.base_offset, m.first.term);
+              m.second.base_offset, m.second.segment_term);
             backlog.push_back(m.second);
         } else {
             break;

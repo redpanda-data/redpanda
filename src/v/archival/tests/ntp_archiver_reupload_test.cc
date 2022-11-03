@@ -224,10 +224,7 @@ struct reupload_fixture : public archiver_fixture {
           });
         composite_meta.size_bytes = total_size;
 
-        auto s_url = m.generate_segment_path(
-          {.base_offset = composite_meta.base_offset,
-           .term = composite_meta.segment_term},
-          composite_meta);
+        auto s_url = m.generate_segment_path(composite_meta);
 
         vlog(test_log.info, "searching for target: {}", s_url);
         auto it = get_targets().find("/" + s_url().string());

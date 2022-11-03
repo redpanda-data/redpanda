@@ -18,12 +18,11 @@ namespace cloud_storage {
 
 class partition_probe {
 public:
-    partition_probe(const model::ntp& ntp);
+    explicit partition_probe(const model::ntp& ntp);
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }
     void add_records_read(uint64_t read) { _records_read += read; }
 
-    void segment_added() { ++_cur_segments; }
     void segment_materialized() { ++_cur_materialized_segments; }
     void segment_offloaded() { --_cur_materialized_segments; }
 
@@ -36,7 +35,6 @@ private:
     uint64_t _bytes_read = 0;
     uint64_t _records_read = 0;
 
-    int32_t _cur_segments = 0;
     int32_t _cur_materialized_segments = 0;
 
     int32_t _cur_readers = 0;

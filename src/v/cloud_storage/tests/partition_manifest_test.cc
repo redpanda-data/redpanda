@@ -68,7 +68,7 @@ static constexpr std::string_view complete_manifest_json = R"json({
             "max_timestamp": 123029,
             "delta_offset": 1
         },
-        "40-1-v1.log": {
+        "40-11-v1.log": {
             "is_compacted": false,
             "size_bytes": 4096,
             "base_offset": 40,
@@ -449,7 +449,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          .segment_term = model::term_id(
            1), // segment_term is propagated from manifest
        }},
-      {"40-1-v1.log",
+      {"40-11-v1.log",
        partition_manifest::segment_meta{
          .is_compacted = false,
          .size_bytes = 4096,
@@ -468,7 +468,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     };
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.first.base_offset, actual.first.term);
+          actual.second.base_offset, actual.second.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
         require_equal_segment_meta(it->second, actual.second);
@@ -499,7 +499,7 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
 
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.first.base_offset, actual.first.term);
+          actual.second.base_offset, actual.second.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
         require_equal_segment_meta(it->second, actual.second);
@@ -572,7 +572,7 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
     };
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.first.base_offset, actual.first.term);
+          actual.second.base_offset, actual.second.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
         require_equal_segment_meta(it->second, actual.second);
@@ -612,7 +612,7 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
 
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.first.base_offset, actual.first.term);
+          actual.second.base_offset, actual.second.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
         require_equal_segment_meta(it->second, actual.second);
@@ -719,6 +719,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
        .sname_format = segment_name_format::v2});
     {
         auto res = m.replaced_segments();
+        std::sort(res.begin(), res.end());
         BOOST_REQUIRE(res.size() == 4);
         BOOST_REQUIRE(res[0].base_offset == model::offset{0});
         BOOST_REQUIRE(res[0].committed_offset == model::offset{9});
@@ -739,12 +740,19 @@ struct partition_manifest_accessor {
       partition_manifest* m,
       const segment_name& key,
       const partition_manifest::segment_meta& meta) {
-        auto comp = parse_segment_name(key);
-        m->_replaced.insert(std::make_pair(*comp, meta));
+        m->_replaced.push_back(
+          partition_manifest::lw_segment_meta::convert(meta));
     }
     static auto find(segment_name n, const partition_manifest& m) {
         auto key = parse_segment_name(n);
-        return m._replaced.equal_range(*key);
+        for (auto it = m._replaced.begin(); it != m._replaced.end(); it++) {
+            if (
+              key
+              == segment_name_components{it->base_offset, it->segment_term}) {
+                return std::make_pair(it, m._replaced.end());
+            }
+        }
+        return std::make_pair(m._replaced.end(), m._replaced.end());
     }
 };
 } // namespace cloud_storage
@@ -918,7 +926,9 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         auto actual = accessor::find(segment_name(expected.first), restored);
         auto res = std::any_of(
           actual.first, actual.second, [&expected](const auto& a) {
-              return expected.second == a.second;
+              return partition_manifest::lw_segment_meta::convert(
+                       expected.second)
+                     == a;
           });
         BOOST_REQUIRE(res);
     }
@@ -1618,8 +1628,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "9b367cb7/test-ns/test-topic/42_1/10-1-v1.log.1");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->first, s->second);
-        auto actual2 = m.generate_segment_path(s->first, s->second);
+          m.get_ntp(), s->second);
+        auto actual2 = m.generate_segment_path(s->second);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1630,8 +1640,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "96c6b7a9/test-ns/test-topic/42_1/20-29-2048-1-v1.log.2");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->first, s->second);
-        auto actual2 = m.generate_segment_path(s->first, s->second);
+          m.get_ntp(), s->second);
+        auto actual2 = m.generate_segment_path(s->second);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1642,8 +1652,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "df1262f5/test-ns/test-topic/42_1/30-1-v1.log");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->first, s->second);
-        auto actual2 = m.generate_segment_path(s->first, s->second);
+          m.get_ntp(), s->second);
+        auto actual2 = m.generate_segment_path(s->second);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1654,8 +1664,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "e44e8104/test-ns/test-topic/42_1/40-42-4096-2-v1.log");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->first, s->second);
-        auto actual2 = m.generate_segment_path(s->first, s->second);
+          m.get_ntp(), s->second);
+        auto actual2 = m.generate_segment_path(s->second);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }

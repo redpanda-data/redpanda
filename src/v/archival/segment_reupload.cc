@@ -118,11 +118,11 @@ model::offset segment_collector::find_replacement_boundary() const {
         // first segment after gap: 25-29
         it = std::find_if(
           _manifest.begin(), _manifest.end(), [this](const auto& entry) {
-              return entry.first.base_offset > _begin_inclusive;
+              return entry.second.base_offset > _begin_inclusive;
           });
 
         // The collection is valid if it can reach the end of the gap: 24
-        replace_boundary = it->first.base_offset - model::offset{1};
+        replace_boundary = it->second.base_offset - model::offset{1};
     } else {
         replace_boundary = it->second.committed_offset;
     }
@@ -167,7 +167,7 @@ void segment_collector::align_end_offset_to_manifest(
         if (it->second.committed_offset == compacted_segment_end) {
             _end_inclusive = compacted_segment_end;
         } else {
-            _end_inclusive = it->first.base_offset - model::offset{1};
+            _end_inclusive = it->second.base_offset - model::offset{1};
         }
     }
 }

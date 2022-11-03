@@ -34,6 +34,13 @@ namespace kafka {
 
 using offset = named_type<int64_t, struct kafka_offset_type>;
 
+inline offset next_offset(offset p) {
+    if (p < offset{0}) {
+        return offset{0};
+    }
+    return p + offset{1};
+}
+
 } // namespace kafka
 
 namespace s3 {

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/logger.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
@@ -83,6 +84,15 @@ public:
         }
     }
 
+    /// Returns true if the element referenced by this iterator
+    /// was removed from the collection.
+    bool is_invalidated() const {
+        if (!_key) {
+            return true;
+        }
+        return _map.get().count(*_key) == 0;
+    }
+
 private:
     friend class boost::iterator_core_access;
 
@@ -93,9 +103,12 @@ private:
           _key.has_value(), "btree_map_stable_iterator can't be incremented");
         auto it = _map.get().find(*_key);
         // _key should be present since deletions are not supported
-        vassert(
-          it != _map.get().end(),
-          "btree_map_stable_iterator can't be incremented");
+        if (it == _map.get().end()) {
+            // The element referenced by this iterator was
+            // deleted.
+            set_end();
+            return;
+        }
         ++it;
         if (it == _map.get().end()) {
             set_end();
@@ -107,12 +120,22 @@ private:
     // Decrement iterator if possible.
     // The _key will be set to prev element key.
     void decrement() {
-        auto it = _key ? _map.get().find(*_key) : _map.get().end();
-        vassert(
-          it != _map.get().begin(),
-          "btree_map_stable_iterator can't be decremented");
-        --it;
-        _key = it->first;
+        if (_key) {
+            auto it = _map.get().find(*_key);
+            if (it == _map.get().end()) {
+                set_end();
+                return;
+            }
+            --it;
+            _key = it->first;
+        } else {
+            if (_map.get().empty()) {
+                return;
+            }
+            auto it = _map.get().end();
+            --it;
+            _key = it->first;
+        }
     }
 
     bool equal(const self_t& other) const { return _key == other._key; }
@@ -214,7 +237,7 @@ public:
 private:
     /// Create new remote_segment instances for all new
     /// items in the manifest.
-    void update_segments_incrementally();
+    void maybe_sync_with_manifest();
 
     ss::future<> run_eviction_loop();
 
@@ -334,6 +357,7 @@ private:
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
+    model::offset _insync_offset;
     s3::bucket_name _bucket;
 
     // Deleting from _segments is not supported.
