@@ -38,9 +38,23 @@ class KgoVerifierBase(PreallocNodesTest):
     CONSUMER_GROUP_READERS = None
 
     def __init__(self, test_context, *args, **kwargs):
+        try:
+            extra_rp_conf = kwargs.pop('extra_rp_conf')
+        except KeyError:
+            extra_rp_conf = {}
+
+        # Enable segment size jitter as this is a stress test and does not
+        # rely on exact segment counts.
+        extra_rp_conf['log_segment_size_jitter_percent'] = 5
+
+        # Set a modest reader concurrency limit to run safely on GB-per-core
+        # test environments
+        extra_rp_conf['cloud_storage_max_readers_per_shard'] = 500
+
         super().__init__(test_context=test_context,
                          node_prealloc_count=1,
                          *args,
+                         extra_rp_conf=extra_rp_conf,
                          **kwargs)
 
         self._producer = KgoVerifierProducer(test_context, self.redpanda,
@@ -72,16 +86,6 @@ class KgoVerifierTest(KgoVerifierBase):
     CONSUMER_GROUP_READERS = 8
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            *args,
-            **kwargs,
-            extra_rp_conf={
-                # Enable segment size jitter as this is a stress test and does not
-                # rely on exact segment counts.
-                'log_segment_size_jitter_percent': 5,
-            })
 
     @cluster(num_nodes=4)
     def test_with_all_type_of_loads(self):
@@ -154,9 +158,6 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
                 # intervals
                 'election_timeout_ms': 5000,
                 'raft_heartbeat_interval_ms': 500,
-
-                # Enable segment size jitter as this is a stress test and does not
-                # rely on exact segment counts.
                 'log_segment_size_jitter_percent': 5,
             },
             si_settings=si_settings)
