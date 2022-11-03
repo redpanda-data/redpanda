@@ -27,6 +27,7 @@
 
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <string_view>
 
 namespace kafka {
@@ -88,17 +89,18 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     auto quota_exceeded_it = co_await ssx::partition(
       request.data.topic_names.begin(),
       request.data.topic_names.end(),
-      [&ctx, &resp_delay](const model::topic& t) -> ss::future<bool> {
+      [&ctx, &resp_delay](const model::topic& t) {
           const auto cfg = ctx.metadata_cache().get_topic_cfg(
             model::topic_namespace_view(model::kafka_namespace, t));
           const auto mutations = cfg ? cfg->partition_count : 0;
           /// Capture before next scheduling point below
           auto& resp_delay_ref = resp_delay;
-          const auto delay
-            = co_await ctx.quota_mgr().record_partition_mutations(
-              ctx.header().client_id, mutations);
-          resp_delay_ref = std::max(delay, resp_delay_ref);
-          co_return delay == 0ms;
+          return ctx.quota_mgr()
+            .record_partition_mutations(ctx.header().client_id, mutations)
+            .then([&resp_delay_ref](std::chrono::milliseconds delay) {
+                resp_delay_ref = std::max(delay, resp_delay_ref);
+                return delay == 0ms;
+            });
       });
 
     std::vector<model::topic> quota_exceeded(
