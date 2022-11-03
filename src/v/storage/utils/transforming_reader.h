@@ -55,21 +55,24 @@ make_transforming_reader(
 
         ss::future<storage_t>
         do_load_slice(model::timeout_clock::time_point t) final {
-            return _ptr->do_load_slice(t).then(
-              [this](storage_t source_slice) -> ss::future<storage_t> {
-                  data_t result;
-                  for (auto& batch : get_batches(source_slice)) {
-                      auto opt_batch = co_await transform(std::move(batch));
-                      if (opt_batch) {
-                          result.push_back(std::move(*opt_batch));
-                      }
-                  }
-
-                  co_return make_slice(source_slice, std::move(result));
-              });
+            return _ptr->do_load_slice(t).then([this](storage_t source_slice) {
+                return transform_slice(std::move(source_slice));
+            });
         }
 
     private:
+        ss::future<storage_t> transform_slice(storage_t source_slice) {
+            data_t result;
+            for (auto& batch : get_batches(source_slice)) {
+                auto opt_batch = co_await transform(std::move(batch));
+                if (opt_batch) {
+                    result.push_back(std::move(*opt_batch));
+                }
+            }
+
+            co_return make_slice(source_slice, std::move(result));
+        }
+
         data_t& get_batches(storage_t& st) {
             if (std::holds_alternative<data_t>(st)) {
                 return std::get<data_t>(st);
