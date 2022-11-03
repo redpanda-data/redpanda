@@ -47,6 +47,8 @@ from rptest.utils.si_utils import (
     S3Snapshot,
 )
 
+CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10
+
 
 class BaseCase:
     """Base class for all test cases. The template method inside the test
@@ -943,11 +945,11 @@ class TopicRecoveryTest(RedpandaTest):
                  test_context: TestContext,
                  num_brokers: Optional[int] = None,
                  extra_rp_conf=dict()):
-        si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=50,
-            cloud_storage_max_connections=5,
-            cloud_storage_segment_max_upload_interval_sec=10,
-            log_segment_size=default_log_segment_size)
+        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=50,
+                                 cloud_storage_max_connections=5,
+                                 cloud_storage_segment_max_upload_interval_sec=
+                                 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC,
+                                 log_segment_size=default_log_segment_size)
 
         self.s3_bucket = si_settings.cloud_storage_bucket
 
@@ -1155,10 +1157,12 @@ class TopicRecoveryTest(RedpandaTest):
                 return False
             return True
 
-        wait_until(verify,
-                   timeout_sec=timeout.total_seconds(),
-                   backoff_sec=1,
-                   err_msg='objects not found in S3')
+        wait_until(
+            verify,
+            timeout_sec=timeout.total_seconds(),
+            # Upload should happen not more than in cloud_storage_segment_max_upload_interval_sec
+            backoff_sec=CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC / 2,
+            err_msg='objects not found in S3')
 
     def _wait_for_topic(self,
                         recovered_topics,
