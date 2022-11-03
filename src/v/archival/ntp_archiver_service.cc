@@ -952,8 +952,7 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
           _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           meta.base_offset, meta.segment_term);
-        auto spath = cloud_storage::generate_remote_segment_path(
-          _ntp, _rev, sname, meta.archiver_term);
+        auto spath = m.generate_segment_path(meta);
         auto result = co_await _remote.segment_exists(_bucket, spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
