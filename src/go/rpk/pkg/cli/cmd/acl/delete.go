@@ -28,6 +28,7 @@ func newDeleteCommand(fs afero.Fs) *cobra.Command {
 		printAllFilters bool
 		dry             bool
 		noConfirm       bool
+		printJSON				bool
 	)
 	cmd := &cobra.Command{
 		Use:   "delete",
@@ -69,7 +70,7 @@ resource names:
 
 			var printDeletionsHeader bool
 			if !noConfirm || dry {
-				describeReqResp(adm, printAllFilters, true, b)
+				describeReqResp(adm, printAllFilters, true, b, printJSON)
 				fmt.Println()
 
 				confirmed, err := out.Confirm("Confirm deletion of the above matching ACLs?")
@@ -94,6 +95,7 @@ resource names:
 		},
 	}
 	a.addDeleteFlags(cmd)
+	cmd.Flags().BoolVarP(&printJSON, "json-output", "j", false, "Print acl list as json.")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "Dry run: validate what would be deleted")
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")

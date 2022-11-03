@@ -22,9 +22,10 @@ import (
 
 func newListCommand(fs afero.Fs) *cobra.Command {
 	var (
-		detailed bool
-		internal bool
-		re       bool
+		detailed  bool
+		internal  bool
+		printJSON bool
+		re        bool
 	)
 	cmd := &cobra.Command{
 		Use:     "list",
@@ -74,12 +75,13 @@ information.
 
 			listed, err := adm.ListTopicsWithInternal(context.Background(), topics...)
 			out.MaybeDie(err, "unable to request metadata: %v", err)
-			cluster.PrintTopics(listed, internal, detailed)
+			cluster.PrintTopics(listed, internal, detailed, printJSON)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print per-partition information for topics")
 	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "Print internal topics")
+	cmd.Flags().BoolVarP(&printJSON, "json-output", "j", false, "Print topics as json. NOTE: Only supports non-detailed output, does nothing for detailed output.")
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; list any topic that matches any input topic expression")
 	return cmd
 }

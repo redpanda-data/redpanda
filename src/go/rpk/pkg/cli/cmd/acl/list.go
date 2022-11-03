@@ -11,7 +11,9 @@ package acl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -19,12 +21,16 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/types"
 )
 
 func newListCommand(fs afero.Fs) *cobra.Command {
-	var a acls
-	var printAllFilters bool
+	var (
+		a               acls
+		printAllFilters bool
+		printJSON       bool
+	)
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
@@ -60,10 +66,11 @@ resource names:
 
 			b, err := a.createDeletionsAndDescribes(true)
 			out.MaybeDieErr(err)
-			describeReqResp(adm, printAllFilters, false, b)
+			describeReqResp(adm, printAllFilters, false, b, printJSON)
 		},
 	}
 	a.addListFlags(cmd)
+	cmd.Flags().BoolVarP(&printJSON, "json-output", "j", false, "Print acl list as json.")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }
@@ -94,11 +101,52 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "Denied host ACLs to match (repeatable)")
 }
 
+// Add json tags to kadm.DescribeACLsResult
+// And remove the Described slice
+type JsonDescribeACLsResult struct {
+	Principal *string `json:"principal"` // Principal is the optional user that was used in this filter.
+	Host      *string `json:"host"`      // Host is the optional host that was used in this filter.
+
+	Type       kmsg.ACLResourceType   `json:"type"`       // Type is the type of resource used for this filter.
+	Name       *string                `json:"name"`       // Name is the name of the resource used for this filter.
+	Pattern    kadm.ACLPattern        `json:"pattern"`    // Pattern is the name pattern used for this filter.
+	Operation  kmsg.ACLOperation      `json:"operation"`  // Operation is the operation used for this filter.
+	Permission kmsg.ACLPermissionType `json:"permission"` // Permission is permission used for this filter.
+
+	Err error // Err is non-nil if this filter has an error.
+}
+
+// Add json tags to kadm.JsonDescribedACL
+type JsonDescribedACL struct {
+	Principal string `json:"principal"` // Principal is this described ACL's principal.
+	Host      string `json:"host"`      // Host is this described ACL's host.
+
+	Type       kmsg.ACLResourceType   `json:"type"`       // Type is this described ACL's resource type.
+	Name       string                 `json:"name"`       // Name is this described ACL's resource name.
+	Pattern    kadm.ACLPattern        `json:"pattern"`    // Pattern is this described ACL's resource name pattern.
+	Operation  kmsg.ACLOperation      `json:"operation"`  // Operation is this described ACL's operation.
+	Permission kmsg.ACLPermissionType `json:"permission"` // Permission this described ACLs permission.
+}
+
+type JsonFilterAndDescribed struct {
+	Filter JsonDescribeACLsResult `json:"filter"`
+	Acls   []JsonDescribedACL     `json:"described_acls"`
+}
+
+type JsonFilterAndDescribedResults struct {
+	Results []JsonFilterAndDescribed `json:"results"`
+}
+
+func (collection *JsonFilterAndDescribedResults) addFilterAndDescribed(data JsonFilterAndDescribed) {
+	collection.Results = append(collection.Results, data)
+}
+
 func describeReqResp(
 	adm *kadm.Client,
 	printAllFilters bool,
 	printMatchesHeader bool,
 	b *kadm.ACLBuilder,
+	printJSON bool,
 ) {
 	results, err := adm.DescribeACLs(context.Background(), b)
 	out.MaybeDie(err, "unable to list ACLs: %v", err)
@@ -106,19 +154,71 @@ func describeReqResp(
 
 	// If any filters failed, or if all filters are
 	// requested, we print the filter section.
-	var printFailedFilters bool
+	printFailedFilters := false
 	for _, f := range results {
 		if f.Err != nil {
 			printFailedFilters = true
 			break
 		}
 	}
+
+	printFilters := false
 	if printAllFilters || printFailedFilters {
+		printFilters = true
+	}
+
+	if printJSON {
+		JsonFilterAndDescribedResults := JsonFilterAndDescribedResults{}
+
+		for _, result := range results {
+			// Filter portion of the result
+			newACL := JsonFilterAndDescribed{
+				Filter: JsonDescribeACLsResult{
+					Principal:  result.Principal,
+					Host:       result.Host,
+					Type:       result.Type,
+					Name:       result.Name,
+					Pattern:    result.Pattern,
+					Operation:  result.Operation,
+					Permission: result.Permission,
+					Err:        result.Err,
+				},
+			}
+			// Acl lice portion of the result
+			// Init slice to 0 length so if nothing matches filter, json Marshal will return [] instead of NULL
+			newACL.Acls = []JsonDescribedACL{}
+			for _, described := range result.Described {
+				newACL.Acls = append(newACL.Acls,
+					JsonDescribedACL{
+						Principal:  described.Principal,
+						Host:       described.Host,
+						Type:       described.Type,
+						Name:       described.Name,
+						Pattern:    described.Pattern,
+						Operation:  described.Operation,
+						Permission: described.Permission,
+					},
+				)
+			}
+			JsonFilterAndDescribedResults.addFilterAndDescribed(newACL)
+
+		}
+		jsonBytes, err := json.Marshal(JsonFilterAndDescribedResults)
+		if err != nil {
+			fmt.Printf("Failed to martial json for output. Error: %s", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(jsonBytes))
+		return
+	}
+
+	if printFilters {
 		out.Section("filters")
 		printDescribeFilters(results)
 		fmt.Println()
 		printMatchesHeader = true
 	}
+
 	if printMatchesHeader {
 		out.Section("matches")
 	}

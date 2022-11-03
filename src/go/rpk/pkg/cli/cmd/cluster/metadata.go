@@ -12,6 +12,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -114,7 +115,7 @@ In the broker section, the controller node is suffixed with *.
 			}
 			if topics && len(m.Topics) > 0 {
 				header("TOPICS", func() {
-					PrintTopics(m.Topics, internal, detailed)
+					PrintTopics(m.Topics, internal, detailed, false) // Final false is to print json, which PrintTopics supports, but the rest of these print table statemetns do not yet.
 				})
 			}
 		},
@@ -162,18 +163,47 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	}
 }
 
-func PrintTopics(topics kadm.TopicDetails, internal, detailed bool) {
-	if !detailed {
-		tw := out.NewTable("NAME", "PARTITIONS", "REPLICAS")
-		defer tw.Flush()
+// Used for json printing only
+type Topic struct {
+	Name       string `json:"name"`
+	Partitions int    `json:"partitions"`
+	Replicas   int    `json:"replicas"`
+}
+type TopicCollection struct {
+	Topics []Topic `json:"topics"`
+}
 
+func (collection *TopicCollection) AddTopic(name string, partitions, replicas int) {
+	collection.Topics = append(collection.Topics, Topic{Name: name, Partitions: partitions, Replicas: replicas})
+}
+
+func PrintTopics(topics kadm.TopicDetails, internal, detailed, printJSON bool) {
+	if !detailed {
+
+		var topicsCollection = new(TopicCollection)
 		for _, topic := range topics.Sorted() {
 			if !internal && topic.IsInternal {
 				continue
 			}
 			parts := len(topic.Partitions)
 			replicas := topic.Partitions.NumReplicas()
-			tw.Print(topic.Topic, parts, replicas)
+			topicsCollection.AddTopic(topic.Topic, parts, replicas)
+		}
+
+		if printJSON {
+			jsonBytes, err := json.Marshal(topicsCollection)
+
+			if err != nil {
+				fmt.Printf("Failed to martial json for output. Error: %s", err)
+				os.Exit(1)
+			}
+			fmt.Println(string(jsonBytes))
+		} else {
+			tw := out.NewTable("NAME", "PARTITIONS", "REPLICAS")
+			for _, topic := range topicsCollection.Topics {
+				tw.Print(topic.Name, topic.Partitions, topic.Partitions)
+			}
+			defer tw.Flush()
 		}
 		return
 	}

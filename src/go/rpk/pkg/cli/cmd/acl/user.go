@@ -10,7 +10,9 @@
 package acl
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -22,6 +24,8 @@ import (
 
 func newUserCommand(fs afero.Fs) *cobra.Command {
 	var apiUrls []string
+	printJSON := false
+
 	cmd := &cobra.Command{
 		Use:   "user",
 		Short: "Manage SASL users",
@@ -44,7 +48,7 @@ redpanda section of your redpanda.yaml.
 
 	cmd.AddCommand(newCreateUserCommand(fs))
 	cmd.AddCommand(newDeleteUserCommand(fs))
-	cmd.AddCommand(newListUsersCommand(fs))
+	cmd.AddCommand(newListUsersCommand(fs, printJSON))
 	return cmd
 }
 
@@ -202,8 +206,12 @@ delete any ACLs that may exist for this user.
 	return cmd
 }
 
-func newListUsersCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+type UserCollection struct {
+	Users []string `json:"users"`
+}
+
+func newListUsersCommand(fs afero.Fs, printJSON bool) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
@@ -218,11 +226,24 @@ func newListUsersCommand(fs afero.Fs) *cobra.Command {
 			users, err := cl.ListUsers(cmd.Context())
 			out.MaybeDie(err, "unable to list users: %v", err)
 
-			tw := out.NewTable("Username")
-			defer tw.Flush()
-			for _, u := range users {
-				tw.Print(u)
+			var userCollection = UserCollection{Users: users}
+
+			if printJSON {
+				jsonBytes, err := json.Marshal(userCollection)
+				if err != nil {
+					fmt.Printf("Failed to martial json for output. Error: %s", err)
+					os.Exit(1)
+				}
+				fmt.Println(string(jsonBytes))
+			} else {
+				tw := out.NewTable("Username")
+				defer tw.Flush()
+				for _, u := range userCollection.Users {
+					tw.Print(u)
+				}
 			}
 		},
 	}
+	cmd.Flags().BoolVarP(&printJSON, "json-output", "j", false, "Print user list as json.")
+	return cmd
 }
