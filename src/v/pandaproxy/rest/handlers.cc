@@ -525,13 +525,14 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
       group_shard, rq.context().smp_sg, std::move(handler));
 }
 
-ss::future<proxy::server::reply_t>
-status_ready(proxy::server::request_t rq, proxy::server::reply_t rp) {
+ss::future<server::reply_t>
+status_ready(server::request_t rq, server::reply_t rp) {
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
 
-    auto res = co_await rq.dispatch(make_metadata_req);
+    auto res = co_await rq.service().client().local().dispatch(
+      make_metadata_req);
     rp.rep->set_status(ss::httpd::reply::status_type::ok);
     co_return rp;
 }
