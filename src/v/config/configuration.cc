@@ -1188,6 +1188,13 @@ configuration::configuration()
       "partition if the shard is at its maximum partition capacity.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_max_materialized_segments_per_shard(
+      *this,
+      "cloud_storage_max_materialized_segments_per_shard",
+      "Maximum concurrent readers of remote data per CPU core.  If unset, "
+      "value of `topic_partitions_per_shard` multiplied by 2 is used.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , superusers(
       *this,
       "superusers",
