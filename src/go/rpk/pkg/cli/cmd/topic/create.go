@@ -24,6 +24,19 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
+type topic struct {
+	Name    string `json:"name" yaml:"name"`
+	Message string `json:"message" yaml:"message"`
+	Error   bool   `json:"error" yaml:"error"`
+}
+type topicsCollection struct {
+	Topics []topic `json:"topics" yaml:"topics"`
+}
+
+func (collection *topicsCollection) AddTopic(newTopic topic) {
+	collection.Topics = append(collection.Topics, newTopic)
+}
+
 func newCreateCommand(fs afero.Fs) *cobra.Command {
 	var (
 		dry        bool
@@ -31,6 +44,7 @@ func newCreateCommand(fs afero.Fs) *cobra.Command {
 		replicas   int16
 		compact    bool
 		configKVs  []string
+		format     string
 	)
 	cmd := &cobra.Command{
 		Use:   "create [TOPICS...]",
@@ -88,19 +102,22 @@ the cleanup.policy=compact config option set.
 			resp, err := req.RequestWith(context.Background(), cl)
 			out.MaybeDie(err, "unable to create topics %v: %v", topics, err)
 
-			var exit1 bool
+			var (
+				exit1  			bool
+				createError bool
+			)
+
 			defer func() {
 				if exit1 {
 					os.Exit(1)
 				}
 			}()
 
-			tw := out.NewTable("topic", "status")
-			defer tw.Flush()
+			createdTopics := topicsCollection{}
 
-			for _, topic := range resp.Topics {
+			for _, t := range resp.Topics {
 				msg := "OK"
-				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
+				if err := kerr.ErrorForCode(t.ErrorCode); err != nil {
 					if errors.Is(err, kerr.InvalidPartitions) && partitions > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to create topic with %d partitions due to hardware constraints", partitions)
 					} else if errors.Is(err, kerr.InvalidReplicationFactor) && replicas == -1 {
@@ -110,12 +127,30 @@ the cleanup.policy=compact config option set.
 					} else {
 						msg = err.Error()
 					}
-					exit1 = true
+					// If we're exiting in error, toggle error as well so in structured print mode there's a way to see an eror happen without parsing the message.
+					// While we could just re-use exit1 here, mixing concerns is not a great idea.
+					createError = true
+					exit1       = true
 				}
-				tw.Print(topic.Topic, msg)
+				createdTopics.AddTopic(topic{
+					Name:    t.Topic,
+					Message: msg,
+					Error:   createError,
+				})
+			}
+
+			if format != "text" {
+				out.StructredPrint[any](createdTopics, format)
+			} else {
+				tw := out.NewTable("topic", "status")
+				defer tw.Flush()
+				for _, topic := range createdTopics.Topics {
+					tw.Print(topic.Name, topic.Message)
+				}
 			}
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value; Config parameters (repeatable; e.g. -c cleanup.policy=compact)")
 	cmd.Flags().Int32VarP(&partitions, "partitions", "p", -1, "Number of partitions to create per topic; -1 defaults to the cluster's default_topic_partitions")
 	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor (must be odd); -1 defaults to the cluster's default_topic_replications")

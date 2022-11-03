@@ -23,8 +23,11 @@ import (
 )
 
 func newListCommand(fs afero.Fs) *cobra.Command {
-	var a acls
-	var printAllFilters bool
+	var (
+		a               acls
+		printAllFilters bool
+		format          string
+	)
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
@@ -60,10 +63,11 @@ resource names:
 
 			b, err := a.createDeletionsAndDescribes(true)
 			out.MaybeDieErr(err)
-			describeReqResp(adm, printAllFilters, false, b)
+			describeReqResp(adm, printAllFilters, false, b, format)
 		},
 	}
 	a.addListFlags(cmd)
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }
@@ -99,63 +103,101 @@ func describeReqResp(
 	printAllFilters bool,
 	printMatchesHeader bool,
 	b *kadm.ACLBuilder,
+	format string,
 ) {
 	results, err := adm.DescribeACLs(context.Background(), b)
 	out.MaybeDie(err, "unable to list ACLs: %v", err)
 	types.Sort(results)
 
-	// If any filters failed, or if all filters are
-	// requested, we print the filter section.
-	var printFailedFilters bool
-	for _, f := range results {
-		if f.Err != nil {
-			printFailedFilters = true
-			break
+	filteredAndDescribedResults := filteredAndDescribedResults{}
+	for _, result := range results {
+		// Filter portion of the result
+		newACL := filteredAndDescribed{
+			Filter: describedACLsResult{
+				Principal:  result.Principal,
+				Host:       result.Host,
+				Type:       result.Type,
+				Name:       result.Name,
+				Pattern:    result.Pattern,
+				Operation:  result.Operation,
+				Permission: result.Permission,
+				Err:        result.Err,
+			},
 		}
+		// Acl portion of the result
+		// Init slice to 0 length so if nothing matches filter, json Marshal will return [] instead of NULL
+		newACL.ACLS = []acl{}
+		for _, described := range result.Described {
+			newACL.ACLS = append(newACL.ACLS,
+				acl{
+					Principal:           described.Principal,
+					Host:                described.Host,
+					ResourceType:        described.Type,
+					ResourceName:        described.Name,
+					ResourcePatternType: described.Pattern,
+					Operation:           described.Operation,
+					Permission:          described.Permission,
+				},
+			)
+		}
+		filteredAndDescribedResults.addFilterAndDescribed(newACL)
 	}
-	if printAllFilters || printFailedFilters {
-		out.Section("filters")
-		printDescribeFilters(results)
-		fmt.Println()
-		printMatchesHeader = true
+
+	if format != "text" {
+		out.StructredPrint[any](filteredAndDescribedResults, format)
+	} else {
+		// If any filters failed, or if all filters are
+		// requested, we print the filter section.
+		printFailedFilters := false
+		for _, f := range filteredAndDescribedResults.Results {
+			if f.Filter.Err != nil {
+				printFailedFilters = true
+				break
+			}
+		}
+
+		printFilters := false
+		if printAllFilters || printFailedFilters {
+			printFilters = true
+		}
+
+		if printFilters {
+			out.Section("filters")
+			printDescribeFilters(filteredAndDescribedResults)
+			fmt.Println()
+			printMatchesHeader = true
+		}
+
+		if printMatchesHeader {
+			out.Section("matches")
+		}
+		printDescribedACLs(filteredAndDescribedResults)
 	}
-	if printMatchesHeader {
-		out.Section("matches")
-	}
-	printDescribedACLs(results)
 }
 
-func printDescribeFilters(results kadm.DescribeACLsResults) {
+func printDescribeFilters(filteredResultsCollection filteredAndDescribedResults) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, f := range results {
+	for _, f := range filteredResultsCollection.Results {
 		tw.PrintStructFields(aclWithMessage{
-			unptr(f.Principal),
-			unptr(f.Host),
-			f.Type,
-			unptr(f.Name),
-			f.Pattern,
-			f.Operation,
-			f.Permission,
-			kafka.ErrMessage(f.Err),
+			unptr(f.Filter.Principal),
+			unptr(f.Filter.Host),
+			f.Filter.Type,
+			unptr(f.Filter.Name),
+			f.Filter.Pattern,
+			f.Filter.Operation,
+			f.Filter.Permission,
+			kafka.ErrMessage(f.Filter.Err),
 		})
 	}
 }
 
-func printDescribedACLs(results kadm.DescribeACLsResults) {
+func printDescribedACLs(filteredResultsCollection filteredAndDescribedResults) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, f := range results {
-		for _, d := range f.Described {
-			tw.PrintStructFields(acl{
-				d.Principal,
-				d.Host,
-				d.Type,
-				d.Name,
-				d.Pattern,
-				d.Operation,
-				d.Permission,
-			})
+	for _, f := range filteredResultsCollection.Results {
+		for _, d := range f.ACLS {
+			tw.PrintStructFields(d)
 		}
 	}
 }

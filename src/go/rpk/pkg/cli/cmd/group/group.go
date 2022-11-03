@@ -104,8 +104,26 @@ members and their lag), and manage offsets.
 	return cmd
 }
 
+// ListedGroup contains data from a list groups response for a single group.
+// Copied here from kadm.ListedGroup so tags can be added for strucured print output.
+type listedGroup struct {
+	Coordinator  int32  `json:"coordinator" yaml:"coordinator"`     // Coordinator is the node ID of the coordinator for this group.
+	Group        string `json:"group" yaml:"group"`                 // Group is the name of this group.
+	ProtocolType string `json:"protocol_type" yaml:"protocol_type"` // ProtocolType is the type of protocol the group is using, "consumer" for normal consumers, "connect" for Kafka connect.
+	State        string `json:"state" yaml:"state"`                 // State is the state this group is in (Empty, Dead, Stable, etc.; only if talking to Kafka 2.6+).
+}
+
+type groupCollectionForStructedPrint struct {
+	Groups []listedGroup `json:"groups" yaml:"groups"`
+}
+
+func (collection *groupCollectionForStructedPrint) addGroup(newGroup listedGroup) {
+	collection.Groups = append(collection.Groups, newGroup)
+}
+
 func newListCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+	var format string
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List all groups",
@@ -126,19 +144,36 @@ groups, or to list groups that need to be cleaned up.
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
+			groupCollection := groupCollectionForStructedPrint{}
+			// init with 0 length so stuctured output shows [] instead of null
+			groupCollection.Groups = []listedGroup{}
 			listed, err := adm.ListGroups(context.Background())
-			out.HandleShardError("ListGroups", err)
+			for _, group := range listed.Sorted() {
+				groupCollection.addGroup(listedGroup{
+					Coordinator:  group.Coordinator,
+					Group:        group.Group,
+					ProtocolType: group.ProtocolType,
+					State:        group.State,
+				})
+			}
 
-			tw := out.NewTable("BROKER", "GROUP")
-			defer tw.Flush()
-			for _, g := range listed.Sorted() {
-				tw.PrintStructFields(struct {
-					Broker int32
-					Group  string
-				}{g.Coordinator, g.Group})
+			if format != "text" {
+				out.StructredPrint[any](groupCollection, format)
+			} else {
+				out.HandleShardError("ListGroups", err)
+				tw := out.NewTable("BROKER", "GROUP")
+				defer tw.Flush()
+				for _, g := range groupCollection.Groups {
+					tw.PrintStructFields(struct {
+						Broker int32
+						Group  string
+					}{g.Coordinator, g.Group})
+				}
 			}
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	return cmd
 }
 
 func newDeleteCommand(fs afero.Fs) *cobra.Command {

@@ -65,19 +65,19 @@ Allow write permissions to user buzz to transactional id "txn":
 			}
 			types.Sort(results)
 
-			tw := out.NewTable(headersWithError...)
-			defer tw.Flush()
-			for _, c := range results {
-				tw.PrintStructFields(aclWithMessage{
-					c.Principal,
-					c.Host,
-					c.Type,
-					c.Name,
-					c.Pattern,
-					c.Operation,
-					c.Permission,
-					kafka.ErrMessage(c.Err),
-				})
+			createdACLS:= createdACLCollection{}
+			for _, newACL:= range results {
+				createdACLS.AddACL(newACL)
+			}
+
+			if a.format != "text" {
+				out.StructredPrint[any](createdACLS, a.format)
+			} else {
+				tw := out.NewTable(headersWithError...)
+				defer tw.Flush()
+				for _, acl := range createdACLS.ACLS{
+					tw.PrintStructFields(acl)
+				}
 			}
 		},
 	}
@@ -92,6 +92,7 @@ func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to grant ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to grant ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to grant ACLs for (repeatable)")
+	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml). Default: text")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "Pattern to use when matching resource names (literal or prefixed)")
 

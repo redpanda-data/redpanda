@@ -11,6 +11,7 @@ package acl
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -20,8 +21,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type userCollection struct {
+	Users []string `json:"users"`
+}
+
 func newUserCommand(fs afero.Fs) *cobra.Command {
-	var apiUrls []string
+	var (
+		apiUrls []string
+		format 	string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "user",
 		Short: "Manage SASL users",
@@ -42,9 +51,9 @@ redpanda section of your redpanda.yaml.
 			" You must specify one for each node",
 	)
 
-	cmd.AddCommand(newCreateUserCommand(fs))
-	cmd.AddCommand(newDeleteUserCommand(fs))
-	cmd.AddCommand(newListUsersCommand(fs))
+	cmd.AddCommand(newCreateUserCommand(fs, format))
+	cmd.AddCommand(newDeleteUserCommand(fs, format))
+	cmd.AddCommand(newListUsersCommand(fs, format))
 	return cmd
 }
 
@@ -55,7 +64,7 @@ type UserAPI interface {
 	ListUsers() ([]string, error)
 }
 
-func newCreateUserCommand(fs afero.Fs) *cobra.Command {
+func newCreateUserCommand(fs afero.Fs, format string) *cobra.Command {
 	var userOld, pass, newPass, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER] -p [PASS]",
@@ -138,10 +147,17 @@ acl help text for more info.
 
 			err = cl.CreateUser(cmd.Context(), user, pass, mechanism)
 			out.MaybeDie(err, "unable to create user %q: %v", user, err)
-			fmt.Printf("Created user %q.\n", user)
+
+			userCollection := userCollection{Users: []string{user}}
+			if format != "text" {
+				out.StructredPrint[any](userCollection, format)
+			} else {
+				fmt.Printf("Created user %q.\n", user)
+			}
 		},
 	}
 
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
 	cmd.Flags().MarkHidden("new-username")
 
@@ -159,7 +175,7 @@ acl help text for more info.
 	return cmd
 }
 
-func newDeleteUserCommand(fs afero.Fs) *cobra.Command {
+func newDeleteUserCommand(fs afero.Fs, format string) *cobra.Command {
 	var oldUser string
 	cmd := &cobra.Command{
 		Use:   "delete [USER]",
@@ -192,18 +208,25 @@ delete any ACLs that may exist for this user.
 
 			err = cl.DeleteUser(cmd.Context(), user)
 			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
-			fmt.Printf("Deleted user %q.\n", user)
+
+			userCollection := userCollection{Users: []string{user}}
+			if format != "text" {
+				out.StructredPrint[any](userCollection, format)
+			} else {
+				fmt.Printf("Deleted user %q.\n", user)
+			}
 		},
 	}
 
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
 	cmd.Flags().MarkDeprecated("delete-username", "The username now does not require a flag")
 
 	return cmd
 }
 
-func newListUsersCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
@@ -218,11 +241,25 @@ func newListUsersCommand(fs afero.Fs) *cobra.Command {
 			users, err := cl.ListUsers(cmd.Context())
 			out.MaybeDie(err, "unable to list users: %v", err)
 
-			tw := out.NewTable("Username")
-			defer tw.Flush()
-			for _, u := range users {
-				tw.Print(u)
+			sort.Slice(users, func(i, j int) bool {
+				l, r := users[i], users[j]
+				return l < r
+			 },
+		  )
+
+			var userCollection = userCollection{Users: users}
+
+			if format != "text" {
+				out.StructredPrint[any](userCollection, format)
+			} else {
+				tw := out.NewTable("Username")
+				defer tw.Flush()
+				for _, u := range userCollection.Users {
+					tw.Print(u)
+				}
 			}
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	return cmd
 }

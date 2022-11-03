@@ -114,7 +114,7 @@ In the broker section, the controller node is suffixed with *.
 			}
 			if topics && len(m.Topics) > 0 {
 				header("TOPICS", func() {
-					PrintTopics(m.Topics, internal, detailed)
+					PrintTopics(m.Topics, internal, detailed, "text")
 				})
 			}
 		},
@@ -162,99 +162,165 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	}
 }
 
-func PrintTopics(topics kadm.TopicDetails, internal, detailed bool) {
-	if !detailed {
+// Used for stuctured output. Note stuctured output is always detailed
+type TopicPartitionDetail struct {
+	PartitionID        int32   `json:"partition_id" yaml:"partition_id"`                 // Partition is the partition number these details are for.
+	LeaderID           int32   `json:"leader_id" yaml:"leader_id"`                       // Leader is the broker leader  if there is one  otherwise -1.
+	LeaderEpoch        int32   `json:"leader_epoch" yaml:"leader_epoch"`                 // LeaderEpoch is the leader's current epoch.
+	ReplicaIDs         []int32 `json:"replica_ids" yaml:"replica_ids"`                   // Replicas is the list of replicas.
+	OfflineReplicasIDs []int32 `json:"offline_replicas_ids" yaml:"offline_replicas_ids"` // OfflineReplicas is the list of offline replicas.
+	Err                error   `json:"error" yaml:"error"`                               // Err is non-nil if the partition currently has a load error.
+}
+type Topic struct {
+	Name           string                 `json:"name" yaml:"name"`
+	PartitionCount int                    `json:"partition_count" yaml:"partition_count"`
+	Partitions     []TopicPartitionDetail `json:"partitions" yaml:"partitions"`
+	ReplicaCount   int                    `json:"replica_count" yaml:"replica_count"`
+	IsInternal     bool                   `json:"is_internal" yaml:"is_internal"`
+}
+type Topics struct {
+	Topics []Topic `json:"topics" yaml:"topics"`
+}
+
+func (collection *Topics) sortTopics() {
+  sort.Slice(collection.Topics, func(i, j int) bool {
+    l, r := collection.Topics[i], collection.Topics[j]
+    return l.Name < r.Name
+  })
+}
+
+func (collection *Topics) AddTopic(newTopic kadm.TopicDetail) {
+	partitionsDetail := []TopicPartitionDetail{}
+	for _, partition := range newTopic.Partitions.Sorted() {
+		// init offlineReplicasts to empty slice so json/yaml print will print [] instead of NULL
+		// Other int32s here should at least have leader 0, replica 0, etc, even on a single node cluster.
+		offlineReplicas := make([]int32, 0)
+		if partition.OfflineReplicas != nil {
+			offlineReplicas = partition.OfflineReplicas
+		}
+		partitionsDetail = append(partitionsDetail,
+			TopicPartitionDetail{
+				PartitionID:        partition.Partition,
+				LeaderID:           partition.Leader,
+				LeaderEpoch:        partition.LeaderEpoch,
+				ReplicaIDs:         int32s(partition.Replicas).sort(),
+				OfflineReplicasIDs: int32s(offlineReplicas).sort(),
+				Err:                partition.Err,
+			},
+		)
+	}
+	collection.Topics = append(
+		collection.Topics,
+		Topic{
+			Name:           newTopic.Topic,
+			PartitionCount: len(newTopic.Partitions),
+			Partitions:     partitionsDetail,
+			ReplicaCount:   newTopic.Partitions.NumReplicas(),
+			IsInternal:     newTopic.IsInternal,
+		},
+	)
+}
+
+func PrintTopics(topics kadm.TopicDetails, internal, detailed bool, format string) {
+	var topicsCollection = Topics{}
+	for _, topic := range topics {
+		topicsCollection.AddTopic(topic)
+	}
+	topicsCollection.sortTopics()
+
+	if !detailed && format == "text" {
 		tw := out.NewTable("NAME", "PARTITIONS", "REPLICAS")
 		defer tw.Flush()
-
-		for _, topic := range topics.Sorted() {
+		for _, topic := range topicsCollection.Topics {
 			if !internal && topic.IsInternal {
 				continue
 			}
-			parts := len(topic.Partitions)
-			replicas := topic.Partitions.NumReplicas()
-			tw.Print(topic.Topic, parts, replicas)
+			tw.Print(topic.Name, topic.PartitionCount, topic.ReplicaCount)
 		}
 		return
 	}
 
-	buf := new(bytes.Buffer)
-	buf.Grow(512)
-	defer func() { os.Stdout.Write(buf.Bytes()) }()
+	if format != "text" {
+		out.StructredPrint[any](topicsCollection, format)
+	}else {
+		buf := new(bytes.Buffer)
+		buf.Grow(512)
+		defer func() { os.Stdout.Write(buf.Bytes()) }()
 
-	for i, topic := range topics.Sorted() {
-		if topic.IsInternal && !internal {
-			continue
-		}
-		if i > 0 {
-			fmt.Fprintln(buf)
-		}
+		for i, topic := range topicsCollection.Topics {
+			if topic.IsInternal && !internal {
+				continue
+			}
+			if i > 0 {
+				fmt.Fprintln(buf)
+			}
 
-		// "foo, 20 partitions, 3 replicas"
-		fmt.Fprintf(buf, "%s", topic.Topic)
-		if topic.IsInternal {
-			fmt.Fprint(buf, " (internal)")
-		}
-		fmt.Fprintf(buf, ", %d partitions", len(topic.Partitions))
-		if len(topic.Partitions) > 0 {
-			fmt.Fprintf(buf, ", %d replicas", len(topic.Partitions[0].Replicas))
-		}
-		buf.WriteString("\n")
+			// "foo, 20 partitions, 3 replicas"
+			fmt.Fprintf(buf, "%s", topic.Name)
+			if topic.IsInternal {
+				fmt.Fprint(buf, " (internal)")
+			}
+			fmt.Fprintf(buf, ", %d partitions", topic.PartitionCount)
+			if topic.PartitionCount > 0 {
+				fmt.Fprintf(buf, ", %d replicas", topic.ReplicaCount)
+			}
+			buf.WriteString("\n")
 
-		// We include certain columns if any partition has a
-		// non-default value.
-		var useEpoch, useOffline, useErr bool
-		for _, p := range topic.Partitions.Sorted() {
-			if p.LeaderEpoch != -1 {
-				useEpoch = true
-			}
-			if len(p.OfflineReplicas) > 0 {
-				useOffline = true
-			}
-			if p.Err != nil {
-				useErr = true
-			}
-		}
-
-		// Since this is a nested table, we use one leading empty
-		// header, which tabs the entire table in one. We also use an
-		// empty leading column in our args below.
-		headers := []string{"", "partition", "leader"}
-		if useEpoch {
-			headers = append(headers, "epoch")
-		}
-		headers = append(headers, "replicas") // TODO add isr see #1928
-		if useOffline {
-			headers = append(headers, "offline-replicas")
-		}
-		if useErr {
-			headers = append(headers, "load-error")
-		}
-
-		args := func(p *kadm.PartitionDetail) []interface{} {
-			ret := []interface{}{"", p.Partition, p.Leader}
-			if useEpoch {
-				ret = append(ret, p.LeaderEpoch)
-			}
-			ret = append(ret, int32s(p.Replicas).sort())
-			if useOffline {
-				ret = append(ret, int32s(p.OfflineReplicas).sort())
-			}
-			if useErr {
+			// We include certain columns if any partition has a
+			// non-default value.
+			var useEpoch, useOffline, useErr bool
+			for _, p := range topic.Partitions {
+				if p.LeaderEpoch != -1 {
+					useEpoch = true
+				}
+				if len(p.OfflineReplicasIDs) > 0 {
+					useOffline = true
+				}
 				if p.Err != nil {
-					ret = append(ret, p.Err.Error())
-				} else {
-					ret = append(ret, "-")
+					useErr = true
 				}
 			}
-			return ret
-		}
 
-		tw := out.NewTableTo(buf, headers...)
-		for _, part := range topic.Partitions.Sorted() {
-			tw.Print(args(&part)...)
+			// Since this is a nested table, we use one leading empty
+			// header, which tabs the entire table in one. We also use an
+			// empty leading column in our args below.
+			headers := []string{"", "partition", "leader"}
+			if useEpoch {
+				headers = append(headers, "epoch")
+			}
+			headers = append(headers, "replicas") // TODO add isr see #1928
+			if useOffline {
+				headers = append(headers, "offline-replicas")
+			}
+			if useErr {
+				headers = append(headers, "load-error")
+			}
+
+			args := func(p *TopicPartitionDetail) []interface{} {
+				ret := []interface{}{"", p.PartitionID, p.LeaderID}
+				if useEpoch {
+					ret = append(ret, p.LeaderEpoch)
+				}
+				ret = append(ret, p.ReplicaIDs)
+				if useOffline {
+					ret = append(ret, p.OfflineReplicasIDs)
+				}
+				if useErr {
+					if p.Err != nil {
+						ret = append(ret, p.Err.Error())
+					} else {
+						ret = append(ret, "-")
+					}
+				}
+				return ret
+			}
+
+			tw := out.NewTableTo(buf, headers...)
+			for _, part := range topic.Partitions {
+				tw.Print(args(&part)...)
+			}
+			tw.Flush()
 		}
-		tw.Flush()
 	}
 }
 

@@ -23,8 +23,71 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
+// DescribedGroup contains data from a describe groups response for a single group.
+// Mostly copied here from kadm.describedGroup so tags could be added.
+// DescribedRows is added since the original code did not group the details and the summary together, but we want them together for structured printing.
+type describedGroupForStructredPrint struct {
+	Group string `json:"group" yaml:"group"` // Group is the name of the described group.
+
+	Coordinator   brokerDetail           `json:"coordinator" yaml:"coordinator"`     // Coordinator is the coordinator broker for this group.
+	State         string                 `json:"state" yaml:"state"`                 // State is the state this group is in (Empty, Dead, Stable, etc.).
+	ProtocolType  string                 `json:"protocol_type" yaml:"protocol_type"` // ProtocolType is the type of protocol the group is using, "consumer" for normal consumers, "connect" for Kafka connect.
+	Protocol      string                 `json:"protocol" yaml:"protocol"`           // Protocol is the partition assignor strategy this group is using.
+	Members       []describedGroupMember `json:"members" yaml:"members"`             // Members contains the members of this group sorted first by InstanceID, or if nil, by MemberID.
+	DescribedRows describedRows          `json:"described_rows" yaml:"described_rows"`
+
+	Err error `json:"err" yaml:"err"` // Err is non-nil if the group could not be described.
+}
+// Coppied from kadm.DescribedGroupMember to add struct tags.
+type describedGroupMember struct {
+	MemberID   string  `json:"member_id" yaml:"member_id"`     // MemberID is the Kafka assigned member ID of this group member.
+	InstanceID *string `json:"instance_id" yaml:"instance_id"` // InstanceID is a potential user assigned instance ID of this group member (KIP-345).
+	ClientID   string  `json:"client_id" yaml:"client_id"`     // ClientID is the Kafka client given ClientID of this group member.
+	ClientHost string  `json:"client_host" yaml:"client_host"` // ClientHost is the host this member is running on.
+
+	Join     kadm.GroupMemberMetadata   `json:"join" yaml:"join"`         // Join is what this member sent in its join group request; what it wants to consume.
+	Assigned kadm.GroupMemberAssignment `json:"assigned" yaml:"assigned"` // Assigned is what this member was assigned to consume by the leader.
+}
+// Copied from kadm.BrokerDetail to add struct tags.
+type brokerDetail struct {
+	// NodeID is the broker node ID.
+	//
+	// Seed brokers will have very negative IDs; kgo does not try to map
+	// seed brokers to loaded brokers.
+	NodeID int32 `json:"node_id" yaml:"node_id"`
+
+	// Port is the port of the broker.
+	Port int32 `json:"port" yaml:"port"`
+
+	// Host is the hostname of the broker.
+	Host string `json:"host" yaml:"host"`
+
+	// Rack is an optional rack of the broker. It is invalid to modify this
+	// field.
+	//
+	// Seed brokers will not have a rack.
+	Rack *string `json:"rack" yaml:"rack"`
+
+	_ struct{} // allow us to add fields later
+}
+type describedRows struct {
+	Rows          []describeRow `json:"rows" yaml:"rows"`
+	UseInstanceID bool          `json:"use_instance_id" yaml:"use_instance_id"`
+	UseErr        bool          `json:"use_err" yaml:"use_err"`
+}
+type describedGroupCollectionForStructredPrint struct {
+	Groups []describedGroupForStructredPrint `json:"groups" yaml:"groups"`
+}
+
+func (collection *describedGroupCollectionForStructredPrint) addGroup(newGroup describedGroupForStructredPrint) {
+	collection.Groups = append(collection.Groups, newGroup)
+}
+
 func NewDescribeCommand(fs afero.Fs) *cobra.Command {
-	var summary bool
+	var (
+		summary bool
+		format  string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
@@ -49,36 +112,68 @@ information about the members.
 
 			described, err := adm.DescribeGroups(ctx, groups...)
 			out.HandleShardError("DescribeGroups", err)
+			groupCollection := describedGroupCollectionForStructredPrint{}
+			for _, describedGroup := range described {
 
-			if summary {
-				printDescribedSummary(described)
+				fetched := adm.FetchManyOffsets(ctx, groups...)
+				fetched.EachError(func(r kadm.FetchOffsetsResponse) {
+					fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
+					delete(fetched, r.Group)
+				})
+				if fetched.AllFailed() {
+					out.Die("unable to fetch offsets for any group")
+				}
+
+				var listed kadm.ListedOffsets
+				listPartitions := described.AssignedPartitions()
+				listPartitions.Merge(fetched.CommittedPartitions())
+				if topics := listPartitions.Topics(); len(topics) > 0 {
+					listed, err = adm.ListEndOffsets(ctx, topics...)
+					out.HandleShardError("ListOffsets", err)
+				}
+
+				coordinator := brokerDetail {
+					NodeID: describedGroup.Coordinator.NodeID,
+					Port: describedGroup.Coordinator.Port,
+					Host: describedGroup.Coordinator.Host,
+				}
+
+				members := []describedGroupMember{}
+				for _, member := range describedGroup.Members {
+					members = append(members, describedGroupMember{
+						MemberID:   member.MemberID,
+						InstanceID: member.InstanceID,
+						ClientID:  	member.ClientID,
+						ClientHost: member.ClientHost,
+						Join: 			member.Join,
+						Assigned:   member.Assigned,
+					})
+				}
+
+				groupCollection.addGroup(describedGroupForStructredPrint{
+					Group:         describedGroup.Group,
+					Coordinator:   coordinator,
+					State:         describedGroup.State,
+					Protocol:      describedGroup.Protocol,
+					ProtocolType:  describedGroup.ProtocolType,
+					Members:       members,
+					DescribedRows: getDescribedForGroup(describedGroup, fetched, listed),
+				})
+			}
+
+			if summary && format == "text" {
+				printDescribedSummary(groupCollection)
 				return
 			}
 
-			fetched := adm.FetchManyOffsets(ctx, groups...)
-			fetched.EachError(func(r kadm.FetchOffsetsResponse) {
-				fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
-				delete(fetched, r.Group)
-			})
-			if fetched.AllFailed() {
-				out.Die("unable to fetch offsets for any group")
+			if format != "text" {
+				out.StructredPrint[any](groupCollection, format)
+			} else {
+				printDescribed(groupCollection)
 			}
-
-			var listed kadm.ListedOffsets
-			listPartitions := described.AssignedPartitions()
-			listPartitions.Merge(fetched.CommittedPartitions())
-			if topics := listPartitions.Topics(); len(topics) > 0 {
-				listed, err = adm.ListEndOffsets(ctx, topics...)
-				out.HandleShardError("ListOffsets", err)
-			}
-
-			printDescribed(
-				described,
-				fetched,
-				listed,
-			)
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
 	return cmd
 }
@@ -90,72 +185,85 @@ information about the members.
 // columns if any member in the group has an instance id / error.
 
 type describeRow struct {
-	topic         string
-	partition     int32
-	currentOffset string
-	logEndOffset  int64
-	lag           string
-	memberID      string
-	instanceID    *string
-	clientID      string
-	host          string
-	err           error
+	Topic         string  `json:"topic" yaml:"topic"`
+	Partition     int32   `json:"partition" yaml:"partition"`
+	CurrentOffset string  `json:"current_offset" yaml:"current_offset"`
+	LogEndOffset  int64   `json:"log_end_offset" yaml:"log_end_offset"`
+	Lag           string  `json:"lag" yaml:"lag"`
+	MemberID      string  `json:"member_id" yaml:"member_id"`
+	InstanceID    *string `json:"instance_id" yaml:"instance_id"`
+	ClientID      string  `json:"client_id" yaml:"client_id"`
+	Host          string  `json:"host" yaml:"host"`
+	Err           error   `json:"err" yaml:"err"`
 }
 
 func printDescribed(
-	groups kadm.DescribedGroups,
-	fetched map[string]kadm.FetchOffsetsResponse,
-	listed kadm.ListedOffsets,
+	groups describedGroupCollectionForStructredPrint,
 ) {
-	for _, group := range groups.Sorted() {
-		lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
+	for _, group := range groups.Groups {
 
-		var rows []describeRow
-		var useInstanceID, useErr bool
-		for _, l := range lag.Sorted() {
-			row := describeRow{
-				topic:     l.End.Topic,
-				partition: l.End.Partition,
-
-				currentOffset: strconv.FormatInt(l.Commit.At, 10),
-				logEndOffset:  l.End.Offset,
-				lag:           strconv.FormatInt(l.Lag, 10),
-
-				err: l.Err,
-			}
-
-			if !l.IsEmpty() {
-				row.memberID = l.Member.MemberID
-				row.instanceID = l.Member.InstanceID
-				row.clientID = l.Member.ClientID
-				row.host = l.Member.ClientHost
-			}
-
-			if l.Commit.At == -1 { // nothing committed
-				row.currentOffset = "-"
-			}
-			if l.End.Offset == 0 { // nothing produced yet
-				row.lag = "-"
-			}
-
-			useInstanceID = useInstanceID || row.instanceID != nil
-			useErr = useErr || row.err != nil
-
-			rows = append(rows, row)
-		}
-
-		printDescribedGroup(group, rows, useInstanceID, useErr)
+		printDescribedGroup(group, group.DescribedRows.Rows, group.DescribedRows.UseInstanceID, group.DescribedRows.UseErr)
 		fmt.Println()
 	}
 }
 
-func printDescribedSummary(groups kadm.DescribedGroups) {
-	for _, group := range groups.Sorted() {
+func getDescribedForGroup(
+	group kadm.DescribedGroup,
+	fetched map[string]kadm.FetchOffsetsResponse,
+	listed kadm.ListedOffsets,
+) describedRows {
+
+	lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
+
+	// zero value init so stuctured prints get [] instead of null
+	rows := []describeRow{}
+	var useInstanceID, useErr bool
+	for _, l := range lag.Sorted() {
+		row := describeRow{
+			Topic:     l.End.Topic,
+			Partition: l.End.Partition,
+
+			CurrentOffset: strconv.FormatInt(l.Commit.At, 10),
+			LogEndOffset:  l.End.Offset,
+			Lag:           strconv.FormatInt(l.Lag, 10),
+
+			Err: l.Err,
+		}
+
+		if !l.IsEmpty() {
+			row.MemberID = l.Member.MemberID
+			row.InstanceID = l.Member.InstanceID
+			row.ClientID = l.Member.ClientID
+			row.Host = l.Member.ClientHost
+		}
+
+		if l.Commit.At == -1 { // nothing committed
+			row.CurrentOffset = "-"
+		}
+		if l.End.Offset == 0 { // nothing produced yet
+			row.Lag = "-"
+		}
+
+		useInstanceID = useInstanceID || row.InstanceID != nil
+		useErr = useErr || row.Err != nil
+
+		rows = append(rows, row)
+	}
+
+	return describedRows{
+		Rows:          rows,
+		UseInstanceID: useInstanceID,
+		UseErr:        useErr,
+	}
+}
+
+func printDescribedSummary(groups describedGroupCollectionForStructredPrint) {
+	for _, group := range groups.Groups {
 		printDescribedGroupSummary(group)
 	}
 }
 
-func printDescribedGroupSummary(group kadm.DescribedGroup) {
+func printDescribedGroupSummary(group describedGroupForStructredPrint) {
 	tw := out.NewTabWriter()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
@@ -169,7 +277,7 @@ func printDescribedGroupSummary(group kadm.DescribedGroup) {
 }
 
 func printDescribedGroup(
-	group kadm.DescribedGroup,
+	group describedGroupForStructredPrint,
 	rows []describeRow,
 	useInstanceID bool,
 	useErr bool,
@@ -190,12 +298,12 @@ func printDescribedGroup(
 	}
 	args := func(r *describeRow) []interface{} {
 		return []interface{}{
-			r.topic,
-			r.partition,
-			r.currentOffset,
-			r.logEndOffset,
-			r.lag,
-			r.memberID,
+			r.Topic,
+			r.Partition,
+			r.CurrentOffset,
+			r.LogEndOffset,
+			r.Lag,
+			r.MemberID,
 		}
 	}
 
@@ -203,8 +311,8 @@ func printDescribedGroup(
 		headers = append(headers, "INSTANCE-ID")
 		orig := args
 		args = func(r *describeRow) []interface{} {
-			if r.instanceID != nil {
-				return append(orig(r), *r.instanceID)
+			if r.InstanceID != nil {
+				return append(orig(r), *r.InstanceID)
 			}
 			return append(orig(r), "")
 		}
@@ -214,7 +322,7 @@ func printDescribedGroup(
 		headers = append(headers, "CLIENT-ID", "HOST")
 		orig := args
 		args = func(r *describeRow) []interface{} {
-			return append(orig(r), r.clientID, r.host)
+			return append(orig(r), r.ClientID, r.Host)
 		}
 	}
 
@@ -222,7 +330,7 @@ func printDescribedGroup(
 		headers = append(headers, "ERROR")
 		orig := args
 		args = func(r *describeRow) []interface{} {
-			return append(orig(r), r.err)
+			return append(orig(r), r.Err)
 		}
 	}
 

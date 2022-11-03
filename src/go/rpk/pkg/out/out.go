@@ -12,6 +12,7 @@
 package out
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"gopkg.in/yaml.v3"
 )
 
 // Confirm prompts the user to confirm the formatted message and returns the
@@ -199,4 +201,26 @@ func (t *TabWriter) PrintColumn(header string, args ...interface{}) {
 // Line prints a newline in our tab writer. This will reset tab spacing.
 func (t *TabWriter) Line(sprint ...interface{}) {
 	fmt.Fprint(t.Writer, append(sprint, "\n")...)
+}
+
+// use generics to support structured printing output of all collection types
+func StructredPrint[T any](structToPrint T, format string) {
+	switch format {
+	case "json":
+		jsonBytes, err := json.Marshal(structToPrint)
+
+		if err != nil {
+			MaybeDie(err, "Failed to martial json for output. Error: %s", err)
+		}
+		fmt.Println(string(jsonBytes))
+	case "yaml":
+		yamlBytes, err := yaml.Marshal(structToPrint)
+
+		if err != nil {
+			MaybeDie(err, "Failed to martial yaml for output. Error: %s", err)
+		}
+		fmt.Println(string(yamlBytes))
+	default:
+		Die("Unsupported format: '%s'. Suported formats are 'text', 'json', and 'yaml'\n", format)
+	}
 }

@@ -20,7 +20,10 @@ import (
 )
 
 func newDeleteCommand(fs afero.Fs) *cobra.Command {
-	var re bool
+	var (
+		re     bool
+		format string
+	)
 	cmd := &cobra.Command{
 		Use:   "delete [TOPICS...]",
 		Short: "Delete topics",
@@ -64,17 +67,35 @@ For example,
 
 			resps, err := adm.DeleteTopics(context.Background(), topics...)
 			out.MaybeDie(err, "unable to issue delete topics request: %v", err)
-			tw := out.NewTable("topic", "status")
-			defer tw.Flush()
+
+			topicsCollection := topicsCollection{}
+			var deleteError bool
 			for _, t := range resps.Sorted() {
 				msg := "OK"
 				if t.Err != nil {
+					// If error msg is not okay, set bool so stuctured output doesn't require consumer to parse message to detect errors.
+					deleteError = true
 					msg = t.Err.Error()
 				}
-				tw.Print(t.Topic, msg)
+				topicsCollection.AddTopic(topic{
+					Name:    t.Topic,
+					Message: msg,
+					Error:   deleteError,
+				})
+			}
+
+			if format != "text" {
+				out.StructredPrint[any](topicsCollection, format)
+			} else {
+				tw := out.NewTable("topic", "status")
+				defer tw.Flush()
+				for _, t := range topicsCollection.Topics {
+					tw.Print(t.Name, t.Message)
+				}
 			}
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; delete any topic that matches any input topic expression")
 	return cmd
 }

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -57,25 +58,84 @@ type (
 	// Corresponding to the above, acl and aclWithMessage are the rows
 	// for PrintStructFields.
 	acl struct {
-		Principal           string
-		Host                string
-		ResourceType        kmsg.ACLResourceType
-		ResourceName        string
-		ResourcePatternType kmsg.ACLResourcePatternType
-		Operation           kmsg.ACLOperation
-		Permission          kmsg.ACLPermissionType
+		Principal           string                      `json:"principal" yaml:"principal"`
+		Host                string                      `json:"host" yaml:"host"`
+		ResourceType        kmsg.ACLResourceType        `json:"resource_type" yaml:"resource_type"`
+		ResourceName        string                      `json:"resource_name" yaml:"resource_name"`
+		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type" yaml:"resource_pattern_type"`
+		Operation           kmsg.ACLOperation           `json:"operation" yaml:"operation"`
+		Permission          kmsg.ACLPermissionType      `json:"permission" yaml:"permission"`
 	}
+
 	aclWithMessage struct {
-		Principal           string
-		Host                string
-		ResourceType        kmsg.ACLResourceType
-		ResourceName        string
-		ResourcePatternType kmsg.ACLResourcePatternType
-		Operation           kmsg.ACLOperation
-		Permission          kmsg.ACLPermissionType
-		Message             string
+		Principal           string                      `json:"principal" yaml:"principal"`
+		Host                string                      `json:"host" yaml:"host"`
+		ResourceType        kmsg.ACLResourceType        `json:"resource_type" yaml:"resource_type"`
+		ResourceName        string                      `json:"resource_name" yaml:"resource_name"`
+		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type" yaml:"resource_pattern_type"`
+		Operation           kmsg.ACLOperation           `json:"operation" yaml:"operation"`
+		Permission          kmsg.ACLPermissionType      `json:"permission" yaml:"permission"`
+		Message             string                      `json:"message" yaml:"message"`
+	}
+
+	// Used for json/yaml formatted output in "rpk acl lists|delete"
+	describedACLsResult struct {
+		Principal *string `json:"principal" yaml:"principal"` // Principal is the optional user that was used in this filter.
+		Host      *string `json:"host" yaml:"host"`           // Host is the optional host that was used in this filter.
+
+		Type       kmsg.ACLResourceType   `json:"type" yaml:"type"`             // Type is the type of resource used for this filter.
+		Name       *string                `json:"name" yaml:"name"`             // Name is the name of the resource used for this filter.
+		Pattern    kadm.ACLPattern        `json:"pattern" yaml:"pattern"`       // Pattern is the name pattern used for this filter.
+		Operation  kmsg.ACLOperation      `json:"operation" yaml:"operation"`   // Operation is the operation used for this filter.
+		Permission kmsg.ACLPermissionType `json:"permission" yaml:"permission"` // Permission is permission used for this filter.
+
+		Err error `json:"error" yaml:"error"` // Err is non-nil if this filter has an error.
+	}
+
+	filteredAndDescribed struct {
+		Filter describedACLsResult `json:"filter" yaml:"filter"`
+		ACLS   []acl               `json:"acls" yaml:"acls"`
 	}
 )
+
+// filteredAndDescribedResults and methods
+type filteredAndDescribedResults struct {
+	Results []filteredAndDescribed `json:"filtered_acls" yaml:"filtered_acls"`
+}
+func (collection *filteredAndDescribedResults) addFilterAndDescribed(filteredACL filteredAndDescribed) {
+	collection.Results = append(collection.Results, filteredACL)
+}
+// =======================
+
+// deletedACLCollection and methods
+type deletedACLCollection struct {
+	Deleted []filteredAndDescribed `json:"deleted_acls" yaml:"deleted_acls"`
+}
+func (collection *deletedACLCollection) AddACL(deletedACL filteredAndDescribed) {
+	collection.Deleted = append(collection.Deleted, deletedACL)
+}
+
+// =======================
+
+// createdACLCollection and methods
+type createdACLCollection struct {
+		ACLS []aclWithMessage `json:"created_acls" yaml:"created_acls"`
+}
+func (collection *createdACLCollection) AddACL(newACL kadm.CreateACLsResult) {
+	collection.ACLS = append(collection.ACLS,
+		aclWithMessage{
+			newACL.Principal,
+			newACL.Host,
+			newACL.Type,
+			newACL.Name,
+			newACL.Pattern,
+			newACL.Operation,
+			newACL.Permission,
+			kafka.ErrMessage(newACL.Err),
+		},
+	)
+}
+// =======================
 
 // A helper function to ensure we print an empty string.
 func unptr(str *string) string {
@@ -101,6 +161,7 @@ type acls struct {
 	// create & delete & list flags
 	topics          []string
 	groups          []string
+	format          string
 	cluster         bool
 	txnIDs          []string
 	allowPrincipals []string

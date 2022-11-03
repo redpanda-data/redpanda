@@ -18,7 +18,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/types"
 )
 
@@ -69,7 +68,7 @@ resource names:
 
 			var printDeletionsHeader bool
 			if !noConfirm || dry {
-				describeReqResp(adm, printAllFilters, true, b)
+				describeReqResp(adm, printAllFilters, true, b, "text")
 				fmt.Println()
 
 				confirmed, err := out.Confirm("Confirm deletion of the above matching ACLs?")
@@ -90,7 +89,51 @@ resource names:
 				printDeletionsHeader = true
 			}
 
-			deleteReqResp(adm, printAllFilters, printDeletionsHeader, b)
+			results, err := adm.DeleteACLs(context.Background(), b)
+			out.MaybeDie(err, "unable to delete ACLs: %v", err)
+			types.Sort(results)
+
+			deletedACLs := deletedACLCollection{}
+			// zero init so zero deltede acls doesn't render as { "deleted_acls": null } in structured print format
+			deletedACLs.Deleted = []filteredAndDescribed{}
+			for _, result := range results {
+				// Filter portion of the result
+				deletedACL := filteredAndDescribed{
+					Filter: describedACLsResult{
+						Principal:  result.Principal,
+						Host:       result.Host,
+						Type:       result.Type,
+						Name:       result.Name,
+						Pattern:    result.Pattern,
+						Operation:  result.Operation,
+						Permission: result.Permission,
+						Err:        result.Err,
+					},
+				}
+				// Acl portion of the result
+				// Init slice to 0 length so if nothing matches filter, json Marshal will return [] instead of NULL
+				deletedACL.ACLS = []acl{}
+				for _, described := range result.Deleted {
+					deletedACL.ACLS = append(deletedACL.ACLS,
+						acl{
+							Principal:           described.Principal,
+							Host:                described.Host,
+							ResourceType:        described.Type,
+							ResourceName:        described.Name,
+							ResourcePatternType: described.Pattern,
+							Operation:           described.Operation,
+							Permission:          described.Permission,
+						},
+					)
+					deletedACLs.AddACL(deletedACL)
+				}
+			}
+
+			if a.format != "text" {
+				out.StructredPrint[any](deletedACLs, a.format)
+			} else {
+				deleteReqResp(deletedACLs, printAllFilters, printDeletionsHeader)
+			}
 		},
 	}
 	a.addDeleteFlags(cmd)
@@ -103,6 +146,7 @@ resource names:
 func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
+	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml). Default: text. This option makes the most sense to use with --no-confirm as interactive confirmation will print text tables")
 	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to remove ACLs for (repeatable)")
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")
@@ -119,70 +163,66 @@ func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 }
 
 func deleteReqResp(
-	adm *kadm.Client,
+	deletedACLs deletedACLCollection,
 	printAllFilters bool,
 	printDeletionsHeader bool,
-	b *kadm.ACLBuilder,
 ) {
-	results, err := adm.DeleteACLs(context.Background(), b)
-	out.MaybeDie(err, "unable to delete ACLs: %v", err)
-	types.Sort(results)
 
 	// If any filters failed, or if all filters are requested, we print the
 	// filter section.
 	var printFailedFilters bool
-	for _, f := range results {
-		if f.Err != nil {
+	for _, f := range deletedACLs.Deleted {
+		if f.Filter.Err != nil {
 			printFailedFilters = true
 			break
 		}
 	}
 	if printAllFilters || printFailedFilters {
 		out.Section("filters")
-		printDeleteFilters(printAllFilters, results)
+		printDeleteFilters(printAllFilters, deletedACLs)
 		fmt.Println()
 		printDeletionsHeader = true
 	}
 	if printDeletionsHeader {
 		out.Section("deletions")
 	}
-	printDeleteResults(results)
+	printDeleteResults(deletedACLs)
 }
 
-func printDeleteFilters(all bool, results kadm.DeleteACLsResults) {
+func printDeleteFilters(all bool, deletedACLS deletedACLCollection) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, f := range results {
-		if f.Err == nil && !all {
+	for _, f := range deletedACLS.Deleted {
+		if f.Filter.Err == nil && !all {
 			continue
 		}
 		tw.PrintStructFields(aclWithMessage{
-			unptr(f.Principal),
-			unptr(f.Host),
-			f.Type,
-			unptr(f.Name),
-			f.Pattern,
-			f.Operation,
-			f.Permission,
-			kafka.ErrMessage(f.Err),
+			unptr(f.Filter.Principal),
+			unptr(f.Filter.Host),
+			f.Filter.Type,
+			unptr(f.Filter.Name),
+			f.Filter.Pattern,
+			f.Filter.Operation,
+			f.Filter.Permission,
+			kafka.ErrMessage(f.Filter.Err),
 		})
 	}
 }
 
-func printDeleteResults(results kadm.DeleteACLsResults) {
+func printDeleteResults(deletedACLs deletedACLCollection) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, f := range results {
-		for _, d := range f.Deleted {
+	for _, f := range deletedACLs.Deleted {
+		for _, d := range f.ACLS {
 			tw.PrintStructFields(aclWithMessage{
 				d.Principal,
 				d.Host,
-				d.Type,
-				d.Name,
-				d.Pattern,
+				d.ResourceType,
+				d.ResourceName,
+				d.ResourcePatternType,
 				d.Operation,
 				d.Permission,
-				kafka.ErrMessage(d.Err),
+				kafka.ErrMessage(f.Filter.Err),
 			})
 		}
 	}
