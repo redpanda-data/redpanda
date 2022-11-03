@@ -189,25 +189,29 @@ ss::future<> segment_index::truncate(model::offset o) {
  *         while loading.  On all other types of error (e.g. IO), throw.
  */
 ss::future<bool> segment_index::materialize_index() {
-    return ss::with_file(open(), [this](ss::file f) -> ss::future<bool> {
-        auto size = co_await f.size();
-        auto buf = co_await f.dma_read_bulk<char>(0, size);
-        if (buf.empty()) {
-            co_return false;
-        }
-        iobuf b;
-        b.append(std::move(buf));
-        try {
-            _state = serde::from_iobuf<index_state>(std::move(b));
-            co_return true;
-        } catch (const serde::serde_exception& ex) {
-            vlog(
-              stlog.info,
-              "Rebuilding index_state after decoding failure: {}",
-              ex.what());
-            co_return false;
-        }
+    return ss::with_file(open(), [this](ss::file f) {
+        return materialize_index_from_file(std::move(f));
     });
+}
+
+ss::future<bool> segment_index::materialize_index_from_file(ss::file f) {
+    auto size = co_await f.size();
+    auto buf = co_await f.dma_read_bulk<char>(0, size);
+    if (buf.empty()) {
+        co_return false;
+    }
+    iobuf b;
+    b.append(std::move(buf));
+    try {
+        _state = serde::from_iobuf<index_state>(std::move(b));
+        co_return true;
+    } catch (const serde::serde_exception& ex) {
+        vlog(
+          stlog.info,
+          "Rebuilding index_state after decoding failure: {}",
+          ex.what());
+        co_return false;
+    }
 }
 
 ss::future<> segment_index::drop_all_data() {
@@ -220,17 +224,20 @@ ss::future<> segment_index::flush() {
         return ss::now();
     }
     _needs_persistence = false;
-    return with_file(open(), [this](ss::file backing_file) -> ss::future<> {
-        co_await backing_file.truncate(0);
-        auto out = co_await ss::make_file_output_stream(
-          std::move(backing_file));
-
-        auto b = serde::to_iobuf(_state.copy());
-        for (const auto& f : b) {
-            co_await out.write(f.get(), f.size());
-        }
-        co_await out.flush();
+    return with_file(open(), [this](ss::file backing_file) {
+        return flush_to_file(std::move(backing_file));
     });
+}
+
+ss::future<> segment_index::flush_to_file(ss::file backing_file) {
+    co_await backing_file.truncate(0);
+    auto out = co_await ss::make_file_output_stream(std::move(backing_file));
+
+    auto b = serde::to_iobuf(_state.copy());
+    for (const auto& f : b) {
+        co_await out.write(f.get(), f.size());
+    }
+    co_await out.flush();
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {

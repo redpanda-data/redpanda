@@ -91,6 +91,9 @@ public:
     index_state release_index_state() && { return std::move(_state); }
 
 private:
+    ss::future<bool> materialize_index_from_file(ss::file);
+    ss::future<> flush_to_file(ss::file);
+
     ss::sstring _name;
     size_t _step;
     size_t _acc{0};
