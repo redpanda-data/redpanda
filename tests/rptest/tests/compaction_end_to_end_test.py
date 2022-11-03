@@ -145,8 +145,9 @@ class CompactionEndToEndTest(EndToEndTest):
             rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
 
             # wait for compaction to merge some adjacent segments
+            wait_timeout_sec = 300 if self.debug_mode else 180
             wait_until(lambda: segment_number_matches(lambda s: s < 5),
-                       timeout_sec=180,
+                       timeout_sec=wait_timeout_sec,
                        backoff_sec=2)
 
             # enable consumer and validate consumed records
