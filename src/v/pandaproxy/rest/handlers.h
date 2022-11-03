@@ -49,4 +49,7 @@ get_consumer_offsets(proxy::server::request_t rq, proxy::server::reply_t rp);
 ss::future<proxy::server::reply_t>
 post_consumer_offsets(proxy::server::request_t rq, proxy::server::reply_t rp);
 
+ss::future<proxy::server::reply_t>
+status_ready(proxy::server::request_t rq, proxy::server::reply_t rp);
+
 } // namespace pandaproxy::rest
