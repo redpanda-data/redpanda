@@ -306,7 +306,6 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
                 begin_tx_reply{ntp, tx_errc::partition_not_exists});
           }
           auto topic_revision = topic_md->get_revision();
-
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
             .then([ntp, topic_revision](checked<model::term_id, tx_errc> etag) {
                 if (!etag.has_value()) {
