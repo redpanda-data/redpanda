@@ -30,6 +30,7 @@
 #include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 
 #include <algorithm>
 
@@ -2160,9 +2161,7 @@ ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
     }
 
     co_return co_await container().invoke_on(
-      *shard,
-      _ssg,
-      [tid, ntp](tx_gateway_frontend& self) -> ss::future<tx_errc> {
+      *shard, _ssg, [tid, ntp](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
@@ -2170,7 +2169,7 @@ ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
                 txlog.warn,
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
-              co_return tx_errc::invalid_txn_state;
+              return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 
           auto stm = partition->tm_stm();
@@ -2180,10 +2179,10 @@ ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
                 txlog.warn,
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
-              co_return tx_errc::invalid_txn_state;
+              return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 
-          co_return co_await stm->read_lock().then(
+          return stm->read_lock().then(
             [&self, stm, tid, ntp](ss::basic_rwlock<>::holder unit) {
                 return with(
                          stm,

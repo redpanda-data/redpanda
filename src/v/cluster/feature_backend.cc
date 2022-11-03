@@ -28,15 +28,8 @@ feature_backend::apply_update(model::record_batch b) {
 
     co_await ss::visit(
       cmd,
-      [this](feature_update_cmd update) -> ss::future<> {
-          co_await _feature_table.invoke_on_all(
-            [v = update.key.logical_version](
-              features::feature_table& t) mutable { t.set_active_version(v); });
-
-          for (const auto& a : update.key.actions) {
-              co_await _feature_table.invoke_on_all(
-                [a](features::feature_table& t) mutable { t.apply_action(a); });
-          }
+      [this](feature_update_cmd update) {
+          return apply_feature_update_command(std::move(update));
       },
       [this](feature_update_license_update_cmd update) {
           return _feature_table.invoke_on_all(
@@ -60,6 +53,19 @@ feature_backend::apply_update(model::record_batch b) {
     co_await save_snapshot();
 
     co_return errc::success;
+}
+
+ss::future<>
+feature_backend::apply_feature_update_command(feature_update_cmd update) {
+    co_await _feature_table.invoke_on_all(
+      [v = update.key.logical_version](features::feature_table& t) mutable {
+          t.set_active_version(v);
+      });
+
+    for (const auto& a : update.key.actions) {
+        co_await _feature_table.invoke_on_all(
+          [a](features::feature_table& t) mutable { t.apply_action(a); });
+    }
 }
 
 ss::future<> feature_backend::save_snapshot() {

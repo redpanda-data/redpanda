@@ -74,16 +74,17 @@ controller_api::all_reconciliations_done(std::vector<model::ntp> ntps) {
         co_await ss::parallel_for_each(
           ntps.begin() + i,
           ntps.begin() + i + this_batch,
-          [this, reduced](const model::ntp& ntp) -> ss::future<> {
-              auto status = co_await get_reconciliation_state(ntp);
-              if (
-                status.cluster_errc() != errc::success
-                && reduced->err == errc::success) {
-                  reduced->err = status.cluster_errc();
-              }
-              if (status.status() != reconciliation_status::done) {
-                  reduced->complete = false;
-              }
+          [this, reduced](const model::ntp& ntp) {
+              return get_reconciliation_state(ntp).then([reduced](auto status) {
+                  if (
+                    status.cluster_errc() != errc::success
+                    && reduced->err == errc::success) {
+                      reduced->err = status.cluster_errc();
+                  }
+                  if (status.status() != reconciliation_status::done) {
+                      reduced->complete = false;
+                  }
+              });
           });
 
         // Return as soon as we have a conclusive result, avoid

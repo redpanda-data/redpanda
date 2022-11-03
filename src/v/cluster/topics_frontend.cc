@@ -1098,11 +1098,11 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
         co_await ss::max_concurrent_for_each(
           std::move(node_report.topics),
           32,
-          [&info](const topic_status& status) -> ss::future<> {
+          [&info](const topic_status& status) {
               for (const auto& partition : status.partitions) {
                   info.ntp_sizes[partition.id] = partition.size_bytes;
               }
-              co_return;
+              return ss::now();
           });
     }
 
@@ -1275,13 +1275,13 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
       metadata_ref.get_assignments(),
       32,
       [&new_assignments, &error, topic, new_replication_factor](
-        partition_assignment& assignment) -> ss::future<> {
+        partition_assignment& assignment) {
           if (error) {
-              co_return;
+              return ss::now();
           }
           if (assignment.replicas.size() < new_replication_factor) {
               error = errc::topic_invalid_replication_factor;
-              co_return;
+              return ss::now();
           }
 
           new_assignments.emplace_back(move_topic_replicas_data());
@@ -1291,6 +1291,7 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
             assignment.replicas.begin(),
             new_replication_factor,
             new_assignments.back().replicas.begin());
+          return ss::now();
       });
 
     if (error) {
