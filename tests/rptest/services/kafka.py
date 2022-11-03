@@ -1,3 +1,6 @@
+from ducktape.utils.util import wait_until
+
+
 class KafkaServiceAdapter:
     '''
         Simple adapter to match KafkaService interface with 
@@ -19,6 +22,11 @@ class KafkaServiceAdapter:
 
     def start(self, add_principals=""):
         return self._kafka_service.start(add_principals)
+
+    def wait_until(self, *args, **kwargs):
+        # RedpandaService does some helpful liveness checks to fail faster on crashes,
+        # we don't need this when emulating the interface for Kafka.
+        return wait_until(*args, **kwargs)
 
     def __getattribute__(self, name):
         try:
