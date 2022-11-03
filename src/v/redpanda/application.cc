@@ -1466,6 +1466,10 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             *controller, group_router));
     }
 
+    if (cd.is_cluster_founder().get()) {
+        controller->set_ready().get();
+    }
+
     start_runtime_services(cd);
 
     if (_proxy_config) {
