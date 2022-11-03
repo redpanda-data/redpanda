@@ -1554,12 +1554,24 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
 ss::future<> controller_backend::delete_partition(
   model::ntp ntp, model::revision_id rev, partition_removal_mode mode) {
     auto part = _partition_manager.local().get(ntp);
-    if (unlikely(part.get() == nullptr)) {
-        co_return;
+    auto is_partition_replicated_locally = part.get() != nullptr;
+
+    // The partition leaders table contains partition leaders for all
+    // partitions accross the cluster. For this reason, when deleting a
+    // partition (i.e. removal mode is global), we need to delete from the table
+    // regardless of whether a replica of 'ntp' is present on the node.
+    if (
+      mode == partition_removal_mode::global
+      || is_partition_replicated_locally) {
+        co_await _partition_leaders_table.invoke_on_all(
+          [ntp, rev](partition_leaders_table& leaders) {
+              leaders.remove_leader(ntp, rev);
+          });
     }
 
-    // partition was already recreated with greater rev, do nothing
-    if (unlikely(part->get_revision_id() > rev)) {
+    // partition is not replicated locally or it was already recreated with
+    // greater rev, do nothing
+    if (!is_partition_replicated_locally || part->get_revision_id() > rev) {
         co_return;
     }
 
@@ -1568,11 +1580,6 @@ ss::future<> controller_backend::delete_partition(
     co_await _shard_table.invoke_on_all(
       [ntp, group_id, rev](shard_table& st) mutable {
           st.erase(ntp, group_id, rev);
-      });
-
-    co_await _partition_leaders_table.invoke_on_all(
-      [ntp, rev](partition_leaders_table& leaders) {
-          leaders.remove_leader(ntp, rev);
       });
 
     co_await _partition_manager.local().remove(ntp, mode);
