@@ -1555,30 +1555,27 @@ ss::future<> controller_backend::delete_partition(
   model::ntp ntp, model::revision_id rev, partition_removal_mode mode) {
     auto part = _partition_manager.local().get(ntp);
     if (unlikely(part.get() == nullptr)) {
-        return ss::make_ready_future<>();
+        co_return;
     }
 
     // partition was already recreated with greater rev, do nothing
     if (unlikely(part->get_revision_id() > rev)) {
-        return ss::make_ready_future<>();
+        co_return;
     }
 
     auto group_id = part->group();
 
-    return _shard_table
-      .invoke_on_all([ntp, group_id, rev](shard_table& st) mutable {
+    co_await _shard_table.invoke_on_all(
+      [ntp, group_id, rev](shard_table& st) mutable {
           st.erase(ntp, group_id, rev);
-      })
-      .then([this, ntp, rev] {
-          return _partition_leaders_table.invoke_on_all(
-            [ntp, rev](partition_leaders_table& leaders) {
-                leaders.remove_leader(ntp, rev);
-            });
-      })
-      .then([this, ntp = std::move(ntp), mode] {
-          // remove partition
-          return _partition_manager.local().remove(ntp, mode);
       });
+
+    co_await _partition_leaders_table.invoke_on_all(
+      [ntp, rev](partition_leaders_table& leaders) {
+          leaders.remove_leader(ntp, rev);
+      });
+
+    co_await _partition_manager.local().remove(ntp, mode);
 }
 
 std::vector<topic_table::delta>
