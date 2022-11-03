@@ -333,12 +333,12 @@ ss::future<> offset_translator::maybe_checkpoint() {
 
     constexpr size_t checkpoint_threshold = 64_MiB;
 
-    co_await _checkpoint_lock.with([this]() -> ss::future<> {
+    co_await _checkpoint_lock.with([this]() {
         if (
           _bytes_processed
             < _bytes_processed_at_checkpoint + checkpoint_threshold
           && !_checkpoint_hint) {
-            co_return;
+            return ss::now();
         }
 
         vlog(
@@ -349,7 +349,7 @@ ss::future<> offset_translator::maybe_checkpoint() {
           _highest_known_offset,
           _checkpoint_hint);
 
-        co_await do_checkpoint();
+        return do_checkpoint();
     });
 }
 
