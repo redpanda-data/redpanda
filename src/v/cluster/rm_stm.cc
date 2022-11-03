@@ -1289,17 +1289,12 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         if (cached_offset) {
             if (cached_offset.value() < kafka::offset{0}) {
                 vlog(
-                  _ctx_log.warn,
-                  "Status of the original attempt is unknown (still is "
-                  "in-flight "
-                  "or failed). Failing a retried batch with the same pid:{} & "
-                  "seq:{} to avoid duplicates",
+                  _ctx_log.debug,
+                  "Status of the original attempt pid:{} seq:{} is unknown. "
+                  "Returning not_leader_for_partition to trigger retry.",
                   bid.pid,
                   bid.last_seq);
-                // kafka clients don't automaticly handle fatal errors
-                // so when they encounter the error they will be forced
-                // to propagate it to the app layer
-                co_return errc::generic_tx_error;
+                co_return errc::not_leader;
             }
             co_return kafka_result{.last_offset = cached_offset.value()};
         }
@@ -1327,6 +1322,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
       std::move(br),
       raft::replicate_options(raft::consistency_level::quorum_ack));
     if (!r) {
+        vlog(
+          _ctx_log.info,
+          "got {} on replicating tx data batch for pid:{}",
+          r.error(),
+          bid.pid);
         if (_mem_state.estimated.contains(bid.pid)) {
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
@@ -1338,6 +1338,10 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), _sync_timeout)) {
+        vlog(
+          _ctx_log.warn,
+          "application of the replicated tx batch has timed out pid:{}",
+          bid.pid);
         if (_c->is_leader() && _c->term() == synced_term) {
             co_await _c->step_down("replicate_tx wait error");
         }
