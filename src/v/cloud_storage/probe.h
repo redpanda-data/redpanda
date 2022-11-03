@@ -20,12 +20,15 @@
 
 namespace cloud_storage {
 
+class materialized_segments;
+
 /// Cloud storage endpoint level probe
 class remote_probe {
 public:
     explicit remote_probe(
       remote_metrics_disabled disabled,
-      remote_metrics_disabled public_disabled);
+      remote_metrics_disabled public_disabled,
+      materialized_segments&);
 
     /// Register topic manifest upload
     void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }

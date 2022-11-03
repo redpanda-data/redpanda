@@ -27,6 +27,7 @@ namespace cloud_storage {
 
 class remote_segment;
 class remote_segment_batch_reader;
+class remote_probe;
 
 /**
  * This class tracks:
@@ -77,6 +78,12 @@ private:
     size_t max_readers() const;
     size_t max_segments() const;
 
+    /// How many remote_segment_batch_reader instances exist
+    size_t current_readers() const;
+
+    /// How many materialized_segment_state instances exist
+    size_t current_segments() const;
+
     /// List of segments and readers waiting to have their stop() method
     /// called before destruction
     eviction_list_t _eviction_list;
@@ -114,6 +121,9 @@ private:
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
     void trim_segments();
+
+    // Permit probe to query object counts
+    friend class remote_probe;
 };
 
 } // namespace cloud_storage

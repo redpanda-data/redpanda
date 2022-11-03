@@ -94,6 +94,14 @@ size_t materialized_segments::max_segments() const {
       _max_partitions_per_shard() * default_segment_factor));
 }
 
+size_t materialized_segments::current_readers() const {
+    return _reader_units.outstanding();
+}
+
+size_t materialized_segments::current_segments() const {
+    return _segment_units.outstanding();
+}
+
 void materialized_segments::evict_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     _eviction_list.push_back(std::move(reader));

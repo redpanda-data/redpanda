@@ -84,6 +84,17 @@ public:
     size_t current() const noexcept { return _sem.current(); }
     ssize_t available_units() const noexcept { return _sem.available_units(); }
 
+    /**
+     * Since we know our expected total capacity, we may calculate how many
+     * units are currently leant out.
+     *
+     * If capacity was recently adjusted we might have more units outstanding
+     * than the total capacity (i.e. when available_units() is negative)
+     */
+    size_t outstanding() const noexcept {
+        return _capacity - available_units();
+    }
+
 private:
     ssx::semaphore _sem;
 
