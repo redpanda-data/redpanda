@@ -80,7 +80,7 @@ class ShutdownTest(EndToEndTest):
         pending_attempts = 5
         while pending_attempts != 0:
             # Pick the current leader and restart it, repeat
-            wait_until(lambda: checked_get_leader,
+            wait_until(lambda: checked_get_leader(),
                        timeout_sec=30,
                        backoff_sec=2,
                        err_msg=f"Leader not found for ntp: {self.topic}/0")
