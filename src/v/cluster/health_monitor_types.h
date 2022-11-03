@@ -154,8 +154,12 @@ struct node_health_report
     }
 };
 
+using refreshed_metadata = ss::bool_class<struct refreshed_metadata_tag>;
 struct cluster_health_report
-  : serde::envelope<cluster_health_report, serde::version<0>> {
+  : serde::envelope<
+      cluster_health_report,
+      serde::version<1>,
+      serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     std::optional<model::node_id> raft0_leader;
@@ -166,6 +170,11 @@ struct cluster_health_report
     // node reports are node specific information collected directly on a
     // node
     std::vector<node_health_report> node_reports;
+
+    // Hint indicating whether health metadata was refreshed before
+    // generating this report.
+    refreshed_metadata was_metadata_refreshed = refreshed_metadata::no;
+
     friend std::ostream&
     operator<<(std::ostream&, const cluster_health_report&);
 
