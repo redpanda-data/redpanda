@@ -822,9 +822,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
 
 ss::future<std::optional<storage::timequery_result>>
 remote_partition::timequery(storage::timequery_config cfg) {
-    if (_segments.size() < _manifest.size()) {
-        maybe_sync_with_manifest();
-    }
+    maybe_sync_with_manifest();
 
     if (_segments.empty()) {
         vlog(_ctxlog.debug, "timequery: no segments");
