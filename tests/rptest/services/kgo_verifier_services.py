@@ -8,12 +8,9 @@
 # by the Apache License, Version 2.0
 
 import os
-import json
 import threading
 import requests
-from enum import Enum
 
-from rptest.services.redpanda import RedpandaService
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -21,7 +18,6 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 # Install location, specified by Dockerfile or AMI
 TESTS_DIR = os.path.join("/opt", "kgo-verifier")
 
-# TODO: need to update terraform to open a range of ports
 REMOTE_PORT_BASE = 8080
 
 
@@ -163,10 +159,10 @@ class KgoVerifierService(Service):
         # Let the worker fall through to the end of its current iteration
         self.logger.debug(
             f"wait_node {self.who_am_i()}: waiting for worker to complete")
-        wait_until(lambda: self._status.active is False or self._status_thread.
-                   errored,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=5)
+        self._redpanda.wait_until(lambda: self._status.active is False or self.
+                                  _status_thread.errored,
+                                  timeout_sec=timeout_sec,
+                                  backoff_sec=5)
         self._status_thread.raise_on_error()
 
         # Read final status
@@ -550,16 +546,16 @@ class KgoVerifierProducer(KgoVerifierService):
             return True
 
         self.logger.debug(f"{self.who_am_i()} wait: awaiting message count")
-        wait_until(lambda: self._status_thread.errored or self._status.acked >=
-                   self._msg_count,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=self._status_thread.INTERVAL)
+        self._redpanda.wait_until(lambda: self._status_thread.errored or self.
+                                  _status.acked >= self._msg_count,
+                                  timeout_sec=timeout_sec,
+                                  backoff_sec=self._status_thread.INTERVAL)
         self._status_thread.raise_on_error()
 
         return super().wait_node(node, timeout_sec=timeout_sec)
 
     def wait_for_acks(self, count, timeout_sec, backoff_sec):
-        wait_until(
+        self._redpanda.wait_until(
             lambda: self._status_thread.errored or self._status.acked >= count,
             timeout_sec=timeout_sec,
             backoff_sec=backoff_sec)
@@ -567,11 +563,11 @@ class KgoVerifierProducer(KgoVerifierService):
 
     def wait_for_offset_map(self):
         # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
-        wait_until(lambda: self._status_thread.errored or all(
+        self._redpanda.wait_until(lambda: self._status_thread.errored or all(
             node.account.exists(f"valid_offsets_{self._topic}.json")
             for node in self.nodes),
-                   timeout_sec=15,
-                   backoff_sec=1)
+                                  timeout_sec=15,
+                                  backoff_sec=1)
         self._status_thread.raise_on_error()
 
     def is_complete(self):
