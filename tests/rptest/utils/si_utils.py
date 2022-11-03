@@ -454,6 +454,13 @@ class S3Snapshot:
             self.logger.info(f'error {e} while checking if {o} is a segment')
             return False
 
+    def is_ntp_in_manifest(self,
+                           topic: str,
+                           partition: int,
+                           ns: str = "kafka") -> bool:
+        ntp = NTP(ns, topic, partition)
+        return ntp in self.partition_manifests
+
     def manifest_for_ntp(self,
                          topic: str,
                          partition: int,
