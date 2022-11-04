@@ -312,7 +312,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if advProxyAPI != nil {
+			if len(advProxyAPI) > 0 {
 				if cfg.Pandaproxy == nil {
 					cfg.Pandaproxy = config.DevDefault().Pandaproxy
 				}
