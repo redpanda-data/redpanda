@@ -1129,6 +1129,85 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
+		name: "it should leave cfg_file.pandaproxy untouched if no pandaproxy flags are passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			cfg := config.DevDefault()
+			cfg.Pandaproxy = &config.Pandaproxy{
+				PandaproxyAPI: []config.NamedAuthNSocketAddress{
+					{Address: "127.0.0.1", Port: 8888, Name: "advertised"},
+				},
+				PandaproxyAPITLS: []config.ServerTLS{
+					{Name: "my-tls", KeyFile: "redpanda.key"},
+				},
+				AdvertisedPandaproxyAPI: []config.NamedSocketAddress{
+					{Address: "foo.com", Port: 8888, Name: "advertised"},
+				},
+				Other: map[string]interface{}{"foo": "bar"},
+			}
+			return cfg.Write(fs)
+		},
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			expectedPandaProxy := &config.Pandaproxy{
+				PandaproxyAPI: []config.NamedAuthNSocketAddress{
+					{Address: "127.0.0.1", Port: 8888, Name: "advertised"},
+				},
+				PandaproxyAPITLS: []config.ServerTLS{
+					{Name: "my-tls", KeyFile: "redpanda.key"},
+				},
+				AdvertisedPandaproxyAPI: []config.NamedSocketAddress{
+					{Address: "foo.com", Port: 8888, Name: "advertised"},
+				},
+				Other: map[string]interface{}{"foo": "bar"},
+			}
+			require.Exactly(st, conf.Pandaproxy, expectedPandaProxy)
+		},
+	}, {
+		name: "it should override cfg_file.pandaproxy.advertised_pandaproxy_api with the --advertise-pandaproxy-addr",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--advertise-pandaproxy-addr", "changed://192.168.34.32:8083",
+		},
+		before: func(fs afero.Fs) error {
+			cfg := config.DevDefault()
+			cfg.Pandaproxy = &config.Pandaproxy{
+				PandaproxyAPI: []config.NamedAuthNSocketAddress{
+					{Address: "127.0.0.1", Port: 8888, Name: "advertised"},
+				},
+				PandaproxyAPITLS: []config.ServerTLS{
+					{Name: "my-tls", KeyFile: "redpanda.key"},
+				},
+				AdvertisedPandaproxyAPI: []config.NamedSocketAddress{
+					{Address: "foo.com", Port: 8888, Name: "advertised"},
+				},
+				Other: map[string]interface{}{"foo": "bar"},
+			}
+			return cfg.Write(fs)
+		},
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
+			conf, err := new(config.Params).Load(fs)
+			require.NoError(st, err)
+			// we compare the whole pandaproxy field to check we are not
+			// changing anything else.
+			expectedPandaProxy := &config.Pandaproxy{
+				PandaproxyAPI: []config.NamedAuthNSocketAddress{
+					{Address: "127.0.0.1", Port: 8888, Name: "advertised"},
+				},
+				PandaproxyAPITLS: []config.ServerTLS{
+					{Name: "my-tls", KeyFile: "redpanda.key"},
+				},
+				AdvertisedPandaproxyAPI: []config.NamedSocketAddress{
+					{Address: "192.168.34.32", Port: 8083, Name: "changed"},
+				},
+				Other: map[string]interface{}{"foo": "bar"},
+			}
+			require.Exactly(st, conf.Pandaproxy, expectedPandaProxy)
+		},
+	}, {
 		name: "it should parse the --advertise-pandaproxy-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
