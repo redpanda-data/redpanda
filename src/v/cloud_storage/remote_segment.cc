@@ -886,14 +886,16 @@ private:
 remote_segment_batch_reader::remote_segment_batch_reader(
   ss::lw_shared_ptr<remote_segment> s,
   const storage::log_reader_config& config,
-  partition_probe& probe) noexcept
+  partition_probe& probe,
+  ssx::semaphore_units units) noexcept
   : _seg(std::move(s))
   , _config(config)
   , _probe(probe)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _cur_rp_offset(_seg->get_base_rp_offset())
-  , _cur_delta(_seg->get_base_offset_delta()) {
+  , _cur_delta(_seg->get_base_offset_delta())
+  , _units(std::move(units)) {
     _probe.segment_reader_created();
 }
 

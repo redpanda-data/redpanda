@@ -218,7 +218,7 @@ bool storage_resources::stm_take_bytes(
 }
 
 bool storage_resources::filter_checkpoints(
-  adjustable_allowance::take_result&& tr, ssx::semaphore_units& units) {
+  adjustable_semaphore::take_result&& tr, ssx::semaphore_units& units) {
     // Adopt units from the take_result into the caller's unit store
     if (units.count()) {
         units.adopt(std::move(tr.units));
@@ -229,7 +229,7 @@ bool storage_resources::filter_checkpoints(
     return tr.checkpoint_hint && (units.count() > _min_checkpoint_bytes);
 }
 
-adjustable_allowance::take_result
+adjustable_semaphore::take_result
 storage_resources::compaction_index_take_bytes(size_t bytes) {
     vlog(
       stlog.trace,

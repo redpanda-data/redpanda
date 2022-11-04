@@ -258,6 +258,10 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
                              num_brokers=7,
                              si_settings=si_settings)
 
+        if not self.redpanda.dedicated_nodes:
+            self.redpanda.set_extra_rp_conf(
+                {'cloud_storage_max_readers_per_shard': 10})
+
     def setUp(self):
         # Dedicated nodes refers to non-container nodes such as EC2 instances
         self.topics[
@@ -292,9 +296,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         msg_count = 500000 if self.redpanda.dedicated_nodes else 100000
         timeout = 600
 
-        # This must be very low to avoid hitting bad_allocs:
-        # https://github.com/redpanda-data/redpanda/issues/6111
-        random_parallelism = 10 if self.redpanda.dedicated_nodes else 2
+        random_parallelism = 100 if self.redpanda.dedicated_nodes else 20
 
         producer = KgoVerifierProducer(self.test_context, self.redpanda,
                                        self.topic, msg_size, msg_count,

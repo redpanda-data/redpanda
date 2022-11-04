@@ -11,9 +11,9 @@
 #include "cloud_storage/remote_partition.h"
 
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/remote_segment.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
@@ -86,7 +86,7 @@ public:
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
-                _partition->evict_reader(std::move(_reader));
+                _partition->materialized().evict_reader(std::move(_reader));
                 _it = _end;
             });
             if (sub) {
@@ -240,7 +240,7 @@ private:
             // The segment was evicted or replaced by the compacted
             // segment. In this case we can't return the reader back
             // to the materialized segment and have to remove it.
-            _partition->evict_reader(std::move(_reader));
+            _partition->materialized().evict_reader(std::move(_reader));
         }
     }
 
@@ -309,7 +309,7 @@ private:
           segment->get_base_offset_delta(),
           config);
         if (it->first > config.max_offset) {
-            _partition->evict_reader(std::move(reader));
+            _partition->materialized().evict_reader(std::move(reader));
             return std::nullopt;
         }
         return {{.reader = std::move(reader), .iter = it}};
@@ -366,7 +366,7 @@ private:
             } else {
                 // reuse config but replace the reader
                 auto config = _reader->config();
-                _partition->evict_reader(std::move(_reader));
+                _partition->materialized().evict_reader(std::move(_reader));
                 vlog(_ctxlog.debug, "initializing new segment reader");
                 // It's safe to dereference '_it' since we just incremented it.
                 // If the underlying segment was deleted the _it will be equal
@@ -443,96 +443,12 @@ remote_partition::remote_partition(
   , _cache(c)
   , _manifest(m)
   , _bucket(std::move(bucket))
-  , _stm_jitter(stm_jitter_duration)
   , _probe(m.get_ntp()) {}
 
 ss::future<> remote_partition::start() {
     maybe_sync_with_manifest();
-    (void)run_eviction_loop();
 
-    _stm_timer.set_callback([this] {
-        gc_stale_materialized_segments(false);
-        _stm_timer.rearm(_stm_jitter());
-    });
-    _stm_timer.rearm(_stm_jitter());
     co_return;
-}
-
-ss::future<> remote_partition::run_eviction_loop() {
-    // Evict readers asynchronously
-    gate_guard g(_gate);
-    try {
-        while (true) {
-            co_await _cvar.wait([this] { return !_eviction_list.empty(); });
-            auto tmp_list = std::exchange(_eviction_list, {});
-            for (auto& rs : tmp_list) {
-                co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
-            }
-        }
-    } catch (const ss::broken_condition_variable&) {
-    }
-    vlog(_ctxlog.debug, "remote partition eviction loop stopped");
-}
-
-void remote_partition::gc_stale_materialized_segments(bool force_collection) {
-    // The remote_segment instances are materialized on demand. They are
-    // collected after some period of inactivity.
-    // To prevent high memory consumption in some corner cases the
-    // materialization of the new remote_segment triggers GC. The idea is
-    // that remote_partition should have only one remote_segment in materialized
-    // state when it's constantly in use and zero if not in use.
-    vlog(
-      _ctxlog.debug,
-      "collecting stale materialized segments, {} segments materialized, {} "
-      "segments total",
-      _materialized.size(),
-      _segments.size());
-
-    auto now = ss::lowres_clock::now();
-    auto max_idle = force_collection ? 0ms : stm_max_idle_time;
-
-    std::vector<kafka::offset> offsets;
-    for (auto& st : _materialized) {
-        auto deadline = st.atime + max_idle;
-        if (now >= deadline && !st.segment->download_in_progress()) {
-            if (st.segment.owned()) {
-                vlog(
-                  _ctxlog.debug,
-                  "reader for segment with base offset {} is stale",
-                  st.offset_key);
-                // this will delete and unlink the object from
-                // _materialized collection
-                offsets.push_back(st.offset_key);
-            } else {
-                vlog(
-                  _ctxlog.debug,
-                  "Materialized segment with base-offset {} is not stale: {} "
-                  "{} {} {} readers={}",
-                  st.base_rp_offset,
-                  now - st.atime > stm_max_idle_time,
-                  st.segment->download_in_progress(),
-                  st.segment.owned(),
-                  st.segment.use_count(),
-                  st.readers.size());
-
-                // Readers hold a reference to the segment, so for the
-                // segment.owned() check to pass, we need to clear them out.
-                while (!st.readers.empty()) {
-                    evict_reader(std::move(st.readers.front()));
-                    st.readers.pop_front();
-                }
-            }
-        }
-    }
-    vlog(_ctxlog.debug, "found {} eviction candidates ", offsets.size());
-    for (auto o : offsets) {
-        vlog(_ctxlog.debug, "about to offload segment {}", o);
-        auto it = _segments.find(o);
-        vassert(it != _segments.end(), "Can't find offset {}", o);
-        auto tmp = std::visit(
-          [this](auto&& st) { return st->offload(this); }, it->second);
-        it->second = tmp;
-    }
 }
 
 kafka::offset remote_partition::first_uploaded_offset() {
@@ -660,16 +576,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
 
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
-    _stm_timer.cancel();
-    _cvar.broken();
 
     co_await _gate.close();
-
-    // Do the last pass over the eviction list to stop remaining items returned
-    // from readers after the eviction loop stopped.
-    for (auto& rs : _eviction_list) {
-        co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
-    }
 
     for (auto it = begin(); it != end(); it++) {
         vlog(_ctxlog.debug, "remote partition stop {}", it->first);
@@ -772,9 +680,6 @@ void remote_partition::maybe_sync_with_manifest() {
 /// Materialize segment if needed and create a reader
 std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
   storage::log_reader_config config, kafka::offset key, segment_state& st) {
-    if (std::holds_alternative<offloaded_segment_state>(st)) {
-        gc_stale_materialized_segments(true);
-    }
     return ss::visit(
       st,
       [this, &config, offset_key = key, &st](
@@ -795,7 +700,7 @@ void remote_partition::return_reader(
     return ss::visit(
       st,
       [this, &reader](offloaded_segment_state&) {
-          evict_reader(std::move(reader));
+          materialized().evict_reader(std::move(reader));
       },
       [&reader](materialized_segment_ptr& m_state) {
           m_state->return_reader(std::move(reader));
@@ -860,88 +765,6 @@ remote_partition::timequery(storage::timequery_config cfg) {
     } else {
         co_return std::nullopt;
     }
-}
-
-remote_partition::offloaded_segment_state::offloaded_segment_state(
-  model::offset base_offset)
-  : base_rp_offset(base_offset) {}
-
-std::unique_ptr<remote_partition::materialized_segment_state>
-remote_partition::offloaded_segment_state::materialize(
-  remote_partition& p, kafka::offset offset_key) {
-    auto st = std::make_unique<materialized_segment_state>(
-      base_rp_offset, offset_key, p);
-    p._probe.segment_materialized();
-    return st;
-}
-
-ss::future<> remote_partition::offloaded_segment_state::stop() {
-    return ss::now();
-}
-
-remote_partition::offloaded_segment_state
-remote_partition::offloaded_segment_state::offload(remote_partition*) {
-    return offloaded_segment_state(base_rp_offset);
-}
-
-remote_partition::materialized_segment_state::materialized_segment_state(
-  model::offset base_offset, kafka::offset off_key, remote_partition& p)
-  : base_rp_offset(base_offset)
-  , offset_key(off_key)
-  , segment(ss::make_lw_shared<remote_segment>(
-      p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
-  , atime(ss::lowres_clock::now()) {
-    p._materialized.push_back(*this);
-}
-
-void remote_partition::materialized_segment_state::return_reader(
-  std::unique_ptr<remote_segment_batch_reader> state) {
-    atime = ss::lowres_clock::now();
-    readers.push_back(std::move(state));
-}
-
-/// Borrow reader or make a new one.
-/// In either case return a reader.
-std::unique_ptr<remote_segment_batch_reader>
-remote_partition::materialized_segment_state::borrow_reader(
-  const storage::log_reader_config& cfg,
-  retry_chain_logger& ctxlog,
-  partition_probe& probe) {
-    atime = ss::lowres_clock::now();
-    for (auto it = readers.begin(); it != readers.end(); it++) {
-        if ((*it)->config().start_offset == cfg.start_offset) {
-            // here we're reusing the existing reader
-            auto tmp = std::move(*it);
-            tmp->config() = cfg;
-            readers.erase(it);
-            vlog(
-              ctxlog.debug,
-              "reusing existing reader, config: {}",
-              tmp->config());
-            return tmp;
-        }
-    }
-    vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
-    return std::make_unique<remote_segment_batch_reader>(segment, cfg, probe);
-}
-
-ss::future<> remote_partition::materialized_segment_state::stop() {
-    for (auto& rs : readers) {
-        co_await rs->stop();
-    }
-    co_await segment->stop();
-}
-
-remote_partition::offloaded_segment_state
-remote_partition::materialized_segment_state::offload(
-  remote_partition* partition) {
-    _hook.unlink();
-    for (auto&& rs : readers) {
-        partition->evict_reader(std::move(rs));
-    }
-    partition->evict_segment(std::move(segment));
-    partition->_probe.segment_offloaded();
-    return offloaded_segment_state(base_rp_offset);
 }
 
 remote_partition::iterator remote_partition::begin() {
@@ -1134,6 +957,20 @@ ss::future<> remote_partition::erase() {
             co_return;
         };
     }
+}
+
+void remote_partition::offload_segment(kafka::offset o) {
+    vlog(_ctxlog.debug, "about to offload segment {}", o);
+
+    auto it = _segments.find(o);
+    vassert(it != _segments.end(), "Can't find offset {}", o);
+    auto tmp = std::visit(
+      [this](auto&& st) { return st->offload(this); }, it->second);
+    it->second = tmp;
+}
+
+materialized_segments& remote_partition::materialized() {
+    return _api.materialized();
 }
 
 } // namespace cloud_storage
