@@ -5,8 +5,9 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, RedpandaService, LoggingConfig
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import wait_until_segments, wait_for_removal_of_n_segments, wait_until
+from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import S3Snapshot
+from ducktape.utils.util import wait_until
 
 
 class ShadowIndexingCompactedTopicTest(EndToEndTest):
