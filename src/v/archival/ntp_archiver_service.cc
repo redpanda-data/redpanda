@@ -713,7 +713,14 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
                 break;
             }
 
-            uploads_remaining -= 1;
+            // Decrement remaining upload count if the last call actually
+            // scheduled an upload.
+            if (!ctx.uploads.empty()) {
+                const auto& last_scheduled = ctx.uploads.back();
+                if (last_scheduled.result.has_value()) {
+                    uploads_remaining -= 1;
+                }
+            }
         }
 
         auto upload_segments_count = std::count_if(
