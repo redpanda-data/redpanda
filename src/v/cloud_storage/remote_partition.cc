@@ -497,7 +497,13 @@ const model::ntp& remote_partition::get_ntp() const {
 }
 
 bool remote_partition::is_data_available() const {
-    return _manifest.size() > 0;
+    // Only advertize data if we have segments _and_ our start offset
+    // corresponds to some data (not if our start_offset points off
+    // the end of the manifest, as a result of a truncation where we
+    // have not yet cleaned out the segments.
+    return _manifest.size() > 0
+           && _manifest.find(_manifest.get_start_offset().value())
+                != _manifest.end();
 }
 
 // returns term last kafka offset
