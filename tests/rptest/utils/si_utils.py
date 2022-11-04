@@ -468,7 +468,7 @@ class S3Snapshot:
     def cloud_log_size_for_ntp(self,
                                topic: str,
                                partition: int,
-                               ns: str = 'kafka') -> dict:
+                               ns: str = 'kafka') -> int:
         manifest = self.manifest_for_ntp(topic, partition, ns)
         return sum(seg_meta['size_bytes']
                    for seg_meta in manifest['segments'].values())
