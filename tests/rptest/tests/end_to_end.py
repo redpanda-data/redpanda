@@ -226,6 +226,9 @@ class EndToEndTest(Test):
                    err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
                    (timeout_sec, min_records))
 
+    def _collect_segment_data(self):
+        self.redpanda.mark_data_dir_for_collection()
+
     def _collect_all_logs(self):
         for s in self.test_context.services:
             self.mark_for_collect(s)

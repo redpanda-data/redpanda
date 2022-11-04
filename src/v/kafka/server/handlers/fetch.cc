@@ -100,11 +100,13 @@ static ss::future<read_result> read_from_partition(
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
-        if (result.record_count > 0) {
+        if (result.first_tx_batch_offset && result.record_count > 0) {
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
             aborted_transactions = co_await part.aborted_transactions(
-              result.base_offset, result.last_offset, std::move(rdr.ot_state));
+              result.first_tx_batch_offset.value(),
+              result.last_offset,
+              std::move(rdr.ot_state));
         }
 
     } catch (...) {

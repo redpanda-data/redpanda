@@ -31,6 +31,13 @@ public:
         uint32_t record_count;
         model::offset base_offset;
         model::offset last_offset;
+        // First batch with the transactional bit set.
+        // We only return aborted transactions from this point on.
+        // This is needed for the correctness of consumption logic for
+        // transactions spanning compacted and non-compacted segments.
+        // For more details, check the details in the commit that added
+        // this.
+        std::optional<model::offset> first_tx_batch_offset;
     };
 
     kafka_batch_serializer() noexcept
@@ -48,6 +55,11 @@ public:
         if (unlikely(record_count_ == 0)) {
             _base_offset = batch.base_offset();
         }
+        if (unlikely(
+              !_first_tx_batch_offset
+              && batch.header().attrs.is_transactional())) {
+            _first_tx_batch_offset = batch.base_offset();
+        }
         _last_offset = batch.last_offset();
         record_count_ += batch.record_count();
         write_batch(std::move(batch));
@@ -61,6 +73,7 @@ public:
           .record_count = record_count_,
           .base_offset = _base_offset,
           .last_offset = _last_offset,
+          .first_tx_batch_offset = _first_tx_batch_offset,
         };
     }
 
@@ -74,6 +87,7 @@ private:
     response_writer _wr;
     model::offset _base_offset;
     model::offset _last_offset;
+    std::optional<model::offset> _first_tx_batch_offset;
     uint32_t record_count_ = 0;
 };
 
