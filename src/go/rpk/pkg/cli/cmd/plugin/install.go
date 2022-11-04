@@ -76,7 +76,7 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				var userAlreadyHas bool
 				installed := plugin.ListPlugins(fs, plugin.UserPaths())
 				for _, p := range installed {
-					if name == p.Name() {
+					if name == p.FullName() {
 						sha, err := plugin.Sha256Path(fs, p.Path)
 						out.MaybeDieErr(err)
 

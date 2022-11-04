@@ -29,7 +29,8 @@ func newUninstallCommand(fs afero.Fs) *cobra.Command {
 
 This command lists locally installed plugins and removes the first plugin that
 matches the requested removal. If --include-shadowed is specified, this command
-also removes all shadowed plugins of the same name.
+also removes all shadowed plugins of the same name. To remove a command under a
+nested namespace ("rpk foo bar"), you can use "foo_bar".
 `,
 
 		Args: cobra.ExactArgs(1),

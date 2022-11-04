@@ -13,6 +13,7 @@ package plugin
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -58,6 +59,9 @@ const (
 // If a plugin filepath is /foo/bar/rpk.ac-baz-boz_biz, then the arguments will
 // be baz-boz biz.
 type Plugin struct {
+	// Name is the original name of the plugin.
+	Name string
+
 	// Path is the path to the plugin binary on disk.
 	Path string
 
@@ -74,22 +78,22 @@ type Plugin struct {
 	Managed bool
 }
 
-// Name returns the name of the plugin, which is simply the plugin's first
-// argument.
-func (p *Plugin) Name() string { return p.Arguments[0] }
+// FullName returns the full name of the plugin, joining the arguments with
+// "_".
+func (p *Plugin) FullName() string { return strings.Join(p.Arguments, "_") }
 
 // Plugins is a handy alias for a slice of plugins.
 type Plugins []Plugin
 
 // Sort sorts a slice of plugins.
 func (ps Plugins) Sort() {
-	sort.Slice(ps, func(i, j int) bool { return ps[i].Name() < ps[j].Name() })
+	sort.Slice(ps, func(i, j int) bool { return ps[i].Name < ps[j].Name })
 }
 
 // Find returns the given plugin if it exists.
 func (ps Plugins) Find(name string) (*Plugin, bool) {
 	for _, p := range ps {
-		if p.Name() == name {
+		if p.FullName() == name {
 			return &p, true
 		}
 	}
@@ -124,19 +128,18 @@ func UserPaths() []string {
 }
 
 // ListPlugins returns all plugins found in fs across the given search
-// directories.
-//
-// Unlike kubectl, we do not allow plugins to be tacked on paths within other
-// plugins. That is, we do not allow rpk_foo_bar to be an additional plugin on
-// top of rpk_foo.
-//
-// We do support plugins defining themselves as "rpk-foo_bar", even though that
-// reserves the "foo" plugin namespace.
+// directories. The returned plugins are ordered by the raw args it
+// would take to execute them: [baz, baz_biz, foo, foo_bar].
 func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 	searchDirs = uniqueTrimmedStrs(searchDirs)
 
 	uniquePlugins := make(map[string]int) // plugin name (e.g., mm3 or cloud) => index into plugins
-	var plugins []Plugin
+
+	type rawNamePlugin struct {
+		Plugin
+		rawName string
+	}
+	var plugins []rawNamePlugin
 	for _, searchDir := range searchDirs {
 		infos, err := afero.ReadDir(fs, searchDir)
 		if err != nil {
@@ -170,26 +173,37 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 			}
 
 			arguments := NameToArgs(name)
-			pluginName := arguments[0]
 
 			fullPath := filepath.Join(searchDir, originalName)
-			priorAt, exists := uniquePlugins[pluginName]
+			priorAt, exists := uniquePlugins[name]
 			if exists {
 				prior := &plugins[priorAt]
 				prior.ShadowedPaths = append(prior.ShadowedPaths, fullPath)
 				continue
 			}
 
-			uniquePlugins[pluginName] = len(plugins)
-			plugins = append(plugins, Plugin{
-				Path:      fullPath,
-				Arguments: arguments,
-				Managed:   managed,
+			uniquePlugins[name] = len(plugins)
+			plugins = append(plugins, rawNamePlugin{
+				Plugin: Plugin{
+					Name:      arguments[0],
+					Path:      fullPath,
+					Arguments: arguments,
+					Managed:   managed,
+				},
+				rawName: name,
 			})
 		}
 	}
 
-	return plugins
+	sort.Slice(plugins, func(i, j int) bool {
+		return plugins[i].rawName < plugins[j].rawName
+	})
+
+	r := make([]Plugin, len(plugins))
+	for i, p := range plugins {
+		r[i] = p.Plugin
+	}
+	return r
 }
 
 // Returns the unique strings in `in`, preserving order.
@@ -246,22 +260,26 @@ func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, autocomplete
 }
 
 // Download downloads a plugin at the given URL and ensures that the shasum of
-// the binary has the given prefix (which can be empty to not check shasum's).
+// the binary is as expected either before or after decompression / untarring.
 //
 // If the url ends in ".gz", this unzips the binary before shasumming. If the
 // url ends in ".tar.gz", this unzips, then untars ONE file, then shasums.
-func Download(ctx context.Context, url, shaPrefix string) ([]byte, error) {
+func Download(ctx context.Context, url, expSha string) ([]byte, error) {
 	cl := httpapi.NewClient(
 		httpapi.HTTPClient(&http.Client{
 			Timeout: 100 * time.Second,
 		}),
 	)
 
-	var plugin io.Reader
-	if err := cl.Get(ctx, url, nil, &plugin); err != nil {
+	var raw []byte
+	if err := cl.Get(ctx, url, nil, &raw); err != nil {
 		return nil, fmt.Errorf("unable to download plugin: %w", err)
 	}
 
+	shasum := sha256.Sum256(raw)
+	shaPre := strings.ToLower(hex.EncodeToString(shasum[:]))
+
+	plugin := io.Reader(bytes.NewReader(raw))
 	if strings.HasSuffix(url, ".gz") {
 		gzr, err := gzip.NewReader(plugin)
 		if err != nil {
@@ -279,18 +297,17 @@ func Download(ctx context.Context, url, shaPrefix string) ([]byte, error) {
 		plugin = untar
 	}
 
-	var raw []byte
 	var err error
 	if raw, err = io.ReadAll(plugin); err != nil {
 		return nil, fmt.Errorf("unable to read plugin: %w", err)
 	}
 
-	shasum := sha256.Sum256(raw)
-	shaGot := strings.ToLower(hex.EncodeToString(shasum[:]))
-	shaPrefix = strings.ToLower(shaPrefix)
+	shasum = sha256.Sum256(raw)
+	shaPost := strings.ToLower(hex.EncodeToString(shasum[:]))
+	expSha = strings.ToLower(expSha)
 
-	if !strings.HasPrefix(shaGot, shaPrefix) {
-		return nil, fmt.Errorf("checksum of plugin does not contain expected prefix (downloaded sha256sum: %s, expected prefix: %s)", shaGot, shaPrefix)
+	if shaPre != expSha && shaPost != expSha {
+		return nil, fmt.Errorf("checksum of plugin before and after decompression does not match expected sha256: before %s, after %s, expected %s", shaPre, shaPost, expSha)
 	}
 
 	return raw, nil

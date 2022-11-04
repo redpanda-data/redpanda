@@ -26,6 +26,7 @@ func TestListPlugins(t *testing.T) {
 		"/bin/.rpk.ac-barely_executable":         {Mode: 0o100, Contents: "also shadowed!"},
 		"/bin/.rpk.ac-auto_completed":            {Mode: 0o777, Contents: ""},
 		"/bin/.rpk.managed-man2":                 {Mode: 0o777, Contents: ""},
+		"/bin/.rpk.managed-man2_nested":          {Mode: 0o777, Contents: ""},
 		"/bin/has/dir/":                          {Mode: 0o777, Contents: ""},
 		"/bin/.rpk.ac-":                          {Mode: 0o777, Contents: "empty name ignored"},
 		"/bin/.rpk-":                             {Mode: 0o777, Contents: "empty name ignored"},
@@ -43,6 +44,12 @@ func TestListPlugins(t *testing.T) {
 
 	exp := Plugins{
 		{
+			Name:      "auto",
+			Path:      "/bin/.rpk.ac-auto_completed",
+			Arguments: []string{"auto", "completed"},
+		},
+		{
+			Name:      "barely",
 			Path:      "/usr/local/sbin/.rpk-barely_executable",
 			Arguments: []string{"barely", "executable"},
 			ShadowedPaths: []string{
@@ -51,12 +58,15 @@ func TestListPlugins(t *testing.T) {
 			},
 		},
 		{
-			Path:      "/bin/.rpk.ac-auto_completed",
-			Arguments: []string{"auto", "completed"},
-		},
-		{
+			Name:      "man2",
 			Path:      "/bin/.rpk.managed-man2",
 			Arguments: []string{"man2"},
+			Managed:   true,
+		},
+		{
+			Name:      "man2",
+			Path:      "/bin/.rpk.managed-man2_nested",
+			Arguments: []string{"man2", "nested"},
 			Managed:   true,
 		},
 	}
