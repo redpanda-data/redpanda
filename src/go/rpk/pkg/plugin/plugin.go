@@ -94,6 +94,16 @@ func IsManaged(name string) bool {
 	return calcName(name).managed
 }
 
+// IsSamePluginPath returns true if an old plugin path is the "same" as a new
+// plugin path. Two paths are the same if they live in the same directory and
+// have the same non-prefix name. The prefix is ignored.
+func IsSamePluginPath(oldPath, newPath string) bool {
+	ldir, rdir := filepath.Dir(oldPath), filepath.Dir(newPath)
+	lbase, rbase := filepath.Base(oldPath), filepath.Base(newPath)
+	l, r := calcName(lbase), calcName(rbase)
+	return ldir == rdir && l.rest == r.rest
+}
+
 // Plugin groups information about a plugin's location on disk with the
 // arguments to call the plugin.
 //

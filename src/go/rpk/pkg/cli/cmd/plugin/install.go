@@ -50,13 +50,19 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				out.MaybeDieErr(err)
 			}
 
+			installed := plugin.ListPlugins(fs, plugin.UserPaths())
+
 			name := args[0]
 			var (
 				autoComplete bool
 				body         []byte
 				err          error
+
+				remoteSha string
 			)
 			if len(version) > 0 {
+				// We do not use sha's for this temporary
+				// direct download path.
 				body, err = tryDirectDownload(name, version)
 				if err != nil {
 					log.Debugf("unable to download: %v", err)
@@ -70,11 +76,10 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				p, err := m.FindEntry(name)
 				out.MaybeDieErr(err)
 
-				_, remoteSha, err := p.PathShaForUser()
+				_, remoteSha, err = p.PathShaForUser()
 				out.MaybeDieErr(err)
 
 				var userAlreadyHas bool
-				installed := plugin.ListPlugins(fs, plugin.UserPaths())
 				for _, p := range installed {
 					if name == p.FullName() {
 						sha, err := plugin.Sha256Path(fs, p.Path)
@@ -107,8 +112,19 @@ Remote sha256: %s
 			}
 
 			fmt.Println("Downloaded! Writing plugin to disk...")
-			dst, err := plugin.WriteBinary(fs, name, dir, body, "", autoComplete, false)
+			dst, err := plugin.WriteBinary(fs, name, dir, body, remoteSha, autoComplete, false)
 			out.MaybeDieErr(err)
+
+			// If we add shas to filenames, then writing our binary
+			// likely will not replace the old plugin. So, if the
+			// old plugin exists, the path is *not* equal to the
+			// new path, but this is technically the same "plugin
+			// path", we remove the old plugin manually.
+			if old, exists := installed.Find(name); exists && old.Path != dst && plugin.IsSamePluginPath(old.Path, dst) {
+				if err := os.Remove(old.Path); err != nil {
+					fmt.Printf("Unable to remove old plugin at %q: %v\n", old.Path, err)
+				}
+			}
 
 			fmt.Printf("Success! Plugin %q has been saved to %q and is now ready to use!\n", name, dst)
 
