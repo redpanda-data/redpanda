@@ -45,9 +45,9 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                 # (https://github.com/redpanda-data/redpanda/issues/5004)
                 # self.redpanda.decode_backtraces()
 
-                self.redpanda.raise_on_crash()
-
                 self.redpanda.cloud_storage_diagnostics()
+
+                self.redpanda.raise_on_crash()
 
                 raise
             else:
