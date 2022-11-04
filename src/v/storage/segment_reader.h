@@ -220,6 +220,8 @@ private:
     // The file position upto which the last segment will be read.
     size_t _end_pos;
     ss::io_priority_class _priority_class;
+
+    ss::gate _gate;
 };
 
 /**

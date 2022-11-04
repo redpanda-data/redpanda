@@ -270,6 +270,7 @@ concat_segment_data_source_impl::concat_segment_data_source_impl(
   , _priority_class{priority_class} {}
 
 ss::future<ss::temporary_buffer<char>> concat_segment_data_source_impl::get() {
+    ss::gate::holder guard{_gate};
     if (!_current_stream) {
         _current_stream = co_await next_stream();
     }
@@ -315,6 +316,7 @@ concat_segment_data_source_impl::next_stream() {
 }
 
 ss::future<> concat_segment_data_source_impl::close() {
+    co_await _gate.close();
     if (_current_handle) {
         co_return co_await _current_handle->close();
     }
