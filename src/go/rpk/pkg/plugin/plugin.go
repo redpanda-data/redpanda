@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,22 +34,65 @@ import (
 )
 
 const (
-	// NamePrefix is the expected prefix of the basename of plugins that do
-	// not support the --help-autocomplete flag.
-	NamePrefix = ".rpk-"
-
-	// NamePrefixAutoComplete is the expected prefix of the basename of
-	// plugins that support the --help-autocomplete flag.
-	NamePrefixAutoComplete = ".rpk.ac-"
-
-	// NamePrefixManaged is the expected prefix of the basename of plugins
-	// that are managed by rpk itself (rpk cloud byoc).
-	NamePrefixManaged = ".rpk.managed-"
+	// FilenameSHALength is how long of a SHA we save into files.
+	FilenameSHALength = 20
 
 	// FlagAutoComplete is the expected flag if a plugin has the rpk.ac-
 	// name prefix.
 	FlagAutoComplete = "--help-autocomplete"
 )
+
+type pluginName struct {
+	sha          string
+	autocomplete bool
+	managed      bool
+	isPlugin     bool
+	rest         string
+}
+
+func (p pluginName) filename() string {
+	name := ".rpk"
+	if len(p.sha) >= FilenameSHALength {
+		name += "." + p.sha[:FilenameSHALength]
+	}
+	if p.autocomplete {
+		name += ".ac"
+	} else if p.managed {
+		name += ".managed"
+	}
+	name += "-" + p.rest
+	return name
+}
+
+// 0: whole match
+// 1: sha, if present, 1 to 64 characters; note we save with 20; 10 characters at least to not conflict with "managed"
+// 2: ".managed" or ".ac", if present
+// 3: rest of the name
+var reName = regexp.MustCompile(`^.rpk(?:\.([a-z0-9]{10,64}))?(\.ac|\.managed)?-(.+)`)
+
+func calcName(name string) pluginName {
+	m := reName.FindStringSubmatch(name)
+	if len(m) == 0 {
+		return pluginName{}
+	}
+	return pluginName{
+		isPlugin:     true,
+		sha:          m[1],
+		autocomplete: m[2] == ".ac",
+		managed:      m[2] == ".managed",
+		rest:         m[3],
+	}
+}
+
+// IsAutoComplete returns whether the given name is an autocomplete plugin.
+func IsAutoComplete(name string) bool {
+	return calcName(name).autocomplete
+}
+
+// IsManaged returns whether the given name is a managed plugin.
+func IsManaged(name string) bool {
+	return calcName(name).managed
+}
 
 // Plugin groups information about a plugin's location on disk with the
 // arguments to call the plugin.
@@ -76,6 +120,12 @@ type Plugin struct {
 	// Managed returns whether this is an rpk internally managed plugin
 	// and should not auto-install any help.
 	Managed bool
+
+	// FilenameSHA is the bit of the sha256sum encoded into the filename.
+	// This can be used for fast version comparisons if the plugin is
+	// the correct version, and is required if the original sha256sum
+	// was calculated after compression / etc.
+	FilenameSHA string
 }
 
 // FullName returns the full name of the plugin, joining the arguments with
@@ -150,47 +200,34 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 				continue
 			}
 
-			name := info.Name()
-			originalName := name
-			var managed bool
-
-			switch {
-			case strings.HasPrefix(name, NamePrefix):
-				name = strings.TrimPrefix(name, NamePrefix)
-			case strings.HasPrefix(name, NamePrefixAutoComplete):
-				name = strings.TrimPrefix(name, NamePrefixAutoComplete)
-			case strings.HasPrefix(name, NamePrefixManaged):
-				name = strings.TrimPrefix(name, NamePrefixManaged)
-				managed = true
-			default:
-				continue // missing required name prefix; skip
-			}
-			if len(name) == 0 { // e.g., ".rpk-"
+			name := calcName(info.Name())
+			if !name.isPlugin {
 				continue
 			}
 			if info.Mode()&0o111 == 0 {
 				continue // not executable; skip
 			}
 
-			arguments := NameToArgs(name)
+			arguments := NameToArgs(name.rest)
 
-			fullPath := filepath.Join(searchDir, originalName)
-			priorAt, exists := uniquePlugins[name]
+			fullPath := filepath.Join(searchDir, info.Name())
+			priorAt, exists := uniquePlugins[name.rest]
 			if exists {
 				prior := &plugins[priorAt]
 				prior.ShadowedPaths = append(prior.ShadowedPaths, fullPath)
 				continue
 			}
 
-			uniquePlugins[name] = len(plugins)
+			uniquePlugins[name.rest] = len(plugins)
 			plugins = append(plugins, rawNamePlugin{
 				Plugin: Plugin{
-					Name:      arguments[0],
-					Path:      fullPath,
-					Arguments: arguments,
-					Managed:   managed,
+					Name:        arguments[0],
+					Path:        fullPath,
+					Arguments:   arguments,
+					Managed:     name.managed,
+					FilenameSHA: name.sha,
 				},
-				rawName: name,
+				rawName: name.rest,
 			})
 		}
 	}
@@ -248,13 +285,14 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 // This returns the filepath that was written, or an error if any step of the
 // process fails. If the process fails after the binary has been written to a
 // temporary directory, the file is left on disk for user inspection.
-func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, autocomplete, managed bool) (string, error) {
-	dstBase := NamePrefix + name
-	if autocomplete {
-		dstBase = NamePrefixAutoComplete + name
-	} else if managed {
-		dstBase = NamePrefixManaged + name
-	}
+func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, sha string, autocomplete, managed bool) (string, error) {
+	dstBase := (pluginName{
+		sha:          sha,
+		autocomplete: autocomplete,
+		managed:      managed,
+		isPlugin:     true,
+		rest:         name,
+	}).filename()
 	dst := filepath.Join(dstDir, dstBase)
 	return dst, rpkos.ReplaceFile(fs, dst, contents, 0o755)
 }

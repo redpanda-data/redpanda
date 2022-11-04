@@ -205,7 +205,7 @@ func addPluginWithExec(
 	// commands installed yet: managed commands receive additional logic in
 	// the autocompletion step.
 	base := filepath.Base(execPath)
-	if !strings.HasPrefix(base, plugin.NamePrefixAutoComplete) && !strings.HasPrefix(base, plugin.NamePrefixManaged) {
+	if !plugin.IsAutoComplete(base) && !plugin.IsManaged(base) {
 		return
 	}
 

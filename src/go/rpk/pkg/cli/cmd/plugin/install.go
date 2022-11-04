@@ -107,7 +107,7 @@ Remote sha256: %s
 			}
 
 			fmt.Println("Downloaded! Writing plugin to disk...")
-			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete, false)
+			dst, err := plugin.WriteBinary(fs, name, dir, body, "", autoComplete, false)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Success! Plugin %q has been saved to %q and is now ready to use!\n", name, dst)
