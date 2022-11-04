@@ -282,7 +282,8 @@ void materialized_segments::maybe_trim_segment(
         // enqueue it for eviction.
         vlog(
           cst_log.debug,
-          "Materialized segment with base offset {} is stale",
+          "Materialized segment {} offset {} is stale",
+          st.ntp(),
           st.offset_key);
         // this will delete and unlink the object from
         // _materialized collection
@@ -293,7 +294,10 @@ void materialized_segments::maybe_trim_segment(
             // is only instantiated by remote_partition and will
             // be disposed before the remote_partition it points to.
             vassert(
-              false, "materialized_segment_state outlived remote_partition");
+              false,
+              "materialized_segment_state outlived remote_partition (offset "
+              "{})",
+              st.offset_key);
         }
     } else {
         // We would like to trim this segment, but cannot right now
