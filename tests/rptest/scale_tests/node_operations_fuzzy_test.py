@@ -354,6 +354,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 decommission(idx)
 
         enable_failures = False
+        finjector_thread.join()
         admin_fuzz.wait(20, 180)
         admin_fuzz.stop()
         self.run_validation(min_records=self.min_produced_records,
