@@ -85,22 +85,24 @@ class ShutdownTest(EndToEndTest):
         # Inject failures in the background.
         self.background_failures = threading.Thread(
             target=pause_non_leader_node, args=(), daemon=True)
-        self.background_failures.start()
-        pending_attempts = 5
-        while pending_attempts != 0:
-            # Pick the current leader and restart it, repeat
-            leader = wait_until_result(
-                lambda: checked_get_leader(),
-                timeout_sec=30,
-                backoff_sec=2,
-                err_msg=f"Leader not found for ntp: {self.topic}/0")
+        try:
+            self.background_failures.start()
+            pending_attempts = 5
+            while pending_attempts != 0:
+                # Pick the current leader and restart it, repeat
+                leader = wait_until_result(
+                    lambda: checked_get_leader(),
+                    timeout_sec=30,
+                    backoff_sec=2,
+                    err_msg=f"Leader not found for ntp: {self.topic}/0")
 
-            assert leader
-            self.redpanda.logger.info(
-                f"Restarting leader node {leader.account.hostname}")
-            self.redpanda.restart_nodes(leader)
-            pending_attempts -= 1
-
-        # Stop the finjector
-        self.stopped = True
-        self.producer.stop()
+                assert leader
+                self.redpanda.logger.info(
+                    f"Restarting leader node {leader.account.hostname}")
+                self.redpanda.restart_nodes(leader)
+                pending_attempts -= 1
+        finally:
+            # Stop the finjector
+            self.stopped = True
+            self.background_failures.join()
+            self.producer.stop()
