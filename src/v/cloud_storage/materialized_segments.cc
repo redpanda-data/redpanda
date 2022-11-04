@@ -113,6 +113,22 @@ void materialized_segments::evict_segment(
     _cvar.signal();
 }
 
+ss::future<> materialized_segments::flush_evicted() {
+    if (_eviction_list.empty()) {
+        // Fast path, avoid waking up the eviction loop if there is no work.
+        co_return;
+    }
+
+    auto barrier = ss::make_lw_shared<eviction_barrier>();
+
+    // Write a barrier to the list and wait for the eviction consumer
+    // to reach it: this
+    _eviction_list.push_back(barrier);
+    _cvar.signal();
+
+    co_await barrier->promise.get_future();
+}
+
 ss::future<> materialized_segments::run_eviction_loop() {
     // Evict readers asynchronously
     while (true) {
