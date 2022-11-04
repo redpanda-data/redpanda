@@ -144,7 +144,8 @@ archival_policy::lookup_result archival_policy::find_segment(
 
     if (!closed) {
         auto kafka_start_offset = ot_state.from_log_offset(start_offset);
-        auto kafka_lso = ot_state.from_log_offset(adjusted_lso);
+        auto kafka_lso = ot_state.from_log_offset(
+          model::next_offset(adjusted_lso));
         if (kafka_start_offset >= kafka_lso) {
             // If timeboxed uploads are enabled and there is no producer
             // activity, we can get into a nasty loop where we upload a segment,

@@ -249,18 +249,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 // NOLINTNEXTLINE
 SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     storage::disk_log_builder b;
-    b | storage::start(manifest_ntp) | storage::add_segment(model::offset{0})
-      | storage::add_random_batch(
-        model::offset{0},
-        1,
-        storage::maybe_compress_batches::no,
-        model::record_batch_type::raft_configuration)
-      | storage::add_random_batch(model::offset{1}, 10)
-      | storage::add_random_batch(
-        model::offset{11},
-        3,
-        storage::maybe_compress_batches::no,
-        model::record_batch_type::archival_metadata);
+    b | storage::start(manifest_ntp);
 
     archival::archival_policy policy(manifest_ntp, segment_time_limit{0s});
 
@@ -273,36 +262,107 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
       manifest_ntp,
       b.storage());
     tr.start(raft::offset_translator::must_reset::yes, {}).get();
-    tr.sync_with_log(log, std::nullopt).get();
     const auto& tr_state = *tr.state();
 
+    // first offset that is not yet uploaded
     auto start_offset = model::offset{0};
-    auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
-    auto upload1 = policy
+
+    auto get_next_upload = [&]() {
+        auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
+        auto ret = policy
                      .get_next_candidate(
                        start_offset, last_stable_offset, log, tr_state)
                      .get();
-    BOOST_REQUIRE(upload1.source);
-    BOOST_REQUIRE_EQUAL(upload1.exposed_name, "0-0-v1.log");
-    BOOST_REQUIRE_EQUAL(upload1.starting_offset, start_offset);
-    BOOST_REQUIRE_EQUAL(upload1.final_offset, log.offsets().dirty_offset);
+        if (ret.source) {
+            start_offset = ret.final_offset + model::offset{1};
+        }
+        return ret;
+    };
 
+    // configuration[0-0] + data[1-10] + archival_metadata[11-13]
+    b | storage::add_segment(model::offset{0})
+      | storage::add_random_batch(
+        model::offset{0},
+        1,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::raft_configuration)
+      | storage::add_random_batch(model::offset{1}, 10)
+      | storage::add_random_batch(
+        model::offset{11},
+        3,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::archival_metadata);
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{13});
+    tr.sync_with_log(log, std::nullopt).get();
+
+    // should upload [0-13]
+    {
+        auto upload = get_next_upload();
+        BOOST_REQUIRE(upload.source);
+        BOOST_REQUIRE_EQUAL(upload.exposed_name, "0-0-v1.log");
+        BOOST_REQUIRE_EQUAL(upload.starting_offset, model::offset{0});
+        BOOST_REQUIRE_EQUAL(upload.final_offset, model::offset{13});
+    }
+
+    // data[14-14]
+    b | storage::add_random_batch(model::offset{14}, 1);
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{14});
+    tr.sync_with_log(log, std::nullopt).get();
+
+    // should upload [14-14]
+    {
+        auto upload = get_next_upload();
+        BOOST_REQUIRE(upload.source);
+        BOOST_REQUIRE_EQUAL(upload.exposed_name, "14-0-v1.log");
+        BOOST_REQUIRE_EQUAL(upload.starting_offset, model::offset{14});
+        BOOST_REQUIRE_EQUAL(upload.final_offset, model::offset{14});
+    }
+
+    // archival_metadata[15-16]
     b
       | storage::add_random_batch(
-        model::offset{14},
+        model::offset{15},
         2,
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
-
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{16});
     tr.sync_with_log(log, std::nullopt).get();
 
-    start_offset = upload1.final_offset + model::offset{1};
-    last_stable_offset = log.offsets().dirty_offset + model::offset{1};
-    auto upload2 = policy
-                     .get_next_candidate(
-                       start_offset, last_stable_offset, log, tr_state)
-                     .get();
-    BOOST_REQUIRE(!upload2.source);
+    // should skip uploading because there are no data batches to upload
+    {
+        auto upload = get_next_upload();
+        BOOST_REQUIRE(!upload.source);
+    }
+
+    // data[17-17]
+    b | storage::add_random_batch(model::offset{17}, 1);
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{17});
+    tr.sync_with_log(log, std::nullopt).get();
+
+    // should upload [15-17]
+    {
+        auto upload = get_next_upload();
+        BOOST_REQUIRE(upload.source);
+        BOOST_REQUIRE_EQUAL(upload.exposed_name, "15-0-v1.log");
+        BOOST_REQUIRE_EQUAL(upload.starting_offset, model::offset{15});
+        BOOST_REQUIRE_EQUAL(upload.final_offset, model::offset{17});
+    }
+
+    // archival_metadata[18-18]
+    b
+      | storage::add_random_batch(
+        model::offset{18},
+        1,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::archival_metadata);
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{18});
+    tr.sync_with_log(log, std::nullopt).get();
+
+    // should skip uploading because there are no data batches to upload
+    {
+        auto upload6 = get_next_upload();
+        BOOST_REQUIRE(!upload6.source);
+    }
 
     b.stop().get();
 }
