@@ -118,13 +118,15 @@ private:
     ss::future<std::error_code> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
-    ss::future<std::error_code> maybe_refresh_cluster_health(
-      force_refresh, model::timeout_clock::time_point);
+    ss::future<std::pair<refreshed_metadata, std::error_code>>
+      maybe_refresh_cluster_health(
+        force_refresh, model::timeout_clock::time_point);
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
     ss::future<std::error_code>
       dispatch_refresh_cluster_health_request(model::node_id);
 
-    cluster_health_report build_cluster_report(const cluster_report_filter&);
+    cluster_health_report
+    build_cluster_report(const cluster_report_filter&, refreshed_metadata);
 
     std::optional<node_health_report>
     build_node_report(model::node_id, const node_report_filter&);
