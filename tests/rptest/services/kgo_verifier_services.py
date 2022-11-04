@@ -507,7 +507,8 @@ class ProduceStatus:
                  bad_offsets=0,
                  restarts=0,
                  latency=None,
-                 active=False):
+                 active=False,
+                 failed_transactions=0):
         self.sent = sent
         self.acked = acked
         self.bad_offsets = bad_offsets
@@ -516,10 +517,11 @@ class ProduceStatus:
             latency = {'p50': 0, 'p90': 0, 'p99': 0}
         self.latency = latency
         self.active = active
+        self.failed_transactions = failed_transactions
 
     def __str__(self):
         l = self.latency
-        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {l['p50']}/{l['p90']}/{l['p99']}>"
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {l['p50']}/{l['p90']}/{l['p99']}>"
 
 
 class KgoVerifierProducer(KgoVerifierService):
@@ -532,7 +534,10 @@ class KgoVerifierProducer(KgoVerifierService):
                  custom_node=None,
                  batch_max_bytes=None,
                  debug_logs=False,
-                 fake_timestamp_ms=None):
+                 fake_timestamp_ms=None,
+                 use_transactions=False,
+                 transaction_abort_rate=None,
+                 msgs_per_transaction=None):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
                              debug_logs)
@@ -540,6 +545,9 @@ class KgoVerifierProducer(KgoVerifierService):
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
         self._fake_timestamp_ms = fake_timestamp_ms
+        self._use_transactions = use_transactions
+        self._transaction_abort_rate = transaction_abort_rate
+        self._msgs_per_transaction = msgs_per_transaction
 
     @property
     def produce_status(self):
@@ -588,6 +596,15 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._fake_timestamp_ms is not None:
             cmd = cmd + f' --fake-timestamp-ms {self._fake_timestamp_ms}'
+
+        if self._use_transactions:
+            cmd = cmd + f' --use-transactions'
+
+            if self._msgs_per_transaction is not None:
+                cmd = cmd + f' --msgs-per-transaction {self._msgs_per_transaction}'
+
+            if self._transaction_abort_rate is not None:
+                cmd = cmd + f' --transaction-abort-rate {self._transaction_abort_rate}'
 
         self.spawn(cmd, node)
 
