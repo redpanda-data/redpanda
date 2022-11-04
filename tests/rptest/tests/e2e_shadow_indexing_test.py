@@ -13,6 +13,7 @@ from ducktape.mark import ok_to_fail
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -278,17 +279,8 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
                                str(self.segment_size))
 
     @cluster(num_nodes=8)
+    @skip_debug_mode
     def test_create_or_delete_topics_while_busy(self):
-        self.logger.info(f"Environment: {os.environ}")
-        if self.debug_mode:
-            # Trigger node allocation to avoid test failure on asking for
-            # more nodes than it used.
-            _ = self.preallocated_nodes
-
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
-
         # 100k messages of size 2**18
         # is ~24GB of data. 500k messages
         # of size 2**19 is ~244GB of data.
