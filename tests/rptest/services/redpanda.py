@@ -761,12 +761,12 @@ class RedpandaService(Service):
                 return int(line.split()[2])
         assert False, "couldn't parse df output"
 
-    def _for_nodes(self, nodes, cb: callable, *, parallel: bool):
+    def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
         if not parallel:
             # Trivial case: just loop and call
             for n in nodes:
                 cb(n)
-            return
+            return list(map(cb, nodes))
 
         n_workers = len(nodes)
         if n_workers > 0:
@@ -774,7 +774,9 @@ class RedpandaService(Service):
                     max_workers=n_workers) as executor:
                 # The list() wrapper is to cause futures to be evaluated here+now
                 # (including throwing any exceptions) and not just spawned in background.
-                list(executor.map(cb, nodes))
+                return list(executor.map(cb, nodes))
+        else:
+            return []
 
     def _startup_poll_interval(self, first_start):
         """
