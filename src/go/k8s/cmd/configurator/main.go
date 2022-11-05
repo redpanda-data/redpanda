@@ -23,7 +23,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,11 +108,15 @@ func main() {
 
 	log.Print(c.String())
 
-	fs := afero.NewOsFs()
-	p := config.Params{ConfigPath: path.Join(c.configSourceDir, "redpanda.yaml")}
-	cfg, err := p.Load(fs)
+	p := path.Join(c.configSourceDir, "redpanda.yaml")
+	cf, err := os.ReadFile(p)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file, %q: %w", p, err))
+	}
+	cfg := &config.Config{}
+	err = yaml.Unmarshal(cf, cfg)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to parse the redpanda configuration file, %q: %w", p, err))
 	}
 
 	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
