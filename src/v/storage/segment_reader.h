@@ -204,7 +204,7 @@ private:
     /**
      * Switches over to the next segment, if the current segment is depleted.
      */
-    ss::future<ss::input_stream<char>> next_stream();
+    ss::future<> next_stream();
 
 private:
     using segment_seq = std::vector<ss::lw_shared_ptr<segment>>;
@@ -222,6 +222,7 @@ private:
     ss::io_priority_class _priority_class;
 
     ss::gate _gate;
+    ss::sstring _name;
 };
 
 /**
