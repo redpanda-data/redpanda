@@ -10,22 +10,14 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPopulateRack(t *testing.T) {
-	fs := afero.NewOsFs()
-	p := config.Params{ConfigPath: ""}
-	cfg, err := p.Load(fs)
-	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
-	}
+	cfg := &config.Config{}
 	tests := []struct {
 		Zone         string
 		ZoneID       string
