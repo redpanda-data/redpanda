@@ -190,7 +190,7 @@ class RetentionPolicyTest(RedpandaTest):
         validate_time_query_until_deleted()
 
 
-class ShadowIndexingRetentionTest(RedpandaTest):
+class ShadowIndexingLocalRetentionTest(RedpandaTest):
     segment_size = 1000000  # 1MB
     default_retention_segments = 2
     retention_segments = 4
@@ -203,7 +203,7 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                              default_retention_segments * self.segment_size)
 
         si_settings = SISettings(log_segment_size=self.segment_size)
-        super(ShadowIndexingRetentionTest,
+        super(ShadowIndexingLocalRetentionTest,
               self).__init__(test_context=test_context,
                              num_brokers=1,
                              si_settings=si_settings,
@@ -340,7 +340,25 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg=f"Segments were not removed")
 
-    @cluster(num_nodes=1)
+
+class ShadowIndexingCloudRetentionTest(RedpandaTest):
+    segment_size = 1000000  # 1MB
+    topic_name = "si_test_topic"
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(log_compaction_interval_ms=1000)
+
+        si_settings = SISettings(log_segment_size=self.segment_size)
+        super(ShadowIndexingCloudRetentionTest,
+              self).__init__(test_context=test_context,
+                             si_settings=si_settings,
+                             extra_rp_conf=extra_rp_conf,
+                             log_level="trace")
+
+        self.rpk = RpkTool(self.redpanda)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+    @cluster(num_nodes=3)
     def test_cloud_retention_deleted_segments_count(self):
         """
         Test that retention deletes the right number of segments. The test sets the
@@ -387,7 +405,7 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg=f"Segments were not removed from the cloud")
 
-    @cluster(num_nodes=1)
+    @cluster(num_nodes=3)
     def test_cloud_size_based_retention(self):
         """
         Test that retention is enforced in the cloud log by checking
@@ -398,7 +416,7 @@ class ShadowIndexingRetentionTest(RedpandaTest):
 
         topic = TopicSpec(name=self.topic_name,
                           partition_count=1,
-                          replication_factor=1,
+                          replication_factor=3,
                           cleanup_policy=TopicSpec.CLEANUP_DELETE)
 
         self.redpanda.set_cluster_config(
@@ -444,6 +462,75 @@ class ShadowIndexingRetentionTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
+
+    @cluster(num_nodes=3)
+    def test_cloud_time_based_retention(self):
+        """
+        Test that retention is enforced in the cloud log by checking
+        the total size of segments in the manifest. The test steps are:
+        1. Produce a fixed number of bytes to a partition
+        2. Get the local segment count
+        3. Wait until the number of segments in the cloud is the same as locally
+        4. Set a short 'retention.ms' period for the topic
+        5. Wait for all segments to be deleted from the cloud
+        """
+        total_bytes = 20 * self.segment_size
+
+        topic = TopicSpec(name=self.topic_name,
+                          partition_count=1,
+                          replication_factor=3,
+                          cleanup_policy=TopicSpec.CLEANUP_DELETE)
+
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_enable_remote_write": True,
+                "cloud_storage_housekeeping_interval_ms": 100
+            },
+            expect_restart=True)
+
+        self.rpk.create_topic(topic=topic.name,
+                              partitions=topic.partition_count,
+                              replicas=topic.replication_factor,
+                              config={
+                                  "cleanup.policy": topic.cleanup_policy,
+                              })
+
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=total_bytes)
+
+        def cloud_log_segment_count() -> int:
+            s3_snapshot = S3Snapshot([topic], self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
+            count = s3_snapshot.cloud_log_segment_count_for_ntp(topic.name, 0)
+            self.logger.debug(
+                f"Current count of segments in manifest is: {count}")
+            return count
+
+        local_seg_count = len(
+            self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", topic.name, 0))
+
+        self.logger.info(
+            f"Waiting for {local_seg_count - 1} segments to be uploaded to the cloud"
+        )
+        # Wait for everything to be uploaded to the cloud.
+        wait_until(lambda: cloud_log_segment_count() == local_seg_count - 1,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg=f"Segments not uploaded")
+
+        # Alter the topic's retention.ms config to trigger removal of
+        # all segments in the cloud.
+        self.client().alter_topic_configs(
+            topic.name, {TopicSpec.PROPERTY_RETENTION_TIME: 10})
+
+        # Check that all segments have been removed
+        wait_until(lambda: cloud_log_segment_count() == 0,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg=f"Not all segments were removed from the cloud")
 
     @cluster(num_nodes=1)
     def test_cloud_size_based_retention_application(self):
