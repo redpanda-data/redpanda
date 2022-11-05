@@ -27,6 +27,7 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 
 namespace pandaproxy::rest {
@@ -135,6 +136,9 @@ kafka::client::configuration& proxy::client_config() {
 }
 
 ss::future<> proxy::do_start() {
+    if (_is_started) {
+        co_return;
+    }
     auto guard = gate_guard(_gate);
     try {
         co_await configure();
@@ -146,6 +150,8 @@ ss::future<> proxy::do_start() {
           std::current_exception());
         throw;
     }
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [](proxy& p) { p._is_started = true; });
 }
 
 ss::future<> proxy::configure() {
@@ -157,7 +163,11 @@ ss::future<> proxy::configure() {
     co_await set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
-    _has_ephemeral_credentials = store.has(store.find(principal));
+    bool has_ephemeral_credentials = store.has(store.find(principal));
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [has_ephemeral_credentials](proxy& p) {
+          p._has_ephemeral_credentials = has_ephemeral_credentials;
+      });
 
     security::acl_entry acl_entry{
       principal,
@@ -182,6 +192,10 @@ ss::future<> proxy::configure() {
 }
 
 ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
+    if (_gate.is_closed()) {
+        // Return so that the client doesn't try to mitigate.
+        return ss::now();
+    }
     vlog(plog.debug, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr).handle_exception_type(
       [this, eptr](kafka::client::broker_error const& ex) {
@@ -200,21 +214,22 @@ ss::future<> proxy::mitigate_error(std::exception_ptr eptr) {
 
 ss::future<> proxy::inform(model::node_id id) {
     vlog(plog.trace, "inform: {}", id);
-    const auto do_inform = [this](model::node_id n) -> ss::future<> {
-        auto& fe = _controller->get_ephemeral_credential_frontend().local();
-        auto ec = co_await fe.inform(n, principal);
-        vlog(plog.info, "Informed: broker: {}, ec: {}", n, ec);
-    };
 
     // Inform a particular node
     if (id != kafka::client::unknown_node_id) {
-        co_return co_await do_inform(id);
+        return do_inform(id);
     }
 
     // Inform all nodes
-    co_await seastar::parallel_for_each(
+    return seastar::parallel_for_each(
       _controller->get_members_table().local().all_broker_ids(),
-      [do_inform](model::node_id n) { return do_inform(n); });
+      [this](model::node_id id) { return do_inform(id); });
+}
+
+ss::future<> proxy::do_inform(model::node_id id) {
+    auto& fe = _controller->get_ephemeral_credential_frontend().local();
+    auto ec = co_await fe.inform(id, principal);
+    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 } // namespace pandaproxy::rest

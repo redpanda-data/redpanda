@@ -1740,6 +1740,9 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
+        self.logger.info(
+            f"self.render: hasattr(self, 'template_env'): {hasattr(self, 'template_env')}"
+        )
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,

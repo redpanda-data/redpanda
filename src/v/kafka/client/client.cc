@@ -144,6 +144,7 @@ ss::future<> client::apply(metadata_response res) {
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return _external_mitigate(ex).handle_exception(
       [this](std::exception_ptr ex) {
+          _gate.check();
           try {
               std::rethrow_exception(ex);
           } catch (const broker_error& ex) {

@@ -145,11 +145,13 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
 }
 
 ss::future<> service::do_start() {
+    if (_is_started) {
+        co_return;
+    }
     auto guard = gate_guard(_gate);
     try {
         co_await configure();
         co_await create_internal_topic();
-        co_await fetch_internal_topic();
         vlog(plog.info, "Schema registry successfully initialized");
     } catch (...) {
         vlog(
@@ -158,6 +160,10 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
+    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
+        s._is_started = true;
+        return s.fetch_internal_topic();
+    });
 }
 
 ss::future<> service::configure() {
@@ -169,8 +175,11 @@ ss::future<> service::configure() {
     co_await set_client_credentials(*config, _client);
 
     auto const& store = _controller->get_ephemeral_credential_store().local();
-    _has_ephemeral_credentials = store.has(store.find(principal));
-
+    bool has_ephemeral_credentials = store.has(store.find(principal));
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
+          s._has_ephemeral_credentials = has_ephemeral_credentials;
+      });
     co_await _controller->get_security_frontend().local().create_acls(
       {security::acl_binding{
         security::resource_pattern{
@@ -186,6 +195,10 @@ ss::future<> service::configure() {
 }
 
 ss::future<> service::mitigate_error(std::exception_ptr eptr) {
+    if (_gate.is_closed()) {
+        // Return so that the client doesn't try to mitigate.
+        return ss::now();
+    }
     vlog(plog.warn, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr).handle_exception_type(
       [this, eptr](kafka::client::broker_error const& ex) {
@@ -203,22 +216,23 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
 }
 
 ss::future<> service::inform(model::node_id id) {
-    vlog(plog.warn, "inform: {}", id);
-    const auto do_inform = [this](model::node_id n) -> ss::future<> {
-        auto& fe = _controller->get_ephemeral_credential_frontend().local();
-        auto ec = co_await fe.inform(n, principal);
-        vlog(plog.warn, "Informed: broker: {}, ec: {}", n, ec);
-    };
+    vlog(plog.trace, "inform: {}", id);
 
     // Inform a particular node
     if (id != kafka::client::unknown_node_id) {
-        co_return co_await do_inform(id);
+        return do_inform(id);
     }
 
     // Inform all nodes
-    co_await ss::coroutine::parallel_for_each(
+    return seastar::parallel_for_each(
       _controller->get_members_table().local().all_broker_ids(),
-      [do_inform](model::node_id n) { return do_inform(n); });
+      [this](model::node_id id) { return do_inform(id); });
+}
+
+ss::future<> service::do_inform(model::node_id id) {
+    auto& fe = _controller->get_ephemeral_credential_frontend().local();
+    auto ec = co_await fe.inform(id, principal);
+    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 ss::future<> service::create_internal_topic() {

@@ -20,7 +20,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, LoggingConfig
 from rptest.services.admin import Admin
 from typing import Optional, List, Dict, Union
 
@@ -88,6 +88,13 @@ HTTP_CONSUMER_SET_OFFSETS_HEADERS = {
     "Accept": "application/vnd.kafka.v2+json",
     "Content-Type": "application/vnd.kafka.v2+json"
 }
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'security': 'trace',
+                               'pandaproxy': 'trace',
+                               'kafka/client': 'trace'
+                           })
 
 
 class Consumer:
@@ -180,10 +187,18 @@ class PandaProxyEndpoints(RedpandaTest):
             num_brokers=3,
             enable_pp=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
+            log_config=log_config,
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
+
+    def _get_kafka_cli_tools(self):
+        sasl_enabled = self.redpanda.sasl_enabled()
+        cfg = self.redpanda.security_config() if sasl_enabled else {}
+        return KafkaCliTools(self.redpanda,
+                             user=cfg.get('sasl_plain_username'),
+                             passwd=cfg.get('sasl_plain_password'))
 
     def _base_uri(self, hostname=None):
         hostname = hostname if hostname else self.redpanda.nodes[
@@ -200,13 +215,25 @@ class PandaProxyEndpoints(RedpandaTest):
                        partitions=1,
                        replicas=1):
         self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools = self._get_kafka_cli_tools()
         for name in names:
             kafka_tools.create_topic(
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        assert set(names).issubset(self._get_topics().json())
+
+        def has_topics():
+            self_topics = self._get_topics()
+            self.logger.info(
+                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+            )
+            return set(names).issubset(self_topics.json())
+
+        wait_until(has_topics,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Timeout waiting for topics: {names}")
+
         return names
 
     def _get_topics(self,
@@ -274,12 +301,14 @@ class PandaProxyEndpoints(RedpandaTest):
         return res
 
 
-class PandaProxyTest(PandaProxyEndpoints):
+class PandaProxyTestMethods(PandaProxyEndpoints):
     """
-    Test pandaproxy against a redpanda cluster.
+    Base class for testing pandaproxy against a redpanda cluster.
+
+    Inherit from this to run the tests.
     """
-    def __init__(self, context):
-        super(PandaProxyTest, self).__init__(context)
+    def __init__(self, context, **kwargs):
+        super(PandaProxyTestMethods, self).__init__(context, **kwargs)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -929,6 +958,16 @@ class PandaProxySASLTest(PandaProxyEndpoints):
                    err_msg="Timeout waiting for topics to appear.")
 
 
+class PandaProxyTest(PandaProxyTestMethods):
+    """
+    Test pandaproxy against a redpanda cluster without auth.
+
+    This derived class inherits all the tests from PandaProxyTestMethods.
+    """
+    def __init__(self, context):
+        super(PandaProxyTest, self).__init__(context)
+
+
 class PandaProxyBasicAuthTest(PandaProxyEndpoints):
     username = 'red'
     password = 'panda'
@@ -1247,9 +1286,11 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         admin.update_user(super_username, super_password, super_algorithm)
 
 
-class PandaProxyAutoAuthTest(PandaProxyEndpoints):
+class PandaProxyAutoAuthTest(PandaProxyTestMethods):
     """
-    Testpandaproxy against a redpanda cluster with Auto Auth enabled.
+    Test pandaproxy against a redpanda cluster with Auto Auth enabled.
+
+    This derived class inherits all the tests from PandaProxyTestMethods.
     """
     def __init__(self, context):
         security = SecurityConfig()
@@ -1261,7 +1302,7 @@ class PandaProxyAutoAuthTest(PandaProxyEndpoints):
                                                      security=security)
 
     @cluster(num_nodes=3)
-    def test_get_topics(self):
+    def test_restarts(self):
         nodes = self.redpanda.nodes
         node_count = len(nodes)
         restart_node_idx = 0

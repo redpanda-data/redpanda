@@ -17,6 +17,7 @@ import random
 from rptest.util import inject_remote_script
 from rptest.services.cluster import cluster
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -141,6 +142,24 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
+    def _get_kafka_cli_tools(self):
+        sasl_enabled = self.redpanda.sasl_enabled()
+        cfg = self.redpanda.security_config() if sasl_enabled else {}
+        return KafkaCliTools(self.redpanda,
+                             user=cfg.get('sasl_plain_username'),
+                             passwd=cfg.get('sasl_plain_password'))
+
+    def _get_serde_client(self, schema_type: SchemaType, topic: str):
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        sasl_enabled = self.redpanda.sasl_enabled()
+        sec_cfg = self.redpanda.security_config() if sasl_enabled else None
+        return SerdeClient(self.redpanda.brokers(),
+                           schema_reg,
+                           schema_type,
+                           topic=topic,
+                           logger=self.logger,
+                           security_config=sec_cfg)
+
     def _get_topics(self):
         return requests.get(
             f"http://{self.redpanda.nodes[0].account.hostname}:8082/topics")
@@ -151,13 +170,25 @@ class SchemaRegistryEndpoints(RedpandaTest):
                        replicas=1,
                        cleanup_policy=TopicSpec.CLEANUP_DELETE):
         self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools = self._get_kafka_cli_tools()
         for name in names:
             kafka_tools.create_topic(
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        assert set(names).issubset(self._get_topics().json())
+
+        def has_topics():
+            self_topics = self._get_topics()
+            self.logger.info(
+                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+            )
+            return set(names).issubset(self_topics.json())
+
+        wait_until(has_topics,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Timeout waiting for topics: {names}")
+
         return names
 
     def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):
@@ -310,12 +341,14 @@ class SchemaRegistryEndpoints(RedpandaTest):
             **kwargs)
 
 
-class SchemaRegistryTest(SchemaRegistryEndpoints):
+class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     """
-    Test schema registry against a redpanda cluster.
+    Base class for testing schema registry against a redpanda cluster.
+
+    Inherit from this to run the tests.
     """
-    def __init__(self, context):
-        super(SchemaRegistryTest, self).__init__(context)
+    def __init__(self, context, **kwargs):
+        super(SchemaRegistryTestMethods, self).__init__(context, **kwargs)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
@@ -1108,11 +1141,7 @@ class SchemaRegistryTest(SchemaRegistryEndpoints):
             self.logger.info(
                 f"Connecting to redpanda: {self.redpanda.brokers()} schema_reg: {schema_reg}"
             )
-            client = SerdeClient(self.redpanda.brokers(),
-                                 schema_reg,
-                                 protocols[i],
-                                 topic=topics[i],
-                                 logger=self.logger)
+            client = self._get_serde_client(protocols[i], topics[i])
             client.run(2)
             schema = self._get_subjects_subject_versions_version(
                 f"{topics[i]}-value", "latest")
@@ -1607,9 +1636,21 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         assert result_raw.json() == [2]
 
 
-class SchemaRegistryAutoAuthTest(SchemaRegistryEndpoints):
+class SchemaRegistryTest(SchemaRegistryTestMethods):
+    """
+    Test schema registry against a redpanda cluster without auth.
+
+    This derived class inherits all the tests from SchemaRegistryTestMethods.
+    """
+    def __init__(self, context):
+        super(SchemaRegistryTest, self).__init__(context)
+
+
+class SchemaRegistryAutoAuthTest(SchemaRegistryTestMethods):
     """
     Test schema registry against a redpanda cluster with Auto Auth enabled.
+
+    This derived class inherits all the tests from SchemaRegistryTestMethods.
     """
     def __init__(self, context):
         security = SecurityConfig()
@@ -1621,7 +1662,7 @@ class SchemaRegistryAutoAuthTest(SchemaRegistryEndpoints):
                                                          security=security)
 
     @cluster(num_nodes=3)
-    def test_get_subjects(self):
+    def test_restarts(self):
         admin = Admin(self.redpanda)
 
         def check_connection(hostname: str):

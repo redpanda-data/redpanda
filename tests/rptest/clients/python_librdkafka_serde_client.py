@@ -71,7 +71,8 @@ class SerdeClient:
                  *,
                  topic=str(uuid4()),
                  group=str(uuid4()),
-                 logger=logging.getLogger("SerdeClient")):
+                 logger=logging.getLogger("SerdeClient"),
+                 security_config: dict = None):
         self.logger = logger
         self.brokers = brokers
         self.sr_client = SchemaRegistryClient({'url': schema_registry_url})
@@ -82,6 +83,8 @@ class SerdeClient:
         self.produced = 0
         self.acked = 0
         self.consumed = 0
+
+        self.security_config = security_config
 
     def _make_serializer(self):
         return {
@@ -107,6 +110,17 @@ class SerdeClient:
             SchemaType.PROTOBUF: make_protobuf_payload(val)
         }[self.schema_type]
 
+    def _get_security_options(self):
+        if self.security_config is None:
+            return {}
+
+        return {
+            'sasl.mechanism': self.security_config['sasl_mechanism'],
+            'sasl.password': self.security_config['sasl_plain_password'],
+            'sasl.username': self.security_config['sasl_plain_username'],
+            'security.protocol': self.security_config['security_protocol']
+        }
+
     def produce(self, count: int):
         def increment(err, msg):
             assert err is None
@@ -115,14 +129,12 @@ class SerdeClient:
             self.logger.debug("Acked offset %d", msg.offset())
             self.acked += 1
 
-        producer = SerializingProducer({
-            'bootstrap.servers':
-            self.brokers,
-            'key.serializer':
-            StringSerializer('utf_8'),
-            'value.serializer':
-            self._make_serializer()
-        })
+        producer = SerializingProducer(
+            {
+                'bootstrap.servers': self.brokers,
+                'key.serializer': StringSerializer('utf_8'),
+                'value.serializer': self._make_serializer()
+            } | self._get_security_options())
 
         self.logger.info("Producing %d %s records to topic %s", count,
                          self.schema_type.name, self.topic)
@@ -146,18 +158,14 @@ class SerdeClient:
         self.logger.info("Records acked: %d", self.acked)
 
     def consume(self, count: int):
-        consumer = DeserializingConsumer({
-            'bootstrap.servers':
-            self.brokers,
-            'key.deserializer':
-            StringDeserializer('utf_8'),
-            'value.deserializer':
-            self._make_deserializer(),
-            'group.id':
-            self.group,
-            'auto.offset.reset':
-            "earliest"
-        })
+        consumer = DeserializingConsumer(
+            {
+                'bootstrap.servers': self.brokers,
+                'key.deserializer': StringDeserializer('utf_8'),
+                'value.deserializer': self._make_deserializer(),
+                'group.id': self.group,
+                'auto.offset.reset': "earliest"
+            } | self._get_security_options())
         consumer.subscribe([self.topic])
 
         self.logger.info("Consuming %d %s records from topic %s with group %s",

@@ -33,7 +33,7 @@ class controller;
 
 namespace pandaproxy::schema_registry {
 
-class service {
+class service : public ss::peering_sharded_service<service> {
 public:
     service(
       const YAML::Node& config,
@@ -59,6 +59,7 @@ private:
     ss::future<> do_start();
     ss::future<> configure();
     ss::future<> inform(model::node_id);
+    ss::future<> do_inform(model::node_id);
     ss::future<> create_internal_topic();
     ss::future<> fetch_internal_topic();
     configuration _config;
@@ -74,6 +75,7 @@ private:
     one_shot _ensure_started;
     request_authenticator _auth;
     bool _has_ephemeral_credentials{false};
+    bool _is_started{false};
 };
 
 } // namespace pandaproxy::schema_registry
