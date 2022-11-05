@@ -16,7 +16,6 @@ require (
 	github.com/prometheus/client_golang v1.12.2
 	github.com/redpanda-data/console/backend v0.0.0-20220728140642-884100150168
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20220726211426-9ad7e9d59990
-	github.com/spf13/afero v1.9.2
 	github.com/stretchr/testify v1.7.1
 	github.com/twmb/franz-go v1.9.2-0.20221101035527-a07b8c8a01ce
 	github.com/twmb/franz-go/pkg/kadm v1.3.0
@@ -101,6 +100,7 @@ require (
 	github.com/sethgrid/pester v1.2.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
+	github.com/spf13/afero v1.9.2 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/cobra v1.5.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
