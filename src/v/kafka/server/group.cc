@@ -2148,11 +2148,17 @@ ss::future<error_code> group::remove() {
               "Replicated group delete record {} at offset {}",
               _id,
               result.value().last_offset);
+        } else if (result.error() == raft::errc::shutting_down) {
+            vlog(
+              klog.debug,
+              "Cannot replicate group {} delete records due to shutdown",
+              _id);
         } else {
             vlog(
               klog.error,
-              "Error occured replicating group {} delete records {}",
+              "Error occured replicating group {} delete records {} ({})",
               _id,
+              result.error().message(),
               result.error());
         }
     } catch (const std::exception& e) {
