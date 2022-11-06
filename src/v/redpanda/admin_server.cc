@@ -2869,7 +2869,7 @@ void admin_server::register_debug_routes() {
               ans.push_back(std::move(info));
           }
 
-          co_return ss::json::json_return_type(ans);
+          return ss::make_ready_future<ss::json::json_return_type>(ans);
       });
 
     register_route<user>(
