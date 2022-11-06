@@ -2899,11 +2899,11 @@ void admin_server::register_cluster_routes() {
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           vlog(logger.debug, "Requested cluster status");
-          auto health_overview = co_await _controller->get_health_monitor()
+          return _controller->get_health_monitor()
                                    .local()
                                    .get_cluster_health_overview(
                                      model::time_from_now(
-                                       std::chrono::seconds(5)));
+                                       std::chrono::seconds(5))).then([](auto health_overview) {
           ss::httpd::cluster_json::cluster_health_overview ret;
           ret.is_healthy = health_overview.is_healthy;
           ret.all_nodes._set = true;
@@ -2923,7 +2923,8 @@ void admin_server::register_cluster_routes() {
               ret.controller_id = -1;
           }
 
-          co_return ss::json::json_return_type(ret);
+          return ss::json::json_return_type(ret);
+          });
       });
 
     register_route<publik>(
