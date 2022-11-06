@@ -1999,11 +1999,12 @@ void admin_server::register_broker_routes() {
      */
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req)
+      [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          co_await _controller->get_drain_manager().invoke_on_all(
-            [](cluster::drain_manager& dm) { return dm.drain(); });
-          co_return ss::json::json_void();
+          return _controller->get_drain_manager().invoke_on_all(
+            [](cluster::drain_manager& dm) { return dm.drain(); }).then([] {
+              return ss::make_ready_future<ss::json::json_return_type>(ss::json::json_void());
+          });
       });
 
     register_route<superuser>(
