@@ -2834,10 +2834,11 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           vlog(logger.info, "Request to reset leaders info");
-          co_await _metadata_cache.invoke_on_all(
-            [](auto& mc) { mc.reset_leaders(); });
+          return _metadata_cache.invoke_on_all(
+            [](auto& mc) { mc.reset_leaders(); }).then([] {
 
-          co_return ss::json::json_void();
+          return ss::make_ready_future<ss::json::json_return_type>(ss::json::json_void());
+          });
       });
 
     register_route<user>(
