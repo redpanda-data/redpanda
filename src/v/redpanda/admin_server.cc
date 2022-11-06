@@ -1079,9 +1079,6 @@ void config_multi_property_validation(
 }
 
 void admin_server::register_cluster_config_routes() {
-    static thread_local auto cluster_config_validator(
-      make_cluster_config_validator());
-
     register_route<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config_status,
       [this](std::unique_ptr<ss::httpd::request>)
@@ -1130,6 +1127,15 @@ void admin_server::register_cluster_config_routes() {
         std::unique_ptr<ss::httpd::request> req,
         request_auth_result const& auth_state)
         -> ss::future<ss::json::json_return_type> {
+            return patch_cluster_config_handler(std::move(req), auth_state);
+        });
+}
+
+ss::future<ss::json::json_return_type> admin_server::patch_cluster_config_handler(
+  std::unique_ptr<ss::httpd::request> req, request_auth_result const& auth_state) {
+    static thread_local auto cluster_config_validator(
+      make_cluster_config_validator());
+
           if (!_controller->get_feature_table().local().is_active(
                 features::feature::central_config)) {
               throw ss::httpd::bad_request_exception(
@@ -1355,7 +1361,6 @@ void admin_server::register_cluster_config_routes() {
           ss::httpd::cluster_config_json::cluster_config_write_result result;
           result.config_version = patch_result.version;
           co_return ss::json::json_return_type(std::move(result));
-      });
 }
 
 void admin_server::register_raft_routes() {
