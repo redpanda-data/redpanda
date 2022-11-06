@@ -37,8 +37,9 @@ int corpus_check(char** argv, std::filesystem::path path) {
     seastar::app_template app;
     try {
         return app.run(1, argv, [path = std::move(path)]() -> ss::future<int> {
-            co_await compat::check_type(path);
-            co_return 0;
+            return compat::check_type(path).then([] {
+            return 0;
+            });
         });
     } catch (...) {
         std::cerr << std::current_exception() << "\n";
