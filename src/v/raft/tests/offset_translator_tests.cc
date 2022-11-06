@@ -638,9 +638,10 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
             raft::group_id(0),
             ntp,
             api.local()};
-          co_await remote_ot.start(
+          return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
+          return remote_ot.start(
             raft::offset_translator::must_reset::no,
-            raft::offset_translator::bootstrap_state{});
+            raft::offset_translator::bootstrap_state{}).then([&remote_ot] {
 
           validate_translation(remote_ot, model::offset(0), model::offset(0));
           validate_translation(remote_ot, model::offset(1), model::offset(1));
@@ -648,6 +649,8 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
           validate_translation(remote_ot, model::offset(9), model::offset(3));
           validate_translation(remote_ot, model::offset(10), model::offset(4));
           validate_translation(remote_ot, model::offset(11), model::offset(5));
+          });
+          });
       })
       .get();
 
