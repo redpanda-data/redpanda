@@ -1083,15 +1083,14 @@ void admin_server::register_cluster_config_routes() {
       ss::httpd::cluster_config_json::get_cluster_config_status,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          std::vector<ss::httpd::cluster_config_json::cluster_config_status>
-            res;
-
           auto& cfg = _controller->get_config_manager();
-          auto statuses = co_await cfg.invoke_on(
+          return cfg.invoke_on(
             cluster::controller_stm_shard,
             [](cluster::config_manager& manager) {
                 return manager.get_projected_status();
-            });
+            }).then([](auto statuses) {
+          std::vector<ss::httpd::cluster_config_json::cluster_config_status>
+            res;
 
           for (const auto& s : statuses) {
               vlog(logger.trace, "status: {}", s.second);
@@ -1111,7 +1110,8 @@ void admin_server::register_cluster_config_routes() {
               rs.unknown = s.second.unknown;
           }
 
-          co_return ss::json::json_return_type(std::move(res));
+          return ss::json::json_return_type(std::move(res));
+          });
       });
 
     register_route<publik>(
