@@ -1116,9 +1116,9 @@ void admin_server::register_cluster_config_routes() {
 
     register_route<publik>(
       ss::httpd::cluster_config_json::get_cluster_config_schema,
-      [](std::unique_ptr<ss::httpd::request> req)
+      [](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          co_return util::generate_json_schema(config::shard_local_cfg());
+          return ss::make_ready_future<ss::json::json_return_type>(util::generate_json_schema(config::shard_local_cfg()));
       });
 
     register_route<superuser, true>(
