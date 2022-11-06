@@ -2017,10 +2017,9 @@ void admin_server::register_broker_routes() {
 
     register_route<superuser>(
       ss::httpd::broker_json::get_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req)
+      [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          auto status
-            = co_await _controller->get_drain_manager().local().status();
+          return _controller->get_drain_manager().local().status().then([](auto status) {
           ss::httpd::broker_json::maintenance_status res;
           res.draining = status.has_value();
           if (status.has_value()) {
@@ -2039,7 +2038,8 @@ void admin_server::register_broker_routes() {
                   res.failed = status->failed.value();
               }
           }
-          co_return res;
+          return ss::make_ready_future<ss::json::json_return_type>(res);
+          });
       });
     register_route<superuser>(
       ss::httpd::broker_json::cancel_partition_moves,
