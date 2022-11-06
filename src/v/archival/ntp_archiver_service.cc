@@ -444,11 +444,11 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
     auto reset_func =
       [this,
        candidate]() -> ss::future<std::unique_ptr<storage::stream_provider>> {
-        co_return std::make_unique<storage::concat_segment_reader_view>(
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::concat_segment_reader_view>(
           candidate.sources,
           candidate.file_offset,
           candidate.final_file_offset,
-          _io_priority);
+          _io_priority));
     };
 
     co_return co_await _remote.upload_segment(
@@ -890,10 +890,11 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
                    _mutex,
                    1,
                    [this, last_stable_offset]() -> ss::future<batch_result> {
-                       auto scheduled_uploads = co_await schedule_uploads(
-                         last_stable_offset);
-                       co_return co_await wait_all_scheduled_uploads(
+                       return schedule_uploads(
+                         last_stable_offset).then([this](auto scheduled_uploads) {
+                       return wait_all_scheduled_uploads(
                          std::move(scheduled_uploads));
+                       });
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {
