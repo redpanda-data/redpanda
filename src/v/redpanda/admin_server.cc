@@ -2575,7 +2575,7 @@ void admin_server::register_partition_routes() {
               }
               ret.push_back(std::move(r));
           }
-          co_return ret;
+          return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
 }
 
