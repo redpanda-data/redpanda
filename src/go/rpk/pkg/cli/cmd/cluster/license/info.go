@@ -53,8 +53,9 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 						Organization string
 						Type         string
 						Expires      string
-						Expired      bool `json:"license_expired,omitempty"`
-					}{info.Properties.Organization, info.Properties.Type, tm, expired}, "", "  ")
+						Checksum     string `json:"ChecksumSHA256,omitempty"`
+						Expired      bool   `json:"license_expired,omitempty"`
+					}{info.Properties.Organization, info.Properties.Type, tm, info.Properties.Checksum, expired}, "", "  ")
 					out.MaybeDie(err, "unable to print license information as json: %v", err)
 					fmt.Printf("%s\n", props)
 				} else {
