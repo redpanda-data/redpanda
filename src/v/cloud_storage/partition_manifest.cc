@@ -311,6 +311,15 @@ local_segment_path partition_manifest::generate_local_segment_path(
       fmt::format("{}_{}/{}", ntp.path(), val.ntp_revision, name()));
 }
 
+partition_manifest::const_iterator
+partition_manifest::first_addressable_segment() const {
+    if (_start_offset == model::offset{}) {
+        return end();
+    }
+
+    return _segments.find(_start_offset);
+}
+
 partition_manifest::const_iterator partition_manifest::begin() const {
     return _segments.begin();
 }
@@ -388,6 +397,10 @@ std::vector<segment_meta> partition_manifest::replaced_segments() const {
         res.push_back(lw_segment_meta::convert(s));
     }
     return res;
+}
+
+size_t partition_manifest::replaced_segments_count() const {
+    return _replaced.size();
 }
 
 void partition_manifest::move_aligned_offset_range(
