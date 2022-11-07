@@ -1808,6 +1808,7 @@ void admin_server::register_features_routes() {
               lc.org = license->organization;
               lc.type = security::license_type_to_string(license->type);
               lc.expires = license->expiry.count();
+              lc.sha256 = license->checksum;
               res.license = lc;
           }
           co_return std::move(res);

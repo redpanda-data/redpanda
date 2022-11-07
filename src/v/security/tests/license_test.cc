@@ -77,5 +77,8 @@ BOOST_AUTO_TEST_CASE(test_license_valid_content) {
     BOOST_CHECK_EQUAL(license.type, license_type::enterprise);
     BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
     BOOST_CHECK_EQUAL(license.expiry.count(), 4813252273);
+    BOOST_CHECK_EQUAL(
+      license.checksum,
+      "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf");
 }
 } // namespace security

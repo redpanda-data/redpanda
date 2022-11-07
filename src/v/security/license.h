@@ -62,15 +62,16 @@ inline std::ostream& operator<<(std::ostream& os, license_type lt) {
     return os;
 }
 
-struct license : serde::envelope<license, serde::version<0>> {
+struct license : serde::envelope<license, serde::version<1>> {
     /// Expected encoded contents
     uint8_t format_version;
     license_type type;
     ss::sstring organization;
     std::chrono::seconds expiry;
+    ss::sstring checksum;
 
     auto serde_fields() {
-        return std::tie(format_version, type, organization, expiry);
+        return std::tie(format_version, type, organization, expiry, checksum);
     }
 
     /// true if todays date is greater then \ref expiry
