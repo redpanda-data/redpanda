@@ -1084,41 +1084,45 @@ void admin_server::register_cluster_config_routes() {
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           auto& cfg = _controller->get_config_manager();
-          return cfg.invoke_on(
-            cluster::controller_stm_shard,
-            [](cluster::config_manager& manager) {
-                return manager.get_projected_status();
-            }).then([](auto statuses) {
-          std::vector<ss::httpd::cluster_config_json::cluster_config_status>
-            res;
+          return cfg
+            .invoke_on(
+              cluster::controller_stm_shard,
+              [](cluster::config_manager& manager) {
+                  return manager.get_projected_status();
+              })
+            .then([](auto statuses) {
+                std::vector<
+                  ss::httpd::cluster_config_json::cluster_config_status>
+                  res;
 
-          for (const auto& s : statuses) {
-              vlog(logger.trace, "status: {}", s.second);
-              auto& rs = res.emplace_back();
-              rs.node_id = s.first;
-              rs.restart = s.second.restart;
-              rs.config_version = s.second.version;
+                for (const auto& s : statuses) {
+                    vlog(logger.trace, "status: {}", s.second);
+                    auto& rs = res.emplace_back();
+                    rs.node_id = s.first;
+                    rs.restart = s.second.restart;
+                    rs.config_version = s.second.version;
 
-              // Workaround: seastar json_list hides empty lists by
-              // default.  This complicates API clients, so always push
-              // in a dummy element to get _set=true on json_list (this
-              // is then cleared in the subsequent operator=).
-              rs.invalid.push(ss::sstring("hack"));
-              rs.unknown.push(ss::sstring("hack"));
+                    // Workaround: seastar json_list hides empty lists by
+                    // default.  This complicates API clients, so always push
+                    // in a dummy element to get _set=true on json_list (this
+                    // is then cleared in the subsequent operator=).
+                    rs.invalid.push(ss::sstring("hack"));
+                    rs.unknown.push(ss::sstring("hack"));
 
-              rs.invalid = s.second.invalid;
-              rs.unknown = s.second.unknown;
-          }
+                    rs.invalid = s.second.invalid;
+                    rs.unknown = s.second.unknown;
+                }
 
-          return ss::json::json_return_type(std::move(res));
-          });
+                return ss::json::json_return_type(std::move(res));
+            });
       });
 
     register_route<publik>(
       ss::httpd::cluster_config_json::get_cluster_config_schema,
       [](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          return ss::make_ready_future<ss::json::json_return_type>(util::generate_json_schema(config::shard_local_cfg()));
+          return ss::make_ready_future<ss::json::json_return_type>(
+            util::generate_json_schema(config::shard_local_cfg()));
       });
 
     register_route<superuser, true>(
@@ -1127,240 +1131,235 @@ void admin_server::register_cluster_config_routes() {
         std::unique_ptr<ss::httpd::request> req,
         request_auth_result const& auth_state)
         -> ss::future<ss::json::json_return_type> {
-            return patch_cluster_config_handler(std::move(req), auth_state);
-        });
+          return patch_cluster_config_handler(std::move(req), auth_state);
+      });
 }
 
-ss::future<ss::json::json_return_type> admin_server::patch_cluster_config_handler(
-  std::unique_ptr<ss::httpd::request> req, request_auth_result const& auth_state) {
+ss::future<ss::json::json_return_type>
+admin_server::patch_cluster_config_handler(
+  std::unique_ptr<ss::httpd::request> req,
+  request_auth_result const& auth_state) {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
 
-          if (!_controller->get_feature_table().local().is_active(
-                features::feature::central_config)) {
-              throw ss::httpd::bad_request_exception(
-                "Central config feature not active (upgrade in progress?)");
-          }
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::central_config)) {
+        throw ss::httpd::bad_request_exception(
+          "Central config feature not active (upgrade in progress?)");
+    }
 
-          auto doc = parse_json_body(*req);
-          apply_validator(cluster_config_validator, doc);
+    auto doc = parse_json_body(*req);
+    apply_validator(cluster_config_validator, doc);
 
-          cluster::config_update_request update;
+    cluster::config_update_request update;
 
-          // Deserialize removes
-          const auto& json_remove = doc["remove"];
-          for (const auto& v : json_remove.GetArray()) {
-              update.remove.push_back(v.GetString());
-          }
+    // Deserialize removes
+    const auto& json_remove = doc["remove"];
+    for (const auto& v : json_remove.GetArray()) {
+        update.remove.push_back(v.GetString());
+    }
 
-          // Deserialize upserts
-          const auto& json_upsert = doc["upsert"];
-          for (const auto& i : json_upsert.GetObject()) {
-              // Re-serialize the individual value.  Our on-disk format
-              // for property values is a YAML value (JSON is a subset
-              // of YAML, so encoding with JSON is fine)
-              json::StringBuffer val_buf;
-              json::Writer<json::StringBuffer> w{val_buf};
-              i.value.Accept(w);
-              auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
-              update.upsert.push_back({i.name.GetString(), s});
-          }
+    // Deserialize upserts
+    const auto& json_upsert = doc["upsert"];
+    for (const auto& i : json_upsert.GetObject()) {
+        // Re-serialize the individual value.  Our on-disk format
+        // for property values is a YAML value (JSON is a subset
+        // of YAML, so encoding with JSON is fine)
+        json::StringBuffer val_buf;
+        json::Writer<json::StringBuffer> w{val_buf};
+        i.value.Accept(w);
+        auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
+        update.upsert.push_back({i.name.GetString(), s});
+    }
 
-          // Config property validation happens further down the line
-          // at the point that properties are set on each node in
-          // response to the deltas that we write to the controller log,
-          // but we also do an early validation pass here to avoid writing
-          // clearly wrong things into the log & give better feedback
-          // to the API consumer.
-          absl::flat_hash_set<ss::sstring> upsert_no_op_names;
-          if (!get_boolean_query_param(*req, "force")) {
-              // A scratch copy of configuration: we must not touch
-              // the real live configuration object, that will be updated
-              // by config_manager much after config is written to controller
-              // log.
-              config::configuration cfg;
+    // Config property validation happens further down the line
+    // at the point that properties are set on each node in
+    // response to the deltas that we write to the controller log,
+    // but we also do an early validation pass here to avoid writing
+    // clearly wrong things into the log & give better feedback
+    // to the API consumer.
+    absl::flat_hash_set<ss::sstring> upsert_no_op_names;
+    if (!get_boolean_query_param(*req, "force")) {
+        // A scratch copy of configuration: we must not touch
+        // the real live configuration object, that will be updated
+        // by config_manager much after config is written to controller
+        // log.
+        config::configuration cfg;
 
-              // Populate the temporary config object with existing values
-              config::shard_local_cfg().for_each(
-                [&cfg](const config::base_property& p) {
-                    auto& tmp_p = cfg.get(p.name());
-                    tmp_p = p;
-                });
+        // Populate the temporary config object with existing values
+        config::shard_local_cfg().for_each(
+          [&cfg](const config::base_property& p) {
+              auto& tmp_p = cfg.get(p.name());
+              tmp_p = p;
+          });
 
-              // Configuration properties cannot do multi-property validation
-              // themselves, so there is some special casing here for critical
-              // properties.
+        // Configuration properties cannot do multi-property validation
+        // themselves, so there is some special casing here for critical
+        // properties.
 
-              std::map<ss::sstring, ss::sstring> errors;
-              for (const auto& [yaml_name, yaml_value] : update.upsert) {
-                  // Decode to a YAML object because that's what the property
-                  // interface expects.
-                  // Don't both catching ParserException: this was encoded
-                  // just a few lines above.
-                  auto val = YAML::Load(yaml_value);
+        std::map<ss::sstring, ss::sstring> errors;
+        for (const auto& [yaml_name, yaml_value] : update.upsert) {
+            // Decode to a YAML object because that's what the property
+            // interface expects.
+            // Don't both catching ParserException: this was encoded
+            // just a few lines above.
+            auto val = YAML::Load(yaml_value);
 
-                  if (!cfg.contains(yaml_name)) {
-                      errors[yaml_name] = "Unknown property";
-                      continue;
-                  }
-                  auto& property = cfg.get(yaml_name);
+            if (!cfg.contains(yaml_name)) {
+                errors[yaml_name] = "Unknown property";
+                continue;
+            }
+            auto& property = cfg.get(yaml_name);
 
-                  try {
-                      auto validation_err = property.validate(val);
-                      if (validation_err.has_value()) {
-                          errors[yaml_name]
-                            = validation_err.value().error_message();
-                          vlog(
-                            logger.warn,
-                            "Invalid {}: '{}' ({})",
-                            yaml_name,
-                            property.format_raw(yaml_value),
-                            validation_err.value().error_message());
-                      } else {
-                          // In case any property subclass might throw
-                          // from it's value setter even after a non-throwing
-                          // call to validate (if this happens validate() was
-                          // implemented wrongly, but let's be safe)
-                          auto changed = property.set_value(val);
-                          if (!changed) {
-                              upsert_no_op_names.insert(yaml_name);
-                          }
-                      }
-                  } catch (YAML::BadConversion const& e) {
-                      // Be helpful, and give the user an example of what
-                      // the setting should look like, if we have one.
-                      ss::sstring example;
-                      auto example_opt = property.example();
-                      if (example_opt.has_value()) {
-                          example = fmt::format(
-                            ", for example '{}'", example_opt.value());
-                      }
+            try {
+                auto validation_err = property.validate(val);
+                if (validation_err.has_value()) {
+                    errors[yaml_name] = validation_err.value().error_message();
+                    vlog(
+                      logger.warn,
+                      "Invalid {}: '{}' ({})",
+                      yaml_name,
+                      property.format_raw(yaml_value),
+                      validation_err.value().error_message());
+                } else {
+                    // In case any property subclass might throw
+                    // from it's value setter even after a non-throwing
+                    // call to validate (if this happens validate() was
+                    // implemented wrongly, but let's be safe)
+                    auto changed = property.set_value(val);
+                    if (!changed) {
+                        upsert_no_op_names.insert(yaml_name);
+                    }
+                }
+            } catch (YAML::BadConversion const& e) {
+                // Be helpful, and give the user an example of what
+                // the setting should look like, if we have one.
+                ss::sstring example;
+                auto example_opt = property.example();
+                if (example_opt.has_value()) {
+                    example = fmt::format(
+                      ", for example '{}'", example_opt.value());
+                }
 
-                      auto message = fmt::format(
-                        "expected type {}{}", property.type_name(), example);
+                auto message = fmt::format(
+                  "expected type {}{}", property.type_name(), example);
 
-                      // Special case: we get BadConversion for out-of-range
-                      // values on smaller integer sizes (e.g. too
-                      // large value to an int16_t property).
-                      // ("integer" is a magic string but it's a stable part
-                      //  of our outward interface)
-                      if (property.type_name() == "integer") {
-                          int64_t n{0};
-                          try {
-                              n = val.as<int64_t>();
-                              // It's a valid integer:
-                              message = fmt::format("out of range: '{}'", n);
-                          } catch (...) {
-                              // This was not an out-of-bounds case, use
-                              // the type error message
-                          }
-                      }
+                // Special case: we get BadConversion for out-of-range
+                // values on smaller integer sizes (e.g. too
+                // large value to an int16_t property).
+                // ("integer" is a magic string but it's a stable part
+                //  of our outward interface)
+                if (property.type_name() == "integer") {
+                    int64_t n{0};
+                    try {
+                        n = val.as<int64_t>();
+                        // It's a valid integer:
+                        message = fmt::format("out of range: '{}'", n);
+                    } catch (...) {
+                        // This was not an out-of-bounds case, use
+                        // the type error message
+                    }
+                }
 
-                      errors[yaml_name] = message;
-                      vlog(
-                        logger.warn,
-                        "Invalid {}: '{}' ({})",
-                        yaml_name,
-                        property.format_raw(yaml_value),
-                        std::current_exception());
-                  } catch (...) {
-                      auto message = fmt::format(
-                        "{}", std::current_exception());
-                      errors[yaml_name] = message;
-                      vlog(
-                        logger.warn,
-                        "Invalid {}: '{}' ({})",
-                        yaml_name,
-                        property.format_raw(yaml_value),
-                        message);
-                  }
-              }
+                errors[yaml_name] = message;
+                vlog(
+                  logger.warn,
+                  "Invalid {}: '{}' ({})",
+                  yaml_name,
+                  property.format_raw(yaml_value),
+                  std::current_exception());
+            } catch (...) {
+                auto message = fmt::format("{}", std::current_exception());
+                errors[yaml_name] = message;
+                vlog(
+                  logger.warn,
+                  "Invalid {}: '{}' ({})",
+                  yaml_name,
+                  property.format_raw(yaml_value),
+                  message);
+            }
+        }
 
-              for (const auto& key : update.remove) {
-                  if (cfg.contains(key)) {
-                      cfg.get(key).reset();
-                  } else {
-                      errors[key] = "Unknown property";
-                  }
-              }
+        for (const auto& key : update.remove) {
+            if (cfg.contains(key)) {
+                cfg.get(key).reset();
+            } else {
+                errors[key] = "Unknown property";
+            }
+        }
 
-              // After checking each individual property, check for
-              // any multi-property validation errors
-              config_multi_property_validation(
-                auth_state.get_username(), update, cfg, errors);
+        // After checking each individual property, check for
+        // any multi-property validation errors
+        config_multi_property_validation(
+          auth_state.get_username(), update, cfg, errors);
 
-              if (!errors.empty()) {
-                  json::StringBuffer buf;
-                  json::Writer<json::StringBuffer> w(buf);
+        if (!errors.empty()) {
+            json::StringBuffer buf;
+            json::Writer<json::StringBuffer> w(buf);
 
-                  w.StartObject();
-                  for (const auto& e : errors) {
-                      w.Key(e.first.data(), e.first.size());
-                      w.String(e.second.data(), e.second.size());
-                  }
-                  w.EndObject();
+            w.StartObject();
+            for (const auto& e : errors) {
+                w.Key(e.first.data(), e.first.size());
+                w.String(e.second.data(), e.second.size());
+            }
+            w.EndObject();
 
-                  throw ss::httpd::base_exception(
-                    buf.GetString(),
-                    ss::httpd::reply::status_type::bad_request,
-                    "json");
-              }
-          }
+            throw ss::httpd::base_exception(
+              buf.GetString(),
+              ss::httpd::reply::status_type::bad_request,
+              "json");
+        }
+    }
 
-          if (get_boolean_query_param(*req, "dry_run")) {
-              auto current_version
-                = co_await _controller->get_config_manager().invoke_on(
-                  cluster::config_manager::shard,
-                  [](cluster::config_manager& cm) { return cm.get_version(); });
+    if (get_boolean_query_param(*req, "dry_run")) {
+        auto current_version
+          = co_await _controller->get_config_manager().invoke_on(
+            cluster::config_manager::shard,
+            [](cluster::config_manager& cm) { return cm.get_version(); });
 
-              // A dry run doesn't really need a result, but it's simpler for
-              // the API definition if we return the same structure as a
-              // normal write.
-              ss::httpd::cluster_config_json::cluster_config_write_result
-                result;
-              result.config_version = current_version;
-              co_return ss::json::json_return_type(std::move(result));
-          }
+        // A dry run doesn't really need a result, but it's simpler for
+        // the API definition if we return the same structure as a
+        // normal write.
+        ss::httpd::cluster_config_json::cluster_config_write_result result;
+        result.config_version = current_version;
+        co_return ss::json::json_return_type(std::move(result));
+    }
 
-          if (
-            update.upsert.size() == upsert_no_op_names.size()
-            && update.remove.empty()) {
-              vlog(
-                logger.trace,
-                "patch_cluster_config: ignoring request, {} upserts resulted "
-                "in no-ops",
-                update.upsert.size());
-              auto current_version
-                = co_await _controller->get_config_manager().invoke_on(
-                  cluster::config_manager::shard,
-                  [](cluster::config_manager& cm) { return cm.get_version(); });
-              ss::httpd::cluster_config_json::cluster_config_write_result
-                result;
-              result.config_version = current_version;
-              co_return ss::json::json_return_type(std::move(result));
-          }
+    if (
+      update.upsert.size() == upsert_no_op_names.size()
+      && update.remove.empty()) {
+        vlog(
+          logger.trace,
+          "patch_cluster_config: ignoring request, {} upserts resulted "
+          "in no-ops",
+          update.upsert.size());
+        auto current_version
+          = co_await _controller->get_config_manager().invoke_on(
+            cluster::config_manager::shard,
+            [](cluster::config_manager& cm) { return cm.get_version(); });
+        ss::httpd::cluster_config_json::cluster_config_write_result result;
+        result.config_version = current_version;
+        co_return ss::json::json_return_type(std::move(result));
+    }
 
-          vlog(
-            logger.trace,
-            "patch_cluster_config: {} upserts, {} removes",
-            update.upsert.size(),
-            update.remove.size());
+    vlog(
+      logger.trace,
+      "patch_cluster_config: {} upserts, {} removes",
+      update.upsert.size(),
+      update.remove.size());
 
-          auto patch_result
-            = co_await _controller->get_config_frontend().invoke_on(
-              cluster::config_frontend::version_shard,
-              [update = std::move(update)](cluster::config_frontend& fe) mutable
-              -> ss::future<cluster::config_frontend::patch_result> {
-                  return fe.patch(
-                    std::move(update), model::timeout_clock::now() + 5s);
-              });
+    auto patch_result = co_await _controller->get_config_frontend().invoke_on(
+      cluster::config_frontend::version_shard,
+      [update = std::move(update)](cluster::config_frontend& fe) mutable
+      -> ss::future<cluster::config_frontend::patch_result> {
+          return fe.patch(std::move(update), model::timeout_clock::now() + 5s);
+      });
 
-          co_await throw_on_error(
-            *req, patch_result.errc, model::controller_ntp);
+    co_await throw_on_error(*req, patch_result.errc, model::controller_ntp);
 
-          ss::httpd::cluster_config_json::cluster_config_write_result result;
-          result.config_version = patch_result.version;
-          co_return ss::json::json_return_type(std::move(result));
+    ss::httpd::cluster_config_json::cluster_config_write_result result;
+    result.config_version = patch_result.version;
+    co_return ss::json::json_return_type(std::move(result));
 }
 
 void admin_server::register_raft_routes() {
@@ -2001,47 +2000,54 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::start_local_maintenance,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          return _controller->get_drain_manager().invoke_on_all(
-            [](cluster::drain_manager& dm) { return dm.drain(); }).then([] {
-              return ss::make_ready_future<ss::json::json_return_type>(ss::json::json_void());
-          });
+          return _controller->get_drain_manager()
+            .invoke_on_all(
+              [](cluster::drain_manager& dm) { return dm.drain(); })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_local_maintenance,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          return _controller->get_drain_manager().invoke_on_all(
-            [](cluster::drain_manager& dm) { return dm.restore(); }).then([] {
-              return ss::make_ready_future<ss::json::json_return_type>(ss::json::json_void());
-          });
+          return _controller->get_drain_manager()
+            .invoke_on_all(
+              [](cluster::drain_manager& dm) { return dm.restore(); })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::get_local_maintenance,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          return _controller->get_drain_manager().local().status().then([](auto status) {
-          ss::httpd::broker_json::maintenance_status res;
-          res.draining = status.has_value();
-          if (status.has_value()) {
-              res.finished = status->finished;
-              res.errors = status->errors;
-              if (status->partitions.has_value()) {
-                  res.partitions = status->partitions.value();
-              }
-              if (status->eligible.has_value()) {
-                  res.eligible = status->eligible.value();
-              }
-              if (status->transferring.has_value()) {
-                  res.transferring = status->transferring.value();
-              }
-              if (status->failed.has_value()) {
-                  res.failed = status->failed.value();
-              }
-          }
-          return ss::make_ready_future<ss::json::json_return_type>(res);
-          });
+          return _controller->get_drain_manager().local().status().then(
+            [](auto status) {
+                ss::httpd::broker_json::maintenance_status res;
+                res.draining = status.has_value();
+                if (status.has_value()) {
+                    res.finished = status->finished;
+                    res.errors = status->errors;
+                    if (status->partitions.has_value()) {
+                        res.partitions = status->partitions.value();
+                    }
+                    if (status->eligible.has_value()) {
+                        res.eligible = status->eligible.value();
+                    }
+                    if (status->transferring.has_value()) {
+                        res.transferring = status->transferring.value();
+                    }
+                    if (status->failed.has_value()) {
+                        res.failed = status->failed.value();
+                    }
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(res);
+            });
       });
     register_route<superuser>(
       ss::httpd::broker_json::cancel_partition_moves,
@@ -2836,11 +2842,12 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
           vlog(logger.info, "Request to reset leaders info");
-          return _metadata_cache.invoke_on_all(
-            [](auto& mc) { mc.reset_leaders(); }).then([] {
-
-          return ss::make_ready_future<ss::json::json_return_type>(ss::json::json_void());
-          });
+          return _metadata_cache
+            .invoke_on_all([](auto& mc) { mc.reset_leaders(); })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
       });
 
     register_route<user>(
@@ -2903,31 +2910,31 @@ void admin_server::register_cluster_routes() {
         -> ss::future<ss::json::json_return_type> {
           vlog(logger.debug, "Requested cluster status");
           return _controller->get_health_monitor()
-                                   .local()
-                                   .get_cluster_health_overview(
-                                     model::time_from_now(
-                                       std::chrono::seconds(5))).then([](auto health_overview) {
-          ss::httpd::cluster_json::cluster_health_overview ret;
-          ret.is_healthy = health_overview.is_healthy;
-          ret.all_nodes._set = true;
-          ret.nodes_down._set = true;
-          ret.leaderless_partitions._set = true;
+            .local()
+            .get_cluster_health_overview(
+              model::time_from_now(std::chrono::seconds(5)))
+            .then([](auto health_overview) {
+                ss::httpd::cluster_json::cluster_health_overview ret;
+                ret.is_healthy = health_overview.is_healthy;
+                ret.all_nodes._set = true;
+                ret.nodes_down._set = true;
+                ret.leaderless_partitions._set = true;
 
-          ret.all_nodes = health_overview.all_nodes;
-          ret.nodes_down = health_overview.nodes_down;
+                ret.all_nodes = health_overview.all_nodes;
+                ret.nodes_down = health_overview.nodes_down;
 
-          for (auto& ntp : health_overview.leaderless_partitions) {
-              ret.leaderless_partitions.push(fmt::format(
-                "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
-          }
-          if (health_overview.controller_id) {
-              ret.controller_id = health_overview.controller_id.value();
-          } else {
-              ret.controller_id = -1;
-          }
+                for (auto& ntp : health_overview.leaderless_partitions) {
+                    ret.leaderless_partitions.push(fmt::format(
+                      "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
+                }
+                if (health_overview.controller_id) {
+                    ret.controller_id = health_overview.controller_id.value();
+                } else {
+                    ret.controller_id = -1;
+                }
 
-          return ss::json::json_return_type(ret);
-          });
+                return ss::json::json_return_type(ret);
+            });
       });
 
     register_route<publik>(

@@ -393,8 +393,7 @@ partition_downloader::download_log_with_capped_size(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, &dlpart, &dloffsets](
-        const segment_meta& s) -> ss::future<> {
+      [this, &dlpart, &dloffsets](const segment_meta& s) -> ss::future<> {
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
           vlog(
@@ -407,11 +406,12 @@ partition_downloader::download_log_with_capped_size(
             s.size_bytes,
             dlpart.part_prefix,
             dlpart.dest_prefix);
-          return download_segment_file(s, dlpart).then([&dloffsets](auto offsets) {
-          if (offsets) {
-              dloffsets.push_back(offsets.value());
-          }
-          });
+          return download_segment_file(s, dlpart).then(
+            [&dloffsets](auto offsets) {
+                if (offsets) {
+                    dloffsets.push_back(offsets.value());
+                }
+            });
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
     if (dlpart.num_files == 0) {
@@ -487,8 +487,7 @@ partition_downloader::download_log_with_capped_time(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, &dlpart, &dloffsets](
-        const segment_meta& s) -> ss::future<> {
+      [this, &dlpart, &dloffsets](const segment_meta& s) -> ss::future<> {
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
           vlog(
@@ -499,11 +498,12 @@ partition_downloader::download_log_with_capped_time(
             s.segment_term,
             dlpart.part_prefix,
             dlpart.dest_prefix);
-          return download_segment_file(s, dlpart).then([&dloffsets](auto offsets) {
-          if (offsets) {
-              dloffsets.push_back(offsets.value());
-          }
-          });
+          return download_segment_file(s, dlpart).then(
+            [&dloffsets](auto offsets) {
+                if (offsets) {
+                    dloffsets.push_back(offsets.value());
+                }
+            });
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
     if (dlpart.num_files == 0) {

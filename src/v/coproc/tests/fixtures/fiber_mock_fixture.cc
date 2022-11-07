@@ -37,8 +37,8 @@ ss::future<> fiber_mock_fixture::init_test(test_parameters params) {
         co_await _state.invoke_on(
           *shard, [this, ntp, params](state& s) -> ss::future<> {
               return make_source(ntp, s, params).then([ntp, &s](auto src) {
-              auto [_, success] = s.routes.emplace(ntp, src);
-              vassert(success, "no double insert attempt should occur");
+                  auto [_, success] = s.routes.emplace(ntp, src);
+                  vassert(success, "no double insert attempt should occur");
               });
           });
     }
