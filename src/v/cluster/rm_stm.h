@@ -380,6 +380,11 @@ private:
         return std::nullopt;
     }
 
+    struct seq_entry_wrapper {
+        seq_entry entry;
+        safe_intrusive_list_hook _hook;
+    };
+
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
@@ -414,11 +419,20 @@ private:
         // conflicts. if the replication fails we reject a command but clients
         // by spec should be ready for thier commands being rejected so it's
         // ok by design to have false rejects
-        absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
+        using seq_map
+          = absl::node_hash_map<model::producer_identity, seq_entry_wrapper>;
+        seq_map seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
+
+        // We need to store replication order for idempotent pids only. So we
+        // will use intrusive list for it.
+        using idempotent_pids_replicate_order = counted_intrusive_list<
+          seq_entry_wrapper,
+          &seq_entry_wrapper::_hook>;
+        idempotent_pids_replicate_order lru_idempotent_pids;
 
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
