@@ -305,6 +305,13 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
+    vlog(
+      _ctx_log.trace,
+      "begin tx pid: {}, tx sequence: {}, timeout: {} ms",
+      pid,
+      tx_seq,
+      transaction_timeout_ms / std::chrono::milliseconds(1));
+
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
@@ -621,6 +628,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(_ctx_log.trace, "commit tx pid: {}, tx sequence: {}", pid, tx_seq);
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
@@ -859,6 +867,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
   model::producer_identity pid,
   std::optional<model::tx_seq> tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(_ctx_log.debug, "abort tx pid: {}, tx sequence: {}", pid, tx_seq);
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
@@ -2523,11 +2532,12 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
+    auto filename = abort_idx_name(snapshot.first, snapshot.last);
+    vlog(_ctx_log.debug, "saving abort snapshot {} at {}", snapshot, filename);
     iobuf snapshot_data;
     reflection::adl<abort_snapshot>{}.to(snapshot_data, snapshot);
     int32_t snapshot_size = snapshot_data.size_bytes();
 
-    auto filename = abort_idx_name(snapshot.first, snapshot.last);
     auto writer = co_await _abort_snapshot_mgr.start_snapshot(filename);
 
     iobuf metadata_buf;
@@ -2604,5 +2614,13 @@ ss::future<> rm_stm::handle_eviction() {
           return ss::now();
       });
 }
-
+std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
+    fmt::print(
+      o,
+      "{{first: {}, last: {}, aborted tx count: {}}}",
+      as.first,
+      as.last,
+      as.aborted.size());
+    return o;
+}
 } // namespace cluster
