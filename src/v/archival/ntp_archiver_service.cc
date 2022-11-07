@@ -571,21 +571,31 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
                               ot_state->from_log_offset(upload.final_offset));
 
     // The upload is successful only if both segment and tx_range are uploaded.
+    std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
+    all_uploads.emplace_back(upload_segment(upload));
+    if (upload_ctx.upload_kind == segment_upload_kind::non_compacted) {
+        all_uploads.emplace_back(upload_tx(upload));
+    }
     auto upl_fut
-      = ss::when_all(upload_segment(upload), upload_tx(upload))
-          .then([](auto tup) {
-              auto [fs, ftx] = std::move(tup);
-              auto rs = fs.get();
-              auto rtx = ftx.get();
-              if (
-                rs == cloud_storage::upload_result::success
-                && rtx == cloud_storage::upload_result::success) {
-                  return rs;
-              } else if (rs != cloud_storage::upload_result::success) {
-                  return rs;
-              }
-              return rtx;
-          });
+      = ss::when_all(all_uploads.begin(), all_uploads.end())
+          .then(
+            [this](std::vector<ss::future<cloud_storage::upload_result>> vec) {
+                auto res = cloud_storage::upload_result::success;
+                for (auto& v : vec) {
+                    if (v.failed()) {
+                        vlog(
+                          _rtclog.warn,
+                          "Unexpected upload error {}",
+                          v.get_exception());
+                    } else {
+                        auto r = v.get();
+                        if (r != cloud_storage::upload_result::success) {
+                            res = r;
+                        }
+                    }
+                }
+                return res;
+            });
     auto is_compacted = first_source->is_compacted_segment()
                         && first_source->finished_self_compaction();
     co_return scheduled_upload{
