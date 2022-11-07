@@ -118,13 +118,14 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
 
     auto r = boost::irange<unsigned int>(0, ss::smp::count);
     auto mapper = [this](unsigned int c) {
-        return ss::smp::submit_to(c, [this]() -> ss::future<size_t> {
-            auto r = co_await coproc::recover_offsets(snapshot_mgr());
-            size_t n = 0;
-            for (auto& [id, routes] : r) {
-                n += routes.size();
-            }
-            co_return n;
+        return ss::smp::submit_to(c, [this]() {
+            return coproc::recover_offsets(snapshot_mgr()).then([](auto r) {
+                size_t n = 0;
+                for (auto& [id, routes] : r) {
+                    n += routes.size();
+                }
+                return n;
+            });
         });
     };
     auto results
