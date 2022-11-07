@@ -1091,7 +1091,7 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     auto to_remove = _partition->archival_meta_stm()->get_segments_to_cleanup();
 
-    std::atomic<size_t> successful_deletes{0};
+    size_t successful_deletes{0};
     co_await ss::max_concurrent_for_each(
       to_remove,
       _concurrency,
@@ -1134,7 +1134,7 @@ ss::future<> ntp_archiver::garbage_collect() {
           "retry on the next housekeeping run.");
     }
 
-    _probe->segments_deleted(successful_deletes);
+    _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
     vlog(
       _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
 }
