@@ -52,6 +52,10 @@ public:
         _segments_deleted += deleted_count;
     };
 
+    void segments_in_manifest(int64_t count) { _segments_in_manifest = count; };
+
+    void segments_to_delete(int64_t count) { _segments_to_delete = count; };
+
 private:
     /// Uploaded offsets
     uint64_t _uploaded = 0;
@@ -63,6 +67,10 @@ private:
     int64_t _pending = 0;
     /// Number of segments deleted by garbage collection
     int64_t _segments_deleted = 0;
+    /// Number of accounted segments in the cloud
+    int64_t _segments_in_manifest = 0;
+    /// Number of segments awaiting deletion
+    int64_t _segments_to_delete = 0;
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
