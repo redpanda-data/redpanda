@@ -493,6 +493,43 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     b.stop().get();
 }
 
+namespace archival::internal {
+
+// A replacement for NTP archiver which does no operations. Can be placed in the
+// scheduler service to make sure that the service fixture does not interfere
+// with another archiver started explicitly in a unit test.
+class no_op_archiver final : public archival::ntp_archiver {
+public:
+    ss::future<ntp_archiver::batch_result> upload_next_candidates(
+      std::optional<model::offset> last_stable_offset_override) override {
+        ntp_archiver::batch_result result{
+          .non_compacted_upload_result = {}, .compacted_upload_result = {}};
+        return ss::make_ready_future<ntp_archiver::batch_result>(result);
+    }
+};
+
+class scheduler_service_accessor {
+public:
+    // If the scheduler contains an archiver for the given ntp, stop the
+    // archiver, and replace it with another archiver which does no uploads. The
+    // no-op archiver is started before returning.
+    static void replace_archiver_with_no_op(
+      const model::ntp& ntp, internal::scheduler_service_impl& scheduler) {
+        if (auto it = scheduler._archivers.find(ntp);
+            it != scheduler._archivers.end()) {
+            it->second->stop().get();
+            it->second = ss::make_lw_shared<ntp_archiver>(
+              scheduler._partition_manager.local().log(ntp)->config(),
+              scheduler._partition_manager.local(),
+              scheduler._conf,
+              scheduler._remote.local(),
+              scheduler._partition_manager.local().get(ntp));
+            it->second->run_upload_loop();
+        }
+    }
+};
+} // namespace archival::internal
+
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // This test simulates leadership transfer. In this situation the
@@ -518,6 +555,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       part->high_watermark(),
       part->committed_offset(),
       *part);
+
+    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
+      manifest_ntp, get_scheduler_service());
 
     auto s1name = archival::segment_name("0-1-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
@@ -682,13 +722,6 @@ struct upload_range {
 /// data.
 static void test_partial_upload_impl(
   archiver_fixture& test, upload_range first, upload_range last) {
-    // Make sure that the ntp archiver in the fixture is not able to make any
-    // progress, so only the archiver started in this test is responsible for
-    // any state changes.
-    test.start_request_masking(
-      http_test_utils::response{
-        "slow down", ss::httpd::reply::status_type::service_unavailable},
-      60s);
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1), 10},
     };
@@ -699,6 +732,9 @@ static void test_partial_upload_impl(
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
+
+    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
+      manifest_ntp, test.get_scheduler_service());
 
     auto s1name = archival::segment_name("0-1-v1.log");
 
@@ -772,18 +808,6 @@ static void test_partial_upload_impl(
 
     auto [aconf, cconf] = get_configurations();
 
-    // Starts a custom http imposter so that assertions about requests made by
-    // archiver started in this test are not polluted by requests from the
-    // archiver in the fixture app. The archiver in this test talks to the
-    // custom imposter.
-    net::unresolved_address test_server_address{
-      http_imposter_fixture::httpd_host_name.data(),
-      http_imposter_fixture::httpd_port_number + 1};
-    cconf.client_config.server_addr = test_server_address;
-
-    http_imposter_fixture test_server{test_server_address};
-    test_server.listen();
-
     cloud_storage::remote remote(
       cconf.connection_limit,
       cconf.client_config,
@@ -795,6 +819,8 @@ static void test_partial_upload_impl(
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
+    test.reset_http_call_state();
+
     auto res = archiver.upload_next_candidates(lso).get();
 
     auto non_compacted_result = res.non_compacted_upload_result;
@@ -806,11 +832,11 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
-    test_server.log_requests();
-    BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 2);
+    test.log_requests();
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 2);
 
     {
-        auto [begin, end] = test_server.get_targets().equal_range(manifest_url);
+        auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT");
@@ -821,7 +847,7 @@ static void test_partial_upload_impl(
     ss::sstring url2 = "/" + get_segment_path(manifest, s2name)().string();
 
     {
-        auto [begin, end] = test_server.get_targets().equal_range(url2);
+        auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
@@ -846,10 +872,10 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
-    test_server.log_requests();
-    BOOST_REQUIRE_EQUAL(test_server.get_requests().size(), 4);
+    test.log_requests();
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 4);
     {
-        auto [begin, end] = test_server.get_targets().equal_range(manifest_url);
+        auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 2);
         std::multiset<ss::sstring> expected = {"PUT", "PUT"};
@@ -873,14 +899,14 @@ static void test_partial_upload_impl(
     }
 
     {
-        auto [begin, end] = test_server.get_targets().equal_range(url2);
+        auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
     {
         ss::sstring url3 = "/" + get_segment_path(manifest, s3name)().string();
-        auto [begin, end] = test_server.get_targets().equal_range(url3);
+        auto [begin, end] = test.get_targets().equal_range(url3);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT

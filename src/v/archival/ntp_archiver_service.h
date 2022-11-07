@@ -146,7 +146,7 @@ public:
     ///
     /// \param lso_override last stable offset override
     /// \return future that returns number of uploaded/failed segments
-    ss::future<batch_result> upload_next_candidates(
+    virtual ss::future<batch_result> upload_next_candidates(
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
 
     ss::future<cloud_storage::download_result> sync_manifest();
@@ -169,6 +169,8 @@ public:
     /// segments that are below the current start offset and segments
     /// that have been replaced with their compacted equivalent.
     ss::future<> garbage_collect();
+
+    virtual ~ntp_archiver() = default;
 
 private:
     /// Information about started upload
