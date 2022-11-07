@@ -279,6 +279,8 @@ private:
     ss::future<cloud_storage::upload_result>
     delete_segment(const remote_segment_path& path);
 
+    void update_probe();
+
     bool upload_loop_can_continue() const;
     bool sync_manifest_loop_can_continue() const;
     bool housekeeping_can_continue() const;

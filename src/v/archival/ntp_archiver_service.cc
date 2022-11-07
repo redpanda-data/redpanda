@@ -232,6 +232,8 @@ ss::future<> ntp_archiver::upload_loop() {
             break;
         }
 
+        update_probe();
+
         if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU
             // utilization when redpanda is not receiving any data and there
@@ -311,6 +313,21 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         co_return cloud_storage::download_result::success;
     }
     __builtin_unreachable();
+}
+
+void ntp_archiver::update_probe() {
+    const auto& man = manifest();
+
+    _probe.segments_in_manifest(man.size());
+
+    const auto first_addressable = man.first_addressable_segment();
+    const auto truncated_seg_count = first_addressable == man.end()
+                                       ? 0
+                                       : std::distance(
+                                         man.begin(), first_addressable);
+
+    _probe.segments_to_delete(
+      truncated_seg_count + man.replaced_segments_count());
 }
 
 bool ntp_archiver::upload_loop_can_continue() const {
