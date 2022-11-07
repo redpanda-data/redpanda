@@ -29,6 +29,7 @@ from rptest.util import (
     wait_for_removal_of_n_segments,
 )
 from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -127,7 +128,7 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         cleanup_policy="compact,delete",
         segment_bytes=EndToEndShadowIndexingBase.segment_size // 2), )
 
-    @ok_to_fail
+    @skip_debug_mode
     @cluster(num_nodes=5)
     def test_write(self):
         # Set compaction interval high at first, so we can get enough segments in log
