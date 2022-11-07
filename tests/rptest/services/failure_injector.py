@@ -49,12 +49,14 @@ class FailureSpec:
 class FailureInjector:
     def __init__(self, redpanda):
         self.redpanda = redpanda
+        self.uuid = self.redpanda.register_failure_injector(self)
 
     def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
         self._heal_all()
+        self.redpanda.deregister_failure_injector(self.uuid)
 
     def inject_failure(self, spec):
         self.redpanda.logger.info(f"injecting failure: {spec}")
