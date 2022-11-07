@@ -561,60 +561,6 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     }
 
     auto first_source = upload.sources.front();
-    if (
-      manifest().contains(upload.exposed_name) && !upload_ctx.allow_reuploads) {
-        // If the manifest already contains the name we have the following
-        // cases
-        //
-        // manifest: [A-B], upload: [C-D] where A/C are base offsets and B/D
-        // are committed offsets
-        // invariant:
-        // - A == C (because the name contains base offset)
-        // cases:
-        // - B < D:
-        //   - We need to upload the segment since it has more data.
-        //     Skipping the upload is not an option since partial upload
-        //     is not guaranteed to start from an offset which is not equal
-        //     to B (which will trigger a loop).
-        // - B > D:
-        //   - Normally this shouldn't happen because we will lookup
-        //     offset B to start the next upload and the segment returned by
-        //     the policy will have commited offset which is less than this
-        //     value. We need to log a warning and continue with the largest
-        //     offset.
-        // - B == D:
-        //   - Same as previoius. We need to log error and continue with the
-        //   largest offset.
-        const auto& meta = manifest().get(upload.exposed_name);
-        auto dirty_offset = first_source->offsets().dirty_offset;
-        if (meta->committed_offset < dirty_offset) {
-            vlog(
-              _rtclog.info,
-              "will re-upload {}, last offset in the manifest {}, "
-              "candidate dirty offset {}",
-              upload,
-              meta->committed_offset,
-              dirty_offset);
-        } else if (meta->committed_offset >= dirty_offset) {
-            vlog(
-              _rtclog.warn,
-              "skip upload {} because it's already in the manifest, "
-              "last offset in the manifest {}, candidate dirty offset {}",
-              upload,
-              meta->committed_offset,
-              dirty_offset);
-            start_upload_offset = meta->committed_offset;
-            co_return scheduled_upload{
-              .result = std::nullopt,
-              .inclusive_last_offset = start_upload_offset,
-              .meta = std::nullopt,
-              .name = std::nullopt,
-              .delta = std::nullopt,
-              .stop = ss::stop_iteration::no,
-              .segment_read_locks = {},
-            };
-        }
-    }
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     start_upload_offset = offset + model::offset(1);
