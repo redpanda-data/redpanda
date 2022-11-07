@@ -128,6 +128,7 @@ class TxAbortSnapshotTest(RedpandaTest):
             return True
 
         wait_until(segments_gone, timeout_sec=60, backoff_sec=1)
+        self.fill_segment(self.topics[0].name)
 
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
