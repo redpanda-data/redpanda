@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -47,6 +48,7 @@ public:
     }
 
 private:
+    ss::future<std::error_code> apply(bootstrap_cluster_cmd);
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
     std::optional<model::cluster_uuid> _cluster_uuid_applied;

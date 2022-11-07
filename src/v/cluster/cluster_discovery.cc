@@ -188,7 +188,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
 
 ss::future<cluster_bootstrap_info_reply>
 cluster_discovery::request_cluster_bootstrap_info_single(
-  const net::unresolved_address& addr) const {
+  net::unresolved_address addr) const {
     vlog(clusterlog.info, "Requesting cluster bootstrap info from {}", addr);
     _as.check();
     auto repeat_jitter = simple_time_jitter<model::timeout_clock>(1s);
@@ -308,18 +308,19 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
         replies.emplace(seed_server.addr, cluster_bootstrap_info_reply{});
     }
     co_await ss::parallel_for_each(
-      replies, ss::coroutine::lambda([this](auto& iter) -> ss::future<> {
-          auto& [addr, reply] = iter;
-          reply = co_await request_cluster_bootstrap_info_single(addr);
-          if (reply.cluster_uuid.has_value()) {
-              vlog(
-                clusterlog.info,
-                "Cluster presence detected in other seed servers: {}",
-                *reply.cluster_uuid);
-              _is_cluster_founder = false;
-              co_return;
-          }
-      }));
+      replies, [this, &replies](auto& entry) mutable {
+          return request_cluster_bootstrap_info_single(entry.first)
+            .then([this, &replies, addr = entry.first](auto reply) mutable {
+                if (reply.cluster_uuid.has_value()) {
+                    vlog(
+                      clusterlog.info,
+                      "Cluster presence detected in other seed servers: {}",
+                      *reply.cluster_uuid);
+                    _is_cluster_founder = false;
+                }
+                replies[addr] = std::move(reply);
+            });
+      });
     if (_is_cluster_founder.has_value()) {
         vassert(
           !*_is_cluster_founder,

@@ -72,76 +72,76 @@ bootstrap_backend::apply_update(model::record_batch b) {
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
     co_return co_await ss::visit(
-      cmd,
-      ss::coroutine::lambda(
-        [this](bootstrap_cluster_cmd cmd) -> ss::future<std::error_code> {
-            // Provide bootstrap_cluster_cmd idempotency
-            if (_cluster_uuid_applied) {
-                vlog(
-                  clusterlog.debug,
-                  "Skipping bootstrap_cluster_cmd {}, current cluster_uuid: {}",
-                  cmd.value.uuid,
-                  *_cluster_uuid_applied);
-                vassert(
-                  _storage.local().get_cluster_uuid(),
-                  "Cluster UUID applied but missing from storage");
-                co_return errc::cluster_already_exists;
-            }
+      cmd, [this](bootstrap_cluster_cmd cmd) { return apply(std::move(cmd)); });
+}
 
-            // Reconcile with the cluster_uuid value in kvstore
-            if (
-              _storage.local().get_cluster_uuid()
-              && *_storage.local().get_cluster_uuid() != cmd.value.uuid) {
-                throw std::runtime_error(fmt_with_ctx(
-                  fmt::format,
-                  "Cluster UUID mismatch. Controller log value: {}, kvstore "
-                  "value: {}. Possible reasons: local controller log storage "
-                  "wiped while kvstore storage is not, or vice versa",
-                  cmd.value.uuid,
-                  *_storage.local().get_cluster_uuid()));
-            }
+ss::future<std::error_code>
+bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
+    // Provide bootstrap_cluster_cmd idempotency
+    if (_cluster_uuid_applied) {
+        vlog(
+          clusterlog.debug,
+          "Skipping bootstrap_cluster_cmd {}, current cluster_uuid: {}",
+          cmd.value.uuid,
+          *_cluster_uuid_applied);
+        vassert(
+          _storage.local().get_cluster_uuid(),
+          "Cluster UUID applied but missing from storage");
+        co_return errc::cluster_already_exists;
+    }
 
-            // Apply bootstrap user
-            if (cmd.value.bootstrap_user_cred) {
-                const std::error_code errc
-                  = co_await dispatch_updates_to_cores<user_and_credential>(
-                    *cmd.value.bootstrap_user_cred, _credentials);
-                if (errc == errc::user_exists) {
-                    vlog(
-                      clusterlog.warn,
-                      "Failed to dispatch bootstrap user: {} ({})",
-                      errc.message(),
-                      errc);
-                } else if (errc) {
-                    throw std::runtime_error(fmt_with_ctx(
-                      fmt::format,
-                      "Failed to dispatch bootstrap user: {} ({})",
-                      errc.message(),
-                      errc));
-                } else {
-                    vlog(
-                      clusterlog.debug,
-                      "Bootstrap user created {}",
-                      cmd.value.bootstrap_user_cred->username);
-                }
-            }
+    // Reconcile with the cluster_uuid value in kvstore
+    if (
+      _storage.local().get_cluster_uuid()
+      && *_storage.local().get_cluster_uuid() != cmd.value.uuid) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Cluster UUID mismatch. Controller log value: {}, kvstore "
+          "value: {}. Possible reasons: local controller log storage "
+          "wiped while kvstore storage is not, or vice versa",
+          cmd.value.uuid,
+          *_storage.local().get_cluster_uuid()));
+    }
 
-            // Apply cluster_uuid
-            co_await _storage.invoke_on_all(
-              [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
-                  storage.set_cluster_uuid(new_cluster_uuid);
-                  return ss::make_ready_future();
-              });
-            co_await _storage.local().kvs().put(
-              cluster_uuid_key_space,
-              cluster_uuid_key,
-              serde::to_iobuf(cmd.value.uuid));
-            _cluster_uuid_applied = cmd.value.uuid;
+    // Apply bootstrap user
+    if (cmd.value.bootstrap_user_cred) {
+        const std::error_code errc
+          = co_await dispatch_updates_to_cores<user_and_credential>(
+            *cmd.value.bootstrap_user_cred, _credentials);
+        if (errc == errc::user_exists) {
             vlog(
-              clusterlog.debug, "Cluster UUID initialized {}", cmd.value.uuid);
+              clusterlog.warn,
+              "Failed to dispatch bootstrap user: {} ({})",
+              errc.message(),
+              errc);
+        } else if (errc) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to dispatch bootstrap user: {} ({})",
+              errc.message(),
+              errc));
+        } else {
+            vlog(
+              clusterlog.debug,
+              "Bootstrap user created {}",
+              cmd.value.bootstrap_user_cred->username);
+        }
+    }
 
-            co_return errc::success;
-        }));
+    // Apply cluster_uuid
+    co_await _storage.invoke_on_all(
+      [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
+          storage.set_cluster_uuid(new_cluster_uuid);
+          return ss::make_ready_future();
+      });
+    co_await _storage.local().kvs().put(
+      cluster_uuid_key_space,
+      cluster_uuid_key,
+      serde::to_iobuf(cmd.value.uuid));
+    _cluster_uuid_applied = cmd.value.uuid;
+    vlog(clusterlog.debug, "Cluster UUID initialized {}", cmd.value.uuid);
+
+    co_return errc::success;
 }
 
 } // namespace cluster

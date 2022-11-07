@@ -111,7 +111,7 @@ private:
     // early with a bogus result if it's already been determined if this node
     // is a cluster founder.
     ss::future<cluster_bootstrap_info_reply>
-    request_cluster_bootstrap_info_single(const net::unresolved_address&) const;
+      request_cluster_bootstrap_info_single(net::unresolved_address) const;
 
     // Initializes founder state (whether a cluster already exists, whether
     // this node is a founder, etc). Requests cluster_bootstrap_info from all
