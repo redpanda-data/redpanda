@@ -367,6 +367,10 @@ public:
 
     std::vector<model::ntp> all_updates_in_progress() const;
 
+    model::revision_id last_applied_revision() const {
+        return _last_applied_revision_id;
+    }
+
 private:
     friend topic_table_probe;
 
@@ -396,6 +400,7 @@ private:
     hierarchy_t _topics_hierarchy;
 
     updates_t _updates_in_progress;
+    model::revision_id _last_applied_revision_id;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;

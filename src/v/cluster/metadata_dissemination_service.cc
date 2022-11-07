@@ -371,10 +371,6 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
-    if (report.was_metadata_refreshed == refreshed_metadata::no) {
-        co_return;
-    }
-
     for (const auto& node_report : report.node_reports) {
         co_await _leaders.invoke_on_all(
           [&node_report](partition_leaders_table& leaders) {

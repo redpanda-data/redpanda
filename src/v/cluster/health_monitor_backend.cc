@@ -130,15 +130,13 @@ ss::future<> health_monitor_backend::stop() {
 }
 
 cluster_health_report health_monitor_backend::build_cluster_report(
-  const cluster_report_filter& filter,
-  refreshed_metadata was_metadata_refreshed) {
+  const cluster_report_filter& filter) {
     std::vector<node_health_report> reports;
     std::vector<node_state> statuses;
     // refreshing node status is not expensive on leader, we can refresh it
     // every time
     if (_raft0->is_elected_leader()) {
         refresh_nodes_status();
-        was_metadata_refreshed = refreshed_metadata::yes;
     }
 
     auto nodes = filter.nodes.empty() ? _members.local().all_broker_ids()
@@ -160,8 +158,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
     return cluster_health_report{
       .raft0_leader = _raft0->get_leader_id(),
       .node_states = std::move(statuses),
-      .node_reports = std::move(reports),
-      .was_metadata_refreshed = was_metadata_refreshed};
+      .node_reports = std::move(reports)};
 }
 
 void health_monitor_backend::refresh_nodes_status() {
@@ -423,20 +420,18 @@ health_monitor_backend::get_cluster_health(
       "requesting cluster state report with filter: {}, force refresh: {}",
       filter,
       refresh);
-    auto [refreshed, ec] = co_await maybe_refresh_cluster_health(
-      refresh, deadline);
+    auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
     if (ec) {
         co_return ec;
     }
 
-    co_return build_cluster_report(filter, refreshed);
+    co_return build_cluster_report(filter);
 }
 
 ss::future<storage::disk_space_alert>
 health_monitor_backend::get_cluster_disk_health(
   force_refresh refresh, model::timeout_clock::time_point deadline) {
-    auto [refreshed, ec] = co_await maybe_refresh_cluster_health(
-      refresh, deadline);
+    auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
     if (ec) {
         vlog(clusterlog.warn, "Failed to refresh cluster health.");
         // No obvious choice what to return here; really, health data should be
@@ -450,7 +445,7 @@ health_monitor_backend::get_cluster_disk_health(
     co_return _reports_disk_health;
 }
 
-ss::future<std::pair<refreshed_metadata, std::error_code>>
+ss::future<std::error_code>
 health_monitor_backend::maybe_refresh_cluster_health(
   force_refresh refresh, model::timeout_clock::time_point deadline) {
     auto const need_refresh = refresh
@@ -473,21 +468,20 @@ health_monitor_backend::maybe_refresh_cluster_health(
                   rate,
                   "error refreshing cluster health state - {}",
                   err.message());
-                co_return std::make_pair(refreshed_metadata::no, err);
+                co_return err;
             }
         } catch (const ss::broken_semaphore&) {
             // Refresh was waiting on _refresh_mutex during shutdown
-            co_return std::make_pair(
-              refreshed_metadata::no, errc::shutting_down);
+            co_return errc::shutting_down;
         } catch (const ss::timed_out_error&) {
             vlog(
               clusterlog.info,
               "timed out when refreshing cluster health state, falling back to "
               "previous cluster health snapshot");
-            co_return std::make_pair(refreshed_metadata::no, errc::timeout);
+            co_return errc::timeout;
         }
     }
-    co_return std::make_pair(refreshed_metadata{need_refresh}, errc::success);
+    co_return errc::success;
 }
 
 ss::future<result<node_health_report>>
@@ -748,7 +742,7 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_backend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {
-    auto [refreshed, ec] = co_await maybe_refresh_cluster_health(
+    auto ec = co_await maybe_refresh_cluster_health(
       force_refresh::no, deadline);
     if (ec) {
         co_return ec;
@@ -765,7 +759,7 @@ health_monitor_backend::get_node_drain_status(
 ss::future<cluster_health_overview>
 health_monitor_backend::get_cluster_health_overview(
   model::timeout_clock::time_point deadline) {
-    auto [refreshed, ec] = co_await maybe_refresh_cluster_health(
+    auto ec = co_await maybe_refresh_cluster_health(
       force_refresh::no, deadline);
 
     cluster_health_overview ret;
