@@ -89,9 +89,8 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 		return err
 	}
 	username := string(secret.Data[corev1.BasicAuthUsernameKey])
-	password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-	config, err := cm.generateConsoleConfig(ctx, username, password)
+	config, err := cm.generateConsoleConfig(ctx, username)
 	if err != nil {
 		return err
 	}
@@ -135,13 +134,13 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // This should match the fields at https://github.com/redpanda-data/console/blob/master/docs/config/console.yaml
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
 func (cm *ConfigMap) generateConsoleConfig(
-	ctx context.Context, username, password string,
+	ctx context.Context, username string,
 ) (configString string, err error) {
 	consoleConfig := &ConsoleConfig{
 		MetricsNamespace: cm.consoleobj.Spec.MetricsPrefix,
 		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
 		Server:           cm.genServer(),
-		Kafka:            cm.genKafka(username, password),
+		Kafka:            cm.genKafka(username),
 		Enterprise:       cm.genEnterprise(),
 		Redpanda:         cm.genRedpanda(),
 	}
@@ -430,7 +429,7 @@ func (s *SecretTLSCa) useCaCert() bool {
 	return !s.UsePublicCerts && s.NodeSecretRef != nil
 }
 
-func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
+func (cm *ConfigMap) genKafka(username string) kafka.Config {
 	k := kafka.Config{
 		Brokers:  getBrokers(cm.clusterobj),
 		ClientID: fmt.Sprintf("redpanda-console-%s-%s", cm.consoleobj.GetNamespace(), cm.consoleobj.GetName()),
@@ -486,7 +485,6 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 		sasl = kafka.SASLConfig{
 			Enabled:   yes,
 			Username:  username,
-			Password:  password,
 			Mechanism: admin.ScramSha256,
 		}
 	}
