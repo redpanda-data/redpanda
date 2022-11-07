@@ -121,12 +121,8 @@ void seq_writer::advance_offset_inner(model::offset offset) {
     }
 }
 
-ss::future<schema_id>
-seq_writer::write_subject_version(canonical_schema schema) {
-    auto do_write = [_schema{std::move(schema)}](
-                      model::offset write_at,
-                      seq_writer& seq) -> ss::future<std::optional<schema_id>> {
-        auto schema{_schema};
+ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
+  canonical_schema schema, model::offset write_at, seq_writer& seq) {
         // Check if store already contains this data: if
         // so, we do no I/O and return the schema ID.
         auto projected = co_await seq._store.project_ids(schema);
@@ -170,18 +166,21 @@ seq_writer::write_subject_version(canonical_schema schema) {
                 co_return std::nullopt;
             }
         }
-    };
-
-    return sequenced_write(do_write);
 }
 
-ss::future<bool> seq_writer::write_config(
-  std::optional<subject> sub, compatibility_level compat) {
-    auto do_write = [_sub{std::move(sub)}, _compat{compat}](
-                      model::offset write_at,
-                      seq_writer& seq) -> ss::future<std::optional<bool>> {
-        auto sub{_sub};
-        auto compat{_compat};
+ss::future<schema_id>
+seq_writer::write_subject_version(canonical_schema schema) {
+    return sequenced_write([this, schema{std::move(schema)}](
+                             model::offset write_at, seq_writer& seq) {
+        return do_write_subject_version(schema, write_at, seq);
+    });
+}
+
+ss::future<std::optional<bool>> seq_writer::do_write_config(
+  std::optional<subject> sub,
+  compatibility_level compat,
+  model::offset write_at,
+  seq_writer& seq) {
         vlog(
           plog.debug,
           "write_config sub={} compat={} offset={}",
@@ -220,19 +219,22 @@ ss::future<bool> seq_writer::write_config(
             // Pass up a None, our caller's cue to retry
             co_return std::nullopt;
         }
-    };
+}
 
-    co_return co_await sequenced_write(do_write);
+ss::future<bool> seq_writer::write_config(
+  std::optional<subject> sub, compatibility_level compat) {
+    return sequenced_write([this, sub{std::move(sub)}, compat](
+                             model::offset write_at, seq_writer& seq) {
+        return do_write_config(sub, compat, write_at, seq);
+    });
 }
 
 /// Impermanent delete: update a version with is_deleted=true
-ss::future<bool>
-seq_writer::delete_subject_version(subject sub, schema_version version) {
-    auto do_write = [_sub{std::move(sub)}, _version{version}](
-                      model::offset write_at,
-                      seq_writer& seq) -> ss::future<std::optional<bool>> {
-        auto sub{_sub};
-        auto version{_version};
+ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
+  subject sub,
+  schema_version version,
+  model::offset write_at,
+  seq_writer& seq) {
         if (co_await seq._store.is_referenced(sub, version)) {
             throw as_exception(has_references(sub, version));
         }
@@ -263,19 +265,20 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
             // Pass up a None, our caller's cue to retry
             co_return std::nullopt;
         }
-    };
-
-    co_return co_await sequenced_write(do_write);
 }
 
-ss::future<std::vector<schema_version>>
-seq_writer::delete_subject_impermanent(subject sub) {
-    vlog(plog.debug, "delete_subject_impermanent sub={}", sub);
-    auto do_write = [_sub{std::move(sub)}](
-                      model::offset write_at, seq_writer& seq)
-      -> ss::future<std::optional<std::vector<schema_version>>> {
-        auto sub{_sub};
-        // Grab the versions before they're gone.
+ss::future<bool>
+seq_writer::delete_subject_version(subject sub, schema_version version) {
+    return sequenced_write([this, sub{std::move(sub)}, version](
+                             model::offset write_at, seq_writer& seq) {
+        return do_delete_subject_version(sub, version, write_at, seq);
+    });
+}
+
+ss::future<std::optional<std::vector<schema_version>>>
+seq_writer::do_delete_subject_impermanent(
+  subject sub, model::offset write_at, seq_writer& seq) {
+    // Grab the versions before they're gone.
         auto versions = co_await seq._store.get_versions(
           sub, include_deleted::no);
 
@@ -287,8 +290,8 @@ seq_writer::delete_subject_impermanent(subject sub) {
         auto is_referenced = co_await ssx::parallel_transform(
           versions.begin(),
           versions.end(),
-          [&seq, &sub](auto const& ver) -> ss::future<bool> {
-              co_return co_await seq._store.is_referenced(sub, ver);
+          [&seq, &sub](auto const& ver) {
+              return seq._store.is_referenced(sub, ver);
           });
         if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
                 return v;
@@ -313,9 +316,15 @@ seq_writer::delete_subject_impermanent(subject sub) {
             // Pass up a None, our caller's cue to retry
             co_return std::nullopt;
         }
-    };
+}
 
-    co_return co_await sequenced_write(do_write);
+ss::future<std::vector<schema_version>>
+seq_writer::delete_subject_impermanent(subject sub) {
+    vlog(plog.debug, "delete_subject_impermanent sub={}", sub);
+    return sequenced_write(
+      [this, sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
+          return do_delete_subject_impermanent(sub, write_at, seq);
+      });
 }
 
 /// Permanent deletions (i.e. writing tombstones for previous sequenced
