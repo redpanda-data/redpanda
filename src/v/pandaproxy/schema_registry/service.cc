@@ -29,6 +29,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "pandaproxy/util.h"
 #include "security/acl.h"
 #include "security/ephemeral_credential_store.h"
 #include "ssx/semaphore.h"
@@ -41,6 +42,7 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 namespace pandaproxy::schema_registry {
 
@@ -48,24 +50,31 @@ using server = ctx_server<service>;
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__schema_registry"};
 
-template<typename Handler>
-auto wrap(ss::gate& g, one_shot& os, Handler h) {
-    return [&g, &os, _h{std::move(h)}](
-             server::request_t rq,
-             server::reply_t rp) -> ss::future<server::reply_t> {
-        auto h{_h};
+class wrap {
+public:
+    wrap(ss::gate& g, one_shot& os, server::function_handler h)
+      : _g{g}
+      , _os{os}
+      , _h{std::move(h)} {}
 
+    ss::future<server::reply_t>
+    operator()(server::request_t rq, server::reply_t rp) const {
         rq.authn_method = config::get_authn_method(
           rq.service().config().schema_registry_api.value(),
           rq.req->get_listener_idx());
         rq.user = maybe_authenticate_request(
           rq.authn_method, rq.service().authenticator(), *rq.req);
 
-        auto units = co_await os();
-        auto guard = gate_guard(g);
-        co_return co_await h(std::move(rq), std::move(rp));
-    };
-}
+        auto units = co_await _os();
+        auto guard = gate_guard(_g);
+        co_return co_await _h(std::move(rq), std::move(rp));
+    }
+
+private:
+    ss::gate& _g;
+    one_shot& _os;
+    server::function_handler _h;
+};
 
 server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     server::routes_t routes;
