@@ -21,6 +21,7 @@ import threading
 import collections
 import re
 import uuid
+import weakref
 import zipfile
 from enum import Enum
 from typing import Mapping, Optional, Tuple, Union, Any
@@ -43,6 +44,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services import tls
 from rptest.services.admin import Admin
+from rptest.services.failure_injector import FailureInjector
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
@@ -619,6 +621,8 @@ class RedpandaService(Service):
         self._node_id_by_idx = {}
 
         self._seed_servers = [self.nodes[0]] if len(self.nodes) > 0 else []
+
+        self.failure_injectors = {}
 
     def set_seed_servers(self, node_list):
         assert len(node_list) > 0
@@ -1586,6 +1590,19 @@ class RedpandaService(Service):
                         lambda n: self.stop_node(n, **kwargs),
                         parallel=True)
 
+        if len(self.failure_injectors) > 0:
+            for ident, injector_wref in self.failure_injectors.items():
+                if injector_wref:
+                    self.logger.error(
+                        f"Test left behind live failure injector with identifier: {ident}."
+                        " This will impact subsequent tests.")
+                else:
+                    self.logger.info(
+                        f"Failure injector with identifier {ident} did not deregister."
+                    )
+
+            self.failure_injectors.clear()
+
         self._stop_duration_seconds = time.time() - self._stop_time
 
     def stop_node(self, node, timeout=None):
@@ -2333,3 +2350,16 @@ class RedpandaService(Service):
 
         # Fall through, match on all nodes
         return True
+
+    def register_failure_injector(self,
+                                  finjector: FailureInjector) -> uuid.UUID:
+        finjector_id = uuid.uuid4()
+        self.failure_injectors[finjector_id] = weakref.ref(finjector)
+
+        self.logger.debug(f"Registered failure injector {finjector_id}")
+
+        return finjector_id
+
+    def deregister_failure_injector(self, uuid: uuid.UUID):
+        del self.failure_injectors[uuid]
+        self.logger.debug(f"Deregistered failure injector {uuid}")
