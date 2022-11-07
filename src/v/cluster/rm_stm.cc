@@ -1362,6 +1362,21 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         co_return errc::invalid_request;
     }
 
+    auto idempotent_lock = get_idempotent_producer_lock(bid.pid);
+    auto units = co_await idempotent_lock->hold_read_lock();
+
+    // Double check that after hold read lock rw_lock still exists in rw map.
+    // Becasue we can not continue replicate_seq if pid was deleted from state
+    // after we lock mutex
+    if (!_idempotent_producer_locks.contains(bid.pid)) {
+        vlog(
+          _ctx_log.error,
+          "[pid: {}] Lock for pid was deleted from map after we hold it. "
+          "Cleaning process was during replicate_seq",
+          bid.pid);
+        co_return errc::invalid_request;
+    }
+
     // getting session by client's pid
     auto session = _inflight_requests
                      .lazy_emplace(
@@ -2725,6 +2740,23 @@ ss::future<> rm_stm::clear_old_tx_pids() {
           _log_state.forget(pid);
           return ss::now();
       });
+}
+
+ss::future<> rm_stm::clear_old_idempotent_pids() {
+    while (_log_state.lru_idempotent_pids.size() > 100500) {
+        auto pid_for_delete = _log_state.lru_idempotent_pids.front().entry.pid;
+        auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
+        auto lock = rw_lock->try_write_lock();
+        if (lock) {
+            _log_state.lru_idempotent_pids.pop_front();
+            _log_state.seq_table.erase(pid_for_delete);
+            _inflight_requests.erase(pid_for_delete);
+            _idempotent_producer_locks.erase(pid_for_delete);
+            rw_lock->write_unlock();
+        }
+
+        co_await ss::maybe_yield();
+    }
 }
 
 } // namespace cluster
