@@ -87,7 +87,7 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     mkdir -p "/opt/kafka-3.0.0" && chmod a+rw /opt/kafka-3.0.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.0.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.0.0" && \
     ln -s /opt/kafka-3.0.0 /opt/kafka-dev && \
     mkdir /opt/librdkafka && \
-    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.8.0.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
+    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.9.2.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
     cd /opt/librdkafka && \
     ./configure && \
     make -j$(nproc) && \
