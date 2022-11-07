@@ -129,14 +129,20 @@ class FailureInjector:
         node.account.ssh(cmd)
 
     def _heal(self, node):
+        self.redpanda.logger.info(f"healing node {node.account.hostname}")
         try:
-            self.redpanda.logger.info(f"healing node {node.account.hostname}")
             cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
             node.account.ssh(cmd)
+        except Exception as e:
+            self.redpanda.logger.error(
+                f"Failed to clean up OUTPUT rule on {node.name}: {e}")
+
+        try:
             cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
             node.account.ssh(cmd)
-        except:
-            pass
+        except Exception as e:
+            self.redpanda.logger.error(
+                f"Failed to clean up INPUT rule on {node.name}: {e}")
 
     def _delete_netem(self, node):
         tc_netem.tc_netem_delete(node)
