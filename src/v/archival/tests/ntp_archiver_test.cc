@@ -493,45 +493,10 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     b.stop().get();
 }
 
-namespace archival::internal {
-
-// A replacement for NTP archiver which does no operations. Can be placed in the
-// scheduler service to make sure that the service fixture does not interfere
-// with another archiver started explicitly in a unit test.
-class no_op_archiver final : public archival::ntp_archiver {
-public:
-    ss::future<ntp_archiver::batch_result> upload_next_candidates(
-      std::optional<model::offset> last_stable_offset_override) override {
-        ntp_archiver::batch_result result{
-          .non_compacted_upload_result = {}, .compacted_upload_result = {}};
-        return ss::make_ready_future<ntp_archiver::batch_result>(result);
-    }
-};
-
-class scheduler_service_accessor {
-public:
-    // If the scheduler contains an archiver for the given ntp, stop the
-    // archiver, and replace it with another archiver which does no uploads. The
-    // no-op archiver is started before returning.
-    static void replace_archiver_with_no_op(
-      const model::ntp& ntp, internal::scheduler_service_impl& scheduler) {
-        if (auto it = scheduler._archivers.find(ntp);
-            it != scheduler._archivers.end()) {
-            it->second->stop().get();
-            it->second = ss::make_lw_shared<ntp_archiver>(
-              scheduler._partition_manager.local().log(ntp)->config(),
-              scheduler._partition_manager.local(),
-              scheduler._conf,
-              scheduler._remote.local(),
-              scheduler._partition_manager.local().get(ntp));
-            it->second->run_upload_loop();
-        }
-    }
-};
-} // namespace archival::internal
-
 // NOLINTNEXTLINE
-FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
+FIXTURE_TEST(
+  test_upload_segments_leadership_transfer,
+  archiver_fixture_with_cloud_storage_disabled) {
     // This test simulates leadership transfer. In this situation the
     // manifest might contain misaligned segments. This triggers partial
     // segment upload which, in turn should guarantee that the progress is
@@ -555,9 +520,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       part->high_watermark(),
       part->committed_offset(),
       *part);
-
-    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
-      manifest_ntp, get_scheduler_service());
 
     auto s1name = archival::segment_name("0-1-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
@@ -732,9 +694,6 @@ static void test_partial_upload_impl(
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
         return part->high_watermark() >= model::offset(1);
     }).get();
-
-    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
-      manifest_ntp, test.get_scheduler_service());
 
     auto s1name = archival::segment_name("0-1-v1.log");
 
@@ -920,17 +879,20 @@ static void test_partial_upload_impl(
 }
 
 // NOLINTNEXTLINE
-FIXTURE_TEST(test_partial_upload1, archiver_fixture) {
+FIXTURE_TEST(
+  test_partial_upload1, archiver_fixture_with_cloud_storage_disabled) {
     test_partial_upload_impl(*this, {3, 7}, {8, 9});
 }
 
 // NOLINTNEXTLINE
-FIXTURE_TEST(test_partial_upload2, archiver_fixture) {
+FIXTURE_TEST(
+  test_partial_upload2, archiver_fixture_with_cloud_storage_disabled) {
     test_partial_upload_impl(*this, {3, 3}, {4, 9});
 }
 
 // NOLINTNEXTLINE
-FIXTURE_TEST(test_partial_upload3, archiver_fixture) {
+FIXTURE_TEST(
+  test_partial_upload3, archiver_fixture_with_cloud_storage_disabled) {
     test_partial_upload_impl(*this, {3, 8}, {9, 9});
 }
 

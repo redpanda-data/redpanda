@@ -121,6 +121,8 @@ public:
     ~enable_cloud_storage_fixture();
 };
 
+struct disable_cloud_storage {};
+
 /// Archiver fixture that contains S3 mock and full redpanda stack.
 class archiver_fixture
   : public http_imposter_fixture
@@ -131,6 +133,9 @@ public:
     archiver_fixture()
       : redpanda_thread_fixture(
         redpanda_thread_fixture::init_cloud_storage_tag{}) {}
+
+    archiver_fixture(disable_cloud_storage)
+      : redpanda_thread_fixture() {}
 
     std::unique_ptr<storage::disk_log_builder> get_started_log_builder(
       model::ntp ntp, model::revision_id rev = model::revision_id(0));
@@ -181,6 +186,12 @@ private:
       bool fit_segments);
 
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
+};
+
+class archiver_fixture_with_cloud_storage_disabled : public archiver_fixture {
+public:
+    archiver_fixture_with_cloud_storage_disabled()
+      : archiver_fixture(disable_cloud_storage{}) {}
 };
 
 std::tuple<archival::configuration, cloud_storage::configuration>
