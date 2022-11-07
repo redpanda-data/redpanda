@@ -443,25 +443,12 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
     auto path = segment_path_for_candidate(candidate);
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
-    auto original_term = _partition->term();
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
       "lost leadership or term changed during upload, "
       "current leadership status: {}, "
       "current term: {}, "
       "original term: {}",
-      [this, original_term](cloud_storage::lazy_abort_source& las) {
-          auto lost_leadership = !_partition->is_elected_leader()
-                                 || _partition->term() != original_term;
-          if (unlikely(lost_leadership)) {
-              std::string reason{las.abort_reason()};
-              las.abort_reason(fmt::format(
-                fmt::runtime(reason),
-                _partition->is_elected_leader(),
-                _partition->term(),
-                original_term));
-          }
-          return lost_leadership;
-      },
+      [this](auto& s) { return archiver_lost_leadership(s); },
     };
 
     auto reset_func =
@@ -482,6 +469,22 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       reset_func,
       fib,
       lazy_abort_source);
+}
+
+bool ntp_archiver::archiver_lost_leadership(
+  cloud_storage::lazy_abort_source& las) {
+    auto original_term = _partition->term();
+    auto lost_leadership = !_partition->is_elected_leader()
+                           || _partition->term() != original_term;
+    if (unlikely(lost_leadership)) {
+        std::string reason{las.abort_reason()};
+        las.abort_reason(fmt::format(
+          fmt::runtime(reason),
+          _partition->is_elected_leader(),
+          _partition->term(),
+          original_term));
+    }
+    return lost_leadership;
 }
 
 ss::future<cloud_storage::upload_result>
