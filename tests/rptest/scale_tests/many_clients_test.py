@@ -53,6 +53,7 @@ class ManyClientsTest(RedpandaTest):
 
         PARTITION_COUNT = 100
         PRODUCER_COUNT = 4000
+        PRODUCER_TIMEOUT_MS = 5000
         TOPIC_NAME = "manyclients"
         RECORDS_PER_PRODUCER = 1000
 
@@ -78,7 +79,8 @@ class ManyClientsTest(RedpandaTest):
                                  save_msgs=False)
 
         producer = ProducerSwarm(self.test_context, self.redpanda, TOPIC_NAME,
-                                 PRODUCER_COUNT, RECORDS_PER_PRODUCER)
+                                 PRODUCER_COUNT, RECORDS_PER_PRODUCER,
+                                 PRODUCER_TIMEOUT_MS)
         producer.start()
         consumer_a.start()
         consumer_b.start()
