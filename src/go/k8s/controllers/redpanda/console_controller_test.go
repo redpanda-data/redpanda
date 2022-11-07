@@ -193,13 +193,22 @@ var _ = Describe("Console controller", func() {
 	Context("When updating Console", func() {
 		ctx := context.Background()
 		It("Should not create new ConfigMap if no change on spec", func() {
+			var configmapNsn string
+
 			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
-			createdConsole := &redpandav1alpha1.Console{}
-			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
+			Eventually(func() bool {
+				createdConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, createdConsole); err != nil {
+					return false
+				}
 
-			ref := createdConsole.Status.ConfigMapRef
-			configmapNsn := fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
+				if ref := createdConsole.Status.ConfigMapRef; ref != nil {
+					configmapNsn = fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
+					return true
+				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "Console %s/%s should be present with ConfigMap reference in the Status stanza", ConsoleNamespace, ConsoleName)
 
 			By("Adding label to Console")
 			Eventually(consoleUpdater(consoleLookupKey, func(console *redpandav1alpha1.Console) {
