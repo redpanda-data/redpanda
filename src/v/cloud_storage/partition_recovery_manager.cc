@@ -552,6 +552,49 @@ open_output_file_stream(const std::filesystem::path& path) {
     co_return std::move(stream);
 }
 
+ss::future<uint64_t> partition_downloader::download_segment_file_stream(
+  uint64_t len,
+  ss::input_stream<char> in,
+  const download_part& part,
+  remote_segment_path remote_path,
+  std::filesystem::path local_path,
+  offset_translator otl,
+  model::offset* _min_offset,
+  model::offset* _max_offset) {
+    auto& min_offset{*_min_offset};
+    auto& max_offset{*_max_offset};
+    vlog(
+      _ctxlog.info,
+      "Copying s3 path {} to local location {}",
+      remote_path,
+      local_path.string());
+    co_await ss::recursive_touch_directory(part.part_prefix.string());
+    auto fs = co_await open_output_file_stream(local_path);
+    auto stream_stats = co_await otl.copy_stream(
+      std::move(in), std::move(fs), _rtcnode);
+
+    min_offset = stream_stats.min_offset;
+    max_offset = stream_stats.max_offset;
+
+    if (stream_stats.size_bytes == 0) {
+        vlog(
+          _ctxlog.debug,
+          "Log segment downloaded empty. Original size: {}.",
+          len);
+        // The segment is empty after filtering
+        co_await ss::remove_file(local_path.native());
+    } else {
+        vlog(
+          _ctxlog.debug,
+          "Log segment downloaded. {} bytes expected, {} bytes after "
+          "pre-processing.",
+          len,
+          stream_stats.size_bytes);
+    }
+
+    co_return stream_stats.size_bytes;
+}
+
 ss::future<std::optional<partition_downloader::offset_range>>
 partition_downloader::download_segment_file(
   const segment_meta& segm, const download_part& part) {
@@ -595,42 +638,15 @@ partition_downloader::download_segment_file(
                    _max_offset{&max_offset}](
                     uint64_t len,
                     ss::input_stream<char> in) -> ss::future<uint64_t> {
-        auto part{_part};
-        auto remote_path{_remote_path};
-        auto localpath{_localpath};
-        auto otl{_otl};
-        auto& min_offset{*_min_offset};
-        auto& max_offset{*_max_offset};
-        vlog(
-          _ctxlog.info,
-          "Copying s3 path {} to local location {}",
-          remote_path,
-          localpath.string());
-        co_await ss::recursive_touch_directory(part.part_prefix.string());
-        auto fs = co_await open_output_file_stream(localpath);
-        auto stream_stats = co_await otl.copy_stream(
-          std::move(in), std::move(fs), _rtcnode);
-
-        min_offset = stream_stats.min_offset;
-        max_offset = stream_stats.max_offset;
-
-        if (stream_stats.size_bytes == 0) {
-            vlog(
-              _ctxlog.debug,
-              "Log segment downloaded empty. Original size: {}.",
-              len);
-            // The segment is empty after filtering
-            co_await ss::remove_file(localpath.native());
-        } else {
-            vlog(
-              _ctxlog.debug,
-              "Log segment downloaded. {} bytes expected, {} bytes after "
-              "pre-processing.",
-              len,
-              stream_stats.size_bytes);
-        }
-
-        co_return stream_stats.size_bytes;
+        return download_segment_file_stream(
+          len,
+          std::move(in),
+          _part,
+          _remote_path,
+          _localpath,
+          _otl,
+          _min_offset,
+          _max_offset);
     };
 
     auto result = co_await _remote->download_segment(
