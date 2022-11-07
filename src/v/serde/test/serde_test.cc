@@ -748,6 +748,21 @@ struct serde_fields_test_struct
     int _b, _c;
 };
 
+SEASTAR_THREAD_TEST_CASE(serde_fields_const_test) {
+    auto const x_const = serde_fields_test_struct{};
+    auto x_mutable = serde_fields_test_struct{};
+    static_assert(
+      std::is_same_v<
+        decltype(std::get<0>(serde::envelope_to_tuple(x_const))),
+        int const&>,
+      "envelope_to_tuple(const) = const");
+    static_assert(
+      std::is_same_v<
+        decltype(std::get<0>(serde::envelope_to_tuple(x_mutable))),
+        int&>,
+      "envelope_to_tuple(mutable) = mutable");
+}
+
 SEASTAR_THREAD_TEST_CASE(serde_fields_test_struct_test) {
     BOOST_CHECK(
       serde::from_iobuf<serde_fields_test_struct>(

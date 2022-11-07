@@ -20,11 +20,25 @@ namespace serde {
 namespace detail {
 
 template<typename T>
+using make_const_ref_t
+  = std::add_lvalue_reference_t<std::add_const_t<std::remove_reference_t<T>>>;
+
+template<typename... Ts>
+auto make_const_ref(std::tuple<Ts&...>&& t) {
+    return std::tuple<make_const_ref_t<Ts>...>{t};
+}
+
+template<typename T>
 concept has_serde_fields = requires(T t) {
-    t.serde_fields();
+    std::declval<std::decay_t<T>>().serde_fields();
 };
 
 } // namespace detail
+
+template<detail::has_serde_fields T>
+constexpr inline auto envelope_to_tuple(T const& t) {
+    return detail::make_const_ref(const_cast<T&>(t).serde_fields());
+}
 
 template<detail::has_serde_fields T>
 constexpr inline auto envelope_to_tuple(T&& t) {
