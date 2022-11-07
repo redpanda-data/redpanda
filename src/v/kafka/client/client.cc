@@ -309,26 +309,26 @@ client::list_offsets(model::topic_partition tp) {
 
 ss::future<list_offsets_response>
 client::do_list_offsets(model::topic_partition tp) {
-        auto node_id = co_await _topic_cache.leader(tp);
-        auto broker = co_await _brokers.find(node_id);
-        auto res = co_await broker->dispatch(kafka::list_offsets_request{
-          .data = {.topics{
-            {{.name{tp.topic},
-              .partitions{
-                {{.partition_index{tp.partition}, .max_num_offsets = 1}}}}}}}});
+    auto node_id = co_await _topic_cache.leader(tp);
+    auto broker = co_await _brokers.find(node_id);
+    auto res = co_await broker->dispatch(kafka::list_offsets_request{
+      .data = {.topics{
+        {{.name{tp.topic},
+          .partitions{
+            {{.partition_index{tp.partition}, .max_num_offsets = 1}}}}}}}});
 
-        const auto& topics = res.data.topics;
-        auto ec = error_code::none;
-        if (topics.size() != 1 || topics[0].partitions.size() != 1) {
-            co_return ss::coroutine::exception(std::make_exception_ptr(
-              broker_error(node_id, error_code::unknown_server_error)));
-        }
-        ec = topics[0].partitions[0].error_code;
-        if (ec != error_code::none) {
-            co_return ss::coroutine::exception(
-              std::make_exception_ptr(partition_error(tp, ec)));
-        }
-        co_return res;
+    const auto& topics = res.data.topics;
+    auto ec = error_code::none;
+    if (topics.size() != 1 || topics[0].partitions.size() != 1) {
+        co_return ss::coroutine::exception(std::make_exception_ptr(
+          broker_error(node_id, error_code::unknown_server_error)));
+    }
+    ec = topics[0].partitions[0].error_code;
+    if (ec != error_code::none) {
+        co_return ss::coroutine::exception(
+          std::make_exception_ptr(partition_error(tp, ec)));
+    }
+    co_return res;
 }
 
 ss::future<fetch_response> client::fetch_partition(
