@@ -239,58 +239,66 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     return pos;
 }
 
-ss::future<> remote_segment::do_hydrate_segment() {
-    auto callback = [this](
-                      uint64_t size_bytes,
-                      ss::input_stream<char> s) -> ss::future<uint64_t> {
-        offset_index tmpidx(
-          get_base_rp_offset(),
-          get_base_kafka_offset(),
-          0,
-          remote_segment_sampling_step_bytes);
-        auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
-        auto parser = make_remote_segment_index_builder(
-          std::move(sparse),
-          tmpidx,
-          _base_offset_delta,
-          remote_segment_sampling_step_bytes);
-        auto fparse = parser->consume().finally(
-          [parser] { return parser->close(); });
-        auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
-            return sref.get().close();
-        });
-        auto [rparse, rput] = co_await ss::when_all(
-          std::move(fparse), std::move(fput));
-        bool index_prepared = true;
-        if (rparse.failed()) {
-            auto parse_exception = rparse.get_exception();
-            vlog(
-              _ctxlog.warn,
-              "Failed to build a remote_segment index, error: {}",
-              parse_exception);
-            index_prepared = false;
-        }
-        if (rput.failed()) {
-            auto put_exception = rput.get_exception();
-            vlog(
-              _ctxlog.warn,
-              "Failed to write a segment file to cache, error: {}",
-              put_exception);
-            std::rethrow_exception(put_exception);
-        }
-        if (index_prepared) {
-            auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-            co_await _cache.put(_path().native() + ".index", index_stream);
-            _index = std::move(tmpidx);
-        }
-        co_return size_bytes;
-    };
+/**
+ * Called by do_hydrate_segment on the stream the S3 remote creates for
+ * a GET response: pass the dat through into the cache.
+ */
+ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
+  uint64_t size_bytes, ss::input_stream<char> s) {
+    offset_index tmpidx(
+      get_base_rp_offset(),
+      get_base_kafka_offset(),
+      0,
+      remote_segment_sampling_step_bytes);
+    auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
+    auto parser = make_remote_segment_index_builder(
+      std::move(sparse),
+      tmpidx,
+      _base_offset_delta,
+      remote_segment_sampling_step_bytes);
+    auto fparse = parser->consume().finally(
+      [parser] { return parser->close(); });
+    auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
+        return sref.get().close();
+    });
+    auto [rparse, rput] = co_await ss::when_all(
+      std::move(fparse), std::move(fput));
+    bool index_prepared = true;
+    if (rparse.failed()) {
+        auto parse_exception = rparse.get_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to build a remote_segment index, error: {}",
+          parse_exception);
+        index_prepared = false;
+    }
+    if (rput.failed()) {
+        auto put_exception = rput.get_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write a segment file to cache, error: {}",
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+    if (index_prepared) {
+        auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
+        co_await _cache.put(_path().native() + ".index", index_stream);
+        _index = std::move(tmpidx);
+    }
+    co_return size_bytes;
+}
 
+ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
 
     auto res = co_await _api.download_segment(
-      _bucket, _path, callback, local_rtc);
+      _bucket,
+      _path,
+      [this](uint64_t size_bytes, ss::input_stream<char> s) {
+          return do_hydrate_segment_inner(size_bytes, std::move(s));
+      },
+      local_rtc);
 
     if (res != download_result::success) {
         vlog(
