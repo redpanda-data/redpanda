@@ -303,12 +303,14 @@ client::create_topic(kafka::creatable_topic req) {
 
 ss::future<list_offsets_response>
 client::list_offsets(model::topic_partition tp) {
-    using result = ss::future<list_offsets_response>;
-    return gated_retry_with_mitigation([this, _tp = std::move(tp)]() -> result {
-        auto me = this;
-        auto tp = _tp;
-        auto node_id = co_await me->_topic_cache.leader(tp);
-        auto broker = co_await me->_brokers.find(node_id);
+    return gated_retry_with_mitigation(
+      [this, tp{std::move(tp)}]() { return do_list_offsets(tp); });
+}
+
+ss::future<list_offsets_response>
+client::do_list_offsets(model::topic_partition tp) {
+        auto node_id = co_await _topic_cache.leader(tp);
+        auto broker = co_await _brokers.find(node_id);
         auto res = co_await broker->dispatch(kafka::list_offsets_request{
           .data = {.topics{
             {{.name{tp.topic},
@@ -327,7 +329,6 @@ client::list_offsets(model::topic_partition tp) {
               std::make_exception_ptr(partition_error(tp, ec)));
         }
         co_return res;
-    });
 }
 
 ss::future<fetch_response> client::fetch_partition(
