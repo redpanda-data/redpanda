@@ -153,6 +153,7 @@ var _ = BeforeSuite(func(done Done) {
 		err = k8sManager.Start(ctrl.SetupSignalHandler())
 		Expect(err).ToNot(HaveOccurred())
 	}()
+	Expect(k8sManager.GetCache().WaitForCacheSync(context.Background())).To(BeTrue())
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
@@ -214,7 +215,7 @@ func (*unavailableError) Error() string {
 	return "unavailable"
 }
 
-func (m *mockAdminAPI) Config(context.Context, bool) (admin.Config, error) {
+func (m *mockAdminAPI) Config(_ context.Context) (admin.Config, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
