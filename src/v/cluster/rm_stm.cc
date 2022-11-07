@@ -1137,7 +1137,7 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
 }
 
 bool rm_stm::check_seq(model::batch_identity bid) {
-    auto& seq = _log_state.seq_table[bid.pid];
+    auto& seq = _log_state.seq_table[bid.pid].entry;
     auto last_write_timestamp = model::timestamp::now().value();
 
     if (!is_sequence(seq.seq, bid.first_seq)) {
@@ -1160,10 +1160,10 @@ rm_stm::known_seq(model::batch_identity bid) const {
     if (pid_seq == _log_state.seq_table.end()) {
         return std::nullopt;
     }
-    if (pid_seq->second.seq == bid.last_seq) {
-        return pid_seq->second.last_offset;
+    if (pid_seq->second.entry.seq == bid.last_seq) {
+        return pid_seq->second.entry.last_offset;
     }
-    for (auto& entry : pid_seq->second.seq_cache) {
+    for (auto& entry : pid_seq->second.entry.seq_cache) {
         if (entry.seq == bid.last_seq) {
             return entry.offset;
         }
@@ -1176,21 +1176,21 @@ std::optional<int32_t> rm_stm::tail_seq(model::producer_identity pid) const {
     if (pid_seq == _log_state.seq_table.end()) {
         return std::nullopt;
     }
-    return pid_seq->second.seq;
+    return pid_seq->second.entry.seq;
 }
 
 void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
     auto pid_seq = _log_state.seq_table.find(bid.pid);
     if (pid_seq != _log_state.seq_table.end()) {
-        if (pid_seq->second.seq == bid.last_seq) {
-            pid_seq->second.last_offset = last_offset;
+        if (pid_seq->second.entry.seq == bid.last_seq) {
+            pid_seq->second.entry.last_offset = last_offset;
         }
     }
 }
 
 void rm_stm::reset_seq(model::batch_identity bid) {
     _log_state.seq_table.erase(bid.pid);
-    auto& seq = _log_state.seq_table[bid.pid];
+    auto& seq = _log_state.seq_table[bid.pid].entry;
     seq.seq = bid.last_seq;
     seq.last_offset = kafka::offset{-1};
     seq.pid = bid.pid;
@@ -1594,13 +1594,22 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         }
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
         if (inserted) {
-            seq_it->second.pid = bid.pid;
-            seq_it->second.seq = front->last_seq;
-            seq_it->second.last_offset = front->r.value().last_offset;
+            seq_it->second.entry.pid = bid.pid;
+            seq_it->second.entry.seq = front->last_seq;
+            seq_it->second.entry.last_offset = front->r.value().last_offset;
         } else {
-            seq_it->second.update(
+            seq_it->second.entry.update(
               front->last_seq, front->r.value().last_offset);
         }
+
+        if (!bid.is_transactional) {
+            if (seq_it->second._hook.is_linked()) {
+                _log_state.lru_idempotent_pids.erase(
+                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
+            }
+            _log_state.lru_idempotent_pids.push_back(seq_it->second);
+        }
+
         session->cache.pop_front();
     }
 
@@ -1767,7 +1776,7 @@ void rm_stm::compact_snapshot() {
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();
          it++) {
-        lw_tss.push_back(it->second.last_write_timestamp);
+        lw_tss.push_back(it->second.entry.last_write_timestamp);
     }
     std::sort(lw_tss.begin(), lw_tss.end());
     auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
@@ -1782,13 +1791,13 @@ void rm_stm::compact_snapshot() {
          it != _log_state.seq_table.cend();) {
         if (
           size > _seq_table_min_size
-          && it->second.last_write_timestamp <= cutoff_timestamp) {
+          && it->second.entry.last_write_timestamp <= cutoff_timestamp) {
             size--;
             _log_state.seq_table.erase(it++);
         } else {
             next_oldest_session = std::min(
               next_oldest_session,
-              model::timestamp(it->second.last_write_timestamp));
+              model::timestamp(it->second.entry.last_write_timestamp));
             ++it;
         }
     }
@@ -2191,13 +2200,22 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
         auto translated = from_log_offset(last_offset);
         if (inserted) {
-            seq_it->second.pid = bid.pid;
-            seq_it->second.seq = bid.last_seq;
-            seq_it->second.last_offset = translated;
+            seq_it->second.entry.pid = bid.pid;
+            seq_it->second.entry.seq = bid.last_seq;
+            seq_it->second.entry.last_offset = translated;
         } else {
-            seq_it->second.update(bid.last_seq, translated);
+            seq_it->second.entry.update(bid.last_seq, translated);
         }
-        seq_it->second.last_write_timestamp = bid.first_timestamp.value();
+
+        if (!bid.is_transactional) {
+            if (seq_it->second._hook.is_linked()) {
+                _log_state.lru_idempotent_pids.erase(
+                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
+            }
+            _log_state.lru_idempotent_pids.push_back(seq_it->second);
+        }
+
+        seq_it->second.entry.last_write_timestamp = bid.first_timestamp.value();
         _oldest_session = std::min(_oldest_session, bid.first_timestamp);
     }
 
@@ -2336,12 +2354,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
-          entry.pid, std::move(entry));
+          entry.pid, seq_entry_wrapper{.entry = std::move(entry)});
         // try_emplace does not move from r-value reference if the insertion
         // didn't take place so the clang-tidy warning is a false positive
         // NOLINTNEXTLINE(hicpp-invalid-access-moved)
-        if (!inserted && seq_it->second.seq < entry.seq) {
-            seq_it->second = std::move(entry);
+        if (!inserted && seq_it->second.entry.seq < entry.seq) {
+            seq_it->second.entry = std::move(entry);
         }
     }
 
@@ -2369,6 +2387,28 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             .timeout = entry.timeout,
             .last_update = clock_type::now(),
             .is_expiration_requested = false});
+    }
+
+    // We need to fill order for idempotent requests. So pid is from idempotent
+    // request if it is not inside fence_pid_epoch. For order we just need to
+    // check last_write_timestamp. It contains time last apply for log record.
+    std::vector<log_state::seq_map::iterator> sorted_pids;
+    for (auto it = _log_state.seq_table.begin();
+         it != _log_state.seq_table.end();
+         ++it) {
+        if (!_log_state.fence_pid_epoch.contains(
+              it->second.entry.pid.get_id())) {
+            sorted_pids.emplace_back(it);
+        }
+    }
+
+    std::sort(sorted_pids.begin(), sorted_pids.end(), [](auto& lhs, auto& rhs) {
+        return lhs->second.entry.last_write_timestamp
+               < rhs->second.entry.last_write_timestamp;
+    });
+
+    for (auto it : sorted_pids) {
+        _log_state.lru_idempotent_pids.push_back(it->second);
     }
 
     _last_snapshot_offset = data.offset;
@@ -2510,7 +2550,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& entry : _log_state.seq_table) {
-            tx_ss.seqs.push_back(entry.second.copy());
+            tx_ss.seqs.push_back(entry.second.entry.copy());
         }
         tx_ss.offset = _insync_offset;
 
@@ -2529,7 +2569,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot_v2 tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& entry : _log_state.seq_table) {
-            tx_ss.seqs.push_back(entry.second.copy());
+            tx_ss.seqs.push_back(entry.second.entry.copy());
         }
         tx_ss.offset = _insync_offset;
         reflection::adl<tx_snapshot_v2>{}.to(tx_ss_buf, std::move(tx_ss));
@@ -2537,7 +2577,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot_v1 tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& it : _log_state.seq_table) {
-            auto& entry = it.second;
+            auto& entry = it.second.entry;
             seq_entry_v1 seqs;
             seqs.pid = entry.pid;
             seqs.seq = entry.seq;
