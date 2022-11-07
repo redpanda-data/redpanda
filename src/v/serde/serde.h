@@ -287,9 +287,8 @@ void write(iobuf& out, T t);
 template<typename T>
 void write(iobuf& out, std::vector<T> t);
 
-template<typename T>
-requires is_envelope<std::decay_t<T>>
-void write(iobuf& out, T t);
+void write(iobuf& out, is_envelope auto const& t);
+void write(iobuf& out, is_envelope auto&& t);
 
 inline void write(iobuf& out, iobuf t);
 
@@ -479,9 +478,8 @@ void write(iobuf& out, std::vector<T> t) {
 }
 
 template<typename T>
-requires is_envelope<std::decay_t<T>>
-void write(iobuf& out, T t) {
-    using Type = std::decay_t<T>;
+void write_envelope(iobuf& out, T&& t) {
+    using Type = std::decay_t<decltype(t)>;
 
     write(out, Type::redpanda_serde_version);
     write(out, Type::redpanda_serde_compat_version);
@@ -497,8 +495,13 @@ void write(iobuf& out, T t) {
     if constexpr (has_serde_write<Type>) {
         t.serde_write(out);
     } else {
-        envelope_for_each_field(
-          t, [&out](auto& f) { write(out, std::move(f)); });
+        envelope_for_each_field(t, [&out](auto& f) {
+            if constexpr (std::is_rvalue_reference_v<decltype(t)>) {
+                write(out, std::move(f));
+            } else {
+                write(out, f);
+            }
+        });
     }
 
     auto const written_size = out.size_bytes() - size_before;
@@ -524,6 +527,9 @@ void write(iobuf& out, T t) {
           reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
     }
 }
+
+void write(iobuf& out, is_envelope auto const& t) { write_envelope(out, t); }
+void write(iobuf& out, is_envelope auto&& t) { write_envelope(out, t); }
 
 inline void write(iobuf& out, iobuf t) {
     write<serde_size_t>(out, t.size_bytes());

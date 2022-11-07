@@ -1004,3 +1004,76 @@ SEASTAR_THREAD_TEST_CASE(no_default_ctor_vector_test) {
       serde_input(std::vector<no_default_ctor>({no_default_ctor(37)})).at(0).x,
       37);
 }
+
+SEASTAR_THREAD_TEST_CASE(write_does_not_require_copy) {
+    struct no_copy_no_move
+      : serde::envelope<
+          no_copy_no_move,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        no_copy_no_move() = default;
+        no_copy_no_move(no_copy_no_move const&) = delete;
+        no_copy_no_move(no_copy_no_move&&) = delete;
+        no_copy_no_move& operator=(no_copy_no_move const&) = delete;
+        no_copy_no_move& operator=(no_copy_no_move&&) = delete;
+        auto serde_fields() { return std::tie(i_); }
+        int i_;
+    };
+    static_assert(serde::detail::has_serde_fields<no_copy_no_move&&>);
+
+    // r-value
+    serde::to_iobuf(no_copy_no_move{});
+
+    // l-value
+    auto mv = no_copy_no_move{};
+    serde::to_iobuf(mv);
+
+    // l-value
+    auto const mv1 = no_copy_no_move{};
+    serde::to_iobuf(mv1);
+
+    // move doesn't do anything so still l-value
+    auto mv2 = no_copy_no_move{};
+    serde::to_iobuf(std::move(mv2));
+}
+
+SEASTAR_THREAD_TEST_CASE(write_does_not_move_from_lvalue_ref) {
+    struct no_copy_no_move
+      : serde::envelope<
+          no_copy_no_move,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        no_copy_no_move(int i)
+          : i_{i} {}
+        no_copy_no_move(no_copy_no_move&& o) {
+            i_ = o.i_;
+            o.i_ = 0;
+        }
+        no_copy_no_move& operator=(no_copy_no_move&& o) {
+            i_ = o.i_;
+            o.i_ = 0;
+            return *this;
+        }
+        auto serde_fields() { return std::tie(i_); }
+        int i_{1U};
+    };
+    static_assert(serde::detail::has_serde_fields<no_copy_no_move&&>);
+
+    // r-value
+    serde::to_iobuf(no_copy_no_move{100});
+
+    // l-value
+    auto mv = no_copy_no_move{100};
+    serde::to_iobuf(mv);
+    BOOST_CHECK_EQUAL(mv.i_, 100);
+
+    // const l-value
+    auto const mv1 = no_copy_no_move{100};
+    serde::to_iobuf(mv1);
+    BOOST_CHECK_EQUAL(mv1.i_, 100);
+
+    // move doesn't do anything so still l-value
+    auto mv2 = no_copy_no_move{100};
+    serde::to_iobuf(std::move(mv2));
+    BOOST_CHECK_EQUAL(mv2.i_, 100);
+}

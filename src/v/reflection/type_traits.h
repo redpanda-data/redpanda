@@ -30,7 +30,7 @@ template<template<typename...> class C, typename... Args>
 struct is_specialization_of<C<Args...>, C> : std::true_type {};
 template<typename T, template<typename...> class C>
 inline constexpr bool is_specialization_of_v
-  = is_specialization_of<T, C>::value;
+  = is_specialization_of<std::decay_t<T>, C>::value;
 
 } // namespace detail
 
