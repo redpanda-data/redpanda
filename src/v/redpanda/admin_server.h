@@ -200,6 +200,9 @@ private:
     void register_cluster_routes();
     void register_shadow_indexing_routes();
 
+    ss::future<ss::json::json_return_type> patch_cluster_config_handler(
+      std::unique_ptr<ss::httpd::request>, const request_auth_result&);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
