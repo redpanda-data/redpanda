@@ -1836,6 +1836,13 @@ void admin_server::register_features_routes() {
                   throw ss::httpd::bad_request_exception(
                     fmt::format("License is expired: {}", license));
               }
+              const auto& ft = _controller->get_feature_table().local();
+              const auto& loaded_license = ft.get_license();
+              if (loaded_license && (*loaded_license == license)) {
+                  /// Loaded license is idential to license in request, do
+                  /// nothing and return 200(OK)
+                  co_return ss::json::json_void();
+              }
               auto& fm = _controller->get_feature_manager();
               auto err = co_await fm.invoke_on(
                 cluster::feature_manager::backend_shard,
