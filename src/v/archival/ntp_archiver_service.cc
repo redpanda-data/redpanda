@@ -888,28 +888,17 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
     auto last_stable_offset = lso_override ? *lso_override
                                            : _partition->last_stable_offset();
-    return ss::with_gate(
-             _gate,
-             [this, last_stable_offset] {
-                 return ss::with_semaphore(
-                   _mutex,
-                   1,
-                   [this, last_stable_offset]() -> ss::future<batch_result> {
-                       return schedule_uploads(last_stable_offset)
-                         .then([this](auto scheduled_uploads) {
-                             return wait_all_scheduled_uploads(
-                               std::move(scheduled_uploads));
-                         });
-                   });
-             })
-      .handle_exception_type([](const ss::gate_closed_exception&) {
-          return ss::make_ready_future<batch_result>(batch_result{
-            .non_compacted_upload_result = {}, .compacted_upload_result = {}});
-      })
-      .handle_exception_type([](const ss::abort_requested_exception&) {
-          return ss::make_ready_future<batch_result>(batch_result{
-            .non_compacted_upload_result = {}, .compacted_upload_result = {}});
-      });
+    ss::gate::holder holder(_gate);
+    try {
+        auto units = co_await ss::get_units(_mutex, 1);
+        auto scheduled_uploads = co_await schedule_uploads(last_stable_offset);
+        co_return co_await wait_all_scheduled_uploads(
+          std::move(scheduled_uploads));
+    } catch (const ss::gate_closed_exception&) {
+    } catch (const ss::abort_requested_exception&) {
+    }
+    co_return batch_result{
+      .non_compacted_upload_result = {}, .compacted_upload_result = {}};
 }
 
 uint64_t ntp_archiver::estimate_backlog_size() {
