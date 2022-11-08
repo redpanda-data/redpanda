@@ -85,12 +85,10 @@ public:
     //
     // If this node is a cluster founder, returns all seed servers, after
     // making sure that all founders are configured with identical seed servers
-    // list.
+    // list. In case of root-driven bootstrap, that reflects to a list of just
+    // the root broker.
     //
     // If this node is not a cluster founder, returns an empty list.
-    //
-    // In case of root-driven bootstrap, that reflects to a list of just the
-    // root broker.
     brokers founding_brokers() const;
 
     // A cluster founder is a node that is configured as a seed server, and
