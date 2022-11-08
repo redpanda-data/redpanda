@@ -80,7 +80,7 @@ get_brokers(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = false};
     };
 
-    return rq.dispatch(make_metadata_req)
+    co_return co_await rq.dispatch(make_metadata_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           json::get_brokers_res brokers;
@@ -114,7 +114,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = true};
     };
 
-    return rq.dispatch(make_list_topics_req)
+    co_return co_await rq.dispatch(make_list_topics_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
@@ -156,13 +156,9 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
       timeout,
       max_bytes);
 
-    return rq
-      .dispatch([user{rq.user},
-                 offset{offset},
-                 timeout{timeout},
-                 max_bytes{max_bytes},
-                 res_fmt,
-                 tp{std::move(tp)}](kafka::client::client& client) mutable {
+    co_return co_await rq
+      .dispatch([offset, timeout, max_bytes, res_fmt, tp{std::move(tp)}](
+                  kafka::client::client& client) mutable {
           return client
             .fetch_partition(std::move(tp), offset, max_bytes, timeout)
             .then([res_fmt](kafka::fetch_response res) {
