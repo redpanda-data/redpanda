@@ -139,6 +139,11 @@ private:
     /// Actually hydrate the segment. The method downloads the segment file
     /// to the cache dir and updates the segment index.
     ss::future<> do_hydrate_segment();
+
+    /// Helper for do_hydrate_segment
+    ss::future<uint64_t>
+      do_hydrate_segment_inner(uint64_t, ss::input_stream<char>);
+
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
     ss::future<> do_hydrate_txrange();

@@ -166,6 +166,17 @@ private:
     ss::future<std::optional<offset_range>>
     download_segment_file(const segment_meta& segm, const download_part& part);
 
+    /// Helper for download_segment_file
+    ss::future<uint64_t> download_segment_file_stream(
+      uint64_t,
+      ss::input_stream<char>,
+      const download_part&,
+      remote_segment_path,
+      std::filesystem::path,
+      offset_translator,
+      model::offset*,
+      model::offset*);
+
     using offset_map_t = absl::btree_map<model::offset, segment_meta>;
 
     ss::future<offset_map_t> build_offset_map(const recovery_material& mat);
