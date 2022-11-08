@@ -131,14 +131,15 @@ private:
               // Intercept exceptions
               const auto url = req->get_url();
               if constexpr (peek_auth) {
-                  return handler(std::move(req), auth_state)
+                  return ss::futurize_invoke(
+                           handler, std::move(req), auth_state)
                     .handle_exception(
                       exception_intercepter<
                         decltype(handler(std::move(req), auth_state).get0())>(
                         url, auth_state));
 
               } else {
-                  return handler(std::move(req))
+                  return ss::futurize_invoke(handler, std::move(req))
                     .handle_exception(exception_intercepter<
                                       decltype(handler(std::move(req)).get0())>(
                       url, auth_state));
@@ -202,6 +203,71 @@ private:
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::httpd::request>, const request_auth_result&);
+
+    /// Raft routes
+    ss::future<ss::json::json_return_type>
+      raft_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Security routes
+    ss::future<ss::json::json_return_type>
+      create_user_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      delete_user_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      update_user_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Kafka routes
+    ss::future<ss::json::json_return_type>
+      kafka_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Feature routes
+    ss::future<ss::json::json_return_type>
+      put_feature_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      put_license_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Broker routes
+    ss::future<ss::json::json_return_type>
+      get_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      decomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      recomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      start_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      stop_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Register partition routes
+    ss::future<ss::json::json_return_type>
+      get_transactions_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      mark_transaction_expired_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      cancel_partition_reconfig_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      unclean_abort_partition_reconfig_handler(
+        std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      set_partition_replicas_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Transaction routes
+    ss::future<ss::json::json_return_type>
+      get_all_transactions_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      delete_partition_handler(std::unique_ptr<ss::httpd::request>);
+
+    /// Cluster routes
+    ss::future<ss::json::json_return_type>
+      get_partition_balancer_status_handler(
+        std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      cancel_all_partitions_reconfigs_handler(
+        std::unique_ptr<ss::httpd::request>);
+
+    /// Shadow indexing routes
+    ss::future<ss::json::json_return_type>
+      sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
