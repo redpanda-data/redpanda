@@ -115,10 +115,6 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
-	}
-
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
 	nodeports := collectNodePorts(redpandaPorts)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
@@ -264,7 +260,18 @@ func (r *ClusterReconciler) Reconcile(
 		log.Info(requeueErr.Error())
 		return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
 	}
-	return ctrl.Result{}, err
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// setting license should be at the last part as it requires AdminAPI to be running
+	if cc := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+		return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
+	}
+	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
