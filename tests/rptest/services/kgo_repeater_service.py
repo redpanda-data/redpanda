@@ -39,7 +39,10 @@ class KgoRepeaterService(Service):
                  key_count: Optional[int] = None,
                  group_name: str = "repeat01",
                  max_buffered_records: Optional[int] = None,
-                 mb_per_worker: Optional[int] = None):
+                 mb_per_worker: Optional[int] = None,
+                 use_transactions: bool = False,
+                 transaction_abort_rate: Optional[float] = None,
+                 msgs_per_transaction: Optional[int] = None):
         # num_nodes=0 because we're asking it to not allocate any for us
         super().__init__(context, num_nodes=0 if nodes else 1)
 
@@ -65,6 +68,10 @@ class KgoRepeaterService(Service):
             mb_per_worker = 4
 
         self.mb_per_worker = mb_per_worker
+
+        self.use_transactions = use_transactions
+        self.transaction_abort_rate = transaction_abort_rate
+        self.msgs_per_transaction = msgs_per_transaction
 
         self._stopped = False
 
@@ -92,6 +99,15 @@ class KgoRepeaterService(Service):
 
         if self.max_buffered_records is not None:
             cmd += f" -max-buffered-records={self.max_buffered_records}"
+
+        if self.use_transactions:
+            cmd += f" -use-transactions"
+
+            if self.transaction_abort_rate is not None:
+                cmd += f" -transaction-abort-rate={self.transaction_abort_rate}"
+
+            if self.msgs_per_transaction is not None:
+                cmd += f" -msgs-per-transaction={self.msgs_per_transaction}"
 
         cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 &"
 
