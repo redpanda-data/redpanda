@@ -81,3 +81,5 @@ class LibrdkafkaTest(RedpandaTest):
         tc = LibrdkafkaTestcase(self.test_context, self.redpanda, test_num)
         tc.start()
         tc.wait()
+
+        assert tc.error is None, f"Failure in librdkafka test case {test_num:04}"
