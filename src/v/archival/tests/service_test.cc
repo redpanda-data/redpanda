@@ -158,6 +158,8 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
 
     wait_for_partition_leadership(ntp);
 
+    wait_for_lso(ntp);
+
     auto& service = get_scheduler_service();
 
     service.reconcile_archivers().get();
