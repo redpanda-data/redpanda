@@ -2735,149 +2735,155 @@ void admin_server::register_hbadger_routes() {
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_all_transactions_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    if (!config::shard_local_cfg().enable_transactions) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+    }
+
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    if (!tx_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Can not get tx_frontend");
+    }
+
+    auto res = co_await tx_frontend.local().get_all_transactions();
+    if (!res.has_value()) {
+        co_await throw_on_error(*req, res.error(), model::tx_manager_ntp);
+    }
+
+    using tx_info = ss::httpd::transaction_json::transaction_summary;
+    std::vector<tx_info> ans;
+    ans.reserve(res.value().size());
+
+    for (auto& tx : res.value()) {
+        if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
+            continue;
+        }
+
+        tx_info new_tx;
+
+        new_tx.transactional_id = tx.id;
+
+        ss::httpd::transaction_json::producer_identity pid;
+        pid.id = tx.pid.id;
+        pid.epoch = tx.pid.epoch;
+        new_tx.pid = pid;
+
+        new_tx.tx_seq = tx.tx_seq;
+        new_tx.etag = tx.etag;
+
+        // The motivation behind mapping killed to aborting is to make
+        // user not to think about the subtle differences between both
+        // statuses
+        if (tx.status == cluster::tm_transaction::tx_status::killed) {
+            tx.status = cluster::tm_transaction::tx_status::aborting;
+        }
+        new_tx.status = ss::sstring(tx.get_status());
+
+        new_tx.timeout_ms = tx.get_timeout().count();
+        new_tx.staleness_ms = tx.get_staleness().count();
+
+        for (auto& partition : tx.partitions) {
+            ss::httpd::transaction_json::partition partition_info;
+            partition_info.ns = partition.ntp.ns;
+            partition_info.topic = partition.ntp.tp.topic;
+            partition_info.partition_id = partition.ntp.tp.partition;
+            partition_info.etag = partition.etag;
+
+            new_tx.partitions.push(partition_info);
+        }
+
+        for (auto& group : tx.groups) {
+            ss::httpd::transaction_json::group group_info;
+            group_info.group_id = group.group_id;
+            group_info.etag = group.etag;
+
+            new_tx.groups.push(group_info);
+        }
+
+        ans.push_back(std::move(new_tx));
+    }
+
+    co_return ss::json::json_return_type(ans);
+}
+
+ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+    }
+
+    auto transaction_id = req->param["transactional_id"];
+
+    auto namespace_from_req = req->get_query_param("namespace");
+    auto topic_from_req = req->get_query_param("topic");
+
+    auto partition_str = req->get_query_param("partition_id");
+    int64_t partition;
+    try {
+        partition = std::stoi(partition_str);
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Partition must be an integer: {}", partition_str));
+    }
+
+    if (partition < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid partition {}", partition));
+    }
+
+    auto etag_str = req->get_query_param("etag");
+    int64_t etag;
+    try {
+        etag = std::stoi(etag_str);
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Etag must be an integer: {}", etag_str));
+    }
+
+    if (etag < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid etag {}", etag));
+    }
+
+    model::ntp ntp(namespace_from_req, topic_from_req, partition);
+    cluster::tm_transaction::tx_partition partition_for_delete{
+      .ntp = ntp, .etag = model::term_id(etag)};
+    kafka::transactional_id tid(transaction_id);
+
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    if (!tx_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    vlog(
+      logger.info,
+      "Delete partition(ntp: {}, etag: {}) from transaction({})",
+      ntp,
+      etag,
+      tid);
+
+    auto res = co_await tx_frontend.local().delete_partition_from_tx(
+      tid, partition_for_delete);
+    co_await throw_on_error(*req, res, ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
 void admin_server::register_transaction_routes() {
     register_route<user>(
       ss::httpd::transaction_json::get_all_transactions,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          if (!config::shard_local_cfg().enable_transactions) {
-              throw ss::httpd::bad_request_exception(
-                "Transaction are disabled");
-          }
-
-          if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
-              throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
-          }
-
-          auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-          if (!tx_frontend.local_is_initialized()) {
-              throw ss::httpd::bad_request_exception("Can not get tx_frontend");
-          }
-
-          auto res = co_await tx_frontend.local().get_all_transactions();
-          if (!res.has_value()) {
-              co_await throw_on_error(*req, res.error(), model::tx_manager_ntp);
-          }
-
-          using tx_info = ss::httpd::transaction_json::transaction_summary;
-          std::vector<tx_info> ans;
-          ans.reserve(res.value().size());
-
-          for (auto& tx : res.value()) {
-              if (tx.status == cluster::tm_transaction::tx_status::tombstone) {
-                  continue;
-              }
-
-              tx_info new_tx;
-
-              new_tx.transactional_id = tx.id;
-
-              ss::httpd::transaction_json::producer_identity pid;
-              pid.id = tx.pid.id;
-              pid.epoch = tx.pid.epoch;
-              new_tx.pid = pid;
-
-              new_tx.tx_seq = tx.tx_seq;
-              new_tx.etag = tx.etag;
-
-              // The motivation behind mapping killed to aborting is to make
-              // user not to think about the subtle differences between both
-              // statuses
-              if (tx.status == cluster::tm_transaction::tx_status::killed) {
-                  tx.status = cluster::tm_transaction::tx_status::aborting;
-              }
-              new_tx.status = ss::sstring(tx.get_status());
-
-              new_tx.timeout_ms = tx.get_timeout().count();
-              new_tx.staleness_ms = tx.get_staleness().count();
-
-              for (auto& partition : tx.partitions) {
-                  ss::httpd::transaction_json::partition partition_info;
-                  partition_info.ns = partition.ntp.ns;
-                  partition_info.topic = partition.ntp.tp.topic;
-                  partition_info.partition_id = partition.ntp.tp.partition;
-                  partition_info.etag = partition.etag;
-
-                  new_tx.partitions.push(partition_info);
-              }
-
-              for (auto& group : tx.groups) {
-                  ss::httpd::transaction_json::group group_info;
-                  group_info.group_id = group.group_id;
-                  group_info.etag = group.etag;
-
-                  new_tx.groups.push(group_info);
-              }
-
-              ans.push_back(std::move(new_tx));
-          }
-
-          co_return ss::json::json_return_type(ans);
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return get_all_transactions_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::transaction_json::delete_partition,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
-              throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
-          }
-
-          auto transaction_id = req->param["transactional_id"];
-
-          auto namespace_from_req = req->get_query_param("namespace");
-          auto topic_from_req = req->get_query_param("topic");
-
-          auto partition_str = req->get_query_param("partition_id");
-          int64_t partition;
-          try {
-              partition = std::stoi(partition_str);
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Partition must be an integer: {}", partition_str));
-          }
-
-          if (partition < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid partition {}", partition));
-          }
-
-          auto etag_str = req->get_query_param("etag");
-          int64_t etag;
-          try {
-              etag = std::stoi(etag_str);
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Etag must be an integer: {}", etag_str));
-          }
-
-          if (etag < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid etag {}", etag));
-          }
-
-          model::ntp ntp(namespace_from_req, topic_from_req, partition);
-          cluster::tm_transaction::tx_partition partition_for_delete{
-            .ntp = ntp, .etag = model::term_id(etag)};
-          kafka::transactional_id tid(transaction_id);
-
-          auto& tx_frontend = _partition_manager.local().get_tx_frontend();
-          if (!tx_frontend.local_is_initialized()) {
-              throw ss::httpd::bad_request_exception(
-                "Transaction are disabled");
-          }
-
-          vlog(
-            logger.info,
-            "Delete partition(ntp: {}, etag: {}) from transaction({})",
-            ntp,
-            etag,
-            tid);
-
-          auto res = co_await tx_frontend.local().delete_partition_from_tx(
-            tid, partition_for_delete);
-          co_await throw_on_error(*req, res, ntp);
-          co_return ss::json::json_return_type(ss::json::json_void());
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return delete_partition_handler(std::move(req));
       });
 }
 
