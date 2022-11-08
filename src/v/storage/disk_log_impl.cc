@@ -508,6 +508,9 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
           segments_str.str());
     }
 
+    // Important that we take this lock _before_ any segment locks.
+    auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
+
     // the segment which will be expanded to replace
     auto target = segments.front();
 
@@ -1250,11 +1253,17 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     vassert(!_closed, "truncate() on closed log - {}", *this);
     return _failure_probes.truncate().then([this, cfg]() mutable {
         // dispatch the actual truncation
-        return do_truncate(cfg);
+        return do_truncate(cfg, std::nullopt);
     });
 }
 
-ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
+ss::future<> disk_log_impl::do_truncate(
+  truncate_config cfg, std::optional<ssx::semaphore_units> lock_guard) {
+    if (!lock_guard) {
+        ssx::semaphore_units units = co_await _segment_rewrite_lock.get_units();
+        lock_guard = std::move(units);
+    }
+
     auto stats = offsets();
 
     if (cfg.base_offset > stats.dirty_offset || _segs.empty()) {
@@ -1269,8 +1278,9 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
       < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
         co_await remove_full_segments(cfg.base_offset);
         // recurse
-        co_return co_await do_truncate(cfg);
+        co_return co_await do_truncate(cfg, std::move(lock_guard));
     }
+
     auto last = _segs.back();
     if (cfg.base_offset > last->offsets().dirty_offset) {
         co_return;
@@ -1325,7 +1335,7 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
           cfg,
           initial_generation_id,
           last_ptr->get_generation_id());
-        co_return co_await do_truncate(cfg);
+        co_return co_await do_truncate(cfg, std::move(lock_guard));
     }
 
     if (!phs) {

@@ -139,7 +139,8 @@ private:
       model::term_id term_for_this_segment,
       ss::io_priority_class prio);
 
-    ss::future<> do_truncate(truncate_config);
+    ss::future<> do_truncate(
+      truncate_config, std::optional<ssx::semaphore_units> lock_guard);
     ss::future<> remove_full_segments(model::offset o);
 
     ss::future<> do_truncate_prefix(truncate_prefix_config);
@@ -193,6 +194,13 @@ private:
     std::unique_ptr<readers_cache> _readers_cache;
     // average ratio of segment sizes after segment size before compaction
     moving_average<double, 5> _compaction_ratio{1.0};
+
+    // Mutually exclude operations that do non-appending modification
+    // to segments: adjacent segment compaction and truncation.  Truncation
+    // repeatedly takes+releases segment read locks, and without this extra
+    // coarse grained lock, the compaction can happen in between steps.
+    // See https://github.com/redpanda-data/redpanda/issues/7118
+    mutex _segment_rewrite_lock;
 
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
