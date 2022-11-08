@@ -540,7 +540,7 @@ ss::future<> controller::create_cluster(const create_cluster_mode mode) {
             co_return;
         }
 
-        vlog(clusterlog.info, "Creating cluster {}", cmd_data.uuid);
+        vlog(clusterlog.info, "Creating cluster UUID {}", cmd_data.uuid);
         model::record_batch b = serde_serialize_cmd(
           bootstrap_cluster_cmd{0, cmd_data});
         // cluster::replicate_and_wait() cannot be used here because it checks
@@ -552,18 +552,23 @@ ss::future<> controller::create_cluster(const create_cluster_mode mode) {
           _as.local(),
           std::nullopt);
         if (errc == errc::success) {
+            vlog(clusterlog.info, "Cluster UUID created {}", cmd_data.uuid);
             co_return;
         }
         vlog(
           clusterlog.warn,
-          "Failed to replicate and wait the cluster bootstrap cmd, {}",
+          "Failed to replicate and wait the cluster bootstrap cmd. {} ({})",
+          errc.message(),
           errc);
         if (errc == errc::cluster_already_exists) {
             co_return;
         }
 
         co_await ss::sleep_abortable(retry_jitter.next_duration(), _as.local());
-        vlog(clusterlog.trace, "Retrying to create cluster {}", cmd_data.uuid);
+        vlog(
+          clusterlog.trace,
+          "Will retry to create cluster UUID {}",
+          cmd_data.uuid);
     }
 }
 

@@ -137,8 +137,9 @@ bootstrap_backend::apply_update(model::record_batch b) {
               cluster_uuid_key,
               serde::to_iobuf(cmd.value.uuid));
             _cluster_uuid_applied = cmd.value.uuid;
+            vlog(
+              clusterlog.debug, "Cluster UUID initialized {}", cmd.value.uuid);
 
-            vlog(clusterlog.info, "Cluster created {}", cmd.value.uuid);
             co_return errc::success;
         }));
 }
