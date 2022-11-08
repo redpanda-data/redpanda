@@ -114,6 +114,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> kafka_connection_rate_limit_overrides;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
+    bounded_property<uint64_t> max_concurrent_producer_ids;
     property<bool> enable_idempotence;
     property<bool> enable_transactions;
     property<uint32_t> abort_index_segment_size;
