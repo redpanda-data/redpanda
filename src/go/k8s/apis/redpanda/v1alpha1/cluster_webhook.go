@@ -47,6 +47,7 @@ const (
 	noneAuthorizationMechanism         = "none"
 	saslAuthorizationMechanism         = "sasl"
 	mTLSIdentityAuthorizationMechanism = "mtls_identity"
+	httpBasicAuthorizationMechanism    = "http_basic"
 
 	defaultSchemaRegistryPort = 8081
 )
