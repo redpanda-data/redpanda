@@ -131,14 +131,15 @@ private:
               // Intercept exceptions
               const auto url = req->get_url();
               if constexpr (peek_auth) {
-                  return handler(std::move(req), auth_state)
+                  return ss::futurize_invoke(
+                           handler, std::move(req), auth_state)
                     .handle_exception(
                       exception_intercepter<
                         decltype(handler(std::move(req), auth_state).get0())>(
                         url, auth_state));
 
               } else {
-                  return handler(std::move(req))
+                  return ss::futurize_invoke(handler, std::move(req))
                     .handle_exception(exception_intercepter<
                                       decltype(handler(std::move(req)).get0())>(
                       url, auth_state));
