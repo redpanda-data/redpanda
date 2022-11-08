@@ -34,6 +34,8 @@ namespace pandaproxy::rest {
 
 using server = proxy::server;
 
+ss::logger rplog("rest_proxy");
+
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__pandaproxy"};
 
@@ -112,7 +114,8 @@ proxy::proxy(
       "header",
       "/definitions",
       _ctx,
-      json::serialization_format::application_json)
+      json::serialization_format::application_json,
+      rplog)
   , _ensure_started{[this]() { return do_start(); }}
   , _controller(controller) {}
 

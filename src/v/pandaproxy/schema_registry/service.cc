@@ -41,8 +41,11 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/util/log.hh>
 
 namespace pandaproxy::schema_registry {
+
+ss::logger srlog{"schema_registry"};
 
 using server = ctx_server<service>;
 const security::acl_principal principal{
@@ -319,7 +322,8 @@ service::service(
       "schema_registry_header",
       "/schema_registry_definitions",
       _ctx,
-      json::serialization_format::schema_registry_v1_json)
+      json::serialization_format::schema_registry_v1_json,
+      srlog)
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
