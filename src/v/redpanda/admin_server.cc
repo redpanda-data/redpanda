@@ -1401,22 +1401,21 @@ admin_server::raft_transfer_leadership_handler(
 
     auto shard = _shard_table.local().shard_for(group_id);
 
-    return _partition_manager.invoke_on(
+    co_return co_await _partition_manager.invoke_on(
       shard,
-      [group_id, target, this, req = std::move(req)](
-        cluster::partition_manager& pm) mutable {
-          auto partition = pm.partition_for(group_id);
-          if (!partition) {
-              throw ss::httpd::not_found_exception();
-          }
-          const auto ntp = partition->ntp();
-          return partition->transfer_leadership(target).then(
-            [this, req = std::move(req), ntp](
-              std::error_code err) -> ss::future<ss::json::json_return_type> {
-                co_await throw_on_error(*req, err, ntp);
-                co_return ss::json::json_return_type(ss::json::json_void());
-            });
-      });
+      ss::coroutine::lambda(
+        [group_id, target, this, req = std::move(req)](
+          cluster::partition_manager& pm) mutable
+        -> ss::future<ss::json::json_return_type> {
+            auto partition = pm.partition_for(group_id);
+            if (!partition) {
+                throw ss::httpd::not_found_exception();
+            }
+            const auto ntp = partition->ntp();
+            auto err = co_await partition->transfer_leadership(target);
+            co_await throw_on_error(*req, err, ntp);
+            co_return ss::json::json_return_type(ss::json::json_void());
+        }));
 }
 
 void admin_server::register_raft_routes() {
