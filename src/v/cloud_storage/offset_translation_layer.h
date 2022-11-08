@@ -21,6 +21,12 @@
 
 namespace cloud_storage {
 
+struct stream_stats {
+    model::offset min_offset = model::offset::max();
+    model::offset max_offset = model::offset::min();
+    uint64_t size_bytes{};
+};
+
 /// This instance of this class is supposed to be used to
 /// translate from redpanda offsets to kafka offsets in the
 /// shadow-indexing and recovery contexts.
@@ -32,12 +38,6 @@ public:
       storage::opt_abort_source_t as = std::nullopt)
       : _initial_delta(initial_delta)
       , _as(as) {}
-
-    struct stream_stats {
-        model::offset min_offset;
-        model::offset max_offset;
-        uint64_t size_bytes{};
-    };
 
     /// Copy source stream into the destination stream
     ///
