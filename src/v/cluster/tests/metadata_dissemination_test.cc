@@ -74,8 +74,7 @@ FIXTURE_TEST(
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
       [&cache_1, &cache_2] {
-          return cache_1.brokers().size() == 3
-                 && cache_2.brokers().size() == 3;
+          return cache_1.brokers().size() == 3 && cache_2.brokers().size() == 3;
       })
       .get0();
 
@@ -136,8 +135,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
       [&cache_1, &cache_2] {
-          return cache_1.brokers().size() == 3
-                 && cache_2.brokers().size() == 3;
+          return cache_1.brokers().size() == 3 && cache_2.brokers().size() == 3;
       })
       .get0();
 

@@ -165,9 +165,7 @@ public:
         return tests::cooperative_spin_wait_with_timeout(timeout, [this] {
             return std::all_of(
               _instances.begin(), _instances.end(), [this](auto& p) {
-                  return p.second->app.metadata_cache.local()
-                           .brokers()
-                           .size()
+                  return p.second->app.metadata_cache.local().brokers().size()
                          == _instances.size();
               });
         });

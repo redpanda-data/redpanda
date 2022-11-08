@@ -223,10 +223,8 @@ public:
             if (!leader) {
                 return ss::make_ready_future<bool>(false);
             }
-            auto ids = (*leader)
-                         ->controller->get_members_table()
-                         .local()
-                         .broker_ids();
+            auto ids
+              = (*leader)->controller->get_members_table().local().broker_ids();
             test_logger.info("current brokers: {}", ids);
             return ss::make_ready_future<bool>(
               std::find(ids.begin(), ids.end(), id) == ids.end());

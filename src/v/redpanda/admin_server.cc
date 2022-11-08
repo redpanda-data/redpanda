@@ -1947,7 +1947,7 @@ admin_server::start_broker_maintenance_handler(
           "progress?)");
     }
 
-    if (_controller->get_members_table().local().brokers().size() < 2) {
+    if (_controller->get_members_table().local().broker_count() < 2) {
         throw ss::httpd::bad_request_exception(
           "Maintenance mode may not be used on a single node "
           "cluster");
