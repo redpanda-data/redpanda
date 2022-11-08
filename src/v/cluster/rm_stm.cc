@@ -1634,8 +1634,31 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
 }
 
 model::offset rm_stm::last_stable_offset() {
-    auto first_tx_start = model::offset::max();
+    // There are two main scenarios we deal with here.
+    // 1. stm is still bootstrapping
+    // 2. stm is past bootstrapping.
+    //
+    // We distinguish between (1) and (2) based on the offset
+    // we save during first apply (_bootstrap_committed_offset).
 
+    // We always want to return only the `applied` state as it
+    // contains aborted transactions metadata that is consumed by
+    // the client to distinguish aborted data batches.
+    //
+    // We optimize for the case where there are no inflight transactional
+    // batches to return the high water mark.
+    if (unlikely(!_bootstrap_committed_offset)) {
+        return model::offset::min();
+    }
+
+    auto last_applied = last_applied_offset();
+    auto next_to_apply = model::next_offset(last_applied);
+    if (last_applied < _bootstrap_committed_offset.value()) {
+        return next_to_apply;
+    }
+
+    // Check for any in-flight transactions.
+    auto first_tx_start = model::offset::max();
     if (_is_tx_enabled) {
         if (!_log_state.ongoing_set.empty()) {
             first_tx_start = *_log_state.ongoing_set.begin();
@@ -1655,9 +1678,12 @@ model::offset rm_stm::last_stable_offset() {
 
     auto last_visible_index = _c->last_visible_index();
     if (first_tx_start <= last_visible_index) {
-        return first_tx_start;
+        // There are in flight transactions < high water mark that may
+        // not be applied yet. We still need to consider only applied
+        // transactions.
+        return std::min(first_tx_start, next_to_apply);
     }
-
+    // no inflight transactions.
     return model::next_offset(last_visible_index);
 }
 
@@ -2069,6 +2095,9 @@ void rm_stm::apply_fence(model::record_batch&& b) {
 }
 
 ss::future<> rm_stm::apply(model::record_batch b) {
+    if (unlikely(!_bootstrap_committed_offset)) {
+        _bootstrap_committed_offset = _c->committed_offset();
+    }
     auto last_offset = b.last_offset();
 
     const auto& hdr = b.header();
