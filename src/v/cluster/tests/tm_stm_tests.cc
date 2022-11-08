@@ -72,7 +72,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx1.pid, pid);
     BOOST_REQUIRE_EQUAL(tx1.status, tx_status::ready);
     BOOST_REQUIRE_EQUAL(tx1.partitions.size(), 0);
-    expect_tx(stm.mark_tx_ongoing(tx_id).get0());
+    expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
     std::vector<tm_transaction::tx_partition> partitions = {
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
@@ -100,7 +100,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
     BOOST_REQUIRE_EQUAL(tx4.tx_seq, tx2.tx_seq);
     BOOST_REQUIRE_EQUAL(tx4.partitions.size(), 2);
-    auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id).get0());
+    auto tx5 = expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
     BOOST_REQUIRE_EQUAL(tx5.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx5.pid, pid);
     BOOST_REQUIRE_EQUAL(tx5.status, tx_status::ongoing);
@@ -142,7 +142,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
     auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
     auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id).get0());
+    auto tx6 = expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
     BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx6.pid, pid);
     BOOST_REQUIRE_EQUAL(tx6.status, tx_status::ongoing);
@@ -184,7 +184,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
     auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
     auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
-    auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id).get0());
+    auto tx6 = expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
 
     auto pid2 = model::producer_identity{1, 1};
     auto expected_pid = model::producer_identity(3, 5);
