@@ -219,13 +219,13 @@ class RpkClusterTest(RedpandaTest):
             err_msg="unable to retrieve license information")
 
         expected_license = {
-            'Expires':
+            'expires':
             "Jul 11 2122",
-            'Organization':
+            'organization':
             'redpanda-testing',
-            'Type':
+            'type':
             'enterprise',
-            'ChecksumSHA256':
+            'checksum_sha256':
             '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf'
         }
         result = json.loads(rp_license)
