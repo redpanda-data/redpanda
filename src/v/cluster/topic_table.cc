@@ -63,6 +63,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     for (auto& pas : md.get_assignments()) {
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
         for (auto& r : pas.replicas) {
+            _partition_count++;
             md.replica_revisions[pas.id][r.node_id] = model::revision_id(
               offset);
         }
@@ -122,6 +123,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
         }
 
         for (auto& p_as : tp->second.get_assignments()) {
+            _partition_count--;
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
             _updates_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
@@ -152,6 +154,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
       = cmd.value.cfg.new_total_partition_count;
     // add assignments of newly created partitions
     for (auto& p_as : cmd.value.assignments) {
+        _partition_count++;
         p_as.id += model::partition_id(prev_partition_count);
         tp->second.get_assignments().emplace(p_as);
         // propagate deltas
