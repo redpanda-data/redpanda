@@ -63,15 +63,20 @@ client_ptr kafka_client_cache::make_client(
       to_yaml(cfg, config::redact_secrets::no));
 }
 
-client_ptr kafka_client_cache::fetch_or_insert_impl(
-  credential_t user,
-  config::rest_authn_method authn_method,
-  underlying_list_t& inner_list,
-  underlying_hash_t& inner_hash) {
+std::pair<client_ptr, client_mu_ptr> kafka_client_cache::fetch_or_insert(
+  credential_t user, config::rest_authn_method authn_method) {
+    // This method does not need a gate or lock becase the entire function is
+    // synchronous until the point that client clean up is called. Then
+    // scheduling mechs are needed for client stop but that is handled within
+    // clean_stale_clients
+
+    auto& inner_list = _cache.get<underlying_list>();
+    auto& inner_hash = _cache.get<underlying_hash>();
     ss::sstring k{user.name};
     auto it_hash = inner_hash.find(k);
 
     client_ptr client;
+    client_mu_ptr client_mu;
 
     // When no client is found ...
     if (it_hash == inner_hash.end()) {
@@ -99,7 +104,8 @@ client_ptr kafka_client_cache::fetch_or_insert_impl(
         vlog(plog.debug, "Make client for user {}", k);
 
         client = make_client(user, authn_method);
-        inner_list.emplace_front(k, client);
+        client_mu = ss::make_lw_shared<mutex>();
+        inner_list.emplace_front(k, client, client_mu);
     } else {
         // If the passwords don't match, update the password on the client, so
         // that it can reconnect.
@@ -111,6 +117,7 @@ client_ptr kafka_client_cache::fetch_or_insert_impl(
         }
 
         client = it_hash->client;
+        client_mu = it_hash->client_mu;
 
         // Convert hash iterator to list iterator
         auto it_list = _cache.project<underlying_list>(it_hash);
@@ -123,20 +130,7 @@ client_ptr kafka_client_cache::fetch_or_insert_impl(
         inner_list.relocate(inner_list.begin(), it_list);
     }
 
-    return client;
-}
-
-client_ptr kafka_client_cache::fetch_or_insert(
-  credential_t user, config::rest_authn_method authn_method) {
-    // This method does not need a gate or lock becase the entire function is
-    // synchronous until the point that client clean up is called. Then
-    // scheduling mechs are needed for client stop but that is handled within
-    // clean_stale_clients
-
-    auto& inner_list = _cache.get<underlying_list>();
-    auto& inner_hash = _cache.get<underlying_hash>();
-
-    return fetch_or_insert_impl(user, authn_method, inner_list, inner_hash);
+    return std::make_pair(client, client_mu);
 }
 
 template<typename List, typename Pred>
@@ -153,14 +147,17 @@ ss::future<> remove_client_if(List& list, Pred pred) {
         }
     }
     for (auto& item : remove) {
-        co_await item.client->stop()
-          .handle_exception([&item](std::exception_ptr ex) {
-              // The stop failed
-              vlog(
-                plog.debug,
-                "Stale client {} stop already happened {}",
-                item.key,
-                ex);
+        co_await item.client_mu
+          ->with([&item]() {
+              return item.client->stop().handle_exception(
+                [&item](std::exception_ptr ex) {
+                    // The stop failed
+                    vlog(
+                      plog.debug,
+                      "Stale client {} stop already happened {}",
+                      item.key,
+                      ex);
+                });
           })
           .finally([client{item.client}]() {});
     }

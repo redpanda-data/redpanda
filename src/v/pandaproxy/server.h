@@ -208,9 +208,8 @@ public:
             case config::rest_authn_method::http_basic: {
                 return dispatch([this, func{std::forward<Func>(func)}](
                                   kafka_client_cache& cache) mutable {
-                    auto client = cache.fetch_or_insert(user, authn_method);
-                    return std::invoke(std::forward<Func>(func), *client)
-                      .finally([client] {});
+                    return cache.with_client_for(
+                      user, authn_method, std::forward<Func>(func));
                 });
             }
             }
@@ -226,9 +225,8 @@ public:
             case config::rest_authn_method::http_basic: {
                 return dispatch([this, func{std::forward<Func>(func)}](
                                   kafka_client_cache& cache) mutable {
-                    auto client = cache.fetch_or_insert(user, authn_method);
-                    return std::invoke(std::forward<Func>(func), *client)
-                      .finally([client] {});
+                    return cache.with_client_for(
+                      user, authn_method, std::forward<Func>(func));
                 });
             }
             }

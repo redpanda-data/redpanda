@@ -30,6 +30,8 @@ using namespace std::chrono_literals;
 static constexpr auto clean_timer_period = 10s;
 
 namespace pandaproxy {
+using cache_item = std::pair<client_ptr, client_mu_ptr>;
+
 struct test_client_cache : public kafka_client_cache {
     explicit test_client_cache(size_t max_size)
       : kafka_client_cache(
@@ -48,6 +50,11 @@ struct test_client_cache : public kafka_client_cache {
     }
 
     ~test_client_cache() { stop().get(); }
+
+    cache_item
+    get_client(credential_t user, config::rest_authn_method authn_method) {
+        return fetch_or_insert(user, authn_method);
+    }
 };
 } // namespace pandaproxy
 
@@ -89,16 +96,17 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
 
     // First fetch tests not-found path: cache.size > cache.max_size and cache
     // is empty
-    pp::client_ptr client = client_cache.fetch_or_insert(
+    pp::cache_item item = client_cache.get_client(
       user, config::rest_authn_method::http_basic);
+    pp::client_ptr client = item.first;
     BOOST_TEST(
       client->config().sasl_mechanism.value() == ss::sstring{"SCRAM-SHA-256"});
     BOOST_TEST(client->config().scram_username.value() == user.name);
     BOOST_TEST(client->config().scram_password.value() == user.pass);
 
     // Second fetch tests found path: user password did not change
-    client = client_cache.fetch_or_insert(
-      user, config::rest_authn_method::http_basic);
+    item = client_cache.get_client(user, config::rest_authn_method::http_basic);
+    client = item.first;
     BOOST_TEST(
       client->config().sasl_mechanism.value() == ss::sstring{"SCRAM-SHA-256"});
     BOOST_TEST(client->config().scram_username.value() == user.name);
@@ -108,8 +116,9 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
     user2.pass = "parrot";
     // Third fetch tests found path: user password did change
     // so any refs will have the updated password.
-    pp::client_ptr client2 = client_cache.fetch_or_insert(
+    item = client_cache.get_client(
       user2, config::rest_authn_method::http_basic);
+    pp::client_ptr client2 = item.first;
     BOOST_TEST(
       client2->config().sasl_mechanism.value() == ss::sstring{"SCRAM-SHA-256"});
     BOOST_TEST(client2->config().scram_username.value() == user.name);
@@ -123,8 +132,9 @@ SEASTAR_THREAD_TEST_CASE(cache_fetch_or_insert) {
     // Fourth fetch tests not-found path: cache.size == cache.max_size and cache
     // is not empty. The LRU replacement policy takes affect and an element is
     // evicted
-    client2 = client_cache.fetch_or_insert(
+    item = client_cache.get_client(
       user2, config::rest_authn_method::http_basic);
+    client2 = item.first;
     BOOST_TEST(
       client2->config().sasl_mechanism.value() == ss::sstring{"SCRAM-SHA-256"});
     BOOST_TEST(client2->config().scram_username.value() == user2.name);
@@ -142,7 +152,7 @@ SEASTAR_THREAD_TEST_CASE(test_keep_alive) {
 
     // This will insert a client into the cache. The client is keyed by the user
     // name.
-    client_cache.fetch_or_insert(user, config::rest_authn_method::none);
+    client_cache.get_client(user, config::rest_authn_method::none);
 
     size_t s = client_cache.size();
     BOOST_CHECK(s == 1);

@@ -54,13 +54,26 @@ public:
     client_ptr
     make_client(credential_t user, config::rest_authn_method authn_method);
 
-    client_ptr
-    fetch_or_insert(credential_t user, config::rest_authn_method authn_method);
+    template<
+      std::invocable<kafka::client::client&> Func,
+      typename Futurator
+      = ss::futurize<std::invoke_result_t<Func, kafka::client::client&>>>
+    typename Futurator::type with_client_for(
+      credential_t user, config::rest_authn_method authn_method, Func&& func) {
+        auto [client, client_mu] = fetch_or_insert(
+          std::move(user), authn_method);
+        auto units = co_await client_mu->get_units();
+        co_return co_await Futurator::invoke(std::forward<Func>(func), *client);
+    }
 
     ss::future<> clean_stale_clients();
 
     size_t size() const;
     size_t max_size() const;
+
+protected:
+    std::pair<client_ptr, client_mu_ptr>
+    fetch_or_insert(credential_t user, config::rest_authn_method authn_method);
 
 private:
     // Tags used for indexing
@@ -81,9 +94,6 @@ private:
           std::hash<ss::sstring>,
           std::equal_to<>>>>;
 
-    using underlying_list_t = underlying_t::index<underlying_list>::type;
-    using underlying_hash_t = underlying_t::index<underlying_hash>::type;
-
     kafka::client::configuration _config;
     size_t _cache_max_size;
     std::chrono::milliseconds _keep_alive;
@@ -92,11 +102,5 @@ private:
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gc_gate;
     mutex _gc_lock;
-
-    client_ptr fetch_or_insert_impl(
-      credential_t user,
-      config::rest_authn_method authn_method,
-      underlying_list_t& inner_list,
-      underlying_hash_t& inner_hash);
 };
 } // namespace pandaproxy
