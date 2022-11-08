@@ -313,10 +313,8 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
-    auto res = archiver->upload_next_candidates().get();
-
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     auto part = app.partition_manager.local().get(manifest_ntp);
@@ -338,8 +336,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     auto seg = mark_segments_as_compacted({0});
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
-    res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
     verify_segment_request("0-1-v1.log", manifest);
@@ -358,8 +355,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     reset_http_call_state();
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
-    res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
@@ -388,8 +384,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     auto part = app.partition_manager.local().get(manifest_ntp);
@@ -411,8 +406,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     auto seg = mark_segments_as_compacted({0, 1});
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
-    res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
     BOOST_REQUIRE_EQUAL(
@@ -451,8 +445,7 @@ FIXTURE_TEST(
     mark_segments_as_compacted({0, 1});
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
     std::stringstream st;
@@ -489,8 +482,7 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
     mark_segments_as_compacted({0});
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
@@ -529,8 +521,7 @@ FIXTURE_TEST(test_upload_compacted_segments_ends_in_gap, reupload_fixture) {
     mark_segments_as_compacted({0});
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
@@ -568,8 +559,7 @@ FIXTURE_TEST(test_upload_compacted_segments_begins_in_gap, reupload_fixture) {
     mark_segments_as_compacted({0, 1});
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
@@ -595,8 +585,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
@@ -632,8 +621,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     auto seg = mark_segments_as_compacted({0});
 
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {1, 0, 0}};
-    res = archiver->upload_next_candidates(model::offset::max()).get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected, model::offset::max());
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     manifest = part->archival_meta_stm()->manifest();
@@ -662,8 +650,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
@@ -710,8 +697,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     // The non-compacted uploads proceed as normal, the compacted upload fails.
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {0, 1, 0}};
-    res = archiver->upload_next_candidates(model::offset::max()).get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected, model::offset::max());
 
     log_requests();
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
@@ -738,10 +724,9 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
-    auto res = archiver->upload_next_candidates().get();
 
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     auto part = app.partition_manager.local().get(manifest_ntp);
@@ -763,8 +748,7 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     auto seg = mark_segments_as_compacted({0});
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {0, 0, 0}};
-    res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 0);
 
     BOOST_REQUIRE_EQUAL(
@@ -785,10 +769,9 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
-    auto res = archiver->upload_next_candidates().get();
 
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     auto part = app.partition_manager.local().get(manifest_ntp);
@@ -815,8 +798,7 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     config::shard_local_cfg()
       .get("cloud_storage_enable_compacted_topic_reupload")
       .set_value(false);
-    res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 0);
 
     BOOST_REQUIRE_EQUAL(
@@ -846,8 +828,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
 
     // 4 out of 5 segments uploaded due to archiver limit of 4
     archival::ntp_archiver::batch_result expected{{4, 0, 0}, {0, 0, 0}};
-    auto res = archiver->upload_next_candidates().get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
@@ -887,8 +868,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     // Mark four segments as compacted, so they are valid for upload
     auto seg = mark_segments_as_compacted({0, 1, 2, 3});
     expected = archival::ntp_archiver::batch_result{{4, 0, 0}, {0, 0, 0}};
-    res = archiver->upload_next_candidates(model::offset::max()).get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected, model::offset::max());
     BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     manifest = part->archival_meta_stm()->manifest();
@@ -906,8 +886,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     reset_http_call_state();
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
 
-    res = archiver->upload_next_candidates(model::offset::max()).get();
-    BOOST_REQUIRE(res == expected);
+    upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 
     verify_concat_segment_request(
