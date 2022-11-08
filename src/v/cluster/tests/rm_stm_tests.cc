@@ -98,7 +98,9 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -119,8 +121,11 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
                  .get0();
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
+
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
@@ -133,8 +138,9 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
-
-    BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
+        return tx_offset < stm.last_stable_offset();
+    }).get0();
 }
 
 // tests:
@@ -176,7 +182,9 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -197,7 +205,9 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
                  .get0();
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
@@ -213,8 +223,9 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
       std::any_of(aborted_txs.begin(), aborted_txs.end(), [pid2](auto x) {
           return x.pid == pid2;
       }));
-
-    BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
+        return tx_offset < stm.last_stable_offset();
+    }).get0();
 }
 
 // tests:
@@ -256,7 +267,9 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     auto aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
     auto first_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
 
     auto pid2 = model::producer_identity{2, 0};
     auto term_op = stm
@@ -277,7 +290,9 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
                  .get0();
     BOOST_REQUIRE((bool)offset_r);
     auto tx_offset = offset_r.value().last_offset();
-    BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, first_offset]() {
+        return first_offset < stm.last_stable_offset();
+    }).get0();
     BOOST_REQUIRE_LE(stm.last_stable_offset(), tx_offset);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
@@ -300,7 +315,9 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
           return x.pid == pid2;
       }));
 
-    BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
+    tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
+        return tx_offset < stm.last_stable_offset();
+    }).get0();
 }
 
 // transactional writes of an unknown tx are rejected
