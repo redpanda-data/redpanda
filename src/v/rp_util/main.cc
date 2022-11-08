@@ -23,7 +23,7 @@ namespace {
 int corpus_write(char** argv, std::filesystem::path dir) {
     seastar::app_template app;
     try {
-        return app.run(1, argv, [dir = std::move(dir)]() -> ss::future<int> {
+        return app.run(1, argv, [dir = std::move(dir)]() {
             return compat::write_corpus(dir).then([] { return 0; });
         });
     } catch (...) {
