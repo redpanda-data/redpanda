@@ -10,6 +10,8 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/later.hh>
 
+#include <boost/range/irange.hpp>
+
 static ss::logger logger("test");
 
 using namespace net;
@@ -93,12 +95,14 @@ struct conn_quota_fixture {
         scq
           .invoke_on(
             shard,
-            [shard, this, take_units, addr](conn_quota& cq) -> ss::future<> {
-                for (unsigned int j = 0; j < take_units; ++j) {
-                    auto u = co_await cq.get(addr);
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[shard].push_back(std::move(u));
-                }
+            [shard, this, take_units, addr](conn_quota& cq) {
+                auto range = boost::irange(0u, take_units);
+                return ss::do_for_each(range, [this, shard, addr, &cq](auto) {
+                    return cq.get(addr).then([this, shard](auto u) {
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[shard].push_back(std::move(u));
+                    });
+                });
             })
           .get();
     }
@@ -213,12 +217,14 @@ void conn_quota_fixture::test_borrows(
         scq
           .invoke_on(
             i,
-            [i, take_each, this](conn_quota& cq) -> ss::future<> {
-                for (unsigned int j = 0; j < take_each; ++j) {
-                    auto u = co_await cq.get(addr1);
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[i].push_back(std::move(u));
-                }
+            [i, take_each, this](conn_quota& cq) {
+                auto range = boost::irange(0u, take_each);
+                return ss::do_for_each(range, [this, i, &cq](auto) {
+                    return cq.get(addr1).then([this, i](auto u) {
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[i].push_back(std::move(u));
+                    });
+                });
             })
           .get();
     }
@@ -239,10 +245,11 @@ void conn_quota_fixture::test_borrows(
     scq
       .invoke_on(
         2,
-        [this, i = 2](conn_quota& cq) -> ss::future<> {
-            auto u = co_await cq.get(addr1);
-            BOOST_TEST_REQUIRE(u.live());
-            shard_units[i].push_back(std::move(u));
+        [this, i = 2](conn_quota& cq) {
+            return cq.get(addr1).then([this, i](auto u) {
+                BOOST_TEST_REQUIRE(u.live());
+                shard_units[i].push_back(std::move(u));
+            });
         })
       .get();
 
@@ -303,11 +310,13 @@ FIXTURE_TEST(test_change_limits, conn_quota_fixture) {
           .invoke_on(
             i,
             [i, this](conn_quota& cq) -> ss::future<> {
-                for (unsigned int j = 0; j < 3; ++j) {
-                    auto u = co_await cq.get(addr1);
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[i].push_back(std::move(u));
-                }
+                auto range = boost::irange(0, 3);
+                return ss::do_for_each(range, [this, i, &cq](auto) {
+                    return cq.get(addr1).then([this, i](auto u) {
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[i].push_back(std::move(u));
+                    });
+                });
             })
           .get();
     }

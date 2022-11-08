@@ -1136,6 +1136,42 @@ FIXTURE_TEST(rpc_add_service, rpc_sharded_fixture) {
     BOOST_CHECK_EQUAL(payload, res.value().data.str);
 }
 
+// Runs the given RPC-sending function, validating the successes and
+// failures, depending on whether the service has been registered.
+template<typename workload_t>
+static ss::future<> send_req_until_close(
+  ss::gate& rpc_g,
+  workload_t workload_fn,
+  ss::sstring service_name,
+  int& num_successes,
+  int& num_failures,
+  bool& service_start_support,
+  bool& service_full_support) {
+    while (!rpc_g.is_closed()) {
+        // Cache the full-support flag before sending anything out so we
+        // know up front whether to expect success.
+        bool full_support = service_full_support;
+        auto res = co_await workload_fn();
+        if (full_support) {
+            BOOST_CHECK_MESSAGE(
+              res.has_value(),
+              ssx::sformat(
+                "{} service was fully started; requests should not fail",
+                service_name));
+            ++num_successes;
+        } else if (res.has_value()) {
+            BOOST_CHECK_MESSAGE(
+              service_start_support,
+              ssx::sformat(
+                "{} request succeeded; service must have been started",
+                service_name));
+            ++num_successes;
+        } else {
+            ++num_failures;
+        }
+    }
+};
+
 // Test that exercises adding new services to the RPC server while there are
 // requests being processed.
 FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
@@ -1152,41 +1188,6 @@ FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
     movistar_client.connect(model::no_timeout).get();
     ss::gate rpc_g;
 
-    // Runs the given RPC-sending function, validating the successes and
-    // failures, depending on whether the service has been registered.
-    const auto send_req_until_close =
-      [&rpc_g]<typename workload_t>(
-        workload_t workload_fn,
-        ss::sstring service_name,
-        int& num_successes,
-        int& num_failures,
-        bool& service_start_support,
-        bool& service_full_support) -> ss::future<> {
-        while (!rpc_g.is_closed()) {
-            // Cache the full-support flag before sending anything out so we
-            // know up front whether to expect success.
-            bool full_support = service_full_support;
-            auto res = co_await workload_fn();
-            if (full_support) {
-                BOOST_CHECK_MESSAGE(
-                  res.has_value(),
-                  ssx::sformat(
-                    "{} service was fully started; requests should not fail",
-                    service_name));
-                ++num_successes;
-            } else if (res.has_value()) {
-                BOOST_CHECK_MESSAGE(
-                  service_start_support,
-                  ssx::sformat(
-                    "{} request succeeded; service must have been started",
-                    service_name));
-                ++num_successes;
-            } else {
-                ++num_failures;
-            }
-        }
-    };
-
     // Starts the service while the workload is running, ensuring we see the
     // expected success and errors at different points in service registration.
     const auto start_service_and_wait =
@@ -1201,6 +1202,7 @@ FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
         bool& service_full_support) {
           // Start our workload before we start the service.
           workload_fut = send_req_until_close(
+            rpc_g,
             std::move(workload_fn),
             service_name,
             num_successes,
