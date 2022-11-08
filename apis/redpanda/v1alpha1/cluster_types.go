@@ -992,6 +992,13 @@ func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
 		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
 }
 
+// IsSchemaRegistryAuthHTTPBasic returns true if schema registry authentication method
+// is enabled with HTTP Basic
+func (r *Cluster) IsSchemaRegistryAuthHTTPBasic() bool {
+	return r.Spec.Configuration.SchemaRegistry != nil &&
+		r.Spec.Configuration.SchemaRegistry.AuthenticationMethod == httpBasicAuthorizationMechanism
+}
+
 // IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the pods.
 // Maintenance mode feature needs to be enabled for this to be relevant.
 func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
