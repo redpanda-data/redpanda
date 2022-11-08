@@ -73,7 +73,10 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -132,7 +135,6 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
-    feature_table.stop().get0();
 }
 
 // tests:
@@ -149,7 +151,10 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -210,7 +215,6 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
       }));
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
-    feature_table.stop().get0();
 }
 
 // tests:
@@ -227,7 +231,10 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -294,7 +301,6 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
       }));
 
     BOOST_REQUIRE_LT(tx_offset, stm.last_stable_offset());
-    feature_table.stop().get0();
 }
 
 // transactional writes of an unknown tx are rejected
@@ -309,7 +315,10 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -334,7 +343,6 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
-    feature_table.stop().get0();
 }
 
 // begin fences off old transactions
@@ -349,7 +357,10 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -394,7 +405,6 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(!(bool)offset_r);
-    feature_table.stop().get0();
 }
 
 // transactional writes of an aborted tx are rejected
@@ -409,7 +419,10 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -456,7 +469,6 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
-    feature_table.stop().get0();
 }
 
 // Tests aborted transaction semantics with single and multi segment
@@ -474,8 +486,11 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
+    auto stop = ss::defer([&stm, &feature_table] {
+        stm.stop().get0();
+        feature_table.stop().get0();
+    });
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
@@ -689,5 +704,4 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
             BOOST_REQUIRE_EQUAL(txes[0].pid, pid2);
         }
     }
-    feature_table.stop().get0();
 }
