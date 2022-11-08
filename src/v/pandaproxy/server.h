@@ -132,8 +132,14 @@ private:
 
 template<typename service_t>
 class ctx_server : public server {
+    using base = server;
+
 public:
-    using server::server;
+    using reply_t = base::reply_t;
+    using function_handler
+      = ss::noncopyable_function<ss::future<reply_t>(request_t, reply_t)>;
+
+    using base::server;
 
     struct context_t : server::context_t {
         service_t& service;
@@ -245,6 +251,10 @@ public:
                   auth_result.get_username(), auth_result.get_password()};
             }
         }
+
+        using reply_t = typename base::reply_t;
+        using function_handler
+          = ss::noncopyable_function<ss::future<reply_t>(request_t, reply_t)>;
 
         credential_t user;
         config::rest_authn_method authn_method;

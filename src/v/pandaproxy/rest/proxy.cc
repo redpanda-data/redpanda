@@ -37,18 +37,25 @@ using server = proxy::server;
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__pandaproxy"};
 
-template<typename Handler>
-auto wrap(ss::gate& g, one_shot& os, Handler h) {
-    return [&g, &os, _h{std::move(h)}](
-             server::request_t rq,
-             server::reply_t rp) -> ss::future<server::reply_t> {
-        auto h{_h};
+class wrap {
+public:
+    wrap(ss::gate& g, one_shot& os, server::function_handler h)
+      : _g{g}
+      , _os{os}
+      , _h{std::move(h)} {}
 
-        auto units = co_await os();
-        auto guard = gate_guard(g);
-        co_return co_await h(std::move(rq), std::move(rp));
-    };
-}
+    ss::future<server::reply_t>
+    operator()(server::request_t rq, server::reply_t rp) const {
+        auto units = co_await _os();
+        auto guard = gate_guard(_g);
+        co_return co_await _h(std::move(rq), std::move(rp));
+    }
+
+private:
+    ss::gate& _g;
+    one_shot& _os;
+    server::function_handler _h;
+};
 
 server::routes_t get_proxy_routes(ss::gate& gate, one_shot& es) {
     server::routes_t routes;

@@ -80,7 +80,7 @@ get_brokers(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = false};
     };
 
-    return rq.dispatch(make_metadata_req)
+    co_return co_await rq.dispatch(make_metadata_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           json::get_brokers_res brokers;
@@ -114,7 +114,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
         return kafka::metadata_request{.list_all_topics = true};
     };
 
-    return rq.dispatch(make_list_topics_req)
+    co_return co_await rq.dispatch(make_list_topics_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
@@ -156,13 +156,9 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
       timeout,
       max_bytes);
 
-    return rq
-      .dispatch([user{rq.user},
-                 offset{offset},
-                 timeout{timeout},
-                 max_bytes{max_bytes},
-                 res_fmt,
-                 tp{std::move(tp)}](kafka::client::client& client) mutable {
+    co_return co_await rq
+      .dispatch([offset, timeout, max_bytes, res_fmt, tp{std::move(tp)}](
+                  kafka::client::client& client) mutable {
           return client
             .fetch_partition(std::move(tp), offset, max_bytes, timeout)
             .then([res_fmt](kafka::fetch_response res) {
@@ -195,18 +191,23 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
     vlog(plog.debug, "get_topics_name: topic: {}", topic);
 
-    auto res = co_await rq.dispatch(
-      [user{rq.user}, data{rq.req->content.data()}, topic, req_fmt](
-        kafka::client::client& client) mutable {
+    co_return co_await rq.dispatch(
+      [data{rq.req->content.data()},
+       topic,
+       req_fmt,
+       res_fmt,
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           auto records = ppj::rjson_parse(
             data, ppj::produce_request_handler(req_fmt));
-          return client.produce_records(topic, std::move(records));
+          return client.produce_records(topic, std::move(records))
+            .then([rp{std::move(rp)},
+                   res_fmt](kafka::produce_response res) mutable {
+                auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
+                rp.rep->write_body("json", json_rslt);
+                rp.mime_type = res_fmt;
+                return std::move(rp);
+            });
       });
-
-    auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
-    rp.rep->write_body("json", json_rslt);
-    rp.mime_type = res_fmt;
-    co_return rp;
 }
 
 static ss::sstring make_consumer_uri_base(
@@ -251,18 +252,11 @@ create_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _base_uri{std::move(base_uri)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto base_uri{std::move(_base_uri)};
-          auto res_fmt{_res_fmt};
-          auto req_data{std::move(_req_data)};
-          auto rp{std::move(_rp)};
-
+      [group_id,
+       base_uri{std::move(base_uri)},
+       res_fmt,
+       req_data{std::move(req_data)},
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "create_consumer: group_id: {}, name: {}, min_bytes: {}, timeout: "
@@ -274,22 +268,32 @@ create_consumer(server::request_t rq, server::reply_t rp) {
             req_data.auto_offset_reset,
             req_data.auto_commit_enable);
 
-          try {
-              co_await client.get_consumer(group_id, req_data.name);
-              auto ec = make_error_condition(
-                reply_error_code::consumer_already_exists);
-              rp.rep = errored_body(ec, ec.message());
-              co_return std::move(rp);
-          } catch (const kafka::client::consumer_error& e) {
-              // Ignore - consumer doesn't exist
-          }
-          auto name = co_await client.create_consumer(group_id, req_data.name);
-          json::create_consumer_response res{
-            .instance_id = name, .base_uri = base_uri + name};
-          auto json_rslt = ppj::rjson_serialize(res);
-          rp.rep->write_body("json", json_rslt);
-          rp.mime_type = res_fmt;
-          co_return std::move(rp);
+          return client.get_consumer(group_id, req_data.name)
+            .then([group_id](const kafka::client::shared_consumer_t&) mutable {
+                auto ec = make_error_condition(
+                  reply_error_code::consumer_already_exists);
+                server::reply_t rp;
+                rp.rep = errored_body(ec, ec.message());
+                return ss::make_ready_future<server::reply_t>(std::move(rp));
+            })
+            .handle_exception_type(
+              [group_id,
+               base_uri{std::move(base_uri)},
+               res_fmt,
+               req_data{std::move(req_data)},
+               rp{std::move(rp)},
+               &client](const kafka::client::consumer_error&) mutable {
+                  return client.create_consumer(group_id, req_data.name)
+                    .then([rp{std::move(rp)}, base_uri, res_fmt](
+                            kafka::member_id name) mutable {
+                        json::create_consumer_response res{
+                          .instance_id = name, .base_uri = base_uri + name};
+                        auto json_rslt = ppj::rjson_serialize(res);
+                        rp.rep->write_body("json", json_rslt);
+                        rp.mime_type = res_fmt;
+                        return std::move(rp);
+                    });
+              });
       });
 }
 
@@ -307,22 +311,19 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _member_id{std::move(member_id)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto member_id{std::move(_member_id)};
-          auto rp{std::move(_rp)};
+      [group_id, member_id{std::move(member_id)}, rp{std::move(rp)}](
+        kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "remove_consumer: group_id: {}, member_id: {}",
             group_id,
             member_id);
 
-          co_await client.remove_consumer(group_id, member_id);
-          rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-          co_return std::move(rp);
+          return client.remove_consumer(group_id, member_id)
+            .then([rp{std::move(rp)}]() mutable {
+                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                return std::move(rp);
+            });
       });
 }
 
@@ -343,17 +344,11 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _member_id{std::move(member_id)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto member_id{std::move(_member_id)};
-          auto res_fmt{_res_fmt};
-          auto req_data{std::move(_req_data)};
-          auto rp{std::move(_rp)};
+      [group_id,
+       member_id{std::move(member_id)},
+       req_data{std::move(req_data)},
+       res_fmt,
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "subscribe_consumer: group_id: {}, member_id: {}, topics: {}",
@@ -361,11 +356,13 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
             member_id,
             req_data.topics);
 
-          co_await client.subscribe_consumer(
-            group_id, member_id, std::move(req_data.topics));
-          rp.mime_type = res_fmt;
-          rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-          co_return std::move(rp);
+          return client
+            .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
+            .then([res_fmt, rp{std::move(rp)}]() mutable {
+                rp.mime_type = res_fmt;
+                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                return std::move(rp);
+            });
       });
 }
 
@@ -385,19 +382,12 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _name{std::move(name)},
-       _timeout{timeout},
-       _max_bytes{max_bytes},
-       _res_fmt{res_fmt},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto name{std::move(_name)};
-          auto timeout{_timeout};
-          auto max_bytes{_max_bytes};
-          auto res_fmt{_res_fmt};
-          auto rp{std::move(_rp)};
+      [group_id,
+       name{std::move(name)},
+       timeout,
+       max_bytes,
+       res_fmt,
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "consumer_fetch: group_id: {}, name: {}, timeout: {}, max_bytes: "
@@ -407,18 +397,19 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
             timeout,
             max_bytes);
 
-          auto res = co_await client.consumer_fetch(
-            group_id, name, timeout, max_bytes);
-          ::json::StringBuffer str_buf;
-          ::json::Writer<::json::StringBuffer> w(str_buf);
+          return client.consumer_fetch(group_id, name, timeout, max_bytes)
+            .then([res_fmt, rp{std::move(rp)}](auto res) mutable {
+                ::json::StringBuffer str_buf;
+                ::json::Writer<::json::StringBuffer> w(str_buf);
 
-          ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
+                ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
-          // TODO Ben: Prevent this linearization
-          ss::sstring json_rslt = str_buf.GetString();
-          rp.rep->write_body("json", json_rslt);
-          rp.mime_type = res_fmt;
-          co_return std::move(rp);
+                // TODO Ben: Prevent this linearization
+                ss::sstring json_rslt = str_buf.GetString();
+                rp.rep->write_body("json", json_rslt);
+                rp.mime_type = res_fmt;
+                return std::move(rp);
+            });
       });
 }
 
@@ -437,17 +428,11 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _member_id{std::move(member_id)},
-       _res_fmt{res_fmt},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto member_id{std::move(_member_id)};
-          auto res_fmt{_res_fmt};
-          auto req_data{std::move(_req_data)};
-          auto rp{std::move(_rp)};
+      [group_id,
+       member_id{std::move(member_id)},
+       req_data{std::move(req_data)},
+       res_fmt,
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "get_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
@@ -455,15 +440,17 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
             member_id,
             req_data);
 
-          auto res = co_await client.consumer_offset_fetch(
-            group_id, member_id, std::move(req_data));
-          ::json::StringBuffer str_buf;
-          ::json::Writer<::json::StringBuffer> w(str_buf);
-          ppj::rjson_serialize(w, res);
-          ss::sstring json_rslt = str_buf.GetString();
-          rp.rep->write_body("json", json_rslt);
-          rp.mime_type = res_fmt;
-          co_return std::move(rp);
+          return client
+            .consumer_offset_fetch(group_id, member_id, std::move(req_data))
+            .then([rp{std::move(rp)}, res_fmt](auto res) mutable {
+                ::json::StringBuffer str_buf;
+                ::json::Writer<::json::StringBuffer> w(str_buf);
+                ppj::rjson_serialize(w, res);
+                ss::sstring json_rslt = str_buf.GetString();
+                rp.rep->write_body("json", json_rslt);
+                rp.mime_type = res_fmt;
+                return std::move(rp);
+            });
       });
 }
 
@@ -487,15 +474,10 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
     co_return co_await rq.dispatch(
       group_id,
-      [_group_id{group_id},
-       _member_id{std::move(member_id)},
-       _req_data{std::move(req_data)},
-       _rp{std::move(rp)}](
-        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
-          auto group_id{std::move(_group_id)};
-          auto member_id{std::move(_member_id)};
-          auto req_data{std::move(_req_data)};
-          auto rp{std::move(_rp)};
+      [group_id,
+       member_id{std::move(member_id)},
+       req_data{std::move(req_data)},
+       rp{std::move(rp)}](kafka::client::client& client) mutable {
           vlog(
             plog.debug,
             "post_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
@@ -503,10 +485,12 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
             member_id,
             req_data);
 
-          auto res = co_await client.consumer_offset_commit(
-            group_id, member_id, std::move(req_data));
-          rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-          co_return std::move(rp);
+          return client
+            .consumer_offset_commit(group_id, member_id, std::move(req_data))
+            .then([rp{std::move(rp)}](auto) mutable {
+                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                return std::move(rp);
+            });
       });
 }
 

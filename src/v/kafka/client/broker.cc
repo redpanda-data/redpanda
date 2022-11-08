@@ -54,9 +54,10 @@ ss::future<shared_broker_t> make_broker(
           vlog(kclog.warn, "std::system_error: {}", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);
       })
-      .then([&config](shared_broker_t broker) -> ss::future<shared_broker_t> {
-          co_await do_authenticate(broker, config);
-          co_return broker;
+      .then([&config](shared_broker_t broker) {
+          return do_authenticate(broker, config).then([broker]() {
+              return broker;
+          });
       });
 }
 
