@@ -63,9 +63,9 @@ ss::future<> client::do_connect(net::unresolved_address addr) {
     return make_broker(unknown_node_id, addr, _config)
       .then([this](shared_broker_t broker) {
           return broker->dispatch(metadata_request{.list_all_topics = true})
-            .then([this, broker](metadata_response res) {
-                return apply(std::move(res));
-            });
+            .then(
+              [this](metadata_response res) { return apply(std::move(res)); })
+            .finally([broker]() {});
       });
 }
 
