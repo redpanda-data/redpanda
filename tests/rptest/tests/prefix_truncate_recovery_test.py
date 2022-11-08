@@ -180,11 +180,17 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
         def _run_recovery(src_node, dst_node):
             # Force leadership to 'src_node' so we can deterministically check
             # mixed-version traffic.
-            self.redpanda._admin.transfer_leadership_to(
+            # Note it's possible to see surprising error codes on older
+            # versions following a node restart (e.g. 500 insteaad of 503/504);
+            # just retry until leadership is moved.
+            wait_until(lambda: self.redpanda._admin.transfer_leadership_to(
                 namespace="kafka",
                 topic=self.topic,
                 partition=0,
-                target_id=self.redpanda.idx(src_node))
+                target_id=self.redpanda.idx(src_node)),
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       retry_on_exc=True)
             # Speed the test up a bit by using acks=1.
             self.run_recovery(acks=1, dst_node=dst_node)
 
