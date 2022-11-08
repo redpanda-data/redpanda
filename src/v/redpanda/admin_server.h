@@ -208,6 +208,14 @@ private:
     ss::future<ss::json::json_return_type>
       raft_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Security routes
+    ss::future<ss::json::json_return_type>
+      create_user_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      delete_user_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      update_user_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,

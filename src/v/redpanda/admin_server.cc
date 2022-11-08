@@ -1483,86 +1483,90 @@ static bool match_scram_credential(
     }
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    auto doc = parse_json_body(*req);
+
+    auto credential = parse_scram_credential(doc);
+
+    if (!doc.HasMember("username") || !doc["username"].IsString()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("String username missing"));
+    }
+
+    auto username = security::credential_user(doc["username"].GetString());
+
+    auto err
+      = co_await _controller->get_security_frontend().local().create_user(
+        username, credential, model::timeout_clock::now() + 5s);
+    vlog(
+      logger.debug, "Creating user '{}' {}:{}", username, err, err.message());
+
+    if (err == cluster::errc::user_exists) {
+        // Idempotency: if user is same as one that already exists,
+        // suppress the user_exists error and return success.
+        const auto& credentials_store
+          = _controller->get_credential_store().local();
+        std::optional<security::scram_credential> creds
+          = credentials_store.get<security::scram_credential>(username);
+        if (creds.has_value() && match_scram_credential(doc, creds.value())) {
+            co_return ss::json::json_return_type(ss::json::json_void());
+        }
+    }
+
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    auto user = security::credential_user(req->param["user"]);
+
+    auto err
+      = co_await _controller->get_security_frontend().local().delete_user(
+        user, model::timeout_clock::now() + 5s);
+    vlog(logger.debug, "Deleting user '{}' {}:{}", user, err, err.message());
+    if (err == cluster::errc::user_does_not_exist) {
+        // Idempotency: removing a non-existent user is successful.
+        co_return ss::json::json_return_type(ss::json::json_void());
+    }
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    auto user = security::credential_user(req->param["user"]);
+
+    auto doc = parse_json_body(*req);
+
+    auto credential = parse_scram_credential(doc);
+
+    auto err
+      = co_await _controller->get_security_frontend().local().update_user(
+        user, credential, model::timeout_clock::now() + 5s);
+    vlog(logger.debug, "Updating user {}:{}", err, err.message());
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
 void admin_server::register_security_routes() {
     register_route<superuser>(
       ss::httpd::security_json::create_user,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto doc = parse_json_body(*req);
-
-          auto credential = parse_scram_credential(doc);
-
-          if (!doc.HasMember("username") || !doc["username"].IsString()) {
-              throw ss::httpd::bad_request_exception(
-                fmt::format("String username missing"));
-          }
-
-          auto username = security::credential_user(
-            doc["username"].GetString());
-
-          auto err
-            = co_await _controller->get_security_frontend().local().create_user(
-              username, credential, model::timeout_clock::now() + 5s);
-          vlog(
-            logger.debug,
-            "Creating user '{}' {}:{}",
-            username,
-            err,
-            err.message());
-
-          if (err == cluster::errc::user_exists) {
-              // Idempotency: if user is same as one that already exists,
-              // suppress the user_exists error and return success.
-              const auto& credentials_store
-                = _controller->get_credential_store().local();
-              std::optional<security::scram_credential> creds
-                = credentials_store.get<security::scram_credential>(username);
-              if (
-                creds.has_value()
-                && match_scram_credential(doc, creds.value())) {
-                  co_return ss::json::json_return_type(ss::json::json_void());
-              }
-          }
-
-          co_await throw_on_error(*req, err, model::controller_ntp);
-          co_return ss::json::json_return_type(ss::json::json_void());
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return create_user_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::delete_user,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto user = security::credential_user(req->param["user"]);
-
-          auto err
-            = co_await _controller->get_security_frontend().local().delete_user(
-              user, model::timeout_clock::now() + 5s);
-          vlog(
-            logger.debug, "Deleting user '{}' {}:{}", user, err, err.message());
-          if (err == cluster::errc::user_does_not_exist) {
-              // Idempotency: removing a non-existent user is successful.
-              co_return ss::json::json_return_type(ss::json::json_void());
-          }
-          co_await throw_on_error(*req, err, model::controller_ntp);
-          co_return ss::json::json_return_type(ss::json::json_void());
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return delete_user_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::update_user,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto user = security::credential_user(req->param["user"]);
-
-          auto doc = parse_json_body(*req);
-
-          auto credential = parse_scram_credential(doc);
-
-          auto err
-            = co_await _controller->get_security_frontend().local().update_user(
-              user, credential, model::timeout_clock::now() + 5s);
-          vlog(logger.debug, "Updating user {}:{}", err, err.message());
-          co_await throw_on_error(*req, err, model::controller_ntp);
-          co_return ss::json::json_return_type(ss::json::json_void());
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return update_user_handler(std::move(req));
       });
 
     register_route<superuser>(
