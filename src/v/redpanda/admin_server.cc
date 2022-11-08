@@ -1081,8 +1081,7 @@ void config_multi_property_validation(
 void admin_server::register_cluster_config_routes() {
     register_route<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config_status,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           auto& cfg = _controller->get_config_manager();
           return cfg
             .invoke_on(
@@ -1119,8 +1118,7 @@ void admin_server::register_cluster_config_routes() {
 
     register_route<publik>(
       ss::httpd::cluster_config_json::get_cluster_config_schema,
-      [](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [](std::unique_ptr<ss::httpd::request>) {
           return ss::make_ready_future<ss::json::json_return_type>(
             util::generate_json_schema(config::shard_local_cfg()));
       });
@@ -1129,8 +1127,7 @@ void admin_server::register_cluster_config_routes() {
       ss::httpd::cluster_config_json::patch_cluster_config,
       [this](
         std::unique_ptr<ss::httpd::request> req,
-        request_auth_result const& auth_state)
-        -> ss::future<ss::json::json_return_type> {
+        request_auth_result const& auth_state) {
           return patch_cluster_config_handler(std::move(req), auth_state);
       });
 }
@@ -1350,8 +1347,7 @@ admin_server::patch_cluster_config_handler(
 
     auto patch_result = co_await _controller->get_config_frontend().invoke_on(
       cluster::config_frontend::version_shard,
-      [update = std::move(update)](cluster::config_frontend& fe) mutable
-      -> ss::future<cluster::config_frontend::patch_result> {
+      [update = std::move(update)](cluster::config_frontend& fe) mutable {
           return fe.patch(std::move(update), model::timeout_clock::now() + 5s);
       });
 
@@ -1879,8 +1875,7 @@ void admin_server::register_broker_routes() {
                 ret.version = members_table.version();
                 ret.brokers = std::move(brokers);
 
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  std::move(ret));
+                return ss::json::json_return_type(std::move(ret));
             });
       });
 
@@ -1889,8 +1884,7 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::httpd::request>) {
           return get_brokers(_controller)
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  std::move(brokers));
+                return ss::json::json_return_type(std::move(brokers));
             });
       });
 
@@ -2006,34 +2000,27 @@ void admin_server::register_broker_routes() {
      */
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           return _controller->get_drain_manager()
             .invoke_on_all(
               [](cluster::drain_manager& dm) { return dm.drain(); })
-            .then([] {
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            });
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           return _controller->get_drain_manager()
             .invoke_on_all(
               [](cluster::drain_manager& dm) { return dm.restore(); })
-            .then([] {
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            });
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::get_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           return _controller->get_drain_manager().local().status().then(
             [](auto status) {
                 ss::httpd::broker_json::maintenance_status res;
@@ -2054,7 +2041,7 @@ void admin_server::register_broker_routes() {
                         res.failed = status->failed.value();
                     }
                 }
-                return ss::make_ready_future<ss::json::json_return_type>(res);
+                return ss::json::json_return_type(res);
             });
       });
     register_route<superuser>(
@@ -2132,8 +2119,7 @@ void admin_server::register_partition_routes() {
                 for (auto& s : s2) {
                     partitions.push_back(std::move(s));
                 }
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  std::move(partitions));
+                return ss::json::json_return_type(std::move(partitions));
             });
       });
 
@@ -2216,8 +2202,7 @@ void admin_server::register_partition_routes() {
                 .then(
                   [p](const cluster::ntp_reconciliation_state& state) mutable {
                       p.status = ssx::sformat("{}", state.status());
-                      return ss::make_ready_future<ss::json::json_return_type>(
-                        std::move(p));
+                      return ss::json::json_return_type(std::move(p));
                   });
           }
       });
@@ -2568,8 +2553,7 @@ void admin_server::register_partition_routes() {
 
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           using reconfiguration = ss::httpd::partition_json::reconfiguration;
           std::vector<reconfiguration> ret;
           auto& in_progress
@@ -2847,21 +2831,17 @@ void admin_server::register_transaction_routes() {
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           vlog(logger.info, "Request to reset leaders info");
           return _metadata_cache
             .invoke_on_all([](auto& mc) { mc.reset_leaders(); })
-            .then([] {
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            });
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
       });
 
     register_route<user>(
       ss::httpd::debug_json::get_leaders_info,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           vlog(logger.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
           std::vector<result_t> ans;
@@ -2891,8 +2871,7 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       seastar::httpd::debug_json::get_peer_status,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request> req) {
           model::node_id id = parse_broker_id(*req);
           auto node_status = _node_status_table.local().get_node_status(id);
 
@@ -2907,15 +2886,14 @@ void admin_server::register_debug_routes() {
           seastar::httpd::debug_json::peer_status ret;
           ret.since_last_status = delta.count();
 
-          co_return ret;
+          return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
 }
 
 void admin_server::register_cluster_routes() {
     register_route<publik>(
       ss::httpd::cluster_json::get_cluster_health_overview,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           vlog(logger.debug, "Requested cluster status");
           return _controller->get_health_monitor()
             .local()
