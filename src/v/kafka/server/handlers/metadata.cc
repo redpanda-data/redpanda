@@ -372,7 +372,7 @@ template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     metadata_response reply;
-    auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
+    auto alive_brokers = co_await ctx.metadata_cache().alive_brokers();
     for (const auto& broker : alive_brokers) {
         std::optional<model::broker_endpoint> peer_listener;
         for (const auto& listener : broker->kafka_advertised_listeners()) {
@@ -459,7 +459,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // just for the size estimate.
     constexpr size_t extra_bytes_per_broker = 200;
     size_estimate
-      += md_cache.all_brokers().size()
+      += md_cache.brokers().size()
          * (sizeof(metadata_response_broker) + extra_bytes_per_broker);
 
     for (auto& [tp_ns, topic_metadata] : md_cache.all_topics_metadata()) {

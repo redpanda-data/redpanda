@@ -44,9 +44,9 @@ FIXTURE_TEST(test_creating_same_topic_twice, cluster_test_fixture) {
 
     // wait for cluster to be stable
     tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return get_local_cache(model::node_id{0}).all_brokers().size() == 3
-               && get_local_cache(model::node_id{1}).all_brokers().size() == 3
-               && get_local_cache(model::node_id{2}).all_brokers().size() == 3;
+        return get_local_cache(model::node_id{0}).brokers().size() == 3
+               && get_local_cache(model::node_id{1}).brokers().size() == 3
+               && get_local_cache(model::node_id{2}).brokers().size() == 3;
     }).get0();
 
     std::vector<ss::future<std::vector<cluster::topic_result>>> futures;

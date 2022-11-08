@@ -27,11 +27,11 @@ class members_table {
 public:
     using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
-    std::vector<broker_ptr> all_brokers() const;
+    std::vector<broker_ptr> brokers() const;
 
-    size_t all_brokers_count() const;
+    size_t broker_count() const;
 
-    std::vector<model::node_id> all_broker_ids() const;
+    std::vector<model::node_id> broker_ids() const;
 
     /// Returns single broker if exists in cache
     std::optional<broker_ptr> get_broker(model::node_id) const;

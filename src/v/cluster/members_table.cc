@@ -20,7 +20,7 @@
 
 namespace cluster {
 
-std::vector<broker_ptr> members_table::all_brokers() const {
+std::vector<broker_ptr> members_table::brokers() const {
     std::vector<broker_ptr> brokers;
     brokers.reserve(_brokers.size());
     for (auto& [id, broker] : _brokers) {
@@ -33,14 +33,14 @@ std::vector<broker_ptr> members_table::all_brokers() const {
     return brokers;
 }
 
-size_t members_table::all_brokers_count() const {
+size_t members_table::broker_count() const {
     return std::count_if(_brokers.begin(), _brokers.end(), [](auto entry) {
         return entry.second->get_membership_state()
                != model::membership_state::removed;
     });
 }
 
-std::vector<model::node_id> members_table::all_broker_ids() const {
+std::vector<model::node_id> members_table::broker_ids() const {
     std::vector<model::node_id> ids;
     ids.reserve(_brokers.size());
     for (auto& [id, broker] : _brokers) {
@@ -265,7 +265,7 @@ void members_table::unregister_members_updated_notification(
 
 void members_table::notify_members_updated() {
     for (const auto& [id, cb] : _members_updated_notifications) {
-        cb(all_broker_ids());
+        cb(broker_ids());
     }
 }
 

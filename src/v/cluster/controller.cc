@@ -628,7 +628,7 @@ int16_t controller::internal_topic_replication() const {
       = (int16_t)config::shard_local_cfg().internal_topic_replication_factor();
     if (
       replication_factor
-      > (int16_t)_members_table.local().all_brokers().size()) {
+      > (int16_t)_members_table.local().brokers().size()) {
         // Fall back to r=1 if we do not have sufficient nodes
         return 1;
     } else {

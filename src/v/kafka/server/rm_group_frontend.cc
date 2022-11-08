@@ -126,7 +126,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
           _controller->get_topics_frontend().local(),
           (int16_t)_controller->get_members_table()
             .local()
-            .all_brokers()
+            .brokers()
             .size());
         if (!has_created) {
             vlog(

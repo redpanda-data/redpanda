@@ -111,11 +111,11 @@ std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
     return _members_table.local().get_broker(nid);
 }
 
-std::vector<broker_ptr> metadata_cache::all_brokers() const {
-    return _members_table.local().all_brokers();
+std::vector<broker_ptr> metadata_cache::brokers() const {
+    return _members_table.local().brokers();
 }
 
-ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
+ss::future<std::vector<broker_ptr>> metadata_cache::alive_brokers() const {
     std::vector<broker_ptr> brokers;
     auto res = co_await _health_monitor.local().get_nodes_status(
       config::shard_local_cfg().metadata_status_wait_timeout_ms()
@@ -123,7 +123,7 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
     if (!res) {
         // if we were not able to refresh the cache, return all brokers
         // (controller may be unreachable)
-        co_return _members_table.local().all_brokers();
+        co_return _members_table.local().brokers();
     }
 
     std::set<model::node_id> brokers_with_health;
@@ -142,17 +142,17 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
     // presume it is newly added and assume it is alive.  This avoids
     // newly added nodes being inconsistently excluded from metadata
     // responses until all nodes' health caches update.
-    for (const auto& broker : _members_table.local().all_brokers()) {
+    for (const auto& broker : _members_table.local().brokers()) {
         if (!brokers_with_health.contains(broker->id())) {
             brokers.push_back(broker);
         }
     }
 
-    co_return !brokers.empty() ? brokers : _members_table.local().all_brokers();
+    co_return !brokers.empty() ? brokers : _members_table.local().brokers();
 }
 
-std::vector<model::node_id> metadata_cache::all_broker_ids() const {
-    return _members_table.local().all_broker_ids();
+std::vector<model::node_id> metadata_cache::broker_ids() const {
+    return _members_table.local().broker_ids();
 }
 
 bool metadata_cache::should_reject_writes() const {

@@ -139,7 +139,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
         refresh_nodes_status();
     }
 
-    auto nodes = filter.nodes.empty() ? _members.local().all_broker_ids()
+    auto nodes = filter.nodes.empty() ? _members.local().broker_ids()
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
@@ -166,7 +166,7 @@ void health_monitor_backend::refresh_nodes_status() {
     absl::erase_if(
       _status, [this](auto& e) { return !_members.local().contains(e.first); });
 
-    for (auto& b : _members.local().all_brokers()) {
+    for (auto& b : _members.local().brokers()) {
         node_state status;
         status.id = b->id();
         status.membership_state = b->get_membership_state();
@@ -566,7 +566,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
      */
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
-    auto ids = _members.local().all_broker_ids();
+    auto ids = _members.local().broker_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _raft0->self().id()) {
@@ -763,7 +763,7 @@ health_monitor_backend::get_cluster_health_overview(
       force_refresh::no, deadline);
 
     cluster_health_overview ret;
-    const auto brokers = _members.local().all_brokers();
+    const auto brokers = _members.local().brokers();
     ret.all_nodes.reserve(brokers.size());
 
     for (auto& broker : brokers) {

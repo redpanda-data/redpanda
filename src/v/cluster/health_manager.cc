@@ -190,7 +190,7 @@ ss::future<> health_manager::do_tick() {
 
     // Only ensure replication if we have a big enough cluster, to avoid
     // spamming log with replication complaints on single node cluster
-    if (_members.local().all_brokers().size() >= 3) {
+    if (_members.local().brokers().size() >= 3) {
         /*
          * we try to be conservative here. if something goes wrong we'll
          * back off and wait before trying to fix replication for any

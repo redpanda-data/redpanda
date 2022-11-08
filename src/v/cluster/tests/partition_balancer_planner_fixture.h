@@ -178,7 +178,7 @@ struct partition_balancer_planner_fixture {
         auto& members_table = workers.members.local();
 
         std::vector<model::broker> new_brokers;
-        for (auto broker_ptr : members_table.all_brokers()) {
+        for (auto broker_ptr : members_table.brokers()) {
             new_brokers.push_back(*broker_ptr);
         }
 

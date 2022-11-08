@@ -329,7 +329,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // Ensure that our _node_versions contains versions for all
     // nodes in members_table & that they are all sufficiently recent
     const auto& member_table = _members.local();
-    for (const auto& node_id : member_table.all_broker_ids()) {
+    for (const auto& node_id : member_table.broker_ids()) {
         auto v_iter = _node_versions.find(node_id);
         if (v_iter == _node_versions.end()) {
             vlog(

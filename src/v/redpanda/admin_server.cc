@@ -643,7 +643,7 @@ get_brokers(cluster::controller* const controller) {
 
           // Collect broker information from the members table.
           auto& members_table = controller->get_members_table().local();
-          for (auto& broker : members_table.all_brokers()) {
+          for (auto& broker : members_table.brokers()) {
               ss::httpd::broker_json::broker b;
               b.node_id = broker->id();
               b.num_cores = broker->properties().cores;
@@ -1947,7 +1947,7 @@ admin_server::start_broker_maintenance_handler(
           "progress?)");
     }
 
-    if (_controller->get_members_table().local().all_brokers().size() < 2) {
+    if (_controller->get_members_table().local().brokers().size() < 2) {
         throw ss::httpd::bad_request_exception(
           "Maintenance mode may not be used on a single node "
           "cluster");
@@ -2532,7 +2532,7 @@ void admin_server::register_partition_routes() {
               }
               // special case, controller is raft group 0
               p.raft_group_id = 0;
-              for (const auto& i : _metadata_cache.local().all_broker_ids()) {
+              for (const auto& i : _metadata_cache.local().broker_ids()) {
                   if (!leader_opt.has_value() || leader_opt.value() != i) {
                       ss::httpd::partition_json::assignment a;
                       a.node_id = i;

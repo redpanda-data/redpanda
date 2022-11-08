@@ -166,7 +166,7 @@ public:
             return std::all_of(
               _instances.begin(), _instances.end(), [this](auto& p) {
                   return p.second->app.metadata_cache.local()
-                           .all_brokers()
+                           .brokers()
                            .size()
                          == _instances.size();
               });

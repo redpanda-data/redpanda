@@ -105,13 +105,13 @@ public:
     const topic_table::underlying_t& all_topics_metadata() const;
 
     /// Returns all brokers, returns copy as the content of broker can change
-    std::vector<broker_ptr> all_brokers() const;
+    std::vector<broker_ptr> brokers() const;
 
     /// Returns all brokers, returns copy as the content of broker can change
-    ss::future<std::vector<broker_ptr>> all_alive_brokers() const;
+    ss::future<std::vector<broker_ptr>> alive_brokers() const;
 
     /// Returns all broker ids
-    std::vector<model::node_id> all_broker_ids() const;
+    std::vector<model::node_id> broker_ids() const;
 
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change

@@ -152,7 +152,7 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     cfg.for_each_broker([&new_list](const model::broker& br) {
         new_list.push_back(ss::make_lw_shared<model::broker>(br));
     });
-    std::vector<broker_ptr> old_list = m.all_brokers();
+    std::vector<broker_ptr> old_list = m.brokers();
 
     return calculate_changed_brokers(std::move(new_list), std::move(old_list));
 }
@@ -1018,7 +1018,7 @@ members_manager::handle_configuration_update_request(
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
-    auto all_brokers = _members_table.local().all_brokers();
+    auto all_brokers = _members_table.local().brokers();
     if (auto err = check_result_configuration(all_brokers, req.node); err) {
         vlog(
           clusterlog.warn,

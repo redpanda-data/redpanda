@@ -52,7 +52,7 @@ public:
               apps.cbegin(), apps.cend(), [node_count](auto c) {
                   return c.second->controller->get_members_table()
                            .local()
-                           .all_broker_ids()
+                           .broker_ids()
                            .size()
                          == node_count;
               });
@@ -226,7 +226,7 @@ public:
             auto ids = (*leader)
                          ->controller->get_members_table()
                          .local()
-                         .all_broker_ids();
+                         .broker_ids();
             test_logger.info("current brokers: {}", ids);
             return ss::make_ready_future<bool>(
               std::find(ids.begin(), ids.end(), id) == ids.end());

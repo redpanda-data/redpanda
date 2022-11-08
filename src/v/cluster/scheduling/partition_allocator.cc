@@ -147,7 +147,7 @@ partition_allocator::allocate_partition(
  */
 std::error_code partition_allocator::check_cluster_limits(
   allocation_request const& request) const {
-    if (_members.local().all_brokers().empty()) {
+    if (_members.local().brokers().empty()) {
         // Empty members table, we're probably running in a unit test
         return errc::success;
     }
@@ -170,7 +170,7 @@ std::error_code partition_allocator::check_cluster_limits(
     uint32_t min_core_count = 0;
     uint64_t min_memory_bytes = 0;
     uint64_t min_disk_bytes = 0;
-    auto all_brokers = _members.local().all_brokers();
+    auto all_brokers = _members.local().brokers();
     for (const auto& b : all_brokers) {
         if (min_core_count == 0) {
             min_core_count = b->properties().cores;

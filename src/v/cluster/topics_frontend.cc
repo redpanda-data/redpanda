@@ -1147,12 +1147,12 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     if (
       static_cast<size_t>(new_replication_factor)
-      > _members_table.local().all_brokers_count()) {
+      > _members_table.local().broker_count()) {
         vlog(
           clusterlog.warn,
           "New replication factor({}) is greater than number of brokers({})",
           new_replication_factor,
-          _members_table.local().all_brokers_count());
+          _members_table.local().broker_count());
         co_return errc::topic_invalid_replication_factor;
     }
 

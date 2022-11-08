@@ -66,7 +66,7 @@ void partition_balancer_planner::init_per_node_state(
   const std::vector<raft::follower_metrics>& follower_metrics,
   reallocation_request_state& rrs,
   plan_data& result) const {
-    for (const auto& broker : _state.members().all_brokers()) {
+    for (const auto& broker : _state.members().brokers()) {
         if (
           broker->get_membership_state() == model::membership_state::removed) {
             continue;

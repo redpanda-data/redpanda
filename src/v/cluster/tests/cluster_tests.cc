@@ -25,7 +25,7 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
 
     wait_for_all_members(3s).get();
 
-    auto brokers = get_local_cache(model::node_id{0}).all_brokers();
+    auto brokers = get_local_cache(model::node_id{0}).brokers();
 
     // single broker
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
@@ -98,7 +98,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
     wait_for_controller_leadership(id0).get();
     wait_for_all_members(3s).get();
-    auto brokers = get_local_cache(id0).all_brokers();
+    auto brokers = get_local_cache(id0).brokers();
 
     // single broker
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
