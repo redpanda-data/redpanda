@@ -50,7 +50,9 @@ def tests_to_run():
         119,
         # tests that are flaky in CI
         30,
-        84
+        84,
+        # using mocked cluster, not relevant
+        105,
     ])
     return [t for t in range(120) if t not in ignored_tests]
 
