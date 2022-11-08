@@ -3090,7 +3090,7 @@ void admin_server::register_shadow_indexing_routes() {
           auto ntp = model::ntp(model::kafka_namespace, topic, partition);
           if (need_redirect_to_leader(ntp, _metadata_cache)) {
               vlog(logger.info, "Need to redirect bucket syncup request");
-              co_await redirect_to_leader(*request, ntp);
+              throw co_await redirect_to_leader(*request, ntp);
           } else {
               auto result = co_await _archival_service.map_reduce(
                 manifest_reducer(),
