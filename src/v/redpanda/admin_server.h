@@ -220,6 +220,12 @@ private:
     ss::future<ss::json::json_return_type>
       kafka_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Feature routes
+    ss::future<ss::json::json_return_type>
+      put_feature_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      put_license_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,

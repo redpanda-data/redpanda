@@ -1685,10 +1685,96 @@ static json::validator make_feature_put_validator() {
     return json::validator(schema);
 }
 
-void admin_server::register_features_routes() {
+ss::future<ss::json::json_return_type>
+admin_server::put_feature_handler(std::unique_ptr<ss::httpd::request> req) {
     static thread_local auto feature_put_validator(
       make_feature_put_validator());
 
+    auto doc = parse_json_body(*req);
+    apply_validator(feature_put_validator, doc);
+
+    auto feature_name = req->param["feature_name"];
+
+    if (!_controller->get_feature_table()
+           .local()
+           .resolve_name(feature_name)
+           .has_value()) {
+        throw ss::httpd::bad_request_exception("Unknown feature name");
+    }
+
+    cluster::feature_update_action action{.feature_name = feature_name};
+    auto& new_state_str = doc["state"];
+    if (new_state_str == "active") {
+        action.action = cluster::feature_update_action::action_t::activate;
+    } else if (new_state_str == "disabled") {
+        action.action = cluster::feature_update_action::action_t::deactivate;
+    } else {
+        throw ss::httpd::bad_request_exception("Invalid state");
+    }
+
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
+    auto& fm = _controller->get_feature_manager();
+    auto err = co_await fm.invoke_on(
+      cluster::feature_manager::backend_shard,
+      [action](cluster::feature_manager& fm) {
+          return fm.write_action(action);
+      });
+    if (err) {
+        throw ss::httpd::bad_request_exception(fmt::format("{}", err));
+    } else {
+        co_return ss::json::json_void();
+    }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
+    auto& raw_license = req->content;
+    if (raw_license.empty()) {
+        throw ss::httpd::bad_request_exception(
+          "Missing redpanda license from request body");
+    }
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::license)) {
+        throw ss::httpd::bad_request_exception(
+          "Feature manager reports the cluster is not fully upgraded to "
+          "accept license put requests");
+    }
+
+    try {
+        boost::trim_if(raw_license, boost::is_any_of(" \n"));
+        auto license = security::make_license(raw_license);
+        if (license.is_expired()) {
+            throw ss::httpd::bad_request_exception(
+              fmt::format("License is expired: {}", license));
+        }
+        const auto& ft = _controller->get_feature_table().local();
+        const auto& loaded_license = ft.get_license();
+        if (loaded_license && (*loaded_license == license)) {
+            /// Loaded license is idential to license in request, do
+            /// nothing and return 200(OK)
+            co_return ss::json::json_void();
+        }
+        auto& fm = _controller->get_feature_manager();
+        auto err = co_await fm.invoke_on(
+          cluster::feature_manager::backend_shard,
+          [license = std::move(license)](cluster::feature_manager& fm) mutable {
+              return fm.update_license(std::move(license));
+          });
+        co_await throw_on_error(*req, err, model::controller_ntp);
+    } catch (const security::license_malformed_exception& ex) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("License is malformed: {}", ex.what()));
+    } catch (const security::license_invalid_exception& ex) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("License is invalid: {}", ex.what()));
+    }
+    co_return ss::json::json_void();
+}
+
+void admin_server::register_features_routes() {
     register_route<user>(
       ss::httpd::features_json::get_features,
       [this](std::unique_ptr<ss::httpd::request>) {
@@ -1752,47 +1838,8 @@ void admin_server::register_features_routes() {
 
     register_route<superuser>(
       ss::httpd::features_json::put_feature,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto doc = parse_json_body(*req);
-          apply_validator(feature_put_validator, doc);
-
-          auto feature_name = req->param["feature_name"];
-
-          if (!_controller->get_feature_table()
-                 .local()
-                 .resolve_name(feature_name)
-                 .has_value()) {
-              throw ss::httpd::bad_request_exception("Unknown feature name");
-          }
-
-          cluster::feature_update_action action{.feature_name = feature_name};
-          auto& new_state_str = doc["state"];
-          if (new_state_str == "active") {
-              action.action
-                = cluster::feature_update_action::action_t::activate;
-          } else if (new_state_str == "disabled") {
-              action.action
-                = cluster::feature_update_action::action_t::deactivate;
-          } else {
-              throw ss::httpd::bad_request_exception("Invalid state");
-          }
-
-          if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-              throw co_await redirect_to_leader(*req, model::controller_ntp);
-          }
-
-          auto& fm = _controller->get_feature_manager();
-          auto err = co_await fm.invoke_on(
-            cluster::feature_manager::backend_shard,
-            [action](cluster::feature_manager& fm) {
-                return fm.write_action(action);
-            });
-          if (err) {
-              throw ss::httpd::bad_request_exception(fmt::format("{}", err));
-          } else {
-              co_return ss::json::json_void();
-          }
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return put_feature_handler(std::move(req));
       });
 
     register_route<user>(
@@ -1824,50 +1871,8 @@ void admin_server::register_features_routes() {
 
     register_route<superuser>(
       ss::httpd::features_json::put_license,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          auto& raw_license = req->content;
-          if (raw_license.empty()) {
-              throw ss::httpd::bad_request_exception(
-                "Missing redpanda license from request body");
-          }
-          if (!_controller->get_feature_table().local().is_active(
-                features::feature::license)) {
-              throw ss::httpd::bad_request_exception(
-                "Feature manager reports the cluster is not fully upgraded to "
-                "accept license put requests");
-          }
-
-          try {
-              boost::trim_if(raw_license, boost::is_any_of(" \n"));
-              auto license = security::make_license(raw_license);
-              if (license.is_expired()) {
-                  throw ss::httpd::bad_request_exception(
-                    fmt::format("License is expired: {}", license));
-              }
-              const auto& ft = _controller->get_feature_table().local();
-              const auto& loaded_license = ft.get_license();
-              if (loaded_license && (*loaded_license == license)) {
-                  /// Loaded license is idential to license in request, do
-                  /// nothing and return 200(OK)
-                  co_return ss::json::json_void();
-              }
-              auto& fm = _controller->get_feature_manager();
-              auto err = co_await fm.invoke_on(
-                cluster::feature_manager::backend_shard,
-                [license = std::move(license)](
-                  cluster::feature_manager& fm) mutable {
-                    return fm.update_license(std::move(license));
-                });
-              co_await throw_on_error(*req, err, model::controller_ntp);
-          } catch (const security::license_malformed_exception& ex) {
-              throw ss::httpd::bad_request_exception(
-                fmt::format("License is malformed: {}", ex.what()));
-          } catch (const security::license_invalid_exception& ex) {
-              throw ss::httpd::bad_request_exception(
-                fmt::format("License is invalid: {}", ex.what()));
-          }
-          co_return ss::json::json_void();
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return put_license_handler(std::move(req));
       });
 }
 
