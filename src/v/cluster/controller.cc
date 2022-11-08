@@ -578,7 +578,6 @@ ss::future<> controller::create_cluster(const create_cluster_mode mode) {
  * to it, and before we have started communicating with peers.
  */
 ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
-
     if (co_await discovery.is_cluster_founder()) {
         if (config::node().empty_seed_starts_cluster()) {
             vassert(
