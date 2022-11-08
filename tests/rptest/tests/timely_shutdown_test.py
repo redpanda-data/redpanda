@@ -22,11 +22,11 @@ from rptest.util import wait_until_result
 class ShutdownTest(EndToEndTest):
     def __init__(self, test_context):
         super().__init__(test_context)
-        self.stopped = False
+        self.stopped = threading.Event()
         self.background_failures = None
 
     def teardown(self):
-        self.stopped = True
+        self.stopped.set()
         if self.background_failures:
             self.background_failures.join()  # Wait for ip tables rules reset.
 
@@ -72,22 +72,25 @@ class ShutdownTest(EndToEndTest):
             """Picks a non leader node for the ntp and isolates it repeatedly"""
             with FailureInjector(self.redpanda) as finjector:
                 timeout_s = 5
+                period_s = 1
                 failure = FailureSpec.FAILURE_ISOLATE
-                while not self.stopped:
+                while not self.stopped.is_set():
                     node = random.choice(self.redpanda.nodes)
                     assert node
                     if node == checked_get_leader():
                         continue
+
                     # Suspend for longer than send timeouts
                     finjector.inject_failure(
                         FailureSpec(node=node, type=failure, length=timeout_s))
+                    self.stopped.wait(timeout=period_s)
 
         # Inject failures in the background.
         self.background_failures = threading.Thread(
             target=pause_non_leader_node, args=(), daemon=True)
         self.background_failures.start()
         try:
-            pending_attempts = 5
+            pending_attempts = 10
             while pending_attempts != 0:
                 # Pick the current leader and restart it, repeat
                 leader = wait_until_result(
@@ -103,7 +106,7 @@ class ShutdownTest(EndToEndTest):
                 pending_attempts -= 1
         finally:
             # Stop the finjector
-            self.stopped = True
+            self.stopped.set()
             self.background_failures.join()
 
         self.producer.stop()
