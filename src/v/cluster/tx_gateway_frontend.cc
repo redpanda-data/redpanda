@@ -1433,7 +1433,7 @@ tx_gateway_frontend::do_end_txn(
     }
     tx = r.value();
 
-    auto ongoing_tx = co_await stm->mark_tx_ongoing(tx.id);
+    auto ongoing_tx = co_await stm->mark_tx_ongoing(term, tx.id);
     if (!ongoing_tx.has_value()) {
         co_return tx_errc::unknown_server_error;
     }

@@ -184,7 +184,7 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       get_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_ongoing(kafka::transactional_id);
+      mark_tx_ongoing(model::term_id, kafka::transactional_id);
     // mark_xxx: updates a transaction if the term matches etag
     // reset_xxx: updates a transaction and an etag
     ss::future<checked<tm_transaction, tm_stm::op_status>>

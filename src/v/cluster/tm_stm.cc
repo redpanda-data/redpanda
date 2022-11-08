@@ -422,13 +422,25 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
+ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
+  model::term_id expected_term, kafka::transactional_id tx_id) {
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
         co_return tx_opt;
     }
     tm_transaction tx = tx_opt.value();
+    if (tx.etag != expected_term) {
+        vlog(
+          txlog.warn,
+          "An attempt to update state data tx:{} pid:{} tx_seq:{} etag:{} "
+          "assuming etag is {}",
+          tx.id,
+          tx.pid,
+          tx.tx_seq,
+          tx.etag,
+          expected_term);
+        co_return tm_stm::op_status::unknown;
+    }
     tx.status = tm_transaction::tx_status::ongoing;
     tx.tx_seq += 1;
     tx.partitions.clear();
