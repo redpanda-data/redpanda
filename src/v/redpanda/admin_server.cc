@@ -904,8 +904,7 @@ void admin_server::register_config_routes() {
 
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request> req) {
           ss::sstring name;
           if (!ss::httpd::connection::url_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
@@ -978,7 +977,8 @@ void admin_server::register_config_routes() {
 
           rearm_log_level_timer();
 
-          co_return ss::json::json_return_type(ss::json::json_void());
+          return ss::make_ready_future<ss::json::json_return_type>(
+            ss::json::json_void());
       });
 }
 
@@ -1687,8 +1687,7 @@ void admin_server::register_features_routes() {
 
     register_route<user>(
       ss::httpd::features_json::get_features,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           ss::httpd::features_json::features_response res;
 
           const auto& ft = _controller->get_feature_table().local();
@@ -1743,7 +1742,8 @@ void admin_server::register_features_routes() {
               res.features.push(item);
           }
 
-          co_return std::move(res);
+          return ss::make_ready_future<ss::json::json_return_type>(
+            std::move(res));
       });
 
     register_route<superuser>(
@@ -1793,8 +1793,7 @@ void admin_server::register_features_routes() {
 
     register_route<user>(
       ss::httpd::features_json::get_license,
-      [this](std::unique_ptr<ss::httpd::request>)
-        -> ss::future<ss::json::json_return_type> {
+      [this](std::unique_ptr<ss::httpd::request>) {
           if (!_controller->get_feature_table().local().is_active(
                 features::feature::license)) {
               throw ss::httpd::bad_request_exception(
@@ -1815,7 +1814,8 @@ void admin_server::register_features_routes() {
               lc.sha256 = license->checksum;
               res.license = lc;
           }
-          co_return std::move(res);
+          return ss::make_ready_future<ss::json::json_return_type>(
+            std::move(res));
       });
 
     register_route<superuser>(
