@@ -144,6 +144,10 @@
                 "expires": {
                     "type": "long",
                     "description": "Expiration date of the license in Unix epoch seconds"
+                },
+                "sha256": {
+                    "type": "string",
+                    "description": "Checksum (sha256) of the raw license data"
                 }
             }
         },

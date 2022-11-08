@@ -188,10 +188,16 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
         expected_license_contents = {
-            'expires': 4813252273,
-            'format_version': 0,
-            'org': 'redpanda-testing',
-            'type': 'enterprise'
+            'expires':
+            4813252273,
+            'format_version':
+            0,
+            'org':
+            'redpanda-testing',
+            'type':
+            'enterprise',
+            'sha256':
+            '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf'
         }
 
         assert self.admin.put_license(license).status_code == 200

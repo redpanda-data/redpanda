@@ -1812,6 +1812,7 @@ void admin_server::register_features_routes() {
               lc.org = license->organization;
               lc.type = security::license_type_to_string(license->type);
               lc.expires = license->expiry.count();
+              lc.sha256 = license->checksum;
               res.license = lc;
           }
           co_return std::move(res);
@@ -1839,6 +1840,13 @@ void admin_server::register_features_routes() {
               if (license.is_expired()) {
                   throw ss::httpd::bad_request_exception(
                     fmt::format("License is expired: {}", license));
+              }
+              const auto& ft = _controller->get_feature_table().local();
+              const auto& loaded_license = ft.get_license();
+              if (loaded_license && (*loaded_license == license)) {
+                  /// Loaded license is idential to license in request, do
+                  /// nothing and return 200(OK)
+                  co_return ss::json::json_void();
               }
               auto& fm = _controller->get_feature_manager();
               auto err = co_await fm.invoke_on(
