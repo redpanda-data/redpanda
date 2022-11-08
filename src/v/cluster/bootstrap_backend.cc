@@ -39,23 +39,23 @@ do_apply(user_and_credential cred, security::credential_store& store) {
 template<typename Cmd>
 ss::future<std::error_code> dispatch_updates_to_cores(
   Cmd cmd, ss::sharded<security::credential_store>& sharded_service) {
-    auto res = co_await sharded_service.map_reduce0(
+    using res_type = std::optional<std::error_code>;
+    const res_type res = co_await sharded_service.map_reduce0(
       [cmd](security::credential_store& service) {
           return do_apply(std::move(cmd), service);
       },
-      std::optional<std::error_code>{},
-      [](std::optional<std::error_code> result, std::error_code error_code) {
+      res_type{},
+      [](const res_type result, const std::error_code errc) -> res_type {
           if (!result.has_value()) {
-              result = error_code;
-          } else {
-              vassert(
-                result.value() == error_code,
-                "State inconsistency across shards detected, "
-                "expected result: {}, have: {}",
-                result->value(),
-                error_code);
+              return errc;
           }
-          return result.value();
+          vassert(
+            result.value() == errc,
+            "State inconsistency across shards detected, "
+            "expected result: {}, have: {}",
+            result->value(),
+            errc);
+          return result;
       });
     co_return res.value();
 }
@@ -101,21 +101,29 @@ bootstrap_backend::apply_update(model::record_batch b) {
                   *_storage.local().get_cluster_uuid()));
             }
 
+            // Apply bootstrap user
             if (cmd.value.bootstrap_user_cred) {
-                const std::error_code res
+                const std::error_code errc
                   = co_await dispatch_updates_to_cores<user_and_credential>(
                     *cmd.value.bootstrap_user_cred, _credentials);
-                if (!res) {
+                if (errc == errc::user_exists) {
                     vlog(
                       clusterlog.warn,
-                      "Failed to dispatch bootstrap user: {}",
-                      res);
-                    co_return res;
+                      "Failed to dispatch bootstrap user: {} ({})",
+                      errc.message(),
+                      errc);
+                } else if (errc) {
+                    throw std::runtime_error(fmt_with_ctx(
+                      fmt::format,
+                      "Failed to dispatch bootstrap user: {} ({})",
+                      errc.message(),
+                      errc));
+                } else {
+                    vlog(
+                      clusterlog.debug,
+                      "Bootstrap user created {}",
+                      cmd.value.bootstrap_user_cred->username);
                 }
-                vlog(
-                  clusterlog.info,
-                  "Bootstrap user {} created",
-                  cmd.value.bootstrap_user_cred->username);
             }
 
             // Apply cluster_uuid
