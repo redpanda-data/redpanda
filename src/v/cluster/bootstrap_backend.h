@@ -49,6 +49,7 @@ public:
 private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
+    std::optional<model::cluster_uuid> _cluster_uuid_applied;
 };
 
 } // namespace cluster

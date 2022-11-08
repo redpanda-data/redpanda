@@ -75,13 +75,30 @@ bootstrap_backend::apply_update(model::record_batch b) {
       cmd,
       ss::coroutine::lambda(
         [this](bootstrap_cluster_cmd cmd) -> ss::future<std::error_code> {
-            if (_storage.local().get_cluster_uuid().has_value()) {
+            // Provide bootstrap_cluster_cmd idempotency
+            if (_cluster_uuid_applied) {
                 vlog(
                   clusterlog.debug,
                   "Skipping bootstrap_cluster_cmd {}, current cluster_uuid: {}",
                   cmd.value.uuid,
-                  *_storage.local().get_cluster_uuid());
+                  *_cluster_uuid_applied);
+                vassert(
+                  _storage.local().get_cluster_uuid(),
+                  "Cluster UUID applied but missing from storage");
                 co_return errc::cluster_already_exists;
+            }
+
+            // Reconcile with the cluster_uuid value in kvstore
+            if (
+              _storage.local().get_cluster_uuid()
+              && *_storage.local().get_cluster_uuid() != cmd.value.uuid) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format,
+                  "Cluster UUID mismatch. Controller log value: {}, kvstore "
+                  "value: {}. Possible reasons: local controller log storage "
+                  "wiped while kvstore storage is not, or vice versa",
+                  cmd.value.uuid,
+                  *_storage.local().get_cluster_uuid()));
             }
 
             if (cmd.value.bootstrap_user_cred) {
@@ -101,6 +118,7 @@ bootstrap_backend::apply_update(model::record_batch b) {
                   cmd.value.bootstrap_user_cred->username);
             }
 
+            // Apply cluster_uuid
             co_await _storage.invoke_on_all(
               [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
                   storage.set_cluster_uuid(new_cluster_uuid);
@@ -110,6 +128,7 @@ bootstrap_backend::apply_update(model::record_batch b) {
               cluster_uuid_key_space,
               cluster_uuid_key,
               serde::to_iobuf(cmd.value.uuid));
+            _cluster_uuid_applied = cmd.value.uuid;
 
             vlog(clusterlog.info, "Cluster created {}", cmd.value.uuid);
             co_return errc::success;
