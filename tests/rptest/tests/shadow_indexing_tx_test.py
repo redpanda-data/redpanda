@@ -117,8 +117,14 @@ class ShadowIndexingTxTest(RedpandaTest):
                 break
             consumed.extend([(m.key(), m.offset()) for m in msgs])
 
+        self.logger.info(
+            f"consumed {len(consumed)} records, expected {len(producer.keys)} keys"
+        )
+
         first_mismatch = ''
-        for p_key, (c_key, c_offset) in zip_longest(producer.keys, consumed):
+        for p_key, (c_key, c_offset) in zip_longest(producer.keys,
+                                                    consumed,
+                                                    fillvalue=(None, -1)):
             if p_key != c_key:
                 first_mismatch = f"produced: {p_key}, consumed: {c_key} (offset: {c_offset})"
                 break
