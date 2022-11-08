@@ -290,7 +290,6 @@ private:
     remote_segment_path
     segment_path_for_candidate(const upload_candidate& candidate);
 
-    ntp_level_probe _probe;
     model::ntp _ntp;
     model::initial_revision_id _rev;
     cluster::partition_manager& _partition_manager;
@@ -319,6 +318,9 @@ private:
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
+
+    per_ntp_metrics_disabled _ntp_metrics_disabled;
+    std::optional<ntp_level_probe> _probe{std::nullopt};
 
     loop_state _upload_loop_state{loop_state::initial};
     loop_state _sync_manifest_loop_state{loop_state::initial};
