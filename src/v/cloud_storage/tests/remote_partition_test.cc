@@ -272,10 +272,10 @@ static void reupload_compacted_segments(
             bytes bb;
             bb.resize(body.size());
             std::memcpy(bb.data(), body.data(), body.size());
-            auto reset_stream = [body = std::move(bb)]()
-              -> ss::future<std::unique_ptr<storage::stream_provider>> {
-                co_return std::make_unique<storage::segment_reader_handle>(
-                  make_iobuf_input_stream(bytes_to_iobuf(body)));
+            auto reset_stream = [body = std::move(bb)] {
+                return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
+                          std::make_unique<storage::segment_reader_handle>(
+                  make_iobuf_input_stream(bytes_to_iobuf(body))));
             };
             api
               .upload_segment(

@@ -64,11 +64,11 @@ static cloud_storage::lazy_abort_source always_continue("no-op", [](auto&) {
  * exposing some synthetic data as a segment_reader_handle.
  */
 remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
-    return [&segment_bytes]()
-             -> ss::future<std::unique_ptr<storage::stream_provider>> {
+    return [&segment_bytes] {
         auto out = iobuf_deep_copy(segment_bytes);
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
+                  std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
 }
 
