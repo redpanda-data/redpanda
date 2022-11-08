@@ -2948,7 +2948,118 @@ void admin_server::register_debug_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
 }
+ss::future<ss::json::json_return_type>
+admin_server::get_partition_balancer_status_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    vlog(logger.debug, "Requested partition balancer status");
 
+    using result_t = std::variant<
+      cluster::partition_balancer_overview_reply,
+      model::node_id,
+      cluster::errc>;
+
+    result_t result = co_await _controller->get_partition_balancer().invoke_on(
+      cluster::partition_balancer_backend::shard,
+      [](cluster::partition_balancer_backend& backend) {
+          if (backend.is_leader()) {
+              return result_t(backend.overview());
+          } else {
+              auto leader_id = backend.leader_id();
+              if (leader_id) {
+                  return result_t(leader_id.value());
+              } else {
+                  return result_t(cluster::errc::no_leader_controller);
+              }
+          }
+      });
+
+    cluster::partition_balancer_overview_reply overview;
+    if (std::holds_alternative<cluster::partition_balancer_overview_reply>(
+          result)) {
+        overview = std::move(
+          std::get<cluster::partition_balancer_overview_reply>(result));
+    } else if (std::holds_alternative<model::node_id>(result)) {
+        auto node_id = std::get<model::node_id>(result);
+        vlog(
+          logger.debug,
+          "proxying the partition_balancer_overview call to node {}",
+          node_id);
+        auto rpc_result
+          = co_await _connection_cache.local()
+              .with_node_client<
+                cluster::partition_balancer_rpc_client_protocol>(
+                _controller->self(),
+                ss::this_shard_id(),
+                node_id,
+                5s,
+                [](cluster::partition_balancer_rpc_client_protocol cp) {
+                    return cp.overview(
+                      cluster::partition_balancer_overview_request{},
+                      rpc::client_opts(5s));
+                });
+
+        if (rpc_result.has_error()) {
+            co_await throw_on_error(
+              *req, rpc_result.error(), model::controller_ntp);
+        }
+
+        overview = std::move(rpc_result.value().data);
+    } else {
+        co_await throw_on_error(
+          *req, std::get<cluster::errc>(result), model::controller_ntp);
+    }
+
+    ss::httpd::cluster_json::partition_balancer_status ret;
+
+    if (overview.error == cluster::errc::feature_disabled) {
+        ret.status = "off";
+        co_return ss::json::json_return_type(ret);
+    } else if (overview.error != cluster::errc::success) {
+        co_await throw_on_error(*req, overview.error, model::controller_ntp);
+    }
+
+    ret.status = fmt::format("{}", overview.status);
+
+    if (overview.last_tick_time != model::timestamp::missing()) {
+        ret.seconds_since_last_tick = (model::timestamp::now().value()
+                                       - overview.last_tick_time.value())
+                                      / 1000;
+    }
+
+    if (overview.violations) {
+        ss::httpd::cluster_json::partition_balancer_violations ret_violations;
+        for (const auto& n : overview.violations->unavailable_nodes) {
+            ret_violations.unavailable_nodes.push(n.id);
+        }
+        for (const auto& n : overview.violations->full_nodes) {
+            ret_violations.over_disk_limit_nodes.push(n.id);
+        }
+        ret.violations = ret_violations;
+    }
+
+    ret.current_reassignments_count
+      = _controller->get_topics_state().local().updates_in_progress().size();
+
+    co_return ss::json::json_return_type(ret);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::cancel_all_partitions_reconfigs_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    vlog(
+      logger.info, "Requested cancellation of all ongoing partition movements");
+
+    auto res = co_await _controller->get_topics_frontend()
+                 .local()
+                 .cancel_moving_all_partition_replicas(
+                   model::timeout_clock::now() + 5s);
+    if (res.has_error()) {
+        co_await throw_on_error(*req, res.error(), model::controller_ntp);
+    }
+
+    co_return ss::json::json_return_type(
+      co_await map_partition_results(std::move(res.value())));
+}
 void admin_server::register_cluster_routes() {
     register_route<publik>(
       ss::httpd::cluster_json::get_cluster_health_overview,
@@ -2984,123 +3095,14 @@ void admin_server::register_cluster_routes() {
 
     register_route<publik>(
       ss::httpd::cluster_json::get_partition_balancer_status,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          vlog(logger.debug, "Requested partition balancer status");
-
-          using result_t = std::variant<
-            cluster::partition_balancer_overview_reply,
-            model::node_id,
-            cluster::errc>;
-
-          result_t result
-            = co_await _controller->get_partition_balancer().invoke_on(
-              cluster::partition_balancer_backend::shard,
-              [](cluster::partition_balancer_backend& backend) {
-                  if (backend.is_leader()) {
-                      return result_t(backend.overview());
-                  } else {
-                      auto leader_id = backend.leader_id();
-                      if (leader_id) {
-                          return result_t(leader_id.value());
-                      } else {
-                          return result_t(cluster::errc::no_leader_controller);
-                      }
-                  }
-              });
-
-          cluster::partition_balancer_overview_reply overview;
-          if (std::holds_alternative<
-                cluster::partition_balancer_overview_reply>(result)) {
-              overview = std::move(
-                std::get<cluster::partition_balancer_overview_reply>(result));
-          } else if (std::holds_alternative<model::node_id>(result)) {
-              auto node_id = std::get<model::node_id>(result);
-              vlog(
-                logger.debug,
-                "proxying the partition_balancer_overview call to node {}",
-                node_id);
-              auto rpc_result
-                = co_await _connection_cache.local()
-                    .with_node_client<
-                      cluster::partition_balancer_rpc_client_protocol>(
-                      _controller->self(),
-                      ss::this_shard_id(),
-                      node_id,
-                      5s,
-                      [](cluster::partition_balancer_rpc_client_protocol cp) {
-                          return cp.overview(
-                            cluster::partition_balancer_overview_request{},
-                            rpc::client_opts(5s));
-                      });
-
-              if (rpc_result.has_error()) {
-                  co_await throw_on_error(
-                    *req, rpc_result.error(), model::controller_ntp);
-              }
-
-              overview = std::move(rpc_result.value().data);
-          } else {
-              co_await throw_on_error(
-                *req, std::get<cluster::errc>(result), model::controller_ntp);
-          }
-
-          ss::httpd::cluster_json::partition_balancer_status ret;
-
-          if (overview.error == cluster::errc::feature_disabled) {
-              ret.status = "off";
-              co_return ss::json::json_return_type(ret);
-          } else if (overview.error != cluster::errc::success) {
-              co_await throw_on_error(
-                *req, overview.error, model::controller_ntp);
-          }
-
-          ret.status = fmt::format("{}", overview.status);
-
-          if (overview.last_tick_time != model::timestamp::missing()) {
-              ret.seconds_since_last_tick = (model::timestamp::now().value()
-                                             - overview.last_tick_time.value())
-                                            / 1000;
-          }
-
-          if (overview.violations) {
-              ss::httpd::cluster_json::partition_balancer_violations
-                ret_violations;
-              for (const auto& n : overview.violations->unavailable_nodes) {
-                  ret_violations.unavailable_nodes.push(n.id);
-              }
-              for (const auto& n : overview.violations->full_nodes) {
-                  ret_violations.over_disk_limit_nodes.push(n.id);
-              }
-              ret.violations = ret_violations;
-          }
-
-          ret.current_reassignments_count = _controller->get_topics_state()
-                                              .local()
-                                              .updates_in_progress()
-                                              .size();
-
-          co_return ss::json::json_return_type(ret);
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return get_partition_balancer_status_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::cluster_json::cancel_all_partitions_reconfigurations,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          vlog(
-            logger.info,
-            "Requested cancellation of all ongoing partition movements");
-
-          auto res = co_await _controller->get_topics_frontend()
-                       .local()
-                       .cancel_moving_all_partition_replicas(
-                         model::timeout_clock::now() + 5s);
-          if (res.has_error()) {
-              co_await throw_on_error(*req, res.error(), model::controller_ntp);
-          }
-
-          co_return ss::json::json_return_type(
-            co_await map_partition_results(std::move(res.value())));
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return cancel_all_partitions_reconfigs_handler(std::move(req));
       });
 }
 

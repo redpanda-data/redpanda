@@ -257,6 +257,14 @@ private:
     ss::future<ss::json::json_return_type>
       delete_partition_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Cluster routes
+    ss::future<ss::json::json_return_type>
+      get_partition_balancer_status_handler(
+        std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      cancel_all_partitions_reconfigs_handler(
+        std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
