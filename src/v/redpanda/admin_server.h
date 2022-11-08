@@ -265,6 +265,10 @@ private:
       cancel_all_partitions_reconfigs_handler(
         std::unique_ptr<ss::httpd::request>);
 
+    /// Shadow indexing routes
+    ss::future<ss::json::json_return_type>
+      sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,

@@ -3106,7 +3106,8 @@ void admin_server::register_cluster_routes() {
       });
 }
 
-void admin_server::register_shadow_indexing_routes() {
+ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
+  std::unique_ptr<ss::httpd::request> request) {
     struct manifest_reducer {
         ss::future<>
         operator()(std::optional<cloud_storage::partition_manifest>&& value) {
@@ -3118,36 +3119,36 @@ void admin_server::register_shadow_indexing_routes() {
         }
         std::optional<cloud_storage::partition_manifest> _manifest;
     };
+
+    vlog(logger.info, "Requested bucket syncup");
+    auto topic = model::topic(request->param["topic"]);
+    auto partition = model::partition_id(
+      boost::lexical_cast<int32_t>(request->param["partition"]));
+    auto ntp = model::ntp(model::kafka_namespace, topic, partition);
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        vlog(logger.info, "Need to redirect bucket syncup request");
+        throw co_await redirect_to_leader(*request, ntp);
+    } else {
+        auto result = co_await _archival_service.map_reduce(
+          manifest_reducer(), [ntp](archival::scheduler_service& service) {
+              return service.maybe_truncate_manifest(ntp);
+          });
+        vlog(logger.info, "Requested bucket syncup completed");
+        if (result) {
+            std::stringstream sts;
+            result->serialize(sts);
+            vlog(logger.info, "Requested bucket syncup result {}", sts.str());
+        } else {
+            vlog(logger.info, "Requested bucket syncup result empty");
+        }
+    }
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
-      [this](std::unique_ptr<ss::httpd::request> request)
-        -> ss::future<ss::json::json_return_type> {
-          vlog(logger.info, "Requested bucket syncup");
-          auto topic = model::topic(request->param["topic"]);
-          auto partition = model::partition_id(
-            boost::lexical_cast<int32_t>(request->param["partition"]));
-          auto ntp = model::ntp(model::kafka_namespace, topic, partition);
-          if (need_redirect_to_leader(ntp, _metadata_cache)) {
-              vlog(logger.info, "Need to redirect bucket syncup request");
-              throw co_await redirect_to_leader(*request, ntp);
-          } else {
-              auto result = co_await _archival_service.map_reduce(
-                manifest_reducer(),
-                [ntp](archival::scheduler_service& service) {
-                    return service.maybe_truncate_manifest(ntp);
-                });
-              vlog(logger.info, "Requested bucket syncup completed");
-              if (result) {
-                  std::stringstream sts;
-                  result->serialize(sts);
-                  vlog(
-                    logger.info,
-                    "Requested bucket syncup result {}",
-                    sts.str());
-              } else {
-                  vlog(logger.info, "Requested bucket syncup result empty");
-              }
-          }
-          co_return ss::json::json_return_type(ss::json::json_void());
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return sync_local_state_handler(std::move(req));
       });
 }
