@@ -11,12 +11,48 @@ import subprocess
 import os
 
 from rptest.services.cluster import cluster
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix
 
 from rptest.services.librdkafka_test_case import LibrdkafkaTestcase
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.utils.mode_checks import skip_debug_mode
+
+
+def tests_to_run():
+    ignored_tests = set([
+        14,
+        51,
+        67,
+        90,
+        99,
+        103,
+        # timequery issue
+        52,
+        # consumer offsets coordinator and tx_coordinator reported to early
+        61,
+        # librdkafka interceptor test, not important for Redpanda
+        66,
+        # compaction test - lack of low water mark support
+        77,
+        # create topic test - topic is being created despite invalid config
+        81,
+        # fetch max bytes test
+        82,
+        # additional topic configuration reported by Redpanda
+        92,
+        # autocreate topics test - security
+        109,
+        # cooperative rebalance issue
+        113,
+        # ACL test - TODO: add security config to the test
+        115,
+        119,
+        # tests that are flaky in CI
+        30,
+        84
+    ])
+    return [t for t in range(120) if t not in ignored_tests]
 
 
 class LibrdkafkaTest(RedpandaTest):
@@ -36,38 +72,7 @@ class LibrdkafkaTest(RedpandaTest):
                                              })
 
     @cluster(num_nodes=4)
-    # coordinator being reported before it is an elected leader
-    @ignore(test_num=14)
-    @ignore(test_num=51)
-    @ignore(test_num=67)
-    @ignore(test_num=90)
-    @ignore(test_num=99)
-    @ignore(test_num=103)
-    # timequery issue
-    @ignore(test_num=52)
-    # consumer offsets coordinator and tx_coordinator reported to early
-    @ignore(test_num=61)
-    # librdkafka interceptor test, not important for Redpanda
-    @ignore(test_num=66)
-    # compaction test - lack of low water mark support
-    @ignore(test_num=77)
-    # create topic test - topic is being created despite invalid config
-    @ignore(test_num=81)
-    # fetch max bytes test
-    @ignore(test_num=82)
-    # additional topic configuration reported by Redpanda
-    @ignore(test_num=92)
-    # autocreate topics test - security
-    @ignore(test_num=109)
-    # cooperative rebalance issue
-    @ignore(test_num=113)
-    # ACL test - TODO: add security config to the test
-    @ignore(test_num=115)
-    @ignore(test_num=119)
-    # tests that are flaky in CI
-    @ignore(test_num=30)
-    @ignore(test_num=84)
-    @matrix(test_num=range(120))
+    @matrix(test_num=tests_to_run())
     @skip_debug_mode
     def test_librdkafka(self, test_num):
         tc = LibrdkafkaTestcase(self.test_context, self.redpanda, test_num)
