@@ -106,6 +106,8 @@ protected:
     void set_next(model::offset offset);
     virtual ss::future<> handle_eviction();
 
+    model::offset last_applied_offset() { return model::prev_offset(_next); }
+
     consensus* _raft;
     ss::gate _gate;
 
