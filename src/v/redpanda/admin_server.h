@@ -226,6 +226,18 @@ private:
     ss::future<ss::json::json_return_type>
       put_license_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Broker routes
+    ss::future<ss::json::json_return_type>
+      get_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      decomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      recomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      start_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      stop_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,

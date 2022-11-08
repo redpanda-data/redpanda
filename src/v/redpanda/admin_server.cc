@@ -1876,6 +1876,104 @@ void admin_server::register_features_routes() {
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
+    model::node_id id = parse_broker_id(*req);
+    auto broker = _metadata_cache.local().get_broker(id);
+    if (!broker) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("broker with id: {} not found", id));
+    }
+
+    auto maybe_drain_status = co_await _controller->get_health_monitor()
+                                .local()
+                                .get_node_drain_status(
+                                  id, model::time_from_now(5s));
+    if (maybe_drain_status.has_error()) {
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Unexpected error: {}", maybe_drain_status.error().message()),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    ss::httpd::broker_json::broker ret;
+    ret.node_id = (*broker)->id();
+    ret.num_cores = (*broker)->properties().cores;
+    if ((*broker)->rack()) {
+        ret.rack = *(*broker)->rack();
+    }
+    ret.membership_status = fmt::format(
+      "{}", (*broker)->get_membership_state());
+    ret.maintenance_status = fill_maintenance_status(
+      maybe_drain_status.value());
+
+    co_return ret;
+}
+
+ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    model::node_id id = parse_broker_id(*req);
+
+    auto ec
+      = co_await _controller->get_members_frontend().local().decommission_node(
+        id);
+
+    co_await throw_on_error(*req, ec, model::controller_ntp, id);
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    model::node_id id = parse_broker_id(*req);
+
+    auto ec
+      = co_await _controller->get_members_frontend().local().recommission_node(
+        id);
+    co_await throw_on_error(*req, ec, model::controller_ntp, id);
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::start_broker_maintenance_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::maintenance_mode)) {
+        throw ss::httpd::bad_request_exception(
+          "Maintenance mode feature not active (upgrade in "
+          "progress?)");
+    }
+
+    if (_controller->get_members_table().local().all_brokers().size() < 2) {
+        throw ss::httpd::bad_request_exception(
+          "Maintenance mode may not be used on a single node "
+          "cluster");
+    }
+
+    model::node_id id = parse_broker_id(*req);
+    auto ec = co_await _controller->get_members_frontend()
+                .local()
+                .set_maintenance_mode(id, true);
+    co_await throw_on_error(*req, ec, model::controller_ntp, id);
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::stop_broker_maintenance_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    if (!_controller->get_feature_table().local().is_active(
+          features::feature::maintenance_mode)) {
+        throw ss::httpd::bad_request_exception(
+          "Maintenance mode feature not active (upgrade in "
+          "progress?)");
+    }
+    model::node_id id = parse_broker_id(*req);
+    auto ec = co_await _controller->get_members_frontend()
+                .local()
+                .set_maintenance_mode(id, false);
+    co_await throw_on_error(*req, ec, model::controller_ntp, id);
+    co_return ss::json::json_void();
+}
+
 void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_cluster_view,
@@ -1903,113 +2001,39 @@ void admin_server::register_broker_routes() {
 
     register_route<user>(
       ss::httpd::broker_json::get_broker,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          model::node_id id = parse_broker_id(*req);
-          auto broker = _metadata_cache.local().get_broker(id);
-          if (!broker) {
-              throw ss::httpd::not_found_exception(
-                fmt::format("broker with id: {} not found", id));
-          }
-
-          auto maybe_drain_status = co_await _controller->get_health_monitor()
-                                      .local()
-                                      .get_node_drain_status(
-                                        id, model::time_from_now(5s));
-          if (maybe_drain_status.has_error()) {
-              throw ss::httpd::base_exception(
-                fmt::format(
-                  "Unexpected error: {}", maybe_drain_status.error().message()),
-                ss::httpd::reply::status_type::service_unavailable);
-          }
-
-          ss::httpd::broker_json::broker ret;
-          ret.node_id = (*broker)->id();
-          ret.num_cores = (*broker)->properties().cores;
-          if ((*broker)->rack()) {
-              ret.rack = *(*broker)->rack();
-          }
-          ret.membership_status = fmt::format(
-            "{}", (*broker)->get_membership_state());
-          ret.maintenance_status = fill_maintenance_status(
-            maybe_drain_status.value());
-
-          co_return ret;
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return get_broker_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::decommission,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          model::node_id id = parse_broker_id(*req);
-
-          auto ec = co_await _controller->get_members_frontend()
-                      .local()
-                      .decommission_node(id);
-
-          co_await throw_on_error(*req, ec, model::controller_ntp, id);
-          co_return ss::json::json_void();
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return decomission_broker_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::recommission,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          model::node_id id = parse_broker_id(*req);
-
-          auto ec = co_await _controller->get_members_frontend()
-                      .local()
-                      .recommission_node(id);
-          co_await throw_on_error(*req, ec, model::controller_ntp, id);
-          co_return ss::json::json_void();
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return recomission_broker_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::start_broker_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          if (!_controller->get_feature_table().local().is_active(
-                features::feature::maintenance_mode)) {
-              throw ss::httpd::bad_request_exception(
-                "Maintenance mode feature not active (upgrade in progress?)");
-          }
-
-          if (
-            _controller->get_members_table().local().all_brokers().size() < 2) {
-              throw ss::httpd::bad_request_exception(
-                "Maintenance mode may not be used on a single node cluster");
-          }
-
-          model::node_id id = parse_broker_id(*req);
-          auto ec = co_await _controller->get_members_frontend()
-                      .local()
-                      .set_maintenance_mode(id, true);
-          co_await throw_on_error(*req, ec, model::controller_ntp, id);
-          co_return ss::json::json_void();
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return start_broker_maintenance_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_broker_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req)
-        -> ss::future<ss::json::json_return_type> {
-          if (!_controller->get_feature_table().local().is_active(
-                features::feature::maintenance_mode)) {
-              throw ss::httpd::bad_request_exception(
-                "Maintenance mode feature not active (upgrade in progress?)");
-          }
-          model::node_id id = parse_broker_id(*req);
-          auto ec = co_await _controller->get_members_frontend()
-                      .local()
-                      .set_maintenance_mode(id, false);
-          co_await throw_on_error(*req, ec, model::controller_ntp, id);
-          co_return ss::json::json_void();
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return stop_broker_maintenance_handler(std::move(req));
       });
 
     /*
-     * Unlike start|stop_broker_maintenace, the xxx_local_maintenance versions
-     * below operate on local state only and could be used to force a node out
-     * of maintenance mode if needed. they don't require the feature flag
-     * because the feature is available locally.
+     * Unlike start|stop_broker_maintenace, the xxx_local_maintenance
+     * versions below operate on local state only and could be used to force
+     * a node out of maintenance mode if needed. they don't require the
+     * feature flag because the feature is available locally.
      */
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
