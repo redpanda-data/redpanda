@@ -2130,74 +2130,77 @@ ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
 
     co_return co_await _partition_manager.invoke_on(
       *shard,
-      [_ntp = std::move(ntp), _req = std::move(req), this](
-        cluster::partition_manager& pm) mutable
-      -> ss::future<ss::json::json_return_type> {
-          auto ntp = std::move(_ntp);
-          auto req = std::move(_req);
-          auto partition = pm.get(ntp);
-          if (!partition) {
-              throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not find partition {}", partition));
-          }
+      ss::coroutine::lambda(
+        [_ntp = std::move(ntp), _req = std::move(req), this](
+          cluster::partition_manager& pm) mutable
+        -> ss::future<ss::json::json_return_type> {
+            auto ntp = std::move(_ntp);
+            auto req = std::move(_req);
+            auto partition = pm.get(ntp);
+            if (!partition) {
+                throw ss::httpd::server_error_exception(fmt_with_ctx(
+                  fmt::format, "Can not find partition {}", partition));
+            }
 
-          auto rm_stm_ptr = partition->rm_stm();
+            auto rm_stm_ptr = partition->rm_stm();
 
-          if (!rm_stm_ptr) {
-              throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not get rm_stm for partition {}", partition));
-          }
+            if (!rm_stm_ptr) {
+                throw ss::httpd::server_error_exception(fmt_with_ctx(
+                  fmt::format,
+                  "Can not get rm_stm for partition {}",
+                  partition));
+            }
 
-          auto transactions = co_await rm_stm_ptr->get_transactions();
+            auto transactions = co_await rm_stm_ptr->get_transactions();
 
-          if (transactions.has_error()) {
-              co_await throw_on_error(*req, transactions.error(), ntp);
-          }
-          ss::httpd::partition_json::transactions ans;
+            if (transactions.has_error()) {
+                co_await throw_on_error(*req, transactions.error(), ntp);
+            }
+            ss::httpd::partition_json::transactions ans;
 
-          auto offset_translator = partition->get_offset_translator_state();
+            auto offset_translator = partition->get_offset_translator_state();
 
-          for (auto& [id, tx_info] : transactions.value()) {
-              ss::httpd::partition_json::producer_identity pid;
-              pid.id = id.get_id();
-              pid.epoch = id.get_epoch();
+            for (auto& [id, tx_info] : transactions.value()) {
+                ss::httpd::partition_json::producer_identity pid;
+                pid.id = id.get_id();
+                pid.epoch = id.get_epoch();
 
-              ss::httpd::partition_json::transaction new_tx;
-              new_tx.producer_id = pid;
-              new_tx.status = ss::sstring(tx_info.get_status());
+                ss::httpd::partition_json::transaction new_tx;
+                new_tx.producer_id = pid;
+                new_tx.status = ss::sstring(tx_info.get_status());
 
-              new_tx.lso_bound = offset_translator->from_log_offset(
-                tx_info.lso_bound);
+                new_tx.lso_bound = offset_translator->from_log_offset(
+                  tx_info.lso_bound);
 
-              auto staleness = tx_info.get_staleness();
-              // -1 is returned for expired transaction, because how
-              // long transaction do not do progress is useless for
-              // expired tx.
-              new_tx.staleness_ms
-                = staleness.has_value()
-                    ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                        staleness.value())
-                        .count()
-                    : -1;
-              auto timeout = tx_info.get_timeout();
-              // -1 is returned for expired transaction, because
-              // timeout is useless for expired tx.
-              new_tx.timeout_ms
-                = timeout.has_value()
-                    ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                        timeout.value())
-                        .count()
-                    : -1;
+                auto staleness = tx_info.get_staleness();
+                // -1 is returned for expired transaction, because how
+                // long transaction do not do progress is useless for
+                // expired tx.
+                new_tx.staleness_ms
+                  = staleness.has_value()
+                      ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                          staleness.value())
+                          .count()
+                      : -1;
+                auto timeout = tx_info.get_timeout();
+                // -1 is returned for expired transaction, because
+                // timeout is useless for expired tx.
+                new_tx.timeout_ms
+                  = timeout.has_value()
+                      ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                          timeout.value())
+                          .count()
+                      : -1;
 
-              if (tx_info.is_expired()) {
-                  ans.expired_transactions.push(new_tx);
-              } else {
-                  ans.active_transactions.push(new_tx);
-              }
-          }
+                if (tx_info.is_expired()) {
+                    ans.expired_transactions.push(new_tx);
+                } else {
+                    ans.active_transactions.push(new_tx);
+                }
+            }
 
-          co_return ss::json::json_return_type(ans);
-      });
+            co_return ss::json::json_return_type(ans);
+        }));
 }
 
 ss::future<ss::json::json_return_type>
@@ -2243,29 +2246,32 @@ admin_server::mark_transaction_expired_handler(
 
     co_return co_await _partition_manager.invoke_on(
       *shard,
-      [_ntp = std::move(ntp), pid, _req = std::move(req), this](
-        cluster::partition_manager& pm) mutable
-      -> ss::future<ss::json::json_return_type> {
-          auto ntp = std::move(_ntp);
-          auto req = std::move(_req);
-          auto partition = pm.get(ntp);
-          if (!partition) {
-              throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not find partition {}", partition));
-          }
+      ss::coroutine::lambda(
+        [_ntp = std::move(ntp), pid, _req = std::move(req), this](
+          cluster::partition_manager& pm) mutable
+        -> ss::future<ss::json::json_return_type> {
+            auto ntp = std::move(_ntp);
+            auto req = std::move(_req);
+            auto partition = pm.get(ntp);
+            if (!partition) {
+                throw ss::httpd::server_error_exception(fmt_with_ctx(
+                  fmt::format, "Can not find partition {}", partition));
+            }
 
-          auto rm_stm_ptr = partition->rm_stm();
+            auto rm_stm_ptr = partition->rm_stm();
 
-          if (!rm_stm_ptr) {
-              throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not get rm_stm for partition {}", partition));
-          }
+            if (!rm_stm_ptr) {
+                throw ss::httpd::server_error_exception(fmt_with_ctx(
+                  fmt::format,
+                  "Can not get rm_stm for partition {}",
+                  partition));
+            }
 
-          auto res = co_await rm_stm_ptr->mark_expired(pid);
-          co_await throw_on_error(*req, res, ntp);
+            auto res = co_await rm_stm_ptr->mark_expired(pid);
+            co_await throw_on_error(*req, res, ntp);
 
-          co_return ss::json::json_return_type(ss::json::json_void());
-      });
+            co_return ss::json::json_return_type(ss::json::json_void());
+        }));
 }
 
 ss::future<ss::json::json_return_type>
