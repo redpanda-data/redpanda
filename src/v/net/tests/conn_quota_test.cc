@@ -99,8 +99,8 @@ struct conn_quota_fixture {
                 auto range = boost::irange(0u, take_units);
                 return ss::do_for_each(range, [this, shard, addr, &cq](auto) {
                     return cq.get(addr).then([this, shard](auto u) {
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[shard].push_back(std::move(u));
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[shard].push_back(std::move(u));
                     });
                 });
             })
@@ -221,9 +221,9 @@ void conn_quota_fixture::test_borrows(
                 auto range = boost::irange(0u, take_each);
                 return ss::do_for_each(range, [this, i, &cq](auto) {
                     return cq.get(addr1).then([this, i](auto u) {
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[i].push_back(std::move(u));
-                });
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[i].push_back(std::move(u));
+                    });
                 });
             })
           .get();
@@ -247,8 +247,8 @@ void conn_quota_fixture::test_borrows(
         2,
         [this, i = 2](conn_quota& cq) {
             return cq.get(addr1).then([this, i](auto u) {
-            BOOST_TEST_REQUIRE(u.live());
-            shard_units[i].push_back(std::move(u));
+                BOOST_TEST_REQUIRE(u.live());
+                shard_units[i].push_back(std::move(u));
             });
         })
       .get();
@@ -313,8 +313,8 @@ FIXTURE_TEST(test_change_limits, conn_quota_fixture) {
                 auto range = boost::irange(0, 3);
                 return ss::do_for_each(range, [this, i, &cq](auto) {
                     return cq.get(addr1).then([this, i](auto u) {
-                    BOOST_TEST_REQUIRE(u.live());
-                    shard_units[i].push_back(std::move(u));
+                        BOOST_TEST_REQUIRE(u.live());
+                        shard_units[i].push_back(std::move(u));
                     });
                 });
             })
