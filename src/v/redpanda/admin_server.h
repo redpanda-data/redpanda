@@ -216,6 +216,10 @@ private:
     ss::future<ss::json::json_return_type>
       update_user_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Kafka routes
+    ss::future<ss::json::json_return_type>
+      kafka_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
