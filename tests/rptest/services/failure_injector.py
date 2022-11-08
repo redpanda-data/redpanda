@@ -148,18 +148,24 @@ class FailureInjector:
         tc_netem.tc_netem_delete(node)
 
     def _heal_all(self):
-        self.redpanda.logger.info(f"healling all network failures")
+        self.redpanda.logger.info(f"healing all network failures")
+
+        actions = [
+            lambda n: n.account.ssh("iptables -P INPUT ACCEPT"),
+            lambda n: n.account.ssh("iptables -P FORWARD ACCEPT"),
+            lambda n: n.account.ssh("iptables -P OUTPUT ACCEPT"),
+            lambda n: n.account.ssh("iptables -F"),
+            lambda n: n.account.ssh("iptables -X"),
+            lambda n: self._delete_netem(n)
+        ]
+
         for n in self.redpanda.nodes:
-            try:
-                n.account.ssh("iptables -P INPUT ACCEPT")
-                n.account.ssh("iptables -P FORWARD ACCEPT")
-                n.account.ssh("iptables -P OUTPUT ACCEPT")
-                n.account.ssh("iptables -F")
-                n.account.ssh("iptables -X")
-                self._delete_netem(n)
-            except:
-                # skip error as deleting netem may fail if there are no rules applied
-                pass
+            for action in actions:
+                try:
+                    action(n)
+                except Exception as e:
+                    # Cleanups can fail, e.g. rule does not exist
+                    self.redpanda.logger.warn(f"_heal_all: {e}")
 
     def _suspend(self, node):
         self.redpanda.logger.info(
