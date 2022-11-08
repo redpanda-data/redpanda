@@ -154,6 +154,7 @@ public:
         bool match(abort_index idx) {
             return idx.first == first && idx.last == last;
         }
+        friend std::ostream& operator<<(std::ostream&, const abort_snapshot&);
     };
 
     static constexpr int8_t prepare_control_record_version{0};
