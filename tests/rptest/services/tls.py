@@ -99,15 +99,27 @@ class TLSCertManager:
 
     def _exec(self, cmd):
         self._logger.info(f"Running command: {cmd}")
-        try:
-            output = subprocess.check_output(cmd.split(),
-                                             cwd=self._dir.name,
-                                             stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            self._logger.error(f"openssl error: {e.output}")
-            raise
-        else:
-            self._logger.debug(output)
+        retries = 0
+        while retries < 3:
+            try:
+                output = subprocess.check_output(cmd.split(),
+                                                 cwd=self._dir.name,
+                                                 stderr=subprocess.STDOUT)
+                retries = 3  # Stop retry
+            except subprocess.CalledProcessError as e:
+                self._logger.error(f"openssl error: {e.output}")
+                output = subprocess.check_output(
+                    ["df", "--human-readable", self._dir.name],
+                    cwd=self._dir.name,
+                    stderr=subprocess.STDOUT)
+                self._logger.error(f"disk space on {self._dir.name} {output}")
+
+                if retries >= 3:
+                    raise
+            else:
+                self._logger.debug(output)
+
+            retries += 1
 
     def _create_ca(self):
         cfg = self._with_dir("ca.conf")
