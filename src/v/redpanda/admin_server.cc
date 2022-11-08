@@ -1358,68 +1358,72 @@ admin_server::patch_cluster_config_handler(
     co_return ss::json::json_return_type(std::move(result));
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::raft_transfer_leadership_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    raft::group_id group_id;
+    try {
+        group_id = raft::group_id(std::stoll(req->param["group_id"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Raft group id must be an integer: {}", req->param["group_id"]));
+    }
+
+    if (group_id() < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid raft group id {}", group_id));
+    }
+
+    if (!_shard_table.local().contains(group_id)) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("Raft group {} not found", group_id));
+    }
+
+    std::optional<model::node_id> target;
+    if (auto node = req->get_query_param("target"); !node.empty()) {
+        try {
+            target = model::node_id(std::stoi(node));
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Target node id must be an integer: {}", node));
+        }
+        if (*target < 0) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid target node id {}", *target));
+        }
+    }
+
+    vlog(
+      logger.info,
+      "Leadership transfer request for raft group {} to node {}",
+      group_id,
+      target);
+
+    auto shard = _shard_table.local().shard_for(group_id);
+
+    return _partition_manager.invoke_on(
+      shard,
+      [group_id, target, this, req = std::move(req)](
+        cluster::partition_manager& pm) mutable {
+          auto partition = pm.partition_for(group_id);
+          if (!partition) {
+              throw ss::httpd::not_found_exception();
+          }
+          const auto ntp = partition->ntp();
+          return partition->transfer_leadership(target).then(
+            [this, req = std::move(req), ntp](
+              std::error_code err) -> ss::future<ss::json::json_return_type> {
+                co_await throw_on_error(*req, err, ntp);
+                co_return ss::json::json_return_type(ss::json::json_void());
+            });
+      });
+}
+
 void admin_server::register_raft_routes() {
     register_route<superuser>(
       ss::httpd::raft_json::raft_transfer_leadership,
       [this](std::unique_ptr<ss::httpd::request> req) {
-          raft::group_id group_id;
-          try {
-              group_id = raft::group_id(std::stoll(req->param["group_id"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Raft group id must be an integer: {}",
-                req->param["group_id"]));
-          }
-
-          if (group_id() < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid raft group id {}", group_id));
-          }
-
-          if (!_shard_table.local().contains(group_id)) {
-              throw ss::httpd::not_found_exception(
-                fmt::format("Raft group {} not found", group_id));
-          }
-
-          std::optional<model::node_id> target;
-          if (auto node = req->get_query_param("target"); !node.empty()) {
-              try {
-                  target = model::node_id(std::stoi(node));
-              } catch (...) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format("Target node id must be an integer: {}", node));
-              }
-              if (*target < 0) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format("Invalid target node id {}", *target));
-              }
-          }
-
-          vlog(
-            logger.info,
-            "Leadership transfer request for raft group {} to node {}",
-            group_id,
-            target);
-
-          auto shard = _shard_table.local().shard_for(group_id);
-
-          return _partition_manager.invoke_on(
-            shard,
-            [group_id, target, this, req = std::move(req)](
-              cluster::partition_manager& pm) mutable {
-                auto partition = pm.partition_for(group_id);
-                if (!partition) {
-                    throw ss::httpd::not_found_exception();
-                }
-                const auto ntp = partition->ntp();
-                return partition->transfer_leadership(target).then(
-                  [this, req = std::move(req), ntp](std::error_code err)
-                    -> ss::future<ss::json::json_return_type> {
-                      co_await throw_on_error(*req, err, ntp);
-                      co_return ss::json::json_return_type(
-                        ss::json::json_void());
-                  });
-            });
+          return raft_transfer_leadership_handler(std::move(req));
       });
 }
 

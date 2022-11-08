@@ -204,6 +204,10 @@ private:
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::httpd::request>, const request_auth_result&);
 
+    /// Raft routes
+    ss::future<ss::json::json_return_type>
+      raft_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
