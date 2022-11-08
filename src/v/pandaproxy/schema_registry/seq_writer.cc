@@ -123,49 +123,49 @@ void seq_writer::advance_offset_inner(model::offset offset) {
 
 ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
   canonical_schema schema, model::offset write_at, seq_writer& seq) {
-        // Check if store already contains this data: if
-        // so, we do no I/O and return the schema ID.
-        auto projected = co_await seq._store.project_ids(schema);
+    // Check if store already contains this data: if
+    // so, we do no I/O and return the schema ID.
+    auto projected = co_await seq._store.project_ids(schema);
 
-        if (!projected.inserted) {
-            vlog(plog.debug, "write_subject_version: no-op");
+    if (!projected.inserted) {
+        vlog(plog.debug, "write_subject_version: no-op");
+        co_return projected.id;
+    } else {
+        vlog(
+          plog.debug,
+          "seq_writer::write_subject_version project offset={} "
+          "subject={} "
+          "schema={} "
+          "version={}",
+          write_at,
+          schema.sub(),
+          projected.id,
+          projected.version);
+
+        auto key = schema_key{
+          .seq{write_at},
+          .node{seq._node_id},
+          .sub{schema.sub()},
+          .version{projected.version}};
+        auto value = schema_value{
+          .schema{schema},
+          .version{projected.version},
+          .id{projected.id},
+          .deleted = is_deleted::no};
+
+        auto batch = as_record_batch(key, value);
+
+        auto success = co_await seq.produce_and_check(
+          write_at, std::move(batch));
+        if (success) {
+            auto applier = consume_to_store(seq._store, seq);
+            co_await applier.apply(write_at, key, value);
+            seq.advance_offset_inner(write_at);
             co_return projected.id;
         } else {
-            vlog(
-              plog.debug,
-              "seq_writer::write_subject_version project offset={} "
-              "subject={} "
-              "schema={} "
-              "version={}",
-              write_at,
-              schema.sub(),
-              projected.id,
-              projected.version);
-
-            auto key = schema_key{
-              .seq{write_at},
-              .node{seq._node_id},
-              .sub{schema.sub()},
-              .version{projected.version}};
-            auto value = schema_value{
-              .schema{schema},
-              .version{projected.version},
-              .id{projected.id},
-              .deleted = is_deleted::no};
-
-            auto batch = as_record_batch(key, value);
-
-            auto success = co_await seq.produce_and_check(
-              write_at, std::move(batch));
-            if (success) {
-                auto applier = consume_to_store(seq._store, seq);
-                co_await applier.apply(write_at, key, value);
-                seq.advance_offset_inner(write_at);
-                co_return projected.id;
-            } else {
-                co_return std::nullopt;
-            }
+            co_return std::nullopt;
         }
+    }
 }
 
 ss::future<schema_id>
@@ -181,44 +181,43 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
   compatibility_level compat,
   model::offset write_at,
   seq_writer& seq) {
-        vlog(
-          plog.debug,
-          "write_config sub={} compat={} offset={}",
-          sub,
-          to_string_view(compat),
-          write_at);
+    vlog(
+      plog.debug,
+      "write_config sub={} compat={} offset={}",
+      sub,
+      to_string_view(compat),
+      write_at);
 
-        try {
-            // Check for no-op case
-            compatibility_level existing;
-            if (sub.has_value()) {
-                existing = co_await seq._store.get_compatibility(
-                  sub.value(), default_to_global::no);
-            } else {
-                existing = co_await seq._store.get_compatibility();
-            }
-            if (existing == compat) {
-                co_return false;
-            }
-        } catch (const exception&) {
-            // ignore
-        }
-
-        auto key = config_key{.seq{write_at}, .node{seq._node_id}, .sub{sub}};
-        auto value = config_value{.compat = compat};
-        auto batch = as_record_batch(key, value);
-
-        auto success = co_await seq.produce_and_check(
-          write_at, std::move(batch));
-        if (success) {
-            auto applier = consume_to_store(seq._store, seq);
-            co_await applier.apply(write_at, key, value);
-            seq.advance_offset_inner(write_at);
-            co_return true;
+    try {
+        // Check for no-op case
+        compatibility_level existing;
+        if (sub.has_value()) {
+            existing = co_await seq._store.get_compatibility(
+              sub.value(), default_to_global::no);
         } else {
-            // Pass up a None, our caller's cue to retry
-            co_return std::nullopt;
+            existing = co_await seq._store.get_compatibility();
         }
+        if (existing == compat) {
+            co_return false;
+        }
+    } catch (const exception&) {
+        // ignore
+    }
+
+    auto key = config_key{.seq{write_at}, .node{seq._node_id}, .sub{sub}};
+    auto value = config_value{.compat = compat};
+    auto batch = as_record_batch(key, value);
+
+    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
+    if (success) {
+        auto applier = consume_to_store(seq._store, seq);
+        co_await applier.apply(write_at, key, value);
+        seq.advance_offset_inner(write_at);
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
 }
 
 ss::future<bool> seq_writer::write_config(
@@ -235,36 +234,35 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
   schema_version version,
   model::offset write_at,
   seq_writer& seq) {
-        if (co_await seq._store.is_referenced(sub, version)) {
-            throw as_exception(has_references(sub, version));
-        }
+    if (co_await seq._store.is_referenced(sub, version)) {
+        throw as_exception(has_references(sub, version));
+    }
 
-        auto s_res = co_await seq._store.get_subject_schema(
-          sub, version, include_deleted::yes);
-        subject_schema ss = std::move(s_res);
+    auto s_res = co_await seq._store.get_subject_schema(
+      sub, version, include_deleted::yes);
+    subject_schema ss = std::move(s_res);
 
-        auto key = schema_key{
-          .seq{write_at}, .node{seq._node_id}, .sub{sub}, .version{version}};
-        vlog(plog.debug, "seq_writer::delete_subject_version {}", key);
-        auto value = schema_value{
-          .schema{std::move(ss.schema)},
-          .version{version},
-          .id{ss.id},
-          .deleted{is_deleted::yes}};
+    auto key = schema_key{
+      .seq{write_at}, .node{seq._node_id}, .sub{sub}, .version{version}};
+    vlog(plog.debug, "seq_writer::delete_subject_version {}", key);
+    auto value = schema_value{
+      .schema{std::move(ss.schema)},
+      .version{version},
+      .id{ss.id},
+      .deleted{is_deleted::yes}};
 
-        auto batch = as_record_batch(key, value);
+    auto batch = as_record_batch(key, value);
 
-        auto success = co_await seq.produce_and_check(
-          write_at, std::move(batch));
-        if (success) {
-            auto applier = consume_to_store(seq._store, seq);
-            co_await applier.apply(write_at, key, value);
-            seq.advance_offset_inner(write_at);
-            co_return true;
-        } else {
-            // Pass up a None, our caller's cue to retry
-            co_return std::nullopt;
-        }
+    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
+    if (success) {
+        auto applier = consume_to_store(seq._store, seq);
+        co_await applier.apply(write_at, key, value);
+        seq.advance_offset_inner(write_at);
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
 }
 
 ss::future<bool>
@@ -279,43 +277,39 @@ ss::future<std::optional<std::vector<schema_version>>>
 seq_writer::do_delete_subject_impermanent(
   subject sub, model::offset write_at, seq_writer& seq) {
     // Grab the versions before they're gone.
-        auto versions = co_await seq._store.get_versions(
-          sub, include_deleted::no);
+    auto versions = co_await seq._store.get_versions(sub, include_deleted::no);
 
-        // Inspect the subject to see if its already deleted
-        if (co_await seq._store.is_subject_deleted(sub)) {
-            co_return std::make_optional(versions);
-        }
+    // Inspect the subject to see if its already deleted
+    if (co_await seq._store.is_subject_deleted(sub)) {
+        co_return std::make_optional(versions);
+    }
 
-        auto is_referenced = co_await ssx::parallel_transform(
-          versions.begin(),
-          versions.end(),
-          [&seq, &sub](auto const& ver) {
-              return seq._store.is_referenced(sub, ver);
-          });
-        if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
-                return v;
-            })) {
-            throw as_exception(has_references(sub, versions.back()));
-        }
+    auto is_referenced = co_await ssx::parallel_transform(
+      versions.begin(), versions.end(), [&seq, &sub](auto const& ver) {
+          return seq._store.is_referenced(sub, ver);
+      });
+    if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
+            return v;
+        })) {
+        throw as_exception(has_references(sub, versions.back()));
+    }
 
-        // Proceed to write
-        auto key = delete_subject_key{
-          .seq{write_at}, .node{seq._node_id}, .sub{sub}};
-        auto value = delete_subject_value{.sub{sub}};
-        auto batch = as_record_batch(key, value);
+    // Proceed to write
+    auto key = delete_subject_key{
+      .seq{write_at}, .node{seq._node_id}, .sub{sub}};
+    auto value = delete_subject_value{.sub{sub}};
+    auto batch = as_record_batch(key, value);
 
-        auto success = co_await seq.produce_and_check(
-          write_at, std::move(batch));
-        if (success) {
-            auto applier = consume_to_store(seq._store, seq);
-            co_await applier.apply(write_at, key, value);
-            seq.advance_offset_inner(write_at);
-            co_return versions;
-        } else {
-            // Pass up a None, our caller's cue to retry
-            co_return std::nullopt;
-        }
+    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
+    if (success) {
+        auto applier = consume_to_store(seq._store, seq);
+        co_await applier.apply(write_at, key, value);
+        seq.advance_offset_inner(write_at);
+        co_return versions;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
 }
 
 ss::future<std::vector<schema_version>>
