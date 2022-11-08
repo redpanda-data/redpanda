@@ -238,6 +238,19 @@ private:
     ss::future<ss::json::json_return_type>
       stop_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Register partition routes
+    ss::future<ss::json::json_return_type>
+      get_transactions_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      mark_transaction_expired_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      cancel_partition_reconfig_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      unclean_abort_partition_reconfig_handler(
+        std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      set_partition_replicas_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
