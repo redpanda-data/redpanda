@@ -19,6 +19,7 @@
 #include "pandaproxy/util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/std-coroutine.hh>
@@ -63,10 +64,11 @@ SEASTAR_THREAD_TEST_CASE(test_one_shot_fail) {
 SEASTAR_THREAD_TEST_CASE(test_one_shot_multi) {
     size_t count{0};
     size_t ex_count{0};
-    pp::one_shot one{[&count]() -> ss::future<> {
+    pp::one_shot one{[&count]() {
         ++count;
-        co_await ss::sleep(10ms);
-        throw std::runtime_error("failed");
+        return ss::sleep(10ms).then([] {
+            return ss::make_exception_future<>(std::runtime_error("failed"));
+        });
     }};
     ss::parallel_for_each(boost::irange(10), [&](auto) {
         return one().discard_result().handle_exception(
