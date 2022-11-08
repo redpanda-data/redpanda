@@ -453,6 +453,9 @@ func (cm *ConfigMap) genKafka(username string) kafka.Config {
 			}
 		}
 		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
+		if cm.clusterobj.IsSchemaRegistryAuthHTTPBasic() {
+			schemaRegistry.Username = username
+		}
 
 		// Default protobuf values to enable decoding in SchemaRegistry
 		// REF https://app.zenhub.com/workspaces/cloud-62684e2c6635e100149514fd/issues/redpanda-data/cloud/2834
