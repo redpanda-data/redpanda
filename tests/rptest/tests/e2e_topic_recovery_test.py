@@ -140,6 +140,47 @@ class EndToEndTopicRecovery(RedpandaTest):
         return False
 
     @cluster(num_nodes=4)
+    @matrix(num_messages=[2])
+    def test_restore_with_config_batches(self, num_messages):
+        """related to issue 6413: force the creation of remote segments containing only configuration batches,
+        check that older data can be nonetheless recovered even if the total download size
+         would exceed the property retention.bytes.
+         in other words, only segments containing at least some data counts towards retention.bytes limit"""
+        """1. generate some messages
+        2. restart the cluster to generate some config-only remote segments
+        3. restore topic with a small retention.bytes to force redpanda 
+           to get over the limit and skip over configuration batches"""
+        self.logger.info("start")
+        self.init_producer(5000, num_messages)
+        self._producer.start(clean=False)
+        self._producer.wait()
+        assert self._producer.produce_status.acked >= num_messages
+        self.logger.info("waiting S3")
+        wait_until(lambda: self._s3_has_all_data(num_messages),
+                   timeout_sec=100,
+                   backoff_sec=5,
+                   err_msg="Not all data is uploaded to S3 bucket")
+
+        for i in range(3):
+            self.logger.info(f"iteration {i}")
+            self._stop_redpanda_nodes()
+            self._start_redpanda_nodes()
+
+        self.logger.info("final iteration")
+        self._stop_redpanda_nodes()
+        self._wipe_data()
+
+        # Run recovery
+        self._start_redpanda_nodes()
+        for topic_spec in self.topics:
+            self._restore_topic(topic_spec, {'retention.bytes': 512})
+
+        self.init_consumer(5000)
+        self._consumer.start(clean=False)
+        # we just care for the consumer to receive some data
+        self._consumer.wait(timeout_sec=100)
+
+    @cluster(num_nodes=4)
     @matrix(message_size=[5000],
             num_messages=[100000],
             recovery_overrides=[{}, {
