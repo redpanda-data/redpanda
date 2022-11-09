@@ -172,6 +172,15 @@ void application::shutdown() {
         raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
           .get();
     }
+
+    // Stop any I/O to object store: this will cause any readers in flight
+    // to abort and enables partition shutdown to proceed reliably.
+    if (cloud_storage_api.local_is_initialized()) {
+        cloud_storage_api
+          .invoke_on_all(&cloud_storage::remote::shutdown_connections)
+          .get();
+    }
+
     // Stop all partitions before destructing the subsystems (transaction
     // coordinator, etc). This interrupts ongoing replication requests,
     // allowing higher level state machines to shutdown cleanly.
@@ -952,17 +961,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           std::ref(archival_scheduler),
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
-
-        // In order to stop segment uploads and downloads we need
-        // to close conneciton so active uploads and downloads will be
-        // stopped.
-        _deferred.emplace_back([this] {
-            if (cloud_storage_api.local_is_initialized()) {
-                cloud_storage_api
-                  .invoke_on_all(&cloud_storage::remote::shutdown_connections)
-                  .get();
-            }
-        });
     }
 
     // group membership
