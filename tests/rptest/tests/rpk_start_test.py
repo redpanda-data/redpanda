@@ -67,6 +67,43 @@ class RpkRedpandaStartTest(RedpandaTest):
         assert len(node_ids) == 3, f"Node IDs: {node_ids}"
 
     @cluster(num_nodes=3)
+    def test_bootstrap_then_start(self):
+        """
+        Validate bootstrap and start using rpk with multiple nodes. Node IDs
+        should be assigned automatically by Redpanda, configuring seeds-driven
+        cluster formation.
+        """
+        seeds_str = ",".join(
+            [f"{n.account.hostname}" for n in self.redpanda.nodes])
+
+        def config_bootstrap_with_rpk(node):
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
+            seeds_arg = f"--ips={seeds_str}"
+            rpk = f"{self.rpk._rpk_binary()} --config {RedpandaService.NODE_CONFIG_FILE}"
+            # Dockerized test runs don't play well with the bootstrap command's
+            # `--self` config, which expects an IP. Instead, manually set the
+            # RPC server address to something usable with a Dockerized network.
+            node.account.ssh(f"{rpk} redpanda config bootstrap {seeds_arg} && " \
+                    f"{rpk} redpanda config set redpanda.empty_seed_starts_cluster false && " \
+                    f"{rpk} redpanda config set redpanda.rpc_server " \
+                    f"'{{\"address\":\"{node.account.hostname}\",\"port\":33145}}'")
+
+        self.redpanda._for_nodes(self.redpanda.nodes,
+                                 config_bootstrap_with_rpk,
+                                 parallel=True)
+
+        # Run a start with no arguments, as is done when Redpanda is run by a
+        # systemd service.
+        self.redpanda._for_nodes(self.redpanda.nodes,
+                                 self.redpanda.start_node_with_rpk,
+                                 parallel=True)
+        node_ids = set()
+        for node in self.redpanda.nodes:
+            node_ids.add(self.redpanda.node_id(node))
+        assert len(node_ids) == 3, f"Node IDs: {node_ids}"
+
+    @cluster(num_nodes=3)
     def test_simple_start_three_with_root(self):
         """
         Validate simple start using rpk with multiple nodes. Node IDs should be
