@@ -44,7 +44,7 @@ func (e *BadClientTokenError) Error() string {
 // refreshes or creates an auth0 token using the given auth0 parameters.
 //
 // This function is expected to be called at the start of most commands.
-func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (string, error) {
+func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (token string, rerr error) {
 	auth0Endpoint := auth0.Endpoint{
 		URL:      cfg.AuthURL,
 		Audience: cfg.AuthAudience,
@@ -72,13 +72,12 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (string, e
 			return "", err
 		}
 	}
-	var save bool
 	defer func() {
-		if save {
+		if rerr == nil {
 			if prompt { // see above
-				cfg.SaveAll(fs)
+				rerr = cfg.SaveAll(fs)
 			} else {
-				cfg.SaveToken(fs)
+				rerr = cfg.SaveToken(fs)
 			}
 		}
 	}()
@@ -89,7 +88,6 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (string, e
 			return "", &BadClientTokenError{err}
 		}
 		if !expired {
-			save = true
 			return cfg.AuthToken, nil
 		}
 	}
@@ -99,7 +97,6 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config) (string, e
 		return "", fmt.Errorf("unable to retrieve a cloud token: %v", err)
 	}
 	cfg.AuthToken = resp.AccessToken
-	save = true
 
 	return cfg.AuthToken, nil
 }

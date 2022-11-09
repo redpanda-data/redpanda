@@ -22,6 +22,7 @@ import (
 
 func newLoginCommand(fs afero.Fs) *cobra.Command {
 	var params cloudcfg.Params
+	var save bool
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to the Redpanda cloud",
@@ -61,10 +62,15 @@ and then re-specify the client credentials next time you log in.
 `, err)
 			}
 			out.MaybeDie(err, "unable to login into Redpanda Cloud: %v", err)
+			if save {
+				err = cfg.SaveAll(fs)
+				out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
+			}
 			fmt.Println("Successfully logged in.")
 		},
 	}
 
+	cmd.Flags().BoolVar(&save, "save", false, "Save environment or flag specified client ID and client secret to the configuration file")
 	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
 	cmd.Flags().StringVar(&params.ClientSecret, cloudcfg.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
 	cmd.MarkFlagsRequiredTogether(cloudcfg.FlagClientID, cloudcfg.FlagClientSecret)
