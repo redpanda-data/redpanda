@@ -34,6 +34,7 @@ class LibrdkafkaTestcase(BackgroundThreadService):
         self.redpanda = redpanda
 
         self.test_case_number = test_case_number
+        self.error = None
 
     def _worker(self, _idx, node):
         node.account.ssh("mkdir -p %s" % LibrdkafkaTestcase.ROOT,
@@ -60,10 +61,10 @@ class LibrdkafkaTestcase(BackgroundThreadService):
                 f"{env_str} {LibrdkafkaTestcase.TEST_DIR}/test-runner > {LibrdkafkaTestcase.LOG_FILE} 2>&1"
             )
         except RemoteCommandError as error:
-            self.logger.error(
+            self.logger.info(
                 f"Librdkafka test case: {self.test_case_number} failed with error: {error}"
             )
-            assert False
+            self.error = error
 
     def stop_node(self, node):
         pass

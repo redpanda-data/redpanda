@@ -73,11 +73,13 @@ class LibrdkafkaTest(RedpandaTest):
                                                  "default_topic_partitions": 4
                                              })
 
-    @ok_to_fail  #
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/7148
     @cluster(num_nodes=4)
     @matrix(test_num=tests_to_run())
-    @skip_debug_mode  # https://github.com/redpanda-data/redpanda/issues/7148
+    @skip_debug_mode
     def test_librdkafka(self, test_num):
         tc = LibrdkafkaTestcase(self.test_context, self.redpanda, test_num)
         tc.start()
         tc.wait()
+
+        assert tc.error is None, f"Failure in librdkafka test case {test_num:04}"
