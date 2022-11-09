@@ -9,10 +9,11 @@
 import os
 import random
 
-from ducktape.mark import ok_to_fail
+from ducktape.mark import ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -271,24 +272,24 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         # Topic creation happens here
         super().setUp()
 
+    @cluster(num_nodes=8)
+    @parametrize(short_retention=False)
+    @parametrize(short_retention=True)
+    @skip_debug_mode
+    def test_create_or_delete_topics_while_busy(self, short_retention):
+        """
+        :param short_retention: whether to run with a very short retention globally, or just
+               a short target for local retention (see issue #7092)
+        """
         # Remote write/read and retention set at topic level
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
         rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
-        rpk.alter_topic_config(self.topic, 'retention.bytes',
-                               str(self.segment_size))
 
-    @cluster(num_nodes=8)
-    def test_create_or_delete_topics_while_busy(self):
-        self.logger.info(f"Environment: {os.environ}")
-        if self.debug_mode:
-            # Trigger node allocation to avoid test failure on asking for
-            # more nodes than it used.
-            _ = self.preallocated_nodes
-
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
+        rpk.alter_topic_config(
+            self.topic, 'retention.bytes'
+            if short_retention else 'retention.local.target.bytes',
+            str(self.segment_size))
 
         # 100k messages of size 2**18
         # is ~24GB of data. 500k messages
