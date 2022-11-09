@@ -505,17 +505,42 @@ ss::future<> controller::stop() {
     });
 }
 
-ss::future<> controller::create_cluster() {
+ss::future<> controller::create_cluster(const create_cluster_mode mode) {
     vassert(
       ss::this_shard_id() == controller_stm_shard,
       "Cluster can only be created from controller_stm_shard");
+
     bootstrap_cluster_cmd_data cmd_data;
     cmd_data.uuid = model::cluster_uuid(uuid_t::create());
-    cmd_data.bootstrap_user_cred
-      = security_frontend::get_bootstrap_user_creds_from_env();
-    vlog(clusterlog.info, "Creating cluster {}", cmd_data.uuid);
+    if (mode == create_cluster_mode::bootstrap) {
+        cmd_data.bootstrap_user_cred
+          = security_frontend::get_bootstrap_user_creds_from_env();
+    }
 
     for (simple_time_jitter<model::timeout_clock> retry_jitter(1s);;) {
+        // A new cluster is created by the leader of raft0 consisting of seed
+        // servers, once elected, or by the root.
+        // * In seed driven bootstrap mode, non-leaders will wait for
+        // cluster_uuid to appear, or for leadership change, while the leader
+        // will proceed with cluster creation once elected.
+        // * In root driven bootstrap mode, root is the only cluster member and
+        // joiners never make it into create_cluster(), so checking for
+        // cluster_uuid() never returns true and the wait for leadership is
+        // really just a wait for the consensus object to finish writing its
+        // last_voted_for from its self-vote.
+        while (!_storage.local().get_cluster_uuid() && !_raft0->is_leader()) {
+            co_await ss::sleep_abortable(100ms, _as.local());
+        }
+        if (_storage.local().get_cluster_uuid()) {
+            // Cluster has been created by other seed node and replicated here
+            vlog(
+              clusterlog.info,
+              "Cluster UUID is {}",
+              *_storage.local().get_cluster_uuid());
+            co_return;
+        }
+
+        vlog(clusterlog.info, "Creating cluster UUID {}", cmd_data.uuid);
         model::record_batch b = serde_serialize_cmd(
           bootstrap_cluster_cmd{0, cmd_data});
         // cluster::replicate_and_wait() cannot be used here because it checks
@@ -527,18 +552,23 @@ ss::future<> controller::create_cluster() {
           _as.local(),
           std::nullopt);
         if (errc == errc::success) {
+            vlog(clusterlog.info, "Cluster UUID created {}", cmd_data.uuid);
             co_return;
         }
         vlog(
           clusterlog.warn,
-          "Failed to replicate and wait the cluster bootstrap cmd, {}",
+          "Failed to replicate and wait the cluster bootstrap cmd. {} ({})",
+          errc.message(),
           errc);
         if (errc == errc::cluster_already_exists) {
             co_return;
         }
 
         co_await ss::sleep_abortable(retry_jitter.next_duration(), _as.local());
-        vlog(clusterlog.trace, "Retrying to create cluster {}", cmd_data.uuid);
+        vlog(
+          clusterlog.trace,
+          "Will retry to create cluster UUID {}",
+          cmd_data.uuid);
     }
 }
 
@@ -548,59 +578,39 @@ ss::future<> controller::create_cluster() {
  * to it, and before we have started communicating with peers.
  */
 ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
-    auto is_cluster_founder = co_await discovery.is_cluster_founder();
-    if (!is_cluster_founder) {
-        co_return;
-    }
-
-    if (config::node().empty_seed_starts_cluster()) {
-        // This is the legacy empty-seed-starts-cluster mode
-        vassert(
-          config::node().seed_servers().empty(), "We are not on the root node");
-
-        if (
-          _raft0->last_visible_index() > model::offset{}
-          || _raft0->config().brokers().size() > 1) {
-            // The controller log has already been written to
-            co_return;
+    if (co_await discovery.is_cluster_founder()) {
+        if (config::node().empty_seed_starts_cluster()) {
+            vassert(
+              config::node().seed_servers().empty(),
+              "Cluster founder is not the root node");
+            vassert(
+              _raft0->config().brokers().size() == 1,
+              "Root is a cluster founder but joiners are in the cluster alrdy");
         }
 
-        // Internal RPC does not start until after controller startup
-        // is complete (we are called during controller startup), so
-        // it is guaranteed that if we were single node/empty controller
-        // log at start of this function, we will still be in that state
-        // here.  The wait for leadership is really just a wait for the
-        // consensus object to finish writing its last_voted_for from
-        // its self-vote.
-        while (!_raft0->is_leader()) {
-            co_await ss::sleep(100ms);
-        }
-
-        co_return co_await create_cluster();
-    }
-
-    // The new cluster creation is done by the leader of raft0 consisting of
-    // seed servers, once elected
-    while (!_storage.local().get_cluster_uuid() && !_raft0->is_leader()) {
-        co_await ss::sleep(100ms);
+        co_return co_await create_cluster(create_cluster_mode::bootstrap);
     }
 
     if (_storage.local().get_cluster_uuid()) {
         vlog(
           clusterlog.info,
-          "Cluster is {}",
+          "Member of cluster UUID {}",
           *_storage.local().get_cluster_uuid());
         co_return;
     }
 
-    if (
-      _raft0->last_visible_index() > model::offset{}
-      || _raft0->config().brokers().size() > 1) {
-        // The controller log has already been written to
-        // TODO: create_cluster() but use the metrics' cluster_id
-    }
-
-    co_return co_await create_cluster();
+    // No cluster UUID in non-founder is a possibility that a pre-22.3
+    // cluster needs a UUID
+    ssx::background
+      = _feature_table.local()
+          .await_feature(
+            features::feature::seeds_driven_bootstrap_capable, _as.local())
+          .then([this] {
+              return create_cluster(create_cluster_mode::cluster_uuid_only);
+          })
+          .handle_exception([](const std::exception_ptr e) {
+              vlog(clusterlog.warn, "Error creating cluster UUID. {}", e);
+          });
 }
 
 /**

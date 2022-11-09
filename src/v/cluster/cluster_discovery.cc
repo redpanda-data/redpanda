@@ -71,11 +71,10 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
 cluster_discovery::brokers cluster_discovery::founding_brokers() const {
     vassert(
       _is_cluster_founder.has_value(), "must call discover_founding_brokers()");
-    if (!*_is_cluster_founder) {
-        vassert(
-          _founding_brokers.empty(),
-          "Should return empty if this node is not founding a new cluster");
-    }
+    vassert(
+      _founding_brokers.empty() == !*_is_cluster_founder,
+      "Should return broker(s) if and only if this node is founding a new "
+      "cluster");
     return _founding_brokers;
 }
 

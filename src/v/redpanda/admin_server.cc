@@ -3104,6 +3104,20 @@ void admin_server::register_cluster_routes() {
       [this](std::unique_ptr<ss::httpd::request> req) {
           return cancel_all_partitions_reconfigs_handler(std::move(req));
       });
+
+    register_route_sync<publik>(
+      ss::httpd::cluster_json::get_cluster_uuid,
+      [this](ss::httpd::const_req) -> ss::json::json_return_type {
+          vlog(logger.debug, "Requested cluster UUID");
+          const std::optional<model::cluster_uuid>& cluster_uuid
+            = _controller->get_storage().local().get_cluster_uuid();
+          if (cluster_uuid) {
+              ss::httpd::cluster_json::uuid ret;
+              ret.cluster_uuid = fmt::format("{}", cluster_uuid);
+              return ss::json::json_return_type(std::move(ret));
+          }
+          return ss::json::json_return_type(ss::json::json_void());
+      });
 }
 
 ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(

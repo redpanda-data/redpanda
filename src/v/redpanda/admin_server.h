@@ -121,7 +121,8 @@ private:
     void register_route(ss::httpd::path_description const& path, F handler) {
         path.set(
           _server._routes,
-          [this, handler](std::unique_ptr<ss::httpd::request> req) {
+          [this, handler](std::unique_ptr<ss::httpd::request> req)
+            -> ss::future<ss::json::json_return_type> {
               auto auth_state = apply_auth<required_auth>(*req);
 
               // Note: a request is only logged if it does not throw
@@ -143,6 +144,35 @@ private:
                     .handle_exception(exception_intercepter<
                                       decltype(handler(std::move(req)).get0())>(
                       url, auth_state));
+              }
+          });
+    }
+
+    /**
+     * Variant of register_route for synchronous handlers.
+     * \tparam F An ss::httpd::json_request_function, or variant
+     *    with an extra request_auth_state argument if peek_auth is true.
+     */
+    template<auth_level required_auth, bool peek_auth = false, typename F>
+    void
+    register_route_sync(ss::httpd::path_description const& path, F handler) {
+        path.set(
+          _server._routes,
+          [this,
+           handler](ss::httpd::const_req req) -> ss::json::json_return_type {
+              const auto auth_state = apply_auth<required_auth>(req);
+              log_request(req, auth_state);
+
+              const auto url = req.get_url();
+              try {
+                  if constexpr (peek_auth) {
+                      return handler(req, auth_state);
+                  } else {
+                      return handler(req);
+                  }
+              } catch (...) {
+                  log_exception(url, auth_state, std::current_exception());
+                  throw;
               }
           });
     }

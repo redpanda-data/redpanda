@@ -51,6 +51,21 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/uuid",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the UUID of the cluster this node belongs to. Not to be confused with the configurable cluster identifier used in metrics",
+                    "type": "get_cluster_uuid",
+                    "nickname": "get_cluster_uuid",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -124,6 +139,14 @@
                     "items": {
                         "type": "int"
                     }
+                }
+            }
+        },
+        "uuid": {
+            "id": "uuid",
+            "properties": {
+                "cluster_uuid": {
+                    "type": "string"
                 }
             }
         }

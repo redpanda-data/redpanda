@@ -51,6 +51,8 @@ std::string_view to_string_view(feature f) {
         return "replication_factor_change";
     case feature::ephemeral_secrets:
         return "ephemeral_secrets";
+    case feature::seeds_driven_bootstrap_capable:
+        return "seeds_driven_bootstrap_capable";
     case feature::test_alpha:
         return "__test_alpha";
     }
