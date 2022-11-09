@@ -271,6 +271,10 @@ private:
     /// Register partition routes
     ss::future<ss::json::json_return_type>
       get_transactions_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type> get_transactions_inner_handler(
+      cluster::partition_manager&,
+      model::ntp,
+      std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
       mark_transaction_expired_handler(std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
