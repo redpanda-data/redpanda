@@ -56,6 +56,8 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 
 static constexpr std::string_view tmp_extension{".part"};
 
+static constexpr ss::lowres_clock::duration min_clean_up_interval = 5000ms;
+
 cache::cache(std::filesystem::path cache_dir, size_t max_cache_size) noexcept
   : _cache_dir(std::move(cache_dir))
   , _max_cache_size(max_cache_size)
@@ -107,11 +109,13 @@ ss::future<> cache::consume_cache_space(size_t sz) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
     _current_cache_size += sz;
     if (_current_cache_size > _max_cache_size) {
-        auto units = ss::try_get_units(_cleanup_sm, 1);
-        if (units) {
-            co_await clean_up_cache();
+        if (ss::lowres_clock::now() - _last_clean_up > min_clean_up_interval) {
+            auto units = ss::try_get_units(_cleanup_sm, 1);
+            if (units) {
+                co_await clean_up_cache();
+            }
+            // Otherwise the cleanup is already running
         }
-        // Otherwise the cleanup is already running
     }
 }
 
@@ -269,6 +273,8 @@ ss::future<> cache::clean_up_cache() {
           i_to_delete,
           deleted_size);
     }
+
+    _last_clean_up = ss::lowres_clock::now();
 }
 
 ss::future<> cache::load_access_time_tracker() {
