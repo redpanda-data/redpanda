@@ -2133,8 +2133,7 @@ ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
     co_return co_await _partition_manager.invoke_on(
       *shard,
       [ntp = std::move(ntp), req = std::move(req), this](
-        cluster::partition_manager& pm) mutable
-      -> ss::future<ss::json::json_return_type> {
+        cluster::partition_manager& pm) mutable {
           return get_transactions_inner_handler(
             pm, std::move(ntp), std::move(req));
       });

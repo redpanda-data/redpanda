@@ -233,9 +233,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     iobuf downloaded;
-    auto try_consume = [&downloaded](
-                         uint64_t len,
-                         ss::input_stream<char> is) -> ss::future<uint64_t> {
+    auto try_consume = [&downloaded](uint64_t len, ss::input_stream<char> is) {
         downloaded.clear();
         auto rds = make_iobuf_ref_output_stream(downloaded);
         return ss::do_with(
