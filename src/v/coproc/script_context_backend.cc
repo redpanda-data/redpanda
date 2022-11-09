@@ -340,11 +340,11 @@ write_materialized(output_write_inputs replies, output_write_args args) {
     bool err{false};
     co_await ss::parallel_for_each(
       grs,
-      ss::coroutine::lambda(
         [args, &err](grouping_t::value_type& vt) -> ss::future<> {
+                return process_reply_group(
+                  vt.first, std::move(vt.second), args).handle_exception([args, &err](const std::exception_ptr& e) {
             try {
-                co_await process_reply_group(
-                  vt.first, std::move(vt.second), args);
+                std::rethrow_exception(e);
             } catch (const bad_reply_exception& ex) {
                 vlog(coproclog.error, "No source for reply: {}", ex);
             } catch (const script_failed_exception& ex) {
@@ -364,7 +364,8 @@ write_materialized(output_write_inputs replies, output_write_args args) {
                 vlog(coproclog.info, "Error while processing reply: {}", ex);
                 err = true;
             }
-        }));
+            });
+        });
     if (err) {
         co_await ss::sleep(100ms);
     }
