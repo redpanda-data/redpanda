@@ -2130,12 +2130,14 @@ ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
 
     co_return co_await _partition_manager.invoke_on(
       *shard,
-      ss::coroutine::lambda(
-        [_ntp = std::move(ntp), _req = std::move(req), this](
+        [ntp = std::move(ntp), req = std::move(req), this](
           cluster::partition_manager& pm) mutable
         -> ss::future<ss::json::json_return_type> {
-            auto ntp = std::move(_ntp);
-            auto req = std::move(_req);
+        return get_transactions_inner_handler(pm, std::move(ntp), std::move(req));
+    });
+}
+
+ss::future<ss::json::json_return_type> admin_server::get_transactions_inner_handler(cluster::partition_manager& pm, model::ntp ntp, std::unique_ptr<ss::httpd::request> req) {
             auto partition = pm.get(ntp);
             if (!partition) {
                 throw ss::httpd::server_error_exception(fmt_with_ctx(
@@ -2200,7 +2202,6 @@ ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
             }
 
             co_return ss::json::json_return_type(ans);
-        }));
 }
 
 ss::future<ss::json::json_return_type>
