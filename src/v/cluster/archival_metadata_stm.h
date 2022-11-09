@@ -17,11 +17,13 @@
 #include "features/fwd.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "storage/record_batch_builder.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/util/log.hh>
 
+#include <functional>
 #include <system_error>
 
 namespace cluster {
@@ -30,6 +32,39 @@ namespace details {
 /// This class is supposed to be implemented in unit tests.
 class archival_metadata_stm_accessor;
 } // namespace details
+
+class archival_metadata_stm;
+
+/// Batch builder allows to combine different archival_metadata_stm commands
+/// together in a single record batch
+class command_batch_builder {
+public:
+    command_batch_builder(
+      archival_metadata_stm& stm,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+    command_batch_builder(const command_batch_builder&) = delete;
+    command_batch_builder(command_batch_builder&&) = default;
+    command_batch_builder& operator=(const command_batch_builder&) = delete;
+    command_batch_builder& operator=(command_batch_builder&&) = default;
+    ~command_batch_builder() = default;
+    /// Add segments to the batch
+    command_batch_builder&
+      add_segments(std::vector<cloud_storage::segment_meta>);
+    /// Add cleanup_metadata command to the batch
+    command_batch_builder& cleanup_metadata();
+    /// Add truncate command to the batch
+    command_batch_builder& truncate(model::offset start_rp_offset);
+    /// Replicate the configuration batch
+    ss::future<std::error_code> replicate();
+
+private:
+    std::reference_wrapper<archival_metadata_stm> _stm;
+    storage::record_batch_builder _builder;
+    ss::lowres_clock::time_point _deadline;
+    std::optional<std::reference_wrapper<ss::abort_source>> _as;
+    ss::gate::holder _holder;
+};
 
 /// This replicated state machine allows storing archival manifest (a set of
 /// segments archived to cloud storage) in the archived partition log itself.
@@ -40,6 +75,8 @@ class archival_metadata_stm final : public persisted_stm {
     friend class details::archival_metadata_stm_accessor;
 
 public:
+    friend class command_batch_builder;
+
     explicit archival_metadata_stm(
       raft::consensus*,
       cloud_storage::remote& remote,
@@ -91,7 +128,15 @@ public:
     // removed from S3.
     std::vector<cloud_storage::segment_meta> get_segments_to_cleanup() const;
 
+    /// Create batch builder that can be used to combine and replicate multipe
+    /// STM commands together
+    command_batch_builder batch_start(
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
 private:
+    bool cleanup_needed() const;
+
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
       ss::lowres_clock::time_point deadline,

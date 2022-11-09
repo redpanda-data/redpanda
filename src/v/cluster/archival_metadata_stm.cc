@@ -112,6 +112,80 @@ segment_from_meta(const cloud_storage::segment_meta& meta) {
       .meta = meta};
 }
 
+command_batch_builder::command_batch_builder(
+  archival_metadata_stm& stm,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as)
+  : _stm(stm)
+  , _builder(model::record_batch_type::archival_metadata, model::offset(0))
+  , _deadline(deadline)
+  , _as(as)
+  , _holder(stm._gate) {}
+
+command_batch_builder& command_batch_builder::add_segments(
+  std::vector<cloud_storage::segment_meta> add_segments) {
+    for (auto& meta : add_segments) {
+        iobuf key_buf = serde::to_iobuf(
+          archival_metadata_stm::add_segment_cmd::key);
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = _stm.get()._manifest->get_revision_id();
+        }
+        auto record_val = archival_metadata_stm::add_segment_cmd::value{
+          segment_from_meta(meta)};
+        iobuf val_buf = serde::to_iobuf(std::move(record_val));
+        _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::cleanup_metadata() {
+    // NOTE: the method doesn't check if the manifest has any data to cleanup.
+    // This is needed because the cleanup_metadata_cmd command can be batched
+    // together with other commands which will create some garbage to cleanup.
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::cleanup_metadata_cmd::key);
+    iobuf empty_body;
+    _builder.add_raw_kv(std::move(key_buf), std::move(empty_body));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::truncate(model::offset start_rp_offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::update_start_offset_cmd::key);
+    auto record_val = archival_metadata_stm::update_start_offset_cmd::value{
+      .start_offset = start_rp_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+ss::future<std::error_code> command_batch_builder::replicate() {
+    if (_as) {
+        _as->get().check();
+    }
+    return _stm.get()._lock.with([this]() {
+        vlog(
+          _stm.get()._logger.debug, "command_batch_builder::replicate called");
+        auto now = ss::lowres_clock::now();
+        auto timeout = now < _deadline ? _deadline - now : 0ms;
+        return _stm.get().sync(timeout).then([this](bool success) {
+            if (!success) {
+                return ss::make_ready_future<std::error_code>(errc::timeout);
+            }
+            auto batch = std::move(_builder).build();
+            return _stm.get().do_replicate_commands(
+              std::move(batch), _deadline, _as);
+        });
+    });
+}
+
+command_batch_builder archival_metadata_stm::batch_start(
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return {*this, deadline, as};
+}
+
 std::vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
@@ -311,6 +385,17 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
     co_return errc::success;
 }
 
+bool archival_metadata_stm::cleanup_needed() const {
+    auto has_replaced_segments = !_manifest->replaced_segments().empty();
+    auto has_trailing_segments = (_manifest->size() > 0
+                                  && _manifest->get_start_offset())
+                                   ? _manifest->begin()->first
+                                       < _manifest->get_start_offset()
+                                   : false;
+
+    return has_replaced_segments || has_trailing_segments;
+}
+
 ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -327,14 +412,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
         as->get().check();
     }
 
-    auto has_replaced_segments = !_manifest->replaced_segments().empty();
-    auto has_trailing_segments = (_manifest->size() > 0
-                                  && _manifest->get_start_offset())
-                                   ? _manifest->begin()->first
-                                       < _manifest->get_start_offset()
-                                   : false;
-
-    if (!has_replaced_segments && !has_trailing_segments) {
+    if (!cleanup_needed()) {
         vlog(_logger.debug, "no metadata to clean up");
         co_return errc::success;
     }
