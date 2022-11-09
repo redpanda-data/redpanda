@@ -238,11 +238,11 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
                          ss::input_stream<char> is) -> ss::future<uint64_t> {
         downloaded.clear();
         auto rds = make_iobuf_ref_output_stream(downloaded);
-        return ss::do_with(std::move(rds), std::move(is), [&downloaded](auto& rds, auto& is) {
-        return ss::copy(is, rds).then([&downloaded] {
-        return downloaded.size_bytes();
-        });
-        });
+        return ss::do_with(
+          std::move(rds), std::move(is), [&downloaded](auto& rds, auto& is) {
+              return ss::copy(is, rds).then(
+                [&downloaded] { return downloaded.size_bytes(); });
+          });
     };
     auto dnl_res
       = remote.download_segment(bucket, path, try_consume, fib).get();
@@ -390,12 +390,12 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
 
     auto reset_stream = [&b, start_pos, end_pos]() {
         return ss::make_ready_future<std::unique_ptr<stream_provider>>(
-                  std::make_unique<concat_segment_reader_view>(
-          std::vector<ss::lw_shared_ptr<segment>>{
-            b.get_log_segments().begin(), b.get_log_segments().end()},
-          start_pos,
-          end_pos,
-          ss::default_priority_class()));
+          std::make_unique<concat_segment_reader_view>(
+            std::vector<ss::lw_shared_ptr<segment>>{
+              b.get_log_segments().begin(), b.get_log_segments().end()},
+            start_pos,
+            end_pos,
+            ss::default_priority_class()));
     };
 
     retry_chain_node fib(100ms, 20ms);

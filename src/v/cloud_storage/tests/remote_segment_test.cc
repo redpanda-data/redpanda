@@ -67,8 +67,8 @@ remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
     return [&segment_bytes] {
         auto out = iobuf_deep_copy(segment_bytes);
         return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
-                  std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out))));
+          std::make_unique<storage::segment_reader_handle>(
+            make_iobuf_input_stream(std::move(out))));
     };
 }
 
