@@ -38,6 +38,7 @@ type describedGroupForStructredPrint struct {
 
 	Err error `json:"err" yaml:"err"` // Err is non-nil if the group could not be described.
 }
+
 // Coppied from kadm.DescribedGroupMember to add struct tags.
 type describedGroupMember struct {
 	MemberID   string  `json:"member_id" yaml:"member_id"`     // MemberID is the Kafka assigned member ID of this group member.
@@ -48,6 +49,7 @@ type describedGroupMember struct {
 	Join     kadm.GroupMemberMetadata   `json:"join" yaml:"join"`         // Join is what this member sent in its join group request; what it wants to consume.
 	Assigned kadm.GroupMemberAssignment `json:"assigned" yaml:"assigned"` // Assigned is what this member was assigned to consume by the leader.
 }
+
 // Copied from kadm.BrokerDetail to add struct tags.
 type brokerDetail struct {
 	// NodeID is the broker node ID.
@@ -132,10 +134,10 @@ information about the members.
 					out.HandleShardError("ListOffsets", err)
 				}
 
-				coordinator := brokerDetail {
+				coordinator := brokerDetail{
 					NodeID: describedGroup.Coordinator.NodeID,
-					Port: describedGroup.Coordinator.Port,
-					Host: describedGroup.Coordinator.Host,
+					Port:   describedGroup.Coordinator.Port,
+					Host:   describedGroup.Coordinator.Host,
 				}
 
 				members := []describedGroupMember{}
@@ -143,9 +145,9 @@ information about the members.
 					members = append(members, describedGroupMember{
 						MemberID:   member.MemberID,
 						InstanceID: member.InstanceID,
-						ClientID:  	member.ClientID,
+						ClientID:   member.ClientID,
 						ClientHost: member.ClientHost,
-						Join: 			member.Join,
+						Join:       member.Join,
 						Assigned:   member.Assigned,
 					})
 				}
@@ -212,10 +214,9 @@ func getDescribedForGroup(
 	fetched map[string]kadm.FetchOffsetsResponse,
 	listed kadm.ListedOffsets,
 ) describedRows {
-
 	lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
 
-	// zero value init so stuctured prints get [] instead of null
+	// zero value init so structured prints get [] instead of null
 	rows := []describeRow{}
 	var useInstanceID, useErr bool
 	for _, l := range lag.Sorted() {

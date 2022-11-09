@@ -78,7 +78,7 @@ type (
 		Message             string                      `json:"message" yaml:"message"`
 	}
 
-	// Used for json/yaml formatted output in "rpk acl lists|delete"
+	// Used for json/yaml formatted output in "rpk acl lists|delete".
 	describedACLsResult struct {
 		Principal *string `json:"principal" yaml:"principal"` // Principal is the optional user that was used in this filter.
 		Host      *string `json:"host" yaml:"host"`           // Host is the optional host that was used in this filter.
@@ -98,19 +98,22 @@ type (
 	}
 )
 
-// filteredAndDescribedResults and methods
+// filteredAndDescribedResults and methods.
 type filteredAndDescribedResults struct {
 	Results []filteredAndDescribed `json:"filtered_acls" yaml:"filtered_acls"`
 }
+
 func (collection *filteredAndDescribedResults) addFilterAndDescribed(filteredACL filteredAndDescribed) {
 	collection.Results = append(collection.Results, filteredACL)
 }
+
 // =======================
 
 // deletedACLCollection and methods
 type deletedACLCollection struct {
 	Deleted []filteredAndDescribed `json:"deleted_acls" yaml:"deleted_acls"`
 }
+
 func (collection *deletedACLCollection) AddACL(deletedACL filteredAndDescribed) {
 	collection.Deleted = append(collection.Deleted, deletedACL)
 }
@@ -119,8 +122,9 @@ func (collection *deletedACLCollection) AddACL(deletedACL filteredAndDescribed) 
 
 // createdACLCollection and methods
 type createdACLCollection struct {
-		ACLS []aclWithMessage `json:"created_acls" yaml:"created_acls"`
+	ACLS []aclWithMessage `json:"created_acls" yaml:"created_acls"`
 }
+
 func (collection *createdACLCollection) AddACL(newACL kadm.CreateACLsResult) {
 	collection.ACLS = append(collection.ACLS,
 		aclWithMessage{
@@ -135,6 +139,7 @@ func (collection *createdACLCollection) AddACL(newACL kadm.CreateACLsResult) {
 		},
 	)
 }
+
 // =======================
 
 // A helper function to ensure we print an empty string.
