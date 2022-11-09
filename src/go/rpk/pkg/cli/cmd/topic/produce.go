@@ -36,7 +36,8 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 		compression string
 		acks        int
 
-		tombstone bool
+		tombstone              bool
+		allowAutoTopicCreation bool
 
 		timeout time.Duration
 	)
@@ -66,6 +67,10 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 				opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression()))
 			default:
 				out.Die("invalid compression codec %q", compression)
+			}
+
+			if allowAutoTopicCreation {
+				opts = append(opts, kgo.AllowAutoTopicCreation())
 			}
 
 			switch acks {
@@ -174,6 +179,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
 	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "Produce empty values as tombstones")
+	cmd.Flags().BoolVar(&allowAutoTopicCreation, "allow-auto-topic-creation", false, "Auto-create non-existent topics; requires auto_create_topics_enabled on the broker")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")

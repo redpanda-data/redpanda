@@ -75,11 +75,13 @@ func NewFranzClient(
 			User: k.SASL.User,
 			Pass: k.SASL.Password,
 		}
-		switch strings.ToUpper(k.SASL.Mechanism) {
-		case "SCRAM-SHA-256":
+		switch name := strings.ToUpper(k.SASL.Mechanism); name {
+		case "SCRAM-SHA-256", "": // we default to SCRAM-SHA-256 -- people commonly specify user & pass without --sasl-mechanism
 			opts = append(opts, kgo.SASL(mech.AsSha256Mechanism()))
 		case "SCRAM-SHA-512":
 			opts = append(opts, kgo.SASL(mech.AsSha512Mechanism()))
+		default:
+			return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512]", name)
 		}
 	}
 
