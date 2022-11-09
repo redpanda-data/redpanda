@@ -71,6 +71,9 @@ ntp_archiver::ntp_archiver(
   , _sync_manifest_timeout(
       config::shard_local_cfg()
         .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
+  , _max_segments_pending_deletion(
+      config::shard_local_cfg()
+        .cloud_storage_max_segments_pending_deletion_per_partition.bind())
   , _upload_sg(conf.upload_scheduling_group)
   , _io_priority(conf.upload_io_priority)
   , _housekeeping_interval(
@@ -1102,21 +1105,20 @@ ss::future<> ntp_archiver::apply_retention() {
 // Garbage collection can be improved as follows:
 // * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
 // segments
-// * issue #6844: flush _replaced and advance the start offset even if the
-// deletions fail if the backlog breaches a certain limit. This can lead to
-// segments begin orphaned, but it's preferable to unbounded backlog growth.
 ss::future<> ntp_archiver::garbage_collect() {
     if (!housekeeping_can_continue()) {
         co_return;
     }
 
-    auto to_remove = _partition->archival_meta_stm()->get_segments_to_cleanup();
+    const auto to_remove
+      = _partition->archival_meta_stm()->get_segments_to_cleanup();
 
     std::atomic<size_t> successful_deletes{0};
     co_await ss::max_concurrent_for_each(
       to_remove,
       _concurrency,
-      [this, &successful_deletes](const cloud_storage::segment_meta& meta) {
+      [this, &successful_deletes](
+        const cloud_storage::partition_manifest::lw_segment_meta& meta) {
           auto path = manifest().generate_segment_path(meta);
           return ss::do_with(
             std::move(path), [this, &successful_deletes](auto& path) {
@@ -1135,7 +1137,21 @@ ss::future<> ntp_archiver::garbage_collect() {
             });
       });
 
-    if (successful_deletes == to_remove.size()) {
+    const auto backlog_size_exceeded = to_remove.size()
+                                       > _max_segments_pending_deletion();
+    const auto all_deletes_succeeded = successful_deletes == to_remove.size();
+    if (!all_deletes_succeeded && backlog_size_exceeded) {
+        vlog(
+          _rtclog.warn,
+          "The current number of segments pending deletion has exceeded the "
+          "configurable limit ({} > {}) and deletion of some segments failed. "
+          "Metadata for all remaining segments pending deletion will be "
+          "removed and these segments will have to be removed manually.",
+          to_remove.size(),
+          _max_segments_pending_deletion());
+    }
+
+    if (all_deletes_succeeded || backlog_size_exceeded) {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
