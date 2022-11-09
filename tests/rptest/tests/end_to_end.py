@@ -227,7 +227,10 @@ class EndToEndTest(Test):
                    (timeout_sec, min_records))
 
     def _collect_segment_data(self):
-        self.redpanda.mark_data_dir_for_collection()
+        # TODO: data collection is disabled because it was
+        # affecting other tests.
+        # See issue https://github.com/redpanda-data/redpanda/issues/7179
+        pass
 
     def _collect_all_logs(self):
         for s in self.test_context.services:
