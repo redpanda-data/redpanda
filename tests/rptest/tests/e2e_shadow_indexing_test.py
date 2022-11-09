@@ -129,15 +129,12 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         cleanup_policy="compact,delete",
         segment_bytes=EndToEndShadowIndexingBase.segment_size // 2), )
 
-    @skip_debug_mode
-    @cluster(num_nodes=5)
-    def test_write(self):
+    def _prime_compacted_topic(self, segment_count):
         # Set compaction interval high at first, so we can get enough segments in log
         rpk_client = RpkTool(self.redpanda)
         rpk_client.cluster_config_set("log_compaction_interval_ms",
                                       f'{1000 * 60 * 60}')
 
-        segment_count = 10
         self.start_producer(throughput=10000, repeating_keys=10)
         wait_until_segments(
             redpanda=self.redpanda,
@@ -164,6 +161,13 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
             f"Stopping producer after writing up to offsets {self.producer.last_acked_offsets}"
         )
         self.producer.stop()
+
+        return original_snapshot
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    def test_write(self):
+        original_snapshot = self._prime_compacted_topic(10)
 
         self.kafka_tools.alter_topic_config(
             self.topic,
