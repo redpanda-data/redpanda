@@ -293,32 +293,80 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         co_return res;
     } else {
         vlog(
-          _rtclog.debug, "Updating the archival_meta_stm in read-replica mode");
+          _rtclog.debug,
+          "Updating the archival_meta_stm in read-replica mode, in-sync "
+          "offset: {}, last uploaded offset: {}, last compacted offset: {}",
+          m.get_insync_offset(),
+          m.get_last_offset(),
+          m.get_last_uploaded_compacted_offset());
         std::vector<cloud_storage::segment_meta> mdiff;
-        auto offset
-          = _partition->archival_meta_stm()->manifest().get_last_offset()
-            + model::offset(1);
-        // TODO: this code needs to be updated when the compacted segment
-        // uploads are merged.
+        // Several things has to be done:
+        // - Add all segments between old last_offset and new last_offset
+        // - Compare all segments below last compacted offset with their
+        //   counterparts in the old manifest and re-add them if they are
+        //   diferent.
+        // - Apply new start_offset if it's different
+        auto offset = model::next_offset(manifest().get_last_offset());
         for (auto it = m.segment_containing(offset); it != m.end(); it++) {
             mdiff.push_back(it->second);
         }
+
+        bool needs_cleanup = false;
+        auto old_start_offset = manifest().get_start_offset();
+        auto new_start_offset = m.get_start_offset();
+        for (const auto& s : m) {
+            if (
+              s.second.committed_offset
+                <= m.get_last_uploaded_compacted_offset()
+              && s.second.base_offset >= new_start_offset) {
+                // Re-uploaded segments has to be aligned with one of
+                // the existing segments in the manifest. This is guaranteed
+                // by the archiver. Because of that we can simply lookup
+                // the base offset of the segment in the manifest and
+                // compare them.
+                auto iter = manifest().get(s.first);
+                if (iter && *iter != s.second) {
+                    mdiff.push_back(s.second);
+                    needs_cleanup = true;
+                }
+            } else {
+                break;
+            }
+        }
+
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _partition->archival_meta_stm()->add_segments(
-          mdiff, deadline, _as);
+        // The commands to update the manifest need to be batched together,
+        // otherwise the read-replica will be able to see partial update. Also,
+        // the batching is more efficient.
+        auto builder = _partition->archival_meta_stm()->batch_start(
+          deadline, _as);
+        builder.add_segments(std::move(mdiff));
         if (
-          error != cluster::errc::success
-          && error != cluster::errc::not_leader) {
-            vlog(
-              _rtclog.warn, "archival metadata STM update failed: {}", error);
+          new_start_offset.has_value()
+          && old_start_offset.value_or(model::offset())
+               != new_start_offset.value()) {
+            builder.truncate(new_start_offset.value());
+            needs_cleanup = true;
         }
-        auto last_offset = manifest().get_last_offset();
-        vlog(_rtclog.debug, "manifest last_offset: {}", last_offset);
-        co_return cloud_storage::download_result::success;
+        if (needs_cleanup) {
+            // We only need to replicate this command if the
+            // manifest will be truncated or compacted segments
+            // will be added by previous commands.
+            builder.cleanup_metadata();
+        }
+        auto errc = co_await builder.replicate();
+        if (errc) {
+            vlog(
+              _rtclog.error,
+              "Can't replicate archival_metadata_stm configuration batch: "
+              "{}",
+              errc);
+            co_return cloud_storage::download_result::failed;
+        }
     }
-    __builtin_unreachable();
+    co_return cloud_storage::download_result::success;
 }
 
 void ntp_archiver::update_probe() {
