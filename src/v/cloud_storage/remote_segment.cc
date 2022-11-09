@@ -537,6 +537,13 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
 
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
+
+    // Track whether we have seen our objects in the cache during the loop
+    // below, so that we can detect regression: one object falling out the
+    // cache while the other is read.  We will back off on regression.
+    bool segment_was_cached = false;
+    bool txrange_was_cached = false;
+
     try {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
@@ -556,7 +563,24 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 // cache can't delete it until we close it.
                 auto tx_path = generate_remote_tx_path(_path);
                 auto segment_status = co_await _cache.is_cached(_path);
+                segment_was_cached |= segment_status
+                                      != cache_element_status::not_available;
                 auto txrange_status = co_await _cache.is_cached(tx_path);
+                txrange_was_cached |= txrange_status
+                                      != cache_element_status::not_available;
+
+                if (
+                  (txrange_status == cache_element_status::not_available
+                   && txrange_was_cached)
+                  || (segment_status == cache_element_status::not_available && segment_was_cached)) {
+                    vlog(
+                      _ctxlog.warn,
+                      "Cache thrashing detected while downloading segment {}, "
+                      "backing off",
+                      _path);
+                    co_await ss::sleep(_cache_backoff_jitter.next_duration());
+                }
+
                 auto status = combine_statuses(segment_status, txrange_status);
                 switch (status) {
                 case segment_txrange_status::in_progress:
