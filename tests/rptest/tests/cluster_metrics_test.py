@@ -253,23 +253,23 @@ class ClusterMetricsTest(RedpandaTest):
         try:
             self._wait_until_metric_has_value(controller,
                                               "cluster_partitions",
-                                              value=1)
+                                              value=0)
 
             RpkTool(self.redpanda).create_topic("topic-a", partitions=20)
             RpkTool(self.redpanda).create_topic("topic-b", partitions=10)
             self._wait_until_metric_holds_value(controller,
                                                 "cluster_partitions",
-                                                value=31)
+                                                value=30)
 
             RpkTool(self.redpanda).delete_topic("topic-a")
             self._wait_until_metric_holds_value(controller,
                                                 "cluster_partitions",
-                                                value=11)
+                                                value=10)
 
             RpkTool(self.redpanda).create_topic("topic-a", partitions=30)
             self._wait_until_metric_holds_value(controller,
                                                 "cluster_partitions",
-                                                value=41)
+                                                value=40)
         except Exception as e:
             topics_info = RpkTool(self.redpanda).list_topics()
             raise e

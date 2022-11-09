@@ -86,14 +86,7 @@ void controller_probe::setup_metrics() {
         sm::make_gauge(
           "partitions",
           [this] {
-              const auto& leaders_table
-                = _controller.get_partition_leaders().local();
-
-              auto partitions_count = 0;
-              leaders_table.for_each_leader(
-                [&partitions_count](auto&&...) { ++partitions_count; });
-
-              return partitions_count;
+              return _controller.get_topics_state().local().partition_count();
           },
           sm::description(
             "Number of partitions in the cluster (replicas not included)"))

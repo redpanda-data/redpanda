@@ -371,6 +371,8 @@ public:
         return _last_applied_revision_id;
     }
 
+    size_t partition_count() const { return _partition_count; }
+
 private:
     friend topic_table_probe;
 
@@ -398,6 +400,7 @@ private:
 
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
+    size_t _partition_count{0};
 
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
