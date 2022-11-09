@@ -12,7 +12,11 @@
 #include "net/exceptions.h"
 #include "rpc/service.h"
 
+#include <gnutls/gnutls.h>
+
 namespace net {
+
+constexpr std::string_view gnutls_category_name{"GnuTLS"};
 
 /**
  * If the exception is a "boring" disconnection case, then populate this with
@@ -30,6 +34,17 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
           || e.code() == std::errc::connection_reset
           || e.code() == std::errc::connection_aborted) {
             return e.code().message();
+        }
+        if (e.code().category().name() == gnutls_category_name) {
+            switch (e.code().value()) {
+            case GNUTLS_E_PUSH_ERROR:
+            case GNUTLS_E_PULL_ERROR:
+            case GNUTLS_E_PREMATURE_TERMINATION:
+                return e.code().message();
+            default:
+                break;
+            }
+            return std::nullopt;
         }
     } catch (const net::batched_output_stream_closed& e) {
         return "stream closed";
