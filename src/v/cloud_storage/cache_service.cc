@@ -207,23 +207,57 @@ ss::future<> cache::clean_up_cache() {
             auto filename_to_remove = candidates_for_deletion[i_to_delete].path;
 
             // skip tmp files since someone may be writing to it
-            if (!std::string_view(filename_to_remove)
-                   .ends_with(tmp_extension)) {
+            if (std::string_view(filename_to_remove).ends_with(tmp_extension)) {
+                i_to_delete++;
+                continue;
+            }
+
+            // Doesn't make sense to demote these independent of the segment
+            // they refer to: we will clear them out along with the main log
+            // segment file if they exist.
+            if (
+              std::string_view(filename_to_remove).ends_with(".tx")
+              || std::string_view(filename_to_remove).ends_with(".index")) {
+                i_to_delete++;
+                continue;
+            }
+
+            try {
+                auto tx_file = fmt::format("{}.tx", filename_to_remove);
+                auto index_file = fmt::format("{}.index", filename_to_remove);
+
                 try {
-                    co_await recursive_delete_empty_directory(
-                      filename_to_remove);
-                    deleted_size += candidates_for_deletion[i_to_delete].size;
-                    // Remove key if possible to make sure there is no resource
-                    // leak
-                    _access_time_tracker.remove_timestamp(
-                      std::string_view(filename_to_remove));
-                } catch (std::exception& e) {
-                    vlog(
-                      cst_log.error,
-                      "Cache eviction couldn't delete {}: {}.",
-                      filename_to_remove,
-                      e.what());
+                    auto sz = co_await ss::file_size(tx_file);
+                    co_await ss::remove_file(tx_file);
+                    deleted_size += sz;
+                } catch (std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        throw;
+                    }
                 }
+
+                try {
+                    auto sz = co_await ss::file_size(index_file);
+                    co_await ss::remove_file(index_file);
+                    deleted_size += sz;
+                } catch (std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        throw;
+                    }
+                }
+
+                co_await recursive_delete_empty_directory(filename_to_remove);
+                deleted_size += candidates_for_deletion[i_to_delete].size;
+                // Remove key if possible to make sure there is no resource
+                // leak
+                _access_time_tracker.remove_timestamp(
+                  std::string_view(filename_to_remove));
+            } catch (std::exception& e) {
+                vlog(
+                  cst_log.error,
+                  "Cache eviction couldn't delete {}: {}.",
+                  filename_to_remove,
+                  e.what());
             }
             i_to_delete++;
         }
@@ -419,8 +453,8 @@ ss::future<> cache::put(
     ss::file tmp_cache_file;
     while (true) {
         try {
-            // recursive_delete_empty_directory may delete dir_path before we
-            // open file, in this case we recreate dir_path and try again
+            // recursive_delete_empty_directory may delete dir_path before
+            // we open file, in this case we recreate dir_path and try again
             co_await ss::recursive_touch_directory(dir_path.string());
 
             auto flags = ss::open_flags::wo | ss::open_flags::create
