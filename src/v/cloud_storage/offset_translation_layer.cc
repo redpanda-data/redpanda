@@ -22,7 +22,7 @@
 
 namespace cloud_storage {
 
-ss::future<offset_translator::stream_stats> offset_translator::copy_stream(
+ss::future<stream_stats> offset_translator::copy_stream(
   ss::input_stream<char> src,
   ss::output_stream<char> dst,
   retry_chain_node& fib) const {
