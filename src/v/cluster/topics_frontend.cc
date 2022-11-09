@@ -1191,12 +1191,11 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
        &error,
        &partition_constraints,
        topic,
-       new_replication_factor](
-        partition_assignment& assignment) -> ss::future<> {
+       new_replication_factor](partition_assignment& assignment) {
           if (error) {
-              co_return;
+              return ss::now();
           }
-
+          auto p_id = assignment.id;
           if (assignment.replicas.size() > new_replication_factor) {
               vlog(
                 clusterlog.warn,
@@ -1205,45 +1204,48 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
                 assignment.replicas.size(),
                 new_replication_factor,
                 topic,
-                assignment.id);
+                p_id);
               error = errc::topic_invalid_replication_factor;
-              co_return;
+              return ss::now();
           }
 
-          partition_constraints.partition_id = assignment.id;
+          partition_constraints.partition_id = p_id;
 
-          auto ntp = model::ntp(topic.ns, topic.tp, assignment.id);
+          auto ntp = model::ntp(topic.ns, topic.tp, p_id);
 
-          auto reallocation = co_await _allocator.invoke_on(
-            partition_allocator::shard,
-            [partition_constraints,
-             assignment = std::move(assignment),
-             ntp = std::move(ntp)](partition_allocator& al) {
-                return al.reallocate_partition(
-                  partition_constraints,
-                  assignment,
-                  get_allocation_domain(ntp));
+          return _allocator
+            .invoke_on(
+              partition_allocator::shard,
+              [partition_constraints,
+               assignment = std::move(assignment),
+               ntp = std::move(ntp)](partition_allocator& al) {
+                  return al.reallocate_partition(
+                    partition_constraints,
+                    assignment,
+                    get_allocation_domain(ntp));
+              })
+            .then([&error, &units, &new_assignments, topic, p_id](
+                    result<allocation_units> reallocation) {
+                if (!reallocation) {
+                    vlog(
+                      clusterlog.warn,
+                      "attempt to find reallocation for topic {}, partition {} "
+                      "failed, error: {}",
+                      topic,
+                      p_id,
+                      reallocation.error().message());
+                    error = reallocation.error();
+                    return;
+                }
+
+                units_from_allocator ptr = std::make_unique<allocation_units>(
+                  std::move(reallocation.value()));
+
+                units.emplace_back(std::move(ptr));
+
+                new_assignments.emplace_back(
+                  p_id, units.back()->get_assignments().front().replicas);
             });
-
-          if (!reallocation) {
-              vlog(
-                clusterlog.warn,
-                "attempt to find reallocation for topic {}, partition {} "
-                "failed, error: {}",
-                topic,
-                assignment.id,
-                reallocation.error().message());
-              error = reallocation.error();
-              co_return;
-          }
-
-          units_from_allocator ptr = std::make_unique<allocation_units>(
-            std::move(reallocation.value()));
-
-          units.emplace_back(std::move(ptr));
-
-          new_assignments.emplace_back(
-            assignment.id, units.back()->get_assignments().front().replicas);
       });
 
     if (error) {
