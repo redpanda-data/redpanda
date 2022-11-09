@@ -105,6 +105,20 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
            "This may grow due to retention or non compacted segments being "
            "replaced with their compacted equivalent."),
          labels)
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "segments",
+         [this] { return _segments_in_manifest; },
+         sm::description(
+           "Total number of accounted segments in the cloud for the topic"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_gauge(
+         "segments_pending_deletion",
+         [this] { return _segments_to_delete; },
+         sm::description("Total number of segments pending deletion from the "
+                         "cloud for the topic"),
+         labels)
          .aggregate(aggregate_labels)});
 }
 

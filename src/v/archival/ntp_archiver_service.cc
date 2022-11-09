@@ -52,8 +52,7 @@ ntp_archiver::ntp_archiver(
   const configuration& conf,
   cloud_storage::remote& remote,
   ss::lw_shared_ptr<cluster::partition> part)
-  : _probe(conf.ntp_metrics_disabled, ntp.ntp())
-  , _ntp(ntp.ntp())
+  : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _partition_manager(partition_manager)
   , _remote(remote)
@@ -76,7 +75,8 @@ ntp_archiver::ntp_archiver(
   , _housekeeping_interval(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), 5ms)
-  , _next_housekeeping(_housekeeping_jitter()) {
+  , _next_housekeeping(_housekeeping_jitter())
+  , _ntp_metrics_disabled(conf.ntp_metrics_disabled) {
     vassert(
       _partition && _partition->is_elected_leader(),
       "must be the leader to launch ntp_archiver {}",
@@ -151,6 +151,10 @@ void ntp_archiver::run_upload_loop() {
       _ntp);
     _upload_loop_state = loop_state::started;
 
+    if (!_probe) {
+        _probe.emplace(_ntp_metrics_disabled, _ntp);
+    }
+
     // NOTE: not using ssx::spawn_with_gate_then here because we want to log
     // inside the gate (so that _rtclog is guaranteed to be alive).
     ssx::spawn_with_gate(_gate, [this] {
@@ -172,6 +176,8 @@ void ntp_archiver::run_upload_loop() {
           .finally([this] {
               vlog(_rtclog.debug, "upload loop stopped");
               _upload_loop_state = loop_state::stopped;
+
+              _probe.reset();
           });
     });
 }
@@ -231,6 +237,8 @@ ss::future<> ntp_archiver::upload_loop() {
         if (!upload_loop_can_continue()) {
             break;
         }
+
+        update_probe();
 
         if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU
@@ -311,6 +319,21 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         co_return cloud_storage::download_result::success;
     }
     __builtin_unreachable();
+}
+
+void ntp_archiver::update_probe() {
+    const auto& man = manifest();
+
+    _probe->segments_in_manifest(man.size());
+
+    const auto first_addressable = man.first_addressable_segment();
+    const auto truncated_seg_count = first_addressable == man.end()
+                                       ? 0
+                                       : std::distance(
+                                         man.begin(), first_addressable);
+
+    _probe->segments_to_delete(
+      truncated_seg_count + man.replaced_segments_count());
 }
 
 bool ntp_archiver::upload_loop_can_continue() const {
@@ -705,7 +728,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
 
         // this metric is only relevant for non compacted uploads.
         if (ctx.upload_kind == segment_upload_kind::non_compacted) {
-            _probe.upload_lag(ctx.last_offset - ctx.start_offset);
+            _probe->upload_lag(ctx.last_offset - ctx.start_offset);
         }
 
         while (uploads_remaining > 0 && upload_loop_can_continue()) {
@@ -791,8 +814,8 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         const auto& upload = scheduled[ixupload[i]];
 
         if (segment_kind == segment_upload_kind::non_compacted) {
-            _probe.uploaded(*upload.delta);
-            _probe.uploaded_bytes(upload.meta->size_bytes);
+            _probe->uploaded(*upload.delta);
+            _probe->uploaded_bytes(upload.meta->size_bytes);
 
             model::offset expected_base_offset;
             if (manifest().get_last_offset() < model::offset{0}) {
@@ -802,7 +825,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
                                        + model::offset{1};
             }
             if (upload.meta->base_offset > expected_base_offset) {
-                _probe.gap_detected(
+                _probe->gap_detected(
                   upload.meta->base_offset - expected_base_offset);
             }
         }
@@ -1155,7 +1178,7 @@ ss::future<> ntp_archiver::garbage_collect() {
           "retry on the next housekeeping run.");
     }
 
-    _probe.segments_deleted(successful_deletes);
+    _probe->segments_deleted(successful_deletes);
     vlog(
       _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
 }
