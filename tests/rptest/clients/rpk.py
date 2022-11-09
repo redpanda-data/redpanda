@@ -44,11 +44,13 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self, id, leader, leader_epoch, replicas, hw, start_offset):
+    def __init__(self, id, leader, leader_epoch, replicas, lso, hw,
+                 start_offset):
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
         self.replicas = replicas
+        self.last_stable_offset = lso
         self.high_watermark = hw
         self.start_offset = start_offset
 
@@ -263,7 +265,7 @@ class RpkTool:
 
         def partition_line(line):
             m = re.match(
-                r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<hw>\d+) *",
+                r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<lso>\d+?)? +(?P<hw>\d+) *",
                 line)
             if m is None and tolerant:
                 m = re.match(r" *(?P<id>\d+) +(?P<leader>\d+) .*", line)
@@ -275,6 +277,7 @@ class RpkTool:
                                     leader=int(m.group('leader')),
                                     leader_epoch=None,
                                     replicas=None,
+                                    lso=None,
                                     hw=None,
                                     start_offset=None)
 
@@ -284,12 +287,15 @@ class RpkTool:
                 replicas = list(
                     map(lambda r: int(r),
                         m.group('replicas').split()))
-                return RpkPartition(id=int(m.group('id')),
-                                    leader=int(m.group('leader')),
-                                    leader_epoch=int(m.group('epoch')),
-                                    replicas=replicas,
-                                    hw=int(m.group('hw')),
-                                    start_offset=int(m.group("logstart")))
+                return RpkPartition(
+                    id=int(m.group('id')),
+                    leader=int(m.group('leader')),
+                    leader_epoch=int(m.group('epoch')),
+                    replicas=replicas,
+                    # lso is not always returned by describe.
+                    lso=int(m.group('lso')) if m.group('lso') else 0,
+                    hw=int(m.group('hw')),
+                    start_offset=int(m.group("logstart")))
 
         return filter(None, map(partition_line, lines))
 
