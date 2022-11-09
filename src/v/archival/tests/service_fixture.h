@@ -61,7 +61,16 @@ static constexpr std::string_view error_payload
     <RequestId>requestid</RequestId>
 </Error>)xml";
 
-}
+static constexpr std::string_view forbidden_payload
+  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>AccessDenied</Code>
+    <Message>Access Denied</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
+
+} // namespace archival_tests
 
 /// This utility can be used to match content of the log
 /// with manifest and request content. It's also can be
