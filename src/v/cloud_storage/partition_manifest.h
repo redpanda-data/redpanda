@@ -191,6 +191,7 @@ public:
     timequery(model::timestamp t) const;
 
     remote_segment_path generate_segment_path(const segment_meta&) const;
+    remote_segment_path generate_segment_path(const lw_segment_meta&) const;
 
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
@@ -268,6 +269,10 @@ public:
     /// Returns an iterator to the segment containing offset o, such that o >=
     /// segment.base_offset and o <= segment.committed_offset.
     const_iterator segment_containing(model::offset o) const;
+
+    // Return collection of segments that were replaced in lightweight format.
+    std::vector<partition_manifest::lw_segment_meta>
+    lw_replaced_segments() const;
 
     /// Return collection of segments that were replaced by newer segments.
     std::vector<segment_meta> replaced_segments() const;
