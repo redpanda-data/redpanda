@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 const (
@@ -67,11 +69,12 @@ func NewSuperUsers(
 	suffix string,
 	logger logr.Logger,
 ) *SuperUsersResource {
+	prefixedUsername := redpandav1alpha1.SuperUsersPrefix + username
 	return &SuperUsersResource{
 		client,
 		scheme,
 		object,
-		username,
+		prefixedUsername,
 		suffix,
 		logger.WithValues(
 			"Kind", ingressKind(),
@@ -89,7 +92,14 @@ func (r *SuperUsersResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if !created && redpandav1alpha1.SuperUsersPrefix != "" {
+		r.logger.V(debugLogLevel).Info(
+			"Ignoring --superusers-prefix because SuperUser Secret is already created",
+			"prefix", redpandav1alpha1.SuperUsersPrefix,
+			"superUserSecret", r.Key(),
+		)
+	}
 	return err
 }
 
