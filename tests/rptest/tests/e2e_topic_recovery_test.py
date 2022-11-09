@@ -121,6 +121,24 @@ class EndToEndTopicRecovery(RedpandaTest):
         rpk.describe_topic(topic)
         rpk.describe_topic_configs(topic)
 
+    def _s3_has_all_data(self, num_messages):
+        objects = list(self.redpanda.get_objects_from_si())
+        for o in objects:
+            if o.Key.endswith("/manifest.json") and self.topic in o.Key:
+                data = self.redpanda.s3_client.get_object_data(
+                    self._bucket, o.Key)
+                manifest = json.loads(data)
+                last_upl_offset = manifest['last_offset']
+                self.logger.info(
+                    f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
+                )
+                # We have one partition so this invariant holds
+                # it has to be changed when the number of partitions
+                # will get larger. This will also require different
+                # S3 check.
+                return last_upl_offset >= num_messages
+        return False
+
     @cluster(num_nodes=4)
     @matrix(message_size=[5000],
             num_messages=[100000],
@@ -142,23 +160,8 @@ class EndToEndTopicRecovery(RedpandaTest):
         self._producer.wait()
         assert self._producer.produce_status.acked >= num_messages
 
-        def s3_has_all_data():
-            objects = list(self.redpanda.get_objects_from_si())
-            total_size = 0
-            for o in objects:
-                if o.Key.endswith("/manifest.json") and self.topic in o.Key:
-                    data = self.redpanda.s3_client.get_object_data(
-                        self._bucket, o.Key)
-                    manifest = json.loads(data)
-                    last_upl_offset = manifest['last_offset']
-                    self.logger.info(
-                        f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
-                    )
-                    return last_upl_offset >= num_messages
-            return False
-
         time.sleep(10)
-        wait_until(s3_has_all_data,
+        wait_until(lambda: self._s3_has_all_data(num_messages),
                    timeout_sec=600,
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
@@ -234,27 +237,8 @@ class EndToEndTopicRecovery(RedpandaTest):
 
         assert producer.num_aborted > 0
 
-        # Wait until everything is uploaded
-        def s3_has_all_data():
-            objects = list(self.redpanda.get_objects_from_si())
-            for o in objects:
-                if o.Key.endswith("/manifest.json") and self.topic in o.Key:
-                    data = self.redpanda.s3_client.get_object_data(
-                        self._bucket, o.Key)
-                    manifest = json.loads(data)
-                    last_upl_offset = manifest['last_offset']
-                    self.logger.info(
-                        f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
-                    )
-                    # We have one partition so this invariant holds
-                    # it has to be changed when the number of partitions
-                    # will get larger. This will also require dfferent
-                    # S3 check.
-                    return last_upl_offset >= producer.cur_offset
-            return False
-
         time.sleep(10)
-        wait_until(s3_has_all_data,
+        wait_until(lambda: self._s3_has_all_data(producer.cur_offset),
                    timeout_sec=300,
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
