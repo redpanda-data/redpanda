@@ -1636,18 +1636,18 @@ admin_server::kafka_transfer_leadership_handler(
 
     co_return co_await _partition_manager.invoke_on(
       *shard,
-      ss::coroutine::lambda(
         [ntp = std::move(ntp), target, this, req = std::move(req)](
-          cluster::partition_manager& pm) mutable
-        -> ss::future<ss::json::json_return_type> {
+          cluster::partition_manager& pm) mutable {
             auto partition = pm.get(ntp);
             if (!partition) {
                 throw ss::httpd::not_found_exception();
             }
-            auto err = co_await partition->transfer_leadership(target);
-            co_await throw_on_error(*req, err, ntp);
-            co_return ss::json::json_return_type(ss::json::json_void());
-        }));
+            return partition->transfer_leadership(target).then([this, ntp, req = std::move(req)](auto err) {
+            return throw_on_error(*req, err, ntp).then([] {
+            return ss::json::json_return_type(ss::json::json_void());
+            });
+            });
+        });
 }
 
 void admin_server::register_kafka_routes() {
