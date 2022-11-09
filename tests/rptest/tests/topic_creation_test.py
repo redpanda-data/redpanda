@@ -1,4 +1,5 @@
 # Copyright 2022 Redpanda Data, Inc.
+
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -92,7 +93,9 @@ class TopicRecreateTest(RedpandaTest):
 
         def topic_is_healthy():
             partitions = rpk.describe_topic(spec.name)
-            offsets_present = [p.high_watermark > 0 for p in partitions]
+            hw_offsets = [p.high_watermark for p in partitions]
+            offsets_present = [hw > 0 for hw in hw_offsets]
+            self.logger.debug(f"High watermark offsets: {hw_offsets}")
             return len(offsets_present) == partition_count and all(
                 offsets_present)
 
