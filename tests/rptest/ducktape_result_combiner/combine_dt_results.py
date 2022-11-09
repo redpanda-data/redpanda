@@ -3,12 +3,24 @@ from ducktape.tests.reporter import SimpleStdoutSummaryReporter, SimpleFileSumma
 from ducktape.tests.result import TestResults
 from ducktape.tests.session import SessionContext
 import json
+import os
 import argparse
 
 parser = argparse.ArgumentParser(description = 'ducktape test combiner')
 parser.add_argument('-o', '--output', action="store", help="Output dir", required=True)
 parser.add_argument('-f','--files', nargs='+', help='1 or more ducktape report.json files', required=True)
+parser.add_argument('-a','--custom-test-log-path', nargs='+',
+    help="Use custom test log path per file provided"
+        " when clicking on `Detail` button on HTML report", required=False)
+
 args_list = parser.parse_args()
+use_custom_test_log_path = False
+
+if args_list.custom_test_log_path:
+    use_custom_test_log_path = True
+    if len(args_list.custom_test_log_path) != len(args_list.files):
+        print("Files and custom log path should have the same length")
+        exit(1)
 
 def get_test_results_from_json(report_json_file):
     with open(report_json_file, "r") as f:
@@ -18,7 +30,20 @@ def get_test_results_from_json(report_json_file):
     sc = sc.from_json(obj["session_context"])
     test_results = TestResults(session_context=sc, cluster=[None] * int(obj["cluster_num_nodes"]))
     test_results = test_results.from_json(obj, sc)
-    return test_results 
+    return test_results
+
+def tweak_test_log_path(results, custom_test_log_path_index, session_context):
+    if not use_custom_test_log_path:
+        return results
+    ext_results = []
+    for r in results:
+        base_dir = os.path.abspath(session_context["results_dir"])
+        base_dir = os.path.join(base_dir, "")  # Ensure trailing directory indicator
+        test_results_dir = os.path.abspath(r["results_dir"])
+        rel_path = test_results_dir[len(base_dir):] # truncate the "absolute" portion
+        r["test_log_path"] = f"{args_list.custom_test_log_path[custom_test_log_path_index]}/{session_context['session_id']}/{rel_path}"
+        ext_results.append(r)
+    return ext_results
         
 def combine_test_results(test_results, output_dir):
     obj = {}
@@ -92,7 +117,8 @@ def combine_test_results(test_results, output_dir):
         obj["num_opassed"] += int(tr["num_opassed"])
         obj["num_passed"] += int(tr["num_passed"])
         obj["parallelism"] += float(tr["parallelism"])/len(test_results)
-        obj["results"].extend(tr["results"])
+        ext_results = tweak_test_log_path(tr["results"], test_results.index(tr), tr["session_context"])
+        obj["results"].extend(ext_results)
         obj["run_time_seconds"] += float(tr["run_time_seconds"])
         if float(obj["run_time_statistics"]["max"]) < float(tr["run_time_statistics"]["max"]):
             obj["run_time_statistics"]["max"] = float(tr["run_time_statistics"]["max"])
@@ -143,7 +169,7 @@ test_results = get_test_results_from_json("final_report.json")
 reporters = [
     SimpleStdoutSummaryReporter(test_results),
     SimpleFileSummaryReporter(test_results),
-    HTMLSummaryReporter(test_results),
+    HTMLSummaryReporter(test_results, use_custom_test_log_path),
     JSONReporter(test_results),
     JUnitReporter(test_results)
 ]
