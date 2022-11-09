@@ -243,16 +243,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     @parametrize(cloud_storage=True, batch_cache=False)
     @parametrize(cloud_storage=False, batch_cache=True)
     @parametrize(cloud_storage=False, batch_cache=False)
-    @skip_debug_mode
     def test_timequery(self, cloud_storage: bool, batch_cache: bool):
-        return self._do_test_timequery(cloud_storage, batch_cache)
-
-    @ok_to_fail
-    @cluster(num_nodes=4)
-    @parametrize(cloud_storage=True, batch_cache=False)
-    @parametrize(cloud_storage=False, batch_cache=True)
-    @parametrize(cloud_storage=False, batch_cache=False)
-    def test_timequery_debug(self, cloud_storage: bool, batch_cache: bool):
         return self._do_test_timequery(cloud_storage, batch_cache)
 
 
