@@ -37,6 +37,7 @@
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <utility>
 
 namespace kafka::client {
 
@@ -132,8 +133,11 @@ ss::future<> consumer::stop() {
     _inactive_timer.cancel();
     _inactive_timer.set_callback([]() {});
 
-    _as.request_abort();
     _on_stopped(_name);
+    if (_as.abort_requested()) {
+        return ss::now();
+    }
+    _as.request_abort();
     return _coordinator->stop()
       .then([this]() { return _gate.close(); })
       .finally([me{shared_from_this()}] {});
