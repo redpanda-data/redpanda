@@ -714,14 +714,25 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
                 break;
             }
 
-            uploads_remaining -= 1;
+            // Decrement remaining upload count if the last call actually
+            // scheduled an upload.
+            if (!ctx.uploads.empty()) {
+                const auto& last_scheduled = ctx.uploads.back();
+                if (last_scheduled.result.has_value()) {
+                    uploads_remaining -= 1;
+                }
+            }
         }
 
+        auto upload_segments_count = std::count_if(
+          ctx.uploads.begin(), ctx.uploads.end(), [](const auto& upload) {
+              return upload.result.has_value();
+          });
         vlog(
           _rtclog.debug,
           "scheduled {} uploads for upload kind: {}, uploads remaining: "
           "{}",
-          ctx.uploads.size(),
+          upload_segments_count,
           ctx.upload_kind,
           uploads_remaining);
 
@@ -746,7 +757,10 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         }
     }
     if (flist.empty()) {
-        vlog(_rtclog.debug, "no uploads started, returning");
+        vlog(
+          _rtclog.debug,
+          "no uploads started for segment upload kind: {}, returning",
+          segment_kind);
         co_return total;
     }
     auto results = co_await ss::when_all_succeed(begin(flist), end(flist));

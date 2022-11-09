@@ -267,25 +267,40 @@ concat_segment_data_source_impl::concat_segment_data_source_impl(
   , _current_pos{_segments.begin()}
   , _start_pos{start_pos}
   , _end_pos{end_pos}
-  , _priority_class{priority_class} {}
+  , _priority_class{priority_class}
+  , _name{"uninitialized"} {}
 
 ss::future<ss::temporary_buffer<char>> concat_segment_data_source_impl::get() {
+    ss::gate::holder guard{_gate};
     if (!_current_stream) {
-        _current_stream = co_await next_stream();
+        co_await next_stream();
     }
 
     ss::temporary_buffer<char> buf = co_await _current_stream->read();
     while (buf.empty() && _current_pos != _segments.end()) {
-        _current_stream = co_await next_stream();
+        co_await next_stream();
         buf = co_await _current_stream->read();
     }
 
     co_return buf;
 }
 
-ss::future<ss::input_stream<char>>
-concat_segment_data_source_impl::next_stream() {
+ss::future<> concat_segment_data_source_impl::next_stream() {
+    if (_current_stream) {
+        vlog(
+          stlog.trace,
+          "closing stream for current segment {} before switching to next "
+          "segment",
+          _name);
+        co_await _current_stream->close();
+    }
+
     if (_current_handle) {
+        vlog(
+          stlog.trace,
+          "closing handle for current segment {} before switching to next "
+          "segment",
+          _name);
         co_await _current_handle->close();
     }
 
@@ -306,18 +321,29 @@ concat_segment_data_source_impl::next_stream() {
         end = _end_pos;
     }
 
+    _name = segment->filename();
     _current_handle = co_await segment->reader().data_stream(
       start, end, _priority_class);
-    auto stream = _current_handle->take_stream();
+    _current_stream = _current_handle->take_stream();
 
     _current_pos++;
-    co_return stream;
+
+    vlog(stlog.trace, "opened segment {}", _name);
+    co_return;
 }
 
 ss::future<> concat_segment_data_source_impl::close() {
-    if (_current_handle) {
-        co_return co_await _current_handle->close();
+    co_await _gate.close();
+    if (_current_stream) {
+        vlog(stlog.trace, "closing stream for segment {}", _name);
+        co_await _current_stream->close();
     }
+
+    if (_current_handle) {
+        vlog(stlog.trace, "closing handle for segment {}", _name);
+        co_await _current_handle->close();
+    }
+    co_return;
 }
 
 concat_segment_reader_view::concat_segment_reader_view(
