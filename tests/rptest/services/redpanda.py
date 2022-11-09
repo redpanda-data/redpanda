@@ -507,10 +507,6 @@ class RedpandaService(Service):
         "backtraces": {
             "path": BACKTRACE_CAPTURE,
             "collect_default": True
-        },
-        "data": {
-            "path": DATA_DIR,
-            "collect_default": False
         }
     }
 
@@ -683,9 +679,6 @@ class RedpandaService(Service):
 
     def require_client_auth(self):
         return self._security.require_client_auth
-
-    def mark_data_dir_for_collection(self):
-        self.logs["data"]["collect_default"] = True
 
     @property
     def dedicated_nodes(self):
