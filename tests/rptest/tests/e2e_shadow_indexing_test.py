@@ -13,6 +13,7 @@ from ducktape.mark import ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.services.admin import Admin
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
@@ -164,6 +165,27 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
         return original_snapshot
 
+    def _transfer_topic_leadership(self):
+        admin = Admin(self.redpanda)
+        cur_leader = admin.get_partition_leader(namespace='kafka',
+                                                topic=self.topic,
+                                                partition=0)
+        broker_ids = [x['node_id'] for x in admin.get_brokers()]
+        transfer_to = random.choice([n for n in broker_ids if n != cur_leader])
+        assert cur_leader != transfer_to, "incorrect partition move in test"
+        admin.transfer_leadership_to(namespace="kafka",
+                                     topic=self.topic,
+                                     partition=0,
+                                     target_id=transfer_to,
+                                     leader_id=cur_leader)
+
+        admin.await_stable_leader(self.topic,
+                                  partition=0,
+                                  namespace='kafka',
+                                  timeout_s=60,
+                                  backoff_s=2,
+                                  check=lambda node_id: node_id == transfer_to)
+
     @skip_debug_mode
     @cluster(num_nodes=5)
     def test_write(self):
@@ -177,6 +199,39 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
             },
         )
 
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+
+        self.start_consumer(verify_offsets=False)
+        self.run_consumer_validation(enable_compaction=True)
+
+        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                 self.s3_bucket_name, self.logger)
+        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
+                                                                  partition=0,
+                                                                  n=1)
+        s3_snapshot.assert_segments_replaced(self.topic, partition=0)
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    def test_compacting_during_leadership_transfer(self):
+        original_snapshot = self._prime_compacted_topic(10)
+
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
+            },
+        )
+
+        # Transfer the topic to another node
+        self._transfer_topic_leadership()
+
+        # After leadership transfer has completed assert that manifest is OK
         wait_for_removal_of_n_segments(redpanda=self.redpanda,
                                        topic=self.topic,
                                        partition_idx=0,
