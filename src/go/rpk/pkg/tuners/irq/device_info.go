@@ -10,7 +10,9 @@
 package irq
 
 import (
+	"fmt"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -67,7 +69,10 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				irqs = append(irqs, irq)
 			}
 		} else {
-			modAliasFileName := path.Join(irqConfigDir, "modalias")
+			modAliasFileName, err := findModalias(deviceInfo.fs, irqConfigDir)
+			if err != nil {
+				return nil, fmt.Errorf("unable to find device info in %q: %v", irqConfigDir, err)
+			}
 			lines, err := utils.ReadFileLines(deviceInfo.fs, modAliasFileName)
 			if err != nil {
 				return nil, err
@@ -108,4 +113,20 @@ func (*deviceInfo) getIRQsForLinesMatching(
 		}
 	}
 	return irqs
+}
+
+// findModalias recursively tries to find the modalias file in all the parent
+// directories until we reach /sys/devices or root. It returns the filepath
+// to the modalias file.
+func findModalias(fs afero.Fs, dir string) (string, error) {
+	if dir == "/sys/devices" || dir == "/" {
+		return "", fmt.Errorf("unable to find modalias")
+	}
+
+	modAliasFileName := path.Join(dir, "modalias")
+	if exists, _ := afero.Exists(fs, modAliasFileName); exists {
+		return modAliasFileName, nil
+	}
+
+	return findModalias(fs, filepath.Dir(dir))
 }
