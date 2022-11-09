@@ -225,7 +225,7 @@ class RpkTool:
             timeout = DEFAULT_PRODUCE_TIMEOUT
 
         cmd = [
-            'produce', '--key', key, '-z', 'none', '--delivery-timeout',
+            'produce', '-v', '--key', key, '-z', 'none', '--delivery-timeout',
             f'{timeout}s', '-f', '%v', topic
         ]
         if headers:
