@@ -162,7 +162,7 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	}
 }
 
-// Used for stuctured output. Note stuctured output is always detailed
+// Used for structured output. Note: structured output is always detailed and doens't require the -d flag
 type TopicPartitionDetail struct {
 	PartitionID        int32   `json:"partition_id" yaml:"partition_id"`                 // Partition is the partition number these details are for.
 	LeaderID           int32   `json:"leader_id" yaml:"leader_id"`                       // Leader is the broker leader  if there is one  otherwise -1.
@@ -183,10 +183,10 @@ type Topics struct {
 }
 
 func (collection *Topics) sortTopics() {
-  sort.Slice(collection.Topics, func(i, j int) bool {
-    l, r := collection.Topics[i], collection.Topics[j]
-    return l.Name < r.Name
-  })
+	sort.Slice(collection.Topics, func(i, j int) bool {
+		l, r := collection.Topics[i], collection.Topics[j]
+		return l.Name < r.Name
+	})
 }
 
 func (collection *Topics) AddTopic(newTopic kadm.TopicDetail) {
@@ -222,7 +222,7 @@ func (collection *Topics) AddTopic(newTopic kadm.TopicDetail) {
 }
 
 func PrintTopics(topics kadm.TopicDetails, internal, detailed bool, format string) {
-	var topicsCollection = Topics{}
+	topicsCollection := Topics{}
 	for _, topic := range topics {
 		topicsCollection.AddTopic(topic)
 	}
@@ -242,7 +242,7 @@ func PrintTopics(topics kadm.TopicDetails, internal, detailed bool, format strin
 
 	if format != "text" {
 		out.StructredPrint[any](topicsCollection, format)
-	}else {
+	} else {
 		buf := new(bytes.Buffer)
 		buf.Grow(512)
 		defer func() { os.Stdout.Write(buf.Bytes()) }()

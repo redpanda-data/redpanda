@@ -73,7 +73,7 @@ For example,
 			for _, t := range resps.Sorted() {
 				msg := "OK"
 				if t.Err != nil {
-					// If error msg is not okay, set bool so stuctured output doesn't require consumer to parse message to detect errors.
+					// If error msg is not okay, set bool so structured output doesn't require consumer to parse message to detect errors.
 					deleteError = true
 					msg = t.Err.Error()
 				}

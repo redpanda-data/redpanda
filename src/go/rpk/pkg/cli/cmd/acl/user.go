@@ -28,7 +28,7 @@ type userCollection struct {
 func newUserCommand(fs afero.Fs) *cobra.Command {
 	var (
 		apiUrls []string
-		format 	string
+		format  string
 	)
 
 	cmd := &cobra.Command{
@@ -244,10 +244,10 @@ func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
 			sort.Slice(users, func(i, j int) bool {
 				l, r := users[i], users[j]
 				return l < r
-			 },
-		  )
+			},
+			)
 
-			var userCollection = userCollection{Users: users}
+			userCollection := userCollection{Users: users}
 
 			if format != "text" {
 				out.StructredPrint[any](userCollection, format)

@@ -167,7 +167,6 @@ func deleteReqResp(
 	printAllFilters bool,
 	printDeletionsHeader bool,
 ) {
-
 	// If any filters failed, or if all filters are requested, we print the
 	// filter section.
 	var printFailedFilters bool

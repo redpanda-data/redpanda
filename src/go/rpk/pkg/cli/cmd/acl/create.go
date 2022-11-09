@@ -65,8 +65,8 @@ Allow write permissions to user buzz to transactional id "txn":
 			}
 			types.Sort(results)
 
-			createdACLS:= createdACLCollection{}
-			for _, newACL:= range results {
+			createdACLS := createdACLCollection{}
+			for _, newACL := range results {
 				createdACLS.AddACL(newACL)
 			}
 
@@ -75,7 +75,7 @@ Allow write permissions to user buzz to transactional id "txn":
 			} else {
 				tw := out.NewTable(headersWithError...)
 				defer tw.Flush()
-				for _, acl := range createdACLS.ACLS{
+				for _, acl := range createdACLS.ACLS {
 					tw.PrintStructFields(acl)
 				}
 			}

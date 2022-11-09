@@ -103,7 +103,7 @@ the cleanup.policy=compact config option set.
 			out.MaybeDie(err, "unable to create topics %v: %v", topics, err)
 
 			var (
-				exit1  			bool
+				exit1       bool
 				createError bool
 			)
 
@@ -130,7 +130,7 @@ the cleanup.policy=compact config option set.
 					// If we're exiting in error, toggle error as well so in structured print mode there's a way to see an eror happen without parsing the message.
 					// While we could just re-use exit1 here, mixing concerns is not a great idea.
 					createError = true
-					exit1       = true
+					exit1 = true
 				}
 				createdTopics.AddTopic(topic{
 					Name:    t.Topic,

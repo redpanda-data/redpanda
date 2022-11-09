@@ -109,7 +109,7 @@ func (collection *filteredAndDescribedResults) addFilterAndDescribed(filteredACL
 
 // =======================
 
-// deletedACLCollection and methods
+// deletedACLCollection and methods.
 type deletedACLCollection struct {
 	Deleted []filteredAndDescribed `json:"deleted_acls" yaml:"deleted_acls"`
 }
@@ -120,7 +120,7 @@ func (collection *deletedACLCollection) AddACL(deletedACL filteredAndDescribed) 
 
 // =======================
 
-// createdACLCollection and methods
+// createdACLCollection and methods.
 type createdACLCollection struct {
 	ACLS []aclWithMessage `json:"created_acls" yaml:"created_acls"`
 }

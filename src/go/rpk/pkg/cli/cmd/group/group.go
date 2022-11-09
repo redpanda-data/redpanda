@@ -145,7 +145,7 @@ groups, or to list groups that need to be cleaned up.
 			defer adm.Close()
 
 			groupCollection := groupCollectionForStructedPrint{}
-			// init with 0 length so stuctured output shows [] instead of null
+			// init with 0 length so structured output shows [] instead of null
 			groupCollection.Groups = []listedGroup{}
 			listed, err := adm.ListGroups(context.Background())
 			for _, group := range listed.Sorted() {
