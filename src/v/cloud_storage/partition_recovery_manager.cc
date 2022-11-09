@@ -409,7 +409,10 @@ partition_downloader::download_log_with_capped_size(
           return download_segment_file(s, dlpart).then(
             [&dloffsets](auto offsets) {
                 if (offsets) {
-                    dloffsets.push_back(offsets.value());
+                    dloffsets.push_back({
+                      .min_offset = offsets->min_offset,
+                      .max_offset = offsets->max_offset,
+                    });
                 }
             });
       });
@@ -501,7 +504,10 @@ partition_downloader::download_log_with_capped_time(
           return download_segment_file(s, dlpart).then(
             [&dloffsets](auto offsets) {
                 if (offsets) {
-                    dloffsets.push_back(offsets.value());
+                    dloffsets.push_back({
+                      .min_offset = offsets->min_offset,
+                      .max_offset = offsets->max_offset,
+                    });
                 }
             });
       });
@@ -557,10 +563,7 @@ ss::future<uint64_t> partition_downloader::download_segment_file_stream(
   remote_segment_path remote_path,
   std::filesystem::path local_path,
   offset_translator otl,
-  model::offset* _min_offset,
-  model::offset* _max_offset) {
-    auto& min_offset{*_min_offset};
-    auto& max_offset{*_max_offset};
+  stream_stats& stats) {
     vlog(
       _ctxlog.info,
       "Copying s3 path {} to local location {}",
@@ -568,13 +571,9 @@ ss::future<uint64_t> partition_downloader::download_segment_file_stream(
       local_path.string());
     co_await ss::recursive_touch_directory(part.part_prefix.string());
     auto fs = co_await open_output_file_stream(local_path);
-    auto stream_stats = co_await otl.copy_stream(
-      std::move(in), std::move(fs), _rtcnode);
+    stats = co_await otl.copy_stream(std::move(in), std::move(fs), _rtcnode);
 
-    min_offset = stream_stats.min_offset;
-    max_offset = stream_stats.max_offset;
-
-    if (stream_stats.size_bytes == 0) {
+    if (stats.size_bytes == 0) {
         vlog(
           _ctxlog.debug,
           "Log segment downloaded empty. Original size: {}.",
@@ -587,13 +586,13 @@ ss::future<uint64_t> partition_downloader::download_segment_file_stream(
           "Log segment downloaded. {} bytes expected, {} bytes after "
           "pre-processing.",
           len,
-          stream_stats.size_bytes);
+          stats.size_bytes);
     }
 
-    co_return stream_stats.size_bytes;
+    co_return stats.size_bytes;
 }
 
-ss::future<std::optional<partition_downloader::offset_range>>
+ss::future<std::optional<cloud_storage::stream_stats>>
 partition_downloader::download_segment_file(
   const segment_meta& segm, const download_part& part) {
     auto name = generate_local_segment_name(
@@ -625,15 +624,14 @@ partition_downloader::download_segment_file(
         co_await ss::remove_file(localpath.string());
     }
 
-    model::offset min_offset;
-    model::offset max_offset;
+    auto stream_stats = cloud_storage::stream_stats{};
+
     auto stream = [this,
+                   &stream_stats,
                    _part{part},
                    _remote_path{remote_path},
                    _localpath{localpath},
-                   _otl{otl},
-                   _min_offset{&min_offset},
-                   _max_offset{&max_offset}](
+                   _otl{otl}](
                     uint64_t len,
                     ss::input_stream<char> in) -> ss::future<uint64_t> {
         return download_segment_file_stream(
@@ -643,8 +641,7 @@ partition_downloader::download_segment_file(
           _remote_path,
           _localpath,
           _otl,
-          _min_offset,
-          _max_offset);
+          stream_stats);
     };
 
     auto result = co_await _remote->download_segment(
@@ -657,10 +654,7 @@ partition_downloader::download_segment_file(
         co_return std::nullopt;
     }
 
-    co_return offset_range{
-      .min_offset = min_offset,
-      .max_offset = max_offset,
-    };
+    co_return stream_stats;
 }
 
 ss::future<> partition_downloader::move_parts(download_part dls) {
