@@ -11,7 +11,9 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
+#include "storage/logger.h"
 #include "utils/gate_guard.h"
 #include "utils/to_string.h"
 #include "vassert.h"
@@ -117,6 +119,24 @@ uint32_t batch_cache::range::add(const model::record_batch& b) {
     return offset;
 }
 
+static resources::available_memory::deregister_holder
+register_memory_reporter(const batch_cache& bc) {
+    auto& ab = resources::available_memory::local();
+    return ab.register_reporter(
+      "batch_cache", [&bc] { return bc.size_bytes(); });
+}
+
+batch_cache::batch_cache(const reclaim_options& opts)
+  : _reclaimer(
+    [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
+  , _reclaim_opts(opts)
+  , _reclaim_size(_reclaim_opts.min_size)
+  , _background_reclaimer(
+      *this, opts.min_free_memory, opts.background_reclaimer_sg)
+  , _available_mem_deregister(register_memory_reporter(*this)) {
+    _background_reclaimer.start();
+}
+
 batch_cache::entry
 batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     // notify no matter what the exit path
@@ -182,6 +202,12 @@ void batch_cache::evict(range_ptr&& e) {
 }
 
 size_t batch_cache::reclaim(size_t size) {
+    // update the available_memory low-water mark: this is a good place to do
+    // this because under memory pressure the reclaimer will be called
+    // frequently so we expect the LWM to track closely the true LWM if we
+    // update it here
+    resources::available_memory().update_low_water_mark();
+
     if (is_memory_reclaiming()) {
         return 0;
     }

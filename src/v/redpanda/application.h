@@ -80,37 +80,48 @@ public:
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
-    ss::sharded<features::feature_table> feature_table;
-    ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<kafka::group_router> group_router;
-    ss::sharded<cluster::shard_table> shard_table;
-    ss::sharded<storage::api> storage;
-    ss::sharded<storage::node_api> storage_node;
-    std::unique_ptr<coproc::api> coprocessing;
-    ss::sharded<coproc::partition_manager> cp_partition_manager;
-    ss::sharded<cluster::partition_manager> partition_manager;
-    ss::sharded<raft::recovery_throttle> recovery_throttle;
-    ss::sharded<raft::group_manager> raft_group_manager;
-    ss::sharded<cluster::metadata_dissemination_service>
-      md_dissemination_service;
-    ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
-    ss::sharded<kafka::coordinator_ntp_mapper> co_coordinator_ntp_mapper;
-    std::unique_ptr<cluster::controller> controller;
-    ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     smp_groups smp_service_groups;
-    ss::sharded<kafka::quota_manager> quota_mgr;
-    ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<cloud_storage::remote> cloud_storage_api;
+
+    // Sorted list of services (public members)
+    ss::sharded<archival::scheduler_service> archival_scheduler;
+
+    ss::sharded<cloud_storage::cache> shadow_index_cache;
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
-    ss::sharded<archival::scheduler_service> archival_scheduler;
-    ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
-    ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<v8_engine::data_policy_table> data_policies;
-    ss::sharded<cloud_storage::cache> shadow_index_cache;
+    ss::sharded<cloud_storage::remote> cloud_storage_api;
+
+    ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ss::sharded<cluster::metadata_cache> metadata_cache;
+    ss::sharded<cluster::metadata_dissemination_service>
+      md_dissemination_service;
     ss::sharded<cluster::node_status_backend> node_status_backend;
     ss::sharded<cluster::node_status_table> node_status_table;
+    ss::sharded<cluster::partition_manager> partition_manager;
+    ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
+    ss::sharded<cluster::shard_table> shard_table;
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+
+    ss::sharded<coproc::partition_manager> cp_partition_manager;
+
+    ss::sharded<features::feature_table> feature_table;
+
+    ss::sharded<kafka::coordinator_ntp_mapper> co_coordinator_ntp_mapper;
+    ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
+    ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
+    ss::sharded<kafka::group_router> group_router;
+    ss::sharded<kafka::quota_manager> quota_mgr;
+    ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
+
+    ss::sharded<raft::group_manager> raft_group_manager;
+    ss::sharded<raft::recovery_throttle> recovery_throttle;
+
+    ss::sharded<storage::api> storage;
+    ss::sharded<storage::node_api> storage_node;
+
+    ss::sharded<v8_engine::data_policy_table> data_policies;
+
+    std::unique_ptr<cluster::controller> controller;
+    std::unique_ptr<coproc::api> coprocessing;
 
 private:
     using deferred_actions
@@ -146,6 +157,17 @@ private:
 
     bool archival_storage_enabled();
 
+    /**
+     * @brief Construct service boilerplate.
+     *
+     * Construct the given service s, calling start with the given arguments
+     * and set up a shutdown callback to stop it.
+     *
+     * Returns the future from start(), typically you'll call get() on it
+     * immediately to wait for creation to complete.
+     *
+     * @return the future returned by start()
+     */
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
