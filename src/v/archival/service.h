@@ -33,7 +33,7 @@
 namespace archival {
 namespace internal {
 
-class scheduler_service_accessor;
+class archiver_replacer;
 
 using namespace std::chrono_literals;
 
@@ -48,7 +48,7 @@ using namespace std::chrono_literals;
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
-    friend class scheduler_service_accessor;
+    friend class archiver_replacer;
 
 public:
     /// \brief create scheduler service

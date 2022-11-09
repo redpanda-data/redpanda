@@ -15,6 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
+#include "net/types.h"
 #include "net/unresolved_address.h"
 #include "raft/offset_translator.h"
 #include "ssx/sformat.h"
@@ -550,38 +551,70 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
 namespace archival::internal {
 
-// A replacement for NTP archiver which does no operations. Can be placed in the
-// scheduler service to make sure that the service fixture does not interfere
-// with another archiver started explicitly in a unit test.
-class no_op_archiver final : public archival::ntp_archiver {
+/// Replaces the ntp archiver in scheduler with an object which has a remote
+/// connection configured to a port which is not being listened to. The new
+/// archiver does not make any progress, freeing the unit test to create an
+/// archiver of its own and performing actions and making assertions about them
+/// in a clean environment.
+///
+/// We initialize a remote because the newly created archiver expects a
+/// reference to a remote which should remain alive for the duration of the
+/// test. The replacer must be closed before the test ends.
+class archiver_replacer {
 public:
-    ss::future<ntp_archiver::batch_result> upload_next_candidates(
-      std::optional<model::offset> last_stable_offset_override) override {
-        ntp_archiver::batch_result result{
-          .non_compacted_upload_result = {}, .compacted_upload_result = {}};
-        return ss::make_ready_future<ntp_archiver::batch_result>(result);
-    }
-};
+    explicit archiver_replacer(const cloud_storage::configuration& cfg)
+      : _cfg{with_port_replaced(cfg)}
+      , _remote{
+          _cfg.connection_limit,
+          _cfg.client_config,
+          _cfg.cloud_credentials_source} {}
 
-class scheduler_service_accessor {
-public:
-    // If the scheduler contains an archiver for the given ntp, stop the
-    // archiver, and replace it with another archiver which does no uploads. The
-    // no-op archiver is started before returning.
-    static void replace_archiver_with_no_op(
-      const model::ntp& ntp, internal::scheduler_service_impl& scheduler) {
+    void replace_archiver_with_no_op(
+      const model::ntp& ntp,
+      internal::scheduler_service_impl& scheduler,
+      const archival::configuration& aconf) {
         if (auto it = scheduler._archivers.find(ntp);
             it != scheduler._archivers.end()) {
             it->second->stop().get();
-            it->second = ss::make_lw_shared<ntp_archiver>(
-              scheduler._partition_manager.local().log(ntp)->config(),
-              scheduler._partition_manager.local(),
-              scheduler._conf,
-              scheduler._remote.local(),
-              scheduler._partition_manager.local().get(ntp));
-            it->second->run_upload_loop();
+            scheduler._archivers.erase(it);
         }
+
+        auto [it, ok] = scheduler._archivers.emplace(
+          ntp,
+          ss::make_lw_shared<ntp_archiver>(
+            scheduler._partition_manager.local().log(ntp)->config(),
+            scheduler._partition_manager.local(),
+            aconf,
+            _remote,
+            scheduler._partition_manager.local().get(ntp)));
+        it->second->run_upload_loop();
     }
+
+    ss::future<> stop() { return _remote.stop(); }
+
+private:
+    // Replace the client configuration port with an adjacent port so that the
+    // remote object constructed can never connect and the associated archiver
+    // can not make progress.
+    static cloud_storage::configuration
+    with_port_replaced(const cloud_storage::configuration& cfg) {
+        auto replaced = cfg;
+        replaced.client_config.server_addr = net::unresolved_address{
+          {archiver_fixture::httpd_host_name.data(),
+           archiver_fixture::httpd_host_name.size()},
+          archiver_fixture::httpd_port_number + 1};
+
+        // Explicitly disable metrics. The archivers created in test may or may
+        // not have metrics disabled. If we do not disable metrics here there
+        // could be double registration which is an error.
+        replaced.client_config.disable_metrics = net::metrics_disabled::yes;
+        replaced.client_config.disable_public_metrics
+          = net::public_metrics_disabled::yes;
+        return replaced;
+    }
+
+    cloud_storage::configuration _cfg;
+    cloud_storage::remote _remote;
 };
 } // namespace archival::internal
 
@@ -611,8 +644,12 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
-      manifest_ntp, get_scheduler_service());
+    auto [arch_conf, remote_conf] = get_configurations();
+    archival::internal::archiver_replacer replacer{remote_conf};
+    ss::defer([&replacer] { replacer.stop().get(); });
+
+    replacer.replace_archiver_with_no_op(
+      manifest_ntp, get_scheduler_service(), arch_conf);
 
     auto s1name = archival::segment_name("0-1-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
@@ -645,7 +682,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     listen();
 
-    auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
       remote_conf.client_config,
@@ -788,8 +824,12 @@ static void test_partial_upload_impl(
         return part->high_watermark() >= model::offset(1);
     }).get();
 
-    archival::internal::scheduler_service_accessor::replace_archiver_with_no_op(
-      manifest_ntp, test.get_scheduler_service());
+    auto [aconf, cconf] = get_configurations();
+    archival::internal::archiver_replacer replacer{cconf};
+    ss::defer([&replacer] { replacer.stop().get(); });
+
+    replacer.replace_archiver_with_no_op(
+      manifest_ntp, test.get_scheduler_service(), aconf);
 
     auto s1name = archival::segment_name("0-1-v1.log");
 
@@ -860,8 +900,6 @@ static void test_partial_upload_impl(
       lso);
 
     test.listen();
-
-    auto [aconf, cconf] = get_configurations();
 
     cloud_storage::remote remote(
       cconf.connection_limit,
