@@ -33,17 +33,11 @@ import (
 	"github.com/spf13/afero"
 )
 
-const (
-	// FilenameSHALength is how long of a SHA we save into files.
-	FilenameSHALength = 20
-
-	// FlagAutoComplete is the expected flag if a plugin has the rpk.ac-
-	// name prefix.
-	FlagAutoComplete = "--help-autocomplete"
-)
+// FlagAutoComplete is the expected flag if a plugin has the rpk.ac- name
+// prefix.
+const FlagAutoComplete = "--help-autocomplete"
 
 type pluginName struct {
-	sha          string
 	autocomplete bool
 	managed      bool
 	isPlugin     bool
@@ -52,9 +46,6 @@ type pluginName struct {
 
 func (p pluginName) filename() string {
 	name := ".rpk"
-	if len(p.sha) >= FilenameSHALength {
-		name += "." + p.sha[:FilenameSHALength]
-	}
 	if p.autocomplete {
 		name += ".ac"
 	} else if p.managed {
@@ -65,10 +56,9 @@ func (p pluginName) filename() string {
 }
 
 // 0: whole match
-// 1: sha, if present, 1 to 64 characters; note we save with 20; 10 characters at least to not conflict with "managed"
-// 2: ".managed" or ".ac", if present
-// 3: rest of the name
-var reName = regexp.MustCompile(`^.rpk(?:\.([a-z0-9]{10,64}))?(\.ac|\.managed)?-(.+)`)
+// 1: ".managed" or ".ac", if present
+// 2: rest of the name
+var reName = regexp.MustCompile(`^.rpk(\.ac|\.managed)?-(.+)`)
 
 func calcName(name string) pluginName {
 	m := reName.FindStringSubmatch(name)
@@ -77,10 +67,9 @@ func calcName(name string) pluginName {
 	}
 	return pluginName{
 		isPlugin:     true,
-		sha:          m[1],
-		autocomplete: m[2] == ".ac",
-		managed:      m[2] == ".managed",
-		rest:         m[3],
+		autocomplete: m[1] == ".ac",
+		managed:      m[1] == ".managed",
+		rest:         m[2],
 	}
 }
 
@@ -130,12 +119,6 @@ type Plugin struct {
 	// Managed returns whether this is an rpk internally managed plugin
 	// and should not auto-install any help.
 	Managed bool
-
-	// FilenameSHA is the bit of the sha256sum encoded into the filename.
-	// This can be used for fast version comparisons if the plugin is
-	// the correct version, and is required if the original sha256sum
-	// was calculated after compression / etc.
-	FilenameSHA string
 }
 
 // FullName returns the full name of the plugin, joining the arguments with
@@ -231,11 +214,10 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 			uniquePlugins[name.rest] = len(plugins)
 			plugins = append(plugins, rawNamePlugin{
 				Plugin: Plugin{
-					Name:        arguments[0],
-					Path:        fullPath,
-					Arguments:   arguments,
-					Managed:     name.managed,
-					FilenameSHA: name.sha,
+					Name:      arguments[0],
+					Path:      fullPath,
+					Arguments: arguments,
+					Managed:   name.managed,
 				},
 				rawName: name.rest,
 			})
@@ -295,9 +277,8 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 // This returns the filepath that was written, or an error if any step of the
 // process fails. If the process fails after the binary has been written to a
 // temporary directory, the file is left on disk for user inspection.
-func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, sha string, autocomplete, managed bool) (string, error) {
+func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, autocomplete, managed bool) (string, error) {
 	dstBase := (pluginName{
-		sha:          sha,
 		autocomplete: autocomplete,
 		managed:      managed,
 		isPlugin:     true,
@@ -312,7 +293,7 @@ func WriteBinary(fs afero.Fs, name, dstDir string, contents []byte, sha string, 
 //
 // If the url ends in ".gz", this unzips the binary before shasumming. If the
 // url ends in ".tar.gz", this unzips, then untars ONE file, then shasums.
-func Download(ctx context.Context, url, expSha string) ([]byte, error) {
+func Download(ctx context.Context, url string, isKnownCompressed bool, expShaPrefix string) ([]byte, error) {
 	cl := httpapi.NewClient(
 		httpapi.HTTPClient(&http.Client{
 			Timeout: 100 * time.Second,
@@ -324,11 +305,8 @@ func Download(ctx context.Context, url, expSha string) ([]byte, error) {
 		return nil, fmt.Errorf("unable to download plugin: %w", err)
 	}
 
-	shasum := sha256.Sum256(raw)
-	shaPre := strings.ToLower(hex.EncodeToString(shasum[:]))
-
 	plugin := io.Reader(bytes.NewReader(raw))
-	if strings.HasSuffix(url, ".gz") {
+	if strings.HasSuffix(url, ".gz") || isKnownCompressed {
 		gzr, err := gzip.NewReader(plugin)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create gzip reader: %w", err)
@@ -350,12 +328,12 @@ func Download(ctx context.Context, url, expSha string) ([]byte, error) {
 		return nil, fmt.Errorf("unable to read plugin: %w", err)
 	}
 
-	shasum = sha256.Sum256(raw)
-	shaPost := strings.ToLower(hex.EncodeToString(shasum[:]))
-	expSha = strings.ToLower(expSha)
+	shasum := sha256.Sum256(raw)
+	gotSha := strings.ToLower(hex.EncodeToString(shasum[:]))
+	expShaPrefix = strings.ToLower(expShaPrefix)
 
-	if shaPre != expSha && shaPost != expSha {
-		return nil, fmt.Errorf("checksum of plugin before and after decompression does not match expected sha256: before %s, after %s, expected %s", shaPre, shaPost, expSha)
+	if !strings.HasPrefix(gotSha, expShaPrefix) {
+		return nil, fmt.Errorf("checksum of plugin %s does not contain expected plugin %s", gotSha, expShaPrefix)
 	}
 
 	return raw, nil

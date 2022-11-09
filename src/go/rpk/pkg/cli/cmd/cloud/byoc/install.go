@@ -13,8 +13,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/auth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
@@ -58,7 +60,7 @@ autocompletion, start a new terminal and tab complete through it!
 `)
 		},
 	}
-	cmd.Flags().StringVar(&redpandaID, "redpanda-id", "", "")
+	cmd.Flags().StringVar(&redpandaID, "redpanda-id", "", "The redpanda ID of the cluster you are creating")
 	cmd.MarkFlagRequired("redpanda-id")
 
 	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
@@ -68,6 +70,12 @@ autocompletion, start a new terminal and tab complete through it!
 }
 
 func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config, redpandaID string) (binPath string, token string, installed bool, rerr error) {
+	// Logging in and downloading our plugin should not take *that* long,
+	// and we do not want to look like we are just hanging forever if the
+	// cloud API has problems.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
 	// First load our configuration and token.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
@@ -94,32 +102,35 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 		return "", "", false, fmt.Errorf("unable to find byoc plugin %s", name)
 	}
 
+	// Unfortunately, the checksum_sha256 returned in the JSON is the
+	// sha256 of the plugin *after* tar + gz. We need the checksum of the
+	// binary itself.
+	//
+	// Our current contract is that half the sha256 will be in the filename
+	// just before the .tar.gz.
+	m := regexp.MustCompile(`\.([a-zA-Z0-9]{16,64})\.tar\.gz$`).FindStringSubmatch(artifact.Location)
+	if len(m) == 0 {
+		return "", "", false, fmt.Errorf("unable to find sha256 in plugin download filename %q", artifact.Location)
+	}
+	expShaPrefix := m[1]
+
 	// Check if the plugin is downloaded and matches the remote version. We
 	// require the FilenameSHA to have at least 20 characters.
 	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
 	if pluginExists {
-		if len(byoc.FilenameSHA) >= plugin.FilenameSHALength && strings.HasPrefix(artifact.ChecksumSHA256, byoc.FilenameSHA) {
+		currentSha, err := plugin.Sha256Path(fs, byoc.Path)
+		if err != nil {
+			return "", "", false, fmt.Errorf("unable to determine the sha256sum of %q: %v", byoc.Path, err)
+		}
+
+		if strings.HasPrefix(currentSha, expShaPrefix) {
 			return byoc.Path, token, false, nil // remote version matches, all is good, return token
 		}
-		// If we successfully install the plugin, we need to remove any
-		// old plugins: the filename will be different, so it is not
-		// just simply replaced.
-		defer func() {
-			if rerr == nil {
-				messages, anyFailed := removePluginAll(byoc)
-				for _, message := range messages {
-					fmt.Println(message)
-				}
-				if anyFailed {
-					rerr = fmt.Errorf("unable to remove all old plugins, please run `rpk cloud byoc uninstall` and retry")
-				}
-			}
-		}()
 	}
 
 	// Remote version is different: download current plugin version and
 	// replace.
-	bin, err := plugin.Download(ctx, artifact.Location, artifact.ChecksumSHA256)
+	bin, err := plugin.Download(ctx, artifact.Location, false, expShaPrefix)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to replace out of date plugin: %w", err)
 	}
@@ -136,7 +147,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 		}
 	}
 
-	path, err := plugin.WriteBinary(fs, "byoc", pluginDir, bin, artifact.ChecksumSHA256, false, true)
+	path, err := plugin.WriteBinary(fs, "byoc", pluginDir, bin, false, true)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to write byoc plugin to disk: %w", err)
 	}

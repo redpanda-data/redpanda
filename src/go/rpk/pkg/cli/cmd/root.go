@@ -35,6 +35,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -101,12 +102,14 @@ func Execute() {
 	//
 	// Managed plugins are slightly weirder and are documented below.
 	for _, p := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		p, managedHook := plugin.LookupManaged(p)
-		if managedHook != nil {
-			addPluginWithExec(root, p.Name, p.Arguments, p.Path, managedHook, fs)
-		} else {
-			addPluginWithExec(root, p.Name, p.Arguments, p.Path, nil, nil)
+		if plugin.IsManaged(p.Name) {
+			mp, managedHook := plugin.LookupManaged(p)
+			if managedHook != nil {
+				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs)
+				continue
+			}
 		}
+		addPluginWithExec(root, p.Name, p.Arguments, p.Path, nil, nil)
 	}
 
 	// Cobra creates help flag as: help for <command> if you want to override
@@ -177,18 +180,22 @@ func addPluginWithExec(
 	// byoc subcommands.
 
 	p0 := pieces[0]
-	childCmd, _, err := parentCmd.Find([]string{p0})
+	var childCmd *cobra.Command
+	for _, cmd := range parentCmd.Commands() {
+		if cmd.Name() == p0 {
+			childCmd = cmd
+			break
+		}
+	}
 
-	// If the command does not exist, then err will be non-nil. If the
-	// command does not exist and the parent does not have subcommands,
-	// then childCmd is equal to parentCmd.
-	if err != nil || childCmd == nil || parentCmd == childCmd {
+	if childCmd == nil {
 		childCmd = &cobra.Command{
 			Use:                p0,
 			Short:              p0 + pluginShortSuffix,
 			DisableFlagParsing: true,
 			Run: func(_ *cobra.Command, args []string) {
-				osExec(execPath, args)
+				err := osExec(execPath, args)
+				out.MaybeDie(err, "unable to execute plugin: %v", err)
 			},
 		}
 		parentCmd.AddCommand(childCmd)

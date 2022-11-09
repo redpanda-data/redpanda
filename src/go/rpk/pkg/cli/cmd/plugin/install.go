@@ -63,7 +63,7 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 			if len(version) > 0 {
 				// We do not use sha's for this temporary
 				// direct download path.
-				body, err = tryDirectDownload(name, version)
+				body, err = tryDirectDownload(cmd.Context(), name, version)
 				if err != nil {
 					log.Debugf("unable to download: %v", err)
 				}
@@ -112,7 +112,7 @@ Remote sha256: %s
 			}
 
 			fmt.Println("Downloaded! Writing plugin to disk...")
-			dst, err := plugin.WriteBinary(fs, name, dir, body, remoteSha, autoComplete, false)
+			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete, false)
 			out.MaybeDieErr(err)
 
 			// If we add shas to filenames, then writing our binary
@@ -180,8 +180,8 @@ func checkAndCreateDefaultPath(fs afero.Fs) error {
 	return nil
 }
 
-func tryDirectDownload(name, version string) ([]byte, error) {
+func tryDirectDownload(ctx context.Context, name, version string) ([]byte, error) {
 	u := fmt.Sprintf("https://dl.redpanda.com/public/rpk-plugins/raw/names/%[1]s-%[2]s-%[3]s/versions/%[4]s/%[1]s.tgz", name, runtime.GOOS, runtime.GOARCH, version)
 	fmt.Printf("Searching for plugin %q in %s...\n", name, u)
-	return plugin.Download(context.Background(), u, "")
+	return plugin.Download(ctx, u, true, "")
 }

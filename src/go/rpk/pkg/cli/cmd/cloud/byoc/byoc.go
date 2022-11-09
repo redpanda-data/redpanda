@@ -110,7 +110,7 @@ Redpanda cluster.
 
 The BYOC command runs Terraform to create and start the agent. You first need
 a redpanda-id (or cluster ID); this is used to get the details of how your
-agent should be provisioned. You can create a BYOC cluster in our cloud UX
+agent should be provisioned. You can create a BYOC cluster in our cloud UI
 and then come back to this command to complete the process.
 `,
 		DisableFlagParsing: true,
@@ -157,7 +157,8 @@ and then come back to this command to complete the process.
 			path, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
 
-			execFn(path, append(args, "--cloud-api-token", token))
+			err = execFn(path, append(args, "--cloud-api-token", token))
+			out.MaybeDie(err, "unable to execute plugin: %v", err)
 		},
 	}
 

@@ -20,19 +20,18 @@ func TestListPlugins(t *testing.T) {
 	t.Parallel()
 
 	fs := testfs.FromMap(map[string]testfs.Fmode{
-		"/usr/local/sbin/.rpk-non_executable":         {Mode: 0o666, Contents: ""},
-		"/usr/local/sbin/.rpk-barely_executable":      {Mode: 0o100, Contents: ""},
-		"/bin/.rpk-barely_executable":                 {Mode: 0o100, Contents: "shadowed!"},
-		"/bin/.rpk.ac-barely_executable":              {Mode: 0o100, Contents: "also shadowed!"},
-		"/bin/.rpk.ac-auto_completed":                 {Mode: 0o777, Contents: ""},
-		"/bin/.rpk.0123456789abcdef7890.managed-man2": {Mode: 0o777, Contents: ""},
-		"/bin/.rpk.managed-man2_nested":               {Mode: 0o777, Contents: ""},
-		"/bin/has/dir/":                               {Mode: 0o777, Contents: ""},
-		"/bin/.rpk.ac-":                               {Mode: 0o777, Contents: "empty name ignored"},
-		"/bin/.rpk-":                                  {Mode: 0o777, Contents: "empty name ignored"},
-		"/bin/.rpkunrelated":                          {Mode: 0o777, Contents: ""},
-		"/bin/rpk-nodot":                              {Mode: 0o777, Contents: ""},
-		"/unsearched/.rpk-valid_unused":               {Mode: 0o777, Contents: ""},
+		"/usr/local/sbin/.rpk-non_executable":    {Mode: 0o666, Contents: ""},
+		"/usr/local/sbin/.rpk-barely_executable": {Mode: 0o100, Contents: ""},
+		"/bin/.rpk-barely_executable":            {Mode: 0o100, Contents: "shadowed!"},
+		"/bin/.rpk.ac-barely_executable":         {Mode: 0o100, Contents: "also shadowed!"},
+		"/bin/.rpk.ac-auto_completed":            {Mode: 0o777, Contents: ""},
+		"/bin/.rpk.managed-man2_nested":          {Mode: 0o777, Contents: ""},
+		"/bin/has/dir/":                          {Mode: 0o777, Contents: ""},
+		"/bin/.rpk.ac-":                          {Mode: 0o777, Contents: "empty name ignored"},
+		"/bin/.rpk-":                             {Mode: 0o777, Contents: "empty name ignored"},
+		"/bin/.rpkunrelated":                     {Mode: 0o777, Contents: ""},
+		"/bin/rpk-nodot":                         {Mode: 0o777, Contents: ""},
+		"/unsearched/.rpk-valid_unused":          {Mode: 0o777, Contents: ""},
 	})
 
 	got := ListPlugins(fs, []string{
@@ -56,13 +55,6 @@ func TestListPlugins(t *testing.T) {
 				"/bin/.rpk-barely_executable",
 				"/bin/.rpk.ac-barely_executable",
 			},
-		},
-		{
-			Name:        "man2",
-			Path:        "/bin/.rpk.0123456789abcdef7890.managed-man2",
-			Arguments:   []string{"man2"},
-			Managed:     true,
-			FilenameSHA: "0123456789abcdef7890",
 		},
 		{
 			Name:      "man2",
@@ -117,24 +109,24 @@ func TestWriteBinary(t *testing.T) {
 	})
 
 	{
-		dst, err := WriteBinary(fs, "autocomplete", "/bin/", []byte("ac"), "", true, false)
+		dst, err := WriteBinary(fs, "autocomplete", "/bin/", []byte("ac"), true, false)
 		require.NoError(t, err, "creating an autocomplete binary failed")
 		require.Equal(t, "/bin/.rpk.ac-autocomplete", dst, "binary path not as expected")
 	}
 	{
-		dst, err := WriteBinary(fs, "non-auto", "/usr/bin", []byte("nonac"), "", false, false)
+		dst, err := WriteBinary(fs, "non-auto", "/usr/bin", []byte("nonac"), false, false)
 		require.NoError(t, err, "creating a non-autocomplete binary failed")
 		require.Equal(t, "/usr/bin/.rpk-non-auto", dst, "binary path not as expected")
 	}
 	{
-		dst, err := WriteBinary(fs, "managed", "/usr/bin", []byte("m"), "0123456789abcdef7890123", false, true)
+		dst, err := WriteBinary(fs, "managed", "/usr/bin", []byte("m"), false, true)
 		require.NoError(t, err, "creating a managed binary failed")
-		require.Equal(t, "/usr/bin/.rpk.0123456789abcdef7890.managed-managed", dst, "binary path not as expected")
+		require.Equal(t, "/usr/bin/.rpk.managed-managed", dst, "binary path not as expected")
 	}
 
 	testfs.Expect(t, fs, map[string]testfs.Fmode{
-		"/bin/.rpk.ac-autocomplete":                          {Mode: 0o755, Contents: "ac"},
-		"/usr/bin/.rpk-non-auto":                             {Mode: 0o755, Contents: "nonac"},
-		"/usr/bin/.rpk.0123456789abcdef7890.managed-managed": {Mode: 0o755, Contents: "m"},
+		"/bin/.rpk.ac-autocomplete":     {Mode: 0o755, Contents: "ac"},
+		"/usr/bin/.rpk-non-auto":        {Mode: 0o755, Contents: "nonac"},
+		"/usr/bin/.rpk.managed-managed": {Mode: 0o755, Contents: "m"},
 	})
 }

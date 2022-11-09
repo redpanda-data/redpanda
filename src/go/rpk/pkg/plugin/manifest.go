@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -177,12 +176,6 @@ func (p *ManifestPlugin) Download(baseURL, os, host string) ([]byte, error) {
 		return nil, err // error already annotated
 	}
 
-	if decompress && !strings.HasSuffix(path, ".gz") {
-		// Download expects ".gz" to auto-decompress. Our plugin should
-		// have this, but just in case...
-		path += ".gz"
-	}
-
 	u := baseURL + path
-	return Download(context.Background(), u, sha)
+	return Download(context.Background(), u, decompress, sha)
 }
