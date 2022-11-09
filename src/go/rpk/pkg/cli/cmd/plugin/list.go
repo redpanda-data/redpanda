@@ -51,7 +51,7 @@ whether you have "shadowed" plugins (the same plugin specified multiple times).
 					if len(p.ShadowedPaths) > 0 {
 						shadowed = p.ShadowedPaths[0]
 					}
-					tw.Print(p.Name(), p.Path, shadowed)
+					tw.Print(p.FullName(), p.Path, shadowed)
 
 					if len(p.ShadowedPaths) < 1 {
 						continue

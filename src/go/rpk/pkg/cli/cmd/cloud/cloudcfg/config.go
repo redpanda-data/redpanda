@@ -36,10 +36,10 @@ type Config struct {
 	ClientSecret string `yaml:"client_secret,omitempty"`
 	AuthToken    string `yaml:"auth_token,omitempty"`
 
-	AuthURL      string `yaml:"-"`
-	AuthAudience string `yaml:"-"`
-
-	CloudURL string `yaml:"-"`
+	AuthURL          string `yaml:"-"`
+	AuthAudience     string `yaml:"-"`
+	CloudURL         string `yaml:"-"`
+	SkipVersionCheck string `yaml:"-"`
 }
 
 func (c *Config) fileCfg() fileCfg {
@@ -61,17 +61,6 @@ func (c *Config) ClearCredentials() {
 	c.ClientID = ""
 	c.ClientSecret = ""
 	c.AuthToken = ""
-}
-
-// Pretty returns a string with the configuration formatted in a human-readable
-// form.
-func (c *Config) Pretty() string {
-	format := `
-Client ID:            %s 
-Client Secret:        %s
-Authorization Token:  %s
-`
-	return fmt.Sprintf(format, c.ClientID, c.ClientSecret, c.AuthToken)
 }
 
 // defaultCfgPath returns the default path where the cloud configuration will

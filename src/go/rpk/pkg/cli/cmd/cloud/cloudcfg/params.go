@@ -25,10 +25,10 @@ const (
 	envClientID     = "RPK_CLOUD_CLIENT_ID"
 	envClientSecret = "RPK_CLOUD_CLIENT_SECRET"
 
-	envAuthURL      = "RPK_CLOUD_AUTH_URL"
-	envAuthAudience = "RPK_CLOUD_AUTH_AUDIENCE"
-
-	envCloudURL = "RPK_CLOUD_URL"
+	envAuthURL          = "RPK_CLOUD_AUTH_URL"
+	envAuthAudience     = "RPK_CLOUD_AUTH_AUDIENCE"
+	envCloudURL         = "RPK_CLOUD_URL"
+	envSkipVersionCheck = "RPK_CLOUD_SKIP_VERSION_CHECK"
 )
 
 // Params contains values that can be set by flags.
@@ -76,6 +76,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		{envAuthURL, "", &cfg.AuthURL},
 		{envAuthAudience, "", &cfg.AuthAudience},
 		{envCloudURL, "", &cfg.CloudURL},
+		{envSkipVersionCheck, "", &cfg.SkipVersionCheck},
 	} {
 		if v, ok := os.LookupEnv(override.env); ok && len(v) > 0 {
 			*override.dst = v

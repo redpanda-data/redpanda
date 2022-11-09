@@ -35,6 +35,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -76,7 +77,7 @@ func Execute() {
 
 	root.AddCommand(
 		acl.NewCommand(fs),
-		cloud.NewCommand(fs),
+		cloud.NewCommand(fs, osExec),
 		cluster.NewCommand(fs),
 		container.NewCommand(),
 		debug.NewCommand(fs),
@@ -90,40 +91,25 @@ func Execute() {
 
 	addPlatformDependentCmds(fs, root)
 
-	// To support autocompletion even for plugins, we list all plugins now
-	// and add tiny commands to our root command. Cobra works by creating
-	// autocompletion scripts that contain the commands discoverable from
-	// the root command, so by adding cobra.Command's for all plugins, we
-	// allow autocompletion.
+	// Plugin autocompletion: Cobra creates autocompletion for shells via
+	// all commands discoverable from the root command. Plugins that are
+	// prefixed .rpk.ac- indicate they support the --help-autocomplete
+	// flag. We exec with the flag and then create a bunch of fake cobra
+	// commands within rpk. The plugin now looks like it is a part of rpk.
 	//
-	// We do not want any plugin to shadow or replace functionality of any
-	// rpk command. We do not want `rpk-acl-foo` to exec a plugin, when
-	// `rpk acl` exists and the single argument foo may be important. We
-	// block rpk command shadowing by not keeping any plugin that shares an
-	// argument search path with a rpk command.
+	// We block plugins from overwriting actual rpk commands (rpk acl),
+	// unless the plugin is specifically rpk managed.
 	//
-	// Further, unlike kubectl, we do not allow one plugin to be at the end
-	// of another plugin (rpk foo bar cannot exist if rpk foo does). This
-	// is ensured by the return from listPlugins, but we can also ensure
-	// that here by only adding a plugin with exec if a command does not
-	// exist yet.
-	for _, plugin := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		if _, _, err := root.Find(plugin.Arguments); err != nil {
-			addPluginWithExec(root, plugin.Arguments, plugin.Path)
-		}
-	}
-
-	// Lastly, if rpk is being exec'd with arguments that do not match a
-	// command nor a discovered plugin, we do one more search for an
-	// external plugin. Given the above code, this is likely to find
-	// nothing, but this does not hurt.
-	if _, _, err := root.Find(os.Args[1:]); err != nil {
-		if foundPath, err := tryExecPlugin(new(osPluginHandler), os.Args[1:]); len(foundPath) > 0 {
-			if err != nil {
-				log.Fatalf("exec %s: %v\n", foundPath, err)
+	// Managed plugins are slightly weirder and are documented below.
+	for _, p := range plugin.ListPlugins(fs, plugin.UserPaths()) {
+		if plugin.IsManaged(p.Name) {
+			mp, managedHook := plugin.LookupManaged(p)
+			if managedHook != nil {
+				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs)
+				continue
 			}
-			os.Exit(0)
 		}
+		addPluginWithExec(root, p.Name, p.Arguments, p.Path, nil, nil)
 	}
 
 	// Cobra creates help flag as: help for <command> if you want to override
@@ -147,108 +133,91 @@ func Execute() {
 	}
 }
 
-type pluginHandler interface {
-	lookPath(file string) (path string, ok bool)
-	exec(path string, args []string) error
-}
+// See the two use cases for this.
+const pluginShortSuffix = " external plugin"
 
-// tryExecPlugin looks for a plugin, based on the following rules:
+// This recursive function handles everything related to installing a plugin
+// into rpk.
 //
-//   - all "pieces" (non-flags) are joined with an underscore
-//   - we prefer the longest command match
-//   - we search upward by piece until we run out of pieces
-//   - the command must be executable
+// 1) We create a command space so that the plugin looks to be at the correct
+// location: .rpk-foo_bar will be installed at "rpk foo bar".
 //
-// So,
+// 2) If the plugin indicates autocomplete (.rpk.ac-) or is managed
+// (.rpk.managed-), we install autocompletion.
 //
-//	rpk foo-bar baz boz fizz-buzz --flag
+// 3) If the plugin is managed, we use our managed hook as the run function
+// rather than our standard exec-plugin run function.
 //
-// is translated into searching and execing (with osPluginHandler), in order:
-//
-//	rpk-foo-bar_baz_boz_fizz-buzz (with args "--flag")
-//	rpk-foo-bar_baz_boz           (with args "fizz-buzz --flag")
-//	rpk-foo-bar_baz               (with args "boz fizz-buzz --flag")
-//	rpk-foo-bar                   (with args "baz boz fizz-buzz --flag")
-//
-// If a plugin is run, this returns the run error and true, otherwise this
-// returns false.
-func tryExecPlugin(h pluginHandler, args []string) (string, error) {
-	var pieces []string
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "-") { // found a flag, quit
-			break
-		}
-		pieces = append(pieces, arg)
-	}
-
-	if len(pieces) == 0 {
-		return "", nil // no plugin specified (command is just "rpk")
-	}
-
-	foundPath := ""
-	for len(pieces) > 0 {
-		joined := strings.Join(pieces, "_")
-		if path, ok := h.lookPath(plugin.NamePrefixAutoComplete + joined); ok {
-			foundPath = path
-			break
-		}
-		if path, ok := h.lookPath(plugin.NamePrefix + joined); ok {
-			foundPath = path
-			break
-		}
-		pieces = pieces[:len(pieces)-1] // did not find with this piece, strip and search higher
-	}
-	if len(foundPath) == 0 {
-		return "", nil
-	}
-
-	return foundPath, h.exec(foundPath, args[len(pieces):])
-}
-
-// This recursive function recursively adds commands to parent commands,
-// stopping when there is only one piece left.
-//
-// Pieces corresponds to the pieces of a plugin, and on the last piece, the
-// cobra.Command will execute execPath.
+// These steps are documented more below.
 func addPluginWithExec(
-	parentCmd *cobra.Command, pieces []string, execPath string,
+	parentCmd *cobra.Command,
+	name string,
+	pieces []string,
+	execPath string,
+	managedHook plugin.ManagedHook,
+	fs afero.Fs,
 ) {
-	// pieces[0] must exist because this function is only called from the
-	// result of listPlugins (which ensures there are pieces), or
-	// recursively below when there is more than one piece.
+	// Step 1: we install the plugin into our existing command space.
+	//
+	// For simple plugins with one piece, this is easy. For more complex,
+	// or for managed plugins, this is a bit more confusing.
+	//
+	// How: we first "find" the path to the plugin and then install
+	// anything new recursively.
+	//
+	// Simple: .rpk-foo, we do not recurse. We find "foo" does not exist,
+	// and then we add the command under "rpk".
+	//
+	// Complex: .rpk-foo_bar, we see "foo" does not exist and install it
+	// under "rpk", then we recurse and see "bar" does not exist and
+	// install it under "rpk".
+	//
+	// Managed: managed plugins are an agreement of the plugin name to how
+	// that name is managed within rpk. For example, the byoc plugin (named
+	// .rpk.managed-byoc) gets prefixed with rpk with "cloud", so that the
+	// plugin is installed at "rpk cloud byoc". This command also already
+	// exists, so the main thing we add here is exec and autocompletion of
+	// byoc subcommands.
+
 	p0 := pieces[0]
+	var childCmd *cobra.Command
+	for _, cmd := range parentCmd.Commands() {
+		if cmd.Name() == p0 {
+			childCmd = cmd
+			break
+		}
+	}
 
-	childCmd, _, err := parentCmd.Find(pieces)
-
-	// If the command does not exist, then err will be non-nil. If the
-	// command does not exist and the parent does not have subcommands,
-	// then childCmd is equal to parentCmd. We also check nil to be sure.
-	if err != nil || childCmd == nil || parentCmd == childCmd {
+	if childCmd == nil {
 		childCmd = &cobra.Command{
 			Use:                p0,
-			Short:              fmt.Sprintf("%s external plugin", p0),
+			Short:              p0 + pluginShortSuffix,
 			DisableFlagParsing: true,
+			Run: func(_ *cobra.Command, args []string) {
+				err := osExec(execPath, args)
+				out.MaybeDie(err, "unable to execute plugin: %v", err)
+			},
 		}
 		parentCmd.AddCommand(childCmd)
 	}
 
 	if len(pieces) > 1 { // recursive: we are not done yet adding our nested command
 		args := pieces[1:]
-		addPluginWithExec(childCmd, args, execPath)
+		addPluginWithExec(childCmd, name, args, execPath, managedHook, fs)
 		return
 	}
 
-	childCmd.Run = func(_ *cobra.Command, args []string) { // base: we are at the last piece and can add our exec
-		new(osPluginHandler).exec(execPath, args)
-	}
-
-	// If the exec command has the rpk.ac- prefix, then the plugin
-	// signifies that it supports --help-autocomplete, and we can exec it
-	// quickly to get useful fields for the command.
-	if !strings.HasPrefix(filepath.Base(execPath), plugin.NamePrefixAutoComplete) {
+	// If the command does not indicate autocomplete and is not managed, we
+	// are done. Note that managed commands likely do not have any fake
+	// commands installed yet: managed commands receive additional logic in
+	// the autocompletion step.
+	base := filepath.Base(execPath)
+	if !plugin.IsAutoComplete(base) && !plugin.IsManaged(base) {
 		return
 	}
 
+	// Step 2: we exec the plugin with --help-autocomplete and we install
+	// autocompletion.
 	out, err := (&exec.Cmd{
 		Path: execPath,
 		Args: []string{execPath, plugin.FlagAutoComplete},
@@ -268,7 +237,7 @@ func addPluginWithExec(
 		return
 	}
 
-	addPluginHelp(childCmd, p0, helps, execPath)
+	addPluginHelp(childCmd, name, helps, execPath, managedHook, fs)
 }
 
 type pluginHelp struct {
@@ -287,24 +256,27 @@ var (
 // If a plugin supports --help-autocomplete, we exec it and add its commands to
 // rpk itself. This allows autocompletion to work across plugins.
 //
-// In this function, we validate the plugin's return, ensuring the paths it
-// returns for commands follows the convention we expect.
-//
 // We expect similar paths to the binary path of a plugin itself:
 //
-//	cloud_foo-bar corresponds to "rpk cloud foo bar"
-//	cloud_foo_bar corresponds to "rpk cloud foo-bar"
+//	cloud_foo_bar corresponds to "rpk cloud foo bar"
+//	cloud_foo-bar corresponds to "rpk cloud foo-bar"
 //	cloud         corresponds to "rpk cloud"
-//
-// For sanity, all returned paths must begin with the plugin name itself and a
-// dash. The only path that can be without a dash is a help for the plugin name
-// itself (e.g., "cloud").
 func addPluginHelp(
-	cmd *cobra.Command, pluginName string, helps []pluginHelp, execPath string,
+	cmd *cobra.Command,
+	pluginName string,
+	helps []pluginHelp,
+	execPath string,
+	managedHook plugin.ManagedHook,
+	fs afero.Fs,
 ) {
 	childPrefix := pluginName + "_"
 	uniques := make(map[string]pluginHelp, len(helps))
 	for _, h := range helps {
+		// Plugin help is supposed to be prefixed with the plugin name,
+		// but to support people renaming a plugin locally on disk, we
+		// strip the plugin's name and prefix with the on-disk name.
+		piece0 := strings.Split(h.Path, "_")[0]
+		h.Path = pluginName + strings.TrimPrefix(h.Path, piece0)
 		if _, exists := uniques[h.Path]; exists {
 			log.Debugf("invalid plugin help returned duplicate path %s", h.Path)
 			return
@@ -345,8 +317,13 @@ func addPluginHelp(
 		return
 	}
 
-	addPluginHelpToCmd(cmd, pluginName, us.help)
-	addPluginSubcommands(cmd, us, nil, execPath)
+	// For managed plugins, the plugin could be installed over an existing
+	// command. We want to keep the rpk version. Plugin installed commands
+	// all have the same prefix.
+	if strings.HasSuffix(cmd.Short, pluginShortSuffix) {
+		addPluginHelpToCmd(cmd, pluginName, us.help)
+	}
+	addPluginSubcommands(cmd, us, nil, execPath, managedHook, fs)
 }
 
 type useHelp struct {
@@ -375,28 +352,33 @@ func trackHelp(on *useHelp, pieces []string, help pluginHelp) {
 
 // As the final part of adding autocompletion for plugins, this function takes
 // our pre-built useHelp which is shaped like our desired cobra.Command's and
-// actually creates that shape.
-//
-// We always have to track the leading pieces for each subcommand, so that when
-// we exec the plugin, we re-create the args that we passed to and consumed by
-// rpk.
+// actually creates the fake command space.
 func addPluginSubcommands(
 	parentCmd *cobra.Command,
 	parentHelp *useHelp,
 	leadingPieces []string,
 	execPath string,
+	managedHook plugin.ManagedHook,
+	fs afero.Fs,
 ) {
 	for childUse, childHelp := range parentHelp.inner {
 		childCmd := &cobra.Command{
 			Short:              fmt.Sprintf("%s external plugin", childUse),
 			DisableFlagParsing: true,
 			Run: func(cmd *cobra.Command, args []string) {
-				new(osPluginHandler).exec(execPath, append(append(leadingPieces, cmd.Use), args...))
+				osExec(execPath, append(append(leadingPieces, cmd.Use), args...))
 			},
 		}
 		addPluginHelpToCmd(childCmd, childUse, childHelp.help)
+
+		// Step 3, from way above: if this is a managed command, we now
+		// (finally) need to hook this fake command's run through the
+		// managed hook.
+		if managedHook != nil {
+			childCmd = managedHook(childCmd, fs)
+		}
 		if childHelp.inner != nil {
-			addPluginSubcommands(childCmd, childHelp, append(leadingPieces, childCmd.Use), execPath)
+			addPluginSubcommands(childCmd, childHelp, append(leadingPieces, childCmd.Use), execPath, managedHook, fs)
 		}
 
 		parentCmd.AddCommand(childCmd)
@@ -420,14 +402,7 @@ func addPluginHelpToCmd(cmd *cobra.Command, use string, h pluginHelp) {
 	}
 }
 
-type osPluginHandler struct{}
-
-func (*osPluginHandler) lookPath(file string) (string, bool) {
-	path, err := exec.LookPath(file)
-	return path, err == nil
-}
-
-func (*osPluginHandler) exec(path string, args []string) error {
+func osExec(path string, args []string) error {
 	args = append([]string{path}, args...)
 	env := os.Environ()
 	if runtime.GOOS == "windows" {

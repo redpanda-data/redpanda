@@ -10,17 +10,19 @@
 package cloud
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/byoc"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cloud",
 		Short: "Interact with Redpanda cloud",
 	}
 
 	cmd.AddCommand(
+		byoc.NewCommand(fs, execFn),
 		newLoginCommand(fs),
 		newLogoutCommand(fs),
 	)

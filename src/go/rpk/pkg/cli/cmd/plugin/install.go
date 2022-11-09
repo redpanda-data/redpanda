@@ -10,15 +10,10 @@
 package plugin
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -55,14 +50,20 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				out.MaybeDieErr(err)
 			}
 
+			installed := plugin.ListPlugins(fs, plugin.UserPaths())
+
 			name := args[0]
 			var (
 				autoComplete bool
 				body         []byte
 				err          error
+
+				remoteSha string
 			)
 			if len(version) > 0 {
-				body, err = tryDirectDownload(name, version)
+				// We do not use sha's for this temporary
+				// direct download path.
+				body, err = tryDirectDownload(cmd.Context(), name, version)
 				if err != nil {
 					log.Debugf("unable to download: %v", err)
 				}
@@ -75,13 +76,12 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				p, err := m.FindEntry(name)
 				out.MaybeDieErr(err)
 
-				_, remoteSha, err := p.PathShaForUser()
+				_, remoteSha, err = p.PathShaForUser()
 				out.MaybeDieErr(err)
 
 				var userAlreadyHas bool
-				installed := plugin.ListPlugins(fs, plugin.UserPaths())
 				for _, p := range installed {
-					if name == p.Name() {
+					if name == p.FullName() {
 						sha, err := plugin.Sha256Path(fs, p.Path)
 						out.MaybeDieErr(err)
 
@@ -112,8 +112,19 @@ Remote sha256: %s
 			}
 
 			fmt.Println("Downloaded! Writing plugin to disk...")
-			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete)
+			dst, err := plugin.WriteBinary(fs, name, dir, body, autoComplete, false)
 			out.MaybeDieErr(err)
+
+			// If we add shas to filenames, then writing our binary
+			// likely will not replace the old plugin. So, if the
+			// old plugin exists, the path is *not* equal to the
+			// new path, but this is technically the same "plugin
+			// path", we remove the old plugin manually.
+			if old, exists := installed.Find(name); exists && old.Path != dst && plugin.IsSamePluginPath(old.Path, dst) {
+				if err := os.Remove(old.Path); err != nil {
+					fmt.Printf("Unable to remove old plugin at %q: %v\n", old.Path, err)
+				}
+			}
 
 			fmt.Printf("Success! Plugin %q has been saved to %q and is now ready to use!\n", name, dst)
 
@@ -169,46 +180,8 @@ func checkAndCreateDefaultPath(fs afero.Fs) error {
 	return nil
 }
 
-func tryDirectDownload(name, version string) ([]byte, error) {
+func tryDirectDownload(ctx context.Context, name, version string) ([]byte, error) {
 	u := fmt.Sprintf("https://dl.redpanda.com/public/rpk-plugins/raw/names/%[1]s-%[2]s-%[3]s/versions/%[4]s/%[1]s.tgz", name, runtime.GOOS, runtime.GOARCH, version)
 	fmt.Printf("Searching for plugin %q in %s...\n", name, u)
-
-	client := &http.Client{Timeout: 100 * time.Second}
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		u,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create request %s: %v", u, err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("unable to issue request to %s: %v", u, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("unsuccessful plugin response from %s, status: %s", u, http.StatusText(resp.StatusCode))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read response from %s: %v", u, err)
-	}
-
-	gzr, err := gzip.NewReader(bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("unable to create gzip reader: %w", err)
-	}
-	if body, err = io.ReadAll(gzr); err != nil {
-		return nil, fmt.Errorf("unable to gzip decompress plugin: %w", err)
-	}
-	if err = gzr.Close(); err != nil {
-		return nil, fmt.Errorf("unable to close gzip reader: %w", err)
-	}
-
-	return body, nil
+	return plugin.Download(ctx, u, true, "")
 }
