@@ -118,6 +118,9 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 	// require the FilenameSHA to have at least 20 characters.
 	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
 	if pluginExists {
+		if c := cfg.SkipVersionCheck; c == "1" || c == "true" {
+			return byoc.Path, token, false, nil
+		}
 		currentSha, err := plugin.Sha256Path(fs, byoc.Path)
 		if err != nil {
 			return "", "", false, fmt.Errorf("unable to determine the sha256sum of %q: %v", byoc.Path, err)

@@ -36,10 +36,10 @@ type Config struct {
 	ClientSecret string `yaml:"client_secret,omitempty"`
 	AuthToken    string `yaml:"auth_token,omitempty"`
 
-	AuthURL      string `yaml:"-"`
-	AuthAudience string `yaml:"-"`
-
-	CloudURL string `yaml:"-"`
+	AuthURL          string `yaml:"-"`
+	AuthAudience     string `yaml:"-"`
+	CloudURL         string `yaml:"-"`
+	SkipVersionCheck string `yaml:"-"`
 }
 
 func (c *Config) fileCfg() fileCfg {
