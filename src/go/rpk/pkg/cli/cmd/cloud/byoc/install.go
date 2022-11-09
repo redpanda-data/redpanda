@@ -118,6 +118,9 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 	// require the FilenameSHA to have at least 20 characters.
 	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
 	if pluginExists {
+		if !byoc.Managed {
+			return "", "", false, fmt.Errorf("found external plugin at %s, the old plugin must be removed first", byoc.Path)
+		}
 		if c := cfg.SkipVersionCheck; c == "1" || c == "true" {
 			return byoc.Path, token, false, nil
 		}
