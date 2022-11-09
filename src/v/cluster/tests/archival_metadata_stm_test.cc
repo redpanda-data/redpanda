@@ -266,6 +266,8 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
 FIXTURE_TEST(
   test_archival_stm_segment_truncate, archival_metadata_stm_fixture) {
+    using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
+
     wait_for_confirmed_leader();
     auto& ntp_cfg = _raft->log_config();
     std::vector<cloud_storage::segment_meta> m;
@@ -311,7 +313,7 @@ FIXTURE_TEST(
     auto name = cloud_storage::generate_local_segment_name(
       backlog[0].base_offset, backlog[0].segment_term);
     BOOST_REQUIRE(pm.get(name) != nullptr);
-    BOOST_REQUIRE(backlog[0] == *pm.get(name));
+    BOOST_REQUIRE(backlog[0] == lw_segment_meta::convert(*pm.get(name)));
 
     // Truncate the STM, next segment should be added to the backlog
     archival_stm->truncate(model::offset(200), ss::lowres_clock::now() + 10s)
@@ -324,7 +326,7 @@ FIXTURE_TEST(
         auto name = cloud_storage::generate_local_segment_name(
           it.base_offset, it.segment_term);
         BOOST_REQUIRE(pm.get(name) != nullptr);
-        BOOST_REQUIRE(it == *pm.get(name));
+        BOOST_REQUIRE(it == lw_segment_meta::convert(*pm.get(name)));
     }
 }
 
