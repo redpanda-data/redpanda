@@ -2246,7 +2246,6 @@ admin_server::mark_transaction_expired_handler(
 
     co_return co_await _partition_manager.invoke_on(
       *shard,
-      ss::coroutine::lambda(
         [_ntp = std::move(ntp), pid, _req = std::move(req), this](
           cluster::partition_manager& pm) mutable
         -> ss::future<ss::json::json_return_type> {
@@ -2254,24 +2253,28 @@ admin_server::mark_transaction_expired_handler(
             auto req = std::move(_req);
             auto partition = pm.get(ntp);
             if (!partition) {
-                throw ss::httpd::server_error_exception(fmt_with_ctx(
-                  fmt::format, "Can not find partition {}", partition));
+                return ss::make_exception_future<ss::json::json_return_type>(
+                ss::httpd::server_error_exception(fmt_with_ctx(
+                  fmt::format, "Can not find partition {}", partition)));
             }
 
             auto rm_stm_ptr = partition->rm_stm();
 
             if (!rm_stm_ptr) {
-                throw ss::httpd::server_error_exception(fmt_with_ctx(
+                return ss::make_exception_future<ss::json::json_return_type>(
+                ss::httpd::server_error_exception(fmt_with_ctx(
                   fmt::format,
                   "Can not get rm_stm for partition {}",
-                  partition));
+                  partition)));
             }
 
-            auto res = co_await rm_stm_ptr->mark_expired(pid);
-            co_await throw_on_error(*req, res, ntp);
+            return rm_stm_ptr->mark_expired(pid).then([this, ntp, req = std::move(req)](auto res) {
+            return throw_on_error(*req, res, ntp).then([] {
 
-            co_return ss::json::json_return_type(ss::json::json_void());
-        }));
+            return ss::json::json_return_type(ss::json::json_void());
+            });
+            });
+        });
 }
 
 ss::future<ss::json::json_return_type>
