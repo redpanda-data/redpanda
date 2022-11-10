@@ -521,16 +521,21 @@ ss::future<archival::ntp_archiver::batch_result> do_upload_next(
   std::optional<model::offset> lso,
   model::timeout_clock::time_point deadline) {
     if (model::timeout_clock::now() > deadline) {
-        co_return archival::ntp_archiver::batch_result{};
+        return ss::make_ready_future<archival::ntp_archiver::batch_result>(
+          archival::ntp_archiver::batch_result{});
     }
-    auto result = co_await archiver.upload_next_candidates(lso);
-    auto num_success = result.compacted_upload_result.num_succeeded
-                       + result.non_compacted_upload_result.num_succeeded;
-    if (num_success > 0) {
-        co_return result;
-    }
-    co_await ss::sleep(10ms);
-    co_return co_await do_upload_next(archiver, lso, deadline);
+    return archiver.upload_next_candidates(lso).then(
+      [&archiver, lso, deadline](archival::ntp_archiver::batch_result result) {
+          auto num_success = result.compacted_upload_result.num_succeeded
+                             + result.non_compacted_upload_result.num_succeeded;
+          if (num_success > 0) {
+              return ss::make_ready_future<
+                archival::ntp_archiver::batch_result>(result);
+          }
+          return ss::sleep(10ms).then([&archiver, lso, deadline] {
+              return do_upload_next(archiver, lso, deadline);
+          });
+      });
 }
 
 ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
