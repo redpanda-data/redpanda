@@ -103,6 +103,8 @@ the cleanup.policy=compact config option set.
 				if err := kerr.ErrorForCode(topic.ErrorCode); err != nil {
 					if errors.Is(err, kerr.InvalidPartitions) && partitions > 0 {
 						msg = fmt.Sprintf("INVALID_PARTITIONS: unable to create topic with %d partitions due to hardware constraints", partitions)
+					} else if errors.Is(err, kerr.InvalidReplicationFactor) && replicas == -1 {
+						msg = "INVALID_REPLICATION_FACTOR: replication factor must be odd; check your 'default_topic_replications' cluster configuration property"
 					} else if errors.Is(err, kerr.InvalidReplicationFactor) && replicas%2 == 0 {
 						msg = "INVALID_REPLICATION_FACTOR: replication factor must be odd"
 					} else {
