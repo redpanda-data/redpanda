@@ -12,6 +12,7 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
+#include "net/connection.h"
 #include "s3/client.h"
 #include "ssx/sformat.h"
 #include "utils/intrusive_list_helpers.h"
@@ -107,17 +108,14 @@ static error_outcome categorize_error(
         // - any filesystem error
         // - broken-pipe
         // - any other network error (no memory, bad socket, etc)
-        if (auto code = cerr.code();
-            code.value() != ECONNREFUSED && code.value() != ENETUNREACH
-            && code.value() != ETIMEDOUT && code.value() != ECONNRESET
-            && code.value() != EPIPE) {
-            vlog(ctxlog.error, "System error {}", cerr);
-            result = error_outcome::fail;
-        } else {
+        if (net::is_reconnect_error(cerr)) {
             vlog(
               ctxlog.warn,
               "System error susceptible for retry {}",
               cerr.what());
+        } else {
+            vlog(ctxlog.error, "System error {}", cerr);
+            result = error_outcome::fail;
         }
     } catch (const ss::timed_out_error& terr) {
         // This should happen when the connection pool was disconnected
