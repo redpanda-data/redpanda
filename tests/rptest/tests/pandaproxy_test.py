@@ -88,9 +88,10 @@ HTTP_CONSUMER_SET_OFFSETS_HEADERS = {
 
 
 class Consumer:
-    def __init__(self, res):
+    def __init__(self, res, logger):
         self.instance_id = res["instance_id"]
         self.base_uri = res["base_uri"]
+        self.logger = logger
 
     def subscribe(self, topics, headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS):
         res = requests.post(f"{self.base_uri}/subscription",
@@ -105,6 +106,26 @@ class Consumer:
     def fetch(self, headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS):
         res = requests.get(f"{self.base_uri}/records", headers=headers)
         return res
+
+    def fetch_n(self, count, timeout_sec=10):
+        fetch_result = []
+
+        def do_fetch():
+            cf_res = self.fetch()
+            assert cf_res.status_code == requests.codes.ok
+            records = cf_res.json()
+            self.logger.debug(f"Fetched {len(records)} records: {records}")
+            fetch_result.extend(records)
+            if len(fetch_result) != count:
+                self.logger.info(f"Fetch Mitigation {len(fetch_result)}")
+            return len(fetch_result) == count
+
+        wait_until(lambda: do_fetch(),
+                   timeout_sec=timeout_sec,
+                   backoff_sec=0,
+                   err_msg="Timeout waiting for records to appear")
+
+        return fetch_result
 
     def get_offsets(self,
                     data=None,
@@ -571,7 +592,7 @@ class PandaProxyTest(RedpandaTest):
         cc_res = self._create_consumer(group_id)
         assert cc_res.status_code == requests.codes.ok
 
-        c0 = Consumer(cc_res.json())
+        c0 = Consumer(cc_res.json(), self.logger)
 
         self.logger.info("Subscribe a consumer with no accept header")
         sc_res = c0.subscribe(
@@ -640,7 +661,7 @@ class PandaProxyTest(RedpandaTest):
         cc_res = self._create_consumer(group_id)
         assert cc_res.status_code == requests.codes.ok
 
-        c0 = Consumer(cc_res.json())
+        c0 = Consumer(cc_res.json(), self.logger)
 
         self.logger.info("Remove a consumer with invalid accept header")
         sc_res = c0.remove(
@@ -709,7 +730,7 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info("Create a consumer")
         cc_res = self._create_consumer(group_id)
         assert cc_res.status_code == requests.codes.ok
-        c0 = Consumer(cc_res.json())
+        c0 = Consumer(cc_res.json(), self.logger)
 
         # Subscribe a consumer
         self.logger.info(f"Subscribe consumer to topics: {topics}")
@@ -730,12 +751,8 @@ class PandaProxyTest(RedpandaTest):
 
         # Fetch from a consumer
         self.logger.info(f"Consumer fetch")
-        cf_res = c0.fetch()
-        assert cf_res.status_code == requests.codes.ok
-        fetch_result = cf_res.json()
         # 3 topics * 3 msg
-        assert len(fetch_result) == 3 * 3
-        print(fetch_result)
+        c0.fetch_n(3 * 3)
 
         self.logger.info(f"Get consumer offsets")
         co_res_raw = c0.get_offsets(data=json.dumps(co_req))
@@ -799,7 +816,7 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info("Create a consumer")
         cc_res = self._create_consumer(group_id)
         assert cc_res.status_code == requests.codes.ok
-        c0 = Consumer(cc_res.json())
+        c0 = Consumer(cc_res.json(), self.logger)
 
         # Subscribe a consumer
         self.logger.info(f"Subscribe consumer to topics: {topics}")
@@ -808,13 +825,8 @@ class PandaProxyTest(RedpandaTest):
 
         # Fetch from a consumer
         self.logger.info(f"Consumer fetch")
-        cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
-        assert cf_res.status_code == requests.codes.ok
-        fetch_result = cf_res.json()
         # 3 topics * 3 msg
-        assert len(fetch_result) == 3 * 3
-        for r in fetch_result:
-            assert r["value"]["object"]
+        c0.fetch_n(3 * 3)
 
         # Remove consumer
         self.logger.info("Remove consumer")
