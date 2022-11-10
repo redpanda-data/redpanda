@@ -12,6 +12,7 @@ rp_test(
     retry_chain_node_test.cc
     input_stream_fanout_test.cc
     waiter_queue_test.cc
+    object_pool_test.cc
     delta_for_test.cc
     token_bucket_test.cc
     uuid_test.cc
