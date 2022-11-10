@@ -87,9 +87,9 @@ static void parse_and_set_topic_replication_factor(
   const std::optional<ss::sstring>& value) {
     if (!value) {
         property.value = std::nullopt;
+    } else {
+        property.value = cluster::parsing_replication_factor(*value);
     }
-
-    property.value = cluster::parsing_replication_factor(value);
 }
 
 static void parse_and_set_shadow_indexing_mode(
