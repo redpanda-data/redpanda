@@ -616,7 +616,11 @@ ss::future<> remote_segment::run_hydrate_bg() {
             }
         }
     } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Hydraton loop is stopped");
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+    } catch (const ss::abort_requested_exception&) {
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+    } catch (const ss::gate_closed_exception&) {
+        vlog(_ctxlog.debug, "Hydration loop shut down");
     } catch (...) {
         vlog(
           _ctxlog.error,
