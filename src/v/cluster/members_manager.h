@@ -109,6 +109,8 @@ public:
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 
+    using uuid_map_t = absl::flat_hash_map<model::node_uuid, model::node_id>;
+
     members_manager(
       consensus_ptr,
       ss::sharded<controller_stm>&,
@@ -176,8 +178,11 @@ public:
     // guarantee that the UUID has already been registered before calling.
     model::node_id get_node_id(const model::node_uuid&);
 
+    // Initialize `_id_by_uuid`. Should be called once only when bootstrapping a
+    // cluster.
+    void apply_initial_node_uuid_map(uuid_map_t);
+
 private:
-    using uuid_map_t = absl::flat_hash_map<model::node_uuid, model::node_id>;
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     // Cluster join
     void join_raft0();

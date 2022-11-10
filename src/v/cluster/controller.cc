@@ -158,7 +158,9 @@ ss::future<> controller::start(cluster_discovery& discovery) {
       })
       .then([this] {
           return _bootstrap_backend.start_single(
-            std::ref(_credentials), std::ref(_storage));
+            std::ref(_credentials),
+            std::ref(_storage),
+            std::ref(_members_manager));
       })
       .then([this] {
           return _config_frontend.start(
