@@ -26,6 +26,7 @@
 #include "test_utils/http_imposter.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -454,4 +455,35 @@ FIXTURE_TEST(
     BOOST_REQUIRE(archival_stm.manifest() == m);
 
     archival_stm.stop().get();
+}
+
+FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .base_offset = model::offset(1000),
+      .committed_offset = model::offset(1999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(1)});
+    // Replicate add_segment_cmd command that adds segment with offset 0
+    auto batcher = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    batcher.add_segments(m);
+    batcher.cleanup_metadata();
+    batcher.replicate().get();
+    BOOST_REQUIRE(archival_stm->manifest().size() == 2);
+    BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
+    BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 0);
+    BOOST_REQUIRE(
+      archival_stm->manifest().begin()->second.archiver_term
+      == model::term_id(2));
 }
