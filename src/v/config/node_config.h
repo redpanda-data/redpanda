@@ -65,6 +65,10 @@ public:
         return data_directory().path / "pid.lock";
     }
 
+    std::filesystem::path strict_data_dir_file_path() const {
+        return data_directory().path / ".redpanda_data_dir";
+    }
+
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
             std::vector<model::broker_endpoint> eps;

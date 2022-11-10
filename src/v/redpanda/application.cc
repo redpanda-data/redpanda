@@ -578,6 +578,21 @@ void application::check_environment() {
     storage::directories::initialize(
       config::node().data_directory().as_sstring())
       .get();
+
+    if (config::shard_local_cfg().storage_strict_data_init()) {
+        // Look for the special file that indicates a user intends
+        // for the found data directory to be the one we use.
+        auto strict_data_dir_file
+          = config::node().strict_data_dir_file_path().string();
+        auto file_exists = ss::file_exists(strict_data_dir_file).get();
+
+        if (!file_exists) {
+            throw std::invalid_argument(ssx::sformat(
+              "Data directory not in expected state: {} not found, is the "
+              "expected filesystem mounted?",
+              strict_data_dir_file));
+        }
+    }
 }
 
 static admin_server_cfg

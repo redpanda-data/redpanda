@@ -565,6 +565,11 @@ class ClusterConfigTest(RedpandaTest):
                 # Enabling cloud storage requires setting other properties too
                 continue
 
+            if name == 'storage_strict_data_init':
+                # Enabling this property requires a file be manually added
+                # to RP's data dir for it to start
+                continue
+
             updates[name] = valid_value
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,

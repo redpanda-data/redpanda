@@ -1399,6 +1399,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5_GiB,
       {.min = 10_MiB})
+  , storage_strict_data_init(
+      *this,
+      "storage_strict_data_init",
+      "Requires that an empty file named `.redpanda_data_dir` be present in "
+      "the data directory. Redpanda will refuse to start if it is not found.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
