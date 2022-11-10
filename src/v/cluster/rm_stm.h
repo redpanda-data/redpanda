@@ -167,7 +167,8 @@ public:
       ss::logger&,
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      config::binding<uint64_t> max_concurrent_producer_ids);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -624,6 +625,8 @@ private:
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
     prefix_logger _ctx_log;
+
+    config::binding<uint64_t> _max_concurrent_producer_ids;
 };
 
 } // namespace cluster
