@@ -12,7 +12,45 @@
 #include "net/exceptions.h"
 #include "rpc/service.h"
 
+#include <gnutls/gnutls.h>
+
 namespace net {
+
+/**
+ * Identify error cases that should be quickly retried, e.g.
+ * TCP disconnects, timeouts. Network errors may also show up
+ * indirectly as errors from the TLS layer.
+ */
+bool is_reconnect_error(const std::system_error& e) {
+    auto v = e.code().value();
+
+    // The name() of seastar's gnutls_error_category class
+    constexpr std::string_view gnutls_category_name{"GnuTLS"};
+
+    if (e.code().category().name() == gnutls_category_name) {
+        switch (v) {
+        case GNUTLS_E_PUSH_ERROR:
+        case GNUTLS_E_PULL_ERROR:
+        case GNUTLS_E_PREMATURE_TERMINATION:
+            return true;
+        default:
+            return false;
+        }
+    } else {
+        switch (v) {
+        case ECONNREFUSED:
+        case ENETUNREACH:
+        case ETIMEDOUT:
+        case ECONNRESET:
+        case ECONNABORTED:
+        case EPIPE:
+            return true;
+        default:
+            return false;
+        }
+    }
+    __builtin_unreachable();
+}
 
 /**
  * If the exception is a "boring" disconnection case, then populate this with
@@ -25,10 +63,7 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     try {
         rethrow_exception(e);
     } catch (std::system_error& e) {
-        if (
-          e.code() == std::errc::broken_pipe
-          || e.code() == std::errc::connection_reset
-          || e.code() == std::errc::connection_aborted) {
+        if (is_reconnect_error(e)) {
             return e.code().message();
         }
     } catch (const net::batched_output_stream_closed& e) {
