@@ -675,17 +675,16 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
     }
 }
 
-std::vector<cloud_storage::segment_meta>
+std::vector<cloud_storage::partition_manifest::lw_segment_meta>
 archival_metadata_stm::get_segments_to_cleanup() const {
     // Include replaced segments to the backlog
-    std::vector<cloud_storage::segment_meta> backlog
-      = _manifest->replaced_segments();
+    using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
+    std::vector<lw_segment_meta> backlog = _manifest->lw_replaced_segments();
+
     auto so = _manifest->get_start_offset().value_or(model::offset(0));
     for (const auto& m : *_manifest) {
         if (m.second.committed_offset < so) {
-            auto name = cloud_storage::generate_local_segment_name(
-              m.second.base_offset, m.second.segment_term);
-            backlog.push_back(m.second);
+            backlog.push_back(lw_segment_meta::convert(m.second));
         } else {
             break;
         }

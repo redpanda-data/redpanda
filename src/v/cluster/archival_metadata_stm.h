@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/persisted_stm.h"
 #include "features/fwd.h"
@@ -89,7 +90,8 @@ public:
 
     // Return list of all segments that has to be
     // removed from S3.
-    std::vector<cloud_storage::segment_meta> get_segments_to_cleanup() const;
+    std::vector<cloud_storage::partition_manifest::lw_segment_meta>
+    get_segments_to_cleanup() const;
 
 private:
     ss::future<std::error_code> do_add_segments(

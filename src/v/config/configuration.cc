@@ -1118,6 +1118,15 @@ configuration::configuration()
       "Interval for cloud storage housekeeping tasks",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_storage_max_segments_pending_deletion_per_partition(
+      *this,
+      "cloud_storage_max_segments_pending_deletion_per_partition",
+      "The per-partition limit for the number of segments pending deletion "
+      "from the cloud. Segments can be deleted due to retention or compaction. "
+      "If this limit is breached and deletion fails, then segments will be "
+      "orphaned in the cloud and will have to be removed manually",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5000)
   , cloud_storage_enable_compacted_topic_reupload(
       *this,
       "cloud_storage_enable_compacted_topic_reupload",

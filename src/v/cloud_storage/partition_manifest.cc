@@ -278,6 +278,11 @@ partition_manifest::generate_segment_path(const segment_meta& meta) const {
       _ntp, meta.ntp_revision, name, meta.archiver_term);
 }
 
+remote_segment_path
+partition_manifest::generate_segment_path(const lw_segment_meta& meta) const {
+    return generate_segment_path(lw_segment_meta::convert(meta));
+}
+
 segment_name partition_manifest::generate_remote_segment_name(
   const partition_manifest::value& val) {
     switch (val.sname_format) {
@@ -388,6 +393,11 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         return true;
     }
     return false;
+}
+
+std::vector<partition_manifest::lw_segment_meta>
+partition_manifest::lw_replaced_segments() const {
+    return _replaced;
 }
 
 std::vector<segment_meta> partition_manifest::replaced_segments() const {

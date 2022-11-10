@@ -280,6 +280,104 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     }
 }
 
+FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
+    /*
+     * This test verifies that the limit imposed by
+     * cloud_storage_max_segments_pending_deletion_per_partition on the garbage
+     * collection deletion backlog is respected. See
+     * ntp_archiver_service::garbage_collect for more details.
+     *
+     * It works as follows:
+     * 1. Create 4 segments; the first 3 have an old time stamp
+     * 2. Upload all segments
+     * 3. Set cloud_storage_max_segments_pending_deletion_per_partition to 2
+     * 4. Set up the HTTP imposter to fail the DELETE request
+     * for one of the "old" segments.
+     * 4. Trigger retention and garbage collection. DELETE requests
+     * will be sent out for the 3 "old" segments, but one of them will
+     * fail.
+     * 5. Check that the start offset was updated (i.e. manifest was
+     * updated) despite the failure to delete. This should have happened
+     * as the backlog size was breached (3 > 2).
+     */
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    cloud_storage::remote remote(
+      remote_conf.connection_limit,
+      remote_conf.client_config,
+      remote_conf.cloud_credentials_source);
+
+    auto old_stamp = model::timestamp{
+      model::timestamp::now().value()
+      - std::chrono::milliseconds{10min}.count()};
+    std::vector<segment_desc> segments = {
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(1000),
+       .term = model::term_id(2),
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(2000),
+       .term = model::term_id(3),
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(3000),
+       .term = model::term_id(4)}};
+
+    init_storage_api_local(segments);
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->high_watermark() >= model::offset(3000);
+    }).get();
+
+    config::shard_local_cfg().delete_retention_ms.set_value(
+      std::chrono::milliseconds{1min});
+    config::shard_local_cfg()
+      .cloud_storage_max_segments_pending_deletion_per_partition(2);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    auto res = archiver.upload_next_candidates().get();
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    // Fail the second deletion request received.
+    fail_request_if(
+      [delete_request_idx = 0](const ss::httpd::request& req) mutable {
+          if (req._method == "DELETE") {
+              return 2 == ++delete_request_idx;
+          }
+
+          return false;
+      },
+      {.body
+       = {archival_tests::forbidden_payload.data(), archival_tests::forbidden_payload.size()},
+       .status = ss::httpd::reply::status_type::bad_request});
+
+    archiver.apply_retention().get();
+    archiver.garbage_collect().get();
+
+    for (auto [url, req] : get_targets()) {
+        vlog(test_log.info, "{} {}", req._method, req._url);
+    }
+
+    const auto& manifest_after_retention
+      = part->archival_meta_stm()->manifest();
+    vlog(
+      test_log.info,
+      "Start offset after garbage collection is {}",
+      manifest_after_retention.get_start_offset());
+    BOOST_REQUIRE(
+      manifest_after_retention.get_start_offset() == model::offset(3000));
+}
+
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     model::offset lso{9999};
