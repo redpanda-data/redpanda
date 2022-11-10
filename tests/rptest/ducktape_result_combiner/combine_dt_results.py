@@ -1,10 +1,112 @@
 from ducktape.tests.reporter import SimpleStdoutSummaryReporter, SimpleFileSummaryReporter, \
-    HTMLSummaryReporter, JSONReporter, JUnitReporter
-from ducktape.tests.result import TestResults
+    HTMLSummaryReporter, JSONReporter, JUnitReporter, SummaryReporter
+from ducktape.tests.result import TestResult, TestResults
 from ducktape.tests.session import SessionContext
+from ducktape.tests.status import PASS, FAIL, IGNORE, OPASS, OFAIL
 import json
 import os
 import argparse
+
+class CustomSummaryReporter(SummaryReporter):
+    def __init__(self, results, use_custom_test_log_path=False):
+        SummaryReporter.__init__(self, results)
+        self.use_custom_test_log_path = use_custom_test_log_path
+
+class CustomHTMLSummaryReporter(HTMLSummaryReporter, CustomSummaryReporter):
+    def test_results_dir(self, result):
+        """Return *relative path* to test results directory.
+
+        Path is relative to the base results_dir. Relative path behaves better if the results directory is copied,
+        moved etc.
+        """
+        if self.use_custom_test_log_path:
+            return result.test_log_path
+        base_dir = os.path.abspath(result.session_context.results_dir)
+        base_dir = os.path.join(base_dir, "")  # Ensure trailing directory indicator
+
+        test_results_dir = os.path.abspath(result.results_dir)
+        return test_results_dir[len(base_dir):]  # truncate the "absolute" portion
+
+class CustomTestResult(TestResult):
+    def __init__(self,
+                 test_context,
+                 test_index,
+                 session_context,
+                 test_status=PASS,
+                 summary="",
+                 data=None,
+                 start_time=-1,
+                 stop_time=-1,
+                 load_from_json=False):
+        if not load_from_json:
+            TestResult.__init__(self, test_context, test_index,
+                    session_context, test_status=PASS, summary="",
+                    data=None, start_time=-1, stop_time=-1)
+    def from_json(self, obj, sc):
+        self.test_id = obj["test_id"]
+        self.module_name = obj["module_name"]
+        self.cls_name = obj["cls_name"]
+        self.function_name = obj["function_name"]
+        self.injected_args = obj["injected_args"]
+        self.description = obj["description"]
+        self.results_dir = obj["results_dir"]
+        self.relative_results_dir = obj["relative_results_dir"]
+        self.base_results_dir = obj["base_results_dir"]
+        self.test_status = obj["test_status"]
+        self.summary = obj["summary"]
+        self.data = obj["data"]
+        self.start_time = obj["start_time"]
+        self.stop_time = obj["stop_time"]
+        self.session_context = sc
+        self.nodes_allocated = obj["nodes_allocated"]
+        self.nodes_used = obj["nodes_used"]
+        self.services = obj["services"]
+        # custom
+        self.test_log_path = obj["test_log_path"] if "test_log_path" in obj else ""
+        return self
+
+class CustomTestResults(TestResults):
+    def __init__(self, session_context, cluster):
+        TestResults.__init__(self, session_context, cluster)
+
+    def from_json(self, obj, sc):
+        self.ducktape_version = obj["ducktape_version"]
+        self.session_context = sc
+        self.start_time = obj["start_time"]
+        self.stop_time = obj["stop_time"]
+        self.run_time_statistics = obj["run_time_statistics"]
+        self.cluster_nodes_used = obj["cluster_nodes_used"]
+        self.cluster_nodes_allocated = obj["cluster_nodes_allocated"]
+        self.cluster_utilization = obj["cluster_utilization"]
+        self.cluster_num_nodes = obj["cluster_num_nodes"]
+        self._results = []
+        self.results = []
+        for r in obj["results"]:
+            tr = CustomTestResult(test_context="", test_index="", session_context="", load_from_json=True)
+            tr = tr.from_json(r, sc)
+            self._results.append(tr)
+            self.results.append(tr)
+        self.parallelism = obj["parallelism"]
+        return self
+
+class CustomSessionContext(SessionContext):
+    def __init__(self, **kwargs):
+        SessionContext.__init__(self, **kwargs)
+
+    def from_json(self, obj):
+        self.session_id = obj["session_id"]
+        self.results_dir = obj["results_dir"]
+        self.debug = obj["debug"]
+        self.compress = obj["compress"]
+        self.exit_first = obj["exit_first"]
+        self.no_teardown = obj["no_teardown"]
+        self.max_parallel = obj["max_parallel"]
+        self.default_expected_num_nodes = obj["default_expected_num_nodes"]
+        self.fail_bad_cluster_utilization = obj["fail_bad_cluster_utilization"]
+        self.test_runner_timeout = obj["test_runner_timeout"]
+        self._globals = obj["_globals"]
+        return self
+
 
 parser = argparse.ArgumentParser(description = 'ducktape test combiner')
 parser.add_argument('-o', '--output', action="store", help="Output dir", required=True)
@@ -26,9 +128,9 @@ def get_test_results_from_json(report_json_file):
     with open(report_json_file, "r") as f:
         obj = json.loads(f.read())
     f.close()
-    sc = SessionContext(**obj["session_context"])
+    sc = CustomSessionContext(**obj["session_context"])
     sc = sc.from_json(obj["session_context"])
-    test_results = TestResults(session_context=sc, cluster=[None] * int(obj["cluster_num_nodes"]))
+    test_results = CustomTestResults(session_context=sc, cluster=[None] * int(obj["cluster_num_nodes"]))
     test_results = test_results.from_json(obj, sc)
     return test_results
 
@@ -166,10 +268,11 @@ with open("final_report.json", "w") as f:
 f.close()
 
 test_results = get_test_results_from_json("final_report.json")
+
 reporters = [
     SimpleStdoutSummaryReporter(test_results),
     SimpleFileSummaryReporter(test_results),
-    HTMLSummaryReporter(test_results, use_custom_test_log_path),
+    CustomHTMLSummaryReporter(test_results, use_custom_test_log_path),
     JSONReporter(test_results),
     JUnitReporter(test_results)
 ]
