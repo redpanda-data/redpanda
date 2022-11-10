@@ -15,7 +15,6 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/rest/proxy.h"
-#include "pandaproxy/sharded_client_cache.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -42,13 +41,10 @@ ss::future<> api::start() {
         return _proxy.local().mitigate_error(ex);
     };
 
-    _client_cache = std::make_unique<sharded_client_cache>();
-
     co_await _client.start(
       config::to_yaml(_client_cfg, config::redact_secrets::no), mitigate_error);
 
-    co_await _client_cache->start(
-      _sg,
+    co_await _client_cache.start(
       config::to_yaml(_client_cfg, config::redact_secrets::no),
       _cfg.client_cache_max_size.value(),
       _cfg.client_keep_alive.value());
@@ -58,7 +54,7 @@ ss::future<> api::start() {
       _sg,
       _max_memory,
       std::ref(_client),
-      std::ref(*_client_cache),
+      std::ref(_client_cache),
       _controller);
 
     co_await _proxy.invoke_on_all(&proxy::start);
@@ -66,9 +62,7 @@ ss::future<> api::start() {
 
 ss::future<> api::stop() {
     co_await _proxy.stop();
-    if (_client_cache) {
-        co_await _client_cache->stop();
-    }
+    co_await _client_cache.stop();
     co_await _client.stop();
 }
 

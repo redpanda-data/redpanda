@@ -12,7 +12,9 @@ import http.client
 import json
 import uuid
 import requests
+import threading
 from rptest.services.cluster import cluster
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
@@ -20,7 +22,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig, LoggingConfig
+from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings
 from rptest.services.admin import Admin
 from typing import Optional, List, Dict, Union
 
@@ -1410,3 +1412,103 @@ class PandaProxyClientStopTest(PandaProxyEndpoints):
 
         if regular_fut.result() != requests.codes.ok:
             raise RuntimeError('Produce failed with regular user')
+
+
+class User:
+    def __init__(self, idx: int):
+        self.username = f'user_{idx}'
+        self.password = f'secret_{self.username}'
+        self.algorithm = 'SCRAM-SHA-256'
+
+    def __str__(self):
+        return self.username
+
+
+class GetTopics(threading.Thread):
+    def __init__(self, user: User, handle):
+        threading.Thread.__init__(self)
+        self.user = user
+        self._get_topics = handle
+        self.result_raw = None
+
+    def run(self):
+        self.result_raw = self._get_topics(auth=(self.user.username,
+                                                 self.user.password))
+
+
+class BasicAuthScaleTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, context):
+
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        security.pp_authn_method = 'http_basic'
+        super(BasicAuthScaleTest, self).__init__(
+            context,
+            security=security,
+            resource_settings=ResourceSettings(num_cpus=4),
+            pp_keep_alive=60000 * 5,  # Time in ms
+            pp_cache_max_size=10)
+
+        self.users_list = []
+
+    @cluster(num_nodes=3)
+    @matrix(num_users=[500])
+    def test_many_users(self, num_users: int):
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        rpk = RpkTool(self.redpanda)
+
+        # First create all users and their acls
+        for idx in range(num_users):
+            user = User(idx)
+            o = rpk.sasl_create_user(user.username, user.password,
+                                     user.algorithm)
+            self.logger.debug(f'Sasl create user {o}')
+
+            # Only the super user can add ACLs
+            o = rpk.sasl_allow_principal(f'User:{user.username}', ['all'],
+                                         'topic', self.topic, super_username,
+                                         super_password, super_algorithm)
+            self.logger.debug(f'Allow all topic perms {o}')
+
+            self.users_list.append(user)
+
+        tasks = []
+
+        for idx in range(num_users):
+            user = self.users_list[idx]
+            task = GetTopics(user, self._get_topics)
+            task.start()
+            tasks.append(task)
+
+        retry_count = 0
+        for task in tasks:
+            task.join()
+
+            self.logger.debug(
+                f'User: {task.user}, Raw Result: {task.result_raw}')
+            assert task.result_raw is not None
+            res = task.result_raw.json()
+            self.logger.debug(f'Content: {res}')
+
+            if task.result_raw.status_code != requests.codes.ok:
+                # Retry gate closed exceptions that bubble up to the user.
+                if res['error_code'] == 50003 and res[
+                        'message'] == 'gate closed':
+                    self.logger.debug(f'Gate closed exception, retrying ')
+                    retry_count += 1
+                    print(f'Retry count {retry_count}')
+                    result_raw = self._get_topics(auth=(task.user.username,
+                                                        task.user.password))
+                    assert result_raw.status_code == requests.codes.ok
+                    res = result_raw.json()
+                else:
+                    raise RuntimeError(
+                        f'Get topics failed, user: {task.user} -- {res}')
+
+            assert res[
+                0] == self.topic, f'Incorrect topic, user: {task.user} -- {res}'

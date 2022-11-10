@@ -13,6 +13,7 @@
 #include "kafka/client/client.h"
 #include "kafka/protocol/errors.h"
 #include "model/timestamp.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -22,6 +23,10 @@
 namespace pandaproxy {
 
 using client_ptr = ss::lw_shared_ptr<kafka::client::client>;
+// Mutex as a shared_ptr because the internal semaphore has a deleted
+// copy-constructor and dereferencing the "timestamped_user" calls the
+// copy-constructor
+using client_mu_ptr = ss::lw_shared_ptr<mutex>;
 
 struct timestamped_user {
     using clock = ss::lowres_clock;
@@ -30,16 +35,20 @@ struct timestamped_user {
     ss::sstring key;
     client_ptr client;
     time_point last_used;
+    client_mu_ptr client_mu;
 
-    timestamped_user(ss::sstring k, client_ptr c, time_point t)
+    timestamped_user(
+      ss::sstring k, client_ptr c, time_point t, client_mu_ptr mu)
       : key{std::move(k)}
       , client{std::move(c)}
-      , last_used{t} {}
+      , last_used{t}
+      , client_mu{mu} {}
 
-    timestamped_user(ss::sstring k, client_ptr c)
+    timestamped_user(ss::sstring k, client_ptr c, client_mu_ptr mu)
       : key{std::move(k)}
       , client{std::move(c)}
-      , last_used{clock::now()} {}
+      , last_used{clock::now()}
+      , client_mu{mu} {}
 };
 
 struct credential_t {
