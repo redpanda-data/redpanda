@@ -20,11 +20,10 @@ commands:
     ignoreFailure: true
   - command: "sh -c 'until kustomize build config/e2e-tests | kubectl apply -f -; do sleep 0.5; done'"
     background: true
-    ignoreFailure: true
   - command: "./hack/wait-for-webhook-ready.sh"
   - command: "mkdir -p tests/_e2e_artifacts"
     background: true
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
 reportFormat: xml
-parallel: 1
+parallel: 2
