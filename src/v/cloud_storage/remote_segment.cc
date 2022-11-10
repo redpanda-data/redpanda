@@ -54,8 +54,13 @@ using namespace std::chrono_literals;
 
 static constexpr size_t max_consume_size = 128_KiB;
 
+// These timeout/backoff settings are for S3 requests
 static ss::lowres_clock::duration cache_hydration_timeout = 60s;
 static ss::lowres_clock::duration cache_hydration_backoff = 250ms;
+
+// This backoff is for failure of the local cache to retain recently
+// promoted data (i.e. highly stressed cache)
+static ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
 
 download_exception::download_exception(
   download_result r, std::filesystem::path p)
@@ -108,7 +113,8 @@ remote_segment::remote_segment(
   , _ntp(m.get_ntp())
   , _rtc(&parent)
   , _ctxlog(cst_log, _rtc, generate_log_prefix(m, key))
-  , _wait_list(expiry_handler_impl) {
+  , _wait_list(expiry_handler_impl)
+  , _cache_backoff_jitter(cache_thrash_backoff) {
     auto meta = m.get(key);
     vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
 
@@ -358,6 +364,16 @@ ss::future<bool> remote_segment::do_materialize_segment() {
           "re-hydrated, {} waiter are pending",
           _path,
           _wait_list.size());
+
+        // If we got here, the cache is in a stressed state: it has
+        // evicted an object that we probably only just promoted.  We can
+        // live-lock if many readers are all trying to promote their objects
+        // concurrently and none of them is getting all their objects in
+        // the cache at the same time: reduce chance of this by backing off.
+        // TODO: this should be a sleep_abortable, but remote_segment does not
+        // have an abort source.
+        co_await ss::sleep(_cache_backoff_jitter.next_duration());
+
         co_return false;
     }
     _data_file = maybe_file->body;
@@ -521,6 +537,13 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
 
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
+
+    // Track whether we have seen our objects in the cache during the loop
+    // below, so that we can detect regression: one object falling out the
+    // cache while the other is read.  We will back off on regression.
+    bool segment_was_cached = false;
+    bool txrange_was_cached = false;
+
     try {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
@@ -540,7 +563,24 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 // cache can't delete it until we close it.
                 auto tx_path = generate_remote_tx_path(_path);
                 auto segment_status = co_await _cache.is_cached(_path);
+                segment_was_cached |= segment_status
+                                      != cache_element_status::not_available;
                 auto txrange_status = co_await _cache.is_cached(tx_path);
+                txrange_was_cached |= txrange_status
+                                      != cache_element_status::not_available;
+
+                if (
+                  (txrange_status == cache_element_status::not_available
+                   && txrange_was_cached)
+                  || (segment_status == cache_element_status::not_available && segment_was_cached)) {
+                    vlog(
+                      _ctxlog.warn,
+                      "Cache thrashing detected while downloading segment {}, "
+                      "backing off",
+                      _path);
+                    co_await ss::sleep(_cache_backoff_jitter.next_duration());
+                }
+
                 auto status = combine_statuses(segment_status, txrange_status);
                 switch (status) {
                 case segment_txrange_status::in_progress:

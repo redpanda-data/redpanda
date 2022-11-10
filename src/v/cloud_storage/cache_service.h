@@ -133,6 +133,10 @@ private:
     access_time_tracker _access_time_tracker;
     ss::timer<ss::lowres_clock> _tracker_timer;
 
+    /// Remember when we last finished clean_up_cache, in order to
+    /// avoid wastefully running it again soon after.
+    ss::lowres_clock::time_point _last_clean_up;
+
     friend class cache_test_fixture;
 };
 
