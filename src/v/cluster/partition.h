@@ -19,6 +19,7 @@
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -47,6 +48,7 @@ public:
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<features::feature_table>&,
+      config::binding<uint64_t>,
       std::optional<s3::bucket_name> read_replica_bucket = std::nullopt);
 
     raft::group_id group() const { return _raft->group(); }

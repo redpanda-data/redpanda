@@ -19,6 +19,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 
@@ -259,7 +260,8 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  config::binding<uint64_t> max_concurrent_producer_ids)
   : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -280,7 +282,8 @@ rm_stm::rm_stm(
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
   , _feature_table(feature_table)
-  , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp())) {
+  , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
+  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
@@ -2720,6 +2723,10 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
 }
 
 ss::future<> rm_stm::clear_old_tx_pids() {
+    if (_log_state.fence_pid_epoch.size() < _max_concurrent_producer_ids()) {
+        co_return;
+    }
+
     std::vector<model::producer_identity> pids_for_delete;
     for (auto [id, epoch] : _log_state.fence_pid_epoch) {
         auto pid = model::producer_identity(id, epoch);
@@ -2743,7 +2750,8 @@ ss::future<> rm_stm::clear_old_tx_pids() {
 }
 
 ss::future<> rm_stm::clear_old_idempotent_pids() {
-    while (_log_state.lru_idempotent_pids.size() > 100500) {
+    while (_log_state.lru_idempotent_pids.size()
+           > _max_concurrent_producer_ids()) {
         auto pid_for_delete = _log_state.lru_idempotent_pids.front().entry.pid;
         auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
         auto lock = rw_lock->try_write_lock();
