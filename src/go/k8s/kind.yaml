@@ -11,3 +11,11 @@ nodes:
   image: vectorizedcloud/kindestnode:v1.21.1-pr2515
 - role: worker
   image: vectorizedcloud/kindestnode:v1.21.1-pr2515
+- role: worker
+  image: vectorizedcloud/kindestnode:v1.21.1-pr2515
+- role: worker
+  image: vectorizedcloud/kindestnode:v1.21.1-pr2515
+- role: worker
+  image: vectorizedcloud/kindestnode:v1.21.1-pr2515
+- role: worker
+  image: vectorizedcloud/kindestnode:v1.21.1-pr2515
