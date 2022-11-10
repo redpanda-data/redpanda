@@ -2303,6 +2303,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       _log_state.abort_indexes.end(),
       std::make_move_iterator(data.abort_indexes.begin()),
       std::make_move_iterator(data.abort_indexes.end()));
+    for (auto& idx : _log_state.abort_indexes) {
+        vlog(
+          _ctx_log.info,
+          "Updated idx from snapshot: {}",
+          abort_idx_name(idx.first, idx.last));
+    }
     for (auto& entry : data.seqs) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
           entry.pid, std::move(entry));
@@ -2402,6 +2408,12 @@ ss::future<> rm_stm::offload_aborted_txns() {
             auto idx = abort_index{
               .first = snapshot.first, .last = snapshot.last};
             _log_state.abort_indexes.push_back(idx);
+            for (auto& idx2 : _log_state.abort_indexes) {
+                vlog(
+                  _ctx_log.info,
+                  "Pushed to abort indxes {}",
+                  abort_idx_name(idx2.first, idx2.last));
+            }
             co_await save_abort_snapshot(snapshot);
             snapshot = abort_snapshot{
               .first = model::offset::max(), .last = model::offset::min()};
@@ -2410,6 +2422,7 @@ ss::future<> rm_stm::offload_aborted_txns() {
     _log_state.aborted = snapshot.aborted;
 }
 
+__attribute__((optnone))
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     auto start_offset = _raft->start_offset();
 
@@ -2418,6 +2431,11 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     abort_indexes.reserve(_log_state.abort_indexes.size());
 
     for (const auto& idx : _log_state.abort_indexes) {
+        vlog(
+          _ctx_log.info,
+          "Candidate idx: {} offset: {}",
+          abort_idx_name(idx.first, idx.last),
+          start_offset);
         if (idx.last < start_offset) {
             // caching expired indexes instead of removing them as we go
             // to avoid giving control to another coroutine and managing
@@ -2427,7 +2445,29 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
             abort_indexes.push_back(idx);
         }
     }
+    for (const auto& idx : expired_abort_indexes) {
+        vlog(
+          _ctx_log.info,
+          "Candidate expiring idx before: {} offset: {}",
+          abort_idx_name(idx.first, idx.last),
+          start_offset);
+    }
     _log_state.abort_indexes = std::move(abort_indexes);
+
+    for (const auto& idx : expired_abort_indexes) {
+        vlog(
+          _ctx_log.info,
+          "Candidate expiring idx after: {} offset: {}",
+          abort_idx_name(idx.first, idx.last),
+          start_offset);
+    }
+    for (auto& idx : _log_state.abort_indexes) {
+        vlog(
+          _ctx_log.info,
+          "After snapshot idx: {} offset: {}",
+          abort_idx_name(idx.first, idx.last),
+          start_offset);
+    }
 
     vlog(
       _ctx_log.debug,
@@ -2439,8 +2479,9 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         auto filename = abort_idx_name(idx.first, idx.last);
         vlog(
           _ctx_log.debug,
-          "removing aborted transactions {} snapshot file",
-          filename);
+          "removing aborted transactions {} snapshot file start: {}",
+          filename,
+          start_offset);
         co_await _abort_snapshot_mgr.remove_snapshot(filename);
     }
 
