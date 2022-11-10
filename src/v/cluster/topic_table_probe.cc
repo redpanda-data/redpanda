@@ -157,6 +157,19 @@ void topic_table_probe::handle_topic_creation(
          },
          sm::description("Configured number of replicas for the topic"),
          labels)
+         .aggregate({sm::shard_label}),
+       sm::make_gauge(
+         "partitions",
+         [this, topic_namespace] {
+             auto md = _topic_table.get_topic_metadata_ref(topic_namespace);
+             if (md) {
+                 return md.value().get().get_configuration().partition_count;
+             }
+
+             return int32_t{0};
+         },
+         sm::description("Configured number of partitions for the topic"),
+         labels)
          .aggregate({sm::shard_label})});
 
     _topics_metrics.emplace(
