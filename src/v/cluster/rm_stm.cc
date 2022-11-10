@@ -24,6 +24,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 
 #include <filesystem>
 #include <optional>
@@ -2410,6 +2411,8 @@ ss::future<> rm_stm::offload_aborted_txns() {
     _log_state.aborted = snapshot.aborted;
 }
 
+// DO NOT coroutinize this method as it may cause issues on ARM:
+// https://github.com/redpanda-data/redpanda/issues/6768
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     auto start_offset = _raft->start_offset();
 
@@ -2434,15 +2437,18 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
       "Removing abort indexes {} with offset < {}",
       expired_abort_indexes.size(),
       start_offset);
-
-    for (const auto& idx : expired_abort_indexes) {
-        auto filename = abort_idx_name(idx.first, idx.last);
-        vlog(
-          _ctx_log.debug,
-          "removing aborted transactions {} snapshot file",
-          filename);
-        co_await _abort_snapshot_mgr.remove_snapshot(filename);
-    }
+    auto f = ss::do_with(
+      std::move(expired_abort_indexes), [this](std::vector<abort_index>& idxs) {
+          return ss::parallel_for_each(
+            idxs.begin(), idxs.end(), [this](const abort_index& idx) {
+                auto f_name = abort_idx_name(idx.first, idx.last);
+                vlog(
+                  _ctx_log.debug,
+                  "removing aborted transactions {} snapshot file",
+                  f_name);
+                return _abort_snapshot_mgr.remove_snapshot(std::move(f_name));
+            });
+      });
 
     std::vector<tx_range> aborted;
     aborted.reserve(_log_state.aborted.size());
@@ -2454,15 +2460,18 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     _log_state.aborted = std::move(aborted);
 
     if (_log_state.aborted.size() > _abort_index_segment_size) {
-        co_await _state_lock.hold_write_lock().then(
-          [this](ss::basic_rwlock<>::holder unit) {
-              // software engineer be careful and do not cause a deadlock.
-              // take_snapshot is invoked under the persisted_stm::_op_lock
-              // and here here we take write lock (_state_lock). most rm_stm
-              // operations require its read lock. however they don't depend
-              // of _op_lock so things are safe now
-              return offload_aborted_txns().finally([u = std::move(unit)] {});
-          });
+        f = f.then([this] {
+            return _state_lock.hold_write_lock().then(
+              [this](ss::basic_rwlock<>::holder unit) {
+                  // software engineer be careful and do not cause a deadlock.
+                  // take_snapshot is invoked under the persisted_stm::_op_lock
+                  // and here here we take write lock (_state_lock). most rm_stm
+                  // operations require its read lock. however they don't depend
+                  // of _op_lock so things are safe now
+                  return offload_aborted_txns().finally(
+                    [u = std::move(unit)] {});
+              });
+        });
     }
 
     iobuf tx_ss_buf;
@@ -2526,9 +2535,10 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     } else {
         vassert(false, "unsupported tx_snapshot version {}", version);
     }
-
-    co_return stm_snapshot::create(
-      version, _insync_offset, std::move(tx_ss_buf));
+    return f.then([this, version, tx_ss_buf = std::move(tx_ss_buf)]() mutable {
+        return stm_snapshot::create(
+          version, _insync_offset, std::move(tx_ss_buf));
+    });
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
