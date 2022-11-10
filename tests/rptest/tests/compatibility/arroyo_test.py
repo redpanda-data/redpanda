@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
@@ -33,6 +34,7 @@ class ArroyoTest(PreallocNodesTest):
             },
             **kwargs)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6826
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
         test_node = self.preallocated_nodes[0]
