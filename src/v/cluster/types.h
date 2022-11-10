@@ -1221,8 +1221,7 @@ using replication_factor
 
 std::istream& operator>>(std::istream& i, replication_factor& cs);
 
-replication_factor
-parsing_replication_factor(const std::optional<ss::sstring>& value);
+replication_factor parsing_replication_factor(const ss::sstring& value);
 
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend

@@ -571,9 +571,8 @@ std::istream& operator>>(std::istream& i, replication_factor& cs) {
     return i;
 };
 
-replication_factor
-parsing_replication_factor(const std::optional<ss::sstring>& value) {
-    auto raw_value = boost::lexical_cast<int32_t>(*value);
+replication_factor parsing_replication_factor(const ss::sstring& value) {
+    auto raw_value = boost::lexical_cast<int32_t>(value);
     if (
       raw_value <= 0
       || raw_value
