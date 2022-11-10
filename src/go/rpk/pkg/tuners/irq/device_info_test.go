@@ -117,3 +117,33 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 		})
 	}
 }
+
+func TestFindModalias(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		init             string
+		modaliasFilePath string
+		expErr           bool
+	}{
+		{"in block device", "/sys/devices/vbd-51792/block/xvdf/", "/sys/devices/vbd-51792/block/xvdf/modalias", false},
+		{"in device", "/sys/devices/vbd-51792/block/xvdf/", "/sys/devices/vbd-51792/modalias", false},
+		{"starting very deep", "/sys/devices/vbd-51792/block/xvdf/xvdf-1/xvdf-part/block/xvdf-a", "/sys/devices/vbd-51792/modalias", false},
+		{"no modalias", "/sys/devices/vbd-51792/block/xvdf/", "", true},
+		{"no modalias in unknown path", "/home/redpanda/opt/bin/device", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			if tt.modaliasFilePath != "" {
+				err := afero.WriteFile(fs, tt.modaliasFilePath, []byte{}, 0o777)
+				require.NoError(t, err)
+			}
+			modalias, err := findModalias(fs, tt.init)
+			if tt.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.modaliasFilePath, modalias)
+		})
+	}
+}
