@@ -42,6 +42,7 @@ bool is_reconnect_error(const std::system_error& e) {
         case ENETUNREACH:
         case ETIMEDOUT:
         case ECONNRESET:
+        case ECONNABORTED:
         case EPIPE:
             return true;
         default:
@@ -62,10 +63,7 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     try {
         rethrow_exception(e);
     } catch (std::system_error& e) {
-        if (
-          e.code() == std::errc::broken_pipe
-          || e.code() == std::errc::connection_reset
-          || e.code() == std::errc::connection_aborted) {
+        if (is_reconnect_error(e)) {
             return e.code().message();
         }
     } catch (const net::batched_output_stream_closed& e) {
