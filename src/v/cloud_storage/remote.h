@@ -259,9 +259,11 @@ private:
     s3::client_pool _pool;
     ss::gate _gate;
     ss::abort_source _as;
-    remote_probe _probe;
     auth_refresh_bg_op _auth_refresh_bg_op;
     std::unique_ptr<materialized_segments> _materialized;
+
+    // Lifetime: probe has reference to _materialized, must be destroyed after
+    remote_probe _probe;
 };
 
 } // namespace cloud_storage

@@ -27,6 +27,7 @@ namespace cloud_storage {
 
 class remote_segment;
 class remote_segment_batch_reader;
+class remote_probe;
 
 /**
  * This class tracks:
@@ -48,12 +49,6 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    using evicted_resource_t = std::variant<
-      std::unique_ptr<remote_segment_batch_reader>,
-      ss::lw_shared_ptr<remote_segment>>;
-
-    using eviction_list_t = std::deque<evicted_resource_t>;
-
     void register_segment(materialized_segment_state& s);
 
     /// Put reader into the eviction list which will
@@ -63,6 +58,11 @@ public:
 
     ssx::semaphore_units get_reader_units();
 
+    ssx::semaphore_units get_segment_units();
+
+    /// Wait until any evicted items in the _eviction_list have been removed.
+    ss::future<> flush_evicted();
+
 private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
@@ -70,8 +70,33 @@ private:
 
     config::binding<uint32_t> _max_partitions_per_shard;
     config::binding<std::optional<uint32_t>> _max_readers_per_shard;
+    config::binding<std::optional<uint32_t>> _max_segments_per_shard;
 
     size_t max_readers() const;
+    size_t max_segments() const;
+
+    /// How many remote_segment_batch_reader instances exist
+    size_t current_readers() const;
+
+    /// How many materialized_segment_state instances exist
+    size_t current_segments() const;
+
+    /// Special item in eviction_list that holds a promise and sets it
+    /// when the eviction fiber calls stop() (see flush_evicted)
+    struct eviction_barrier {
+        ss::promise<> promise;
+
+        ss::future<> stop() {
+            promise.set_value();
+            return ss::now();
+        }
+    };
+
+    using evicted_resource_t = std::variant<
+      std::unique_ptr<remote_segment_batch_reader>,
+      ss::lw_shared_ptr<remote_segment>,
+      ss::lw_shared_ptr<eviction_barrier>>;
+    using eviction_list_t = std::deque<evicted_resource_t>;
 
     /// List of segments and readers waiting to have their stop() method
     /// called before destruction
@@ -96,6 +121,10 @@ private:
     /// instantiated at once on one shard.
     adjustable_semaphore _reader_units;
 
+    /// Concurrency limit on how many segments may be materialized at
+    /// once: this will trigger faster trimming under pressure.
+    adjustable_semaphore _segment_units;
+
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
 
@@ -105,7 +134,16 @@ private:
 
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
-    void trim_segments();
+    void trim_segments(std::optional<size_t>);
+
+    // List of segments to offload, accumulated during trim_segments
+    using offload_list_t
+      = std::vector<std::pair<materialized_segment_state*, kafka::offset>>;
+
+    void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
+
+    // Permit probe to query object counts
+    friend class remote_probe;
 };
 
 } // namespace cloud_storage

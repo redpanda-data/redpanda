@@ -10,6 +10,7 @@
 
 #include "cloud_storage/probe.h"
 
+#include "cloud_storage/materialized_segments.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -19,7 +20,9 @@
 namespace cloud_storage {
 
 remote_probe::remote_probe(
-  remote_metrics_disabled disabled, remote_metrics_disabled public_disabled)
+  remote_metrics_disabled disabled,
+  remote_metrics_disabled public_disabled,
+  materialized_segments& ms)
   : _public_metrics(ssx::metrics::public_metrics_handle) {
     namespace sm = ss::metrics;
 
@@ -111,6 +114,7 @@ remote_probe::remote_probe(
              sm::description("Number of transmit errors"),
              {direction_label("tx")})
              .aggregate({sm::shard_label}),
+
            sm::make_counter(
              "errors_total",
              [this] {
@@ -119,7 +123,21 @@ remote_probe::remote_probe(
              },
              sm::description("Number of receive errors"),
              {direction_label("rx")})
-             .aggregate({sm::shard_label})});
+             .aggregate({sm::shard_label}),
+           sm::make_gauge(
+             "active_segments",
+             [&ms] { return ms.current_segments(); },
+             sm::description(
+               "Number of remote log segments currently hydrated for read"))
+             .aggregate({sm::shard_label}),
+           sm::make_gauge(
+             "readers",
+             [&ms] { return ms.current_readers(); },
+             sm::description(
+               "Number of read cursors for hydrated remote log segments"))
+             .aggregate({sm::shard_label})
+
+          });
     }
 }
 

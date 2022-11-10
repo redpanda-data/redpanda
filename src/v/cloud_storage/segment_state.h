@@ -12,6 +12,7 @@
 
 #include "model/fundamental.h"
 #include "seastar/core/weak_ptr.hh"
+#include "ssx/semaphore.h"
 #include "storage/fwd.h"
 
 class retry_chain_logger;
@@ -49,7 +50,10 @@ struct offloaded_segment_state {
 /// remote segment.
 struct materialized_segment_state {
     materialized_segment_state(
-      model::offset bo, kafka::offset offk, remote_partition& p);
+      model::offset bo,
+      kafka::offset offk,
+      remote_partition& p,
+      ssx::semaphore_units);
 
     void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 
@@ -83,6 +87,10 @@ struct materialized_segment_state {
     /// a weak_ptr is preferable to a reference (crash on bug) or a shared_ptr
     /// (prevent parent deallocation on bug).
     ss::weak_ptr<remote_partition> parent;
+
+    /// Units belonging to `materialized_segments`, for managing how many
+    /// segments may be concurrently materialized shard-wide
+    ssx::semaphore_units _units;
 };
 
 } // namespace cloud_storage

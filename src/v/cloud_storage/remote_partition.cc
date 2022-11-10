@@ -589,6 +589,14 @@ ss::future<> remote_partition::stop() {
         vlog(_ctxlog.debug, "remote partition stop {}", it->first);
         co_await std::visit([](auto&& st) { return st->stop(); }, it->second);
     }
+
+    // We may have some segment or reader objects enqueued for stop in
+    // the shared eviction queue: must flush it, or they can outlive
+    // us and trigger assertion in retry_chain_node destructor.
+    // This waits for all evictions, not just ours, but that's okay because
+    // stopping readers is fast, the queue is not usually long, and destroying
+    // partitions is relatively infrequent.
+    co_await materialized().flush_evicted();
 }
 
 void remote_partition::maybe_sync_with_manifest() {
