@@ -333,6 +333,30 @@ client::list_offsets(model::topic_partition tp) {
     });
 }
 
+namespace {
+ss::future<fetch_response> maybe_throw_exception(
+  shared_broker_t b, model::topic_partition tp, fetch_response res) {
+    if (res.data.error_code != error_code::none) {
+        return ss::make_exception_future<fetch_response>(
+          broker_error(b->id(), res.data.error_code));
+    }
+
+    const auto& topics = res.data.topics;
+    if (topics.size() != 1 || topics[0].partitions.size() != 1) {
+        return ss::make_exception_future<fetch_response>(
+          partition_error(tp, error_code::unknown_server_error));
+    }
+
+    const auto& part = topics[0].partitions[0];
+    if (part.error_code != error_code::none) {
+        return ss::make_exception_future<fetch_response>(
+          partition_error(tp, part.error_code));
+    }
+
+    return ss::make_ready_future<fetch_response>(std::move(res));
+}
+} // namespace
+
 ss::future<fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
@@ -353,7 +377,11 @@ ss::future<fetch_response> client::fetch_partition(
                            return _brokers.find(leader);
                        })
                        .then([&tp, &build_request](shared_broker_t&& b) {
-                           return b->dispatch(build_request(tp));
+                           return b->dispatch(build_request(tp))
+                             .then([b, &tp](fetch_response res) {
+                                 return maybe_throw_exception(
+                                   b, tp, std::move(res));
+                             });
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {
