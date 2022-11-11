@@ -859,19 +859,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           timeout,
           ss::make_lw_shared<available_promise<tx_errc>>());
     } else {
-        tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(stm, term, tx, timeout);
+            r = co_await recommit_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
+            r = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::killed) {
-            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
+            r = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
-        }
-
-        if (ec != tx_errc::none) {
-            r = ec;
         }
     }
 
@@ -1533,42 +1528,7 @@ tx_gateway_frontend::do_abort_tm_tx(
         tx = changed_tx.value();
     }
 
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto done = false;
-    while (0 < retries--) {
-        std::vector<ss::future<abort_tx_reply>> pfs;
-        for (auto rm : tx.partitions) {
-            pfs.push_back(_rm_partition_frontend.local().abort_tx(
-              rm.ntp, tx.pid, tx.tx_seq, timeout));
-        }
-        std::vector<ss::future<abort_group_tx_reply>> gfs;
-        for (auto group : tx.groups) {
-            gfs.push_back(_rm_group_proxy->abort_group_tx(
-              group.group_id, tx.pid, tx.tx_seq, timeout));
-        }
-        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-        bool ok = true;
-        for (const auto& r : prs) {
-            ok = ok && (r.ec == tx_errc::none);
-        }
-        for (const auto& r : grs) {
-            ok = ok && (r.ec == tx_errc::none);
-        }
-        if (ok) {
-            done = true;
-            break;
-        }
-        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
-        if (!co_await sleep_abortable(delay_ms, _as)) {
-            break;
-        }
-    }
-    if (!done) {
-        co_return tx_errc::unknown_server_error;
-    }
-    co_return tx;
+    co_return co_await reabort_tm_tx(stm, expected_term, tx, timeout);
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
@@ -1699,47 +1659,11 @@ tx_gateway_frontend::do_commit_tm_tx(
     outcome->set_value(tx_errc::none);
     tx = changed_tx.value();
 
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto done = false;
-    while (0 < retries--) {
-        std::vector<ss::future<commit_group_tx_reply>> gfs;
-        gfs.reserve(tx.groups.size());
-        for (auto group : tx.groups) {
-            gfs.push_back(_rm_group_proxy->commit_group_tx(
-              group.group_id, tx.pid, tx.tx_seq, timeout));
-        }
-        std::vector<ss::future<commit_tx_reply>> cfs;
-        cfs.reserve(tx.partitions.size());
-        for (auto rm : tx.partitions) {
-            cfs.push_back(_rm_partition_frontend.local().commit_tx(
-              rm.ntp, tx.pid, tx.tx_seq, timeout));
-        }
-        auto ok = true;
-        auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
-        for (const auto& r : grs) {
-            ok = ok && (r.ec == tx_errc::none);
-        }
-        auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
-        for (const auto& r : crs) {
-            ok = ok && (r.ec == tx_errc::none);
-        }
-        if (ok) {
-            done = true;
-            break;
-        }
-        tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
-        if (!co_await sleep_abortable(delay_ms, _as)) {
-            break;
-        }
-    }
-    if (!done) {
-        co_return tx_errc::unknown_server_error;
-    }
-    co_return tx;
+    co_return co_await recommit_tm_tx(stm, expected_term, tx, timeout);
 }
 
-ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
+ss::future<checked<cluster::tm_transaction, tx_errc>>
+tx_gateway_frontend::recommit_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   model::term_id expected_term,
   tm_transaction tx,
@@ -1750,11 +1674,13 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
 
     while (0 < retries--) {
         std::vector<ss::future<commit_group_tx_reply>> gfs;
+        gfs.reserve(tx.groups.size());
         for (auto group : tx.groups) {
             gfs.push_back(_rm_group_proxy->commit_group_tx(
               group.group_id, tx.pid, tx.tx_seq, timeout));
         }
         std::vector<ss::future<commit_tx_reply>> cfs;
+        cfs.reserve(tx.partitions.size());
         for (auto rm : tx.partitions) {
             cfs.push_back(_rm_partition_frontend.local().commit_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
@@ -1783,10 +1709,11 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
         vlog(txlog.warn, "re-commiting pid:{} failed", tx.pid);
         co_return tx_errc::timeout;
     }
-    co_return tx_errc::none;
+    co_return tx;
 }
 
-ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
+ss::future<checked<cluster::tm_transaction, tx_errc>>
+tx_gateway_frontend::reabort_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   model::term_id expected_term,
   tm_transaction tx,
@@ -1794,14 +1721,15 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto done = false;
-
     while (0 < retries--) {
         std::vector<ss::future<abort_tx_reply>> pfs;
+        pfs.reserve(tx.partitions.size());
         for (auto rm : tx.partitions) {
             pfs.push_back(_rm_partition_frontend.local().abort_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
         }
         std::vector<ss::future<abort_group_tx_reply>> gfs;
+        gfs.reserve(tx.groups.size());
         for (auto group : tx.groups) {
             gfs.push_back(_rm_group_proxy->abort_group_tx(
               group.group_id, tx.pid, tx.tx_seq, timeout));
@@ -1810,9 +1738,35 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
         auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
         auto ok = true;
         for (const auto& r : prs) {
+            if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} "
+                  "failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  expected_term,
+                  tx.status,
+                  r.ec);
+            }
             ok = ok && (r.ec == tx_errc::none);
         }
         for (const auto& r : grs) {
+            if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} "
+                  "failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  expected_term,
+                  tx.status,
+                  r.ec);
+            }
             ok = ok && (r.ec == tx_errc::none);
         }
         if (ok) {
@@ -1825,9 +1779,17 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
         }
     }
     if (!done) {
+        vlog(
+          txlog.warn,
+          "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} failed",
+          tx.id,
+          tx.etag,
+          tx.pid,
+          tx.tx_seq,
+          expected_term);
         co_return tx_errc::unknown_server_error;
     }
-    co_return tx_errc::none;
+    co_return tx;
 }
 
 // get_tx must be called under stm->get_tx_lock
@@ -1897,22 +1859,23 @@ tx_gateway_frontend::get_ongoing_tx(
     } else {
         // A previous transaction has failed after its status has been
         // decided, rolling it forward.
-        tx_errc ec;
+        checked<tm_transaction, tx_errc> r(tx);
+
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(stm, expected_term, tx, timeout);
+            r = co_await recommit_tm_tx(stm, expected_term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(stm, expected_term, tx, timeout);
+            r = co_await reabort_tm_tx(stm, expected_term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
         }
 
-        if (ec != tx_errc::none) {
+        if (!r.has_value()) {
             vlog(
               txlog.trace,
               "rolling previous tx failed with {}; pid:{}",
-              ec,
+              r.error(),
               pid);
-            co_return ec;
+            co_return r.error();
         }
 
         if (expected_term != tx.etag) {
@@ -2081,19 +2044,14 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
           timeout,
           ss::make_lw_shared<available_promise<tx_errc>>());
     } else {
-        tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
-            ec = co_await recommit_tm_tx(stm, term, tx, timeout);
+            r = co_await recommit_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
+            r = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::killed) {
-            ec = co_await reabort_tm_tx(stm, term, tx, timeout);
+            r = co_await reabort_tm_tx(stm, term, tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
-        }
-
-        if (ec != tx_errc::none) {
-            r = ec;
         }
     }
 
