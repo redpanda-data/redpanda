@@ -582,12 +582,8 @@ static cloud_storage::upload_result process_multiple_upload_results(
 // otherwise.
 static ss::future<cloud_storage::upload_result> aggregate_upload_results(
   std::vector<ss::future<cloud_storage::upload_result>> upl_vec) {
-    return ss::do_with(
-      std::move(upl_vec),
-      [](std::vector<ss::future<cloud_storage::upload_result>>& all_uploads) {
-          return ss::when_all(all_uploads.begin(), all_uploads.end())
-            .then(&process_multiple_upload_results);
-      });
+    return ss::when_all(upl_vec.begin(), upl_vec.end())
+      .then(&process_multiple_upload_results);
 }
 
 ss::future<ntp_archiver::scheduled_upload>
