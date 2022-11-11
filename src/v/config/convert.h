@@ -55,35 +55,6 @@ struct convert<std::optional<T>> {
 };
 
 template<>
-struct convert<model::violation_recovery_policy> {
-    using type = model::violation_recovery_policy;
-    static Node encode(const type& rhs) {
-        Node node;
-        if (rhs == model::violation_recovery_policy::crash) {
-            node = "crash";
-        } else if (rhs == model::violation_recovery_policy::best_effort) {
-            node = "best_effort";
-        } else {
-            node = "crash";
-        }
-        return node;
-    }
-    static bool decode(const Node& node, type& rhs) {
-        auto value = node.as<std::string>();
-
-        if (value == "crash") {
-            rhs = model::violation_recovery_policy::crash;
-        } else if (value == "best_effort") {
-            rhs = model::violation_recovery_policy::best_effort;
-        } else {
-            return false;
-        }
-
-        return true;
-    }
-};
-
-template<>
 struct convert<ss::socket_address> {
     using type = ss::socket_address;
     static Node encode(const type& rhs) {
