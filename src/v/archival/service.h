@@ -33,8 +33,6 @@
 namespace archival {
 namespace internal {
 
-class archiver_replacer;
-
 using namespace std::chrono_literals;
 
 /// Shard-local archiver service.
@@ -48,8 +46,6 @@ using namespace std::chrono_literals;
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
-    friend class archiver_replacer;
-
 public:
     /// \brief create scheduler service
     ///
