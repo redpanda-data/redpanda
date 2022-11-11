@@ -123,7 +123,7 @@ struct configuration final : public config_store {
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
-    property<int16_t> default_topic_replication;
+    bounded_property<int16_t> default_topic_replication;
     deprecated_property transaction_coordinator_replication;
     deprecated_property id_allocator_replication;
     property<model::cleanup_policy_bitflags>
