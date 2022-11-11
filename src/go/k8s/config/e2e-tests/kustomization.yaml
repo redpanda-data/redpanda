@@ -10,4 +10,7 @@ images:
   - name: vectorized/redpanda-operator
     newName: localhost/redpanda-operator
     newTag: dev
+  - name: vectorized/configurator
+    newName: localhost/configurator
+    newTag: dev
 
