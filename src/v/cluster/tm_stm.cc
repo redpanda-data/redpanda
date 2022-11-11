@@ -113,8 +113,6 @@ tm_stm::tm_stm(
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _recovery_policy(
-      config::shard_local_cfg().tm_violation_recovery_policy.value())
   , _feature_table(feature_table) {}
 
 std::optional<tm_transaction> tm_stm::do_get_tx(kafka::transactional_id tx_id) {

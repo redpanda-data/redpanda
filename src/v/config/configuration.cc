@@ -352,15 +352,7 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
-  , tm_violation_recovery_policy(
-      *this,
-      "tm_violation_recovery_policy",
-      "Describes how to recover from an invariant violation happened on the "
-      "transaction coordinator level",
-      {.example = "best_effort", .visibility = visibility::user},
-      model::violation_recovery_policy::crash,
-      {model::violation_recovery_policy::crash,
-       model::violation_recovery_policy::best_effort})
+  , tm_violation_recovery_policy(*this, "tm_violation_recovery_policy")
   , rm_sync_timeout_ms(
       *this,
       "rm_sync_timeout_ms",
@@ -379,15 +371,7 @@ configuration::configuration()
       "Delay before scheduling next check for timed out transactions",
       {.visibility = visibility::user},
       1000ms)
-  , rm_violation_recovery_policy(
-      *this,
-      "rm_violation_recovery_policy",
-      "Describes how to recover from an invariant violation happened on the "
-      "partition level",
-      {.example = "best_effort", .visibility = visibility::user},
-      model::violation_recovery_policy::crash,
-      {model::violation_recovery_policy::crash,
-       model::violation_recovery_policy::best_effort})
+  , rm_violation_recovery_policy(*this, "rm_violation_recovery_policy")
   , fetch_reads_debounce_timeout(
       *this,
       "fetch_reads_debounce_timeout",
