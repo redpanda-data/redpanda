@@ -581,7 +581,7 @@ static cloud_storage::upload_result process_multiple_upload_results(
 // single future that returns error result of the last failed future or success
 // otherwise.
 static ss::future<cloud_storage::upload_result> aggregate_upload_results(
-  std::vector<ss::future<cloud_storage::upload_result>>&& upl_vec) {
+  std::vector<ss::future<cloud_storage::upload_result>> upl_vec) {
     return ss::do_with(
       std::move(upl_vec),
       [](std::vector<ss::future<cloud_storage::upload_result>>& all_uploads) {
