@@ -1791,8 +1791,10 @@ class RedpandaService(Service):
     def write_bootstrap_cluster_config(self):
         conf = copy.deepcopy(self.CLUSTER_CONFIG_DEFAULTS)
 
-        if self._installer.installed_version != RedpandaInstaller.HEAD:
-            # If we're running an older version, exclude some newer configs
+        cur_ver = self._installer.installed_version
+        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (22, 2, 7):
+            # this configuration property was introduced in 22.2, ensure
+            # it doesn't appear in older configurations
             del conf['log_segment_size_jitter_percent']
 
         if self._extra_rp_conf:
