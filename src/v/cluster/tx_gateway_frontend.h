@@ -181,12 +181,12 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<tx_errc> recommit_tm_tx(
+    ss::future<checked<cluster::tm_transaction, tx_errc>> recommit_tm_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id,
       tm_transaction,
       model::timeout_clock::duration);
-    ss::future<tx_errc> reabort_tm_tx(
+    ss::future<checked<cluster::tm_transaction, tx_errc>> reabort_tm_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id,
       tm_transaction,
