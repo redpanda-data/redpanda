@@ -599,7 +599,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout,
   model::producer_identity expected_pid) {
-    vlog(txlog.trace, "processing name:init_tm_tx, tx_id:{}", tx_id);
+    vlog(
+      txlog.trace,
+      "processing name:init_tm_tx, tx_id:{}, timeout:{}",
+      tx_id,
+      transaction_timeout_ms);
 
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
@@ -1004,10 +1008,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     if (!r.has_value()) {
         vlog(
           txlog.trace,
-          "got {} on getting ongoing tx for pid:{} {}",
+          "got {} on pulling ongoing tx:{} pid:{}",
           r.error(),
-          pid,
-          request.transactional_id);
+          request.transactional_id,
+          pid);
         co_return make_add_partitions_error_response(request, r.error());
     }
     auto tx = r.value();
@@ -1205,6 +1209,12 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     auto r = co_await get_ongoing_tx(
       term, stm, pid, request.transactional_id, timeout);
     if (!r.has_value()) {
+        vlog(
+          txlog.trace,
+          "got {} on pulling ongoing tx for pid:{} {}",
+          r.error(),
+          pid,
+          request.transactional_id);
         co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
@@ -1263,6 +1273,14 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
   end_tx_request request,
   model::timeout_clock::duration timeout) {
     if (!r) {
+        model::producer_identity pid{
+          request.producer_id, request.producer_epoch};
+        vlog(
+          txlog.trace,
+          "got {} on pulling a stm for tx:{} pid:{}",
+          r.error(),
+          request.transactional_id,
+          pid);
         return ss::make_ready_future<end_tx_reply>(
           end_tx_reply{.error_code = r.error()});
     }
@@ -1310,10 +1328,22 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
                           timeout,
                           outcome,
                           h = std::move(h)]() mutable {
+                             model::producer_identity pid{
+                               request.producer_id, request.producer_epoch};
+                             auto tx_id = request.transactional_id;
                              return do_end_txn(
                                       std::move(request), stm, timeout, outcome)
-                               .finally([outcome, stm, h = std::move(h)]() {
+                               .finally([outcome,
+                                         stm,
+                                         h = std::move(h),
+                                         tx_id = std::move(tx_id),
+                                         pid]() {
                                    if (!outcome->available()) {
+                                       vlog(
+                                         txlog.warn,
+                                         "outcome for tx:{} pid:{} isn't set",
+                                         tx_id,
+                                         pid);
                                        outcome->set_value(
                                          tx_errc::unknown_server_error);
                                    }
@@ -1335,11 +1365,18 @@ tx_gateway_frontend::do_end_txn(
   ss::shared_ptr<cluster::tm_stm> stm,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
+    model::producer_identity pid{request.producer_id, request.producer_epoch};
     checked<model::term_id, tm_stm::op_status> term_opt
       = tm_stm::op_status::unknown;
     try {
         term_opt = co_await stm->sync();
     } catch (...) {
+        vlog(
+          txlog.warn,
+          "sync on end_txn for tx:{} pid:{} failed with {}",
+          request.transactional_id,
+          pid,
+          std::current_exception());
         outcome->set_value(tx_errc::invalid_txn_state);
         throw;
     }
@@ -1348,6 +1385,12 @@ tx_gateway_frontend::do_end_txn(
             outcome->set_value(tx_errc::not_coordinator);
             co_return tx_errc::not_coordinator;
         }
+        vlog(
+          txlog.warn,
+          "sync on end_txn for tx:{} pid:{} failed with {}",
+          request.transactional_id,
+          pid,
+          term_opt.error());
         outcome->set_value(tx_errc::invalid_txn_state);
         co_return tx_errc::invalid_txn_state;
     }
@@ -1360,22 +1403,43 @@ tx_gateway_frontend::do_end_txn(
         if (status == tm_stm::op_status::not_leader) {
             err = tx_errc::leader_not_found;
         } else if (status == tm_stm::op_status::unknown) {
+            vlog(
+              txlog.warn,
+              "pulling tx for tx:{} pid:{} failed with unknown",
+              request.transactional_id,
+              pid);
             err = tx_errc::unknown_server_error;
         } else if (status == tm_stm::op_status::timeout) {
+            vlog(
+              txlog.warn,
+              "pulling tx for tx:{} pid:{} failed with timeout",
+              request.transactional_id,
+              pid);
             err = tx_errc::timeout;
         }
         outcome->set_value(err);
         co_return err;
     }
 
-    model::producer_identity pid{request.producer_id, request.producer_epoch};
     auto tx = tx_opt.value();
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
+            vlog(
+              txlog.info,
+              "request {} with pid:{} is fenced by {}",
+              request.transactional_id,
+              pid,
+              tx.pid);
             outcome->set_value(tx_errc::fenced);
             co_return tx_errc::fenced;
         }
 
+        vlog(
+          txlog.info,
+          "request {} with pid:{} doesn't match {}",
+          request.transactional_id,
+          pid,
+          tx.pid);
         outcome->set_value(tx_errc::invalid_producer_id_mapping);
         co_return tx_errc::invalid_producer_id_mapping;
     }
@@ -1409,6 +1473,16 @@ tx_gateway_frontend::do_end_txn(
             //      transaciton is committed
             //
             // so we fail the request with unknow error and let user to recover
+            vlog(
+              txlog.warn,
+              "an ongoing tx:{} pid:{} etag:{} tx_seq:{} in term:{} has "
+              "unexpected status: {}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              term,
+              tx.status);
             outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
         }
@@ -1416,14 +1490,30 @@ tx_gateway_frontend::do_end_txn(
         try {
             r = co_await do_abort_tm_tx(term, stm, tx, timeout);
         } catch (...) {
+            vlog(
+              txlog.error,
+              "aborting a tx:{} etag:{} pid:{} tx_seq:{} failed with {}",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              std::current_exception());
             outcome->set_value(tx_errc::unknown_server_error);
             throw;
         }
         if (r.has_value()) {
             outcome->set_value(tx_errc::none);
         } else {
-            auto ret = r.error();
-            outcome->set_value(std::move(ret));
+            auto ec = r.error();
+            vlog(
+              txlog.info,
+              "aborting a tx:{} etag:{} pid:{} tx_seq:{} failed with {}",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              ec);
+            outcome->set_value(ec);
         }
     }
     // starting from this point we don't need to set outcome on return because
@@ -1435,6 +1525,11 @@ tx_gateway_frontend::do_end_txn(
 
     auto ongoing_tx = co_await stm->mark_tx_ongoing(term, tx.id);
     if (!ongoing_tx.has_value()) {
+        vlog(
+          txlog.warn,
+          "can't mark {} as ongoing error:{}",
+          tx.id,
+          ongoing_tx.error());
         co_return tx_errc::unknown_server_error;
     }
     co_return ongoing_tx.value();
@@ -1485,11 +1580,28 @@ tx_gateway_frontend::do_abort_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout) {
     if (!stm->is_actual_term(expected_term)) {
+        vlog(
+          txlog.trace,
+          "txn coordinator isn't synced with term:{} tx:{} etag:{} pid:{} "
+          "tx_seq:{}",
+          expected_term,
+          tx.id,
+          tx.etag,
+          tx.pid,
+          tx.tx_seq);
         co_return tx_errc::not_coordinator;
     }
 
     if (tx.status == tm_transaction::tx_status::ready) {
         if (stm->is_actual_term(tx.etag)) {
+            vlog(
+              txlog.warn,
+              "tx tx:{} etag:{} pid:{} tx_seq:{} status:{} isn't started",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              tx.status);
             // client should start a transaction before attempting to
             // abort it. since tx has actual term we know for sure it
             // wasn't start on a different leader
@@ -1975,9 +2087,14 @@ tx_gateway_frontend::get_ongoing_tx(
 
         if (expected_term != tx.etag) {
             vlog(
-              txlog.trace,
-              "failing a tx initiated on the previous tx coordinator pid:{}",
-              pid);
+              txlog.warn,
+              "failing a tx initiated on the previous tx coordinator tx:{} "
+              "pid:{} etag:{} tx_seq:{} in term:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              expected_term);
             // The tx has started on the previous term. Even though we rolled it
             // forward there is a possibility that a previous leader did the
             // same and already started the current transaction.

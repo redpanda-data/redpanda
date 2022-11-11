@@ -123,8 +123,25 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         begin_tx_reply result;
         if (leader == _self) {
+            vlog(
+              txlog.trace,
+              "executing name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{} "
+              "locally",
+              ntp,
+              pid,
+              tx_seq,
+              transaction_timeout_ms);
             result = co_await begin_tx_locally(
               ntp, pid, tx_seq, transaction_timeout_ms);
+            vlog(
+              txlog.trace,
+              "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: "
+              "{} locally",
+              ntp,
+              pid,
+              tx_seq,
+              result.ec,
+              result.etag);
             if (
               result.ec == tx_errc::leader_not_found
               || result.ec == tx_errc::shard_not_found) {
@@ -159,11 +176,13 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         vlog(
           txlog.trace,
-          "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, "
+          "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{}, "
+          "from:{}, "
           "to:{}",
           ntp,
           pid,
           tx_seq,
+          transaction_timeout_ms,
           _self,
           leader);
         result = co_await dispatch_begin_tx(

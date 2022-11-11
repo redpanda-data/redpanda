@@ -164,6 +164,14 @@ tm_stm::get_tx(kafka::transactional_id tx_id) {
     // case 4 - Invalid, just return and wait for it to fail in the next term
     // check.
     if (tx.transferring) {
+        vlog(
+          txlog.trace,
+          "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
+          tx_id,
+          tx.pid,
+          tx.etag,
+          tx.tx_seq,
+          _insync_term);
         if (tx.etag == _insync_term) {
             // case 1
             vlog(
@@ -242,6 +250,13 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
     }
     size_t checkpointed_txes = 0;
     for (auto& tx : txes_to_checkpoint) {
+        vlog(
+          txlog.trace,
+          "transfering tx:{} etag:{} pid:{} tx_seq:{}",
+          tx.id,
+          tx.etag,
+          tx.pid,
+          tx.tx_seq);
         tx.transferring = true;
         auto result = co_await update_tx(tx, tx.etag);
         if (!result.has_value()) {
@@ -268,6 +283,10 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
 
 ss::future<std::error_code>
 tm_stm::transfer_leadership(std::optional<model::node_id> target) {
+    vlog(
+      txlog.trace,
+      "transfering leadership to {}",
+      target.value_or(model::node_id(-1)));
     auto units = co_await _state_lock.hold_write_lock();
     // This is a best effort basis, we checkpoint as many as we can
     // and stop at the first error.
@@ -367,6 +386,11 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
+        vlog(
+          txlog.trace,
+          "got {} on pulling tx {} to mark it prepared",
+          tx_opt.error(),
+          tx_id);
         co_return tx_opt;
     }
     auto tx = tx_opt.value();
@@ -375,6 +399,14 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_prepared(
                           ? tm_transaction::tx_status::ongoing
                           : tm_transaction::tx_status::preparing;
     if (tx.status != check_status) {
+        vlog(
+          txlog.warn,
+          "can't mark tx:{} pid:{} tx_seq:{} prepared wrong status {} != {}",
+          tx.id,
+          tx.pid,
+          tx.tx_seq,
+          tx.status,
+          check_status);
         co_return tm_stm::op_status::conflict;
     }
     tx.status = cluster::tm_transaction::tx_status::prepared;
