@@ -257,6 +257,25 @@ inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     auto scattered = iobuf_as_scattered(std::forward<BufferSeq>(seq));
     return client->send(std::move(scattered));
 }
+
+/// Helper to close an http client after a function has been called on it.
+/// Modeled after ss::with_file
+template<typename Func>
+auto with_client(client&& cl, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+    return ss::do_with(
+      std::move(cl), [func = std::move(func)](client& cl) mutable {
+          return ss::futurize_invoke(func, cl).finally([&cl] {
+              return cl.stop().then([&cl] {
+                  cl.shutdown();
+                  return ss::make_ready_future<>();
+              });
+          });
+      });
+}
+
 } // namespace http
 
 template<>

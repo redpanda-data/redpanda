@@ -138,7 +138,7 @@ void http_imposter_fixture::fail_request_if(
   http_imposter_fixture::request_predicate predicate,
   http_test_utils::response response) {
     _fail_requests_when.push_back(std::move(predicate));
-    _fail_responses[_fail_requests_when.size() - 1] = response;
+    _fail_responses[_fail_requests_when.size() - 1] = std::move(response);
 }
 
 void http_imposter_fixture::reset_http_call_state() {
