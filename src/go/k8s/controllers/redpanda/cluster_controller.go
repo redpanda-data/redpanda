@@ -42,6 +42,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
+)
+
 var (
 	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but it's nil")
 	errNodePortMissing              = errors.New("the node port is missing from the service")
@@ -66,7 +70,7 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
@@ -266,9 +270,12 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	// setting license should be at the last part as it requires AdminAPI to be running
+	// The following should be at the last part as it requires AdminAPI to be running
 	if cc := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
 		return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
+	}
+	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
 	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
@@ -326,6 +333,59 @@ func (r *ClusterReconciler) setLicense(
 	return nil
 }
 
+func (r *ClusterReconciler) setPodNodeIDAnnotation(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+) error {
+	pods, err := r.podList(ctx, rp)
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		if _, ok := pod.Annotations[PodAnnotationNodeIDKey]; ok {
+			continue
+		}
+		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
+		if err != nil {
+			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
+		}
+		log.WithValues(pod.Name, nodeID).Info("setting node-id annotation")
+		pod.Annotations[PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
+		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
+			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, log logr.Logger) (int32, error) {
+	redpandaPorts := networking.NewRedpandaPorts(rp)
+	headlessPorts := collectHeadlessPorts(redpandaPorts)
+	clusterPorts := collectClusterPorts(redpandaPorts, rp)
+	headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
+	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
+
+	pki := certmanager.NewPki(r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+
+	ordinal, err := strconv.ParseInt(pod.Name[len(rp.Name)+1:], 10, 0)
+	if err != nil {
+		return -1, fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", rp.Name, pod.Name, err)
+	}
+
+	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), int32(ordinal))
+	if err != nil {
+		return -1, fmt.Errorf("unable to create admin client: %w", err)
+	}
+	cfg, err := adminClient.GetNodeConfig(ctx)
+	if err != nil {
+		return -1, fmt.Errorf("unable to fetch /v1/node_config from %s: %w", pod.Name, err)
+	}
+	return int32(cfg.NodeID), nil
+}
+
 func (r *ClusterReconciler) reportStatus(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
@@ -336,14 +396,9 @@ func (r *ClusterReconciler) reportStatus(
 	nodeportSvcName types.NamespacedName,
 	bootstrapSvcName types.NamespacedName,
 ) error {
-	var observedPods corev1.PodList
-
-	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector: labels.ForCluster(redpandaCluster).AsClientSelector(),
-		Namespace:     redpandaCluster.Namespace,
-	})
+	observedPods, err := r.podList(ctx, redpandaCluster)
 	if err != nil {
-		return fmt.Errorf("unable to fetch PodList resource: %w", err)
+		return fmt.Errorf("unable to fetch PodList: %w", err)
 	}
 
 	observedNodesInternal := make([]string, 0, len(observedPods.Items))
@@ -414,6 +469,20 @@ func statusShouldBeUpdated(
 		status.Replicas != sts.LastObservedState.Status.Replicas ||
 		status.ReadyReplicas != sts.LastObservedState.Status.ReadyReplicas ||
 		status.Version != sts.Version()
+}
+
+func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster) (corev1.PodList, error) {
+	var observedPods corev1.PodList
+
+	err := r.List(ctx, &observedPods, &client.ListOptions{
+		LabelSelector: labels.ForCluster(redpandaCluster).AsClientSelector(),
+		Namespace:     redpandaCluster.Namespace,
+	})
+	if err != nil {
+		return observedPods, fmt.Errorf("unable to fetch PodList resource: %w", err)
+	}
+
+	return observedPods, nil
 }
 
 // WithConfiguratorSettings set the configurator image settings
