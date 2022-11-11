@@ -11,9 +11,9 @@ Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
 - [ ] not a bug fix
 - [ ] issue does not exist in previous branches
 - [ ] papercut/not impactful enough to backport
+- [ ] v22.3.x
 - [ ] v22.2.x
 - [ ] v22.1.x
-- [ ] v21.11.x
 
 ## UX changes
 
