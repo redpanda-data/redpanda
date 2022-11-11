@@ -263,6 +263,53 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
     return _start_offset;
 }
 
+std::optional<kafka::offset>
+partition_manifest::get_start_kafka_offset() const {
+    if (_start_offset != model::offset{}) {
+        auto iter = _segments.find(_start_offset);
+        if (iter != _segments.end()) {
+            auto delta = iter->second.delta_offset;
+            return _start_offset - delta;
+        }
+    }
+    return std::nullopt;
+}
+
+partition_manifest::const_iterator
+partition_manifest::segment_containing(kafka::offset o) const {
+    /*TODO: remove*/ vlog(
+      cst_log.debug, "Metadata lookup using kafka offset {}", o);
+    // Kafka offset is always <= log offset.
+    // To find a segment by its kafka offset we can simply query
+    // manifest by log offset and then traverse forward until we
+    // will find matching segment.
+    auto it = segment_containing(kafka::offset_cast(o));
+    /*TODO: remove*/ vlog(
+      cst_log.debug,
+      "First metadata lookup using kafka offset {}, result {}",
+      o,
+      it->second.base_offset);
+    auto prev = end();
+    while (it != end()) {
+        auto base = it->second.base_offset - it->second.delta_offset;
+        /*TODO: remove*/ vlog(
+          cst_log.debug,
+          "Metadata lookup using kafka offset {} <> {}",
+          o,
+          base);
+        if (base > o) {
+            // We need to find first element which has greater kafka
+            // offset then the target and step back. It is possible
+            // to have a segment that doesn't have data batches. This
+            // scan has to skip segments like that.
+            break;
+        }
+        prev = it;
+        it = std::next(it);
+    }
+    return prev;
+}
+
 model::offset partition_manifest::get_last_uploaded_compacted_offset() const {
     return _last_uploaded_compacted_offset;
 }

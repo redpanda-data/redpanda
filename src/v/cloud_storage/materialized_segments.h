@@ -138,7 +138,7 @@ private:
 
     // List of segments to offload, accumulated during trim_segments
     using offload_list_t
-      = std::vector<std::pair<materialized_segment_state*, kafka::offset>>;
+      = std::vector<std::pair<materialized_segment_state*, model::offset>>;
 
     void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
 
