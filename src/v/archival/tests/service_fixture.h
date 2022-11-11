@@ -183,6 +183,15 @@ public:
       const storage::ntp_config& cfg,
       cloud_storage::partition_manifest manifest);
 
+    /// Stops the scheduler service before listening to incoming HTTP calls.
+    /// Intended to be used in tests which create their own archiver, where
+    /// stopping the scheduler first is necessary so that the built in archiver
+    /// does not interfere with the archiver in test.
+    void stop_archiver_scheduler_and_listen() {
+        get_scheduler_service().stop().get();
+        listen();
+    }
+
 private:
     void initialize_shard(
       storage::api& api,

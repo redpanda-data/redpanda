@@ -310,7 +310,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
@@ -380,7 +380,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
@@ -440,7 +440,7 @@ FIXTURE_TEST(
     stm_acc.replace_manifest(misaligned_lco);
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     mark_segments_as_compacted({0, 1});
 
@@ -477,7 +477,7 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     mark_segments_as_compacted({0});
 
@@ -516,7 +516,7 @@ FIXTURE_TEST(test_upload_compacted_segments_ends_in_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     mark_segments_as_compacted({0});
 
@@ -554,7 +554,7 @@ FIXTURE_TEST(test_upload_compacted_segments_begins_in_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     mark_segments_as_compacted({0, 1});
 
@@ -581,7 +581,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
@@ -646,7 +646,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
@@ -721,7 +721,7 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     initialize(segments, false);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
 
@@ -766,7 +766,7 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
 
@@ -824,7 +824,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    listen();
+    stop_archiver_scheduler_and_listen();
 
     // 4 out of 5 segments uploaded due to archiver limit of 4
     archival::ntp_archiver::batch_result expected{{4, 0, 0}, {0, 0, 0}};
