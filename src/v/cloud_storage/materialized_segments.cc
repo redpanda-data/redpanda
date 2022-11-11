@@ -304,7 +304,7 @@ void materialized_segments::maybe_trim_segment(
         // this will delete and unlink the object from
         // _materialized collection
         if (st.parent) {
-            to_offload.push_back(std::make_pair(&st, st.offset_key));
+            to_offload.push_back(std::make_pair(&st, st.base_rp_offset));
         } else {
             // This cannot happen, because materialized_segment_state
             // is only instantiated by remote_partition and will
