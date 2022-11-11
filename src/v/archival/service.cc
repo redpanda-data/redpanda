@@ -193,6 +193,11 @@ ss::future<> scheduler_service_impl::start() {
 }
 
 ss::future<> scheduler_service_impl::stop() {
+    if (_stopped) {
+        vlog(_rtclog.info, "Scheduler service is already stopped");
+        co_return;
+    }
+    _stopped = true;
     vlog(_rtclog.info, "Scheduler service stop");
     _timer.cancel();
     co_await _gate.close();
