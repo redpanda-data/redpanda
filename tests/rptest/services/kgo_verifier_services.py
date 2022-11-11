@@ -415,11 +415,15 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
                  redpanda,
                  topic,
                  msg_size,
+                 max_msgs=None,
+                 max_throughput_mb=None,
                  nodes=None,
                  debug_logs=False):
         super(KgoVerifierSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes,
                              debug_logs)
+        self._max_msgs = max_msgs
+        self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
 
     @property
@@ -431,6 +435,10 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             self.clean_node(node)
 
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop --client-name {self.who_am_i()}"
+        if self._max_msgs is not None:
+            cmd += f" --seq_read_msgs {self._max_msgs}"
+        if self._max_throughput_mb is not None:
+            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -474,11 +482,17 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
                  topic,
                  msg_size,
                  readers,
+                 loop=False,
+                 max_msgs=None,
+                 max_throughput_mb=None,
                  nodes=None,
                  debug_logs=False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs)
 
         self._readers = readers
+        self._loop = loop
+        self._max_msgs = max_msgs
+        self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
 
     @property
@@ -490,6 +504,12 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
             self.clean_node(node)
 
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
+        if self._loop:
+            cmd += " --loop"
+        if self._max_msgs is not None:
+            cmd += f" --seq_read_msgs {self._max_msgs}"
+        if self._max_throughput_mb is not None:
+            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
