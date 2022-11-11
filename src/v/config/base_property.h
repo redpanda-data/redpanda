@@ -50,6 +50,12 @@ enum class visibility {
     deprecated,
 };
 
+// Whether to force an even or an odd value for a given property.
+enum class odd_even_constraint {
+    even,
+    odd,
+};
+
 std::string_view to_string_view(visibility v);
 
 class base_property {
