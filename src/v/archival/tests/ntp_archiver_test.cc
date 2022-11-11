@@ -86,9 +86,77 @@ void log_upload_candidate(const archival::upload_candidate& up) {
       first_source->offsets().dirty_offset);
 }
 
+namespace archival::internal {
+
+/// Replaces the ntp archiver in scheduler with an object which has a remote
+/// connection configured to a port which is not being listened to. The new
+/// archiver does not make any progress, freeing the unit test to create an
+/// archiver of its own and performing actions and making assertions about them
+/// in a clean environment.
+///
+/// We initialize a remote because the newly created archiver expects a
+/// reference to a remote which should remain alive for the duration of the
+/// test. The replacer must be closed before the test ends.
+class archiver_replacer {
+public:
+    explicit archiver_replacer(const cloud_storage::configuration& cfg)
+      : _cfg{with_port_replaced(cfg)}
+      , _remote{
+          _cfg.connection_limit,
+          _cfg.client_config,
+          _cfg.cloud_credentials_source} {}
+
+    void replace_archiver_with_no_op(
+      const model::ntp& ntp,
+      internal::scheduler_service_impl& scheduler,
+      const archival::configuration& aconf) {
+        if (auto it = scheduler._archivers.find(ntp);
+            it != scheduler._archivers.end()) {
+            it->second->stop().get();
+            scheduler._archivers.erase(it);
+        }
+
+        auto [it, ok] = scheduler._archivers.emplace(
+          ntp,
+          ss::make_lw_shared<ntp_archiver>(
+            scheduler._partition_manager.local().log(ntp)->config(),
+            scheduler._partition_manager.local(),
+            aconf,
+            _remote,
+            scheduler._partition_manager.local().get(ntp)));
+        it->second->run_upload_loop();
+    }
+
+    ss::future<> stop() { return _remote.stop(); }
+
+private:
+    // Replace the client configuration port with an adjacent port so that the
+    // remote object constructed can never connect and the associated archiver
+    // can not make progress.
+    static cloud_storage::configuration
+    with_port_replaced(const cloud_storage::configuration& cfg) {
+        auto replaced = cfg;
+        replaced.client_config.server_addr = net::unresolved_address{
+          {archiver_fixture::httpd_host_name.data(),
+           archiver_fixture::httpd_host_name.size()},
+          archiver_fixture::httpd_port_number + 1};
+
+        // Explicitly disable metrics. The archivers created in test may or may
+        // not have metrics disabled. If we do not disable metrics here there
+        // could be double registration which is an error.
+        replaced.client_config.disable_metrics = net::metrics_disabled::yes;
+        replaced.client_config.disable_public_metrics
+          = net::public_metrics_disabled::yes;
+        return replaced;
+    }
+
+    cloud_storage::configuration _cfg;
+    cloud_storage::remote _remote;
+};
+} // namespace archival::internal
+
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments, archiver_fixture) {
-    listen();
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
@@ -103,10 +171,18 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     vlog(test_log.info, "Initialized, start waiting for partition leadership");
 
     wait_for_partition_leadership(manifest_ntp);
+    archival::internal::archiver_replacer replacer{remote_conf};
+    ss::defer([&replacer] { replacer.stop().get(); });
+
+    replacer.replace_archiver_with_no_op(
+      manifest_ntp, get_scheduler_service(), arch_conf);
+
     auto part = app.partition_manager.local().get(manifest_ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->high_watermark() >= model::offset(1);
+        return part->last_stable_offset() >= model::offset(1000);
     }).get();
+
+    listen();
 
     vlog(
       test_log.info,
@@ -120,7 +196,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
-    auto res = archiver.upload_next_candidates().get();
+    auto res = upload_next_with_retries(archiver).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -188,8 +264,6 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
      * retention was applied and garbage collection has run, we should
      * see DELETE requests for the old segments being made.
      */
-    listen();
-
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
@@ -220,9 +294,14 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     vlog(test_log.info, "Initialized, start waiting for partition leadership");
 
     wait_for_partition_leadership(manifest_ntp);
+    archival::internal::archiver_replacer replacer{remote_conf};
+    ss::defer([&replacer] { replacer.stop().get(); });
+
+    replacer.replace_archiver_with_no_op(
+      manifest_ntp, get_scheduler_service(), arch_conf);
     auto part = app.partition_manager.local().get(manifest_ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->high_watermark() >= model::offset(1);
+        return part->last_stable_offset() >= model::offset(1);
     }).get();
 
     vlog(
@@ -232,12 +311,13 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
       part->committed_offset(),
       *part);
 
+    listen();
     archival::ntp_archiver archiver(
       get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
-    auto res = archiver.upload_next_candidates().get();
+    auto res = upload_next_with_retries(archiver).get0();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
@@ -300,7 +380,6 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
      * updated) despite the failure to delete. This should have happened
      * as the backlog size was breached (3 > 2).
      */
-    listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
@@ -331,11 +410,17 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
     init_storage_api_local(segments);
 
     wait_for_partition_leadership(manifest_ntp);
+    archival::internal::archiver_replacer replacer{remote_conf};
+    ss::defer([&replacer] { replacer.stop().get(); });
+
+    replacer.replace_archiver_with_no_op(
+      manifest_ntp, get_scheduler_service(), arch_conf);
     auto part = app.partition_manager.local().get(manifest_ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->high_watermark() >= model::offset(3000);
+        return part->last_stable_offset() >= model::offset(3000);
     }).get();
 
+    listen();
     config::shard_local_cfg().delete_retention_ms.set_value(
       std::chrono::milliseconds{1min});
     config::shard_local_cfg()
@@ -344,7 +429,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    auto res = archiver.upload_next_candidates().get();
+    auto res = upload_next_with_retries(archiver).get0();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
 
@@ -647,75 +732,6 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     b.stop().get();
 }
 
-namespace archival::internal {
-
-/// Replaces the ntp archiver in scheduler with an object which has a remote
-/// connection configured to a port which is not being listened to. The new
-/// archiver does not make any progress, freeing the unit test to create an
-/// archiver of its own and performing actions and making assertions about them
-/// in a clean environment.
-///
-/// We initialize a remote because the newly created archiver expects a
-/// reference to a remote which should remain alive for the duration of the
-/// test. The replacer must be closed before the test ends.
-class archiver_replacer {
-public:
-    explicit archiver_replacer(const cloud_storage::configuration& cfg)
-      : _cfg{with_port_replaced(cfg)}
-      , _remote{
-          _cfg.connection_limit,
-          _cfg.client_config,
-          _cfg.cloud_credentials_source} {}
-
-    void replace_archiver_with_no_op(
-      const model::ntp& ntp,
-      internal::scheduler_service_impl& scheduler,
-      const archival::configuration& aconf) {
-        if (auto it = scheduler._archivers.find(ntp);
-            it != scheduler._archivers.end()) {
-            it->second->stop().get();
-            scheduler._archivers.erase(it);
-        }
-
-        auto [it, ok] = scheduler._archivers.emplace(
-          ntp,
-          ss::make_lw_shared<ntp_archiver>(
-            scheduler._partition_manager.local().log(ntp)->config(),
-            scheduler._partition_manager.local(),
-            aconf,
-            _remote,
-            scheduler._partition_manager.local().get(ntp)));
-        it->second->run_upload_loop();
-    }
-
-    ss::future<> stop() { return _remote.stop(); }
-
-private:
-    // Replace the client configuration port with an adjacent port so that the
-    // remote object constructed can never connect and the associated archiver
-    // can not make progress.
-    static cloud_storage::configuration
-    with_port_replaced(const cloud_storage::configuration& cfg) {
-        auto replaced = cfg;
-        replaced.client_config.server_addr = net::unresolved_address{
-          {archiver_fixture::httpd_host_name.data(),
-           archiver_fixture::httpd_host_name.size()},
-          archiver_fixture::httpd_port_number + 1};
-
-        // Explicitly disable metrics. The archivers created in test may or may
-        // not have metrics disabled. If we do not disable metrics here there
-        // could be double registration which is an error.
-        replaced.client_config.disable_metrics = net::metrics_disabled::yes;
-        replaced.client_config.disable_public_metrics
-          = net::public_metrics_disabled::yes;
-        return replaced;
-    }
-
-    cloud_storage::configuration _cfg;
-    cloud_storage::remote _remote;
-};
-} // namespace archival::internal
-
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // This test simulates leadership transfer. In this situation the
@@ -732,7 +748,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     wait_for_partition_leadership(manifest_ntp);
     auto part = app.partition_manager.local().get(manifest_ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->high_watermark() >= model::offset(1);
+        return part->last_stable_offset() >= model::offset(1);
     }).get();
 
     vlog(
@@ -791,7 +807,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     retry_chain_node fib;
 
-    auto res = archiver.upload_next_candidates().get();
+    auto res = upload_next_with_retries(archiver).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -919,7 +935,7 @@ static void test_partial_upload_impl(
     test.wait_for_partition_leadership(manifest_ntp);
     auto part = test.app.partition_manager.local().get(manifest_ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
-        return part->high_watermark() >= model::offset(1);
+        return part->last_stable_offset() >= model::offset(1);
     }).get();
 
     auto [aconf, cconf] = get_configurations();
@@ -1012,7 +1028,7 @@ static void test_partial_upload_impl(
     retry_chain_node fib;
     test.reset_http_call_state();
 
-    auto res = archiver.upload_next_candidates(lso).get();
+    auto res = upload_next_with_retries(archiver, lso).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -1052,7 +1068,7 @@ static void test_partial_upload_impl(
     }
 
     lso = last_upl2 + model::offset(1);
-    res = archiver.upload_next_candidates(lso).get();
+    res = upload_next_with_retries(archiver, lso).get0();
 
     non_compacted_result = res.non_compacted_upload_result;
     compacted_result = res.compacted_upload_result;
