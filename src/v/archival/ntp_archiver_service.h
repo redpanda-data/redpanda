@@ -292,6 +292,9 @@ private:
     remote_segment_path
     segment_path_for_candidate(const upload_candidate& candidate);
 
+    /// Method to use with lazy_abort_source
+    bool archiver_lost_leadership(cloud_storage::lazy_abort_source& las);
+
     model::ntp _ntp;
     model::initial_revision_id _rev;
     cluster::partition_manager& _partition_manager;
