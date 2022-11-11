@@ -39,6 +39,8 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <fmt/ranges.h>
+
 #include <chrono>
 #include <system_error>
 namespace cluster {
@@ -352,6 +354,14 @@ model::node_id members_manager::get_node_id(const model::node_uuid& node_uuid) {
       it != _id_by_uuid.end(),
       "Node registration must be completed before calling");
     return it->second;
+}
+
+void members_manager::apply_initial_node_uuid_map(uuid_map_t id_by_uuid) {
+    vassert(_id_by_uuid.empty(), "will not overwrite existing data");
+    if (!id_by_uuid.empty()) {
+        vlog(clusterlog.debug, "Initial node UUID map: {}", id_by_uuid);
+    }
+    _id_by_uuid = std::move(id_by_uuid);
 }
 
 template<typename Cmd>

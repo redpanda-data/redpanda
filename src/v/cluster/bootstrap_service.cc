@@ -34,6 +34,7 @@ bootstrap_service::cluster_bootstrap_info(
       [](const config::seed_server& seed_server) { return seed_server.addr; });
     r.empty_seed_starts_cluster = config::node().empty_seed_starts_cluster();
     r.cluster_uuid = _storage.local().get_cluster_uuid();
+    r.node_uuid = _storage.local().node_uuid();
 
     vlog(clusterlog.debug, "Replying cluster_bootstrap_info: {}", r);
     co_return r;

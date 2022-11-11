@@ -14,16 +14,31 @@
 #include "cluster/cluster_uuid.h"
 #include "cluster/commands.h"
 #include "cluster/logger.h"
+#include "cluster/members_manager.h"
 #include "cluster/types.h"
 #include "security/credential_store.h"
 
 namespace cluster {
 
+// node_ids_by_uuid initialization
+// ===============================
+// If the node UUID to ID map in `members_manager` were not initialized at
+// cluster bootstrap, that would have allowed slow seed nodes (ones that miss
+// their oportunity to be founding nodes because of being slow) to also possibly
+// miss the assignment of `node_id` based on `seed_servers` index (as expected
+// for seed nodes). That could happen if another node joins the cluster before a
+// slow seed node and grabs the `node_id` that should have belonged to it.
+//
+// `bootstrap_backend` references `members_manager` to be able to initialize the
+// node UUID to ID map in it.
+
 bootstrap_backend::bootstrap_backend(
   ss::sharded<security::credential_store>& credentials,
-  ss::sharded<storage::api>& storage)
+  ss::sharded<storage::api>& storage,
+  ss::sharded<members_manager>& members_manager)
   : _credentials(credentials)
-  , _storage(storage) {}
+  , _storage(storage)
+  , _members_manager(members_manager) {}
 
 namespace {
 
@@ -127,6 +142,10 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
               cmd.value.bootstrap_user_cred->username);
         }
     }
+
+    // Apply initial node UUID to ID map
+    _members_manager.local().apply_initial_node_uuid_map(
+      cmd.value.node_ids_by_uuid);
 
     // Apply cluster_uuid
     co_await _storage.invoke_on_all(

@@ -33,12 +33,15 @@ namespace cluster {
  * This class applies the cluster initialization message to
  * - storage, persisting the cluster UUID to the kvstore,
  * - credential_store, to initialize the bootstrap user
+ * - members_manager, to initialize node UUID map
  * - TODO: apply the initial licence
  */
 class bootstrap_backend final {
 public:
     bootstrap_backend(
-      ss::sharded<security::credential_store>&, ss::sharded<storage::api>&);
+      ss::sharded<security::credential_store>&,
+      ss::sharded<storage::api>&,
+      ss::sharded<members_manager>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -49,8 +52,10 @@ public:
 
 private:
     ss::future<std::error_code> apply(bootstrap_cluster_cmd);
+
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
+    ss::sharded<members_manager>& _members_manager;
     std::optional<model::cluster_uuid> _cluster_uuid_applied;
 };
 

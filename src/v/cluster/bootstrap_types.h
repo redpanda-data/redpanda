@@ -40,6 +40,7 @@ struct cluster_bootstrap_info_reply
     std::vector<net::unresolved_address> seed_servers;
     bool empty_seed_starts_cluster;
     std::optional<model::cluster_uuid> cluster_uuid;
+    model::node_uuid node_uuid;
 
     auto serde_fields() {
         return std::tie(
@@ -47,7 +48,8 @@ struct cluster_bootstrap_info_reply
           version,
           seed_servers,
           empty_seed_starts_cluster,
-          cluster_uuid);
+          cluster_uuid,
+          node_uuid);
     }
 
     friend std::ostream&
@@ -55,12 +57,13 @@ struct cluster_bootstrap_info_reply
         fmt::print(
           o,
           "{{broker: {}, version: {}, seed_servers: {}, "
-          "empty_seed_starts_cluster: {}, cluster_uuid: {}}}",
+          "empty_seed_starts_cluster: {}, cluster_uuid: {}, node_uuid: {}}}",
           v.broker,
           v.version,
           v.seed_servers,
           v.empty_seed_starts_cluster,
-          v.cluster_uuid);
+          v.cluster_uuid,
+          v.node_uuid);
         return o;
     }
 };

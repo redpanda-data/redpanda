@@ -117,12 +117,22 @@ ss::future<bool> cluster_discovery::is_cluster_founder() {
             });
         }
         _founding_brokers = brokers{make_self_broker(config::node())};
+        _node_ids_by_uuid = node_ids_by_uuid{
+          {_storage.node_uuid(), _founding_brokers.front().id()}};
         _is_cluster_founder = true;
         co_return *_is_cluster_founder;
     }
     co_await discover_founding_brokers();
     vassert(_is_cluster_founder.has_value(), "must initialize founder state");
     co_return *_is_cluster_founder;
+}
+
+cluster_discovery::node_ids_by_uuid& cluster_discovery::get_node_ids_by_uuid() {
+    vassert(
+      _is_cluster_founder.has_value(), "must call discover_founding_brokers()");
+    vassert(*_is_cluster_founder, "must be a founder");
+    vassert(!_node_ids_by_uuid.empty(), "result has been consumed");
+    return _node_ids_by_uuid;
 }
 
 ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
@@ -281,6 +291,53 @@ std::optional<int> get_node_index_in_seed_servers() {
     return std::nullopt;
 }
 
+void verify_bootstrap_info_consistency(
+  bool& failed,
+  const cluster::cluster_bootstrap_info_reply& reply,
+  const net::unresolved_address& seed_addr) {
+    vassert(!reply.cluster_uuid.has_value(), "Should have returned early");
+    if (
+      reply.version != features::feature_table::get_latest_logical_version()) {
+        vlog(
+          clusterlog.error,
+          "logical version mismatch, local: {}, {}: {}",
+          features::feature_table::get_latest_logical_version(),
+          seed_addr,
+          reply.version);
+        failed = true;
+    }
+    if (!equal(reply.seed_servers, config::node().seed_servers())) {
+        vlog(
+          clusterlog.error,
+          "seed server list mismatch, local: {}, {}: {}",
+          config::node().seed_servers(),
+          seed_addr,
+          reply.seed_servers);
+        failed = true;
+    }
+    if (
+      reply.empty_seed_starts_cluster
+      != config::node().empty_seed_starts_cluster()) {
+        vlog(
+          clusterlog.error,
+          "empty_seed_starts_cluster mismatch, local: {}, {}: {}",
+          config::node().empty_seed_starts_cluster(),
+          seed_addr,
+          reply.empty_seed_starts_cluster);
+        failed = true;
+    }
+    if (seed_addr != reply.broker.rpc_address()) {
+        vlog(
+          clusterlog.warn,
+          "advertised_rpc_api mismatch, local (as per seed_servers): {}, "
+          "remote (as per advertised_rpc_api): {}. This is not an error and "
+          "the cluster will proceed, however the cluster will have less actual "
+          "seed nodes that expected, and may even fail to bootstrap",
+          seed_addr,
+          reply.broker.rpc_address());
+    }
+}
+
 } // anonymous namespace
 
 ss::future<> cluster_discovery::discover_founding_brokers() {
@@ -331,11 +388,6 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
     // Make sure we didn't exit the above calls without a reply.
     _as.check();
 
-    // At this point, assuming the seed replies are consistent with ours, we
-    // are a cluster founder.
-    ss::sstring error_msg;
-    brokers seed_brokers;
-    seed_brokers.reserve(config_seed_servers.size());
     if (!config::node().node_id().has_value()) {
         clusterlog.info("Using index based node ID {}", seed_idx);
         co_await ss::smp::invoke_on_all([&] {
@@ -343,71 +395,64 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
               std::optional<model::node_id>(seed_idx));
         });
     }
+
+    // At this point, assuming the seed replies are consistent with ours, we
+    // are a cluster founder. Now verify consistency of replies, and populate
+    // the list of founding brokers and the node_uuid map.
+    brokers founding_brokers;
+    founding_brokers.reserve(config_seed_servers.size());
+    node_ids_by_uuid node_ids;
+    absl::flat_hash_set<model::node_id> unique_node_ids;
     bool failed = false;
-    for (auto& seed : config_seed_servers) {
+    model::node_id::type idx = 0;
+    for (const auto& seed : config_seed_servers) {
+        model::broker broker;
+        model::node_uuid node_uuid;
         if (seed.addr == self_addr) {
-            seed_brokers.emplace_back(make_self_broker(config::node()));
-            continue;
+            broker = make_self_broker(config::node());
+            vassert(
+              broker.id() != model::unassigned_node_id,
+              "Should have been assigned before");
+            node_uuid = _storage.node_uuid();
+        } else {
+            cluster::cluster_bootstrap_info_reply& reply = replies[seed.addr];
+
+            // The other seeds will likely mostly all have -1 as their node_id
+            // if their node_id was not set explicitly. Have the returned seed
+            // broker node_id populated with indices, relying on the fact that
+            // all seed brokers have identical configuration.
+            if (reply.broker.id() == model::unassigned_node_id) {
+                reply.broker.replace_unassigned_node_id(model::node_id(idx));
+            }
+
+            verify_bootstrap_info_consistency(failed, reply, seed.addr);
+            broker = std::move(reply.broker);
+            node_uuid = reply.node_uuid;
         }
-        auto& reply = replies[seed.addr];
-        vassert(!reply.cluster_uuid.has_value(), "Should have returned early");
-        if (
-          reply.version
-          != features::feature_table::get_latest_logical_version()) {
-            vlog(
-              clusterlog.error,
-              "logical version mismatch, local: {}, {}: {}",
-              features::feature_table::get_latest_logical_version(),
-              seed.addr,
-              reply.version);
+        if (const auto [i, inserted] = node_ids.try_emplace(
+              std::move(node_uuid), broker.id());
+            !inserted) {
+            vlog(clusterlog.error, "Duplicate node UUID: {}", i->first);
             failed = true;
         }
-        if (!equal(reply.seed_servers, config_seed_servers)) {
-            vlog(
-              clusterlog.error,
-              "seed server list mismatch, local: {}, {}: {}",
-              config_seed_servers,
-              seed.addr,
-              reply.seed_servers);
+        if (!unique_node_ids.emplace(broker.id()).second) {
+            vlog(clusterlog.error, "Duplicate node ID: {}", broker.id());
             failed = true;
         }
-        if (
-          reply.empty_seed_starts_cluster
-          != config::node().empty_seed_starts_cluster()) {
-            vlog(
-              clusterlog.error,
-              "empty_seed_starts_cluster mismatch, local: {}, {}: {}",
-              config::node().empty_seed_starts_cluster(),
-              seed.addr,
-              reply.empty_seed_starts_cluster);
-            failed = true;
-        }
-        seed_brokers.emplace_back(std::move(reply.broker));
+        founding_brokers.emplace_back(std::move(broker));
+        ++idx;
     }
     if (failed) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
-          "Cannot bootstrap a cluster due to seed servers mismatch, check "
-          "the log above for details"));
+          "Cannot bootstrap a cluster due to seed servers configuraton "
+          "mismatch, check the errors above in the log for details. Brokers: "
+          "{}",
+          founding_brokers));
     }
-    // The other seeds will likely mostly all have -1 as their node_id if their
-    // node_id was not set explicitly. Have the returned seed broker node_id
-    // populated with indices, relying on the fact that all seed broker's have
-    // identical configuration.
-    model::node_id::type idx = 0;
-    absl::flat_hash_set<model::node_id> unique_node_ids;
-    for (auto& broker : seed_brokers) {
-        if (broker.id() == model::unassigned_node_id) {
-            broker.replace_unassigned_node_id(model::node_id(idx));
-        }
-        unique_node_ids.emplace(broker.id());
-        ++idx;
-    }
-    if (unique_node_ids.size() != seed_brokers.size()) {
-        throw std::runtime_error(
-          fmt_with_ctx(fmt::format, "Duplicate node IDs: {}", seed_brokers));
-    }
-    _founding_brokers = std::move(seed_brokers);
+
+    _founding_brokers = std::move(founding_brokers);
+    _node_ids_by_uuid = std::move(node_ids);
     _is_cluster_founder = true;
 }
 

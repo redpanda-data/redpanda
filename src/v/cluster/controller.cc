@@ -158,7 +158,9 @@ ss::future<> controller::start(cluster_discovery& discovery) {
       })
       .then([this] {
           return _bootstrap_backend.start_single(
-            std::ref(_credentials), std::ref(_storage));
+            std::ref(_credentials),
+            std::ref(_storage),
+            std::ref(_members_manager));
       })
       .then([this] {
           return _config_frontend.start(
@@ -505,17 +507,11 @@ ss::future<> controller::stop() {
     });
 }
 
-ss::future<> controller::create_cluster(const create_cluster_mode mode) {
+ss::future<>
+controller::create_cluster(const bootstrap_cluster_cmd_data cmd_data) {
     vassert(
       ss::this_shard_id() == controller_stm_shard,
       "Cluster can only be created from controller_stm_shard");
-
-    bootstrap_cluster_cmd_data cmd_data;
-    cmd_data.uuid = model::cluster_uuid(uuid_t::create());
-    if (mode == create_cluster_mode::bootstrap) {
-        cmd_data.bootstrap_user_cred
-          = security_frontend::get_bootstrap_user_creds_from_env();
-    }
 
     for (simple_time_jitter<model::timeout_clock> retry_jitter(1s);;) {
         // A new cluster is created by the leader of raft0 consisting of seed
@@ -588,7 +584,13 @@ ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
               "Root is a cluster founder but joiners are in the cluster alrdy");
         }
 
-        co_return co_await create_cluster(create_cluster_mode::bootstrap);
+        // Full cluster bootstrap
+        bootstrap_cluster_cmd_data cmd_data;
+        cmd_data.uuid = model::cluster_uuid(uuid_t::create());
+        cmd_data.bootstrap_user_cred
+          = security_frontend::get_bootstrap_user_creds_from_env();
+        cmd_data.node_ids_by_uuid = std::move(discovery.get_node_ids_by_uuid());
+        co_return co_await create_cluster(std::move(cmd_data));
     }
 
     if (_storage.local().get_cluster_uuid()) {
@@ -599,14 +601,18 @@ ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
         co_return;
     }
 
-    // No cluster UUID in non-founder is a possibility that a pre-22.3
-    // cluster needs a UUID
+    // A missing cluster UUID on a non-founder may indicate this node was
+    // upgraded from a version before 22.3. Replicate just a cluster UUID so we
+    // can advertise that a cluster has already been bootstrapped to nodes
+    // trying to discover existing clusters.
     ssx::background
       = _feature_table.local()
           .await_feature(
             features::feature::seeds_driven_bootstrap_capable, _as.local())
           .then([this] {
-              return create_cluster(create_cluster_mode::cluster_uuid_only);
+              bootstrap_cluster_cmd_data cmd_data;
+              cmd_data.uuid = model::cluster_uuid(uuid_t::create());
+              return create_cluster(std::move(cmd_data));
           })
           .handle_exception([](const std::exception_ptr e) {
               vlog(clusterlog.warn, "Error creating cluster UUID. {}", e);
