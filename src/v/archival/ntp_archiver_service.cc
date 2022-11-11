@@ -573,9 +573,15 @@ static ss::future<cloud_storage::upload_result> aggregate_upload_results(
     return ss::when_all(upl_vec.begin(), upl_vec.end()).then([](auto vec) {
         auto res = cloud_storage::upload_result::success;
         for (auto& v : vec) {
-            auto r = v.get();
-            if (r != cloud_storage::upload_result::success) {
-                res = r;
+            try {
+                auto r = v.get();
+                if (r != cloud_storage::upload_result::success) {
+                    res = r;
+                }
+            } catch (const ss::gate_closed_exception&) {
+                res = cloud_storage::upload_result::cancelled;
+            } catch (...) {
+                res = cloud_storage::upload_result::failed;
             }
         }
         return res;
