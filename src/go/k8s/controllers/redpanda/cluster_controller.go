@@ -50,7 +50,7 @@ import (
 
 const (
 	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
-	PodFinalizerKey        = "operator.redpanda.com/finalizer"
+	FinalizerKey           = "operator.redpanda.com/finalizer"
 )
 
 var (
@@ -120,6 +120,19 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
+	// if the cluster is being deleted, delete finalizers
+	if !redpandaCluster.GetDeletionTimestamp().IsZero() {
+		return r.handleClusterDeletion(ctx, &redpandaCluster, log)
+	}
+
+	// if the cluster isn't being deleted, add a finalizer
+	if !controllerutil.ContainsFinalizer(&redpandaCluster, FinalizerKey) {
+		log.V(7).Info("adding finalizer")
+		controllerutil.AddFinalizer(&redpandaCluster, FinalizerKey)
+		if err := r.Update(ctx, &redpandaCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to set Cluster finalizer: %w", err)
+		}
+	}
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
@@ -468,9 +481,9 @@ func (r *ClusterReconciler) handlePodFinalizer(
 func (r *ClusterReconciler) removePodFinalizer(
 	ctx context.Context, pod *corev1.Pod, log logr.Logger,
 ) error {
-	if controllerutil.ContainsFinalizer(pod, PodFinalizerKey) {
+	if controllerutil.ContainsFinalizer(pod, FinalizerKey) {
 		log.V(7).WithValues(pod.Namespace, pod.Name).Info("removing finalizer")
-		controllerutil.RemoveFinalizer(pod, PodFinalizerKey)
+		controllerutil.RemoveFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
 		}
@@ -481,9 +494,9 @@ func (r *ClusterReconciler) removePodFinalizer(
 func (r *ClusterReconciler) setPodFinalizer(
 	ctx context.Context, pod *corev1.Pod, log logr.Logger,
 ) error {
-	if !controllerutil.ContainsFinalizer(pod, PodFinalizerKey) {
+	if !controllerutil.ContainsFinalizer(pod, FinalizerKey) {
 		log.V(7).WithValues(pod.Namespace, pod.Name).Info("adding finalizer")
-		controllerutil.AddFinalizer(pod, PodFinalizerKey)
+		controllerutil.AddFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
 		}
@@ -799,6 +812,28 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 	}
 	return result, nil
+}
+
+func (r *ClusterReconciler) handleClusterDeletion(
+	ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster, log logr.Logger,
+) (reconcile.Result, error) {
+	if controllerutil.ContainsFinalizer(redpandaCluster, FinalizerKey) {
+		log.V(7).Info("removing finalizers")
+		pods, err := r.podList(ctx, redpandaCluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to list Pods: %w", err)
+		}
+		for i := range pods.Items {
+			if err := r.removePodFinalizer(ctx, &pods.Items[i], log); err != nil {
+				return ctrl.Result{}, fmt.Errorf(`unable to remove finalizer for pod "%s": %w`, pods.Items[i].GetName(), err)
+			}
+		}
+		controllerutil.RemoveFinalizer(redpandaCluster, FinalizerKey)
+		if err := r.Update(ctx, redpandaCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to remove Cluster finalizer: %w", err)
+		}
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *ClusterReconciler) setInitialSuperUserPassword(
