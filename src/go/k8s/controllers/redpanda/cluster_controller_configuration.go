@@ -39,11 +39,11 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	fqdn string,
 	log logr.Logger,
 ) error {
+	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 	if !featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
 		log.Info("Cluster is not using centralized configuration, skipping...")
 		return nil
 	}
-	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 
 	if added, err := r.ensureConditionPresent(ctx, redpandaCluster, log); err != nil || added {
 		// If condition is added or error returned, we wait for another reconcile loop
