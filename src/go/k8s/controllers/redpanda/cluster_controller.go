@@ -133,6 +133,11 @@ func (r *ClusterReconciler) Reconcile(
 			return ctrl.Result{}, fmt.Errorf("unable to set Cluster finalizer: %w", err)
 		}
 	}
+	// set a finalizer on the pods so we can have the data needed to decommission them
+	if err := r.handlePodFinalizer(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
+	}
+
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
@@ -183,7 +188,7 @@ func (r *ClusterReconciler) Reconcile(
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
-	secretResource := resources.NewSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	secretResource := resources.PreStartStopScriptSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -232,11 +237,6 @@ func (r *ClusterReconciler) Reconcile(
 			log.Error(err, "Failed to reconcile resource")
 			return ctrl.Result{}, err
 		}
-	}
-
-	// set a finalizer on the pods so we can have the data needed to decommission them
-	if err := r.handlePodFinalizer(ctx, &redpandaCluster, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
 	}
 
 	var secrets []types.NamespacedName
@@ -344,6 +344,7 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 func (r *ClusterReconciler) setLicense(
 	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
 ) error {
+	log.V(6).Info("setting license")
 	if l := rp.Spec.LicenseRef; l != nil {
 		ll, err := l.GetSecret(ctx, r.Client)
 		if err != nil {
@@ -507,6 +508,7 @@ func (r *ClusterReconciler) setPodFinalizer(
 func (r *ClusterReconciler) setPodNodeIDAnnotation(
 	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
 ) error {
+	log.V(6).Info("setting pod node-id annotation")
 	pods, err := r.podList(ctx, rp)
 	if err != nil {
 		return fmt.Errorf("unable to fetch PodList: %w", err)
