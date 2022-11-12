@@ -125,11 +125,11 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
@@ -158,11 +158,11 @@ FIXTURE_TEST(
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
     retry_chain_node fib(100ms, 20ms);
     auto lost_leadership = lazy_abort_source{
@@ -189,11 +189,11 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
@@ -219,11 +219,11 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
     retry_chain_node fib(100ms, 20ms);
     auto upl_res = remote
@@ -280,11 +280,11 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
 
     retry_chain_node fib(100ms, 20ms);
@@ -328,11 +328,11 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
-      []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+      [] {
         iobuf out;
         out.append(manifest_payload.data(), manifest_payload.size());
-        co_return std::make_unique<storage::segment_reader_handle>(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(std::make_unique<storage::segment_reader_handle>(
+          make_iobuf_input_stream(std::move(out))));
     };
     auto upl_res = remote
                      .upload_segment(
