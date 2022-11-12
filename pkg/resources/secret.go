@@ -47,8 +47,8 @@ type PreStartStopScriptResource struct {
 	logger                 logr.Logger
 }
 
-// NewSecret creates SecretResource
-func NewSecret(
+// PreStartStopScriptSecret creates SecretResource
+func PreStartStopScriptSecret(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
