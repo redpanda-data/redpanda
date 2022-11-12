@@ -558,9 +558,9 @@ ss::future<client::head_object_result> client::head_object(
     return _client.request(std::move(header.value()), timeout)
       .then(
         [key](const http::client::response_stream_ref& ref)
-          -> ss::future<head_object_result> {
+          {
             return ref->prefetch_headers().then(
-              [ref, key]() -> ss::future<head_object_result> {
+              [ref, key] {
                   auto status = ref->get_headers().result();
                   if (status == boost::beast::http::status::not_found) {
                       vlog(

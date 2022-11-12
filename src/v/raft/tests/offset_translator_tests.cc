@@ -631,7 +631,7 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
     // validate translation on target shard
     ss::smp::submit_to(
       target_shard,
-      [&api = _api, ntp = test_ntp]() -> ss::future<> {
+      [&api = _api, ntp = test_ntp] {
           auto remote_ot = raft::offset_translator{
             {model::record_batch_type::raft_configuration,
              model::record_batch_type::checkpoint},

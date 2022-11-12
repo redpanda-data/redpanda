@@ -98,7 +98,7 @@ ss::future<> members_manager::start() {
         if (b.id() == _self.id()) {
             continue;
         }
-        ssx::spawn_with_gate(_gate, [this, &b]() -> ss::future<> {
+        ssx::spawn_with_gate(_gate, [this, &b] {
             return initialize_broker_connection(b);
         });
     }

@@ -296,7 +296,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     }
     return fut
       .then([this, timeout] { return _iterator.reader->read_some(timeout); })
-      .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
+      .then([this, timeout](result<records_t> recs) {
           if (!recs) {
               set_end_of_stream();
               vlog(

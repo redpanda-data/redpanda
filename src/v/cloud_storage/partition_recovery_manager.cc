@@ -372,7 +372,7 @@ partition_downloader::download_log_with_capped_size(
                  (data_found
                   && (total_size + offset_segment_it->second.size_bytes >= max_size));
       },
-      [&]() -> ss::future<> {
+      [&] {
           auto [_, s] = *offset_segment_it;
           ++offset_segment_it;
 
@@ -475,7 +475,7 @@ partition_downloader::download_log_with_capped_time(
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, &dlpart, &dloffsets](const segment_meta& s) -> ss::future<> {
+      [this, &dlpart, &dloffsets](const segment_meta& s) {
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
           vlog(
@@ -618,7 +618,7 @@ partition_downloader::download_segment_file(
                    _localpath{localpath},
                    _otl{otl}](
                     uint64_t len,
-                    ss::input_stream<char> in) -> ss::future<uint64_t> {
+                    ss::input_stream<char> in) {
         return download_segment_file_stream(
           len,
           std::move(in),

@@ -54,7 +54,7 @@ feature_manager::feature_manager(
         model::node_id to,
         feature_barrier_tag tag,
         bool entered)
-        -> ss::future<result<rpc::client_context<feature_barrier_response>>> {
+        {
           auto timeout = 5s;
           return _connection_cache.local()
             .with_node_client<cluster::controller_client_protocol>(

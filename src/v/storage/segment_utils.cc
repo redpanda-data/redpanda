@@ -244,7 +244,7 @@ static ss::future<> do_write_clean_compacted_index(
     return natural_index_of_entries_to_keep(reader)
       .then(
         [reader, cfg, tmpname, &resources](
-          roaring::Roaring bitmap) -> ss::future<> {
+          roaring::Roaring bitmap) {
             auto truncating_writer = make_file_backed_compacted_index(
               tmpname.string(), cfg.iopc, cfg.sanitize, true, resources);
 
@@ -252,7 +252,7 @@ static ss::future<> do_write_clean_compacted_index(
               reader, std::move(bitmap), std::move(truncating_writer));
         })
       .then(
-        [old_name = tmpname, new_name = reader.filename()]() -> ss::future<> {
+        [old_name = tmpname, new_name = reader.filename()]() {
             // from glibc: If oldname is not a directory, then any
             // existing file named newname is removed during the
             // renaming operation

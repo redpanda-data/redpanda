@@ -203,7 +203,7 @@ FIXTURE_TEST(invalidate_outside_cache_dir_throws, cache_test_fixture) {
     ss::recursive_touch_directory(CACHE_DIR.native()).get();
     auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
     target_dir
-      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+      .list_directory([this](const ss::directory_entry& entry) {
           auto entry_path = std::filesystem::path(CACHE_DIR)
                             / std::filesystem::path(entry.name);
           return ss::recursive_remove_directory(entry_path.native());
@@ -231,7 +231,7 @@ FIXTURE_TEST(invalidate_prefix_outside_cache_dir_throws, cache_test_fixture) {
     ss::recursive_touch_directory(CACHE_DIR.native()).get();
     auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
     target_dir
-      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+      .list_directory([this](const ss::directory_entry& entry) {
           auto entry_path = std::filesystem::path(CACHE_DIR)
                             / std::filesystem::path(entry.name);
           return ss::recursive_remove_directory(entry_path.native());
@@ -259,7 +259,7 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     ss::recursive_touch_directory(CACHE_DIR.native()).get();
     auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
     target_dir
-      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+      .list_directory([this](const ss::directory_entry& entry) {
           auto entry_path = std::filesystem::path(CACHE_DIR)
                             / std::filesystem::path(entry.name);
           return ss::recursive_remove_directory(entry_path.native());

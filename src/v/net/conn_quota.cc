@@ -431,7 +431,7 @@ void conn_quota::cancel_reclaim_to(
             auto units = allowance->reclaim_lock.try_get_units().value();
             allowance->reclaim = false;
             return container()
-              .invoke_on_others([addr](conn_quota& cq) -> ss::future<> {
+              .invoke_on_others([addr](conn_quota& cq) {
                   cq.cancel_reclaim_from(addr);
                   return ss::now();
               })

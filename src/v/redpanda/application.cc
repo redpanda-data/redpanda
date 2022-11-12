@@ -1329,7 +1329,7 @@ void application::start_bootstrap_services() {
           .get();
 
     storage
-      .invoke_on_all([disk_stats](storage::api& sa) -> ss::future<> {
+      .invoke_on_all([disk_stats](storage::api& sa) {
           sa.resources().update_allowance(
             disk_stats.total_bytes, disk_stats.free_bytes);
           return ss::now();

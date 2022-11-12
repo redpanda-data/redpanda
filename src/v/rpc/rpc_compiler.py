@@ -128,7 +128,7 @@ public:
                               {{method.output_type}},
                               Codec>::exec(in, ctx, {{method.id}},
       [this](
-          {{method.input_type}}&& t, rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
+          {{method.input_type}}&& t, rpc::streaming_context& ctx) {
           return {{method.name}}(std::move(t), ctx);
       });
     }

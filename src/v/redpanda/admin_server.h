@@ -122,7 +122,7 @@ private:
         path.set(
           _server._routes,
           [this, handler](std::unique_ptr<ss::httpd::request> req)
-            -> ss::future<ss::json::json_return_type> {
+            {
               auto auth_state = apply_auth<required_auth>(*req);
 
               // Note: a request is only logged if it does not throw

@@ -35,7 +35,7 @@ int corpus_write(char** argv, std::filesystem::path dir) {
 int corpus_check(char** argv, std::filesystem::path path) {
     seastar::app_template app;
     try {
-        return app.run(1, argv, [path = std::move(path)]() -> ss::future<int> {
+        return app.run(1, argv, [path = std::move(path)]() {
             return compat::check_type(path).then([] { return 0; });
         });
     } catch (...) {

@@ -149,7 +149,7 @@ ss::future<api_response> post_request(
     return http::with_client(
       std::move(client),
       [req = std::move(req), content = std::move(content), timeout](
-        auto& client) mutable -> ss::future<api_response> {
+        auto& client) mutable {
           return do_request(
             req,
             [&client, content = std::move(content), timeout](

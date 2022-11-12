@@ -720,7 +720,7 @@ ss::future<> group_metadata_migration::migrate_metadata() {
                 [&pm = _controller.get_partition_manager(),
                  &st = _controller.get_shard_table(),
                  &as = _controller.get_abort_source(),
-                 ntps = std::move(ntps)]() mutable -> ss::future<> {
+                 ntps = std::move(ntps)]() mutable {
                     return dispatch_ntps_migration(std::move(ntps), pm, st, as);
                 });
           });

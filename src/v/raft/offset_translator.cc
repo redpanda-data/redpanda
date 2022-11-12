@@ -422,7 +422,7 @@ ss::future<> offset_translator::move_persistent_state(
     co_await api.invoke_on(
       target_shard,
       [gr = group,
-       state = std::move(state)](storage::api& api) -> ss::future<> {
+       state = std::move(state)](storage::api& api) {
           std::vector<ss::future<>> write_futures;
           write_futures.reserve(2);
           if (state->offset_map) {

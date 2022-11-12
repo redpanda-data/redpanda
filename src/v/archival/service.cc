@@ -340,7 +340,7 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
     gate_guard g(_gate);
     return ss::parallel_for_each(
              to_remove,
-             [this](const model::ntp& ntp) -> ss::future<> {
+             [this](const model::ntp& ntp) {
                  vlog(_rtclog.info, "removing archiver for {}", ntp.path());
                  auto archiver = _archivers.at(ntp);
                  return archiver->stop().finally([this, ntp] {

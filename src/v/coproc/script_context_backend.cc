@@ -339,7 +339,7 @@ write_materialized(output_write_inputs replies, output_write_args args) {
     grouping_t grs = group_replies(std::move(replies));
     bool err{false};
     co_await ss::parallel_for_each(
-      grs, [args, &err](grouping_t::value_type& vt) -> ss::future<> {
+      grs, [args, &err](grouping_t::value_type& vt) {
           return process_reply_group(vt.first, std::move(vt.second), args)
             .handle_exception([args, &err](const std::exception_ptr& e) {
                 try {

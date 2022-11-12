@@ -2115,7 +2115,7 @@ tx_gateway_frontend::get_all_transactions() {
       *shard,
       _ssg,
       [](tx_gateway_frontend& self)
-        -> ss::future<tx_gateway_frontend::return_all_txs_res> {
+        {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
