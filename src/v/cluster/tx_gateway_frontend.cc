@@ -2112,10 +2112,7 @@ tx_gateway_frontend::get_all_transactions() {
     }
 
     co_return co_await container().invoke_on(
-      *shard,
-      _ssg,
-      [](tx_gateway_frontend& self)
-        {
+      *shard, _ssg, [](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {

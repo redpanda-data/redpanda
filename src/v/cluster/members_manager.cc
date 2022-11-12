@@ -98,9 +98,8 @@ ss::future<> members_manager::start() {
         if (b.id() == _self.id()) {
             continue;
         }
-        ssx::spawn_with_gate(_gate, [this, &b] {
-            return initialize_broker_connection(b);
-        });
+        ssx::spawn_with_gate(
+          _gate, [this, &b] { return initialize_broker_connection(b); });
     }
     _last_connection_update_offset = _raft0->get_latest_configuration_offset();
     co_return;

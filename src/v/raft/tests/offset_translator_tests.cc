@@ -629,37 +629,34 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
       .get();
 
     // validate translation on target shard
-    ss::smp::submit_to(
-      target_shard,
-      [&api = _api, ntp = test_ntp] {
-          auto remote_ot = raft::offset_translator{
-            {model::record_batch_type::raft_configuration,
-             model::record_batch_type::checkpoint},
-            raft::group_id(0),
-            ntp,
-            api.local()};
-          return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
-              return remote_ot
-                .start(
-                  raft::offset_translator::must_reset::no,
-                  raft::offset_translator::bootstrap_state{})
-                .then([&remote_ot] {
-                    validate_translation(
-                      remote_ot, model::offset(0), model::offset(0));
-                    validate_translation(
-                      remote_ot, model::offset(1), model::offset(1));
-                    validate_translation(
-                      remote_ot, model::offset(7), model::offset(2));
-                    validate_translation(
-                      remote_ot, model::offset(9), model::offset(3));
-                    validate_translation(
-                      remote_ot, model::offset(10), model::offset(4));
-                    validate_translation(
-                      remote_ot, model::offset(11), model::offset(5));
-                });
-          });
-      })
-      .get();
+    ss::smp::submit_to(target_shard, [&api = _api, ntp = test_ntp] {
+        auto remote_ot = raft::offset_translator{
+          {model::record_batch_type::raft_configuration,
+           model::record_batch_type::checkpoint},
+          raft::group_id(0),
+          ntp,
+          api.local()};
+        return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
+            return remote_ot
+              .start(
+                raft::offset_translator::must_reset::no,
+                raft::offset_translator::bootstrap_state{})
+              .then([&remote_ot] {
+                  validate_translation(
+                    remote_ot, model::offset(0), model::offset(0));
+                  validate_translation(
+                    remote_ot, model::offset(1), model::offset(1));
+                  validate_translation(
+                    remote_ot, model::offset(7), model::offset(2));
+                  validate_translation(
+                    remote_ot, model::offset(9), model::offset(3));
+                  validate_translation(
+                    remote_ot, model::offset(10), model::offset(4));
+                  validate_translation(
+                    remote_ot, model::offset(11), model::offset(5));
+              });
+        });
+    }).get();
 
     // check if keys were deleted
     auto map = _api.local().kvs().get(

@@ -53,8 +53,7 @@ feature_manager::feature_manager(
         model::node_id from,
         model::node_id to,
         feature_barrier_tag tag,
-        bool entered)
-        {
+        bool entered) {
           auto timeout = 5s;
           return _connection_cache.local()
             .with_node_client<cluster::controller_client_protocol>(

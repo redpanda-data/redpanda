@@ -556,40 +556,36 @@ ss::future<client::head_object_result> client::head_object(
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then(
-        [key](const http::client::response_stream_ref& ref)
-          {
-            return ref->prefetch_headers().then(
-              [ref, key] {
-                  auto status = ref->get_headers().result();
-                  if (status == boost::beast::http::status::not_found) {
-                      vlog(
-                        s3_log.debug,
-                        "Object not available, error: {}",
-                        ref->get_headers());
-                      return parse_head_error_response<head_object_result>(
-                        ref->get_headers(), key);
-                  } else if (status != boost::beast::http::status::ok) {
-                      vlog(
-                        s3_log.warn,
-                        "S3 replied with error: {}",
-                        ref->get_headers());
-                      return parse_head_error_response<head_object_result>(
-                        ref->get_headers(), key);
-                  }
-                  auto len = boost::lexical_cast<uint64_t>(
-                    ref->get_headers().at(
-                      boost::beast::http::field::content_length));
-                  auto etag = ref->get_headers().at(
-                    boost::beast::http::field::etag);
-                  head_object_result results{
-                    .object_size = len,
-                    .etag = ss::sstring(etag.data(), etag.length()),
-                  };
-                  return ss::make_ready_future<head_object_result>(
-                    std::move(results));
-              });
-        })
+      .then([key](const http::client::response_stream_ref& ref) {
+          return ref->prefetch_headers().then([ref, key] {
+              auto status = ref->get_headers().result();
+              if (status == boost::beast::http::status::not_found) {
+                  vlog(
+                    s3_log.debug,
+                    "Object not available, error: {}",
+                    ref->get_headers());
+                  return parse_head_error_response<head_object_result>(
+                    ref->get_headers(), key);
+              } else if (status != boost::beast::http::status::ok) {
+                  vlog(
+                    s3_log.warn,
+                    "S3 replied with error: {}",
+                    ref->get_headers());
+                  return parse_head_error_response<head_object_result>(
+                    ref->get_headers(), key);
+              }
+              auto len = boost::lexical_cast<uint64_t>(ref->get_headers().at(
+                boost::beast::http::field::content_length));
+              auto etag = ref->get_headers().at(
+                boost::beast::http::field::etag);
+              head_object_result results{
+                .object_size = len,
+                .etag = ss::sstring(etag.data(), etag.length()),
+              };
+              return ss::make_ready_future<head_object_result>(
+                std::move(results));
+          });
+      })
       .handle_exception_type([this](const rest_error_response& err) {
           _probe->register_failure(err.code());
           return ss::make_exception_future<head_object_result>(err);

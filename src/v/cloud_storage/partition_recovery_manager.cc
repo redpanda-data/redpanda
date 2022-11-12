@@ -616,9 +616,7 @@ partition_downloader::download_segment_file(
                    _part{part},
                    _remote_path{remote_path},
                    _localpath{localpath},
-                   _otl{otl}](
-                    uint64_t len,
-                    ss::input_stream<char> in) {
+                   _otl{otl}](uint64_t len, ss::input_stream<char> in) {
         return download_segment_file_stream(
           len,
           std::move(in),

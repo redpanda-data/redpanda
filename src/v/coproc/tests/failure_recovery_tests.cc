@@ -40,8 +40,7 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
           model::partition_id(i));
     }
 
-    auto push_inputs =
-      [this](const std::vector<model::ntp>& ntps) {
+    auto push_inputs = [this](const std::vector<model::ntp>& ntps) {
         std::vector<ss::future<>> fs;
         for (const auto& ntp : ntps) {
             fs.emplace_back(produce(ntp, make_random_batch(500)));

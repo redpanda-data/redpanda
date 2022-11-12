@@ -2252,8 +2252,7 @@ admin_server::mark_transaction_expired_handler(
     co_return co_await _partition_manager.invoke_on(
       *shard,
       [_ntp = std::move(ntp), pid, _req = std::move(req), this](
-        cluster::partition_manager& pm) mutable
-      {
+        cluster::partition_manager& pm) mutable {
           auto ntp = std::move(_ntp);
           auto req = std::move(_req);
           auto partition = pm.get(ntp);

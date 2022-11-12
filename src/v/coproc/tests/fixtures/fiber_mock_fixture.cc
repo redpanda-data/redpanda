@@ -34,13 +34,12 @@ ss::future<> fiber_mock_fixture::init_test(test_parameters params) {
           params.tn.ns, params.tn.tp, model::partition_id(i));
         auto shard = app.shard_table.local().shard_for(ntp);
         vassert(shard, "topic not up yet");
-        co_await _state.invoke_on(
-          *shard, [this, ntp, params](state& s) {
-              return make_source(ntp, s, params).then([ntp, &s](auto src) {
-                  auto [_, success] = s.routes.emplace(ntp, src);
-                  vassert(success, "no double insert attempt should occur");
-              });
-          });
+        co_await _state.invoke_on(*shard, [this, ntp, params](state& s) {
+            return make_source(ntp, s, params).then([ntp, &s](auto src) {
+                auto [_, success] = s.routes.emplace(ntp, src);
+                vassert(success, "no double insert attempt should occur");
+            });
+        });
     }
 }
 

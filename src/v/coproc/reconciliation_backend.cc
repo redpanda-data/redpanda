@@ -183,9 +183,7 @@ reconciliation_backend::fetch_and_reconcile(events_cache_t deltas) {
         co_return;
     }
     co_await ss::parallel_for_each(
-      deltas.begin(),
-      deltas.end(),
-      [this](events_cache_t::value_type& p) {
+      deltas.begin(), deltas.end(), [this](events_cache_t::value_type& p) {
           return process_updates(p.first, std::move(p.second));
       });
 }

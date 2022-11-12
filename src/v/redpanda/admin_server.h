@@ -121,8 +121,7 @@ private:
     void register_route(ss::httpd::path_description const& path, F handler) {
         path.set(
           _server._routes,
-          [this, handler](std::unique_ptr<ss::httpd::request> req)
-            {
+          [this, handler](std::unique_ptr<ss::httpd::request> req) {
               auto auth_state = apply_auth<required_auth>(*req);
 
               // Note: a request is only logged if it does not throw
