@@ -44,8 +44,8 @@ RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
 # - install dependencies of 'rpk debug' system scan
-RUN apt update && \
-    apt install -y \
+RUN apt-get update && \
+    apt-get install -qq \
       bind9-utils \
       bind9-dnsutils \
       bsdmainutils \
@@ -64,7 +64,7 @@ RUN apt update && \
       nodejs \
       npm \
       openssh-server \
-      netcat \
+      netcat-openbsd \
       sudo \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
