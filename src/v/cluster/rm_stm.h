@@ -484,6 +484,14 @@ private:
         }
     };
 
+    enum class clear_type : int8_t {
+        tx_pids,
+        idempotent_pids,
+    };
+
+    void spawn_background_clean_for_pids(clear_type type);
+
+    ss::future<> clear_old_pids(clear_type type);
     ss::future<> clear_old_tx_pids();
     ss::future<> clear_old_idempotent_pids();
 
@@ -627,6 +635,7 @@ private:
     prefix_logger _ctx_log;
 
     config::binding<uint64_t> _max_concurrent_producer_ids;
+    mutex _clean_old_pids_mtx;
 };
 
 } // namespace cluster
