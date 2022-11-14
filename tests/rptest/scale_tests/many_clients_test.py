@@ -36,6 +36,11 @@ class ManyClientsTest(RedpandaTest):
         # as this is just a "did we stay up?" test
         kwargs['log_level'] = "info"
         kwargs['resource_settings'] = resource_settings
+        kwargs['extra_rp_conf'] = {
+            # Enable segment size jitter as this is a stress test and does not
+            # rely on exact segment counts.
+            'log_segment_size_jitter_percent': 5,
+        }
         super().__init__(*args, **kwargs)
 
     @cluster(num_nodes=6)
