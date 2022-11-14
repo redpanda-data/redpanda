@@ -44,7 +44,7 @@ ss::future<> feature_barrier_state_base::barrier(feature_barrier_tag tag) {
         co_await _members.await_membership(_self, _as);
     }
 
-    if (_members.broker_ids().size() < 2) {
+    if (_members.broker_count() < 2) {
         // We are alone, immediate complete.
         vlog(clusterlog.debug, "barrier exit {} (single node)", tag);
         co_return;

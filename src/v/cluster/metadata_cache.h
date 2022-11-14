@@ -107,6 +107,9 @@ public:
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> brokers() const;
 
+    /// Returns curent broker count
+    size_t broker_count() const;
+
     /// Returns all brokers, returns copy as the content of broker can change
     ss::future<std::vector<broker_ptr>> alive_brokers() const;
 

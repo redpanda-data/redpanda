@@ -115,6 +115,10 @@ std::vector<broker_ptr> metadata_cache::brokers() const {
     return _members_table.local().brokers();
 }
 
+size_t metadata_cache::broker_count() const {
+    return _members_table.local().broker_count();
+}
+
 ss::future<std::vector<broker_ptr>> metadata_cache::alive_brokers() const {
     std::vector<broker_ptr> brokers;
     auto res = co_await _health_monitor.local().get_nodes_status(
