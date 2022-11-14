@@ -285,7 +285,9 @@ requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
 void write(iobuf& out, T t);
 
 template<typename T>
-void write(iobuf& out, std::vector<T> t);
+void write(iobuf& out, std::vector<T> const& t);
+template<typename T>
+void write(iobuf& out, std::vector<T>&& t);
 
 void write(iobuf& out, is_envelope auto const& t);
 void write(iobuf& out, is_envelope auto&& t);
@@ -465,7 +467,7 @@ void write(iobuf& out, T t) {
 }
 
 template<typename T>
-void write(iobuf& out, std::vector<T> t) {
+void write_vector(iobuf& out, T&& t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
@@ -474,8 +476,22 @@ void write(iobuf& out, std::vector<T> t) {
     }
     write(out, static_cast<serde_size_t>(t.size()));
     for (auto& el : t) {
-        write(out, std::move(el));
+        if constexpr (std::is_rvalue_reference_v<decltype(t)>) {
+            write(out, std::move(el));
+        } else {
+            write(out, el);
+        }
     }
+}
+
+template<typename T>
+void write(iobuf& out, std::vector<T>&& t) {
+    write_vector(out, std::move(t));
+}
+
+template<typename T>
+void write(iobuf& out, std::vector<T> const& t) {
+    write_vector(out, t);
 }
 
 template<typename T>
