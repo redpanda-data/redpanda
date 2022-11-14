@@ -1237,7 +1237,7 @@ controller_backend::apply_configuration_change_on_leader(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
   model::revision_id rev,
-  Func&& func) {
+  Func func) {
     auto partition = _partition_manager.local().get(ntp);
     if (!partition) {
         co_return errc::partition_not_exists;

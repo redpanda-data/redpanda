@@ -301,7 +301,7 @@ private:
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       model::revision_id,
-      Func&& f);
+      Func f);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
