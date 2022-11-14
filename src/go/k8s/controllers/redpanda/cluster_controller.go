@@ -70,6 +70,7 @@ type ClusterReconciler struct {
 	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
 	DecommissionWaitInterval  time.Duration
 	RestrictToRedpandaVersion string
+	allowPVCDeletion          bool
 }
 
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
@@ -453,6 +454,14 @@ func (r *ClusterReconciler) handlePodFinalizer(
 				return fmt.Errorf(`unable to decommission node "%d": %w`, nodeID, err)
 			}
 		}
+
+		if !r.allowPVCDeletion {
+			//   remove the finalizer
+			if err = r.removePodFinalizer(ctx, pod, log); err != nil {
+				return fmt.Errorf(`unable to remove finalizer from pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
+			}
+			return nil
+		}
 		//   delete the associated pvc
 		pvc := corev1.PersistentVolumeClaim{}
 		//nolint: gocritic // 248 bytes 6 times is not worth decreasing the readability over
@@ -467,6 +476,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 					if !apierrors.IsNotFound(err) {
 						return fmt.Errorf(`unable to fetch PersistentVolumeClaim "%s/%s": %w`, key.Namespace, key.Name, err)
 					}
+					continue
 				}
 				log.WithValues(key).Info("deleting PersistentVolumeClaim")
 				if err := r.Delete(ctx, &pvc, &client.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
@@ -685,6 +695,13 @@ func (r *ClusterReconciler) WithClusterDomain(
 	clusterDomain string,
 ) *ClusterReconciler {
 	r.clusterDomain = clusterDomain
+	return r
+}
+
+func (r *ClusterReconciler) WithAllowPVCDeletion(
+	allowPVCDeletion bool,
+) *ClusterReconciler {
+	r.allowPVCDeletion = allowPVCDeletion
 	return r
 }
 

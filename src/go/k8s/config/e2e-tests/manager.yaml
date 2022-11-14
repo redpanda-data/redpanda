@@ -17,3 +17,4 @@ spec:
         - "--configurator-base-image=localhost/configurator"
         - "--configurator-tag=dev"
         - "--configurator-image-pull-policy=Never"
+        - "--allow-pvc-deletion=true"
