@@ -43,7 +43,8 @@ group_manager::group_manager(
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
   , _recovery_mem_quota(std::move(recovery_mem_cfg))
-  , _feature_table(feature_table.local()) {
+  , _feature_table(feature_table.local())
+  , _is_ready(false) {
     setup_metrics();
 }
 
