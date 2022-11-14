@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:jammy
+FROM ubuntu:kinetic-20220830
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
@@ -44,8 +44,8 @@ RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
 # - install dependencies of 'rpk debug' system scan
-RUN apt update && \
-    apt install -y \
+RUN apt-get update && \
+    apt-get install -qq \
       bind9-utils \
       bind9-dnsutils \
       bsdmainutils \
@@ -64,7 +64,7 @@ RUN apt update && \
       nodejs \
       npm \
       openssh-server \
-      netcat \
+      netcat-openbsd \
       sudo \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
