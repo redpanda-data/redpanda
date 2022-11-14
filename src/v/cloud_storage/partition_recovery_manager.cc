@@ -220,11 +220,13 @@ std::ostream& operator<<(std::ostream& o, const retention& r) {
 
 static retention
 get_retention_policy(const storage::ntp_config::default_overrides& prop) {
-    auto flags = prop.cleanup_policy_bitflags;
+    // In the event no flags were supplied assume cluster defaults
+    const auto flags = !prop.cleanup_policy_bitflags
+                         ? config::shard_local_cfg().log_cleanup_policy()
+                         : *prop.cleanup_policy_bitflags;
     if (
-      flags
-      && (flags.value() & model::cleanup_policy_bitflags::deletion)
-           == model::cleanup_policy_bitflags::deletion) {
+      (flags & model::cleanup_policy_bitflags::deletion)
+      == model::cleanup_policy_bitflags::deletion) {
         if (prop.retention_bytes.has_value()) {
             return size_bound_deletion_parameters{prop.retention_bytes.value()};
         } else if (prop.retention_time.has_value()) {
