@@ -1756,6 +1756,10 @@ class RedpandaService(Service):
     def started_nodes(self):
         return self._started
 
+    def render(self, path, **kwargs):
+        with self.config_file_lock:
+            return super(RedpandaService, self).render(path, **kwargs)
+
     def write_node_conf_file(self,
                              node,
                              override_cfg_params=None,
@@ -1781,9 +1785,6 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
-        self.logger.info(
-            f"self.render: hasattr(self, 'template_env'): {hasattr(self, 'template_env')}"
-        )
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
