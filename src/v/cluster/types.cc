@@ -952,6 +952,20 @@ std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const broker_state& state) {
+    fmt::print(
+      o,
+      "{{membership_state: {}, maintenance_state: {}}}",
+      state._membership_state,
+      state._maintenance_state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
+    fmt::print(o, "{{broker: {}, state: {} }}", nm.broker, nm.state);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
