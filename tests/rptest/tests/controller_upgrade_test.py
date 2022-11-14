@@ -50,7 +50,7 @@ class ControllerUpgradeTest(EndToEndTest):
         self.redpanda = RedpandaService(self.test_context, 5)
 
         installer = self.redpanda._installer
-        installer.install(self.redpanda.nodes, (22, 2, 5))
+        installer.install(self.redpanda.nodes, (22, 2, 7))
 
         self.redpanda.start()
         admin_fuzz = AdminOperationsFuzzer(self.redpanda)

@@ -131,7 +131,7 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 2, 1))
+        self.installer.install(self.redpanda.nodes, (22, 2, 7))
         super(NodeIdAssignmentUpgrade, self).setUp()
 
     @cluster(num_nodes=3)

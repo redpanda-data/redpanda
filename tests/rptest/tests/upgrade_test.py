@@ -20,7 +20,13 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import segments_count, wait_for_local_storage_truncate
+from rptest.util import (
+    segments_count,
+    wait_for_local_storage_truncate,
+    produce_until_segments,
+    wait_until_segments,
+)
+from rptest.utils.si_utils import S3Snapshot
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
 from rptest.services.kgo_verifier_services import (
@@ -505,3 +511,91 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                         newdata_p,
                                         local_retention_bytes + segment_bytes,
                                         timeout_sec=30)
+
+
+class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
+    """
+    Check that a mixed-version cluster does not run into issues with
+    an older node trying to read cloud storage data from a newer node.
+    """
+
+    segment_size = 1000000  # 1MB
+
+    def __init__(self, test_context):
+        si_settings = SISettings(log_segment_size=self.segment_size)
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            si_settings=si_settings,
+            extra_rp_conf={
+                # We will exercise storage/cloud_storage read paths, get the
+                # batch cache out of the way to ensure reads hit storage layer.
+                "disable_batch_cache": True,
+                # We will manually manipulate leaderships, do not want to fight
+                # with the leader balancer
+                "enable_leader_balancer": False,
+            })
+        self.installer = self.redpanda._installer
+        self.rpk = RpkTool(self.redpanda)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+    def setUp(self):
+        self.installer.install(self.redpanda.nodes, (22, 2, 7))
+        super().setUp()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_upgrade(self):
+        """
+        Verify that there is no data loss with topics that have been 'upgraded',
+        i.e. that is topics pre 22.2 that had remote-write enabled before any
+        cloud retention settings were introduced.
+
+        Their respective new cloud retention settings should be 'infinity' and
+        there should be no truncations or compactions performed on the partitions
+        """
+        total_segments = 10
+        topic = TopicSpec(name='migrating-topic',
+                          partition_count=1,
+                          replication_factor=3,
+                          cleanup_policy=TopicSpec.CLEANUP_DELETE)
+
+        # Create a topic with a retention size lower then the total proposed
+        # number of bytes to be pushed
+        self.rpk.create_topic(topic.name,
+                              partitions=topic.partition_count,
+                              replicas=topic.replication_factor,
+                              config={
+                                  'segment.bytes': self.segment_size,
+                                  'cleanup.policy': topic.cleanup_policy
+                              })
+
+        produce_until_segments(self.redpanda, topic.name, 0, total_segments)
+
+        def cloud_log_size() -> int:
+            s3_snapshot = S3Snapshot([topic], self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
+            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
+            self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
+            return cloud_log_size
+
+        # Wait for everything to be uploaded to the cloud.
+        wait_until_segments(self.redpanda, topic.name, 0, total_segments)
+
+        total_cloud_size_before_upgrade = cloud_log_size()
+
+        # Upgrade and restart all of the nodes
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            start_timeout=120,
+                                            stop_timeout=120)
+
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_housekeeping_interval_ms": 100},
+            expect_restart=True)
+
+        # Wait for 5s, enough time for a possible erraneous truncation or compaction to occur
+        time.sleep(5)
+
+        # Assert manifest has not been mutated by comparing sizes
+        total_cloud_size_after_upgrade = cloud_log_size()
+        assert total_cloud_size_before_upgrade <= total_cloud_size_after_upgrade, f"Mismatch in cloud storage size after upgrade, bytes before: {total_cloud_size_before_upgrade} bytes_after: {total_cloud_size_after_upgrade}"

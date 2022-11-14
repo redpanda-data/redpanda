@@ -454,6 +454,13 @@ class S3Snapshot:
             self.logger.info(f'error {e} while checking if {o} is a segment')
             return False
 
+    def is_ntp_in_manifest(self,
+                           topic: str,
+                           partition: int,
+                           ns: str = "kafka") -> bool:
+        ntp = NTP(ns, topic, partition)
+        return ntp in self.partition_manifests
+
     def manifest_for_ntp(self,
                          topic: str,
                          partition: int,
@@ -468,7 +475,7 @@ class S3Snapshot:
     def cloud_log_size_for_ntp(self,
                                topic: str,
                                partition: int,
-                               ns: str = 'kafka') -> dict:
+                               ns: str = 'kafka') -> int:
         manifest = self.manifest_for_ntp(topic, partition, ns)
         return sum(seg_meta['size_bytes']
                    for seg_meta in manifest['segments'].values())
