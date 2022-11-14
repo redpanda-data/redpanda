@@ -150,6 +150,7 @@ enum class membership_state : int8_t { active, draining, removed };
 enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
+std::ostream& operator<<(std::ostream&, maintenance_state);
 
 class broker
   : public serde::
