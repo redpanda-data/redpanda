@@ -1631,6 +1631,11 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         session->cache.pop_front();
     }
 
+    // We can not do any async work after replication is finished and we marked
+    // request as finished. Becasue it can do reordering for requests. So we
+    // need to spawn background cleaning thread
+    spawn_background_clean_for_pids(rm_stm::clear_type::idempotent_pids);
+
     if (session->cache.empty() && session->lock.ready()) {
         _inflight_requests.erase(bid.pid);
     }
@@ -2231,6 +2236,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
                   _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
             }
             _log_state.lru_idempotent_pids.push_back(seq_it->second);
+            spawn_background_clean_for_pids(
+              rm_stm::clear_type::idempotent_pids);
         }
 
         seq_it->second.entry.last_write_timestamp = bid.first_timestamp.value();
@@ -2263,6 +2270,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
         }
+        spawn_background_clean_for_pids(rm_stm::clear_type::tx_pids);
     }
 }
 
@@ -2722,6 +2730,46 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
     return o;
 }
 
+void rm_stm::spawn_background_clean_for_pids(rm_stm::clear_type type) {
+    switch (type) {
+    case rm_stm::clear_type::tx_pids: {
+        if (
+          _log_state.fence_pid_epoch.size() <= _max_concurrent_producer_ids()) {
+            return;
+        }
+        break;
+    }
+    case rm_stm::clear_type::idempotent_pids: {
+        if (
+          _log_state.lru_idempotent_pids.size()
+          <= _max_concurrent_producer_ids()) {
+            return;
+        }
+        break;
+    }
+    }
+
+    ssx::spawn_with_gate(_gate, [this, type] { return clear_old_pids(type); });
+}
+
+ss::future<> rm_stm::clear_old_pids(clear_type type) {
+    auto try_lock = _clean_old_pids_mtx.try_get_units();
+    if (!try_lock) {
+        co_return;
+    }
+
+    auto read_lock = co_await _state_lock.hold_read_lock();
+
+    switch (type) {
+    case rm_stm::clear_type::tx_pids: {
+        co_return co_await clear_old_tx_pids();
+    }
+    case rm_stm::clear_type::idempotent_pids: {
+        co_return co_await clear_old_idempotent_pids();
+    }
+    }
+}
+
 ss::future<> rm_stm::clear_old_tx_pids() {
     if (_log_state.fence_pid_epoch.size() < _max_concurrent_producer_ids()) {
         co_return;
@@ -2737,6 +2785,11 @@ ss::future<> rm_stm::clear_old_tx_pids() {
         }
     }
 
+    vlog(
+      _ctx_log.trace,
+      "Found {} old transaction pids for delete",
+      pids_for_delete.size());
+
     co_await ss::max_concurrent_for_each(
       pids_for_delete, 32, [this](auto pid) -> ss::future<> {
           // We have transaction for this pid
@@ -2750,6 +2803,16 @@ ss::future<> rm_stm::clear_old_tx_pids() {
 }
 
 ss::future<> rm_stm::clear_old_idempotent_pids() {
+    if (
+      _log_state.lru_idempotent_pids.size() < _max_concurrent_producer_ids()) {
+        co_return;
+    }
+
+    vlog(
+      _ctx_log.trace,
+      "Found {} old idempotent pids for delete",
+      _log_state.lru_idempotent_pids.size() - _max_concurrent_producer_ids());
+
     while (_log_state.lru_idempotent_pids.size()
            > _max_concurrent_producer_ids()) {
         auto pid_for_delete = _log_state.lru_idempotent_pids.front().entry.pid;
