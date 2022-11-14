@@ -290,7 +290,8 @@ void write(iobuf& out, std::vector<T> t);
 void write(iobuf& out, is_envelope auto const& t);
 void write(iobuf& out, is_envelope auto&& t);
 
-inline void write(iobuf& out, iobuf t);
+inline void write(iobuf& out, iobuf&& t);
+inline void write(iobuf& out, iobuf const& t);
 
 inline void write(iobuf& out, uuid_t t) {
     out.append(t.uuid().data, uuid_t::length);
@@ -531,7 +532,12 @@ void write_envelope(iobuf& out, T&& t) {
 void write(iobuf& out, is_envelope auto const& t) { write_envelope(out, t); }
 void write(iobuf& out, is_envelope auto&& t) { write_envelope(out, t); }
 
-inline void write(iobuf& out, iobuf t) {
+inline void write(iobuf& out, iobuf const& t) {
+    write<serde_size_t>(out, t.size_bytes());
+    out.append(t.copy());
+}
+
+inline void write(iobuf& out, iobuf&& t) {
     write<serde_size_t>(out, t.size_bytes());
     out.append(t.share(0, t.size_bytes()));
 }
