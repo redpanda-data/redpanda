@@ -50,9 +50,6 @@ class ManyClientsTest(RedpandaTest):
         than usual.
         """
 
-        # This test requires dedicated system resources to run reliably.
-        assert self.redpanda.dedicated_nodes
-
         # Scale tests are not run on debug builds
         assert not self.debug_mode
 
@@ -62,13 +59,15 @@ class ManyClientsTest(RedpandaTest):
         TOPIC_NAME = "manyclients"
         RECORDS_PER_PRODUCER = 1000
 
+        # Realistic conditions: 128MB is the segment size in the cloud
+        segment_size = 128 * 1024 * 1024
+        retention_size = 2 * segment_size
+
         self.client().create_topic(
-            TopicSpec(
-                name=TOPIC_NAME,
-                partition_count=PARTITION_COUNT,
-                retention_bytes=10 * 1024 * 1024,
-                segment_bytes=1024 * 1024 * 5,
-            ))
+            TopicSpec(name=TOPIC_NAME,
+                      partition_count=PARTITION_COUNT,
+                      retention_bytes=retention_size,
+                      segment_bytes=segment_size))
 
         # Two consumers, just so that we are at least touching consumer
         # group functionality, if not stressing the overall number of consumers.
