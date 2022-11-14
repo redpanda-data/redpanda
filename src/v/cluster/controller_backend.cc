@@ -80,12 +80,12 @@ std::vector<model::broker> create_brokers_set(
       std::cend(replicas),
       std::back_inserter(brokers),
       [&members](const model::broker_shard& bs) {
-          auto br = members.get_broker(bs.node_id);
-          if (!br) {
+          auto nm = members.get_node_metadata_ref(bs.node_id);
+          if (!nm) {
               throw std::logic_error(
                 fmt::format("Replica node {} is not available", bs.node_id));
           }
-          return *br->get();
+          return nm->get().broker;
       });
     return brokers;
 }
@@ -103,8 +103,8 @@ std::vector<raft::broker_revision> create_brokers_set(
       std::cend(replicas),
       std::back_inserter(brokers),
       [&members, &replica_revisions](const model::broker_shard& bs) {
-          auto br = members.get_broker(bs.node_id);
-          if (!br) {
+          auto nm = members.get_node_metadata_ref(bs.node_id);
+          if (!nm) {
               throw std::logic_error(
                 fmt::format("Replica node {} is not available", bs.node_id));
           }
@@ -116,7 +116,7 @@ std::vector<raft::broker_revision> create_brokers_set(
             bs.node_id,
             replica_revisions.size());
           return raft::broker_revision{
-            .broker = *br->get(), .rev = rev_it->second};
+            .broker = nm->get().broker, .rev = rev_it->second};
       });
     return brokers;
 }

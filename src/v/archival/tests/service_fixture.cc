@@ -293,7 +293,7 @@ void archiver_fixture::initialize_shard(
         all_ntp[d.ntp] += 1;
     }
     wait_for_controller_leadership().get();
-    auto broker = app.controller->get_members_table().local().get_broker(
+    auto nm = app.controller->get_members_table().local().get_node_metadata(
       model::node_id(1));
     for (const auto& ntp : all_ntp) {
         vlog(
@@ -317,7 +317,7 @@ void archiver_fixture::initialize_shard(
             storage::ntp_config(
               ntp.first, data_dir.string(), std::move(defaults)),
             raft::group_id(1),
-            {*broker.value()})
+            {nm->broker})
           .get();
         BOOST_CHECK_EQUAL(
           api.log_mgr().get(ntp.first)->segment_count(), ntp.second);

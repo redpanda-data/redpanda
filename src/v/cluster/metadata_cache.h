@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -105,20 +106,20 @@ public:
     const topic_table::underlying_t& all_topics_metadata() const;
 
     /// Returns all brokers, returns copy as the content of broker can change
-    std::vector<broker_ptr> brokers() const;
+    const members_table::cache_t& nodes() const;
 
     /// Returns curent broker count
     size_t broker_count() const;
 
     /// Returns all brokers, returns copy as the content of broker can change
-    ss::future<std::vector<broker_ptr>> alive_brokers() const;
+    ss::future<std::vector<node_metadata>> alive_nodes() const;
 
     /// Returns all broker ids
     std::vector<model::node_id> broker_ids() const;
 
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change
-    std::optional<broker_ptr> get_broker(model::node_id) const;
+    std::optional<node_metadata> get_node_metadata(model::node_id) const;
 
     bool should_reject_writes() const;
 

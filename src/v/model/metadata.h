@@ -188,6 +188,7 @@ public:
 
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
+    broker& operator=(const broker&) noexcept = default;
     broker(const broker&) = default;
     const node_id& id() const { return _id; }
 

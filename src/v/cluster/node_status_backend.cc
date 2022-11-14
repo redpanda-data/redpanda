@@ -140,13 +140,13 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
   model::node_id target, node_status_request r) {
     auto gate_holder = _gate.hold();
 
-    auto broker = _members_table.local().get_broker(target);
-    if (!broker) {
+    auto nm = _members_table.local().get_node_metadata_ref(target);
+    if (!nm) {
         co_return make_error_code(errc::node_does_not_exists);
     }
 
     auto connection_source_shard = co_await maybe_create_client(
-      target, broker.value()->rpc_address());
+      target, nm->get().broker.rpc_address());
 
     auto send_by = rpc::clock_type::now() + _period();
     auto reply = co_await _node_connection_cache.local()

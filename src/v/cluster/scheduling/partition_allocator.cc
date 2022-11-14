@@ -147,7 +147,7 @@ partition_allocator::allocate_partition(
  */
 std::error_code partition_allocator::check_cluster_limits(
   allocation_request const& request) const {
-    if (_members.local().brokers().empty()) {
+    if (_members.local().nodes().empty()) {
         // Empty members table, we're probably running in a unit test
         return errc::success;
     }
@@ -170,37 +170,39 @@ std::error_code partition_allocator::check_cluster_limits(
     uint32_t min_core_count = 0;
     uint64_t min_memory_bytes = 0;
     uint64_t min_disk_bytes = 0;
-    auto all_brokers = _members.local().brokers();
-    for (const auto& b : all_brokers) {
+
+    for (const auto& [id, b] : _members.local().nodes()) {
+        auto& b_properties = b.broker.properties();
         if (min_core_count == 0) {
-            min_core_count = b->properties().cores;
+            min_core_count = b_properties.cores;
         } else {
-            min_core_count = std::min(min_core_count, b->properties().cores);
+            min_core_count = std::min(min_core_count, b_properties.cores);
         }
 
         // In redpanda <= 21.11.x, available_memory_gb and available_disk_gb
         // are not populated.  If they're zero we skip the check later.
         if (min_memory_bytes == 0) {
-            min_memory_bytes = b->properties().available_memory_gb * 1_GiB;
-        } else if (b->properties().available_memory_gb > 0) {
+            min_memory_bytes = b_properties.available_memory_gb * 1_GiB;
+        } else if (b_properties.available_memory_gb > 0) {
             min_memory_bytes = std::min(
-              min_memory_bytes, b->properties().available_memory_gb * 1_GiB);
+              min_memory_bytes, b_properties.available_memory_gb * 1_GiB);
         }
 
         if (min_disk_bytes == 0) {
-            min_disk_bytes = b->properties().available_disk_gb * 1_GiB;
-        } else if (b->properties().available_disk_gb > 0) {
+            min_disk_bytes = b_properties.available_disk_gb * 1_GiB;
+        } else if (b_properties.available_disk_gb > 0) {
             min_disk_bytes = std::min(
-              min_disk_bytes, b->properties().available_disk_gb * 1_GiB);
+              min_disk_bytes, b_properties.available_disk_gb * 1_GiB);
         }
     }
 
     // The effective values are the node count times the smallest node's
     // resources: this avoids wrongly assuming the system will handle partition
     // counts that only fit when scheduled onto certain nodes.
-    uint64_t effective_cpu_count = all_brokers.size() * min_core_count;
-    uint64_t effective_cluster_memory = all_brokers.size() * min_memory_bytes;
-    uint64_t effective_cluster_disk = all_brokers.size() * min_disk_bytes;
+    auto broker_count = _members.local().broker_count();
+    uint64_t effective_cpu_count = broker_count * min_core_count;
+    uint64_t effective_cluster_memory = broker_count * min_memory_bytes;
+    uint64_t effective_cluster_disk = broker_count * min_disk_bytes;
 
     vlog(
       clusterlog.debug,
@@ -248,8 +250,7 @@ std::error_code partition_allocator::check_cluster_limits(
         struct rlimit nofile = {0, 0};
         if (getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
             if (nofile.rlim_cur != RLIM_INFINITY) {
-                const uint64_t fds_limit = (all_brokers.size()
-                                            * nofile.rlim_cur)
+                const uint64_t fds_limit = (broker_count * nofile.rlim_cur)
                                            / fds_per_partition_replica.value();
                 if (proposed_total_partitions > fds_limit) {
                     vlog(

@@ -66,24 +66,27 @@ void partition_balancer_planner::init_per_node_state(
   const std::vector<raft::follower_metrics>& follower_metrics,
   reallocation_request_state& rrs,
   plan_data& result) const {
-    for (const auto& broker : _state.members().brokers()) {
+    for (const auto& [id, broker] : _state.members().nodes()) {
         if (
-          broker->get_membership_state() == model::membership_state::removed) {
+          broker.state.get_membership_state()
+          == model::membership_state::removed) {
             continue;
         }
 
-        rrs.all_nodes.push_back(broker->id());
+        rrs.all_nodes.push_back(id);
 
         if (
-          broker->get_maintenance_state() == model::maintenance_state::active) {
-            vlog(clusterlog.debug, "node {}: in maintenance", broker->id());
+          broker.state.get_maintenance_state()
+          == model::maintenance_state::active) {
+            vlog(clusterlog.debug, "node {}: in maintenance", id);
             rrs.num_nodes_in_maintenance += 1;
         }
 
         if (
-          broker->get_membership_state() == model::membership_state::draining) {
-            vlog(clusterlog.debug, "node {}: decommissioning", broker->id());
-            rrs.decommissioning_nodes.insert(broker->id());
+          broker.state.get_membership_state()
+          == model::membership_state::draining) {
+            vlog(clusterlog.debug, "node {}: decommissioning", id);
+            rrs.decommissioning_nodes.insert(id);
         }
     }
 

@@ -29,7 +29,7 @@ coproc_cluster_fixture::enable_coprocessors(std::vector<deploy> copros) {
       std::back_inserter(ids),
       [](const deploy& d) { return coproc::script_id(d.id); });
     co_await coproc_api_fixture::enable_coprocessors(std::move(copros));
-    auto node_ids = get_node_ids();
+    auto node_ids = get_broker_ids();
     co_await ss::parallel_for_each(
       node_ids, [this, ids](const model::node_id& node_id) {
           application* app = get_node_application(node_id);
@@ -61,7 +61,7 @@ application* coproc_cluster_fixture::create_node_application(
     return app;
 }
 
-std::vector<model::node_id> coproc_cluster_fixture::get_node_ids() {
+std::vector<model::node_id> coproc_cluster_fixture::get_broker_ids() {
     std::vector<model::node_id> ids;
     std::transform(
       _instances.cbegin(),

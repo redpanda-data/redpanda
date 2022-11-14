@@ -148,13 +148,24 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
 
 cluster::patch<broker_ptr>
 calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
-    std::vector<broker_ptr> new_list;
-    cfg.for_each_broker([&new_list](const model::broker& br) {
-        new_list.push_back(ss::make_lw_shared<model::broker>(br));
-    });
-    std::vector<broker_ptr> old_list = m.brokers();
+    cluster::patch<broker_ptr> ret;
+    for (auto& cfg_broker : cfg.brokers()) {
+        // current members table doesn't contain configuration broker, it was
+        // added
+        auto node = m.get_node_metadata_ref(cfg_broker.id());
+        if (!node || node.value().get().broker != cfg_broker) {
+            ret.additions.push_back(
+              ss::make_lw_shared<model::broker>(cfg_broker));
+        }
+    }
+    for (auto [id, nm] : m.nodes()) {
+        if (!cfg.contains_broker(id)) {
+            ret.deletions.push_back(
+              ss::make_lw_shared<model::broker>(nm.broker));
+        }
+    }
 
-    return calculate_changed_brokers(std::move(new_list), std::move(old_list));
+    return ret;
 }
 
 ss::future<> members_manager::handle_raft0_cfg_update(
@@ -958,14 +969,16 @@ members_manager::dispatch_configuration_update(model::broker broker) {
  * otherwise
  */
 std::optional<ss::sstring> check_result_configuration(
-  const std::vector<broker_ptr>& current_brokers,
+  const members_table::cache_t& current_brokers,
   const model::broker& to_update) {
-    for (auto& current : current_brokers) {
-        if (current->id() == to_update.id()) {
+    for (const auto& [id, current] : current_brokers) {
+        if (id == to_update.id()) {
             /**
              * do no allow to decrease node core count
              */
-            if (current->properties().cores > to_update.properties().cores) {
+            if (
+              current.broker.properties().cores
+              > to_update.properties().cores) {
                 return "core count must not decrease on any broker";
             }
             continue;
@@ -975,14 +988,14 @@ std::optional<ss::sstring> check_result_configuration(
          * validate if any two of the brokers would listen on the same addresses
          * after applying configuration update
          */
-        if (current->rpc_address() == to_update.rpc_address()) {
+        if (current.broker.rpc_address() == to_update.rpc_address()) {
             // error, nodes would listen on the same rpc addresses
             return fmt::format(
               "duplicate rpc endpoint {} with existing node {}",
               to_update.rpc_address(),
-              current->id());
+              id);
         }
-        for (auto& current_ep : current->kafka_advertised_listeners()) {
+        for (auto& current_ep : current.broker.kafka_advertised_listeners()) {
             auto any_is_the_same = std::any_of(
               to_update.kafka_advertised_listeners().begin(),
               to_update.kafka_advertised_listeners().end(),
@@ -995,7 +1008,7 @@ std::optional<ss::sstring> check_result_configuration(
                   "duplicate kafka advertised endpoint {} with existing node "
                   "{}",
                   current_ep,
-                  current->id());
+                  id);
                 ;
             }
         }
@@ -1018,7 +1031,7 @@ members_manager::handle_configuration_update_request(
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
-    auto all_brokers = _members_table.local().brokers();
+    auto& all_brokers = _members_table.local().nodes();
     if (auto err = check_result_configuration(all_brokers, req.node); err) {
         vlog(
           clusterlog.warn,
@@ -1060,7 +1073,7 @@ members_manager::handle_configuration_update_request(
           });
     }
 
-    auto leader = _members_table.local().get_broker(*leader_id);
+    auto leader = _members_table.local().get_node_metadata_ref(*leader_id);
     if (!leader) {
         return ss::make_ready_future<ret_t>(errc::no_leader_controller);
     }
@@ -1069,7 +1082,7 @@ members_manager::handle_configuration_update_request(
              _self.id(),
              _connection_cache,
              *leader_id,
-             (*leader)->rpc_address(),
+             leader->get().broker.rpc_address(),
              _rpc_tls_config,
              _join_timeout,
              [tout = ss::lowres_clock::now() + _join_timeout,

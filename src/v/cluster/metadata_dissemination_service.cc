@@ -114,13 +114,13 @@ ss::future<> metadata_dissemination_service::start() {
     }
     _dispatch_timer.arm(_dissemination_interval);
     // poll either seed servers or configuration
-    auto all_brokers = _members_table.local().brokers();
+    const auto& all_brokers = _members_table.local().nodes();
     // use hash set to deduplicate ids
     absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
     all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
-    for (auto& b : all_brokers) {
-        all_broker_addresses.emplace(b->rpc_address());
+    for (auto& [_, b] : all_brokers) {
+        all_broker_addresses.emplace(b.broker.rpc_address());
     }
     for (auto& id : _seed_servers) {
         all_broker_addresses.emplace(id);

@@ -191,12 +191,12 @@ metrics_reporter::build_metrics_snapshot() {
         auto& metrics = it->second;
         metrics.is_alive = (bool)ns.is_alive;
 
-        auto broker = _members_table.local().get_broker(ns.id);
-        if (!broker) {
+        auto nm = _members_table.local().get_node_metadata_ref(ns.id);
+        if (!nm) {
             continue;
         }
 
-        metrics.cpu_count = broker.value()->properties().cores;
+        metrics.cpu_count = nm->get().broker.properties().cores;
     }
 
     for (auto& report : report.value().node_reports) {

@@ -13,6 +13,7 @@
 #include "cluster/tests/cluster_test_fixture.h"
 #include "config/configuration.h"
 #include "features/feature_table_snapshot.h"
+#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "test_utils/fixture.h"
 
@@ -25,11 +26,11 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
 
     wait_for_all_members(3s).get();
 
-    auto brokers = get_local_cache(model::node_id{0}).brokers();
+    auto brokers = get_local_cache(model::node_id{0}).nodes();
 
     // single broker
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
-    BOOST_REQUIRE_EQUAL(brokers[0]->id(), model::node_id(0));
+    BOOST_REQUIRE(brokers.contains(model::node_id(0)));
 }
 
 FIXTURE_TEST(test_two_node_cluster, cluster_test_fixture) {
@@ -98,11 +99,12 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(0, *config::node().node_id());
     wait_for_controller_leadership(id0).get();
     wait_for_all_members(3s).get();
-    auto brokers = get_local_cache(id0).brokers();
+
+    auto brokers = get_local_cache(model::node_id{0}).nodes();
 
     // single broker
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);
-    BOOST_REQUIRE_EQUAL(brokers[0]->id(), id0);
+    BOOST_REQUIRE(brokers.contains(id0));
 }
 
 FIXTURE_TEST(test_feature_table_snapshots, cluster_test_fixture) {

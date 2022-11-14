@@ -35,9 +35,9 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(
       5s,
       [this, node_0, node_1, node_2] {
-          return get_local_cache(node_0).brokers().size() == 3
-                 && get_local_cache(node_1).brokers().size() == 3
-                 && get_local_cache(node_2).brokers().size() == 3;
+          return get_local_cache(node_0).broker_count() == 3
+                 && get_local_cache(node_1).broker_count() == 3
+                 && get_local_cache(node_2).broker_count() == 3;
       })
       .get0();
 
@@ -49,21 +49,21 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(
       5s,
       [this, node_0, node_1, node_2] {
-          auto updated_broker = get_local_cache(node_0).get_broker(node_2);
-          if (!updated_broker) {
+          auto meta = get_local_cache(node_0).get_node_metadata(node_2);
+          if (!meta) {
               return false;
           }
-          auto broker = get_local_cache(node_1).get_broker(node_2);
-          if (!broker || *updated_broker.value() != *broker.value()) {
-              return false;
-          }
-
-          broker = get_local_cache(node_1).get_broker(node_2);
-          if (!broker || *updated_broker.value() != *broker.value()) {
+          auto broker = get_local_cache(node_1).get_node_metadata(node_2);
+          if (!broker || meta.value().broker != broker.value().broker) {
               return false;
           }
 
-          return updated_broker.value()->rpc_address()
+          broker = get_local_cache(node_1).get_node_metadata(node_2);
+          if (!broker || meta.value().broker != broker.value().broker) {
+              return false;
+          }
+
+          return meta.value().broker.rpc_address()
                  == net::unresolved_address("127.0.0.1", 13002);
       })
       .get0();
@@ -81,13 +81,13 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
     node = create_node_application(node_id, 15000, 13000);
 
     tests::cooperative_spin_wait_with_timeout(5s, [this, node_id] {
-        auto updated_broker = get_local_cache(node_id).get_broker(node_id);
-        info("updated broker {}", updated_broker);
-        if (!updated_broker) {
+        auto meta = get_local_cache(node_id).get_node_metadata(node_id);
+        info("updated broker {}", meta);
+        if (!meta) {
             return false;
         }
 
-        return updated_broker.value()->kafka_advertised_listeners()[0].address
+        return meta->broker.kafka_advertised_listeners()[0].address
                == net::unresolved_address("127.0.0.1", 15000);
     }).get0();
 }

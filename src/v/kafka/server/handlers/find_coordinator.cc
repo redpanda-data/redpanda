@@ -27,13 +27,15 @@ namespace kafka {
 
 static ss::future<response_ptr>
 handle_leader(request_context& ctx, model::node_id leader) {
-    auto broker = ctx.metadata_cache().get_broker(leader);
+    auto broker = ctx.metadata_cache().get_node_metadata(leader);
     if (broker) {
         auto& b = *broker;
-        for (const auto& listener : b->kafka_advertised_listeners()) {
+        for (const auto& listener : b.broker.kafka_advertised_listeners()) {
             if (listener.name == ctx.listener()) {
                 return ctx.respond(find_coordinator_response(
-                  b->id(), listener.address.host(), listener.address.port()));
+                  b.broker.id(),
+                  listener.address.host(),
+                  listener.address.port()));
             }
         }
     }

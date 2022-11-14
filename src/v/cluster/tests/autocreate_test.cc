@@ -135,8 +135,8 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
 
     // Wait for cluster to reach stable state
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return get_local_cache(model::node_id(0)).brokers().size() == 2
-               && get_local_cache(model::node_id(1)).brokers().size() == 2;
+        return get_local_cache(model::node_id(0)).broker_count() == 2
+               && get_local_cache(model::node_id(1)).broker_count() == 2;
     }).get();
 
     std::vector<cluster::topic_result> results;
