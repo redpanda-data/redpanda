@@ -18,6 +18,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/lib/shadow-index-cache
@@ -40,6 +42,8 @@ spec:
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/lib/shadow-index-cache

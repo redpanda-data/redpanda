@@ -61,6 +61,12 @@ func main() {
 		configuratorImagePullPolicy string
 		decommissionWaitInterval    time.Duration
 		restrictToRedpandaVersion   string
+
+		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
+		// PVCs will be deleted when its Pod has been deleted and the Node that Pod is assigned to
+		// does not exist, or has the NoExecute taint. This is intended to support the rancher.io/local-path
+		// storage driver.
+		allowPVCDeletion bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -75,6 +81,7 @@ func main() {
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
 	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
+	flag.BoolVar(&allowPVCDeletion, "allow-pvc-deletion", false, "Allow the operator to delete PVCs for Pods assigned to failed or missing Nodes (alpha feature)")
 	flag.BoolVar(&redpandav1alpha1.AllowConsoleAnyNamespace, "allow-console-any-ns", false, "Allow to create Console in any namespace. Allowing this copies Redpanda SchemaRegistry TLS Secret to namespace (alpha feature)")
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 
@@ -114,7 +121,7 @@ func main() {
 		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
 		DecommissionWaitInterval:  decommissionWaitInterval,
 		RestrictToRedpandaVersion: restrictToRedpandaVersion,
-	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
+	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}

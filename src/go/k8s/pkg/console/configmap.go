@@ -179,7 +179,9 @@ func (cm *ConfigMap) genRedpanda() (r Redpanda) {
 	return r
 }
 
-func (cm *ConfigMap) buildRedpandaAdmin(aa *redpandav1alpha1.RedpandaAdmin) RedpandaAdmin {
+func (cm *ConfigMap) buildRedpandaAdmin(
+	aa *redpandav1alpha1.RedpandaAdmin,
+) RedpandaAdmin {
 	r := RedpandaAdmin{
 		Enabled: aa.Enabled,
 		URLs:    cm.clusterobj.AdminAPIURLs(),
