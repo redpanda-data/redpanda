@@ -170,54 +170,40 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
 
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
-    // distribute to all cluster::members_table
     vlog(
       clusterlog.debug,
       "updating cluster configuration with {}",
       cfg.brokers());
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [cfg](partition_allocator& allocator) {
-            allocator.update_allocation_nodes(cfg.brokers());
-        })
-      .then([this, cfg = std::move(cfg), update_offset]() mutable {
-          auto diff = calculate_brokers_diff(_members_table.local(), cfg);
-          auto added_brokers = diff.additions;
-          return _members_table
-            .invoke_on_all(
-              [cfg = std::move(cfg), update_offset](members_table& m) mutable {
-                  m.update_brokers(update_offset, cfg.brokers());
-              })
-            .then([this, diff = std::move(diff), update_offset]() mutable {
-                if (update_offset <= _last_connection_update_offset) {
-                    return ss::now();
-                }
-                // update internode connections
 
-                return update_connections(std::move(diff))
-                  .then([this, update_offset] {
-                      _last_connection_update_offset = update_offset;
-                  });
-            })
-            .then([this,
-                   added_nodes = std::move(added_brokers),
-                   update_offset]() mutable {
-                return ss::do_with(
-                  std::move(added_nodes),
-                  [this, update_offset](std::vector<broker_ptr>& added_nodes) {
-                      return ss::do_for_each(
-                        added_nodes,
-                        [this, update_offset](const broker_ptr& broker) {
-                            return _update_queue.push_eventually(node_update{
-                              .id = broker->id(),
-                              .type = node_update_type::added,
-                              .offset = update_offset,
-                            });
-                        });
-                  });
-            });
+    // distribute to all cluster::members_table
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cfg](partition_allocator& allocator) {
+          allocator.update_allocation_nodes(cfg.brokers());
       });
+
+    auto diff = calculate_brokers_diff(_members_table.local(), cfg);
+    auto added_brokers = diff.additions;
+    co_await _members_table.invoke_on_all(
+      [cfg = std::move(cfg), update_offset](members_table& m) mutable {
+          m.update_brokers(update_offset, cfg.brokers());
+      });
+
+    if (update_offset <= _last_connection_update_offset) {
+        co_return;
+    }
+
+    // update internode connections
+    co_await update_connections(std::move(diff));
+
+    _last_connection_update_offset = update_offset;
+
+    for (const broker_ptr& broker : added_brokers) {
+        co_await _update_queue.push_eventually(node_update{
+          .id = broker->id(),
+          .type = node_update_type::added,
+          .offset = update_offset,
+        });
+    }
 }
 
 ss::future<std::error_code>
