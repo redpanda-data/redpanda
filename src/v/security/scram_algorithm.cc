@@ -63,11 +63,6 @@
 #define SERVER_FINAL_MESSAGE_RE                                                \
     "(?:e=(" VALUE_SAFE "))|(?:v=(" BASE64 "))" EXTENSIONS
 
-/*
- * {ctre,re2}_parse_client_{first,final} implementations are defined here with
- * simple wrapper that allows either regex library to be chosen at compile time.
- */
-namespace details {
 struct client_first_match {
     ss::sstring authzid;
     ss::sstring username;
@@ -93,13 +88,8 @@ struct server_final_match {
     bytes signature;
 };
 
-static const char* client_first_message_re = CLIENT_FIRST_MESSAGE_RE;
-static const char* server_first_message_re = SERVER_FIRST_MESSAGE_RE;
-static const char* client_final_message_re = CLIENT_FINAL_MESSAGE_RE;
-static const char* server_final_message_re = SERVER_FINAL_MESSAGE_RE;
-
-static inline std::optional<client_first_match>
-re2_parse_client_first(std::string_view message) {
+static std::optional<client_first_match>
+parse_client_first(std::string_view message) {
     static thread_local const re2::RE2 re(
       CLIENT_FIRST_MESSAGE_RE, re2::RE2::Quiet);
     vassert(re.ok(), "client-first-message regex failure: {}", re.error());
@@ -122,8 +112,8 @@ re2_parse_client_first(std::string_view message) {
     };
 }
 
-static inline std::optional<server_first_match>
-re2_parse_server_first(std::string_view message) {
+static std::optional<server_first_match>
+parse_server_first(std::string_view message) {
     static thread_local const re2::RE2 re(
       SERVER_FIRST_MESSAGE_RE, re2::RE2::Quiet);
     vassert(re.ok(), "server-first-message regex failure: {}", re.error());
@@ -144,8 +134,8 @@ re2_parse_server_first(std::string_view message) {
     };
 }
 
-static inline std::optional<client_final_match>
-re2_parse_client_final(std::string_view message) {
+static std::optional<client_final_match>
+parse_client_final(std::string_view message) {
     static thread_local const re2::RE2 re(
       CLIENT_FINAL_MESSAGE_RE, re2::RE2::Quiet);
     vassert(re.ok(), "client-final-message regex failure: {}", re.error());
@@ -168,8 +158,8 @@ re2_parse_client_final(std::string_view message) {
     };
 }
 
-static inline std::optional<server_final_match>
-re2_parse_server_final(std::string_view message) {
+static std::optional<server_final_match>
+parse_server_final(std::string_view message) {
     static thread_local const re2::RE2 re(
       SERVER_FINAL_MESSAGE_RE, re2::RE2::Quiet);
     vassert(re.ok(), "server-final-message regex failure: {}", re.error());
@@ -187,27 +177,6 @@ re2_parse_server_final(std::string_view message) {
         };
     }
     return server_final_match{.error = ss::sstring(error)};
-}
-} // namespace details
-
-static inline std::optional<details::client_first_match>
-parse_client_first(std::string_view message) {
-    return details::re2_parse_client_first(message);
-}
-
-static inline std::optional<details::server_first_match>
-parse_server_first(std::string_view message) {
-    return details::re2_parse_server_first(message);
-}
-
-static inline std::optional<details::client_final_match>
-parse_client_final(std::string_view message) {
-    return details::re2_parse_client_final(message);
-}
-
-static inline std::optional<details::server_final_match>
-parse_server_final(std::string_view message) {
-    return details::re2_parse_server_final(message);
 }
 
 namespace security {
