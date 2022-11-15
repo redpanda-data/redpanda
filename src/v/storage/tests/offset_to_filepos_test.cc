@@ -40,14 +40,14 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_not_found) {
     }
 
     auto segment = b.get_log_segments().back();
-    auto [offset, bytes, seek_ts] = convert_begin_offset_to_file_pos(
-                                      curr_offset,
-                                      segment,
-                                      segment->index().base_timestamp(),
-                                      ss::default_priority_class())
-                                      .get0();
-    BOOST_REQUIRE_EQUAL(offset, curr_offset);
-    BOOST_REQUIRE_EQUAL(seek_ts, ts);
+    auto result = convert_begin_offset_to_file_pos(
+                    curr_offset,
+                    segment,
+                    segment->index().base_timestamp(),
+                    ss::default_priority_class())
+                    .get0();
+    BOOST_REQUIRE_EQUAL(
+      result.error(), convert_to_file_pos_outcome::offset_not_in_segment);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
@@ -75,12 +75,12 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
     }
 
     auto segment = b.get_log_segments().back();
-    auto [offset, bytes, seek_ts] = convert_end_offset_to_file_pos(
-                                      curr_offset,
-                                      segment,
-                                      segment->index().max_timestamp(),
-                                      ss::default_priority_class())
-                                      .get0();
-    BOOST_REQUIRE_EQUAL(offset, model::prev_offset(curr_offset));
-    BOOST_REQUIRE_EQUAL(seek_ts, segment->index().max_timestamp());
+    auto result = convert_end_offset_to_file_pos(
+                    curr_offset,
+                    segment,
+                    segment->index().max_timestamp(),
+                    ss::default_priority_class())
+                    .get0();
+    BOOST_REQUIRE_EQUAL(
+      result.error(), convert_to_file_pos_outcome::offset_not_in_segment);
 }

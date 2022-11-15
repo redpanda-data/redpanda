@@ -85,7 +85,22 @@ offset_to_filepos_consumer::type offset_to_filepos_consumer::end_of_stream() {
 
 } // namespace internal
 
-ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
+std::ostream&
+operator<<(std::ostream& os, convert_to_file_pos_outcome conv_res) {
+    switch (conv_res) {
+    case success:
+        os << "success";
+        break;
+    case offset_not_in_segment:
+        os << "offset_not_in_segment";
+        break;
+    }
+
+    return os;
+}
+
+ss::future<checked<offset_to_file_pos_result, convert_to_file_pos_outcome>>
+convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp base_timestamp,
@@ -100,16 +115,13 @@ ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
 
     size_t bytes_to_skip = 0;
 
-    // Initialize the timestamp to just past the max timestamp in segment. If
-    // the searched for begin_inclusive is not in the segment, this value will
-    // be returned to the caller, matching the offset returned which is one past
-    // the end of the segment.
-    model::timestamp ts = model::timestamp{
-      segment->index().max_timestamp().value() + 1};
+    model::timestamp ts = base_timestamp;
+    bool offset_found = false;
     auto res = co_await storage::transform_stream(
       reader_handle.take_stream(),
       std::move(ostr),
-      [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
+      [begin_inclusive, &sto, &ts, &offset_found](
+        model::record_batch_header& hdr) {
           if (hdr.last_offset() < begin_inclusive) {
               // The current record batch is accepted and will contribute to
               // skipped length. This means that if we will read segment
@@ -120,6 +132,7 @@ ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
               sto = hdr.last_offset() + model::offset(1);
               return storage::batch_consumer::consume_result::accept_batch;
           }
+          offset_found = true;
           ts = hdr.first_timestamp;
           return storage::batch_consumer::consume_result::stop_parser;
       });
@@ -127,22 +140,33 @@ ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
     if (res.has_error()) {
         vlog(stlog.error, "Can't read segment file, error: {}", res.error());
         throw std::system_error(res.error());
-    } else {
-        bytes_to_skip = scan_from + res.value();
-        vlog(
-          stlog.debug,
-          "Scanned {} bytes starting from {}, total {}. Adjusted starting "
-          "offset: {}",
-          res.value(),
-          scan_from,
-          bytes_to_skip,
-          sto);
     }
+
+    if (!offset_found) {
+        vlog(
+          stlog.warn,
+          "Segment does not contain searched for offset: {}, segment offsets: "
+          "{}",
+          sto,
+          segment->offsets());
+        co_return storage::convert_to_file_pos_outcome::offset_not_in_segment;
+    }
+
+    bytes_to_skip = scan_from + res.value();
+    vlog(
+      stlog.debug,
+      "Scanned {} bytes starting from {}, total {}. Adjusted starting offset: "
+      "{}",
+      res.value(),
+      scan_from,
+      bytes_to_skip,
+      sto);
     // Adjust content length and offsets at the begining of the file
     co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
 }
 
-ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
+ss::future<checked<offset_to_file_pos_result, convert_to_file_pos_outcome>>
+convert_end_offset_to_file_pos(
   model::offset end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp max_timestamp,
@@ -180,10 +204,13 @@ ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
     auto ostr = make_null_output_stream();
     model::timestamp ts = max_timestamp;
     size_t stop_at = 0;
+
+    bool offset_found = false;
     auto res = co_await storage::transform_stream(
       reader_handle.take_stream(),
       std::move(ostr),
-      [off_end = end_inclusive, &fo, &ts](model::record_batch_header& hdr) {
+      [off_end = end_inclusive, &fo, &ts, &offset_found](
+        model::record_batch_header& hdr) {
           if (hdr.last_offset() <= off_end) {
               // If last offset of the record batch is within the range
               // we need to add it to the output stream (to calculate the
@@ -191,6 +218,7 @@ ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
               fo = hdr.last_offset();
               return storage::batch_consumer::consume_result::accept_batch;
           }
+          offset_found = true;
           ts = hdr.max_timestamp;
           return storage::batch_consumer::consume_result::stop_parser;
       });
@@ -199,17 +227,26 @@ ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
     if (res.has_error()) {
         vlog(stlog.error, "Can't read segment file, error: {}", res.error());
         throw std::system_error(res.error());
-    } else {
-        stop_at = scan_from + res.value();
-        vlog(
-          stlog.debug,
-          "Scanned {} bytes starting from {}, total {}. Adjusted final "
-          "offset: {}",
-          res.value(),
-          scan_from,
-          stop_at,
-          fo);
     }
+
+    if (!offset_found) {
+        vlog(
+          stlog.warn,
+          "Segment does not contain searched for offset: {}, segment offsets: "
+          "{}",
+          end_inclusive,
+          segment->offsets());
+        co_return storage::convert_to_file_pos_outcome::offset_not_in_segment;
+    }
+
+    stop_at = scan_from + res.value();
+    vlog(
+      stlog.debug,
+      "Scanned {} bytes starting from {}, total {}. Adjusted final offset: {}",
+      res.value(),
+      scan_from,
+      stop_at,
+      fo);
 
     co_return offset_to_file_pos_result{fo, stop_at, ts};
 }

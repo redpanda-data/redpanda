@@ -327,13 +327,24 @@ segment_collector::make_upload_candidate(
       first->index().base_timestamp(),
       io_priority_class);
 
+    if (head_seek_result.has_error()) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
+
     auto last = _segments.back();
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
+    if (tail_seek_result.has_error()) {
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
+
+    auto head_seek = head_seek_result.value();
+    auto tail_seek = tail_seek_result.value();
+
     size_t content_length = _collected_size
-                            - (head_seek_result.bytes + last->size_bytes());
-    content_length += tail_seek_result.bytes;
+                            - (head_seek.bytes + last->size_bytes());
+    content_length += tail_seek.bytes;
 
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
     std::vector<ss::future<ss::rwlock::holder>> locks;
@@ -347,7 +358,7 @@ segment_collector::make_upload_candidate(
     auto locks_resolved = co_await ss::when_all_succeed(
       locks.begin(), locks.end());
 
-    auto starting_offset = head_seek_result.offset;
+    auto starting_offset = head_seek.offset;
     if (starting_offset != _begin_inclusive) {
         vlog(
           archival_log.info,
@@ -357,7 +368,7 @@ segment_collector::make_upload_candidate(
         starting_offset = _begin_inclusive;
     }
 
-    auto final_offset = tail_seek_result.offset;
+    auto final_offset = tail_seek.offset;
     if (final_offset != _end_inclusive) {
         vlog(
           archival_log.info,
@@ -371,12 +382,12 @@ segment_collector::make_upload_candidate(
       upload_candidate{
         .exposed_name = adjust_segment_name(),
         .starting_offset = starting_offset,
-        .file_offset = head_seek_result.bytes,
+        .file_offset = head_seek.bytes,
         .content_length = content_length,
         .final_offset = final_offset,
-        .final_file_offset = tail_seek_result.bytes,
-        .base_timestamp = head_seek_result.ts,
-        .max_timestamp = tail_seek_result.ts,
+        .final_file_offset = tail_seek.bytes,
+        .base_timestamp = head_seek.ts,
+        .max_timestamp = tail_seek.ts,
         .term = first->offsets().term,
         .sources = _segments,
       },
