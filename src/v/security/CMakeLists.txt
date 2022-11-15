@@ -14,6 +14,7 @@ v_cc_library(
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp
+    re2
  )
 
 add_subdirectory(tests)

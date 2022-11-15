@@ -25,7 +25,8 @@
 #include <ctll.hpp>
 #include <ctre.hpp>
 #else
-#include <regex>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
 #endif
 
 // ALPHA / DIGIT / "/" / "+"
@@ -80,9 +81,8 @@
     "(?:e=(" VALUE_SAFE "))|(?:v=(" BASE64 "))" EXTENSIONS
 
 /*
- * {ctre,std_re}_parse_client_{first,final} implementations are defined. ctre_*
- * with clang, and std_re* for gcc. a generic wrapper compiles with the correct
- * version which scram algorithms use directly.
+ * {ctre,re2}_parse_client_{first,final} implementations are defined here with
+ * simple wrapper that allows either regex library to be chosen at compile time.
  */
 namespace details {
 struct client_first_match {
@@ -201,86 +201,94 @@ static const char* client_final_message_re = CLIENT_FINAL_MESSAGE_RE;
 static const char* server_final_message_re = SERVER_FINAL_MESSAGE_RE;
 
 static inline std::optional<client_first_match>
-std_re_parse_client_first(std::string_view message) {
-    static const std::regex re(
-      client_first_message_re, std::regex::ECMAScript | std::regex::optimize);
-    std::smatch match;
-    std::string m(message);
-    if (unlikely(!std::regex_match(m, match, re))) {
+re2_parse_client_first(std::string_view message) {
+    static thread_local const re2::RE2 re(
+      CLIENT_FIRST_MESSAGE_RE, re2::RE2::Quiet);
+    vassert(re.ok(), "client-first-message regex failure: {}", re.error());
+
+    re2::StringPiece authzid;
+    re2::StringPiece username;
+    re2::StringPiece nonce;
+    re2::StringPiece extensions;
+
+    if (!re2::RE2::FullMatch(
+          message, re, &authzid, nullptr, &username, &nonce, &extensions)) {
         return std::nullopt;
     }
+
     return client_first_match{
-      .authzid = match[1].str(),
-      .username = match[3].str(),
-      .nonce = match[4].str(),
-      .extensions = match[5].str(), // NOLINT
+      .authzid = ss::sstring(authzid),
+      .username = ss::sstring(username),
+      .nonce = ss::sstring(nonce),
+      .extensions = ss::sstring(extensions),
     };
 }
 
 static inline std::optional<server_first_match>
-std_re_parse_server_first(std::string_view message) {
-    static const std::regex re(
-      server_first_message_re, std::regex::ECMAScript | std::regex::optimize);
-    std::smatch match;
-    std::string m(message);
-    if (unlikely(!std::regex_match(m, match, re))) {
+re2_parse_server_first(std::string_view message) {
+    static thread_local const re2::RE2 re(
+      SERVER_FIRST_MESSAGE_RE, re2::RE2::Quiet);
+    vassert(re.ok(), "server-first-message regex failure: {}", re.error());
+
+    re2::StringPiece nonce;
+    re2::StringPiece salt;
+    int iterations; // NOLINT
+
+    if (!re2::RE2::FullMatch(
+          message, re, nullptr, &nonce, &salt, &iterations)) {
         return std::nullopt;
     }
 
-    int iterations; // NOLINT
-    auto i_str = match[4].str();
-    auto res = std::from_chars(
-      i_str.data(), i_str.data() + i_str.size(), iterations);
-
-    // very unlikely since the regex should reject before this
-    if (unlikely(res.ec != std::errc())) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "Unexpected SCRAM server first message iterations: {}",
-          i_str));
-    }
-
     return server_first_match{
-      .nonce = match[2].str(),
-      .salt = base64_to_bytes(match[3].str()),
+      .nonce = ss::sstring(nonce),
+      .salt = base64_to_bytes(salt),
       .iterations = iterations,
     };
 }
 
 static inline std::optional<client_final_match>
-std_re_parse_client_final(std::string_view message) {
-    static const std::regex re(
-      client_final_message_re, std::regex::ECMAScript | std::regex::optimize);
-    std::smatch match;
-    std::string m(message);
-    if (unlikely(!std::regex_match(m, match, re))) {
+re2_parse_client_final(std::string_view message) {
+    static thread_local const re2::RE2 re(
+      CLIENT_FINAL_MESSAGE_RE, re2::RE2::Quiet);
+    vassert(re.ok(), "client-final-message regex failure: {}", re.error());
+
+    re2::StringPiece channel_binding;
+    re2::StringPiece nonce;
+    re2::StringPiece extensions;
+    re2::StringPiece proof;
+
+    if (!re2::RE2::FullMatch(
+          message, re, &channel_binding, &nonce, &extensions, &proof)) {
         return std::nullopt;
     }
+
     return client_final_match{
-      .channel_binding = base64_to_bytes(match[1].str()),
-      .nonce = match[2].str(),
-      .extensions = match[3].str(),
-      .proof = base64_to_bytes(match[4].str()),
+      .channel_binding = base64_to_bytes(channel_binding),
+      .nonce = ss::sstring(nonce),
+      .extensions = ss::sstring(extensions),
+      .proof = base64_to_bytes(proof),
     };
 }
 
 static inline std::optional<server_final_match>
-std_re_parse_server_final(std::string_view message) {
-    static const std::regex re(
-      server_final_message_re, std::regex::ECMAScript | std::regex::optimize);
-    std::smatch match;
-    std::string m(message);
-    if (unlikely(!std::regex_match(m, match, re))) {
+re2_parse_server_final(std::string_view message) {
+    static thread_local const re2::RE2 re(
+      SERVER_FINAL_MESSAGE_RE, re2::RE2::Quiet);
+    vassert(re.ok(), "server-final-message regex failure: {}", re.error());
+
+    re2::StringPiece error;
+    re2::StringPiece signature;
+
+    if (!re2::RE2::FullMatch(message, re, &error, &signature)) {
         return std::nullopt;
     }
 
-    auto error = match[1].str();
     if (error.empty()) {
         return server_final_match{
-          .signature = base64_to_bytes(match[2].str()),
+          .signature = base64_to_bytes(signature),
         };
     }
-    return server_final_match{.error = std::move(error)};
+    return server_final_match{.error = ss::sstring(error)};
 }
 #endif
 } // namespace details
@@ -290,7 +298,7 @@ parse_client_first(std::string_view message) {
 #ifdef USE_CTRE
     return details::ctre_parse_client_first(message);
 #else
-    return details::std_re_parse_client_first(message);
+    return details::re2_parse_client_first(message);
 #endif
 }
 
@@ -299,7 +307,7 @@ parse_server_first(std::string_view message) {
 #ifdef USE_CTRE
     return details::ctre_parse_server_first(message);
 #else
-    return details::std_re_parse_server_first(message);
+    return details::re2_parse_server_first(message);
 #endif
 }
 
@@ -308,7 +316,7 @@ parse_client_final(std::string_view message) {
 #ifdef USE_CTRE
     return details::ctre_parse_client_final(message);
 #else
-    return details::std_re_parse_client_final(message);
+    return details::re2_parse_client_final(message);
 #endif
 }
 
@@ -317,7 +325,7 @@ parse_server_final(std::string_view message) {
 #ifdef USE_CTRE
     return details::ctre_parse_server_final(message);
 #else
-    return details::std_re_parse_server_final(message);
+    return details::re2_parse_server_final(message);
 #endif
 }
 
