@@ -3026,7 +3026,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                     _log.offsets().dirty_offset);
 
                   return seastar::make_ready_future<std::error_code>(
-                    make_error_code(errc::timeout));
+                    make_error_code(errc::exponential_backoff));
               }
 
               timeout_now_request req{
