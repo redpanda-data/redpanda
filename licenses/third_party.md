@@ -17,7 +17,6 @@ please keep this up to date with every new library use.
 | crc32c          | BSD 3                              |
 | CRoaring        | Apache License 2                   |
 | cryptopp        | Public Domain                      |
-| ctre            | Apache License 2                   |
 | DPDK            | BSD                                |
 | fmt             | BSD                                |
 | gmp             | LGPL v3                            |

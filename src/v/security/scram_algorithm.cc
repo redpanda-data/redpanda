@@ -7,27 +7,10 @@
 #include "vlog.h"
 
 #include <boost/algorithm/string.hpp>
-
-#include <charconv>
-
-/*
- * Likely an issue with gcc, memory usage is unacceptably high using c++20 with
- * these regular expressions and the ctre library. Since this is not a problem
- * with clang and our release builds use clang, we fall back to slow std::regex
- * when using gcc. The following ticket is tracking the issue, and the fallback
- * can be removed once the issue is resolved:
- *
- * https://github.com/hanickadot/compile-time-regular-expressions/issues/155
- */
-#undef USE_CTRE
-#ifdef __clang__
-#define USE_CTRE
-#include <ctll.hpp>
-#include <ctre.hpp>
-#else
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
-#endif
+
+#include <charconv>
 
 // ALPHA / DIGIT / "/" / "+"
 // NOLINTNEXTLINE
@@ -110,91 +93,6 @@ struct server_final_match {
     bytes signature;
 };
 
-#ifdef USE_CTRE
-static constexpr auto client_first_message_re = ctll::fixed_string{
-  CLIENT_FIRST_MESSAGE_RE};
-
-static constexpr auto server_first_message_re = ctll::fixed_string{
-  SERVER_FIRST_MESSAGE_RE};
-
-static constexpr auto client_final_message_re = ctll::fixed_string{
-  CLIENT_FINAL_MESSAGE_RE};
-
-static constexpr auto server_final_message_re = ctll::fixed_string{
-  SERVER_FINAL_MESSAGE_RE};
-
-static inline std::optional<client_first_match>
-ctre_parse_client_first(std::string_view message) {
-    auto match = ctre::match<client_first_message_re>(message);
-    if (unlikely(!match)) {
-        return std::nullopt;
-    }
-    return client_first_match{
-      .authzid = match.get<1>().to_string(),
-      .username = match.get<3>().to_string(),
-      .nonce = match.get<4>().to_string(),
-      .extensions = match.get<5>().to_string(), // NOLINT
-    };
-}
-
-static inline std::optional<server_first_match>
-ctre_parse_server_first(std::string_view message) {
-    auto match = ctre::match<server_first_message_re>(message);
-    if (unlikely(!match)) {
-        return std::nullopt;
-    }
-
-    int iterations; // NOLINT
-    auto i_str = match.get<4>().to_view();
-    auto res = std::from_chars(
-      i_str.data(), i_str.data() + i_str.size(), iterations);
-
-    // very unlikely since the regex should reject before this
-    if (unlikely(res.ec != std::errc())) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "Unexpected SCRAM server first message iterations: {}",
-          i_str));
-    }
-
-    return server_first_match{
-      .nonce{match.get<2>().to_view()},
-      .salt = base64_to_bytes(match.get<3>().to_view()),
-      .iterations = iterations,
-    };
-}
-
-static inline std::optional<client_final_match>
-ctre_parse_client_final(std::string_view message) {
-    auto match = ctre::match<client_final_message_re>(message);
-    if (unlikely(!match)) {
-        return std::nullopt;
-    }
-    return client_final_match{
-      .channel_binding = base64_to_bytes(match.get<1>().to_view()),
-      .nonce = match.get<2>().to_string(),
-      .extensions = match.get<3>().to_string(),
-      .proof = base64_to_bytes(match.get<4>().to_view()),
-    };
-}
-
-static inline std::optional<server_final_match>
-ctre_parse_server_final(std::string_view message) {
-    auto match = ctre::match<server_final_message_re>(message);
-    if (unlikely(!match)) {
-        return std::nullopt;
-    }
-
-    auto error = match.get<1>().to_view();
-    if (error.empty()) {
-        return server_final_match{
-          .signature = base64_to_bytes(match.get<2>().to_view()),
-        };
-    }
-    return server_final_match{.error{error}};
-}
-
-#else
 static const char* client_first_message_re = CLIENT_FIRST_MESSAGE_RE;
 static const char* server_first_message_re = SERVER_FIRST_MESSAGE_RE;
 static const char* client_final_message_re = CLIENT_FINAL_MESSAGE_RE;
@@ -290,43 +188,26 @@ re2_parse_server_final(std::string_view message) {
     }
     return server_final_match{.error = ss::sstring(error)};
 }
-#endif
 } // namespace details
 
 static inline std::optional<details::client_first_match>
 parse_client_first(std::string_view message) {
-#ifdef USE_CTRE
-    return details::ctre_parse_client_first(message);
-#else
     return details::re2_parse_client_first(message);
-#endif
 }
 
 static inline std::optional<details::server_first_match>
 parse_server_first(std::string_view message) {
-#ifdef USE_CTRE
-    return details::ctre_parse_server_first(message);
-#else
     return details::re2_parse_server_first(message);
-#endif
 }
 
 static inline std::optional<details::client_final_match>
 parse_client_final(std::string_view message) {
-#ifdef USE_CTRE
-    return details::ctre_parse_client_final(message);
-#else
     return details::re2_parse_client_final(message);
-#endif
 }
 
 static inline std::optional<details::server_final_match>
 parse_server_final(std::string_view message) {
-#ifdef USE_CTRE
-    return details::ctre_parse_server_final(message);
-#else
     return details::re2_parse_server_final(message);
-#endif
 }
 
 namespace security {
