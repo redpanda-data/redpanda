@@ -146,22 +146,24 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
       });
 }
 
-cluster::patch<broker_ptr>
-calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
-    cluster::patch<broker_ptr> ret;
+members_manager::changed_nodes members_manager::calculate_changed_nodes(
+  const raft::group_configuration& cfg) const {
+    changed_nodes ret;
     for (auto& cfg_broker : cfg.brokers()) {
         // current members table doesn't contain configuration broker, it was
         // added
-        auto node = m.get_node_metadata_ref(cfg_broker.id());
-        if (!node || node.value().get().broker != cfg_broker) {
-            ret.additions.push_back(
-              ss::make_lw_shared<model::broker>(cfg_broker));
+        auto node = _members_table.local().get_node_metadata_ref(
+          cfg_broker.id());
+
+        if (!node) {
+            ret.added.push_back(cfg_broker);
+        } else if (node->get().broker != cfg_broker) {
+            ret.updated.push_back(cfg_broker);
         }
     }
-    for (auto [id, nm] : m.nodes()) {
+    for (auto [id, broker] : _members_table.local().nodes()) {
         if (!cfg.contains_broker(id)) {
-            ret.deletions.push_back(
-              ss::make_lw_shared<model::broker>(nm.broker));
+            ret.removed.push_back(id);
         }
     }
 
@@ -175,14 +177,13 @@ ss::future<> members_manager::handle_raft0_cfg_update(
       "updating cluster configuration with {}",
       cfg.brokers());
 
-    // distribute to all cluster::members_table
     co_await _allocator.invoke_on(
       partition_allocator::shard, [cfg](partition_allocator& allocator) {
           allocator.update_allocation_nodes(cfg.brokers());
       });
 
-    auto diff = calculate_brokers_diff(_members_table.local(), cfg);
-    auto added_brokers = diff.additions;
+    auto diff = calculate_changed_nodes(cfg);
+    auto added_nodes = diff.added;
     co_await _members_table.invoke_on_all(
       [cfg = std::move(cfg), update_offset](members_table& m) mutable {
           m.update_brokers(update_offset, cfg.brokers());
@@ -191,15 +192,14 @@ ss::future<> members_manager::handle_raft0_cfg_update(
     if (update_offset <= _last_connection_update_offset) {
         co_return;
     }
-
     // update internode connections
-    co_await update_connections(std::move(diff));
 
+    co_await update_connections(std::move(diff));
     _last_connection_update_offset = update_offset;
 
-    for (const broker_ptr& broker : added_brokers) {
+    for (const auto& broker : added_nodes) {
         co_await _update_queue.push_eventually(node_update{
-          .id = broker->id(),
+          .id = broker.id(),
           .type = node_update_type::added,
           .offset = update_offset,
         });
@@ -391,29 +391,38 @@ ss::future<> members_manager::stop() {
     return _gate.close();
 }
 
-ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
-    return ss::do_with(std::move(diff), [this](patch<broker_ptr>& diff) {
-        return ss::do_for_each(
-                 diff.deletions,
-                 [this](broker_ptr removed) {
-                     return remove_broker_client(
-                       _self.id(), _connection_cache, removed->id());
-                 })
-          .then([this, &diff] {
-              return ss::do_for_each(diff.additions, [this](broker_ptr b) {
-                  if (b->id() == _self.id()) {
-                      // Do not create client to local broker
-                      return ss::make_ready_future<>();
-                  }
-                  return update_broker_client(
-                    _self.id(),
-                    _connection_cache,
-                    b->id(),
-                    b->rpc_address(),
-                    _rpc_tls_config);
-              });
-          });
-    });
+ss::future<>
+members_manager::update_connections(members_manager::changed_nodes changed) {
+    auto const self_id = _self.id();
+    for (auto& id : changed.removed) {
+        if (id == self_id) {
+            continue;
+        }
+        co_await remove_broker_client(self_id, _connection_cache, id);
+    }
+    for (auto& broker : changed.added) {
+        if (broker.id() == self_id) {
+            continue;
+        }
+        co_await update_broker_client(
+          self_id,
+          _connection_cache,
+          broker.id(),
+          broker.rpc_address(),
+          _rpc_tls_config);
+    }
+
+    for (auto& broker : changed.updated) {
+        if (broker.id() == self_id) {
+            continue;
+        }
+        co_await update_broker_client(
+          self_id,
+          _connection_cache,
+          broker.id(),
+          broker.rpc_address(),
+          _rpc_tls_config);
+    }
 }
 
 static inline ss::future<>
@@ -1028,10 +1037,10 @@ members_manager::handle_configuration_update_request(
           all_brokers);
         return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
     }
-    auto node_ptr = ss::make_lw_shared(std::move(req.node));
-    patch<broker_ptr> broker_update_patch{
-      .additions = {node_ptr}, .deletions = {}};
-    auto f = update_connections(std::move(broker_update_patch));
+    changed_nodes changed;
+    changed.updated.push_back(req.node);
+
+    auto f = update_connections(std::move(changed));
     // Current node is not the leader have to send an RPC to leader
     // controller
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();
@@ -1045,8 +1054,8 @@ members_manager::handle_configuration_update_request(
     // curent node is a leader
     if (leader_id == _self.id()) {
         // Just update raft0 configuration
-        return _raft0->update_group_member(*node_ptr).then(
-          [node_ptr](std::error_code ec) {
+        return _raft0->update_group_member(req.node).then(
+          [](std::error_code ec) {
               if (ec) {
                   vlog(
                     clusterlog.warn,
@@ -1072,7 +1081,7 @@ members_manager::handle_configuration_update_request(
              _rpc_tls_config,
              _join_timeout,
              [tout = ss::lowres_clock::now() + _join_timeout,
-              node = *node_ptr,
+              node = req.node,
               target = *leader_id](controller_client_protocol c) mutable {
                  return c
                    .update_node_configuration(
