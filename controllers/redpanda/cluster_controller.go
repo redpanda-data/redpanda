@@ -27,7 +27,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -239,8 +238,7 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	// todo: create adminAPI client once and pass instead of creating in different funcs
-	adminAPI, err := r.adminAPIClient(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
 	if err != nil && !errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return ctrl.Result{}, fmt.Errorf("creating admin api client: %w", err)
 	}
@@ -253,7 +251,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err = r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), secrets)
+	err = r.setInitialSuperUserPassword(ctx, adminAPI, secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -847,21 +845,17 @@ func (r *ClusterReconciler) handleClusterDeletion(
 
 func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
-	fqdn string,
-	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
+	adminAPI adminutils.AdminAPIClient,
 	objs []types.NamespacedName,
 ) error {
-	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminTLSConfigProvider)
-	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
+	// might not have internal AdminAPI listener
+	if adminAPI == nil {
 		return nil
-	} else if err != nil {
-		return err
 	}
 
 	for _, obj := range objs {
 		var secret corev1.Secret
-		err = r.Get(ctx, types.NamespacedName{
+		err := r.Get(ctx, types.NamespacedName{
 			Namespace: obj.Namespace,
 			Name:      obj.Name,
 		}, &secret)
@@ -1020,18 +1014,4 @@ func isRedpandaClusterVersionManaged(
 		return false
 	}
 	return true
-}
-
-func (r *ClusterReconciler) adminAPIClient(
-	ctx context.Context,
-	cluster *redpandav1alpha1.Cluster,
-	fqdn string,
-	adminTLSProvider resourcetypes.AdminTLSConfigProvider,
-	ordinals ...int32,
-) (adminutils.AdminAPIClient, error) {
-	aa, err := r.AdminAPIClientFactory(ctx, r.Client, cluster, fqdn, adminTLSProvider, ordinals...)
-	if err != nil {
-		return nil, err
-	}
-	return aa, nil
 }
