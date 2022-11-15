@@ -27,8 +27,6 @@ class members_table {
 public:
     using cache_t = absl::node_hash_map<model::node_id, node_metadata>;
 
-    using broker_ptr = ss::lw_shared_ptr<model::broker>;
-
     const cache_t& nodes() const;
     std::vector<node_metadata> node_list() const;
     size_t node_count() const;

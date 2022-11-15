@@ -42,7 +42,6 @@
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
-using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
 // A cluster version is a logical protocol version describing the content
 // of the raft0 on disk structures, and available features.  These are
@@ -1683,17 +1682,6 @@ struct update_topic_properties_reply
       = default;
 
     auto serde_fields() { return std::tie(results); }
-};
-
-template<typename T>
-struct patch {
-    std::vector<T> additions;
-    std::vector<T> deletions;
-    std::vector<T> updates;
-
-    bool empty() const {
-        return additions.empty() && deletions.empty() && updates.empty();
-    }
 };
 
 // generic type used for various registration handles such as in ntp_callbacks.h

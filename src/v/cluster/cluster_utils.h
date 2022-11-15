@@ -51,11 +51,6 @@ struct configuration;
 namespace cluster {
 
 class metadata_cache;
-/// This method calculates the machine nodes that were updated/added
-/// and removed
-patch<broker_ptr> calculate_changed_brokers(
-  const std::vector<broker_ptr>& new_list,
-  const std::vector<broker_ptr>& old_list);
 
 /// Creates the same topic_result for all requests
 template<typename T>

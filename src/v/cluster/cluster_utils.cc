@@ -26,52 +26,6 @@
 
 namespace cluster {
 
-/**
- * Broker patch should included all nodes which properties changed as additions
- * (connections may require update after addresses changed, etc) and nodes that
- * were deleted as deletions. We keep `membership_state` in model::broker. This
- * state must not be included into comparision when calculating added brokers.
- * Previous implementation used equality operator from `model::broker` type
- * which lead to propagating broker added events when their internal state was
- * updated.
- */
-patch<broker_ptr> calculate_changed_brokers(
-  const std::vector<broker_ptr>& new_list,
-  const std::vector<broker_ptr>& old_list) {
-    patch<broker_ptr> patch;
-
-    for (auto br : new_list) {
-        auto it = std::find_if(
-          old_list.begin(), old_list.end(), [&br](const broker_ptr& ptr) {
-              // compare only those properties which have to cause update
-              return br->id() == ptr->id()
-                     && br->kafka_advertised_listeners()
-                          == ptr->kafka_advertised_listeners()
-                     && br->rpc_address() == ptr->rpc_address()
-                     && br->properties() == ptr->properties();
-          });
-
-        if (it == old_list.end()) {
-            patch.additions.push_back(br);
-        }
-    }
-
-    for (auto br : old_list) {
-        auto it = std::find_if(
-          new_list.begin(), new_list.end(), [&br](const broker_ptr& ptr) {
-              // it is enough to compare ids since other properties does not
-              // influence deletion
-              return br->id() == ptr->id();
-          });
-
-        if (it == new_list.end()) {
-            patch.deletions.push_back(br);
-        }
-    }
-
-    return patch;
-}
-
 std::vector<ss::shard_id>
 virtual_nodes(model::node_id self, model::node_id node) {
     std::set<ss::shard_id> owner_shards;
