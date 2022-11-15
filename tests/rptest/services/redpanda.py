@@ -1173,12 +1173,16 @@ class RedpandaService(Service):
         if not expect_fail:
             self._started.append(node)
 
-    def start_node_with_rpk(self, node, additional_args=""):
+    def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
         Start a single instance of redpanda using rpk. similar to start_node, 
         this function will not return until redpanda appears to have started 
         successfully.
         """
+        if clean_node:
+            self.clean_node(node, preserve_current_install=True)
+        else:
+            self.logger.debug("%s: skip cleaning node" % self.who_am_i(node))
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 

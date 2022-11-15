@@ -77,6 +77,7 @@ class RpkRedpandaStartTest(RedpandaTest):
             [f"{n.account.hostname}" for n in self.redpanda.nodes])
 
         def config_bootstrap_with_rpk(node):
+            self.redpanda.clean_node(node)
             node.account.mkdirs(
                 os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
             seeds_arg = f"--ips={seeds_str}"
@@ -95,9 +96,10 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # Run a start with no arguments, as is done when Redpanda is run by a
         # systemd service.
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 self.redpanda.start_node_with_rpk,
-                                 parallel=True)
+        self.redpanda._for_nodes(
+            self.redpanda.nodes,
+            lambda n: self.redpanda.start_node_with_rpk(n, clean_node=False),
+            parallel=True)
         node_ids = set()
         for node in self.redpanda.nodes:
             node_ids.add(self.redpanda.node_id(node))
@@ -161,11 +163,15 @@ class RpkRedpandaStartTest(RedpandaTest):
         node = self.redpanda.nodes[0]
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
+        # First we clean the node and then we write via
+        # rpk redpanda mode set prod.
         self.redpanda.clean_node(node)
         rpk = RpkRemoteTool(self.redpanda, node)
         rpk.mode_set("production")
 
-        self.redpanda.start_node_with_rpk(node)
+        # Avoid cleaning, that will delete the config files and we
+        # already cleaned the node above.
+        self.redpanda.start_node_with_rpk(node, clean_node=False)
 
         # First we check that we don't modify redpanda.developer_mode
         # on the first start.
