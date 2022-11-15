@@ -659,6 +659,11 @@ class RpkTool:
                     # Metadata directed us to a broker that is uncontactable, perhaps
                     # it was just stopped.  Retry should succeed once metadata updates.
                     return None
+                elif "did not reply with that broker in the broker list":
+                    # e.g. "all 1 DescribeGroups request failures, first error: broker replied that group repeat01 has broker coordinator 2, but did not reply with that broker in the broker list"
+                    # Broker coordinator identity can race with updates to node up-ness that influences
+                    # whether the node appears in the metadata response
+                    return None
                 else:
                     raise
 
