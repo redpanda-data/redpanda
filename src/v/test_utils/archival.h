@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "model/tests/random_batch.h"
 #include "storage/tests/utils/disk_log_builder.h"

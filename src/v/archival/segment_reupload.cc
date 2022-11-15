@@ -14,6 +14,7 @@
 #include "logger.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
+#include "storage/offset_to_filepos.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/when_all.hh>
@@ -320,14 +321,14 @@ segment_collector::make_upload_candidate(
     }
 
     auto first = _segments.front();
-    auto head_seek_result = co_await convert_begin_offset_to_file_pos(
+    auto head_seek_result = co_await storage::convert_begin_offset_to_file_pos(
       _begin_inclusive,
       first,
       first->index().base_timestamp(),
       io_priority_class);
 
     auto last = _segments.back();
-    auto tail_seek_result = co_await convert_end_offset_to_file_pos(
+    auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
     size_t content_length = _collected_size
@@ -351,7 +352,7 @@ segment_collector::make_upload_candidate(
         vlog(
           archival_log.info,
           "adjusting begin offset of upload candidate from {} to {}",
-          head_seek_result.offset,
+          starting_offset,
           _begin_inclusive);
         starting_offset = _begin_inclusive;
     }
@@ -361,7 +362,7 @@ segment_collector::make_upload_candidate(
         vlog(
           archival_log.info,
           "adjusting end offset of upload candidate from {} to {}",
-          tail_seek_result.offset,
+          final_offset,
           _end_inclusive);
         final_offset = _end_inclusive;
     }
