@@ -67,7 +67,7 @@ resource names:
 		},
 	}
 	a.addListFlags(cmd)
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }

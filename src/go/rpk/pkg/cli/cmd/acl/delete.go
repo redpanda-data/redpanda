@@ -146,7 +146,7 @@ resource names:
 func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml). Default: text. This option makes the most sense to use with --no-confirm as interactive confirmation will print text tables")
+	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml) This option makes the most sense to use with --no-confirm as interactive confirmation will print text tables")
 	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to remove ACLs for (repeatable)")
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")

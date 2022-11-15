@@ -162,7 +162,7 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	}
 }
 
-// Used for structured output. Note: structured output is always detailed and doens't require the -d flag
+// Used for structured output. Note: structured output is always detailed and doens't require the -d flag.
 type TopicPartitionDetail struct {
 	PartitionID        int32   `json:"partition_id" yaml:"partition_id"`                 // Partition is the partition number these details are for.
 	LeaderID           int32   `json:"leader_id" yaml:"leader_id"`                       // Leader is the broker leader  if there is one  otherwise -1.

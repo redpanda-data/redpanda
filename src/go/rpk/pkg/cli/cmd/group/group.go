@@ -172,7 +172,7 @@ groups, or to list groups that need to be cleaned up.
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	return cmd
 }
 

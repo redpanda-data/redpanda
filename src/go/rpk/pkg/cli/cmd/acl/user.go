@@ -157,7 +157,7 @@ acl help text for more info.
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
 	cmd.Flags().MarkHidden("new-username")
 
@@ -218,7 +218,7 @@ delete any ACLs that may exist for this user.
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
 	cmd.Flags().MarkDeprecated("delete-username", "The username now does not require a flag")
 
@@ -260,6 +260,6 @@ func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	return cmd
 }

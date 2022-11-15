@@ -95,7 +95,7 @@ For example,
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; delete any topic that matches any input topic expression")
 	return cmd
 }

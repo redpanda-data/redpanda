@@ -92,7 +92,7 @@ func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to grant ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to grant ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to grant ACLs for (repeatable)")
-	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml).")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "Pattern to use when matching resource names (literal or prefixed)")
 

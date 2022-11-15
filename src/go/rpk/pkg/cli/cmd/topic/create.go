@@ -150,7 +150,7 @@ the cleanup.policy=compact config option set.
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value; Config parameters (repeatable; e.g. -c cleanup.policy=compact)")
 	cmd.Flags().Int32VarP(&partitions, "partitions", "p", -1, "Number of partitions to create per topic; -1 defaults to the cluster's default_topic_partitions")
 	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor (must be odd); -1 defaults to the cluster's default_topic_replications")

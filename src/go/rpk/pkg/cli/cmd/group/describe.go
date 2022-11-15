@@ -116,7 +116,6 @@ information about the members.
 			out.HandleShardError("DescribeGroups", err)
 			groupCollection := describedGroupCollectionForStructredPrint{}
 			for _, describedGroup := range described {
-
 				fetched := adm.FetchManyOffsets(ctx, groups...)
 				fetched.EachError(func(r kadm.FetchOffsetsResponse) {
 					fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
@@ -175,7 +174,7 @@ information about the members.
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml). Default: text")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
 	return cmd
 }
@@ -203,7 +202,6 @@ func printDescribed(
 	groups describedGroupCollectionForStructredPrint,
 ) {
 	for _, group := range groups.Groups {
-
 		printDescribedGroup(group, group.DescribedRows.Rows, group.DescribedRows.UseInstanceID, group.DescribedRows.UseErr)
 		fmt.Println()
 	}
