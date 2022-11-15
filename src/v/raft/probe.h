@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -42,6 +43,7 @@ public:
     create_metric_labels(const model::ntp& ntp);
 
     void setup_metrics(const model::ntp& ntp);
+    void setup_public_metrics(const model::ntp& ntp);
 
     void heartbeat_request_error() { ++_heartbeat_request_error; };
     void replicate_request_error() { ++_replicate_request_error; };
@@ -66,5 +68,7 @@ private:
     uint64_t _recovery_request_error = 0;
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 } // namespace raft

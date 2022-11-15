@@ -136,6 +136,7 @@ consensus::consensus(
   , _node_priority_override(voter_priority_override)
   , _append_requests_buffer(*this, 256) {
     setup_metrics();
+    setup_public_metrics();
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
         maybe_step_down();
@@ -175,6 +176,14 @@ void consensus::setup_metrics() {
                          "joint state i.e. configuration is being changed"),
          labels)
          .aggregate(aggregate_labels)});
+}
+
+void consensus::setup_public_metrics() {
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    _probe.setup_public_metrics(_log.config().ntp());
 }
 
 void consensus::do_step_down(std::string_view ctx) {
