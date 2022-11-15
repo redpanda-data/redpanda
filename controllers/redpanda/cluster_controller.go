@@ -11,7 +11,6 @@
 package redpanda
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -241,6 +239,12 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
+	// todo: create adminAPI client once and pass instead of creating in different funcs
+	adminAPI, err := r.adminAPIClient(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+	if err != nil && !errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
+		return ctrl.Result{}, fmt.Errorf("creating admin api client: %w", err)
+	}
+
 	var secrets []types.NamespacedName
 	if proxySu != nil {
 		secrets = append(secrets, proxySu.Key())
@@ -249,7 +253,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), secrets)
+	err = r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -307,9 +311,19 @@ func (r *ClusterReconciler) Reconcile(
 	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
-	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
+
+	// want: refactor above to resources (i.e. setInitialSuperUserPassword, reconcileConfiguration)
+	// ensuring license must be at the end when condition ClusterConfigured=true and AdminAPI is ready
+	license := resources.NewLicense(r.Client, r.Scheme, &redpandaCluster, adminAPI, log)
+	if err := license.Ensure(ctx); err != nil {
+		var raErr *resources.RequeueAfterError
+		if errors.As(err, &raErr) {
+			log.Info(raErr.Error())
+			return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
+		}
+		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -338,33 +352,6 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 	case corev1.PullNever:
 	default:
 		return fmt.Errorf("available image pull policy: \"%s\", \"%s\" or \"%s\": %w", corev1.PullAlways, corev1.PullIfNotPresent, corev1.PullNever, errInvalidImagePullPolicy)
-	}
-	return nil
-}
-
-// setLicense sets the referenced license in Redpanda.
-// If user sets the license and then removes it in the spec, the loaded license is not unset.
-// Currently don't have admin API to unset license.
-func (r *ClusterReconciler) setLicense(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
-) error {
-	log.V(6).Info("setting license")
-	if l := rp.Spec.LicenseRef; l != nil {
-		ll, err := l.GetSecret(ctx, r.Client)
-		if err != nil {
-			return err
-		}
-		license, err := l.GetValue(ll, redpandav1alpha1.DefaultLicenseSecretKey)
-		if err != nil {
-			return err
-		}
-		adminAPI, err := consolepkg.NewAdminAPI(ctx, r.Client, r.Scheme, rp, r.clusterDomain, r.AdminAPIClientFactory, log)
-		if err != nil {
-			return err
-		}
-		if err := adminAPI.SetLicense(ctx, bytes.NewReader(license)); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -1033,4 +1020,18 @@ func isRedpandaClusterVersionManaged(
 		return false
 	}
 	return true
+}
+
+func (r *ClusterReconciler) adminAPIClient(
+	ctx context.Context,
+	cluster *redpandav1alpha1.Cluster,
+	fqdn string,
+	adminTLSProvider resourcetypes.AdminTLSConfigProvider,
+	ordinals ...int32,
+) (adminutils.AdminAPIClient, error) {
+	aa, err := r.AdminAPIClientFactory(ctx, r.Client, cluster, fqdn, adminTLSProvider, ordinals...)
+	if err != nil {
+		return nil, err
+	}
+	return aa, nil
 }
