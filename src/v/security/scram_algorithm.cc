@@ -32,19 +32,13 @@
 // NOLINTNEXTLINE
 #define BASE64_CHAR "[a-zA-Z0-9/+]"
 
-// Note: Hana Dusikova, CTRE author sent us an optimization
-//   to not make the following regex greedyy
-//   from `*` -> `*+` after the BASE64_CHAR
-//   preventing from running out of stack memory
-//   https://compiler-explorer.com/z/8Y7xxTEb9
-//
 // base64-4 = 4base64-char
 // base64-3 = 3base64-char "="
 // base64-2 = 2base64-char "=="
 // base64   = *base64-4 [base64-3 / base64-2]
 // NOLINTNEXTLINE
 #define BASE64                                                                 \
-    "(?:" BASE64_CHAR "{4})*+(?:" BASE64_CHAR "{3}=|" BASE64_CHAR "{2}==)?"
+    "(?:" BASE64_CHAR "{4})*(?:" BASE64_CHAR "{3}=|" BASE64_CHAR "{2}==)?"
 
 // Printable ASCII except ","
 // NOLINTNEXTLINE
