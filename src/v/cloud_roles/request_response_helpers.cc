@@ -118,7 +118,7 @@ json::Document parse_json_response(iobuf resp) {
 static ss::future<api_response> make_post_request(
   http::client& client,
   http::client::request_header& req,
-  iobuf&& content,
+  iobuf content,
   std::chrono::milliseconds timeout) {
     req.set(
       boost::beast::http::field::content_length,

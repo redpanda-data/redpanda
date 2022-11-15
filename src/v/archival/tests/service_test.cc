@@ -9,7 +9,6 @@
  */
 
 #include "archival/ntp_archiver_service.h"
-#include "archival/service.h"
 #include "archival/tests/service_fixture.h"
 #include "cluster/commands.h"
 #include "net/unresolved_address.h"
@@ -17,13 +16,9 @@
 #include "test_utils/async.h"
 
 #include <seastar/core/deleter.hh>
-#include <seastar/core/file.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/metrics.hh>
-#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
-#include <seastar/http/request.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/log.hh>
 
