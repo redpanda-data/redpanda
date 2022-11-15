@@ -57,6 +57,7 @@ type RedpandaNodeConfig struct {
 	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
 	ID                         *int                      `yaml:"node_id,omitempty" json:"node_id,omitempty"`
 	Rack                       string                    `yaml:"rack,omitempty" json:"rack"`
+	EmptySeedStartsCluster     *bool                     `yaml:"empty_seed_starts_cluster,omitempty" json:"empty_seed_starts_cluster,omitempty"`
 	SeedServers                []SeedServer              `yaml:"seed_servers" json:"seed_servers"`
 	RPCServer                  SocketAddress             `yaml:"rpc_server,omitempty" json:"rpc_server"`
 	RPCServerTLS               []ServerTLS               `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`

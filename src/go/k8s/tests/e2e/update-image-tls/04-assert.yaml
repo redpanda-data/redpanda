@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -22,12 +22,11 @@ spec:
       name: hook-scripts-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:
@@ -42,7 +41,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -50,12 +49,11 @@ spec:
       name: hook-scripts-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:

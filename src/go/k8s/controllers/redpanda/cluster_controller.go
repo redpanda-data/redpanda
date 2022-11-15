@@ -28,6 +28,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -39,7 +40,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+)
+
+const (
+	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
+	FinalizerKey           = "operator.redpanda.com/finalizer"
 )
 
 var (
@@ -58,22 +70,24 @@ type ClusterReconciler struct {
 	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
 	DecommissionWaitInterval  time.Duration
 	RestrictToRedpandaVersion string
+	allowPVCDeletion          bool
 }
 
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;update;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;delete;
+//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=create;get;list;watch;patch;delete;update;
 //+kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/finalizers,verbs=update
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/status,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -84,7 +98,7 @@ type ClusterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:funlen // todo break down
+//nolint:funlen,gocyclo // todo break down
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -106,6 +120,24 @@ func (r *ClusterReconciler) Reconcile(
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
+	}
+
+	// if the cluster is being deleted, delete finalizers
+	if !redpandaCluster.GetDeletionTimestamp().IsZero() {
+		return r.handleClusterDeletion(ctx, &redpandaCluster, log)
+	}
+
+	// if the cluster isn't being deleted, add a finalizer
+	if !controllerutil.ContainsFinalizer(&redpandaCluster, FinalizerKey) {
+		log.V(7).Info("adding finalizer")
+		controllerutil.AddFinalizer(&redpandaCluster, FinalizerKey)
+		if err := r.Update(ctx, &redpandaCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to set Cluster finalizer: %w", err)
+		}
+	}
+	// set a finalizer on the pods so we can have the data needed to decommission them
+	if err := r.handlePodFinalizer(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
 	}
 
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
@@ -158,6 +190,7 @@ func (r *ClusterReconciler) Reconcile(
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	secretResource := resources.PreStartStopScriptSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -184,6 +217,7 @@ func (r *ClusterReconciler) Reconcile(
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
+		secretResource,
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -264,9 +298,14 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	// setting license should be at the last part as it requires AdminAPI to be running
-	if cc := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
-		return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
+	if featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
+		if cc := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+			return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
+		}
+	}
+	// The following should be at the last part as it requires AdminAPI to be running
+	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
 	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
@@ -284,6 +323,11 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
+		Watches(
+			&source.Kind{Type: &corev1.Pod{}},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForPods),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Complete(r)
 }
 
@@ -301,7 +345,10 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 // setLicense sets the referenced license in Redpanda.
 // If user sets the license and then removes it in the spec, the loaded license is not unset.
 // Currently don't have admin API to unset license.
-func (r *ClusterReconciler) setLicense(ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger) error {
+func (r *ClusterReconciler) setLicense(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+) error {
+	log.V(6).Info("setting license")
 	if l := rp.Spec.LicenseRef; l != nil {
 		ll, err := l.GetSecret(ctx, r.Client)
 		if err != nil {
@@ -322,6 +369,209 @@ func (r *ClusterReconciler) setLicense(ctx context.Context, rp *redpandav1alpha1
 	return nil
 }
 
+//nolint:funlen // refactor in the next iteration
+func (r *ClusterReconciler) handlePodFinalizer(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+) error {
+	pods, err := r.podList(ctx, rp)
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp.IsZero() {
+			// if the pod is not being deleted, set the finalizer
+			if err = r.setPodFinalizer(ctx, pod, log); err != nil {
+				//nolint:goerr113 // not going to use wrapped static error here this time
+				return fmt.Errorf(`unable to set the finalizer on pod "%s": %d`, pod.Name, err)
+			}
+			continue
+		}
+		// if the pod is being deleted
+		// check the node it's assigned to
+		node := corev1.Node{}
+		key := types.NamespacedName{Name: pod.Spec.NodeName}
+		err := r.Get(ctx, key, &node)
+		// if the node is not gone
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf(`unable to fetch node "%s": %w`, pod.Spec.NodeName, err)
+		}
+		if err == nil {
+			// nor has a noexecute taint
+			untainted := true
+			for _, taint := range node.Spec.Taints {
+				if taint.Effect == corev1.TaintEffectNoExecute && taint.Key == corev1.TaintNodeUnreachable {
+					untainted = false
+				}
+			}
+			if untainted {
+				// remove the finalizer and let the pod be restarted
+				if err = r.removePodFinalizer(ctx, pod, log); err != nil {
+					return fmt.Errorf(`unable to remove finalizer from pod "%s": %w`, pod.Name, err)
+				}
+				continue
+			}
+		}
+		// get the node id
+		nodeIDStr, ok := pod.GetAnnotations()[PodAnnotationNodeIDKey]
+		if !ok {
+			return fmt.Errorf("cannot determine node_id for pod %s: %w. not removing finalizer", pod.Name, err)
+		}
+		nodeID, err := strconv.Atoi(nodeIDStr)
+		if err != nil {
+			return fmt.Errorf("node-id annotation is not an integer: %w", err)
+		}
+		// get the broker list
+		redpandaPorts := networking.NewRedpandaPorts(rp)
+		headlessPorts := collectHeadlessPorts(redpandaPorts)
+		clusterPorts := collectClusterPorts(redpandaPorts, rp)
+		headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
+		clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
+
+		pki := certmanager.NewPki(r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+
+		adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+		if err != nil {
+			return fmt.Errorf("unable to create admin client: %w", err)
+		}
+		brokers, err := adminClient.Brokers(ctx)
+		if err != nil {
+			return fmt.Errorf("unable to fetch brokers: %w", err)
+		}
+		// check if the node in the broker list
+		var broker *admin.Broker
+		for i := range brokers {
+			if brokers[i].NodeID == nodeID {
+				broker = &brokers[i]
+				break
+			}
+		}
+		// if it's not gone
+		if broker != nil {
+			// decommission it
+			log.WithValues(nodeID).Info("decommissioning broker")
+			if err = adminClient.DecommissionBroker(ctx, nodeID); err != nil {
+				return fmt.Errorf(`unable to decommission node "%d": %w`, nodeID, err)
+			}
+		}
+
+		if !r.allowPVCDeletion {
+			//   remove the finalizer
+			if err = r.removePodFinalizer(ctx, pod, log); err != nil {
+				return fmt.Errorf(`unable to remove finalizer from pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
+			}
+			return nil
+		}
+		//   delete the associated pvc
+		pvc := corev1.PersistentVolumeClaim{}
+		//nolint: gocritic // 248 bytes 6 times is not worth decreasing the readability over
+		for _, v := range pod.Spec.Volumes {
+			if v.PersistentVolumeClaim != nil {
+				key = types.NamespacedName{
+					Name:      v.PersistentVolumeClaim.ClaimName,
+					Namespace: pod.GetNamespace(),
+				}
+				err = r.Get(ctx, key, &pvc)
+				if err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf(`unable to fetch PersistentVolumeClaim "%s/%s": %w`, key.Namespace, key.Name, err)
+					}
+					continue
+				}
+				log.WithValues(key).Info("deleting PersistentVolumeClaim")
+				if err := r.Delete(ctx, &pvc, &client.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf(`unable to delete PersistentVolumeClaim "%s/%s": %w`, key.Name, key.Namespace, err)
+				}
+			}
+		}
+		//   remove the finalizer
+		if err := r.removePodFinalizer(ctx, pod, log); err != nil {
+			return fmt.Errorf(`unable to remove finalizer from pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) removePodFinalizer(
+	ctx context.Context, pod *corev1.Pod, log logr.Logger,
+) error {
+	if controllerutil.ContainsFinalizer(pod, FinalizerKey) {
+		log.V(7).WithValues(pod.Namespace, pod.Name).Info("removing finalizer")
+		controllerutil.RemoveFinalizer(pod, FinalizerKey)
+		if err := r.Update(ctx, pod); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) setPodFinalizer(
+	ctx context.Context, pod *corev1.Pod, log logr.Logger,
+) error {
+	if !controllerutil.ContainsFinalizer(pod, FinalizerKey) {
+		log.V(7).WithValues(pod.Namespace, pod.Name).Info("adding finalizer")
+		controllerutil.AddFinalizer(pod, FinalizerKey)
+		if err := r.Update(ctx, pod); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) setPodNodeIDAnnotation(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+) error {
+	log.V(6).Info("setting pod node-id annotation")
+	pods, err := r.podList(ctx, rp)
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		if _, ok := pod.Annotations[PodAnnotationNodeIDKey]; ok {
+			continue
+		}
+		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
+		if err != nil {
+			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
+		}
+		log.WithValues(pod.Name, nodeID).Info("setting node-id annotation")
+		pod.Annotations[PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
+		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
+			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, log logr.Logger) (int32, error) {
+	redpandaPorts := networking.NewRedpandaPorts(rp)
+	headlessPorts := collectHeadlessPorts(redpandaPorts)
+	clusterPorts := collectClusterPorts(redpandaPorts, rp)
+	headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
+	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
+
+	pki := certmanager.NewPki(r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+
+	ordinal, err := strconv.ParseInt(pod.Name[len(rp.Name)+1:], 10, 0)
+	if err != nil {
+		return -1, fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", rp.Name, pod.Name, err)
+	}
+
+	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), int32(ordinal))
+	if err != nil {
+		return -1, fmt.Errorf("unable to create admin client: %w", err)
+	}
+	cfg, err := adminClient.GetNodeConfig(ctx)
+	if err != nil {
+		return -1, fmt.Errorf("unable to fetch /v1/node_config from %s: %w", pod.Name, err)
+	}
+	return int32(cfg.NodeID), nil
+}
+
 func (r *ClusterReconciler) reportStatus(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
@@ -332,14 +582,9 @@ func (r *ClusterReconciler) reportStatus(
 	nodeportSvcName types.NamespacedName,
 	bootstrapSvcName types.NamespacedName,
 ) error {
-	var observedPods corev1.PodList
-
-	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector: labels.ForCluster(redpandaCluster).AsClientSelector(),
-		Namespace:     redpandaCluster.Namespace,
-	})
+	observedPods, err := r.podList(ctx, redpandaCluster)
 	if err != nil {
-		return fmt.Errorf("unable to fetch PodList resource: %w", err)
+		return fmt.Errorf("unable to fetch PodList: %w", err)
 	}
 
 	observedNodesInternal := make([]string, 0, len(observedPods.Items))
@@ -412,6 +657,31 @@ func statusShouldBeUpdated(
 		status.Version != sts.Version()
 }
 
+func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster) (corev1.PodList, error) {
+	var observedPods corev1.PodList
+
+	err := r.List(ctx, &observedPods, &client.ListOptions{
+		LabelSelector: labels.ForCluster(redpandaCluster).AsClientSelector(),
+		Namespace:     redpandaCluster.Namespace,
+	})
+	if err != nil {
+		return observedPods, fmt.Errorf("unable to fetch PodList resource: %w", err)
+	}
+
+	return observedPods, nil
+}
+
+func (r *ClusterReconciler) reconcileClusterForPods(pod client.Object) []reconcile.Request {
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Namespace: pod.GetNamespace(),
+				Name:      pod.GetLabels()[labels.InstanceKey],
+			},
+		},
+	}
+}
+
 // WithConfiguratorSettings set the configurator image settings
 func (r *ClusterReconciler) WithConfiguratorSettings(
 	configuratorSettings resources.ConfiguratorSettings,
@@ -425,6 +695,13 @@ func (r *ClusterReconciler) WithClusterDomain(
 	clusterDomain string,
 ) *ClusterReconciler {
 	r.clusterDomain = clusterDomain
+	return r
+}
+
+func (r *ClusterReconciler) WithAllowPVCDeletion(
+	allowPVCDeletion bool,
+) *ClusterReconciler {
+	r.allowPVCDeletion = allowPVCDeletion
 	return r
 }
 
@@ -557,6 +834,28 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 	}
 	return result, nil
+}
+
+func (r *ClusterReconciler) handleClusterDeletion(
+	ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster, log logr.Logger,
+) (reconcile.Result, error) {
+	if controllerutil.ContainsFinalizer(redpandaCluster, FinalizerKey) {
+		log.V(7).Info("removing finalizers")
+		pods, err := r.podList(ctx, redpandaCluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to list Pods: %w", err)
+		}
+		for i := range pods.Items {
+			if err := r.removePodFinalizer(ctx, &pods.Items[i], log); err != nil {
+				return ctrl.Result{}, fmt.Errorf(`unable to remove finalizer for pod "%s": %w`, pods.Items[i].GetName(), err)
+			}
+		}
+		controllerutil.RemoveFinalizer(redpandaCluster, FinalizerKey)
+		if err := r.Update(ctx, redpandaCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to remove Cluster finalizer: %w", err)
+		}
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *ClusterReconciler) setInitialSuperUserPassword(

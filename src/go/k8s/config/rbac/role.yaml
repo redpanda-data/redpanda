@@ -90,11 +90,21 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - persistentvolumeclaims
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - ""

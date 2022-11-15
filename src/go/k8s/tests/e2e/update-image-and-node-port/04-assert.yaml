@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: update-image-cluster-and-node-port
 status:
   readyReplicas: 2
 
@@ -10,24 +10,21 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-0
+  name: update-image-cluster-and-node-port-0
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /scripts
       name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:
@@ -38,26 +35,24 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-1
+  name: update-image-cluster-and-node-port-1
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /scripts
       name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
+
 status:
   phase: "Running"
 

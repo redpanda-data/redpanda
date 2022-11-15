@@ -330,6 +330,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		Directory                  weakString                `yaml:"data_directory"`
 		ID                         *weakInt                  `yaml:"node_id"`
 		Rack                       weakString                `yaml:"rack"`
+		EmptySeedStartsCluster     *weakBool                 `yaml:"empty_seed_starts_cluster"`
 		SeedServers                seedServers               `yaml:"seed_servers"`
 		RPCServer                  SocketAddress             `yaml:"rpc_server"`
 		RPCServerTLS               serverTLSArray            `yaml:"rpc_server_tls"`
@@ -353,6 +354,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.Directory = string(internal.Directory)
 	rpc.ID = (*int)(internal.ID)
 	rpc.Rack = string(internal.Rack)
+	rpc.EmptySeedStartsCluster = (*bool)(internal.EmptySeedStartsCluster)
 	rpc.SeedServers = internal.SeedServers
 	rpc.RPCServer = internal.RPCServer
 	rpc.RPCServerTLS = internal.RPCServerTLS
