@@ -27,6 +27,8 @@ namespace cluster::node {
 
 class local_monitor {
 public:
+    static const ss::shard_id shard = 0;
+
     local_monitor(
       config::binding<size_t> min_bytes_alert,
       config::binding<unsigned> min_percent_alert,

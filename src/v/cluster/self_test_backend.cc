@@ -26,7 +26,7 @@ namespace cluster {
 self_test_backend::self_test_backend(ss::scheduling_group sg)
   : _st_sg(sg) {}
 
-ss::future<> self_test_backend::start() { return ss::now(); }
+ss::future<> self_test_backend::start() { co_await _disk_test.start(); }
 
 ss::future<> self_test_backend::stop() {
     co_await _gate.close();
@@ -41,7 +41,6 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     std::vector<self_test_result> results;
     for (auto& dto : dtos) {
         try {
-            vlog(clusterlog.info, "Starting disk self test...");
             dto.sg = _st_sg;
             auto dtr = co_await _disk_test.run(dto).then([](auto result) {
                 vlog(clusterlog.info, "Disk self test finished with success");

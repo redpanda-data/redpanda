@@ -12,10 +12,14 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
 #include "serde/serde.h"
 #include "utils/uuid.h"
+
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/scheduling.hh>
 
 namespace cluster {
 
@@ -39,33 +43,92 @@ inline std::ostream& operator<<(std::ostream& o, self_test_status sts) {
     return o;
 }
 
-/// TODO: Replace fields with actual fields from real self-tests
 struct diskcheck_opts
   : serde::
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
     /// Descriptive name given to test run
-    ss::sstring name;
+    ss::sstring name{"512K sequential r/w disk test"};
+    /// Where files this benchmark will read/write to exist
+    std::filesystem::path dir{config::node().disk_benchmark_path()};
+    /// Open the file with O_DSYNC flag option
+    bool dsync{true};
+    /// Set to true to disable the write portion of the benchmark
+    bool skip_write{false};
+    /// Set to true to disable the read portion of the benchmark
+    bool skip_read{false};
+    /// Total size of all benchmark files to exist on disk
+    uint64_t data_size{10ULL << 30}; // 1GiB
+    /// Size of individual read and/or write requests
+    size_t request_size{512 << 10}; // 512KiB
+    /// Total duration of the benchmark
+    ss::lowres_clock::duration duration{std::chrono::milliseconds(5000)};
+    /// Amount of fibers to run per shard
+    uint16_t parallelism{10};
     /// Scheduling group that the benchmark will operate under
     ss::scheduling_group sg;
 
-    ss::lowres_clock::duration duration;
-
-    auto serde_fields() { return std::tie(name, duration); }
+    /// Total size a single shard will write/read to disk
+    uint64_t file_size() const { return data_size / ss::smp::count; }
+    /// Address where allocated memory is placed will be a multiple of this
+    uint64_t alignment() const { return request_size >= 4096 ? 4096ULL : 512; }
 
     static diskcheck_opts from_json(const json::Value& obj) {
-        static const auto default_duration = 5;
-        return cluster::diskcheck_opts{
-          .name = obj.HasMember("name") ? obj["name"].GetString() : "",
-          .duration = std::chrono::seconds(
-            obj.HasMember("disk_test_execution_time")
-              ? obj["disk_test_execution_time"].GetInt()
-              : default_duration)};
+        /// The application using these parameters will perform any validation
+        diskcheck_opts opts;
+        if (obj.HasMember("name")) {
+            opts.name = obj["name"].GetString();
+        }
+        if (obj.HasMember("dsync")) {
+            opts.dsync = obj["dsync"].GetBool();
+        }
+        if (obj.HasMember("skip_write")) {
+            opts.skip_write = obj["skip_write"].GetBool();
+        }
+        if (obj.HasMember("skip_read")) {
+            opts.skip_read = obj["skip_read"].GetBool();
+        }
+        if (obj.HasMember("data_size")) {
+            opts.data_size = obj["data_size"].GetUint64();
+        }
+        if (obj.HasMember("request_size")) {
+            opts.request_size = obj["request_size"].GetUint64();
+        }
+        if (obj.HasMember("duration_ms")) {
+            opts.duration = std::chrono::milliseconds(
+              obj["duration_ms"].GetInt());
+        }
+        if (obj.HasMember("parallelism")) {
+            opts.parallelism = obj["parallelism"].GetUint();
+        }
+        return opts;
+    }
+
+    auto serde_fields() {
+        return std::tie(
+          name,
+          dsync,
+          skip_write,
+          skip_read,
+          data_size,
+          request_size,
+          duration,
+          parallelism);
     }
 
     friend std::ostream&
     operator<<(std::ostream& o, const diskcheck_opts& opts) {
         fmt::print(
-          o, "{{name: {} duration: {}}}", opts.name, opts.duration.count());
+          o,
+          "{{name: {} dsync: {} skip_write: {} skip_read: {} data_size: {} "
+          "request_size: {} parallelism: {} duration: {}}}",
+          opts.name,
+          opts.dsync,
+          opts.skip_write,
+          opts.skip_read,
+          opts.data_size,
+          opts.request_size,
+          opts.duration,
+          opts.parallelism);
         return o;
     }
 };
