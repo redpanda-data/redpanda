@@ -95,7 +95,7 @@ class KgoVerifierService(Service):
 
         self._remote_port = self._select_port(node)
 
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {'--debug' if self._debug_logs else ''}> {self.log_path} 2>&1 & echo $!"
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {'--debug --trace' if self._debug_logs else ''}> {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd)
         self.logger.debug(
