@@ -416,10 +416,16 @@ void application::setup_public_metrics() {
 
     _public_metrics.start().get();
 
+    const auto version_label = ssx::metrics::make_namespaced_label("version")(
+      redpanda_git_version());
+    const auto revision_label = ssx::metrics::make_namespaced_label("revision")(
+      redpanda_git_revision());
+    const auto build_labels = {version_label, revision_label};
+
     _public_metrics
       .invoke_on(
         ss::this_shard_id(),
-        [](auto& public_metrics) {
+        [build_labels](auto& public_metrics) {
             public_metrics.groups.add_group(
               "application",
               {sm::make_gauge(
@@ -429,6 +435,12 @@ void application::setup_public_metrics() {
                        .count();
                  },
                  sm::description("Redpanda uptime in seconds"))
+                 .aggregate({sm::shard_label}),
+               sm::make_gauge(
+                 "build",
+                 [] { return 1; },
+                 sm::description("Redpanda build information"),
+                 build_labels)
                  .aggregate({sm::shard_label})});
         })
       .get();
