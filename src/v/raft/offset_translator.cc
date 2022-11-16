@@ -43,14 +43,8 @@ void offset_translator::process(const model::record_batch& batch) {
 
     // Update resource manager for the extra dirty bytes, it may hint us
     // to checkpoint early in response.
-    auto take_result = _storage_api.resources().offset_translator_take_bytes(
-      batch.size_bytes());
-    if (_bytes_processed_units.count() == 0) {
-        _bytes_processed_units = std::move(take_result.units);
-    } else {
-        _bytes_processed_units.adopt(std::move(take_result.units));
-    }
-    _checkpoint_hint |= take_result.checkpoint_hint;
+    _checkpoint_hint |= _storage_api.resources().offset_translator_take_bytes(
+      batch.size_bytes(), _bytes_processed_units);
 
     if (
       std::find(

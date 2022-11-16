@@ -89,6 +89,7 @@ public:
     }
 
     size_t current() const noexcept { return _sem.current(); }
+    ssize_t available_units() const noexcept { return _sem.available_units(); }
 
 private:
     ssx::semaphore _sem;
@@ -132,13 +133,13 @@ public:
     size_t get_falloc_step(std::optional<uint64_t>);
     size_t calc_falloc_step();
 
-    adjustable_allowance::take_result
-    offset_translator_take_bytes(int32_t bytes);
+    bool
+    offset_translator_take_bytes(int32_t bytes, ssx::semaphore_units& units);
 
-    adjustable_allowance::take_result
-    configuration_manager_take_bytes(size_t bytes);
+    bool
+    configuration_manager_take_bytes(size_t bytes, ssx::semaphore_units& units);
 
-    adjustable_allowance::take_result stm_take_bytes(size_t bytes);
+    bool stm_take_bytes(size_t bytes, ssx::semaphore_units& units);
 
     adjustable_allowance::take_result compaction_index_take_bytes(size_t bytes);
     bool compaction_index_bytes_available() {
@@ -153,6 +154,25 @@ public:
         return _inflight_close_flush.get_units(1);
     }
 
+    /**
+     * An adjustable_allowance will set checkpoint_hint whenever its units
+     * are exhausted, but this can happen with pathological frequency if
+     * many units are hogged by partitions that have written a lot of
+     * data then stopped.
+     *
+     * To mitigate this, filter out checkpoint hints if the partition
+     * taking units is not occupying more than a threshold number of
+     * units.  This means that instead of doing an avalanche of snapshots
+     * under this unpleasant state, we will instead violate target_replay_bytes
+     */
+    bool filter_checkpoints(
+      adjustable_allowance::take_result&&, ssx::semaphore_units&);
+
+    /**
+     * Call this when the partition count or the target replay bytes changes
+     */
+    void update_min_checkpoint_bytes();
+
 private:
     uint64_t _space_allowance{9};
     uint64_t _space_allowance_free{0};
@@ -163,6 +183,13 @@ private:
     config::binding<uint64_t> _max_concurrent_replay;
     config::binding<uint64_t> _compaction_index_mem_limit;
     size_t _append_chunk_size;
+
+    // A lower bound on how many units a caller must have to be
+    // eligible for flush, to prevent pathological case where on caller
+    // happens to repeatedly request units close to the parent semaphore
+    // being exhausted
+    // See https://github.com/redpanda-data/redpanda/issues/6854
+    uint64_t _min_checkpoint_bytes{0};
 
     size_t _falloc_step{0};
     bool _falloc_step_dirty{false};
