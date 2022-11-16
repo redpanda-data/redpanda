@@ -22,7 +22,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings
+from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, ProxyConfig
 from rptest.services.admin import Admin
 from typing import Optional, List, Dict, Union
 
@@ -208,7 +208,6 @@ class PandaProxyEndpoints(RedpandaTest):
         super(PandaProxyEndpoints, self).__init__(
             context,
             num_brokers=3,
-            enable_pp=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
             log_config=log_config,
             **kwargs)
@@ -331,7 +330,9 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
     Inherit from this to run the tests.
     """
     def __init__(self, context, **kwargs):
-        super(PandaProxyTestMethods, self).__init__(context, **kwargs)
+        super(PandaProxyTestMethods, self).__init__(context,
+                                                    pandaproxy=ProxyConfig(),
+                                                    **kwargs)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -945,7 +946,9 @@ class PandaProxySASLTest(PandaProxyEndpoints):
         security = SecurityConfig()
         security.enable_sasl = True
 
-        super(PandaProxySASLTest, self).__init__(context, security=security)
+        super(PandaProxySASLTest, self).__init__(context,
+                                                 security=security,
+                                                 pandaproxy=ProxyConfig())
 
     def _get_super_client(self):
         user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
@@ -991,10 +994,13 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
-        security.pp_authn_method = 'http_basic'
+
+        proxy_conf = ProxyConfig()
+        proxy_conf.authn_method = 'http_basic'
 
         super(PandaProxyBasicAuthTest, self).__init__(context,
-                                                      security=security)
+                                                      security=security,
+                                                      pandaproxy=proxy_conf)
 
     @cluster(num_nodes=3)
     def test_get_brokers(self):
@@ -1352,13 +1358,15 @@ class PandaProxyClientStopTest(PandaProxyEndpoints):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
-        security.pp_authn_method = 'http_basic'
 
-        super(PandaProxyClientStopTest, self).__init__(
-            context,
-            security=security,
-            pp_keep_alive=60000 * 5,  # Time in ms
-            pp_cache_max_size=1)
+        proxy_conf = ProxyConfig()
+        proxy_conf.authn_method = 'http_basic'
+        proxy_conf.cache_keep_alive = 60000 * 5  # Time in ms
+        proxy_conf.cache_max_size = 1
+
+        super(PandaProxyClientStopTest, self).__init__(context,
+                                                       security=security,
+                                                       pandaproxy=proxy_conf)
 
     @cluster(num_nodes=3)
     def test_client_stop(self):
@@ -1458,13 +1466,16 @@ class BasicAuthScaleTest(PandaProxyEndpoints):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
-        security.pp_authn_method = 'http_basic'
-        super(BasicAuthScaleTest, self).__init__(
-            context,
-            security=security,
-            resource_settings=ResourceSettings(num_cpus=4),
-            pp_keep_alive=60000 * 5,  # Time in ms
-            pp_cache_max_size=10)
+
+        proxy_conf = ProxyConfig()
+        proxy_conf.authn_method = 'http_basic'
+        proxy_conf.cache_keep_alive = 60000 * 5  # Time in ms
+        proxy_conf.cache_max_size = 10
+        super(BasicAuthScaleTest,
+              self).__init__(context,
+                             security=security,
+                             resource_settings=ResourceSettings(num_cpus=4),
+                             pandaproxy=proxy_conf)
 
         self.users_list = []
 

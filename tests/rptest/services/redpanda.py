@@ -400,7 +400,6 @@ class SecurityConfig:
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
-        self.pp_authn_method: Optional[str] = None
         self.sr_authn_method: Optional[str] = None
         self.auto_auth: Optional[bool] = None
 
@@ -530,7 +529,6 @@ class RedpandaService(Service):
                  *,
                  extra_rp_conf=None,
                  extra_node_conf=None,
-                 enable_pp=False,
                  enable_sr=False,
                  resource_settings=None,
                  si_settings=None,
@@ -541,17 +539,14 @@ class RedpandaService(Service):
                  node_ready_timeout_s=None,
                  superuser: Optional[SaslCredentials] = None,
                  skip_if_no_redpanda_log: bool = False,
-                 pp_keep_alive: Optional[int] = None,
-                 pp_cache_max_size: Optional[int] = None):
+                 pandaproxy: Optional[ProxyConfig] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
-        self._enable_pp = enable_pp
         self._enable_sr = enable_sr
-        self._pp_keep_alive = pp_keep_alive
-        self._pp_cache_max_size = pp_cache_max_size
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
+        self._pandaproxy = pandaproxy
 
         if superuser is None:
             superuser = self.SUPERUSER_CREDENTIALS
@@ -689,9 +684,6 @@ class RedpandaService(Service):
 
     def endpoint_authn_method(self):
         return self._security.endpoint_authn_method
-
-    def pp_authn_method(self):
-        return self._security.pp_authn_method
 
     def require_client_auth(self):
         return self._security.require_client_auth
@@ -1797,6 +1789,16 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
+        enable_pp = False
+        pp_authn_method = None
+        pp_keep_alive = None
+        pp_cache_max_size = None
+        if self._pandaproxy is not None:
+            enable_pp = True
+            pp_authn_method = self._pandaproxy.authn_method
+            pp_keep_alive = self._pandaproxy.cache_keep_alive
+            pp_cache_max_size = self._pandaproxy.cache_max_size
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
@@ -1807,16 +1809,16 @@ class RedpandaService(Service):
                            node_ip=node_ip,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
-                           enable_pp=self._enable_pp,
+                           enable_pp=enable_pp,
                            enable_sr=self._enable_sr,
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
-                           pp_authn_method=self._security.pp_authn_method,
+                           pp_authn_method=pp_authn_method,
                            sr_authn_method=self._security.sr_authn_method,
                            auto_auth=self._security.auto_auth,
-                           pp_keep_alive=self._pp_keep_alive,
-                           pp_cache_max_size=self._pp_cache_max_size)
+                           pp_keep_alive=pp_keep_alive,
+                           pp_cache_max_size=pp_cache_max_size)
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)

@@ -16,6 +16,7 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import ProxyConfig
 
 
 class KafkaStreamsTest(RedpandaTest):
@@ -28,9 +29,9 @@ class KafkaStreamsTest(RedpandaTest):
     # The java program is represented by a wrapper in KafkaStreamExamples.
     Example = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
+    def __init__(self, test_context, proxy_conf, enable_sr):
         super(KafkaStreamsTest, self).__init__(test_context=test_context,
-                                               enable_pp=enable_pp,
+                                               pandaproxy=proxy_conf,
                                                enable_sr=enable_sr)
 
         self._ctx = test_context
@@ -60,9 +61,9 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
     # wrapper in KafkaStreamExamples.
     Driver = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
+    def __init__(self, test_context, proxy_conf, enable_sr):
         super(KafkaStreamsDriverBase, self).__init__(test_context=test_context,
-                                                     enable_pp=enable_pp,
+                                                     proxy_conf=proxy_conf,
                                                      enable_sr=enable_sr)
 
     @cluster(num_nodes=5)
@@ -97,10 +98,10 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
     # The producer should be an extension to KafProducer
     PRODUCER = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
+    def __init__(self, test_context, proxy_conf, enable_sr):
         super(KafkaStreamsProdConsBase,
               self).__init__(test_context=test_context,
-                             enable_pp=enable_pp,
+                             proxy_conf=proxy_conf,
                              enable_sr=enable_sr)
 
     def is_valid_msg(self, msg):
@@ -158,7 +159,7 @@ class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
     def __init__(self, test_context):
         super(KafkaStreamsTopArticles,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
+                             proxy_conf=ProxyConfig(),
                              enable_sr=True)
 
 
@@ -178,7 +179,7 @@ class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
     def __init__(self, test_context):
         super(KafkaStreamsSessionWindow,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
+                             proxy_conf=ProxyConfig(),
                              enable_sr=True)
 
 
@@ -197,7 +198,7 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
 
     def __init__(self, test_context):
         super(KafkaStreamsJsonToAvro, self).__init__(test_context=test_context,
-                                                     enable_pp=True,
+                                                     proxy_conf=ProxyConfig(),
                                                      enable_sr=True)
 
 
@@ -214,7 +215,7 @@ class KafkaStreamsPageView(RedpandaTest):
 
     def __init__(self, test_context):
         super(KafkaStreamsPageView, self).__init__(test_context=test_context,
-                                                   enable_pp=True,
+                                                   proxy_conf=ProxyConfig(),
                                                    enable_sr=True)
 
         self._timeout = 300
@@ -258,7 +259,7 @@ class KafkaStreamsWikipedia(RedpandaTest):
 
     def __init__(self, test_context):
         super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
+                                                    proxy_conf=ProxyConfig(),
                                                     enable_sr=True)
 
         self._timeout = 300
@@ -305,7 +306,7 @@ class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
 
     def __init__(self, test_context):
         super(KafkaStreamsSumLambda, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
+                                                    proxy_conf=ProxyConfig(),
                                                     enable_sr=True)
 
 
@@ -336,7 +337,7 @@ class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
     def __init__(self, test_context):
         super(KafkaStreamsAnomalyDetection,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
+                             proxy_conf=ProxyConfig(),
                              enable_sr=True)
 
     def is_valid_msg(self, msg):
@@ -370,7 +371,7 @@ class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
 
     def __init__(self, test_context):
         super(KafkaStreamsUserRegion, self).__init__(test_context=test_context,
-                                                     enable_pp=True,
+                                                     proxy_conf=ProxyConfig(),
                                                      enable_sr=True)
 
     def is_valid_msg(self, msg):
@@ -405,7 +406,7 @@ class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
 
     def __init__(self, test_context):
         super(KafkaStreamsWordCount, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
+                                                    proxy_conf=ProxyConfig(),
                                                     enable_sr=True)
 
     def is_valid_msg(self, msg):
@@ -431,7 +432,7 @@ class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
     def __init__(self, test_context):
         super(KafkaStreamsMapFunction,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
+                             proxy_conf=ProxyConfig(),
                              enable_sr=True)
 
     def is_valid_msg(self, msg):

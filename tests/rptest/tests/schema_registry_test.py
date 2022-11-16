@@ -24,7 +24,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig
+from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, ProxyConfig
 
 
 def create_topic_names(count):
@@ -75,11 +75,11 @@ class SchemaRegistryEndpoints(RedpandaTest):
         super(SchemaRegistryEndpoints, self).__init__(
             context,
             num_brokers=3,
-            enable_pp=True,
             enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
+            pandaproxy=ProxyConfig(),
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
