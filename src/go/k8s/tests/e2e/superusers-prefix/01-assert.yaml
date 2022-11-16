@@ -1,0 +1,45 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster
+  namespace: superusers-prefix
+status:
+  replicas: 2
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-schema-registry-sasl
+  namespace: superusers-prefix
+data:
+  username: X19yZWRwYW5kYV9zeXN0ZW1fX3NjaGVtYXJlZ2lzdHJ5X2NsaWVudA== # __redpanda_system__schemaregistry_client base64 encoded
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-sasl
+  namespace: superusers-prefix
+data:
+  username: X19yZWRwYW5kYV9zeXN0ZW1fX3BhbmRhcHJveHlfY2xpZW50 # __redpanda_system__pandaproxy_client base64 encoded
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda
+    tail: -1
+  - type: pod
+    namespace: redpanda-system
+    selector: control-plane=controller-manager
+    tail: -1
+  - type: command
+    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-schema-registry-sasl
+  - type: command
+    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-asl
