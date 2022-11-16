@@ -348,7 +348,9 @@ struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     }
 };
 
-struct begin_tx_reply : serde::envelope<begin_tx_reply, serde::version<1>> {
+struct begin_tx_reply
+  : serde::
+      envelope<begin_tx_reply, serde::version<1>, serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id etag;
     tx_errc ec;
@@ -1226,7 +1228,10 @@ replication_factor parsing_replication_factor(const ss::sstring& value);
 // This class contains updates for topic properties which are replicates not by
 // topic_frontend
 struct incremental_topic_custom_updates
-  : serde::envelope<incremental_topic_custom_updates, serde::version<1>> {
+  : serde::envelope<
+      incremental_topic_custom_updates,
+      serde::version<1>,
+      serde::compat_version<0>> {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
