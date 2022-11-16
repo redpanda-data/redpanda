@@ -209,17 +209,25 @@ convert_end_offset_to_file_pos(
     auto res = co_await storage::transform_stream(
       reader_handle.take_stream(),
       std::move(ostr),
-      [off_end = end_inclusive, &fo, &ts, &offset_found](
+      [off_end = end_inclusive, &fo, &ts, &offset_found, &max_timestamp](
         model::record_batch_header& hdr) {
           if (hdr.last_offset() <= off_end) {
               // If last offset of the record batch is within the range
               // we need to add it to the output stream (to calculate the
               // total size).
               fo = hdr.last_offset();
+
+              if (hdr.last_offset() == off_end) {
+                  ts = hdr.max_timestamp;
+              }
+
               return storage::batch_consumer::consume_result::accept_batch;
           }
           offset_found = true;
-          ts = hdr.max_timestamp;
+
+          if (ts == max_timestamp) {
+              ts = hdr.max_timestamp;
+          }
           return storage::batch_consumer::consume_result::stop_parser;
       });
     co_await reader_handle.close();
