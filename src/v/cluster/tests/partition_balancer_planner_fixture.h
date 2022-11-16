@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/commands.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
@@ -203,8 +204,10 @@ struct partition_balancer_planner_fixture {
                 .available_disk_gb = 100}));
             last_node_idx++;
         }
-
-        members_table.update_brokers(model::offset{}, new_brokers);
+        for (auto& b : new_brokers) {
+            members_table.apply(
+              model::offset{}, cluster::add_node_cmd(b.id(), b));
+        }
     }
 
     cluster::move_partition_replicas_cmd make_move_partition_replicas_cmd(

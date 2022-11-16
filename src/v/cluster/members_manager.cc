@@ -178,32 +178,17 @@ ss::future<> members_manager::handle_raft0_cfg_update(
       "updating cluster configuration with {}",
       cfg.brokers());
 
-    co_await _allocator.invoke_on(
-      partition_allocator::shard, [cfg](partition_allocator& allocator) {
-          allocator.update_allocation_nodes(cfg.brokers());
-      });
-
     auto diff = calculate_changed_nodes(cfg);
-    auto added_nodes = diff.added;
-    co_await _members_table.invoke_on_all(
-      [cfg = std::move(cfg), update_offset](members_table& m) mutable {
-          m.update_brokers(update_offset, cfg.brokers());
-      });
-
-    if (update_offset <= _last_connection_update_offset) {
-        co_return;
+    for (auto& broker : diff.added) {
+        co_await do_apply_add_node(
+          add_node_cmd(0, std::move(broker)), update_offset);
     }
-    // update internode connections
-
-    co_await update_connections(std::move(diff));
-    _last_connection_update_offset = update_offset;
-
-    for (const auto& broker : added_nodes) {
-        co_await _update_queue.push_eventually(node_update{
-          .id = broker.id(),
-          .type = node_update_type::added,
-          .offset = update_offset,
-        });
+    for (auto& broker : diff.updated) {
+        co_await do_apply_update_node(
+          update_node_cfg_cmd(0, std::move(broker)), update_offset);
+    }
+    for (auto& id : diff.removed) {
+        co_await do_apply_remove_node(remove_node_cmd(id, 0), update_offset);
     }
 }
 

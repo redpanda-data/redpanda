@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cluster/commands.h"
 #include "cluster/feature_manager.h"
 #include "cluster/members_table.h"
 #include "test_utils/async.h"
@@ -58,7 +59,9 @@ struct barrier_fixture {
               std::nullopt,
               model::broker_properties{}));
         }
-        members.update_brokers(model::offset{0}, brokers);
+        for (auto& br : brokers) {
+            members.apply(model::offset(0), cluster::add_node_cmd(br.id(), br));
+        }
     }
 
     void create_node_state(model::node_id id) {
