@@ -15,7 +15,7 @@ spec:
         - "--secure-listen-address=0.0.0.0:8443"
         - "--upstream=http://127.0.0.1:8080/"
         - "--logtostderr=true"
-        - "--v=10"
+        - "--v=7"
         ports:
         - containerPort: 8443
           name: https
