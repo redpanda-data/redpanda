@@ -58,6 +58,8 @@ struct offset_to_file_pos_result {
     model::offset offset;
     size_t bytes;
     model::timestamp ts;
+
+    auto operator<=>(const offset_to_file_pos_result&) const = default;
 };
 
 ss::future<checked<offset_to_file_pos_result, convert_to_file_pos_outcome>>
