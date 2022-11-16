@@ -9,6 +9,7 @@
 
 import random
 from rptest.services.admin import Admin
+from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 
 
@@ -55,7 +56,18 @@ class PartitionMovementMixin():
 
     @staticmethod
     def _get_assignments(admin, topic, partition):
-        res = admin.get_partitions(topic, partition)
+        def try_get_partitions():
+            try:
+                res = admin.get_partitions(topic, partition)
+                return (True, res)
+            except requests.exceptions.HTTPError:
+                # Retry HTTP errors, eg. 404 if the receiving node's controller
+                # is catching up and doesn't yet know about the partition.
+                return (False, None)
+
+        res = wait_until_result(try_get_partitions,
+                                timeout_sec=30,
+                                backoff_sec=1)
 
         def normalize(a):
             return dict(node_id=a["node_id"], core=a["core"])
