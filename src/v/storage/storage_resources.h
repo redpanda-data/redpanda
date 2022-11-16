@@ -20,6 +20,8 @@
 
 namespace storage {
 
+class node_api;
+
 /**
  * This class is used by various storage components to control consumption
  * of shared system resources.  It broadly does this in two ways:

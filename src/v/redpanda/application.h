@@ -41,6 +41,7 @@
 #include "rpc/rpc_server.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
+#include "storage/api.h"
 #include "storage/fwd.h"
 #include "utils/stop_signal.h"
 #include "v8_engine/fwd.h"

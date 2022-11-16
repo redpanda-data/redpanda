@@ -1269,6 +1269,20 @@ void application::wire_up_bootstrap_services() {
       })
       .get();
 
+    // Hook up local_monitor to update storage_resources when disk state changes
+    auto storage_disk_notification
+      = storage_node.local().register_disk_notification(
+        [this](uint64_t total_space, uint64_t free_space) {
+            return storage.invoke_on_all(
+              [total_space, free_space](storage::api& api) {
+                  api.resources().update_allowance(total_space, free_space);
+              });
+        });
+    _deferred.emplace_back([this, storage_disk_notification] {
+        storage_node.local().unregister_disk_notification(
+          storage_disk_notification);
+    });
+
     // Start empty, populated from snapshot in start_bootstrap_services
     syschecks::systemd_message("Creating feature table").get();
     construct_service(feature_table).get();

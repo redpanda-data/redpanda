@@ -236,11 +236,6 @@ ss::future<> local_monitor::update_disk_metrics() {
     auto free_space = _state.disks[0].free;
     auto alert = _state.storage_space_alert;
 
-    co_await _storage_api.invoke_on_all(
-      [total_space, free_space](storage::api& api) {
-          api.resources().update_allowance(total_space, free_space);
-      });
-
     co_await _storage_node_api.invoke_on_all(
       &storage::node_api::set_disk_metrics, total_space, free_space, alert);
 }
