@@ -71,7 +71,10 @@ public:
       recommission_node_cmd,
       finish_reallocations_cmd,
       maintenance_mode_cmd,
-      register_node_uuid_cmd>{};
+      register_node_uuid_cmd,
+      add_node_cmd,
+      remove_node_cmd,
+      update_node_cfg_cmd>{};
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
 
@@ -229,6 +232,12 @@ private:
 
     ss::future<std::error_code>
       apply_raft_configuration_batch(model::record_batch);
+
+    ss::future<std::error_code> do_apply_add_node(add_node_cmd, model::offset);
+    ss::future<std::error_code>
+      do_apply_update_node(update_node_cfg_cmd, model::offset);
+    ss::future<std::error_code>
+      do_apply_remove_node(remove_node_cmd, model::offset);
 
     const std::vector<config::seed_server> _seed_servers;
     const model::broker _self;

@@ -67,42 +67,57 @@ members_table::get_removed_node_metadata_ref(model::node_id id) const {
     return std::make_optional(std::cref(it->second));
 }
 
-void members_table::update_brokers(
-  model::offset version, const std::vector<model::broker>& new_brokers) {
-    _version = model::revision_id(version());
-
-    for (auto& br : new_brokers) {
-        auto it = _nodes.find(br.id());
-        if (it != _nodes.end()) {
-            // update configuration
-            it->second.broker = br;
-
-        } else {
-            _nodes.emplace(
-              br.id(),
-              node_metadata{
-                .broker = br,
-                .state = broker_state{},
-              });
-        }
-
-        _waiters.notify(br.id());
+std::error_code members_table::apply(model::offset o, add_node_cmd cmd) {
+    _version = model::revision_id(o);
+    auto it = _nodes.find(cmd.value.id());
+    if (it != _nodes.end()) {
+        return errc::invalid_node_operation;
     }
-    for (auto it = _nodes.begin(); it != _nodes.end();) {
-        auto new_it = std::find_if(
-          new_brokers.begin(),
-          new_brokers.end(),
-          [id = it->first](const model::broker& br) { return br.id() == id; });
-        if (new_it == new_brokers.end()) {
-            _removed_nodes.emplace(it->first, it->second);
-            _nodes.erase(it++);
-            continue;
-        }
-        ++it;
-    }
+    vlog(clusterlog.info, "adding node {}", cmd.value);
+    _nodes.emplace(cmd.value.id(), node_metadata{.broker = cmd.value});
+
+    _waiters.notify(cmd.value.id());
 
     notify_members_updated();
+    return errc::success;
 }
+
+std::error_code members_table::apply(model::offset o, update_node_cfg_cmd cmd) {
+    _version = model::revision_id(o);
+    auto it = _nodes.find(cmd.value.id());
+    if (it == _nodes.end()) {
+        return errc::node_does_not_exists;
+    }
+    vlog(clusterlog.info, "updating node configuration {}", cmd.value);
+    it->second.broker = std::move(cmd.value);
+
+    notify_members_updated();
+    return errc::success;
+}
+
+std::error_code members_table::apply(model::offset o, remove_node_cmd cmd) {
+    _version = model::revision_id(o);
+    auto it = _nodes.find(cmd.key);
+    if (it == _nodes.end()) {
+        return errc::node_does_not_exists;
+    }
+    if (
+      it->second.state.get_membership_state()
+      != model::membership_state::draining) {
+        return errc::invalid_node_operation;
+    }
+
+    vlog(clusterlog.info, "removing node {}", cmd.key);
+    auto handle = _nodes.extract(it);
+
+    handle.mapped().state.set_membership_state(
+      model::membership_state::removed);
+    _removed_nodes.insert(std::move(handle));
+
+    notify_members_updated();
+    return errc::success;
+}
+
 std::error_code
 members_table::apply(model::offset version, decommission_node_cmd cmd) {
     _version = model::revision_id(version());

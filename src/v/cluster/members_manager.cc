@@ -296,6 +296,15 @@ members_manager::apply_update(model::record_batch b) {
                 return f.then([error] { return error; });
             });
       },
+      [this, update_offset](add_node_cmd cmd) {
+          return do_apply_add_node(std::move(cmd), update_offset);
+      },
+      [this, update_offset](update_node_cfg_cmd cmd) {
+          return do_apply_update_node(std::move(cmd), update_offset);
+      },
+      [this, update_offset](remove_node_cmd cmd) {
+          return do_apply_remove_node(cmd, update_offset);
+      },
       [this](register_node_uuid_cmd cmd) {
           const auto& node_uuid = cmd.key;
           const auto& requested_node_id = cmd.value;
@@ -329,6 +338,108 @@ members_manager::apply_update(model::record_batch b) {
             clusterlog.info, "Node UUID {} has node ID {}", node_uuid, node_id);
           return ss::make_ready_future<std::error_code>(errc::success);
       });
+}
+
+ss::future<std::error_code> members_manager::do_apply_add_node(
+  add_node_cmd cmd, model::offset update_offset) {
+    vlog(
+      clusterlog.info,
+      "processing node add command - broker: {}, offset: {}",
+      cmd.value,
+      update_offset);
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.upsert_allocation_node(cmd.value);
+      });
+
+    // update internode connections
+    if (
+      update_offset >= _last_connection_update_offset
+      && cmd.key != _self.id()) {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          cmd.value.id(),
+          cmd.value.rpc_address(),
+          _rpc_tls_config);
+
+        _last_connection_update_offset = update_offset;
+    }
+
+    co_await _update_queue.push_eventually(node_update{
+      .id = cmd.value.id(),
+      .type = node_update_type::added,
+      .offset = update_offset,
+    });
+    co_return errc::success;
+}
+
+ss::future<std::error_code> members_manager::do_apply_update_node(
+  update_node_cfg_cmd cmd, model::offset update_offset) {
+    vlog(
+      clusterlog.info,
+      "processing node update command - broker: {}, offset: {}",
+      cmd.value,
+      update_offset);
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.upsert_allocation_node(cmd.value);
+      });
+
+    // update internode connections
+    if (
+      update_offset >= _last_connection_update_offset
+      && cmd.key != _self.id()) {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          cmd.value.id(),
+          cmd.value.rpc_address(),
+          _rpc_tls_config);
+
+        _last_connection_update_offset = update_offset;
+    }
+    co_return errc::success;
+}
+ss::future<std::error_code> members_manager::do_apply_remove_node(
+  remove_node_cmd cmd, model::offset update_offset) {
+    vlog(
+      clusterlog.info,
+      "processing node delete command - node: {}, offset: {}",
+      cmd.key,
+      update_offset);
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.remove_allocation_node(cmd.key);
+      });
+
+    // update internode connections
+    if (
+      update_offset >= _last_connection_update_offset
+      && cmd.key != _self.id()) {
+        co_await remove_broker_client(_self.id(), _connection_cache, cmd.key);
+        _last_connection_update_offset = update_offset;
+    }
+
+    co_return errc::success;
 }
 ss::future<std::error_code>
 members_manager::apply_raft_configuration_batch(model::record_batch b) {
