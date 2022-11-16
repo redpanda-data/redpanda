@@ -45,6 +45,14 @@ public:
     void update_allocation_nodes(const std::vector<model::broker>& brokers) {
         _state->update_allocation_nodes(brokers);
     }
+
+    void upsert_allocation_node(const model::broker& broker) {
+        _state->upsert_allocation_node(broker);
+    }
+
+    void remove_allocation_node(model::node_id id) {
+        _state->remove_allocation_node(id);
+    }
     void decommission_node(model::node_id id) { _state->decommission_node(id); }
     void recommission_node(model::node_id id) { _state->recommission_node(id); }
 

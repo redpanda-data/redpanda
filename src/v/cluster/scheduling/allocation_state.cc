@@ -132,6 +132,37 @@ void allocation_state::update_allocation_nodes(
     }
 }
 
+void allocation_state::upsert_allocation_node(const model::broker& broker) {
+    auto it = _nodes.find(broker.id());
+
+    if (it == _nodes.end()) {
+        _nodes.emplace(
+          broker.id(),
+          std::make_unique<allocation_node>(
+            broker.id(),
+            broker.properties().cores,
+            broker.rack(),
+            _partitions_per_shard,
+            _partitions_reserve_shard0));
+    } else {
+        it->second->update_core_count(broker.properties().cores);
+        it->second->update_rack(broker.rack());
+        // node was added back to the cluster
+        if (it->second->is_removed()) {
+            it->second->mark_as_active();
+        }
+    }
+}
+
+void allocation_state::remove_allocation_node(model::node_id id) {
+    auto it = std::find_if(
+      _nodes.begin(), _nodes.end(), [id](const auto& node) {
+          return node.first == id;
+      });
+
+    it->second->mark_as_removed();
+}
+
 void allocation_state::decommission_node(model::node_id id) {
     verify_shard();
     auto it = _nodes.find(id);
