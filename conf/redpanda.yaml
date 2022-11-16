@@ -20,9 +20,6 @@ redpanda:
   # This directory MUST resides on xfs partion.
   data_directory: "/var/lib/redpanda/data"
 
-  # Node ID - must be unique for each node
-  node_id: 1
-
   # The initial cluster nodes addresses
   seed_servers: []
 
