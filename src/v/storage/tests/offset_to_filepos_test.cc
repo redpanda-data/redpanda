@@ -46,8 +46,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_not_found) {
                     segment->index().base_timestamp(),
                     ss::default_priority_class())
                     .get0();
-    BOOST_REQUIRE_EQUAL(
-      result.error(), convert_to_file_pos_outcome::offset_not_in_segment);
+    BOOST_REQUIRE(result.error() == std::errc::result_out_of_range);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
@@ -81,8 +80,7 @@ SEASTAR_THREAD_TEST_CASE(test_search_end_offset_not_found) {
                     segment->index().max_timestamp(),
                     ss::default_priority_class())
                     .get0();
-    BOOST_REQUIRE_EQUAL(
-      result.error(), convert_to_file_pos_outcome::offset_not_in_segment);
+    BOOST_REQUIRE(result.error() == std::errc::result_out_of_range);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_search_begin_offset_found) {

@@ -216,7 +216,7 @@ archival_policy::lookup_result archival_policy::find_segment(
 /// If the full segment is uploaded the segment is not scanned.
 /// If the upload is partial, the partial scan will be performed if
 /// the segment has the index and full scan otherwise.
-static ss::future<storage::convert_to_file_pos_outcome> get_file_range(
+static ss::future<std::optional<std::error_code>> get_file_range(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
@@ -241,7 +241,7 @@ static ss::future<storage::convert_to_file_pos_outcome> get_file_range(
           "Full segment upload {}, file size: {}",
           upl,
           fsize);
-        co_return storage::convert_to_file_pos_outcome::success;
+        co_return std::nullopt;
     }
     if (begin_inclusive != segment->offsets().base_offset) {
         auto seek_result = co_await storage::convert_begin_offset_to_file_pos(
@@ -281,7 +281,7 @@ static ss::future<storage::convert_to_file_pos_outcome> get_file_range(
       "Partial segment upload {}, original file size: {}",
       upl,
       fsize);
-    co_return storage::convert_to_file_pos_outcome::success;
+    co_return std::nullopt;
 }
 
 /// \brief Initializes upload_candidate structure taking into account
@@ -330,9 +330,11 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
 
     auto file_range_result = co_await get_file_range(
       begin_inclusive, end_inclusive, segment, result, io_priority);
-    if (file_range_result != storage::convert_to_file_pos_outcome::success) {
+    if (file_range_result) {
         vlog(
-          archival_log.warn, "Failed to get file range: {}", file_range_result);
+          archival_log.error,
+          "Upload candidate not created, failed to get file range: {}",
+          *file_range_result);
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     if (result->starting_offset != segment->offsets().base_offset) {
