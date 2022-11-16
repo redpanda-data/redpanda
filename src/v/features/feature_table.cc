@@ -67,7 +67,8 @@ std::string_view to_string_view(feature f) {
         return "group_offset_retention";
     case feature::rpc_transport_unknown_errc:
         return "rpc_transport_unknown_errc";
-
+    case feature::membership_change_controller_cmds:
+        return "membership_change_controller_cmds";
     /*
      * testing features
      */
