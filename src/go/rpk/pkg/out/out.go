@@ -209,13 +209,13 @@ func StructredPrint[T any](structToPrint T, format string) {
 	case "json":
 		jsonBytes, err := json.Marshal(structToPrint)
 		if err != nil {
-			MaybeDie(err, "failed to martial json for output. Error: %s", err)
+			MaybeDie(err, "unable to format your output as %v: %v",format, err)
 		}
 		fmt.Println(string(jsonBytes))
 	case "yaml":
 		yamlBytes, err := yaml.Marshal(structToPrint)
 		if err != nil {
-			MaybeDie(err, "failed to martial yaml for output. Error: %s", err)
+			MaybeDie(err, "unable to format your output as %v: %v",format, err)
 		}
 		fmt.Println(string(yamlBytes))
 	default:
