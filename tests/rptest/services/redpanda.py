@@ -437,6 +437,18 @@ class LoggingConfig:
         return args
 
 
+class ProxyConfig:
+    def __init__(self):
+        self.authn_method: Optional[str] = None
+        self.cache_keep_alive: int = 300000  # Time in ms
+        self.cache_max_size: int = 10
+
+
+class SchemaRegistryConfig:
+    def __init__(self):
+        self.authn_method: Optional[str] = None
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
