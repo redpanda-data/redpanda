@@ -62,7 +62,8 @@ inline std::ostream& operator<<(std::ostream& os, license_type lt) {
     return os;
 }
 
-struct license : serde::envelope<license, serde::version<1>> {
+struct license
+  : serde::envelope<license, serde::version<1>, serde::compat_version<0>> {
     /// Expected encoded contents
     uint8_t format_version;
     license_type type;
