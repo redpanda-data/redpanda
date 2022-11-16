@@ -39,7 +39,7 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
  */
-struct node_state : serde::envelope<node_state, serde::version<0>> {
+struct node_state : serde::envelope<node_state, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
@@ -52,7 +52,7 @@ struct node_state : serde::envelope<node_state, serde::version<0>> {
     auto serde_fields() { return std::tie(id, membership_state, is_alive); }
 };
 
-struct partition_status : serde::envelope<partition_status, serde::version<0>> {
+struct partition_status : serde::envelope<partition_status, serde::version<0>, serde::compat_version<0>> {
     /**
      * We increase a version here 'backward' since incorrect assertion would
      * cause older redpanda versions to crash.
@@ -86,7 +86,7 @@ struct partition_status : serde::envelope<partition_status, serde::version<0>> {
       = default;
 };
 
-struct topic_status : serde::envelope<topic_status, serde::version<0>> {
+struct topic_status : serde::envelope<topic_status, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     model::topic_namespace tp_ns;
@@ -102,7 +102,7 @@ struct topic_status : serde::envelope<topic_status, serde::version<0>> {
  * instance of time
  */
 struct node_health_report
-  : serde::envelope<node_health_report, serde::version<0>> {
+  : serde::envelope<node_health_report, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 2;
 
     model::node_id id;
@@ -155,7 +155,7 @@ struct node_health_report
 };
 
 struct cluster_health_report
-  : serde::envelope<cluster_health_report, serde::version<0>> {
+  : serde::envelope<cluster_health_report, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     std::optional<model::node_id> raft0_leader;
@@ -198,7 +198,7 @@ using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
  * Filters are used to limit amout of data returned in health reports
  */
 struct partitions_filter
-  : serde::envelope<partitions_filter, serde::version<0>> {
+  : serde::envelope<partitions_filter, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     using partitions_set_t = absl::node_hash_set<model::partition_id>;
@@ -217,7 +217,7 @@ struct partitions_filter
 };
 
 struct node_report_filter
-  : serde::envelope<node_report_filter, serde::version<0>> {
+  : serde::envelope<node_report_filter, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     include_partitions_info include_partitions = include_partitions_info::yes;
@@ -233,7 +233,7 @@ struct node_report_filter
 };
 
 struct cluster_report_filter
-  : serde::envelope<cluster_report_filter, serde::version<0>> {
+  : serde::envelope<cluster_report_filter, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
     // filtering that will be applied to node reports
     node_report_filter node_report_filter;
@@ -257,7 +257,7 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  */
 
 struct get_node_health_request
-  : serde::envelope<get_node_health_request, serde::version<0>> {
+  : serde::envelope<get_node_health_request, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -281,7 +281,7 @@ struct get_node_health_request
 };
 
 struct get_node_health_reply
-  : serde::envelope<get_node_health_reply, serde::version<0>> {
+  : serde::envelope<get_node_health_reply, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
@@ -298,7 +298,7 @@ struct get_node_health_reply
 };
 
 struct get_cluster_health_request
-  : serde::envelope<get_cluster_health_request, serde::version<0>> {
+  : serde::envelope<get_cluster_health_request, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -339,7 +339,7 @@ struct get_cluster_health_request
 };
 
 struct get_cluster_health_reply
-  : serde::envelope<get_cluster_health_reply, serde::version<0>> {
+  : serde::envelope<get_cluster_health_reply, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;

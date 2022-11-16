@@ -46,7 +46,7 @@ static constexpr clock_type::time_point no_timeout
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
-  : serde::envelope<protocol_metadata, serde::version<0>> {
+  : serde::envelope<protocol_metadata, serde::version<0>, serde::compat_version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
@@ -193,7 +193,7 @@ struct follower_metrics {
 };
 
 struct append_entries_request
-  : serde::envelope<append_entries_request, serde::version<0>> {
+  : serde::envelope<append_entries_request, serde::version<0>, serde::compat_version<0>> {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
     /*
@@ -291,7 +291,7 @@ private:
  * efficient encoding of a vectory of append_entries_reply.
  */
 struct append_entries_reply
-  : serde::envelope<append_entries_reply, serde::version<0>> {
+  : serde::envelope<append_entries_reply, serde::version<0>, serde::compat_version<0>> {
     enum class status : uint8_t {
         success,
         failure,
@@ -352,7 +352,7 @@ struct heartbeat_metadata {
 /// individual raft responses one at a time - for example to start replaying the
 /// log at some offset
 struct heartbeat_request
-  : serde::envelope<heartbeat_request, serde::version<0>> {
+  : serde::envelope<heartbeat_request, serde::version<0>, serde::compat_version<0>> {
     std::vector<heartbeat_metadata> heartbeats;
 
     heartbeat_request() noexcept = default;
@@ -369,7 +369,7 @@ struct heartbeat_request
     void serde_read(iobuf_parser&, const serde::header&);
 };
 
-struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
+struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
     std::vector<append_entries_reply> meta;
 
     heartbeat_reply() noexcept = default;
@@ -385,7 +385,7 @@ struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
     void serde_read(iobuf_parser&, const serde::header&);
 };
 
-struct vote_request : serde::envelope<vote_request, serde::version<0>> {
+struct vote_request : serde::envelope<vote_request, serde::version<0>, serde::compat_version<0>> {
     vnode node_id;
     // node id to validate on receiver
     vnode target_node_id;
@@ -418,7 +418,7 @@ struct vote_request : serde::envelope<vote_request, serde::version<0>> {
     }
 };
 
-struct vote_reply : serde::envelope<vote_reply, serde::version<0>> {
+struct vote_reply : serde::envelope<vote_reply, serde::version<0>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -508,7 +508,7 @@ struct snapshot_metadata {
 };
 
 struct install_snapshot_request
-  : serde::envelope<install_snapshot_request, serde::version<0>> {
+  : serde::envelope<install_snapshot_request, serde::version<0>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // leader’s term
@@ -578,7 +578,7 @@ private:
 };
 
 struct install_snapshot_reply
-  : serde::envelope<install_snapshot_reply, serde::version<0>> {
+  : serde::envelope<install_snapshot_reply, serde::version<0>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // current term, for leader to update itself
@@ -622,7 +622,7 @@ struct write_snapshot_cfg {
 };
 
 struct timeout_now_request
-  : serde::envelope<timeout_now_request, serde::version<0>> {
+  : serde::envelope<timeout_now_request, serde::version<0>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
 
@@ -656,7 +656,7 @@ struct timeout_now_request
 };
 
 struct timeout_now_reply
-  : serde::envelope<timeout_now_reply, serde::version<0>> {
+  : serde::envelope<timeout_now_reply, serde::version<0>, serde::compat_version<0>> {
     enum class status : uint8_t { success, failure };
     // node id to validate on receiver
     vnode target_node_id;
@@ -683,7 +683,7 @@ struct timeout_now_reply
 
 // if not target is specified then the most up-to-date node will be selected
 struct transfer_leadership_request
-  : serde::envelope<transfer_leadership_request, serde::version<0>> {
+  : serde::envelope<transfer_leadership_request, serde::version<0>, serde::compat_version<0>> {
     group_id group;
     std::optional<model::node_id> target;
     raft::group_id target_group() const { return group; }
@@ -702,7 +702,7 @@ struct transfer_leadership_request
 };
 
 struct transfer_leadership_reply
-  : serde::envelope<transfer_leadership_reply, serde::version<0>> {
+  : serde::envelope<transfer_leadership_reply, serde::version<0>, serde::compat_version<0>> {
     bool success{false};
     raft::errc result;
 

@@ -23,7 +23,7 @@
 
 namespace cluster {
 
-struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
+struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>, serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
@@ -54,7 +54,7 @@ struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
 };
 
 struct ntp_leader_revision
-  : serde::envelope<ntp_leader_revision, serde::version<0>> {
+  : serde::envelope<ntp_leader_revision, serde::version<0>, serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
@@ -92,7 +92,7 @@ struct ntp_leader_revision
 };
 
 struct update_leadership_request
-  : serde::envelope<update_leadership_request, serde::version<0>> {
+  : serde::envelope<update_leadership_request, serde::version<0>, serde::compat_version<0>> {
     std::vector<ntp_leader> leaders;
 
     update_leadership_request() noexcept = default;
@@ -114,7 +114,7 @@ struct update_leadership_request
 };
 
 struct update_leadership_request_v2
-  : serde::envelope<update_leadership_request_v2, serde::version<0>> {
+  : serde::envelope<update_leadership_request_v2, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t version = 0;
     std::vector<ntp_leader_revision> leaders;
 
@@ -138,7 +138,7 @@ struct update_leadership_request_v2
 };
 
 struct update_leadership_reply
-  : serde::envelope<update_leadership_reply, serde::version<0>> {
+  : serde::envelope<update_leadership_reply, serde::version<0>, serde::compat_version<0>> {
     update_leadership_reply() noexcept = default;
 
     friend std::ostream&
@@ -151,7 +151,7 @@ struct update_leadership_reply
 };
 
 struct get_leadership_request
-  : serde::envelope<get_leadership_request, serde::version<0>> {
+  : serde::envelope<get_leadership_request, serde::version<0>, serde::compat_version<0>> {
     get_leadership_request() noexcept = default;
 
     friend std::ostream&
@@ -164,7 +164,7 @@ struct get_leadership_request
 };
 
 struct get_leadership_reply
-  : serde::envelope<get_leadership_reply, serde::version<0>> {
+  : serde::envelope<get_leadership_reply, serde::version<0>, serde::compat_version<0>> {
     std::vector<ntp_leader> leaders;
 
     get_leadership_reply() noexcept = default;

@@ -45,9 +45,9 @@ struct node_disk_space {
 };
 
 struct partition_balancer_violations
-  : serde::envelope<partition_balancer_violations, serde::version<0>> {
+  : serde::envelope<partition_balancer_violations, serde::version<0>, serde::compat_version<0>> {
     struct unavailable_node
-      : serde::envelope<unavailable_node, serde::version<0>> {
+      : serde::envelope<unavailable_node, serde::version<0>, serde::compat_version<0>> {
         model::node_id id;
         model::timestamp unavailable_since;
 
@@ -70,7 +70,7 @@ struct partition_balancer_violations
         }
     };
 
-    struct full_node : serde::envelope<full_node, serde::version<0>> {
+    struct full_node : serde::envelope<full_node, serde::version<0>, serde::compat_version<0>> {
         model::node_id id;
         uint32_t disk_used_percent;
 
@@ -159,7 +159,7 @@ operator<<(std::ostream& os, partition_balancer_status status) {
 }
 
 struct partition_balancer_overview_request
-  : serde::envelope<partition_balancer_overview_request, serde::version<0>> {
+  : serde::envelope<partition_balancer_overview_request, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     friend std::ostream&
@@ -172,7 +172,7 @@ struct partition_balancer_overview_request
 };
 
 struct partition_balancer_overview_reply
-  : serde::envelope<partition_balancer_overview_reply, serde::version<0>> {
+  : serde::envelope<partition_balancer_overview_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     errc error;

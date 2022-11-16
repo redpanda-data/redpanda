@@ -45,7 +45,7 @@ public:
      * the optional fields may not be set if draining has been requested, but
      * not yet started. in this case the values are not yet known.
      */
-    struct drain_status : serde::envelope<drain_status, serde::version<0>> {
+    struct drain_status : serde::envelope<drain_status, serde::version<0>, serde::compat_version<0>> {
         bool finished{false};
         bool errors{false};
         std::optional<size_t> partitions;

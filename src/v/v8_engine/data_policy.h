@@ -36,7 +36,7 @@ private:
 // Datapolicy property for v8_engine. In first version it contains only
 // function_name and script_name, in the future it will contain ACLs, geo,
 // e.t.c.
-struct data_policy : public serde::envelope<data_policy, serde::version<0>> {
+struct data_policy : public serde::envelope<data_policy, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t version{1};
 
     data_policy() = default;

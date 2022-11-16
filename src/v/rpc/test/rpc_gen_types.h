@@ -109,7 +109,7 @@ static_assert(!rpc::is_rpc_adl_exempt<echo_req_adl_only>);
 static_assert(!rpc::is_rpc_adl_exempt<echo_resp_adl_only>);
 
 struct echo_req_adl_serde
-  : serde::envelope<echo_req_adl_serde, serde::version<1>> {
+  : serde::envelope<echo_req_adl_serde, serde::version<1>, serde::compat_version<1>> {
     ss::sstring str;
 
     void serde_write(iobuf& out) const {
@@ -127,7 +127,7 @@ struct echo_req_adl_serde
 };
 
 struct echo_resp_adl_serde
-  : serde::envelope<echo_resp_adl_serde, serde::version<1>> {
+  : serde::envelope<echo_resp_adl_serde, serde::version<1>, serde::compat_version<1>> {
     ss::sstring str;
 
     void serde_write(iobuf& out) const {
@@ -150,7 +150,7 @@ static_assert(!rpc::is_rpc_adl_exempt<echo_req_adl_serde>);
 static_assert(!rpc::is_rpc_adl_exempt<echo_resp_adl_serde>);
 
 struct echo_req_serde_only
-  : serde::envelope<echo_req_serde_only, serde::version<1>> {
+  : serde::envelope<echo_req_serde_only, serde::version<1>, serde::compat_version<1>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
 
@@ -169,7 +169,7 @@ struct echo_req_serde_only
 };
 
 struct echo_resp_serde_only
-  : serde::envelope<echo_resp_serde_only, serde::version<1>> {
+  : serde::envelope<echo_resp_serde_only, serde::version<1>, serde::compat_version<1>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
 

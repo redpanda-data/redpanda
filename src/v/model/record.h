@@ -444,7 +444,7 @@ using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 
 struct producer_identity
-  : serde::envelope<producer_identity, serde::version<0>> {
+  : serde::envelope<producer_identity, serde::version<0>, serde::compat_version<0>> {
     int64_t id{-1};
     int16_t epoch{0};
 
