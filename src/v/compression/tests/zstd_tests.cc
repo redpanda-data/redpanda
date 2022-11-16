@@ -88,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(stream_zstd_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(async_stream_zstd_test) {
-    compression::async_stream_zstd fn(default_decompression_size);
+    compression::async_stream_zstd fn(default_decompression_size, 1);
     auto test_sizes = get_test_sizes();
     for (size_t i : sizes) {
         iobuf buf = gen(i);
@@ -131,7 +131,7 @@ SEASTAR_THREAD_TEST_CASE(interleaved_async_stream_zstd_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(async_stream_to_stream_test) {
-    compression::async_stream_zstd fn(default_decompression_size);
+    compression::async_stream_zstd fn(default_decompression_size, 1);
     compression::stream_zstd fn_s;
     auto test_sizes = get_test_sizes();
     for (size_t i : sizes) {
@@ -145,7 +145,7 @@ SEASTAR_THREAD_TEST_CASE(async_stream_to_stream_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(stream_to_async_stream_test) {
-    compression::async_stream_zstd fn(default_decompression_size);
+    compression::async_stream_zstd fn(default_decompression_size, 1);
     compression::stream_zstd fn_s;
     auto test_sizes = get_test_sizes();
     for (size_t i : sizes) {

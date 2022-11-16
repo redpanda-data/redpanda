@@ -56,7 +56,7 @@ inline void uncompress_test(size_t data_size) {
 
 inline ss::future<> async_compress_test(size_t data_size) {
     auto o = gen(data_size);
-    compression::async_stream_zstd fn(2_MiB);
+    compression::async_stream_zstd fn(2_MiB, 1);
 
     perf_tests::start_measuring_time();
     perf_tests::do_not_optimize(co_await fn.compress(std::move(o)));
@@ -64,7 +64,7 @@ inline ss::future<> async_compress_test(size_t data_size) {
 }
 
 inline ss::future<> async_uncompress_test(size_t data_size) {
-    compression::async_stream_zstd fn(2_MiB);
+    compression::async_stream_zstd fn(2_MiB, 1);
     auto o = co_await fn.compress(gen(data_size));
 
     perf_tests::start_measuring_time();

@@ -10,8 +10,9 @@
  */
 
 #pragma once
+
 #include "bytes/iobuf.h"
-#include "utils/mutex.h"
+#include "utils/object_pool.h"
 
 #include <seastar/core/aligned_buffer.hh>
 
@@ -29,7 +30,7 @@ namespace compression {
 class async_stream_zstd {
 public:
     async_stream_zstd() = delete;
-    async_stream_zstd(size_t);
+    async_stream_zstd(size_t, int);
 
     ss::future<iobuf> compress(iobuf);
     ss::future<iobuf> uncompress(iobuf);
@@ -37,19 +38,30 @@ public:
     size_t decompression_size() const;
 
 private:
+    struct static_cctx {
+        static_cctx(int);
+        static_cctx(static_cctx&&) noexcept;
+        static_cctx& operator=(static_cctx&& x) noexcept;
+
+        ZSTD_CCtx* _compress_ctx;
+        std::unique_ptr<char[], ss::free_deleter> _c_workspace;
+        ss::temporary_buffer<char> _c_buffer;
+    };
+
+    struct static_dctx {
+        static_dctx(size_t);
+        static_dctx(static_dctx&&) noexcept;
+        static_dctx& operator=(static_dctx&& x) noexcept;
+
+        ZSTD_DCtx* _decompress_ctx;
+        std::unique_ptr<char[], ss::free_deleter> _d_workspace;
+        ss::temporary_buffer<char> _d_buffer;
+    };
+
     size_t _decompression_size;
 
-    mutex _compress_mtx;
-    mutex _decompress_mtx;
-
-    ZSTD_CCtx* _compress_ctx;
-    ZSTD_DCtx* _decompress_ctx;
-
-    std::unique_ptr<char[], ss::free_deleter> _d_workspace;
-    std::unique_ptr<char[], ss::free_deleter> _c_workspace;
-
-    ss::temporary_buffer<char> _d_buffer;
-    ss::temporary_buffer<char> _c_buffer;
+    object_pool<static_cctx> _compression_ctx_pool;
+    object_pool<static_dctx> _decompression_ctx_pool;
 };
 
 void initialize_async_stream_zstd(size_t);
