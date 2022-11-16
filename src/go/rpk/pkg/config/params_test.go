@@ -166,7 +166,6 @@ func TestRedpandaSampleFile(t *testing.T) {
 		t.Errorf("unexpected error while writing sample config file: %s", err)
 		return
 	}
-	id := 1
 	expCfg := &Config{
 		fileLocation: "/etc/redpanda/redpanda.yaml",
 		Redpanda: RedpandaNodeConfig{
@@ -183,7 +182,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    9644,
 			}},
-			ID:            &id,
+			ID:            nil,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
@@ -216,7 +215,6 @@ func TestRedpandaSampleFile(t *testing.T) {
 	}
 	require.Equal(t, `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 1
     seed_servers: []
     rpc_server:
         address: 0.0.0.0
