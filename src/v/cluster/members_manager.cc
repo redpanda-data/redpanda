@@ -208,9 +208,7 @@ ss::future<> members_manager::handle_raft0_cfg_update(
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
-    vlog(clusterlog.info, "Applying update to members_manager");
     if (b.header().type == model::record_batch_type::raft_configuration) {
-        vlog(clusterlog.info, "Raft config update");
         co_return co_await apply_raft_configuration_batch(std::move(b));
     }
 
