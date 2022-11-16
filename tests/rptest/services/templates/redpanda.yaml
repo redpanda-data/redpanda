@@ -50,23 +50,18 @@ redpanda:
   {% endfor %}
 {% endif %}
 
-{% if enable_pp %}
+{% if pandaproxy_config is not none %}
 pandaproxy:
   # Pandaproxy transport
   pandaproxy_api:
     address: "0.0.0.0"
     port: 8082
-    {% if pp_authn_method %}
-    authentication_method: {{ pp_authn_method }}
+    {% if pandaproxy_config.authn_method %}
+    authentication_method: {{ pandaproxy_config.authn_method }}
     {% endif %}
 
-  {% if pp_keep_alive %}
-  client_keep_alive: {{ pp_keep_alive }}
-  {% endif %}
-
-  {% if pp_cache_max_size %}
-  client_cache_max_size: {{ pp_cache_max_size }}
-  {% endif %}
+  client_keep_alive: {{ pandaproxy_config.cache_keep_alive_ms }}
+  client_cache_max_size: {{ pandaproxy_config.cache_max_size }}
 
   advertised_pandaproxy_api:
     address: "{{node.account.hostname}}"
