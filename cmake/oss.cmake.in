@@ -269,19 +269,6 @@ ExternalProject_Add(kafka-codegen-pex
   COMMAND <SOURCE_DIR>/env/bin/pip install pex==2.1.100
   COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv)
 
-ExternalProject_Add(ctre
-  GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions
-  GIT_TAG v3.7
-  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-    -DCTRE_BUILD_TESTS=OFF
-    -DCTRE_BUILD_PACKAGE=OFF
-    -DCTRE_BUILD_PACKAGE_DEB=OFF
-    -DCTRE_BUILD_PACKAGE_RPM=OFF
-)
-
 ExternalProject_Add(avro
   GIT_REPOSITORY https://github.com/redpanda-data/avro
   GIT_TAG 53250636b5223e434a9819a34e7b5b89e829ffb8

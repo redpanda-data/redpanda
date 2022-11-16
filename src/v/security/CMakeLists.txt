@@ -1,11 +1,10 @@
 v_cc_library(
   NAME security
   SRCS
-    ephemeral_credential.cc
     scram_algorithm.cc
-    scram_credential.cc
     scram_authenticator.cc
-    acl_store.cc
+    credential.cc
+    acl.cc
     mtls.cc
     license.cc
   DEPS
@@ -14,6 +13,7 @@ v_cc_library(
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp
+    re2
  )
 
 add_subdirectory(tests)

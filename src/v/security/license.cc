@@ -16,7 +16,6 @@
 #include "json/validator.h"
 #include "utils/base64.h"
 
-#include <boost/filesystem.hpp>
 #include <cryptopp/base64.h>
 #include <cryptopp/rsa.h>
 #include <cryptopp/sha.h>
