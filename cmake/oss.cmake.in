@@ -271,7 +271,7 @@ ExternalProject_Add(kafka-codegen-pex
 
 ExternalProject_Add(avro
   GIT_REPOSITORY https://github.com/redpanda-data/avro
-  GIT_TAG 53250636b5223e434a9819a34e7b5b89e829ffb8
+  GIT_TAG 6b2896c2720e799371ea6f35b492d62171872e39
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
