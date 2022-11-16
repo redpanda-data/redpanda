@@ -37,6 +37,7 @@
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <utility>
 
 namespace kafka::client {
 
@@ -110,15 +111,15 @@ void consumer::start() {
     _heartbeat_timer.set_callback([me{shared_from_this()}]() {
         vlog(kclog.trace, "Consumer: {}: timer cb", *me);
         (void)me->heartbeat()
-          .handle_exception_type([me](const consumer_error& e) {
+          .handle_exception_type([me](const exception_base& e) {
               vlog(
-                kclog.error,
-                "Consumer: {}: heartbeat failed: {}",
-                *me,
-                e.error);
+                kclog.info, "Consumer: {}: heartbeat failed: {}", *me, e.error);
           })
           .handle_exception_type([me](const ss::gate_closed_exception& e) {
               vlog(kclog.trace, "Consumer: {}: heartbeat failed: {}", *me, e);
+          })
+          .handle_exception([me](const std::exception_ptr& e) {
+              vlog(kclog.error, "Consumer: {}: heartbeat failed: {}", *me, e);
           });
     });
     _heartbeat_timer.rearm_periodic(_config.consumer_heartbeat_interval());
@@ -132,8 +133,11 @@ ss::future<> consumer::stop() {
     _inactive_timer.cancel();
     _inactive_timer.set_callback([]() {});
 
-    _as.request_abort();
     _on_stopped(_name);
+    if (_as.abort_requested()) {
+        return ss::now();
+    }
+    _as.request_abort();
     return _coordinator->stop()
       .then([this]() { return _gate.close(); })
       .finally([me{shared_from_this()}] {});
