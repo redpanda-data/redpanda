@@ -91,7 +91,7 @@ private:
     void dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, const rpc::client_opts&);
+    make_response_handler(netbuf&, const rpc::client_opts&, sequence_t);
 
     ssx::semaphore _memory;
     absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
