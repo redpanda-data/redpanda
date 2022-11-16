@@ -444,11 +444,11 @@ void consensus::maybe_promote_to_voter(vnode id) {
 
         vlog(_ctxlog.trace, "promoting node {} to voter", id);
         return _op_lock.get_units()
-          .then([this, id](ssx::semaphore_units u) mutable {
+          .then([this, id](ssx::semaphore_units u) mutable -> ss::future<std::error_code> {
               auto latest_cfg = _configuration_manager.get_latest();
               latest_cfg.promote_to_voter(id);
 
-              return replicate_configuration(
+              co_return co_await replicate_configuration(
                 std::move(u), std::move(latest_cfg));
           })
           .then([this, id](std::error_code ec) {
