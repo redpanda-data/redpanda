@@ -606,7 +606,7 @@ ss::future<> client::put_object(
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size, tags);
     if (!header) {
-        return body.close().then([&header] {
+        return body.close().then([header] {
             return ss::make_exception_future<>(
               std::system_error(header.error()));
         });
