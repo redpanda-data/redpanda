@@ -472,11 +472,25 @@ class S3Snapshot:
         self.logger.debug(f'manifest: {pprint.pformat(manifest_data)}')
         return manifest_data
 
+    def cloud_log_segment_count_for_ntp(self,
+                                        topic: str,
+                                        partition: int,
+                                        ns: str = 'kafka') -> int:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+        if 'segments' not in manifest:
+            return 0
+
+        return len(manifest['segments'])
+
     def cloud_log_size_for_ntp(self,
                                topic: str,
                                partition: int,
                                ns: str = 'kafka') -> int:
         manifest = self.manifest_for_ntp(topic, partition, ns)
+
+        if 'segments' not in manifest:
+            return 0
+
         return sum(seg_meta['size_bytes']
                    for seg_meta in manifest['segments'].values())
 
