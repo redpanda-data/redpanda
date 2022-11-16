@@ -109,7 +109,8 @@ transport::send(netbuf b, rpc::client_opts opts) {
 }
 
 ss::future<result<std::unique_ptr<streaming_context>>>
-transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
+transport::make_response_handler(
+  netbuf& b, const rpc::client_opts& opts, sequence_t seq) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
         _probe.client_correlation_error();
         vlog(
@@ -132,7 +133,14 @@ transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
         throw std::logic_error(
           fmt::format("Tried to reuse correlation id: {}", idx));
     }
-    item_raw_ptr->with_timeout(opts.timeout, [this, idx] {
+    item_raw_ptr->with_timeout(opts.timeout, [this, idx, seq] {
+        /*
+         * remove pending entry from requests queue. If a timeout occurred
+         * before an entry was sent we can not keep the entry alive as it may
+         * contain caller semaphore units, the units must be released when we
+         * notify caller with the result.
+         */
+        _requests_queue.erase(seq);
         auto it = _correlations.find(idx);
         if (likely(it != _correlations.end())) {
             vlog(rpclog.info, "Request timeout, correlation id: {}", idx);
@@ -156,7 +164,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
     return ss::with_gate(
       _dispatch_gate,
       [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
-          auto f = make_response_handler(b, opts);
+          auto f = make_response_handler(b, opts, seq);
 
           // send
           auto sz = b.buffer().size_bytes();
