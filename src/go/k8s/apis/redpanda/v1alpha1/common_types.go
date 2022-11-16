@@ -8,6 +8,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// SuperUsersPrefix is a prefix added to SuperUsers created and managed by the operator (i.e. PandaProxy, SchemaRegistry, Console)
+// This is useful for identifying and grouping all users managed by the operator
+// This is set as a configuration for backwards compatibility
+var SuperUsersPrefix string
+
 // SecretKeyRef contains enough information to inspect or modify the referred Secret data
 // REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
 type SecretKeyRef struct {
