@@ -250,3 +250,28 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
     pps::canonical_schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
+    // https://github.com/redpanda-data/redpanda/issues/7274
+    // custom attributes supported only at field level
+    const auto avro_metadata_schema
+      = pps::sanitize_avro_schema_definition(
+          {R"({"type":"record","name":"foo","ignored_attr":true,"fields":[{"name":"bar","type":"float","extra_attr":true}]})",
+           pps::schema_type::avro})
+          .value();
+    pps::canonical_schema_definition expected{
+      R"({"type":"record","name":"foo","fields":[{"name":"bar","type":"float","extra_attr":true}]})",
+      pps::schema_type::avro};
+    pps::sharded_store s;
+    auto valid = pps::make_avro_schema_definition(
+                   s,
+                   {pps::subject("s2"),
+                    {avro_metadata_schema.raw(), pps::schema_type::avro}})
+                   .get();
+    static_assert(
+      std::
+        is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
+      "schema2 is an avro_schema_definition");
+    pps::canonical_schema_definition avro_conversion{valid};
+    BOOST_CHECK_EQUAL(expected, avro_conversion);
+}
