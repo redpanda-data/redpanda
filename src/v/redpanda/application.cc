@@ -1345,34 +1345,6 @@ void application::start_bootstrap_services() {
     storage_node.invoke_on_all(&storage::node_api::start).get0();
     local_monitor.invoke_on_all(&cluster::node::local_monitor::start).get0();
 
-    // Early initialization of disk stats, so that logic for e.g. picking
-    // falloc sizes works without having to wait for a local_monitor tick.
-    auto tmp_lm = cluster::node::local_monitor(
-      config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
-      config::shard_local_cfg()
-        .storage_space_alert_free_threshold_percent.bind(),
-      config::shard_local_cfg().storage_min_free_bytes.bind(),
-      storage_node,
-      storage);
-    tmp_lm.update_state().get();
-
-    auto disk_stats
-      = storage_node
-          .invoke_on(
-            ss::shard_id{0},
-            [](const storage::node_api& na) -> storage::disk_metrics {
-                return na.get_disk_metrics();
-            })
-          .get();
-
-    storage
-      .invoke_on_all([disk_stats](storage::api& sa) -> ss::future<> {
-          sa.resources().update_allowance(
-            disk_stats.total_bytes, disk_stats.free_bytes);
-          return ss::now();
-      })
-      .get();
-
     storage.invoke_on_all(&storage::api::start).get();
 
     // As soon as storage is up, load our feature_table snapshot, if any,
