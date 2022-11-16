@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import errno
+import json
 import os
 import re
 import requests
@@ -21,10 +22,17 @@ VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
 
 
 def wait_for_num_versions(redpanda, num_versions):
+    # Use a single node so the metadata about brokers have a consistent source
+    # in case we retry.
+    node = redpanda.nodes[0]
+
     def get_unique_versions():
-        node = redpanda.nodes[0]
-        brokers_list = \
-            str(node.account.ssh_output(f"{redpanda.find_binary('rpk')} redpanda admin brokers list"))
+        try:
+            brokers_list = \
+                json.dumps(redpanda._admin.get_brokers(node=node))
+        except Exception as e:
+            redpanda.logger.debug(f"Failed to list brokers: {e}")
+            raise e
         redpanda.logger.debug(brokers_list)
         version_re = re.compile("v\\d+\\.\\d+\\.\\d+")
         return set(version_re.findall(brokers_list))
@@ -32,7 +40,8 @@ def wait_for_num_versions(redpanda, num_versions):
     # NOTE: allow retries, as the version may not be available immediately
     # following a restart.
     wait_until(lambda: len(get_unique_versions()) == num_versions,
-               timeout_sec=30)
+               timeout_sec=30,
+               retry_on_exc=True)
     unique_versions = get_unique_versions()
     assert len(unique_versions) == num_versions, unique_versions
     return unique_versions
