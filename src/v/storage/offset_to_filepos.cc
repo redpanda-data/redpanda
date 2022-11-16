@@ -85,24 +85,9 @@ offset_to_filepos_consumer::type offset_to_filepos_consumer::end_of_stream() {
 
 } // namespace internal
 
-std::ostream&
-operator<<(std::ostream& os, convert_to_file_pos_outcome conv_res) {
-    switch (conv_res) {
-    case success:
-        os << "success";
-        break;
-    case offset_not_in_segment:
-        os << "offset_not_in_segment";
-        break;
-    }
-
-    return os;
-}
-
-ss::future<checked<offset_to_file_pos_result, convert_to_file_pos_outcome>>
-convert_begin_offset_to_file_pos(
+ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
-  ss::lw_shared_ptr<storage::segment> segment,
+  ss::lw_shared_ptr<segment> segment,
   model::timestamp base_timestamp,
   ss::io_priority_class io_priority) {
     auto ix_begin = segment->index().find_nearest(begin_inclusive);
@@ -117,7 +102,7 @@ convert_begin_offset_to_file_pos(
 
     model::timestamp ts = base_timestamp;
     bool offset_found = false;
-    auto res = co_await storage::transform_stream(
+    auto res = co_await transform_stream(
       reader_handle.take_stream(),
       std::move(ostr),
       [begin_inclusive, &sto, &ts, &offset_found](
@@ -130,11 +115,11 @@ convert_begin_offset_to_file_pos(
               // offset that we're looking for in this segment. This is why
               // we need to update 'sto' per batch.
               sto = hdr.last_offset() + model::offset(1);
-              return storage::batch_consumer::consume_result::accept_batch;
+              return batch_consumer::consume_result::accept_batch;
           }
           offset_found = true;
           ts = hdr.first_timestamp;
-          return storage::batch_consumer::consume_result::stop_parser;
+          return batch_consumer::consume_result::stop_parser;
       });
     co_await reader_handle.close();
     if (res.has_error()) {
@@ -149,7 +134,7 @@ convert_begin_offset_to_file_pos(
           "{}",
           sto,
           segment->offsets());
-        co_return storage::convert_to_file_pos_outcome::offset_not_in_segment;
+        co_return std::make_error_code(std::errc::result_out_of_range);
     }
 
     bytes_to_skip = scan_from + res.value();
@@ -165,10 +150,9 @@ convert_begin_offset_to_file_pos(
     co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
 }
 
-ss::future<checked<offset_to_file_pos_result, convert_to_file_pos_outcome>>
-convert_end_offset_to_file_pos(
+ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
-  ss::lw_shared_ptr<storage::segment> segment,
+  ss::lw_shared_ptr<segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority) {
     // Handle truncated segment upload (if the upload was triggered by time
@@ -206,7 +190,7 @@ convert_end_offset_to_file_pos(
     size_t stop_at = 0;
 
     bool offset_found = false;
-    auto res = co_await storage::transform_stream(
+    auto res = co_await transform_stream(
       reader_handle.take_stream(),
       std::move(ostr),
       [off_end = end_inclusive, &fo, &ts, &offset_found, &max_timestamp](
@@ -218,17 +202,18 @@ convert_end_offset_to_file_pos(
               fo = hdr.last_offset();
 
               if (hdr.last_offset() == off_end) {
+                  offset_found = true;
                   ts = hdr.max_timestamp;
               }
 
-              return storage::batch_consumer::consume_result::accept_batch;
+              return batch_consumer::consume_result::accept_batch;
           }
           offset_found = true;
 
           if (ts == max_timestamp) {
               ts = hdr.max_timestamp;
           }
-          return storage::batch_consumer::consume_result::stop_parser;
+          return batch_consumer::consume_result::stop_parser;
       });
     co_await reader_handle.close();
 
@@ -244,7 +229,7 @@ convert_end_offset_to_file_pos(
           "{}",
           end_inclusive,
           segment->offsets());
-        co_return storage::convert_to_file_pos_outcome::offset_not_in_segment;
+        co_return std::make_error_code(std::errc::result_out_of_range);
     }
 
     stop_at = scan_from + res.value();
