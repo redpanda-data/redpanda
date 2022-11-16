@@ -437,6 +437,23 @@ class LoggingConfig:
         return args
 
 
+class AuthConfig:
+    def __init__(self):
+        self.authn_method: Optional[str] = None
+
+
+class PandaproxyConfig(AuthConfig):
+    def __init__(self):
+        super(PandaproxyConfig, self).__init__()
+        self.cache_keep_alive_ms: int = 300000
+        self.cache_max_size: int = 10
+
+
+class SchemaRegistryConfig(AuthConfig):
+    def __init__(self):
+        super(SchemaRegistryConfig, self).__init__()
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
