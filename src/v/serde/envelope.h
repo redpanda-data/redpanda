@@ -35,10 +35,7 @@ struct compat_version {
  *                         (change for every incompatible update)
  * \tparam CompatVersion   the minimum required version able to parse the type
  */
-template<
-  typename T,
-  typename Version,
-  typename CompatVersion = compat_version<Version::v>>
+template<typename T, typename Version, typename CompatVersion>
 struct envelope {
     bool operator==(envelope const&) const = default;
     auto operator<=>(envelope const&) const = default;
@@ -55,10 +52,7 @@ struct envelope {
  * This can be changed - for example by a separate template parameter
  * template <..., typename HashAlgo = crc32c>
  */
-template<
-  typename T,
-  typename Version,
-  typename CompatVersion = compat_version<Version::v>>
+template<typename T, typename Version, typename CompatVersion>
 struct checksum_envelope {
     bool operator==(checksum_envelope const&) const = default;
     using value_t = T;
