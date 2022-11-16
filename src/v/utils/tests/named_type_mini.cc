@@ -26,9 +26,12 @@
 
 #include <boost/test/unit_test.hpp>
 
+struct nothing {};
+
 struct int_derived : named_base<int32_t, int_derived> {
     using base::base;
 };
+
 struct int_derived_additional_member
   : named_base<int32_t, int_derived_additional_member> {
     using base::base;
@@ -71,6 +74,8 @@ BOOST_AUTO_TEST_CASE(named_base_type_traits) {
     static_assert(reflection::is_named_type_v<int_alias>);
     static_assert(reflection::is_named_type<int_derived>::value);
     static_assert(reflection::is_named_type_v<int_derived>);
+
+    static_assert(!reflection::is_named_type_v<nothing>);
 }
 
 BOOST_AUTO_TEST_CASE(named_base_operator_equals) {

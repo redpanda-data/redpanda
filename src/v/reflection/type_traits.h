@@ -47,9 +47,6 @@ template<typename T>
 concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
 
 template<typename T>
-concept is_rp_named_type
-  = ::detail::is_specialization_of_v<T, ::detail::base_named_type>;
-
 struct is_named_type : std::false_type {};
 template<typename T, typename Tag>
 struct is_named_type<named_type<T, Tag>> : std::true_type {};
@@ -57,6 +54,9 @@ template<::detail::NamedTypeTrivialSubclass T>
 struct is_named_type<T> : std::true_type {};
 template<typename T>
 inline constexpr bool is_named_type_v = is_named_type<T>::value;
+
+template<typename T>
+concept is_rp_named_type = is_named_type_v<T>;
 
 template<typename T>
 concept is_ss_bool_class = ::detail::is_specialization_of_v<T, ss::bool_class>;

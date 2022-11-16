@@ -12,6 +12,7 @@
 #pragma once
 
 #include <functional>
+#include <ostream>
 
 namespace detail {
 
@@ -197,7 +198,6 @@ concept NamedTypeTrivialSubclass
     sizeof(T) == sizeof(typename T::type));
 
 } // namespace detail
-
 
 template<typename T, typename Dervied>
 using named_base = detail::base_named_base<
