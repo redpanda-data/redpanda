@@ -199,16 +199,6 @@ public:
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
 
-    membership_state get_membership_state() const { return _membership_state; }
-    void set_membership_state(membership_state st) { _membership_state = st; }
-
-    maintenance_state get_maintenance_state() const {
-        return _maintenance_state;
-    }
-    void set_maintenance_state(maintenance_state st) {
-        _maintenance_state = st;
-    }
-
     void replace_unassigned_node_id(const node_id id) {
         vassert(
           _id == unassigned_node_id,
@@ -230,9 +220,6 @@ private:
     net::unresolved_address _rpc_address;
     std::optional<rack_id> _rack;
     broker_properties _properties;
-    // in memory state, not serialized
-    membership_state _membership_state = membership_state::active;
-    maintenance_state _maintenance_state{maintenance_state::inactive};
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };
