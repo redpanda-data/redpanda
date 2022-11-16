@@ -38,13 +38,19 @@ namespace {
 // Fake command type used to test serde-only types.
 static constexpr int8_t fake_serde_only_cmd_type = 0;
 struct fake_serde_only_key
-  : serde::envelope<fake_serde_only_key, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      fake_serde_only_key,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;
 };
 struct fake_serde_only_val
-  : serde::envelope<fake_serde_only_val, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      fake_serde_only_val,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;

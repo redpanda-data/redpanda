@@ -19,7 +19,10 @@
 namespace cluster {
 
 struct cluster_bootstrap_info_request
-  : serde::envelope<cluster_bootstrap_info_request, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      cluster_bootstrap_info_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     friend std::ostream&
@@ -32,7 +35,10 @@ struct cluster_bootstrap_info_request
 };
 
 struct cluster_bootstrap_info_reply
-  : serde::envelope<cluster_bootstrap_info_reply, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      cluster_bootstrap_info_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     model::broker broker;

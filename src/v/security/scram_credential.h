@@ -19,7 +19,8 @@
 namespace security {
 
 class scram_credential
-  : public serde::envelope<scram_credential, serde::version<0>, serde::compat_version<0>> {
+  : public serde::
+      envelope<scram_credential, serde::version<0>, serde::compat_version<0>> {
 public:
     scram_credential() noexcept = default;
 

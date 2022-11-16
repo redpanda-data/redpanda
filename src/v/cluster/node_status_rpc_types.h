@@ -17,7 +17,10 @@
 namespace cluster {
 
 struct node_status_metadata
-  : serde::envelope<node_status_metadata, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      node_status_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     model::node_id node_id;
@@ -30,7 +33,10 @@ struct node_status_metadata
 };
 
 struct node_status_request
-  : serde::envelope<node_status_request, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      node_status_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata sender_metadata;
@@ -43,7 +49,8 @@ struct node_status_request
 };
 
 struct node_status_reply
-  : serde::envelope<node_status_reply, serde::version<0>, serde::compat_version<0>> {
+  : serde::
+      envelope<node_status_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata replier_metadata;

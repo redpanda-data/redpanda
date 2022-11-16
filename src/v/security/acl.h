@@ -135,7 +135,9 @@ std::ostream& operator<<(std::ostream&, principal_type);
 /*
  * Kafka principal is (principal-type, principal)
  */
-class acl_principal : public serde::envelope<acl_principal, serde::version<0>, serde::compat_version<0>> {
+class acl_principal
+  : public serde::
+      envelope<acl_principal, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_principal() = default;
     acl_principal(principal_type type, ss::sstring name)
@@ -170,7 +172,8 @@ inline const acl_principal acl_wildcard_user(principal_type::user, "*");
  * pattern type changes how matching occurs (e.g. literal, name prefix).
  */
 class resource_pattern
-  : public serde::envelope<resource_pattern, serde::version<0>, serde::compat_version<0>> {
+  : public serde::
+      envelope<resource_pattern, serde::version<0>, serde::compat_version<0>> {
 public:
     static constexpr const char* wildcard = "*";
     resource_pattern() = default;
@@ -204,7 +207,9 @@ private:
 /*
  * A host (or wildcard) in an ACL rule.
  */
-class acl_host : public serde::envelope<acl_host, serde::version<0>, serde::compat_version<0>> {
+class acl_host
+  : public serde::
+      envelope<acl_host, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_host() = default;
     explicit acl_host(const ss::sstring& host)
@@ -243,7 +248,9 @@ inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
  * permitted to execute an operation on. When associated with a resource, it
  * describes if the principal can execute the operation on that resource.
  */
-class acl_entry : public serde::envelope<acl_entry, serde::version<0>, serde::compat_version<0>> {
+class acl_entry
+  : public serde::
+      envelope<acl_entry, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_entry() = default;
     acl_entry(
@@ -286,7 +293,9 @@ private:
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
  * binding describes if a principal may access resources.
  */
-class acl_binding : public serde::envelope<acl_binding, serde::version<0>, serde::compat_version<0>> {
+class acl_binding
+  : public serde::
+      envelope<acl_binding, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_binding() = default;
     acl_binding(resource_pattern pattern, acl_entry entry)
@@ -316,7 +325,10 @@ private:
  * A filter for matching resources.
  */
 class resource_pattern_filter
-  : public serde::envelope<resource_pattern_filter, serde::version<0>, serde::compat_version<0>> {
+  : public serde::envelope<
+      resource_pattern_filter,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     enum class serialized_pattern_type {
         literal = 0,
@@ -400,7 +412,8 @@ operator<<(std::ostream&, resource_pattern_filter::serialized_pattern_type);
  * A filter for matching ACL entries.
  */
 class acl_entry_filter
-  : public serde::envelope<acl_entry_filter, serde::version<0>, serde::compat_version<0>> {
+  : public serde::
+      envelope<acl_entry_filter, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_entry_filter() = default;
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
@@ -457,7 +470,10 @@ private:
  * A filter for matching ACL bindings.
  */
 class acl_binding_filter
-  : public serde::envelope<acl_binding_filter, serde::version<0>, serde::compat_version<0>> {
+  : public serde::envelope<
+      acl_binding_filter,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     acl_binding_filter() = default;
     acl_binding_filter(resource_pattern_filter pattern, acl_entry_filter acl)
