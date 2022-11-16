@@ -97,14 +97,6 @@ model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
     return do_serialize_tx(old_tx);
 }
 
-std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
-    return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid << ", last_pid=" << tx.last_pid
-             << ", etag=" << tx.etag
-             << ", size(partitions)=" << tx.partitions.size()
-             << ", tx_seq=" << tx.tx_seq << "}";
-}
-
 tm_stm::tm_stm(
   ss::logger& logger,
   raft::consensus* c,
