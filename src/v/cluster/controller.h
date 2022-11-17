@@ -120,6 +120,9 @@ public:
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
     ss::sharded<storage::api>& get_storage() { return _storage; }
+    ss::sharded<members_backend>& get_members_backend() {
+        return _members_backend;
+    }
 
     bool is_raft0_leader() const {
         vassert(

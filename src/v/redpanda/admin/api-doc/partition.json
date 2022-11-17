@@ -186,6 +186,21 @@
             ]
         },
         {
+            "path": "/v1/partitions/rebalance",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Execute on demand partition rebalance",
+                    "type": "void",
+                    "nickname": "trigger_partitions_rebalance",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}/unclean_abort_reconfiguration",
             "operations": [
                 {
