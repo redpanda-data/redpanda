@@ -29,7 +29,7 @@ public:
     void verify_shard_source_location(const char* file, int linenum) const;
 
 private:
-    const shard_id_type _owner_shard;
+    shard_id_type _owner_shard;
 };
 
 // Next function should be replace with source_location in c++20 very soon
