@@ -123,12 +123,20 @@ void server_probe::setup_public_metrics(
 
     mgs.add_group(
       "rpc",
-      {sm::make_counter(
-         "request_errors_total",
-         [this] { return _service_errors; },
-         sm::description("Number of rpc errors"),
-         {server_label(proto)})
-         .aggregate({sm::shard_label})});
+      {
+        sm::make_counter(
+          "request_errors_total",
+          [this] { return _service_errors; },
+          sm::description("Number of rpc errors"),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "active_connections",
+          [this] { return _connections; },
+          sm::description("Count of currently active connections"),
+          {server_label(proto)})
+          .aggregate({sm::shard_label}),
+      });
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {

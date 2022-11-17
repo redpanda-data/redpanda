@@ -480,6 +480,7 @@ private:
     absl::flat_hash_map<vnode, follower_req_seq> next_followers_request_seq();
 
     void setup_metrics();
+    void setup_public_metrics();
 
     bytes voted_for_key() const {
         return raft::details::serialize_group_key(
