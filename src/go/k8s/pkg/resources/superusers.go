@@ -137,3 +137,8 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 func (r *SuperUsersResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(r.object.GetName(), r.suffix), Namespace: r.object.GetNamespace()}
 }
+
+// GetUsername returns username used for Kafka SASL config that has prefix based on --superusers-prefix flag
+func (r *SuperUsersResource) GetUsername() string {
+	return r.username
+}
