@@ -25,24 +25,6 @@ struct materialized_segment_state;
 class remote_segment_batch_reader;
 class partition_probe;
 
-/// State that have to be materialized before use
-struct offloaded_segment_state {
-    explicit offloaded_segment_state(model::offset bo);
-
-    std::unique_ptr<materialized_segment_state>
-    materialize(remote_partition& p, kafka::offset offset_key);
-
-    ss::future<> stop();
-
-    offloaded_segment_state offload(remote_partition*);
-
-    model::offset base_rp_offset;
-
-    offloaded_segment_state* operator->() { return this; }
-
-    const offloaded_segment_state* operator->() const { return this; }
-};
-
 /// State with materialized segment and cached reader
 ///
 /// The object represent the state in which there is(or was) at
@@ -66,7 +48,7 @@ struct materialized_segment_state {
 
     ss::future<> stop();
 
-    offloaded_segment_state offload(remote_partition* partition);
+    void offload(remote_partition* partition);
 
     const model::ntp& ntp() const;
 
