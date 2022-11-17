@@ -529,6 +529,22 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
               return c->fetch(
                 std::chrono::duration_cast<std::chrono::milliseconds>(timeout),
                 max_bytes);
+          })
+          .then([this](kafka::fetch_response res) {
+              bool has_error = std::any_of(
+                res.data.topics.begin(),
+                res.data.topics.end(),
+                [](auto const& topics) {
+                    return std::any_of(
+                      topics.partitions.begin(),
+                      topics.partitions.end(),
+                      [](const auto& p) {
+                          return p.error_code != error_code::none;
+                      });
+                });
+              return (has_error ? _wait_or_start_update_metadata() : ss::now())
+                .then(
+                  [res{std::move(res)}]() mutable { return std::move(res); });
           });
     });
 }
