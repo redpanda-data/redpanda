@@ -11,6 +11,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "config/property.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/logger.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
@@ -75,7 +76,7 @@ private:
         // configurations
         namespace sm = ss::metrics;
         _internal_metrics.add_group(
-          "raft:recovery",
+          prometheus_sanitize::metrics_name("raft:recovery"),
           {sm::make_gauge(
             "partition_movement_available_bandwidth",
             [this] { return _throttler.available(); },
@@ -90,7 +91,7 @@ private:
 
         namespace sm = ss::metrics;
         _public_metrics.add_group(
-          "raft:recovery",
+          prometheus_sanitize::metrics_name("raft:recovery"),
           {sm::make_gauge(
             "partition_movement_available_bandwidth",
             [this] { return _throttler.available(); },
