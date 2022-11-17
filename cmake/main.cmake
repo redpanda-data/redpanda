@@ -76,6 +76,7 @@ set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
 # is accessible in the configure_file call for the third-party dependencies
 include(ccache)
 include(distcc)
+include(icecc)
 
 # don't export() the contents to registry
 set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
