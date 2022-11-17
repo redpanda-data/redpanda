@@ -374,10 +374,6 @@ ss::future<> members_backend::calculate_reallocations_after_node_added(
             std::erase_if(to_move_from_node, [](const replicas_to_move& v) {
                 return v.left_to_move == 0;
             });
-            // skip if this partition is already replicated on added node
-            if (is_in_replica_set(p.replicas, meta.update.id)) {
-                continue;
-            }
 
             std::sort(to_move_from_node.begin(), to_move_from_node.end(), cmp);
             for (auto& to_move : to_move_from_node) {
@@ -389,11 +385,11 @@ ss::future<> members_backend::calculate_reallocations_after_node_added(
                     reallocation.replicas_to_remove.emplace(to_move.id);
                     auto current_assignment = p;
                     reassign_replicas(current_assignment, reallocation);
-                    // if this reassignment does not involve the node we are
-                    // targetting do not add it
-                    if (!is_reassigned_to_node(reallocation, meta.update.id)) {
+                    // skip if partition was reassigned to the same node
+                    if (is_reassigned_to_node(reallocation, to_move.id)) {
                         continue;
                     }
+                    reallocation.current_replica_set = p.replicas;
                     reallocation.state = reallocation_state::reassigned;
                     meta.partition_reallocations.push_back(
                       std::move(reallocation));
