@@ -16,7 +16,7 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import ProxyConfig
+from rptest.services.redpanda import ProxyConfig, SchemaRegistryConfig
 
 
 class KafkaStreamsTest(RedpandaTest):
@@ -29,10 +29,10 @@ class KafkaStreamsTest(RedpandaTest):
     # The java program is represented by a wrapper in KafkaStreamExamples.
     Example = None
 
-    def __init__(self, test_context, proxy_conf, enable_sr):
+    def __init__(self, test_context, proxy_conf, registry_conf):
         super(KafkaStreamsTest, self).__init__(test_context=test_context,
                                                pandaproxy=proxy_conf,
-                                               enable_sr=enable_sr)
+                                               schema_registry=registry_conf)
 
         self._ctx = test_context
 
@@ -61,10 +61,11 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
     # wrapper in KafkaStreamExamples.
     Driver = None
 
-    def __init__(self, test_context, proxy_conf, enable_sr):
-        super(KafkaStreamsDriverBase, self).__init__(test_context=test_context,
-                                                     proxy_conf=proxy_conf,
-                                                     enable_sr=enable_sr)
+    def __init__(self, test_context, proxy_conf, registry_conf):
+        super(KafkaStreamsDriverBase,
+              self).__init__(test_context=test_context,
+                             proxy_conf=proxy_conf,
+                             registry_conf=registry_conf)
 
     @cluster(num_nodes=5)
     def test_kafka_streams(self):
@@ -98,11 +99,11 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
     # The producer should be an extension to KafProducer
     PRODUCER = None
 
-    def __init__(self, test_context, proxy_conf, enable_sr):
+    def __init__(self, test_context, proxy_conf, registry_conf):
         super(KafkaStreamsProdConsBase,
               self).__init__(test_context=test_context,
                              proxy_conf=proxy_conf,
-                             enable_sr=enable_sr)
+                             registry_conf=registry_conf)
 
     def is_valid_msg(self, msg):
         raise NotImplementedError("is_valid_msg() undefined.")
@@ -160,7 +161,7 @@ class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
         super(KafkaStreamsTopArticles,
               self).__init__(test_context=test_context,
                              proxy_conf=ProxyConfig(),
-                             enable_sr=True)
+                             registry_conf=SchemaRegistryConfig())
 
 
 class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
@@ -180,7 +181,7 @@ class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
         super(KafkaStreamsSessionWindow,
               self).__init__(test_context=test_context,
                              proxy_conf=ProxyConfig(),
-                             enable_sr=True)
+                             registry_conf=SchemaRegistryConfig())
 
 
 class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
@@ -197,9 +198,10 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
     Driver = KafkaStreamExamples.KafkaStreamsJsonToAvro
 
     def __init__(self, test_context):
-        super(KafkaStreamsJsonToAvro, self).__init__(test_context=test_context,
-                                                     proxy_conf=ProxyConfig(),
-                                                     enable_sr=True)
+        super(KafkaStreamsJsonToAvro,
+              self).__init__(test_context=test_context,
+                             proxy_conf=ProxyConfig(),
+                             registry_conf=SchemaRegistryConfig())
 
 
 class KafkaStreamsPageView(RedpandaTest):
@@ -214,9 +216,10 @@ class KafkaStreamsPageView(RedpandaTest):
     )
 
     def __init__(self, test_context):
-        super(KafkaStreamsPageView, self).__init__(test_context=test_context,
-                                                   proxy_conf=ProxyConfig(),
-                                                   enable_sr=True)
+        super(KafkaStreamsPageView,
+              self).__init__(test_context=test_context,
+                             pandaproxy=ProxyConfig(),
+                             schema_registry=SchemaRegistryConfig())
 
         self._timeout = 300
 
@@ -258,9 +261,10 @@ class KafkaStreamsWikipedia(RedpandaTest):
     )
 
     def __init__(self, test_context):
-        super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
-                                                    proxy_conf=ProxyConfig(),
-                                                    enable_sr=True)
+        super(KafkaStreamsWikipedia,
+              self).__init__(test_context=test_context,
+                             pandaproxy=ProxyConfig(),
+                             schema_registry=SchemaRegistryConfig())
 
         self._timeout = 300
 
@@ -305,9 +309,10 @@ class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
     Driver = KafkaStreamExamples.KafkaStreamsSumLambda
 
     def __init__(self, test_context):
-        super(KafkaStreamsSumLambda, self).__init__(test_context=test_context,
-                                                    proxy_conf=ProxyConfig(),
-                                                    enable_sr=True)
+        super(KafkaStreamsSumLambda,
+              self).__init__(test_context=test_context,
+                             proxy_conf=ProxyConfig(),
+                             registry_conf=SchemaRegistryConfig())
 
 
 class AnomalyProducer(KafProducer):
@@ -338,7 +343,7 @@ class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
         super(KafkaStreamsAnomalyDetection,
               self).__init__(test_context=test_context,
                              proxy_conf=ProxyConfig(),
-                             enable_sr=True)
+                             registry_conf=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -370,9 +375,10 @@ class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
     PRODUCER = RegionProducer
 
     def __init__(self, test_context):
-        super(KafkaStreamsUserRegion, self).__init__(test_context=test_context,
-                                                     proxy_conf=ProxyConfig(),
-                                                     enable_sr=True)
+        super(KafkaStreamsUserRegion,
+              self).__init__(test_context=test_context,
+                             proxy_conf=ProxyConfig(),
+                             registry_conf=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -405,9 +411,10 @@ class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
     PRODUCER = WordProducer
 
     def __init__(self, test_context):
-        super(KafkaStreamsWordCount, self).__init__(test_context=test_context,
-                                                    proxy_conf=ProxyConfig(),
-                                                    enable_sr=True)
+        super(KafkaStreamsWordCount,
+              self).__init__(test_context=test_context,
+                             proxy_conf=ProxyConfig(),
+                             registry_conf=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -433,7 +440,7 @@ class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
         super(KafkaStreamsMapFunction,
               self).__init__(test_context=test_context,
                              proxy_conf=ProxyConfig(),
-                             enable_sr=True)
+                             registry_conf=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         value = msg["value"]

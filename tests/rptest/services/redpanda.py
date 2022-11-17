@@ -400,7 +400,6 @@ class SecurityConfig:
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
-        self.sr_authn_method: Optional[str] = None
         self.auto_auth: Optional[bool] = None
 
         # The rules to extract principal from mtls
@@ -529,7 +528,6 @@ class RedpandaService(Service):
                  *,
                  extra_rp_conf=None,
                  extra_node_conf=None,
-                 enable_sr=False,
                  resource_settings=None,
                  si_settings=None,
                  log_level: Optional[str] = None,
@@ -539,14 +537,15 @@ class RedpandaService(Service):
                  node_ready_timeout_s=None,
                  superuser: Optional[SaslCredentials] = None,
                  skip_if_no_redpanda_log: bool = False,
-                 pandaproxy: Optional[ProxyConfig] = None):
+                 pandaproxy: Optional[ProxyConfig] = None,
+                 schema_registry: Optional[SchemaRegistryConfig] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
-        self._enable_sr = enable_sr
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy = pandaproxy
+        self._schema_registry = schema_registry
 
         if superuser is None:
             superuser = self.SUPERUSER_CREDENTIALS
@@ -1799,6 +1798,12 @@ class RedpandaService(Service):
             pp_keep_alive = self._pandaproxy.cache_keep_alive
             pp_cache_max_size = self._pandaproxy.cache_max_size
 
+        enable_sr = False
+        sr_authn_method = None
+        if self._schema_registry is not None:
+            enable_sr = True
+            sr_authn_method = self._schema_registry.authn_method
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
@@ -1810,12 +1815,12 @@ class RedpandaService(Service):
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            enable_pp=enable_pp,
-                           enable_sr=self._enable_sr,
+                           enable_sr=enable_sr,
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
                            pp_authn_method=pp_authn_method,
-                           sr_authn_method=self._security.sr_authn_method,
+                           sr_authn_method=sr_authn_method,
                            auto_auth=self._security.auto_auth,
                            pp_keep_alive=pp_keep_alive,
                            pp_cache_max_size=pp_cache_max_size)

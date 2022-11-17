@@ -24,7 +24,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, ProxyConfig
+from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, ProxyConfig, SchemaRegistryConfig
 
 
 def create_topic_names(count):
@@ -71,15 +71,16 @@ class SchemaRegistryEndpoints(RedpandaTest):
     """
     Test schema registry against a redpanda cluster.
     """
-    def __init__(self, context, **kwargs):
+    def __init__(self, context, registry_conf=SchemaRegistryConfig(),
+                 **kwargs):
         super(SchemaRegistryEndpoints, self).__init__(
             context,
             num_brokers=3,
-            enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
             resource_settings=ResourceSettings(num_cpus=1),
             log_config=log_config,
             pandaproxy=ProxyConfig(),
+            schema_registry=registry_conf,
             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
@@ -1163,10 +1164,14 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         security = SecurityConfig()
         security.enable_sasl = True
         security.endpoint_authn_method = 'sasl'
-        security.sr_authn_method = 'http_basic'
 
-        super(SchemaRegistryBasicAuthTest, self).__init__(context,
-                                                          security=security)
+        registry_conf = SchemaRegistryConfig()
+        registry_conf.authn_method = 'http_basic'
+
+        super(SchemaRegistryBasicAuthTest,
+              self).__init__(context,
+                             security=security,
+                             registry_conf=registry_conf)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
