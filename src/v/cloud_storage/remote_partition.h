@@ -126,7 +126,6 @@ private:
     ss::future<> run_eviction_loop();
 
     friend struct materialized_segment_state;
-    friend struct offloaded_segment_state;
 
     using materialized_segment_ptr
       = std::unique_ptr<materialized_segment_state>;
