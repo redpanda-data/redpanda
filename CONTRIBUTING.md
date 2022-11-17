@@ -224,4 +224,238 @@ Finally, the commit message should stand on its own. This means that it should
 largely not depend on or refer to other commits in a series (e.g. "in the
 previous commit..." or "and in a later commit this will be implemented"), nor
 should it refer to out-of-band conversations (e.g. "in last week's meeting").
-Refer to high-level context in the pull request description.
+Refer to high-level context in the pull request body.
+
+## Pull request body
+
+Creating a new pull request (PR) will start with section headers in the body. Fill out the sections with information to help guide the PR reviewers in understanding the code changes. The body will also be parsed by scripts to generation release notes, so be sure to adhere to the structure as documented.
+
+### Contents of the top section
+
+Describe, in plain language, the motivation behind the change (bug fix, feature, improvement) in this PR and how the included commits address it, e.g.
+
+```
+Some users complain the `abort` button is hard to find. Talked with design
+team and they suggested increasing the size of the button as oppposed
+to changing the color or moving its position. So, increased width of
+button to match width of other buttons on the page.
+```
+
+If any of the git commits in the PR address a bug, link the issue that the PR will address using the `Fixes` [keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword), e.g.
+
+```
+Fixes #123
+```
+
+If the PR is a backport, link to the backport with `Backport of PR` as well as the issue, e.g.
+
+```
+Backport of PR #789
+Fixes #567
+```
+
+### Contents of `Backports Required` section
+
+Check at least one of the checkboxes if the PR is not a backport. If the PR is a backport, then do not check any of the check boxes. The `none` checkboxes and the checkboxes for backport branches are mutually exclusive. Checking the checkbox for a release branch means the PR will need backport after merge.
+
+```
+## Backports Required
+
+- [ ] none - not a bug fix
+- [ ] none - issue does not exist in previous branches
+- [ ] none - papercut/not impactful enough to backport
+- [x] v22.3.x
+- [x] v22.2.x
+- [x] v22.1.x
+```
+
+If no backport is needed, check the checkbox for one of `none`: 
+
+```
+## Backports Required
+
+- [x] none - not a bug fix
+- [ ] none - issue does not exist in previous branches
+- [ ] none - papercut/not impactful enough to backport
+- [ ] v22.3.x
+- [ ] v22.2.x
+- [ ] v22.1.x
+```
+
+### Contents of `UX Changes` section
+
+Describe, in plain language, how this PR affects an end-user. Explain topic flags, configuration flags, command line flags, deprecation policies, etc. that are added or modified. Don't ship user breaking changes. Ask the @redpanda-data/product team if you need help with user visible changes.
+
+Example:
+
+```
+## UX Changes
+
+* Additional configuration section for coffee strength in `config.json` with `strength` key.
+* Getting started documentation needs update in separate PR
+```
+
+### Contents of `Release Notes` section
+
+The contents of this section is used to generate the release notes published on the [releases](https://github.com/redpanda-data/redpanda/releases) page.
+
+If the PR is created towards `dev` branch, this section MUST be filled out with either sub-sections or the `none` bullet point.
+
+#### Adding a `Bug fixes` sub-section
+
+If the PR is a bug fix targeting `dev` branch, add a **Bug Fixes** sub-section with a bullet point explaining the bug that is fixed, e.g.
+
+```
+## Release Notes
+
+### Bug Fixes
+
+* Fix crash if log line is over 255 characters.
+```
+
+Do not include a link to the issue that is fixed in the bullet point. This will be automatically derived for the release notes based on the `Fixes` keyword in the top section.
+
+If the PR is a bug fix targeting a release branch, e.g. `v22.2.x`, as a backport PR, then this section is optional because the release notes of the original PR towards `dev` branch will be used. Adding a release notes section in a backport PR will override the original PR's release notes section.
+
+If the PR is a bug fix targeting a release branch as a unique fix, i.e. not a backport PR, then add a **Bug Fixes** sub-section with a bullet point explaining the bug that is fixed.
+
+#### Adding a `Features` sub-section
+
+If the PR introduces new functionality, include it under a **Features** sub-section. Be sure to explain how to configure the feature if applicable, e.g.
+
+```
+## Release Notes
+
+### Features
+
+* Add option to configure strength of coffee. Set in `config.json` file with `strength` key. Valid values: `light`, `medium` (default), `strong`.
+```
+
+#### Adding an `Improvements` sub-section
+
+Improvements make existing functionality perform more efficient without user intervention or change in functional behavior, e.g.
+
+* speed of operation
+* memory utilization
+* disk utilization
+
+If the PR includes improvements, add a bullet point under an **Improvements** sub-section, e.g.:
+
+```
+## Release Notes
+
+### Improvements
+
+* Eliminate 10 ms of delay in outputting debug log messages.
+* Use 50% less memory for each debug log message.
+```
+
+#### Omitting release notes
+
+A release notes entry is not needed if the PR only contains modifications that do not change the functionality of the product, e.g.
+
+* bug fixes in tests that do not require a corresponding change to the core codebase
+* typo fixes in documentation
+* code formatting changes
+
+Indicate this by adding a bullet point with `none`, e.g.
+
+```
+## Release Notes
+
+* none
+```
+
+### Example PR Body
+
+A collection of ficticious PR bodies that have a valid, expected format.
+
+#### Example Feature PR Body
+
+An example of a PR to `dev` branch that adds a new feature for the next release and references the tracking issue that will be closed when the PR is merged:
+
+```
+Closes #999456
+
+Some users complain the `abort` button is hard to find. Talked with design
+team and they suggested increasing the size of the button as oppposed
+to changing the color or moving its position. So, increased width of
+button to match width of other buttons on the page.
+
+## Backports Required
+
+- [x] none - not a bug fix
+- [ ] none - issue does not exist in previous branches
+- [ ] none - papercut/not impactful enough to backport
+- [ ] v22.3.x
+- [ ] v22.2.x
+- [ ] v22.1.x
+
+## UX Changes
+
+* Additional configuration section for coffee strength in `config.json` with `strength` key.
+* Getting started documentation needs update in separate PR
+
+## Release Notes
+
+### Features
+
+* Add option to configure strength of coffee. Set in `config.json` file with `strength` key. Valid values: `light`, `medium` (default), `strong`.
+```
+
+#### Example Bug Fix PR Body
+
+An example of a PR to `dev` branch where a bug fix also happens to add an improvement:
+
+```
+Fixes #999123
+
+## Backports Required
+
+- [ ] none - not a bug fix
+- [ ] none - issue does not exist in previous branches
+- [ ] none - papercut/not impactful enough to backport
+- [x] v22.3.x
+- [x] v22.2.x
+- [x] v22.1.x
+
+## UX Changes
+
+## Release Notes
+
+### Bug Fixes
+
+* Fix crash if log line is over 255 characters.
+
+### Improvements
+
+* Eliminate 10 ms of delay in outputting debug log messages.
+```
+
+#### Example Backport PR Body
+
+An example of a PR to a release branch of a simple backport:
+
+```
+Backport of PR #999234
+Fixes #999123
+```
+
+#### Example Backport PR Body with Release Notes override
+
+An example of a PR to a release branch with override of the release notes.
+
+```
+Backport of PR #999234
+Fixes #999123
+
+Cherry-pick of original PR had conflicts. The changes to eliminate the
+crash was resolvable, but was unable to take the changes to eliminate
+10 ms delay.
+
+## Release Notes
+
+### Bug Fixes
+
+* Fix crash if log line is over 255 characters.
+```
