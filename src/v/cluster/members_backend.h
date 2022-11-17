@@ -63,7 +63,13 @@ public:
         explicit update_meta(members_manager::node_update update)
           : update(update) {}
 
-        members_manager::node_update update;
+        // on demand rebalance request
+        explicit update_meta() noexcept = default;
+
+        // optional node update, if present the update comes from
+        // members_manager, otherwise it is on demand update
+        std::optional<members_manager::node_update> update;
+
         std::vector<partition_reallocation> partition_reallocations;
         bool finished = false;
     };
@@ -82,6 +88,8 @@ public:
     void start();
     ss::future<> stop();
 
+    ss::future<std::error_code> request_rebalance();
+
 private:
     void start_reconciliation_loop();
     ss::future<> reconcile();
@@ -97,13 +105,14 @@ private:
     void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    ss::future<> calculate_reallocations_after_node_added(
+    ss::future<> calculate_reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
+    bool should_stop_rebalancing_update(const update_meta&) const;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
