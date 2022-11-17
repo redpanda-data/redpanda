@@ -25,6 +25,7 @@
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/json/json_elements.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -284,6 +285,9 @@ private:
         std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
       set_partition_replicas_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      trigger_on_demand_reconfiguration_handler(
+        std::unique_ptr<ss::httpd::request>);
 
     /// Transaction routes
     ss::future<ss::json::json_return_type>
