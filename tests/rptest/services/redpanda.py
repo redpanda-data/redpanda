@@ -400,7 +400,6 @@ class SecurityConfig:
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
-        self.sr_authn_method: Optional[str] = None
         self.auto_auth: Optional[bool] = None
 
         # The rules to extract principal from mtls
@@ -556,30 +555,31 @@ class RedpandaService(Service):
         }
     }
 
-    def __init__(self,
-                 context,
-                 num_brokers,
-                 *,
-                 extra_rp_conf=None,
-                 extra_node_conf=None,
-                 enable_sr=False,
-                 resource_settings=None,
-                 si_settings=None,
-                 log_level: Optional[str] = None,
-                 log_config: Optional[LoggingConfig] = None,
-                 environment: Optional[dict[str, str]] = None,
-                 security: SecurityConfig = SecurityConfig(),
-                 node_ready_timeout_s=None,
-                 superuser: Optional[SaslCredentials] = None,
-                 skip_if_no_redpanda_log: bool = False,
-                 pandaproxy_config: Optional[PandaproxyConfig] = None):
+    def __init__(
+            self,
+            context,
+            num_brokers,
+            *,
+            extra_rp_conf=None,
+            extra_node_conf=None,
+            resource_settings=None,
+            si_settings=None,
+            log_level: Optional[str] = None,
+            log_config: Optional[LoggingConfig] = None,
+            environment: Optional[dict[str, str]] = None,
+            security: SecurityConfig = SecurityConfig(),
+            node_ready_timeout_s=None,
+            superuser: Optional[SaslCredentials] = None,
+            skip_if_no_redpanda_log: bool = False,
+            pandaproxy_config: Optional[PandaproxyConfig] = None,
+            schema_registry_config: Optional[SchemaRegistryConfig] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
-        self._enable_sr = enable_sr
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
+        self._schema_registry_config = schema_registry_config
 
         if superuser is None:
             superuser = self.SUPERUSER_CREDENTIALS
@@ -1844,11 +1844,10 @@ class RedpandaService(Service):
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            pandaproxy_config=self._pandaproxy_config,
-                           enable_sr=self._enable_sr,
+                           schema_registry_config=self._schema_registry_config,
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
-                           sr_authn_method=self._security.sr_authn_method,
                            auto_auth=self._security.auto_auth)
 
         if override_cfg_params or self._extra_node_conf[node]:

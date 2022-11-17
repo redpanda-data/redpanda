@@ -104,13 +104,13 @@ pandaproxy_client:
   {% endif %}
 {% endif %}
 
-{% if enable_sr %}
+{% if schema_registry_config is not none %}
 schema_registry:
   schema_registry_api:
     address: "{{node.account.hostname}}"
     port: 8081
-    {% if sr_authn_method %}
-    authentication_method: {{ sr_authn_method }}
+    {% if schema_registry_config.authn_method %}
+    authentication_method: {{ schema_registry_config.authn_method }}
     {% endif %}
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc

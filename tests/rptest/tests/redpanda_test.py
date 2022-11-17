@@ -31,7 +31,6 @@ class RedpandaTest(Test):
                  test_context,
                  num_brokers=None,
                  extra_rp_conf=dict(),
-                 enable_sr=False,
                  si_settings=None,
                  **kwargs):
         """
@@ -56,7 +55,6 @@ class RedpandaTest(Test):
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
                                         extra_rp_conf=extra_rp_conf,
-                                        enable_sr=enable_sr,
                                         si_settings=self.si_settings,
                                         **kwargs)
         self._client = DefaultClient(self.redpanda)

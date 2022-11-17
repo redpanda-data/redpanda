@@ -16,7 +16,7 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import PandaproxyConfig
+from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig
 
 
 class KafkaStreamsTest(RedpandaTest):
@@ -30,11 +30,11 @@ class KafkaStreamsTest(RedpandaTest):
     Example = None
 
     def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
-                 enable_sr):
+                 schema_registry_config: SchemaRegistryConfig):
         super(KafkaStreamsTest,
               self).__init__(test_context=test_context,
                              pandaproxy_config=pandaproxy_config,
-                             enable_sr=enable_sr)
+                             schema_registry_config=schema_registry_config)
 
         self._ctx = test_context
 
@@ -64,11 +64,11 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
     Driver = None
 
     def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
-                 enable_sr):
+                 schema_registry_config: SchemaRegistryConfig):
         super(KafkaStreamsDriverBase,
               self).__init__(test_context=test_context,
                              pandaproxy_config=pandaproxy_config,
-                             enable_sr=enable_sr)
+                             schema_registry_config=schema_registry_config)
 
     @cluster(num_nodes=5)
     def test_kafka_streams(self):
@@ -103,11 +103,11 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
     PRODUCER = None
 
     def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
-                 enable_sr):
+                 schema_registry_config: SchemaRegistryConfig):
         super(KafkaStreamsProdConsBase,
               self).__init__(test_context=test_context,
                              pandaproxy_config=pandaproxy_config,
-                             enable_sr=enable_sr)
+                             schema_registry_config=schema_registry_config)
 
     def is_valid_msg(self, msg):
         raise NotImplementedError("is_valid_msg() undefined.")
@@ -165,7 +165,7 @@ class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
         super(KafkaStreamsTopArticles,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
@@ -185,7 +185,7 @@ class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
         super(KafkaStreamsSessionWindow,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
@@ -205,7 +205,7 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
         super(KafkaStreamsJsonToAvro,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsPageView(RedpandaTest):
@@ -223,7 +223,7 @@ class KafkaStreamsPageView(RedpandaTest):
         super(KafkaStreamsPageView,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
         self._timeout = 300
 
@@ -268,7 +268,7 @@ class KafkaStreamsWikipedia(RedpandaTest):
         super(KafkaStreamsWikipedia,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
         self._timeout = 300
 
@@ -316,7 +316,7 @@ class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
         super(KafkaStreamsSumLambda,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class AnomalyProducer(KafProducer):
@@ -347,7 +347,7 @@ class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
         super(KafkaStreamsAnomalyDetection,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -382,7 +382,7 @@ class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
         super(KafkaStreamsUserRegion,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -418,7 +418,7 @@ class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
         super(KafkaStreamsWordCount,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -444,7 +444,7 @@ class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
         super(KafkaStreamsMapFunction,
               self).__init__(test_context=test_context,
                              pandaproxy_config=PandaproxyConfig(),
-                             enable_sr=True)
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         value = msg["value"]
