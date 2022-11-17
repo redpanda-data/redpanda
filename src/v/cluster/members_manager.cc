@@ -1101,6 +1101,8 @@ operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
         return o << "recommissioned";
     case members_manager::node_update_type::reallocation_finished:
         return o << "reallocation_finished";
+    case members_manager::node_update_type::on_demand:
+        return o << "on_demand_rebalance";
     }
     return o << "unknown";
 }
