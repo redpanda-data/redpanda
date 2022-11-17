@@ -82,6 +82,8 @@ public:
     void start();
     ss::future<> stop();
 
+    ss::future<std::error_code> request_rebalance();
+
 private:
     void start_reconciliation_loop();
     ss::future<> reconcile();
@@ -97,7 +99,7 @@ private:
     void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    ss::future<> calculate_reallocations_after_node_added(
+    ss::future<> calculate_all_reallocations(
       update_meta&, partition_allocation_domain);
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);

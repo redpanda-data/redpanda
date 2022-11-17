@@ -93,6 +93,8 @@ public:
         // (e.g. it's been fully decommissioned, indicating it can no longer be
         // recommissioned).
         reallocation_finished,
+        // on demand update requested manually by user
+        on_demand,
     };
 
     // Node update information to be processed by the members_backend.

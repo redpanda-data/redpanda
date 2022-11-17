@@ -1,6 +1,7 @@
 #include "cluster/members_backend.h"
 
 #include "cluster/controller_api.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_frontend.h"
@@ -30,6 +31,7 @@
 #include <functional>
 #include <optional>
 #include <ostream>
+#include <system_error>
 #include <vector>
 
 namespace cluster {
@@ -116,6 +118,19 @@ ss::future<> members_backend::handle_updates() {
       });
 }
 
+ss::future<std::error_code> members_backend::request_rebalance() {
+    vlog(clusterlog.debug, "requesting on demand rebalance");
+    auto u = co_await _lock.get_units();
+    if (!_updates.empty()) {
+        co_return errc::update_in_progress;
+    }
+    handle_single_update(members_manager::node_update{
+      .type = members_manager::node_update_type::on_demand,
+      .offset = _raft0->committed_offset()});
+
+    co_return errc::success;
+}
+
 void members_backend::handle_single_update(
   members_manager::node_update update) {
     using update_t = members_manager::node_update_type;
@@ -141,7 +156,12 @@ void members_backend::handle_single_update(
         _updates.emplace_back(update);
         _new_updates.signal();
         return;
+    case update_t::on_demand:
+        _updates.emplace_back(update);
+        _new_updates.signal();
+        return;
     }
+
     __builtin_unreachable();
 }
 
@@ -174,13 +194,27 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
     case members_manager::node_update_type::decommissioned:
         co_await calculate_reallocations_after_decommissioned(meta);
         co_return;
-    case members_manager::node_update_type::added:
-        co_await calculate_reallocations_after_node_added(
+    case members_manager::node_update_type::on_demand:
+        co_await calculate_all_reallocations(
           meta, partition_allocation_domains::consumer_offsets);
         if (
           meta.partition_reallocations.size()
           < _max_concurrent_reallocations()) {
-            co_await calculate_reallocations_after_node_added(
+            co_await calculate_all_reallocations(
+              meta, partition_allocation_domains::common);
+        }
+    case members_manager::node_update_type::added:
+        if (
+          config::shard_local_cfg().partition_autobalancing_mode()
+          == model::partition_autobalancing_mode::off) {
+            co_return;
+        }
+        co_await calculate_all_reallocations(
+          meta, partition_allocation_domains::consumer_offsets);
+        if (
+          meta.partition_reallocations.size()
+          < _max_concurrent_reallocations()) {
+            co_await calculate_all_reallocations(
               meta, partition_allocation_domains::common);
         }
         co_return;
@@ -265,13 +299,8 @@ bool is_reassigned_to_node(
       node_id);
 }
 
-ss::future<> members_backend::calculate_reallocations_after_node_added(
+ss::future<> members_backend::calculate_all_reallocations(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
-    if (
-      config::shard_local_cfg().partition_autobalancing_mode()
-      == model::partition_autobalancing_mode::off) {
-        co_return;
-    }
     struct node_info {
         size_t replicas_count;
         size_t max_capacity;
@@ -677,6 +706,12 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
       });
 
     if (all_reallocations_finished && !meta.partition_reallocations.empty()) {
+        // do not replicate finished update command for on demand
+        // reconfiguration
+        if (meta.update.type == members_manager::node_update_type::on_demand) {
+            meta.finished = true;
+            co_return;
+        }
         auto err = co_await _members_frontend.local().finish_node_reallocations(
           meta.update.id);
         if (!err) {
