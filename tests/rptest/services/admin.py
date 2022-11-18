@@ -450,6 +450,14 @@ class Admin:
         self.redpanda.logger.debug(f"recommissioning {id}")
         return self._request('put', path, node=node)
 
+    def trigger_rebalance(self, node=None):
+        """
+        Trigger on demand partitions rebalancing
+        """
+        path = f"partitions/rebalance"
+
+        return self._request('post', path, node=node)
+
     def list_reconfigurations(self, node=None):
         """
         List pending reconfigurations
