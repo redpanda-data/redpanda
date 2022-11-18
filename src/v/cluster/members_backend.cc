@@ -302,32 +302,68 @@ bool is_reassigned_to_node(
       reallocation.allocation_units->get_assignments().front().replicas,
       node_id);
 }
+absl::node_hash_map<model::node_id, members_backend::node_replicas>
+members_backend::calculate_replicas_per_node(
+  partition_allocation_domain domain) const {
+    absl::node_hash_map<model::node_id, members_backend::node_replicas> ret;
+    ret.reserve(_allocator.local().state().allocation_nodes().size());
+
+    for (const auto& [id, n] : _allocator.local().state().allocation_nodes()) {
+        auto [it, _] = ret.try_emplace(
+          id,
+          node_replicas{
+            .allocated_replicas = 0,
+            .max_capacity = n->domain_partition_capacity(domain),
+          });
+
+        const auto domain_allocated = n->domain_allocated_partitions(domain);
+        it->second.allocated_replicas += domain_allocated;
+    }
+    return ret;
+}
+
+size_t calculate_total_replicas(
+  const absl::node_hash_map<model::node_id, members_backend::node_replicas>&
+    node_replicas) {
+    size_t total_replicas = 0;
+    for (auto& [_, replicas] : node_replicas) {
+        total_replicas += replicas.allocated_replicas;
+    }
+    return total_replicas;
+}
+
+double members_backend::calculate_unevenness_error() const {
+    static const std::vector<partition_allocation_domain> domains{
+      partition_allocation_domains::consumer_offsets,
+      partition_allocation_domains::common};
+    size_t err = 0;
+    size_t max_err = 0;
+
+    for (auto d : domains) {
+        const auto node_replicas = calculate_replicas_per_node(d);
+        const auto total_replicas = calculate_total_replicas(node_replicas);
+        const auto node_cnt = _allocator.local().state().available_nodes();
+        const auto target_replicas_per_node
+          = total_replicas / _allocator.local().state().available_nodes();
+
+        max_err += (total_replicas - target_replicas_per_node)
+                   + target_replicas_per_node * (node_cnt - 1);
+        for (auto& [_, allocation_info] : node_replicas) {
+            int64_t diff = static_cast<int64_t>(target_replicas_per_node)
+                           - static_cast<int64_t>(
+                             allocation_info.allocated_replicas);
+            err += std::abs(diff);
+        }
+    }
+    // normalize error to stay in range (0,1)
+    return err / (double)max_err;
+}
 
 ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
-    struct node_info {
-        size_t replicas_count;
-        size_t max_capacity;
-    };
     // 1. count current node allocations
-    absl::node_hash_map<model::node_id, node_info> node_replicas;
-
-    size_t total_replicas = 0;
-    for (const auto& [id, n] : _allocator.local().state().allocation_nodes()) {
-        if (!node_replicas.contains(id)) {
-            node_replicas.emplace(
-              id,
-              node_info{
-                .replicas_count = 0,
-                .max_capacity = n->domain_partition_capacity(domain),
-              });
-        }
-        auto it = node_replicas.find(id);
-        const auto domain_allocated = n->domain_allocated_partitions(domain);
-        it->second.replicas_count += domain_allocated;
-        total_replicas += domain_allocated;
-    }
-
+    auto node_replicas = calculate_replicas_per_node(domain);
+    auto total_replicas = calculate_total_replicas(node_replicas);
     // 2. calculate number of replicas per node leading to even replica per
     // node distribution
     auto target_replicas_per_node
@@ -343,9 +379,9 @@ ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
     // 3. calculate how many replicas have to be moved from each node
     std::vector<replicas_to_move> to_move_from_node;
     for (auto& [id, info] : node_replicas) {
-        auto to_move = info.replicas_count
+        auto to_move = info.allocated_replicas
                        - std::min(
-                         target_replicas_per_node, info.replicas_count);
+                         target_replicas_per_node, info.allocated_replicas);
         to_move_from_node.emplace_back(id, to_move);
     }
 
@@ -372,7 +408,7 @@ ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
               cnt,
               id,
               domain,
-              node_replicas[id].replicas_count);
+              node_replicas[id].allocated_replicas);
         }
     }
     auto& topics = _topics.local().topics_map();
@@ -529,9 +565,12 @@ ss::future<> members_backend::reconcile() {
         }
     }
     // remove finished updates
-    std::erase_if(
+    auto removed = std::erase_if(
       _updates, [](const update_meta& meta) { return meta.finished; });
-
+    // if updates were finished, reset unevenness error
+    if (removed > 0) {
+        _last_unevenness_error = std::numeric_limits<double>::max();
+    }
     if (!_raft0->is_elected_leader() || _updates.empty()) {
         co_return;
     }
@@ -703,13 +742,23 @@ bool members_backend::should_stop_rebalancing_update(
   const members_backend::update_meta& meta) const {
     // do not finish decommissioning and recommissioning updates as they have
     // strict stop conditions
+    auto error = calculate_unevenness_error();
+    vlog(
+      clusterlog.info,
+      "balance unevenness error - current: {}, previous: {}",
+      error,
+      _last_unevenness_error);
     if (
       meta.update
       && meta.update->type != members_manager::node_update_type::added) {
         return false;
     }
+    auto const stop_condition_improvement = 0.05;
+    // if improvement is negative, stop
+    auto improvement = std::max<double>(_last_unevenness_error - error, 0.0);
 
-    return meta.partition_reallocations.empty();
+    return meta.partition_reallocations.empty()
+           || improvement <= stop_condition_improvement;
 }
 
 ss::future<>
