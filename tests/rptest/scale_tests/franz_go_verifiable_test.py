@@ -61,17 +61,23 @@ class KgoVerifierBase(PreallocNodesTest):
                                              self.topic, self.MSG_SIZE,
                                              self.PRODUCE_COUNT,
                                              self.preallocated_nodes)
-        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
-                                                    self.redpanda, self.topic,
-                                                    self.MSG_SIZE,
-                                                    self.preallocated_nodes)
+        self._seq_consumer = KgoVerifierSeqConsumer(
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            nodes=self.preallocated_nodes)
         self._rand_consumer = KgoVerifierRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self.preallocated_nodes)
         self._cg_consumer = KgoVerifierConsumerGroupConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            self.CONSUMER_GROUP_READERS,
+            nodes=self.preallocated_nodes)
 
         self._consumers = [
             self._seq_consumer, self._rand_consumer, self._cg_consumer

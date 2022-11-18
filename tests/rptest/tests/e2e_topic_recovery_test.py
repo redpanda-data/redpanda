@@ -69,9 +69,11 @@ class EndToEndTopicRecovery(RedpandaTest):
                                              [self._verifier_node])
 
     def init_consumer(self, msg_size):
-        self._consumer = KgoVerifierSeqConsumer(self._ctx, self.redpanda,
-                                                self.topic, msg_size,
-                                                [self._verifier_node])
+        self._consumer = KgoVerifierSeqConsumer(self._ctx,
+                                                self.redpanda,
+                                                self.topic,
+                                                msg_size,
+                                                nodes=[self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()

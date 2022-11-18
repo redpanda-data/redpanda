@@ -592,9 +592,12 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(
             "Write+randread stress test complete, verifying sequentially")
 
-        seq_consumer = KgoVerifierSeqConsumer(self.test_context, self.redpanda,
-                                              target_topic, 0,
-                                              [self.preallocated_nodes[2]])
+        seq_consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            target_topic,
+            0,
+            nodes=[self.preallocated_nodes[2]])
         seq_consumer.start(clean=False)
         seq_consumer.wait()
         assert seq_consumer.consumer_status.validator.invalid_reads == 0
