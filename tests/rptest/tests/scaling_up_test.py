@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
@@ -29,7 +30,7 @@ class ScalingUpTest(EndToEndTest):
         kafkacat = KafkaCat(self.redpanda)
         node_replicas = {}
         md = kafkacat.metadata()
-        self.redpanda.logger.info(f"metadata: {md}")
+        self.redpanda.logger.debug(f"metadata: {md}")
         for topic in md['topics']:
             for p in topic['partitions']:
                 for r in p['replicas']:
@@ -57,8 +58,13 @@ class ScalingUpTest(EndToEndTest):
             if replicas != total_replicas:
                 return False
 
-            return all(expected_range[0] < p[1] < expected_range[1]
-                       for p in per_node.items())
+            if not all(expected_range[0] < p[1] < expected_range[1]
+                       for p in per_node.items()):
+                return False
+            admin = Admin(self.redpanda)
+
+            # make sure that all reconfigurations are finished
+            return len(admin.list_reconfigurations()) == 0
 
         wait_until(partitions_rebalanced,
                    timeout_sec=timeout_sec,
@@ -137,6 +143,45 @@ class ScalingUpTest(EndToEndTest):
         # add three nodes at once
         for n in self.redpanda.nodes[3:]:
             self.redpanda.start_node(n)
+
+        self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
+                                            timeout_sec=120)
+
+    @cluster(num_nodes=8)
+    def test_on_demand_rebalancing(self):
+        # start redpanda with disabled rebalancing
+        self.redpanda = RedpandaService(self.test_context,
+                                        6,
+                                        extra_rp_conf={
+                                            "partition_autobalancing_mode":
+                                            "off",
+                                            "group_topic_partitions":
+                                            self.group_topic_partitions
+                                        })
+        # start single node cluster
+        self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+        # create some topics
+        total_replicas = self.create_topics(rf=3)
+        # add consumer group topic replicas
+        total_replicas += self.group_topic_partitions * 3
+
+        throughput = 100000 if not self.debug_mode else 1000
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=15 * throughput, timeout_sec=120)
+        # add three nodes
+        for n in self.redpanda.nodes[3:]:
+            self.redpanda.start_node(n)
+
+        # verify that all new nodes are empty
+
+        per_node = self._replicas_per_node()
+
+        assert len(per_node) == 3
+
+        # trigger rebalance
+        admin = Admin(self.redpanda, retries_amount=20)
+        admin.trigger_rebalance()
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=120)
