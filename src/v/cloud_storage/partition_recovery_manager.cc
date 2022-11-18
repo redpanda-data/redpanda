@@ -271,7 +271,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
         static constexpr auto one_week = one_day * 7;
         vlog(_ctxlog.info, "Default retention parameters are used.");
         part = co_await download_log_with_capped_time(
-          offset_map, mat.partition_manifest, prefix, one_week);
+          std::move(offset_map), mat.partition_manifest, prefix, one_week);
     } else if (std::holds_alternative<size_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<size_bound_deletion_parameters>(retention);
@@ -280,7 +280,10 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Size bound retention is used. Size limit: {} bytes.",
           r.retention_bytes);
         part = co_await download_log_with_capped_size(
-          offset_map, mat.partition_manifest, prefix, r.retention_bytes);
+          std::move(offset_map),
+          mat.partition_manifest,
+          prefix,
+          r.retention_bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
@@ -289,7 +292,10 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           "Time bound retention is used. Time limit: {}ms.",
           r.retention_duration.count());
         part = co_await download_log_with_capped_time(
-          offset_map, mat.partition_manifest, prefix, r.retention_duration);
+          std::move(offset_map),
+          mat.partition_manifest,
+          prefix,
+          r.retention_duration);
     }
     // Move parts to final destinations
     co_await move_parts(part);
@@ -340,7 +346,7 @@ void partition_downloader::update_downloaded_offsets(
 
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_size(
-  const offset_map_t& offset_map,
+  offset_map_t offset_map,
   const partition_manifest& manifest,
   const std::filesystem::path& prefix,
   size_t max_size) {
@@ -363,6 +369,9 @@ partition_downloader::download_log_with_capped_size(
     size_t total_size = 0;
     auto data_found = false;
 
+    // operating on iterators across suspension points is a potentially unsafe
+    // pattern. here the usage is safe since the backing data structure is local
+    // to this coroutine
     co_await ss::do_until(
       [&] {
           return offset_segment_it == offset_end
@@ -413,7 +422,7 @@ partition_downloader::download_log_with_capped_size(
 
 ss::future<partition_downloader::download_part>
 partition_downloader::download_log_with_capped_time(
-  const offset_map_t& offset_map,
+  offset_map_t offset_map,
   const partition_manifest& manifest,
   const std::filesystem::path& prefix,
   model::timestamp_clock::duration retention_time) {

@@ -181,13 +181,13 @@ private:
     ss::future<offset_map_t> build_offset_map(const recovery_material& mat);
 
     ss::future<download_part> download_log_with_capped_size(
-      const offset_map_t& offset_map,
+      offset_map_t offset_map,
       const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       size_t max_size);
 
     ss::future<download_part> download_log_with_capped_time(
-      const offset_map_t& offset_map,
+      offset_map_t offset_map,
       const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       model::timestamp_clock::duration retention_time);
