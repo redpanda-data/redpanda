@@ -38,7 +38,7 @@ class RollingRestarter:
 
         def has_drained_leaders(node):
             try:
-                node_id = self.redpanda.idx(node)
+                node_id = self.redpanda.node_id(node)
                 broker_resp = admin.get_broker(node_id)
                 maintenance_status = broker_resp["maintenance_status"]
                 return maintenance_status["draining"] and maintenance_status[
@@ -51,7 +51,7 @@ class RollingRestarter:
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
             # Wait for the cluster to agree on a controller leader.
-            return self.redpanda.get_node(
+            return self.redpanda.get_node_by_id(
                 admin.await_stable_leader(
                     topic="controller",
                     partition=0,

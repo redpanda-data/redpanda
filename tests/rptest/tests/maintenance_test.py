@@ -34,7 +34,7 @@ class MaintenanceTest(RedpandaTest):
         """
         Returns true if node is leader for some partition, and false otherwise.
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         partitions = self.admin.get_partitions(node=node)
         has_leadership = False
         for p in partitions:
@@ -58,7 +58,7 @@ class MaintenanceTest(RedpandaTest):
         the same status for maintenance mode. further, check if the
         mode is returning that draining has been enabled/disabled
         """
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
         broker_target = self.admin.get_broker(node_id)
         broker_filtered = None
         for broker in self.admin.get_brokers():
@@ -83,7 +83,7 @@ class MaintenanceTest(RedpandaTest):
         both rpk status tooling as well as raw admin interface.
         """
         # get status for this node via rpk
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
         statuses = self.rpk.cluster_maintenance_status()
         self.logger.debug(f"finding node_id {node_id} in rpk "
                           "maintenance status: {statuses}")

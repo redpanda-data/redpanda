@@ -96,7 +96,7 @@ class PartitionMovementMixin():
 
         result = []
         for node in self.redpanda._started:
-            node_id = self.redpanda.idx(node)
+            node_id = self.redpanda.node_id(node)
             partitions = admin.get_partitions(node=node)
             partitions = filter(keep, partitions)
             for partition in partitions:

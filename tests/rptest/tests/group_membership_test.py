@@ -94,7 +94,7 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
             self._transfer_with_retry(namespace="kafka",
                                       topic="__consumer_offsets",
                                       partition=0,
-                                      target_id=self.redpanda.idx(n))
+                                      target_id=self.redpanda.node_id(n))
 
         # assert that there are no duplicates in
         def _list_groups():
@@ -326,11 +326,11 @@ class GroupMetricsTest(RedpandaTest):
                 namespace="kafka",
                 topic="__consumer_offsets",
                 partition=0,
-                target_id=self.redpanda.idx(new_leader))
+                target_id=self.redpanda.node_id(new_leader))
             for _ in range(3):  # re-check a few times
                 leader = get_group_leader()
                 self.logger.debug(f"Current leader: {leader}")
-                if leader != -1 and self.redpanda.get_node(
+                if leader != -1 and self.redpanda.get_node_by_id(
                         leader) == new_leader:
                     return True
                 time.sleep(1)
@@ -357,7 +357,7 @@ class GroupMetricsTest(RedpandaTest):
             assert leader >= 0
             replicas = filter(lambda r: r["node_id"] != leader, replicas)
             new_leader = random.choice(list(replicas))['node_id']
-            return self.redpanda.get_node(new_leader)
+            return self.redpanda.get_node_by_id(new_leader)
 
         # repeat the following test a few times.
         #

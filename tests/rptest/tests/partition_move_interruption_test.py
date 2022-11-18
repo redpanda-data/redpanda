@@ -82,7 +82,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             f"Checking metrics for movement from {prev_assignment_nodes} to {assignment_nodes}"
         )
         for node in self.redpanda.nodes:
-            node_id = self.redpanda.idx(node)
+            node_id = self.redpanda.node_id(node)
             moving_to_node_partitions_amount = self.get_moving_to_node_metrics(
                 node)
             moving_to_node_sum += moving_to_node_partitions_amount
@@ -339,11 +339,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         # nodes form new assignment to make sure that new quorum is no
         # longer available
         to_stop = random.choice(new_assignment)['node_id']
-        self.redpanda.stop_node(self.redpanda.get_node(to_stop))
+        self.redpanda.stop_node(self.redpanda.get_node_by_id(to_stop))
 
         # wait for new controller to be elected
         def new_controller():
-            return self.redpanda.idx(self.redpanda.controller()) != to_stop
+            return self.redpanda.node_id(self.redpanda.controller()) != to_stop
 
         wait_until(new_controller, 10, 1)
 
@@ -357,7 +357,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         admin.force_abort_partition_move(self.topic, partition=partition)
 
         # # restart the node
-        # self.redpanda.start_node(self.redpanda.get_node(to_stop))
+        # self.redpanda.start_node(self.redpanda.get_node_by_id(to_stop))
 
         # wait for previous assignment to be set
         def cancelled():
@@ -465,7 +465,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         ongoing = admin.list_reconfigurations()
         assert len(ongoing) > 0
 
-        target_node_id = self.redpanda.idx(
+        target_node_id = self.redpanda.node_id(
             (random.choice(self.redpanda.nodes)))
 
         self.logger.info(

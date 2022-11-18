@@ -205,7 +205,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         nodes_before = get_nodes(admin.get_partitions(self.topic, 0))
         replacement_node = next(
-            iter((set([self.redpanda.idx(n)
+            iter((set([self.redpanda.node_id(n)
                        for n in self.redpanda.nodes]) - set(nodes_before))))
         nodes_after = nodes_before[1:] + [
             replacement_node,

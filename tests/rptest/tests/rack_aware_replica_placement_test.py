@@ -189,7 +189,7 @@ class RackAwarePlacementTest(RedpandaTest):
 
         def node_is_removed():
             for n in self.redpanda.nodes:
-                if self.redpanda.idx(n) == to_decommission:
+                if self.redpanda.node_id(n) == to_decommission:
                     continue
                 brokers = admin.get_brokers(node=n)
                 for b in brokers:
@@ -203,23 +203,16 @@ class RackAwarePlacementTest(RedpandaTest):
         self._validate_placement(topic, rack_layout, replication_factor)
 
         # stop the node and add it back with different id
-        to_stop = self.redpanda.get_node(to_decommission)
+        to_stop = self.redpanda.get_node_by_id(to_decommission)
         self.redpanda.stop_node(to_stop)
         self.redpanda.clean_node(node=to_stop, preserve_logs=True)
 
         new_node_id = 123
 
-        def seed_servers_for(idx):
-            seeds = map(
-                lambda n: {
-                    "address": n.account.hostname,
-                    "port": 33145
-                }, self.redpanda.nodes)
-
-            return list(
-                filter(
-                    lambda n: n['address'] != self.redpanda.get_node(idx).
-                    account.hostname, seeds))
+        seeds = map(lambda n: {
+            "address": n.account.hostname,
+            "port": 33145
+        }, self.redpanda.nodes)
 
         # add a node back with different id but the same rack
         # change the seed server list to prevent node from forming new cluster
@@ -227,7 +220,7 @@ class RackAwarePlacementTest(RedpandaTest):
             to_stop,
             override_cfg_params={
                 "node_id": new_node_id,
-                "seed_servers": seed_servers_for(to_decommission),
+                "seed_servers": seeds,
                 "rack": rack_layout[to_decommission - 1],
                 'enable_rack_awareness': True,
                 # make fallocation step small to spare the disk space

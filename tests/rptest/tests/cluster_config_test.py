@@ -886,7 +886,7 @@ class ClusterConfigTest(RedpandaTest):
             node_id, *_ = m.groups()
 
             node = self.redpanda.nodes[i]
-            assert int(node_id) == self.redpanda.idx(node)
+            assert int(node_id) == self.redpanda.node_id(node)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_rpk_force_reset(self):
@@ -1273,7 +1273,7 @@ class ClusterConfigTest(RedpandaTest):
             status = self.admin.get_cluster_config_status(node=controller_node)
             local_status = next(
                 s for s in status
-                if s['node_id'] == self.redpanda.idx(controller_node))
+                if s['node_id'] == self.redpanda.node_id(controller_node))
             assert local_status['config_version'] == config_version
 
 

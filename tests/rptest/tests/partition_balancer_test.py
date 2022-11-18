@@ -87,7 +87,7 @@ class PartitionBalancerService(EndToEndTest):
     def validate_metrics_node_down(self, disabled_node,
                                    expected_moving_partitions_amount):
         self.logger.debug(
-            f"Checking metrics for movement with disabled node: {self.redpanda.idx(disabled_node)}"
+            f"Checking metrics for movement with disabled node: {self.redpanda.node_id(disabled_node)}"
         )
         availabale_nodes = list(
             filter(lambda x: x != disabled_node, self.redpanda.nodes))
@@ -215,8 +215,8 @@ class PartitionBalancerService(EndToEndTest):
                 if wait_for_node:
                     wait_until(
                         lambda: self.wait_for_node_to_be_ready(
-                            self.test.redpanda.idx(self.cur_failure.node)), 30,
-                        1)
+                            self.test.redpanda.node_id(self.cur_failure.node)),
+                        30, 1)
                 self.cur_failure = None
 
         def make_unavailable(self,
@@ -268,7 +268,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                     self.logger.info(
                         f"waiting for partition balancer to kick in")
 
-                    node_id = self.redpanda.idx(node)
+                    node_id = self.redpanda.node_id(node)
 
                     def predicate(s):
                         if s["status"] == "in_progress":
@@ -474,7 +474,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                     admin_fuzz.pause()
                     self.wait_until_ready(expected_unavailable_node=node)
                     node2partition_count = get_node2partition_count()
-                    assert self.redpanda.idx(node) not in node2partition_count
+                    assert self.redpanda.node_id(
+                        node) not in node2partition_count
                 finally:
                     admin_fuzz.unpause()
 
@@ -547,7 +548,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             for n in self.redpanda.nodes:
                 disk_usage = self.redpanda.get_node_disk_usage(n)
                 self.logger.info(
-                    f"node {self.redpanda.idx(n)}: "
+                    f"node {self.redpanda.node_id(n)}: "
                     f"disk used percentage: {int(100.0 * disk_usage/disk_size)}"
                 )
 
@@ -591,7 +592,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             disk_usage = self.redpanda.get_node_disk_usage(n)
             used_ratio = disk_usage / disk_size
             self.logger.info(
-                f"node {self.redpanda.idx(n)}: "
+                f"node {self.redpanda.node_id(n)}: "
                 f"disk used percentage: {int(100.0 * used_ratio)}")
             # Checking that used_ratio is less than 81 instead of 80
             # Because when we check, disk can become overfilled one more time
@@ -625,7 +626,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         # choose a node
         node = random.choice(self.redpanda.nodes)
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
 
         rpk = RpkTool(self.redpanda)
         admin = Admin(self.redpanda)
@@ -649,7 +650,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             else:
                 to_kill = random.choice([
                     n for n in self.redpanda.nodes
-                    if self.redpanda.idx(n) != node_id
+                    if self.redpanda.node_id(n) != node_id
                 ])
 
             ns.make_unavailable(to_kill)
@@ -701,7 +702,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
         # choose a node
         to_decom = random.choice(self.redpanda.nodes)
-        to_decom_id = self.redpanda.idx(to_decom)
+        to_decom_id = self.redpanda.node_id(to_decom)
 
         if kill_same_node:
             to_kill = to_decom
@@ -709,9 +710,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         else:
             to_kill = random.choice([
                 n for n in self.redpanda.nodes
-                if self.redpanda.idx(n) != to_decom_id
+                if self.redpanda.node_id(n) != to_decom_id
             ])
-            to_kill_id = self.redpanda.idx(to_kill)
+            to_kill_id = self.redpanda.node_id(to_kill)
 
         # throttle recovery to prevent partition moves from finishing
         self.logger.info("throttling recovery")
@@ -737,10 +738,10 @@ class PartitionBalancerTest(PartitionBalancerService):
             # the admin API from this point onwards.
             survivor_node = random.choice([
                 n for n in self.redpanda.nodes
-                if self.redpanda.idx(n) not in {to_kill_id, to_decom_id}
+                if self.redpanda.node_id(n) not in {to_kill_id, to_decom_id}
             ])
             self.logger.info(
-                f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
+                f"Using survivor node {survivor_node.name} {self.redpanda.node_id(survivor_node)}"
             )
 
             def started_draining():
@@ -805,22 +806,22 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.wait_until_ready()
 
             controller = self.redpanda.controller()
-            controller_id = self.redpanda.idx(controller)
+            controller_id = self.redpanda.node_id(controller)
             admin = Admin(self.redpanda)
 
             transfer_to = random.choice([
                 n for n in self.redpanda.nodes
                 if n.name != to_kill.name and n.name != controller.name
             ])
-            transfer_to_idx = self.redpanda.idx(transfer_to)
+            transfer_to_id = self.redpanda.node_id(transfer_to)
             self.logger.info(
-                f"transferring raft0 leadership from {controller_id} to {transfer_to_idx} "
-                f"(killed node: {self.redpanda.idx(to_kill)})")
+                f"transferring raft0 leadership from {controller_id} to {transfer_to_id} "
+                f"(killed node: {self.redpanda.node_id(to_kill)})")
 
             admin.transfer_leadership_to(namespace='redpanda',
                                          topic='controller',
                                          partition=0,
                                          leader_id=controller_id,
-                                         target_id=transfer_to_idx)
+                                         target_id=transfer_to_id)
 
             self.wait_until_ready()

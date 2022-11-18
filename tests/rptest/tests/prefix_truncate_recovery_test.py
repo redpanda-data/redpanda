@@ -110,7 +110,7 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
             admin.transfer_leadership_to(namespace="kafka",
                                          topic=self.topic,
                                          partition=0,
-                                         target_id=self.redpanda.idx(node))
+                                         target_id=self.redpanda.node_id(node))
             # % ERROR: offsets_for_times failed: Local: Unknown partition
             # may occur here presumably because there is an interaction
             # with leadership transfer. the built-in retries in list_offsets
@@ -188,7 +188,7 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
                 namespace="kafka",
                 topic=self.topic,
                 partition=0,
-                target_id=self.redpanda.idx(src_node)),
+                target_id=self.redpanda.node_id(src_node)),
                        timeout_sec=30,
                        backoff_sec=2,
                        retry_on_exc=True)

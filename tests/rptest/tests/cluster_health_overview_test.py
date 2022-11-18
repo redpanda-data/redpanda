@@ -61,8 +61,9 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         def one_node_down():
             hov = self.admin.get_cluster_health_overview()
-            return not hov['is_healthy'] and [self.redpanda.idx(first_down)
-                                              ] == hov['nodes_down']
+            return not hov['is_healthy'] and [
+                self.redpanda.node_id(first_down)
+            ] == hov['nodes_down']
 
         wait_until(one_node_down, 30, 2)
 
@@ -70,7 +71,8 @@ class ClusterHealthOverviewTest(RedpandaTest):
         # partitions with two out of five nodes down
 
         second_down = random.choice(self.redpanda.nodes)
-        while self.redpanda.idx(second_down) == self.redpanda.idx(first_down):
+        while self.redpanda.node_id(second_down) == self.redpanda.node_id(
+                first_down):
             second_down = random.choice(self.redpanda.nodes)
 
         self.redpanda.stop_node(second_down)

@@ -621,6 +621,7 @@ class RedpandaService(Service):
         self._node_configs = {}
 
         self._node_id_by_idx = {}
+        self._node_by_id = {}
 
         self._seed_servers = [self.nodes[0]] if len(self.nodes) > 0 else []
 
@@ -790,6 +791,12 @@ class RedpandaService(Service):
         takes place.
         """
         return 0.2 if first_start else 1.0
+
+    def get_node_by_id(self, node_id):
+        """
+        Returns the node currently assigned to 'node_id'.
+        """
+        return self._node_by_id[node_id]
 
     def start(self,
               nodes=None,
@@ -2010,7 +2017,7 @@ class RedpandaService(Service):
             else:
                 resp_leader_id = r.json()['leader_id']
                 if resp_leader_id != -1:
-                    return self.get_node(resp_leader_id)
+                    return self.get_node_by_id(resp_leader_id)
 
         return None
 
@@ -2300,6 +2307,7 @@ class RedpandaService(Service):
         )
         self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
         self._node_id_by_idx[idx] = node_id
+        self._node_by_id[node_id] = node
         return node_id
 
     def healthy(self):
@@ -2335,8 +2343,9 @@ class RedpandaService(Service):
         def make_partition(p):
             index = p["partition"]
             leader_id = p["leader"]
-            leader = None if leader_id == -1 else self.get_node(leader_id)
-            replicas = [self.get_node(r["id"]) for r in p["replicas"]]
+            leader = None if leader_id == -1 else self.get_node_by_id(
+                leader_id)
+            replicas = [self.get_node_by_id(r["id"]) for r in p["replicas"]]
             return Partition(index, leader, replicas)
 
         return [make_partition(p) for p in topic["partitions"]]

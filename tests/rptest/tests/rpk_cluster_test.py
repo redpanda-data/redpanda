@@ -137,7 +137,7 @@ class RpkClusterTest(RedpandaTest):
         # properly and prefers one node over others.
         for i, node in enumerate(self.redpanda.nodes):
             self.logger.info(
-                f"Stopping node {node.name}/{self.redpanda.idx(node)} ")
+                f"Stopping node {node.name}/{self.redpanda.node_id(node)} ")
             self.redpanda.stop_node(node)
 
             # A vanilla sendAny command
@@ -156,7 +156,7 @@ class RpkClusterTest(RedpandaTest):
                 self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
 
             self.logger.info(
-                f"Starting node {node.name}/{self.redpanda.idx(node)} ")
+                f"Starting node {node.name}/{self.redpanda.node_id(node)} ")
             self.redpanda.start_node(node)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)

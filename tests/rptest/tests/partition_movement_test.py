@@ -614,7 +614,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.logger.info(
             f"target assignments for {topic}-{partition}: {target_assignment}")
         # shutdown target node to make sure that move will never complete
-        node = self.redpanda.get_node(replacement['node_id'])
+        node = self.redpanda.get_node_by_id(replacement['node_id'])
         self.redpanda.stop_node(node)
 
         # checking that a controller has leader (just in case
@@ -627,9 +627,9 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
             partition=0,
             namespace="redpanda",
             hosts=alive_hosts,
-            check=lambda node_id: node_id != self.redpanda.idx(node),
+            check=lambda node_id: node_id != self.redpanda.node_id(node),
             timeout_s=30)
-        controller_leader = self.redpanda.get_node(controller_leader)
+        controller_leader = self.redpanda.get_node_by_id(controller_leader)
 
         admin.set_partition_replicas(topic,
                                      partition,
@@ -732,7 +732,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         to_stop = assignments[1]['node_id']
         # stop one of the not replaced nodes
         self.logger.info(f"stopping node: {to_stop}")
-        self.redpanda.stop_node(self.redpanda.get_node(to_stop))
+        self.redpanda.stop_node(self.redpanda.get_node_by_id(to_stop))
 
         def new_controller_available():
             controller_id = admin.get_partition_leader(namespace="redpanda",

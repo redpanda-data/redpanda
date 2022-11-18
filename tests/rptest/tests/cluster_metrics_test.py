@@ -55,7 +55,7 @@ class ClusterMetricsTest(RedpandaTest):
                                                  check=check,
                                                  hosts=hosts)
 
-        return self.redpanda.get_node(node_id)
+        return self.redpanda.get_node_by_id(node_id)
 
     def _restart_controller_node(self) -> ClusterNode:
         """
@@ -71,7 +71,7 @@ class ClusterMetricsTest(RedpandaTest):
 
         self._wait_until_controller_leader_is_stable(
             hosts=started_hosts,
-            check=lambda node_id: node_id != self.redpanda.idx(prev))
+            check=lambda node_id: node_id != self.redpanda.node_id(prev))
 
         self.redpanda.start_node(prev)
         return self._wait_until_controller_leader_is_stable()
@@ -88,7 +88,7 @@ class ClusterMetricsTest(RedpandaTest):
         ]
         return self._wait_until_controller_leader_is_stable(
             hosts=started_hosts,
-            check=lambda node_id: node_id != self.redpanda.idx(prev))
+            check=lambda node_id: node_id != self.redpanda.node_id(prev))
 
     def _get_metrics_value_from_node(self, node: ClusterNode, pattern: str):
         samples = self._get_metrics_from_node(node, [pattern])

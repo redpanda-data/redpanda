@@ -37,7 +37,7 @@ TOO_MANY_REQUESTS_HTTP_ERROR_CODE = 429
 
 def get_metric(redpanda, metric_type, label):
     admin = redpanda._admin
-    controller_node = redpanda.get_node(
+    controller_node = redpanda.get_node_by_id(
         admin.await_stable_leader(
             topic="controller",
             partition=0,
@@ -317,7 +317,7 @@ class ControllerNodeManagementLimitTest(RedpandaTest):
     def test_maintance_mode_limit(self):
         self.admin = Admin(self.redpanda)
         admin = self.redpanda._admin
-        controller_node = self.redpanda.get_node(
+        controller_node = self.redpanda.get_node_by_id(
             admin.await_stable_leader(
                 topic="controller",
                 partition=0,
