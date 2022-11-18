@@ -30,6 +30,7 @@ public:
     enum class state { active, decommissioned, deleted };
     using allocation_capacity
       = named_type<uint32_t, struct allocation_node_slot_tag>;
+    enum class deallocation_error_policy { strict, relaxed };
 
     allocation_node(
       model::node_id,
@@ -122,7 +123,10 @@ public:
 private:
     friend allocation_state;
 
-    void deallocate_on(ss::shard_id core, partition_allocation_domain);
+    void deallocate_on(
+      ss::shard_id core,
+      partition_allocation_domain,
+      deallocation_error_policy);
     void allocate_on(ss::shard_id core, partition_allocation_domain);
 
     model::node_id _id;

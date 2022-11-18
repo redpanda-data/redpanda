@@ -11,6 +11,8 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include "cluster/logger.h"
+
 #include <fmt/ranges.h>
 
 namespace cluster {
@@ -58,7 +60,9 @@ allocation_node::allocate(const partition_allocation_domain domain) {
 }
 
 void allocation_node::deallocate_on(
-  ss::shard_id core, const partition_allocation_domain domain) {
+  ss::shard_id core,
+  const partition_allocation_domain domain,
+  const deallocation_error_policy error_policy) {
     vassert(
       core < _weights.size(),
       "Tried to deallocate a non-existing core:{} - {}",
@@ -73,13 +77,24 @@ void allocation_node::deallocate_on(
     allocation_capacity& domain_partitions
       = _allocated_domain_partitions[domain];
     vassert(
-      domain_partitions > allocation_capacity{0}
-        && domain_partitions <= _allocated_partitions,
-      "Unable to deallocate partition from core {} in domain {} at node {}",
-      core,
+      domain_partitions <= _allocated_partitions,
+      "Allocation node data inconsistency: not enough _allocated_partitions. "
+      "Domain: {}, core: {}, node: {}",
       domain,
+      core,
       *this);
-    --domain_partitions;
+    if (likely(domain_partitions > allocation_capacity{0})) {
+        --domain_partitions;
+    } else {
+        const std::string msg = fmt::format(
+          "Allocation node data inconsisteny: no partition in domain {} to "
+          "deallocate. Core: {}, node: {}",
+          domain,
+          core,
+          *this);
+        vassert(error_policy == deallocation_error_policy::relaxed, "{}", msg);
+        vlog(clusterlog.warn, "{}", msg);
+    }
 
     _allocated_partitions--;
     _weights[core]--;

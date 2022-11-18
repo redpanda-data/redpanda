@@ -42,7 +42,10 @@ public:
     int16_t available_nodes() const;
 
     // Operations on state
-    void deallocate(const model::broker_shard&, partition_allocation_domain);
+    void deallocate(
+      const model::broker_shard&,
+      partition_allocation_domain,
+      allocation_node::deallocation_error_policy);
     void apply_update(
       std::vector<model::broker_shard>,
       raft::group_id,

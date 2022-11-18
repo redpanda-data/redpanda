@@ -28,7 +28,8 @@ void allocation_state::rollback(
   const std::vector<model::broker_shard>& v,
   const partition_allocation_domain domain) {
     for (auto& bs : v) {
-        deallocate(bs, domain);
+        deallocate(
+          bs, domain, allocation_node::deallocation_error_policy::strict);
     }
 }
 
@@ -157,9 +158,10 @@ bool allocation_state::is_empty(model::node_id id) const {
 
 void allocation_state::deallocate(
   const model::broker_shard& replica,
-  const partition_allocation_domain domain) {
+  const partition_allocation_domain domain,
+  const allocation_node::deallocation_error_policy error_policy) {
     if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
-        it->second->deallocate_on(replica.shard, domain);
+        it->second->deallocate_on(replica.shard, domain, error_policy);
     }
 }
 

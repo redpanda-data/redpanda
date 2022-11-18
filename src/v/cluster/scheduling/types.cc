@@ -63,7 +63,10 @@ allocation_units::~allocation_units() {
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
             if (!_previous.contains(replica)) {
-                _state->deallocate(replica, _domain);
+                _state->deallocate(
+                  replica,
+                  _domain,
+                  allocation_node::deallocation_error_policy::strict);
             }
         }
     }

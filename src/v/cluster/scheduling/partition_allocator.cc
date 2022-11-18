@@ -395,7 +395,8 @@ void partition_allocator::deallocate(
   const partition_allocation_domain domain) {
     for (auto& r : replicas) {
         // find in brokers
-        _state->deallocate(r, domain);
+        _state->deallocate(
+          r, domain, allocation_node::deallocation_error_policy::relaxed);
     }
 }
 
@@ -420,7 +421,8 @@ void partition_allocator::remove_allocations(
   const std::vector<model::broker_shard>& to_remove,
   const partition_allocation_domain domain) {
     for (const auto& bs : to_remove) {
-        _state->deallocate(bs, domain);
+        _state->deallocate(
+          bs, domain, allocation_node::deallocation_error_policy::relaxed);
     }
 }
 
