@@ -178,8 +178,6 @@ private:
 
     using offset_map_t = absl::btree_map<model::offset, segment_meta>;
 
-    ss::future<offset_map_t> build_offset_map(const recovery_material& mat);
-
     ss::future<download_part> download_log_with_capped_size(
       offset_map_t offset_map,
       const partition_manifest& manifest,
