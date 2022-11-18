@@ -14,6 +14,7 @@
 #include <absl/container/node_hash_set.h>
 
 #include <chrono>
+#include <limits>
 #include <ostream>
 namespace cluster {
 
@@ -26,6 +27,10 @@ public:
         finished,
         request_cancel,
         cancelled
+    };
+    struct node_replicas {
+        size_t allocated_replicas;
+        size_t max_capacity;
     };
 
     struct partition_reallocation {
@@ -112,6 +117,9 @@ private:
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
+    absl::node_hash_map<model::node_id, node_replicas>
+      calculate_replicas_per_node(partition_allocation_domain) const;
+    double calculate_unevenness_error() const;
     bool should_stop_rebalancing_update(const update_meta&) const;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
@@ -133,6 +141,7 @@ private:
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
+    double _last_unevenness_error = std::numeric_limits<double>::max();
     /**
      * store revision of node decommissioning update, decommissioning command
      * revision is stored when node is being decommissioned, it is used to
