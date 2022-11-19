@@ -120,7 +120,7 @@ private:
     absl::node_hash_map<model::node_id, node_replicas>
       calculate_replicas_per_node(partition_allocation_domain) const;
     double calculate_unevenness_error() const;
-    bool should_stop_rebalancing_update(const update_meta&) const;
+    bool should_stop_rebalancing_update(double, const update_meta&) const;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
