@@ -322,9 +322,8 @@ members_backend::calculate_replicas_per_node(
     return ret;
 }
 
-size_t calculate_total_replicas(
-  const absl::node_hash_map<model::node_id, members_backend::node_replicas>&
-    node_replicas) {
+size_t members_backend::calculate_total_replicas(
+  const node_replicas_map_t& node_replicas) {
     size_t total_replicas = 0;
     for (auto& [_, replicas] : node_replicas) {
         total_replicas += replicas.allocated_replicas;
