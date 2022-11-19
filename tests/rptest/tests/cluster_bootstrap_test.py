@@ -28,12 +28,8 @@ class ClusterBootstrapNew(RedpandaTest):
     Tests verifying new cluster bootstrap in Seed Driven Cluster Bootstrap mode
     """
     def __init__(self, test_context):
-        super(ClusterBootstrapNew,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             extra_node_conf={
-                                 "empty_seed_starts_cluster": False,
-                             })
+        super(ClusterBootstrapNew, self).__init__(test_context=test_context,
+                                                  num_brokers=3)
         self.admin = self.redpanda._admin
 
     def setUp(self):
@@ -41,9 +37,15 @@ class ClusterBootstrapNew(RedpandaTest):
         pass
 
     @cluster(num_nodes=3)
-    @matrix(num_seeds=[1, 2, 3], auto_assign_node_ids=[False, True])
-    def test_three_node_bootstrap(self, num_seeds, auto_assign_node_ids):
+    @matrix(num_seeds=[1, 2, 3],
+            auto_assign_node_ids=[False, True],
+            empty_seed_starts_cluster=[False, True])
+    def test_three_node_bootstrap(self, num_seeds, auto_assign_node_ids,
+                                  empty_seed_starts_cluster):
         set_seeds_for_cluster(self.redpanda, num_seeds)
+        for node in self.redpanda.nodes:
+            self.redpanda.set_extra_node_conf(
+                node, {"empty_seed_starts_cluster": empty_seed_starts_cluster})
         self.redpanda.start(auto_assign_node_id=auto_assign_node_ids,
                             omit_seeds_on_idx_one=False)
         node_ids_per_idx = {}
@@ -87,26 +89,34 @@ class ClusterBootstrapUpgrade(RedpandaTest):
         super(ClusterBootstrapUpgrade, self).setUp()
 
     @cluster(num_nodes=3)
-    def test_change_bootstrap_configs_after_upgrade(self):
+    @matrix(empty_seed_starts_cluster=[False, True])
+    def test_change_bootstrap_configs_after_upgrade(self,
+                                                    empty_seed_starts_cluster):
         # Upgrade the cluster to begin using the new binary, but don't change
         # any configs yet.
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
 
         # Now update the configs.
-        self.redpanda.rolling_restart_nodes(
-            self.redpanda.nodes,
-            override_cfg_params={"empty_seed_starts_cluster": False},
-            omit_seeds_on_idx_one=False)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            override_cfg_params={
+                                                "empty_seed_starts_cluster":
+                                                empty_seed_starts_cluster
+                                            },
+                                            omit_seeds_on_idx_one=False)
 
     @cluster(num_nodes=3)
-    def test_change_bootstrap_configs_during_upgrade(self):
+    @matrix(set_empty_seed_starts_cluster=[False, True])
+    def test_change_bootstrap_configs_during_upgrade(
+            self, empty_seed_starts_cluster):
         # Upgrade the cluster as we change the configs node-by-node.
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(
-            self.redpanda.nodes,
-            override_cfg_params={"empty_seed_starts_cluster": False},
-            omit_seeds_on_idx_one=False)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            override_cfg_params={
+                                                "empty_seed_starts_cluster":
+                                                empty_seed_starts_cluster
+                                            },
+                                            omit_seeds_on_idx_one=False)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_cluster_uuid_upgrade(self):

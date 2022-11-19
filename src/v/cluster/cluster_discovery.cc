@@ -101,14 +101,10 @@ ss::future<bool> cluster_discovery::is_cluster_founder() {
             co_return *_is_cluster_founder;
         }
     }
-    if (config::node().empty_seed_starts_cluster()) {
-        // When using root-driven bootstrap, only the node with the empty seed
-        // servers list is a founder.
-        if (!config::node().seed_servers().empty()) {
-            _is_cluster_founder = false;
-            co_return *_is_cluster_founder;
-        }
 
+    if (
+      config::node().empty_seed_starts_cluster()
+      && config::node().seed_servers().empty()) {
         // If there is no node ID, assign one automatically.
         if (!config::node().node_id().has_value()) {
             co_await ss::smp::invoke_on_all([] {
@@ -212,7 +208,7 @@ cluster_discovery::request_cluster_bootstrap_info_single(
               !*_is_cluster_founder,
               "We can only detect the presence of a cluster (indicating we are "
               "not a founder) early, not the absence");
-            co_return reply_result.value();
+            co_return cluster_bootstrap_info_reply{};
         }
         try {
             reply_result = co_await do_with_client_one_shot<
@@ -315,17 +311,6 @@ void verify_bootstrap_info_consistency(
           reply.seed_servers);
         failed = true;
     }
-    if (
-      reply.empty_seed_starts_cluster
-      != config::node().empty_seed_starts_cluster()) {
-        vlog(
-          clusterlog.error,
-          "empty_seed_starts_cluster mismatch, local: {}, {}: {}",
-          config::node().empty_seed_starts_cluster(),
-          seed_addr,
-          reply.empty_seed_starts_cluster);
-        failed = true;
-    }
     if (seed_addr != reply.broker.rpc_address()) {
         vlog(
           clusterlog.warn,
@@ -368,12 +353,45 @@ ss::future<> cluster_discovery::discover_founding_brokers() {
       replies, [this, &replies](auto& entry) mutable {
           return request_cluster_bootstrap_info_single(entry.first)
             .then([this, &replies, addr = entry.first](auto reply) mutable {
+                if (_is_cluster_founder.has_value()) {
+                    return;
+                }
                 if (reply.cluster_uuid.has_value()) {
                     vlog(
                       clusterlog.info,
                       "Cluster presence detected in other seed servers: {}",
                       *reply.cluster_uuid);
                     _is_cluster_founder = false;
+                    return;
+                }
+                if (
+                  reply.empty_seed_starts_cluster
+                  && reply.seed_servers.empty()) {
+                    vlog(
+                      clusterlog.info,
+                      "Detected node {} configured with root-driven bootstrap; "
+                      "assuming local node is not bootstrapping new cluster",
+                      addr);
+                    _is_cluster_founder = false;
+                    return;
+                }
+                if (
+                  config::node().empty_seed_starts_cluster()
+                  && !equal(
+                    reply.seed_servers, config::node().seed_servers())) {
+                    vlog(
+                      clusterlog.info,
+                      "Assuming local node is not bootstrapping new cluster, "
+                      "seed_servers list mismatch, local: {}, {}: {}",
+                      config::node().seed_servers(),
+                      addr,
+                      reply.seed_servers);
+                    // Be permissive rather than crashing: it isn't necessarily
+                    // the case that this was a configuration error; it's
+                    // possible that nodes were configured with some
+                    // non-uniform topology that eventually leads to a root.
+                    _is_cluster_founder = false;
+                    return;
                 }
                 replies[addr] = std::move(reply);
             });
