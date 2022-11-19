@@ -109,7 +109,7 @@ private:
     void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
-    void stop_node_addition(model::node_id id);
+    void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     ss::future<> calculate_reallocations_for_even_partition_count(
