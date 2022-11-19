@@ -152,7 +152,7 @@ void members_backend::handle_single_update(
         _new_updates.signal();
         return;
     case update_t::decommissioned:
-        stop_node_addition(update.id);
+        stop_node_addition_and_ondemand_rebalance(update.id);
         _decommission_command_revision.emplace(
           update.id, model::revision_id(update.offset));
         _updates.emplace_back(update);
@@ -982,7 +982,8 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
     });
 }
 
-void members_backend::stop_node_addition(model::node_id id) {
+void members_backend::stop_node_addition_and_ondemand_rebalance(
+  model::node_id id) {
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
