@@ -2489,7 +2489,7 @@ void admin_server::register_partition_routes() {
     register_route<superuser>(
       ss::httpd::partition_json::trigger_partitions_rebalance,
       [this](std::unique_ptr<ss::httpd::request> req) {
-          return trigger_on_demand_reconfiguration_handler(std::move(req));
+          return trigger_on_demand_rebalance_handler(std::move(req));
       });
 
     register_route<user>(
@@ -2522,7 +2522,7 @@ void admin_server::register_partition_routes() {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::trigger_on_demand_reconfiguration_handler(
+admin_server::trigger_on_demand_rebalance_handler(
   std::unique_ptr<ss::httpd::request> req) {
     auto ec = co_await _controller->get_members_backend().invoke_on(
       cluster::controller_stm_shard, [](cluster::members_backend& backend) {
