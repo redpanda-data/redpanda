@@ -338,22 +338,46 @@ double members_backend::calculate_unevenness_error() const {
     size_t err = 0;
     size_t max_err = 0;
 
+    const auto node_cnt = _allocator.local().state().available_nodes();
     for (auto d : domains) {
         const auto node_replicas = calculate_replicas_per_node(d);
         const auto total_replicas = calculate_total_replicas(node_replicas);
-        const auto node_cnt = _allocator.local().state().available_nodes();
+
+        if (total_replicas == 0) {
+            continue;
+        }
+
         const auto target_replicas_per_node
           = total_replicas / _allocator.local().state().available_nodes();
+        // max error is an error calculated when all replicas are allocated on
+        // the same node
+        auto domain_max_err = (total_replicas - target_replicas_per_node)
+                              + target_replicas_per_node * (node_cnt - 1);
+        // divide by total replicas and node count to make the error independent
+        // from number of nodes and number of topics.
+        domain_max_err /= total_replicas;
+        domain_max_err /= node_cnt;
 
-        max_err += (total_replicas - target_replicas_per_node)
-                   + target_replicas_per_node * (node_cnt - 1);
-        for (auto& [_, allocation_info] : node_replicas) {
+        size_t domain_err = 0;
+        for (auto& [id, allocation_info] : node_replicas) {
             int64_t diff = static_cast<int64_t>(target_replicas_per_node)
                            - static_cast<int64_t>(
                              allocation_info.allocated_replicas);
-            err += std::abs(diff);
+
+            vlog(
+              clusterlog.trace,
+              "node {} has {} replicas allocated, requested replicas per node "
+              "{}, difference: {}",
+              id,
+              allocation_info.allocated_replicas,
+              target_replicas_per_node,
+              diff);
+            domain_err += std::abs(diff);
         }
+        err += domain_err / (total_replicas * node_cnt);
+        max_err += domain_max_err;
     }
+
     // normalize error to stay in range (0,1)
     return err / (double)max_err;
 }
