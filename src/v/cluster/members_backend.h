@@ -28,10 +28,6 @@ public:
         request_cancel,
         cancelled
     };
-    struct node_replicas {
-        size_t allocated_replicas;
-        size_t max_capacity;
-    };
 
     struct partition_reallocation {
         explicit partition_reallocation(
@@ -96,6 +92,12 @@ public:
     ss::future<std::error_code> request_rebalance();
 
 private:
+    struct node_replicas {
+        size_t allocated_replicas;
+        size_t max_capacity;
+    };
+    using node_replicas_map_t
+      = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
     ss::future<> reconcile();
     ss::future<> reallocate_replica_set(partition_reallocation&);
@@ -107,7 +109,7 @@ private:
     void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
-    void stop_node_addition(model::node_id id);
+    void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     ss::future<> calculate_reallocations_for_even_partition_count(
@@ -120,7 +122,10 @@ private:
     absl::node_hash_map<model::node_id, node_replicas>
       calculate_replicas_per_node(partition_allocation_domain) const;
     double calculate_unevenness_error() const;
-    bool should_stop_rebalancing_update(const update_meta&) const;
+    bool should_stop_rebalancing_update(double, const update_meta&) const;
+
+    static size_t calculate_total_replicas(const node_replicas_map_t&);
+
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;

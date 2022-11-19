@@ -152,7 +152,7 @@ void members_backend::handle_single_update(
         _new_updates.signal();
         return;
     case update_t::decommissioned:
-        stop_node_addition(update.id);
+        stop_node_addition_and_ondemand_rebalance(update.id);
         _decommission_command_revision.emplace(
           update.id, model::revision_id(update.offset));
         _updates.emplace_back(update);
@@ -322,9 +322,8 @@ members_backend::calculate_replicas_per_node(
     return ret;
 }
 
-size_t calculate_total_replicas(
-  const absl::node_hash_map<model::node_id, members_backend::node_replicas>&
-    node_replicas) {
+size_t members_backend::calculate_total_replicas(
+  const node_replicas_map_t& node_replicas) {
     size_t total_replicas = 0;
     for (auto& [_, replicas] : node_replicas) {
         total_replicas += replicas.allocated_replicas;
@@ -339,22 +338,46 @@ double members_backend::calculate_unevenness_error() const {
     size_t err = 0;
     size_t max_err = 0;
 
+    const auto node_cnt = _allocator.local().state().available_nodes();
     for (auto d : domains) {
         const auto node_replicas = calculate_replicas_per_node(d);
         const auto total_replicas = calculate_total_replicas(node_replicas);
-        const auto node_cnt = _allocator.local().state().available_nodes();
+
+        if (total_replicas == 0) {
+            continue;
+        }
+
         const auto target_replicas_per_node
           = total_replicas / _allocator.local().state().available_nodes();
+        // max error is an error calculated when all replicas are allocated on
+        // the same node
+        auto domain_max_err = (total_replicas - target_replicas_per_node)
+                              + target_replicas_per_node * (node_cnt - 1);
+        // divide by total replicas and node count to make the error independent
+        // from number of nodes and number of topics.
+        domain_max_err /= total_replicas;
+        domain_max_err /= node_cnt;
 
-        max_err += (total_replicas - target_replicas_per_node)
-                   + target_replicas_per_node * (node_cnt - 1);
-        for (auto& [_, allocation_info] : node_replicas) {
+        size_t domain_err = 0;
+        for (auto& [id, allocation_info] : node_replicas) {
             int64_t diff = static_cast<int64_t>(target_replicas_per_node)
                            - static_cast<int64_t>(
                              allocation_info.allocated_replicas);
-            err += std::abs(diff);
+
+            vlog(
+              clusterlog.trace,
+              "node {} has {} replicas allocated, requested replicas per node "
+              "{}, difference: {}",
+              id,
+              allocation_info.allocated_replicas,
+              target_replicas_per_node,
+              diff);
+            domain_err += std::abs(diff);
         }
+        err += domain_err / (total_replicas * node_cnt);
+        max_err += domain_max_err;
     }
+
     // normalize error to stay in range (0,1)
     return err / (double)max_err;
 }
@@ -634,7 +657,8 @@ ss::future<> members_backend::reconcile() {
           "[update: {}] calculated reallocations: {}",
           meta.update,
           meta.partition_reallocations);
-        if (should_stop_rebalancing_update(meta)) {
+        auto current_error = calculate_unevenness_error();
+        if (should_stop_rebalancing_update(current_error, meta)) {
             if (meta.update) {
                 auto err = co_await _members_frontend.local()
                              .finish_node_reallocations(meta.update->id);
@@ -657,6 +681,7 @@ ss::future<> members_backend::reconcile() {
               meta.finished);
             co_return;
         }
+        _last_unevenness_error = current_error;
     }
 
     // execute reallocations
@@ -739,23 +764,24 @@ ss::future<> members_backend::reconcile() {
 }
 
 bool members_backend::should_stop_rebalancing_update(
-  const members_backend::update_meta& meta) const {
+  double current_error, const members_backend::update_meta& meta) const {
     // do not finish decommissioning and recommissioning updates as they have
     // strict stop conditions
-    auto error = calculate_unevenness_error();
-    vlog(
-      clusterlog.info,
-      "balance unevenness error - current: {}, previous: {}",
-      error,
-      _last_unevenness_error);
+
     if (
       meta.update
       && meta.update->type != members_manager::node_update_type::added) {
         return false;
     }
-    auto const stop_condition_improvement = 0.05;
-    // if improvement is negative, stop
-    auto improvement = std::max<double>(_last_unevenness_error - error, 0.0);
+    static auto const stop_condition_improvement = 0.05;
+
+    auto improvement = _last_unevenness_error - current_error;
+    vlog(
+      clusterlog.info,
+      "balance unevenness error - current: {}, previous: {}, improvement: {}",
+      current_error,
+      _last_unevenness_error,
+      improvement);
 
     return meta.partition_reallocations.empty()
            || improvement <= stop_condition_improvement;
@@ -980,7 +1006,8 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
     });
 }
 
-void members_backend::stop_node_addition(model::node_id id) {
+void members_backend::stop_node_addition_and_ondemand_rebalance(
+  model::node_id id) {
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
