@@ -634,7 +634,8 @@ ss::future<> members_backend::reconcile() {
           "[update: {}] calculated reallocations: {}",
           meta.update,
           meta.partition_reallocations);
-        if (should_stop_rebalancing_update(meta)) {
+        auto current_error = calculate_unevenness_error();
+        if (should_stop_rebalancing_update(current_error, meta)) {
             if (meta.update) {
                 auto err = co_await _members_frontend.local()
                              .finish_node_reallocations(meta.update->id);
@@ -657,6 +658,7 @@ ss::future<> members_backend::reconcile() {
               meta.finished);
             co_return;
         }
+        _last_unevenness_error = current_error;
     }
 
     // execute reallocations
@@ -739,23 +741,24 @@ ss::future<> members_backend::reconcile() {
 }
 
 bool members_backend::should_stop_rebalancing_update(
-  const members_backend::update_meta& meta) const {
+  double current_error, const members_backend::update_meta& meta) const {
     // do not finish decommissioning and recommissioning updates as they have
     // strict stop conditions
-    auto error = calculate_unevenness_error();
-    vlog(
-      clusterlog.info,
-      "balance unevenness error - current: {}, previous: {}",
-      error,
-      _last_unevenness_error);
+
     if (
       meta.update
       && meta.update->type != members_manager::node_update_type::added) {
         return false;
     }
-    auto const stop_condition_improvement = 0.05;
-    // if improvement is negative, stop
-    auto improvement = std::max<double>(_last_unevenness_error - error, 0.0);
+    static auto const stop_condition_improvement = 0.05;
+
+    auto improvement = _last_unevenness_error - current_error;
+    vlog(
+      clusterlog.info,
+      "balance unevenness error - current: {}, previous: {}, improvement: {}",
+      current_error,
+      _last_unevenness_error,
+      improvement);
 
     return meta.partition_reallocations.empty()
            || improvement <= stop_condition_improvement;
