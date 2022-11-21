@@ -11,13 +11,20 @@ set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++20")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
 
+# There is a known issue with ExternalProject_Add's handling of list arguments.
+# ref: https://public.kitware.com/Bug/view.php?id=16137
+# Expected way to pass lists is by replacing ; separtor with a custom separator
+# and the passing it via LIST_SEPARATOR param.
+string (REPLACE ";" "|" CMAKE_C_COMPILER_LAUNCHER_STR "@CMAKE_C_COMPILER_LAUNCHER@")
+string (REPLACE ";" "|" CMAKE_CXX_COMPILER_LAUNCHER_STR "@CMAKE_CXX_COMPILER_LAUNCHER@")
+
 set(common_cmake_args
   -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
   -DCMAKE_CXX_EXTENSIONS=@CMAKE_CXX_EXTENSIONS@
   -DCMAKE_C_COMPILER=@CMAKE_C_COMPILER@
   -DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@
-  -DCMAKE_C_COMPILER_LAUNCHER=@CMAKE_C_COMPILER_LAUNCHER@
-  -DCMAKE_CXX_COMPILER_LAUNCHER=@CMAKE_CXX_COMPILER_LAUNCHER@
+  -DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER_STR}
+  -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER_STR}
   "-DCMAKE_C_FLAGS=@BASE_C_FLAGS@"
   "-DCMAKE_C_FLAGS_@BUILD_TYPE@=@CMAKE_C_FLAGS_BUILD_TYPE@"
   "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++20"
@@ -153,6 +160,7 @@ ExternalProject_Add(cryptopp
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
+  LIST_SEPARATOR |
   CMAKE_ARGS
      ${common_cmake_args}
     -DBUILD_TESTING=OFF)
@@ -163,6 +171,7 @@ ExternalProject_Add(fmt
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
+  LIST_SEPARATOR |
   CMAKE_ARGS
      ${common_cmake_args}
      -DFMT_DOC=OFF
@@ -173,6 +182,7 @@ ExternalProject_Add(seastar
   GIT_TAG 30d3a28bde08d2228b4e560c173b89fdd94c3f05
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     -DBoost_USE_STATIC_LIBS=OFF
@@ -198,6 +208,7 @@ ExternalProject_Add(HdrHistogram
   URL_MD5 95f35abcaf7fae46e63a4dc4b6db81fd
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     -DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF
@@ -210,6 +221,7 @@ ExternalProject_Add(abseil
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     -DABSL_ENABLE_INSTALL=ON)
@@ -220,6 +232,7 @@ ExternalProject_Add(crc32c
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     -DCRC32C_BUILD_TESTS=0
@@ -232,6 +245,7 @@ ExternalProject_Add(roaring
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
   CMAKE_ARGS
   ${common_cmake_args}
   -DENABLE_ROARING_TESTS=OFF
@@ -254,6 +268,7 @@ ExternalProject_Add(base64_ext
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     ${BASE64_CMAKE_ARGS})
@@ -287,6 +302,7 @@ ExternalProject_Add(avro
   GIT_TAG 6b2896c2720e799371ea6f35b492d62171872e39
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=true
     ${common_cmake_args}
@@ -301,6 +317,7 @@ ExternalProject_Add(rapidjson
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
+  LIST_SEPARATOR |
   CMAKE_ARGS
     ${common_cmake_args}
     -DRAPIDJSON_BUILD_EXAMPLES=OFF
@@ -315,6 +332,7 @@ ExternalProject_Add(protobuf
   INSTALL_DIR   @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   SOURCE_SUBDIR cmake
+  LIST_SEPARATOR |
   CMAKE_ARGS
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args}
