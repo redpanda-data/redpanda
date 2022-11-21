@@ -734,11 +734,13 @@ class RedpandaService(Service):
                 cb(n)
             return
 
-        with concurrent.futures.ThreadPoolExecutor(
-                max_workers=len(nodes)) as executor:
-            # The list() wrapper is to cause futures to be evaluated here+now
-            # (including throwing any exceptions) and not just spawned in background.
-            list(executor.map(cb, nodes))
+        n_workers = len(nodes)
+        if n_workers > 0:
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=n_workers) as executor:
+                # The list() wrapper is to cause futures to be evaluated here+now
+                # (including throwing any exceptions) and not just spawned in background.
+                list(executor.map(cb, nodes))
 
     def _startup_poll_interval(self, first_start):
         """

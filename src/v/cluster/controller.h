@@ -105,6 +105,10 @@ public:
 
     ss::sharded<ss::abort_source>& get_abort_source() { return _as; }
 
+    ss::sharded<members_backend>& get_members_backend() {
+        return _members_backend;
+    }
+
     bool is_raft0_leader() const {
         vassert(
           ss::this_shard_id() == ss::shard_id(0),

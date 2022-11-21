@@ -25,6 +25,7 @@
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
+#include <seastar/json/json_elements.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -167,6 +168,8 @@ private:
     void register_debug_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    ss::future<ss::json::json_return_type>
+      trigger_on_demand_rebalance_handler(std::unique_ptr<ss::httpd::request>);
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,
