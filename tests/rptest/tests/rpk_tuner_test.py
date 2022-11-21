@@ -83,6 +83,18 @@ net                    true     true
 swappiness             true     true       
 transparent_hugepages  true     true       
 '''
+
+        uname = str(node.account.ssh_output("uname -m"))
+        # either x86-64 or i386.
+        is_not_x86 = "86" not in uname
+
+        # Clocksource is only available for x86 architectures.
+        expected = expected.replace(
+            "clocksource            true     true       ",
+            "clocksource            true     false      Clocksource setting not available for this architecture"
+        ) if is_not_x86 else expected
+
         output = rpk.tune("list")
+        self.logger.debug(output)
 
         assert output == expected
