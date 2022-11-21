@@ -24,6 +24,6 @@ commands:
   - command: "mkdir -p tests/_e2e_artifacts"
     background: true
 artifactsDir: tests/_e2e_artifacts
-timeout: 300
+timeout: 600
 reportFormat: xml
 parallel: 2

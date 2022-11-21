@@ -1,0 +1,14 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Cluster
+  name: cluster
+  namespace: superusers-prefix
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Console
+  name: console
+  namespace: superusers-prefix
+- apiVersion: v1
+  kind: Namespace
+  name: superusers-prefix

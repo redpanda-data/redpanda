@@ -23,12 +23,13 @@ import (
 // KafkaSA is a Console resource
 type KafkaSA struct {
 	client.Client
-	scheme        *runtime.Scheme
-	consoleobj    *redpandav1alpha1.Console
-	clusterobj    *redpandav1alpha1.Cluster
-	clusterDomain string
-	adminAPI      adminutils.AdminAPIClientFactory
-	log           logr.Logger
+	scheme             *runtime.Scheme
+	consoleobj         *redpandav1alpha1.Console
+	clusterobj         *redpandav1alpha1.Cluster
+	clusterDomain      string
+	adminAPI           adminutils.AdminAPIClientFactory
+	superUsersResource *resources.SuperUsersResource
+	log                logr.Logger
 }
 
 // NewKafkaSA instantiates a new KafkaSA
@@ -41,14 +42,16 @@ func NewKafkaSA(
 	adminAPI adminutils.AdminAPIClientFactory,
 	log logr.Logger,
 ) *KafkaSA {
+	su := resources.NewSuperUsers(cl, consoleobj, scheme, GenerateSASLUsername(consoleobj.GetName()), resources.ConsoleSuffix, log)
 	return &KafkaSA{
-		Client:        cl,
-		scheme:        scheme,
-		consoleobj:    consoleobj,
-		clusterobj:    clusterobj,
-		clusterDomain: clusterDomain,
-		adminAPI:      adminAPI,
-		log:           log,
+		Client:             cl,
+		scheme:             scheme,
+		consoleobj:         consoleobj,
+		clusterobj:         clusterobj,
+		clusterDomain:      clusterDomain,
+		adminAPI:           adminAPI,
+		log:                log,
+		superUsersResource: su,
 	}
 }
 
@@ -72,8 +75,8 @@ type (
 )
 
 // GenerateSASLUsername returns username used for Kafka SASL config
-func GenerateSASLUsername(console *redpandav1alpha1.Console) string {
-	return fmt.Sprintf("%s_%s", console.GetName(), resources.ScramConsoleUsername)
+func GenerateSASLUsername(name string) string {
+	return fmt.Sprintf("%s_%s", name, resources.ScramConsoleUsername)
 }
 
 // KafkaSASecretKey returns the NamespacedName of Kafka SA Secret
@@ -83,7 +86,7 @@ func KafkaSASecretKey(console *redpandav1alpha1.Console) types.NamespacedName {
 
 // Ensure implements Resource interface
 func (k *KafkaSA) Ensure(ctx context.Context) error {
-	su := resources.NewSuperUsers(k.Client, k.consoleobj, k.scheme, GenerateSASLUsername(k.consoleobj), resources.ConsoleSuffix, k.log)
+	su := k.superUsersResource
 	if err := su.Ensure(ctx); err != nil {
 		return fmt.Errorf("ensuring sasl user secret: %w", err)
 	}
@@ -143,7 +146,7 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 		return err
 	}
 
-	if err := adminAPI.DeleteUser(ctx, GenerateSASLUsername(k.consoleobj)); err != nil {
+	if err := adminAPI.DeleteUser(ctx, k.superUsersResource.GetUsername()); err != nil {
 		return err
 	}
 	controllerutil.RemoveFinalizer(k.consoleobj, ConsoleSAFinalizer)
@@ -153,12 +156,13 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 // KafkaACL is a Console resource
 type KafkaACL struct {
 	client.Client
-	scheme     *runtime.Scheme
-	consoleobj *redpandav1alpha1.Console
-	clusterobj *redpandav1alpha1.Cluster
-	kafkaAdmin KafkaAdminClientFactory
-	store      *Store
-	log        logr.Logger
+	scheme             *runtime.Scheme
+	consoleobj         *redpandav1alpha1.Console
+	clusterobj         *redpandav1alpha1.Cluster
+	kafkaAdmin         KafkaAdminClientFactory
+	store              *Store
+	superUsersResource *resources.SuperUsersResource
+	log                logr.Logger
 }
 
 // NewKafkaACL instantiates a new KafkaACL
@@ -171,14 +175,16 @@ func NewKafkaACL(
 	store *Store,
 	log logr.Logger,
 ) *KafkaACL {
+	su := resources.NewSuperUsers(cl, consoleobj, scheme, GenerateSASLUsername(consoleobj.GetName()), resources.ConsoleSuffix, log)
 	return &KafkaACL{
-		Client:     cl,
-		scheme:     scheme,
-		consoleobj: consoleobj,
-		clusterobj: clusterobj,
-		kafkaAdmin: kafkaAdmin,
-		store:      store,
-		log:        log,
+		Client:             cl,
+		scheme:             scheme,
+		consoleobj:         consoleobj,
+		clusterobj:         clusterobj,
+		kafkaAdmin:         kafkaAdmin,
+		store:              store,
+		superUsersResource: su,
+		log:                log,
 	}
 }
 
@@ -186,7 +192,7 @@ func NewKafkaACL(
 func (k *KafkaACL) Ensure(ctx context.Context) error {
 	// Build ACL for console SASL user to access everything
 	b := kadm.NewACLs().
-		Allow(GenerateSASLUsername(k.consoleobj)).
+		Allow(k.superUsersResource.GetUsername()).
 		Topics("*").Groups("*").Clusters().Operations(kadm.OpAll).
 		ResourcePatternType(kadm.ACLPatternLiteral)
 	if err := b.ValidateCreate(); err != nil {
@@ -239,7 +245,7 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 
 	// Build ACL for console SASL user to access everything
 	b := kadm.NewACLs().
-		Allow(GenerateSASLUsername(k.consoleobj)).AllowHosts().
+		Allow(k.superUsersResource.GetUsername()).AllowHosts().
 		Topics("*").Groups("*").Clusters().Operations(kadm.OpAll).
 		ResourcePatternType(kadm.ACLPatternLiteral)
 	if err := b.ValidateCreate(); err != nil {
