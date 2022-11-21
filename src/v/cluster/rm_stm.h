@@ -29,6 +29,8 @@
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
@@ -550,6 +552,14 @@ private:
         return lock_it->second;
     }
 
+    ss::lw_shared_ptr<ss::basic_rwlock<>>
+    get_idempotent_producer_lock(model::producer_identity pid) {
+        auto [it, _] = _idempotent_producer_locks.try_emplace(
+          pid, ss::make_lw_shared<ss::basic_rwlock<>>());
+
+        return it->second;
+    }
+
     kafka::offset from_log_offset(model::offset old_offset) {
         if (old_offset > model::offset{-1}) {
             return kafka::offset(_translator->from_log_offset(old_offset)());
@@ -586,6 +596,10 @@ private:
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
+    absl::flat_hash_map<
+      model::producer_identity,
+      ss::lw_shared_ptr<ss::basic_rwlock<>>>
+      _idempotent_producer_locks;
     absl::flat_hash_map<
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
