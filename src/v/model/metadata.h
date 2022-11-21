@@ -74,6 +74,9 @@ struct broker_properties
                && etc_props == other.etc_props;
     }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const model::broker_properties&);
+
     auto serde_fields() {
         return std::tie(
           cores,
