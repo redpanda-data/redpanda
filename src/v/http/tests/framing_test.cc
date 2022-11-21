@@ -92,7 +92,7 @@ public:
 
 private:
     std::random_device _rnddev;
-    std::uniform_int_distribution<char> _dist;
+    std::uniform_int_distribution<int8_t> _dist;
 };
 
 struct test_case {
