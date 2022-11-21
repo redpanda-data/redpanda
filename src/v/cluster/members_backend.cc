@@ -335,8 +335,8 @@ double members_backend::calculate_unevenness_error() const {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
       partition_allocation_domains::common};
-    size_t err = 0;
-    size_t max_err = 0;
+    double err = 0;
+    double max_err = 0;
 
     const auto node_cnt = _allocator.local().state().available_nodes();
     for (auto d : domains) {
@@ -351,18 +351,18 @@ double members_backend::calculate_unevenness_error() const {
           = total_replicas / _allocator.local().state().available_nodes();
         // max error is an error calculated when all replicas are allocated on
         // the same node
-        auto domain_max_err = (total_replicas - target_replicas_per_node)
-                              + target_replicas_per_node * (node_cnt - 1);
+        double domain_max_err = (total_replicas - target_replicas_per_node)
+                                + target_replicas_per_node * (node_cnt - 1);
         // divide by total replicas and node count to make the error independent
         // from number of nodes and number of topics.
-        domain_max_err /= total_replicas;
-        domain_max_err /= node_cnt;
+        domain_max_err /= static_cast<double>(total_replicas);
+        domain_max_err /= static_cast<double>(node_cnt);
 
-        size_t domain_err = 0;
+        double domain_err = 0;
         for (auto& [id, allocation_info] : node_replicas) {
-            int64_t diff = static_cast<int64_t>(target_replicas_per_node)
-                           - static_cast<int64_t>(
-                             allocation_info.allocated_replicas);
+            double diff = static_cast<double>(target_replicas_per_node)
+                          - static_cast<double>(
+                            allocation_info.allocated_replicas);
 
             vlog(
               clusterlog.trace,
@@ -374,12 +374,12 @@ double members_backend::calculate_unevenness_error() const {
               diff);
             domain_err += std::abs(diff);
         }
-        err += domain_err / (total_replicas * node_cnt);
+        err += domain_err / (static_cast<double>(total_replicas) * node_cnt);
         max_err += domain_max_err;
     }
 
     // normalize error to stay in range (0,1)
-    return err / (double)max_err;
+    return err / max_err;
 }
 
 ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
@@ -592,7 +592,7 @@ ss::future<> members_backend::reconcile() {
       _updates, [](const update_meta& meta) { return meta.finished; });
     // if updates were finished, reset unevenness error
     if (removed > 0) {
-        _last_unevenness_error = std::numeric_limits<double>::max();
+        reset_last_unevenness_error();
     }
     if (!_raft0->is_elected_leader() || _updates.empty()) {
         co_return;
@@ -1008,6 +1008,7 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
 
 void members_backend::stop_node_addition_and_ondemand_rebalance(
   model::node_id id) {
+    reset_last_unevenness_error();
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
@@ -1017,10 +1018,15 @@ void members_backend::stop_node_addition_and_ondemand_rebalance(
 
 void members_backend::handle_reallocation_finished(model::node_id id) {
     // remove all pending added node updates for this node
+    reset_last_unevenness_error();
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update && meta.update->id == id
                && meta.update->type == members_manager::node_update_type::added;
     });
+}
+
+void members_backend::reset_last_unevenness_error() {
+    _last_unevenness_error = 1.0;
 }
 
 std::ostream&
