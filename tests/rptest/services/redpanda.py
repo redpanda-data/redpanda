@@ -1626,8 +1626,13 @@ class RedpandaService(Service):
         if not os.path.isdir(service_dir):
             mkdir_p(service_dir)
 
-        rpk = RpkTool(self)
-        rpk.cluster_config_export(cluster_config_filename, True)
+        try:
+            rpk = RpkTool(self)
+            rpk.cluster_config_export(cluster_config_filename, True)
+        except Exception as e:
+            # Configuration is optional: if redpanda has e.g. crashed, you
+            # will not be able to get it from the admin API
+            self.logger.info(f"{self.who_am_i()}: error getting config: {e}")
 
         self.logger.info("%s: stopping service" % self.who_am_i())
 
