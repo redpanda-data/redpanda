@@ -98,7 +98,7 @@ struct topic_table_fixture {
         auto pas = allocator.local()
                      .allocate(std::move(req))
                      .value()
-                     .get_assignments();
+                     ->get_assignments();
 
         return cluster::topic_configuration_assignment(cfg, std::move(pas));
     }
