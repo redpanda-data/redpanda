@@ -11,6 +11,7 @@ import random
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -70,12 +71,13 @@ class ScalingUpTest(EndToEndTest):
                    timeout_sec=timeout_sec,
                    backoff_sec=1)
 
-    def create_topics(self, rf):
+    def create_topics(self, rf, partition_count):
         total_replicas = 0
         topics = []
         for _ in range(1, 5):
-            partitions = random.randint(10, 20)
-            spec = TopicSpec(partition_count=partitions, replication_factor=rf)
+            partitions = partition_count
+            spec = TopicSpec(partition_count=partition_count,
+                             replication_factor=rf)
             total_replicas += partitions * rf
             topics.append(spec)
 
@@ -87,7 +89,8 @@ class ScalingUpTest(EndToEndTest):
         return total_replicas
 
     @cluster(num_nodes=5)
-    def test_adding_nodes_to_cluster(self):
+    @matrix(partition_count=[1, 20])
+    def test_adding_nodes_to_cluster(self, partition_count):
         self.redpanda = RedpandaService(self.test_context,
                                         3,
                                         extra_rp_conf={
@@ -99,7 +102,8 @@ class ScalingUpTest(EndToEndTest):
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
-        total_replicas = self.create_topics(rf=1)
+        total_replicas = self.create_topics(rf=1,
+                                            partition_count=partition_count)
         # include __consumer_offsets topic replica
         total_replicas += self.group_topic_partitions
 
@@ -118,7 +122,8 @@ class ScalingUpTest(EndToEndTest):
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
     @cluster(num_nodes=8)
-    def test_adding_multiple_nodes_to_the_cluster(self):
+    @matrix(partition_count=[1, 20])
+    def test_adding_multiple_nodes_to_the_cluster(self, partition_count):
 
         self.redpanda = RedpandaService(self.test_context,
                                         6,
@@ -132,14 +137,15 @@ class ScalingUpTest(EndToEndTest):
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
         topics = []
-        total_replicas = self.create_topics(rf=3)
+        total_replicas = self.create_topics(rf=3,
+                                            partition_count=partition_count)
         # add consumer group topic replicas
         total_replicas += self.group_topic_partitions * 3
 
         throughput = 100000 if not self.debug_mode else 1000
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup(min_records=15 * throughput, timeout_sec=120)
+        self.await_startup(min_records=5 * throughput, timeout_sec=120)
         # add three nodes at once
         for n in self.redpanda.nodes[3:]:
             self.redpanda.start_node(n)
@@ -148,7 +154,8 @@ class ScalingUpTest(EndToEndTest):
                                             timeout_sec=120)
 
     @cluster(num_nodes=8)
-    def test_on_demand_rebalancing(self):
+    @matrix(partition_count=[1, 20])
+    def test_on_demand_rebalancing(self, partition_count):
         # start redpanda with disabled rebalancing
         self.redpanda = RedpandaService(self.test_context,
                                         6,
@@ -161,14 +168,15 @@ class ScalingUpTest(EndToEndTest):
         # start single node cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
-        total_replicas = self.create_topics(rf=3)
+        total_replicas = self.create_topics(rf=3,
+                                            partition_count=partition_count)
         # add consumer group topic replicas
         total_replicas += self.group_topic_partitions * 3
 
         throughput = 100000 if not self.debug_mode else 1000
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup(min_records=15 * throughput, timeout_sec=120)
+        self.await_startup(min_records=5 * throughput, timeout_sec=120)
         # add three nodes
         for n in self.redpanda.nodes[3:]:
             self.redpanda.start_node(n)
