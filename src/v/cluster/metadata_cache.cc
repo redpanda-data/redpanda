@@ -156,8 +156,8 @@ ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
     co_return !brokers.empty() ? brokers : _members_table.local().node_list();
 }
 
-std::vector<model::node_id> metadata_cache::broker_ids() const {
-    return _members_table.local().broker_ids();
+std::vector<model::node_id> metadata_cache::node_ids() const {
+    return _members_table.local().node_ids();
 }
 
 bool metadata_cache::should_reject_writes() const {

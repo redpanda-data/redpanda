@@ -50,7 +50,7 @@ public:
       int coproc_supervisor_port = 43189);
 
 private:
-    std::vector<model::node_id> get_broker_ids();
+    std::vector<model::node_id> get_node_ids();
 
 private:
     absl::flat_hash_map<model::node_id, wasm_ptr> _instances;

@@ -115,7 +115,7 @@ public:
     ss::future<std::vector<node_metadata>> alive_nodes() const;
 
     /// Returns all broker ids
-    std::vector<model::node_id> broker_ids() const;
+    std::vector<model::node_id> node_ids() const;
 
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change

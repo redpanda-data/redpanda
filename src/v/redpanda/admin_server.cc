@@ -2534,7 +2534,7 @@ void admin_server::register_partition_routes() {
               }
               // special case, controller is raft group 0
               p.raft_group_id = 0;
-              for (const auto& i : _metadata_cache.local().broker_ids()) {
+              for (const auto& i : _metadata_cache.local().node_ids()) {
                   if (!leader_opt.has_value() || leader_opt.value() != i) {
                       ss::httpd::partition_json::assignment a;
                       a.node_id = i;

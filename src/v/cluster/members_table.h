@@ -33,7 +33,7 @@ public:
     std::vector<node_metadata> node_list() const;
     size_t node_count() const;
 
-    std::vector<model::node_id> broker_ids() const;
+    std::vector<model::node_id> node_ids() const;
 
     /// Returns single broker if exists in cache
     std::optional<std::reference_wrapper<const node_metadata>>

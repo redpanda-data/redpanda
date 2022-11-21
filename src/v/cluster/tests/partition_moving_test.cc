@@ -122,7 +122,7 @@ public:
               controllers.cbegin(),
               controllers.cend(),
               [this](cluster::controller* c) {
-                  return c->get_members_table().local().broker_ids().size()
+                  return c->get_members_table().local().node_ids().size()
                          == nodes.size();
               });
         }).get0();

@@ -139,7 +139,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
         refresh_nodes_status();
     }
 
-    auto nodes = filter.nodes.empty() ? _members.local().broker_ids()
+    auto nodes = filter.nodes.empty() ? _members.local().node_ids()
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
@@ -566,7 +566,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
      */
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
-    auto ids = _members.local().broker_ids();
+    auto ids = _members.local().node_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _raft0->self().id()) {

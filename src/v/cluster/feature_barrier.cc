@@ -59,7 +59,7 @@ ss::future<> feature_barrier_state_base::barrier(feature_barrier_tag tag) {
     std::set<model::node_id> sent_to;
     while (true) {
         bool all_sent = true;
-        for (const auto& member_id : _members.broker_ids()) {
+        for (const auto& member_id : _members.node_ids()) {
             if (member_id == _self) {
                 // Don't try and send to self
                 continue;
@@ -167,7 +167,7 @@ feature_barrier_response feature_barrier_state_base::update_barrier(
     } else {
         i->second.node_enter(peer, entered);
         bool all_in = true;
-        for (const auto& member_id : _members.broker_ids()) {
+        for (const auto& member_id : _members.node_ids()) {
             if (!i->second.is_node_entered(member_id)) {
                 vlog(
                   clusterlog.debug,

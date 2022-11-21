@@ -32,7 +32,7 @@ std::vector<node_metadata> members_table::node_list() const {
 }
 size_t members_table::node_count() const { return _nodes.size(); }
 
-std::vector<model::node_id> members_table::broker_ids() const {
+std::vector<model::node_id> members_table::node_ids() const {
     std::vector<model::node_id> ids;
     ids.reserve(_nodes.size());
     for (const auto& [id, _] : _nodes) {
@@ -265,7 +265,7 @@ void members_table::unregister_members_updated_notification(
 
 void members_table::notify_members_updated() {
     for (const auto& [id, cb] : _members_updated_notifications) {
-        cb(broker_ids());
+        cb(node_ids());
     }
 }
 
