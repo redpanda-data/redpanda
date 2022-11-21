@@ -10,6 +10,7 @@
 import ducktape.errors
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from requests.exceptions import ConnectionError
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -35,6 +36,31 @@ class ClusterBootstrapNew(RedpandaTest):
     def setUp(self):
         # Defer startup to test body.
         pass
+
+    @cluster(num_nodes=3, log_allow_list=["seed_servers cannot be empty"])
+    def test_misconfigured_root_driven_bootstrap(self):
+        """
+        Test that empty_seed_starts_cluster=False prevents root-driven
+        bootstrap from occurring.
+        """
+        for node in self.redpanda.nodes:
+            self.redpanda.set_extra_node_conf(
+                node, {"empty_seed_starts_cluster": False})
+        try:
+            self.redpanda.start(omit_seeds_on_idx_one=True)
+            assert False, "Should have been unable to start"
+        except ducktape.errors.TimeoutError:
+            # The cluster should be unable to start.
+            pass
+
+        for node in self.redpanda.nodes:
+            idx = self.redpanda.idx(node)
+            try:
+                cluster_uuid = self.redpanda._admin.get_cluster_uuid(node)
+                assert idx != 1, "Expected failure on idx 1"
+                assert cluster_uuid == None, f"Unexpected cluster UUID: {cluster_uuid}"
+            except ConnectionError:
+                assert 1 == idx, f"Should have failed on idx 1, failed on {idx}"
 
     @cluster(num_nodes=3)
     @matrix(num_seeds=[1, 2, 3],
@@ -106,7 +132,7 @@ class ClusterBootstrapUpgrade(RedpandaTest):
                                             omit_seeds_on_idx_one=False)
 
     @cluster(num_nodes=3)
-    @matrix(set_empty_seed_starts_cluster=[False, True])
+    @matrix(empty_seed_starts_cluster=[False, True])
     def test_change_bootstrap_configs_during_upgrade(
             self, empty_seed_starts_cluster):
         # Upgrade the cluster as we change the configs node-by-node.
