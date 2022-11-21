@@ -12,42 +12,30 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
-#include "config/configuration.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
-#include "s3/client.h"
-#include "s3/error.h"
-#include "storage/log_reader.h"
-#include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
-#include "storage/segment_appender_utils.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/coroutine.hh>
 #include <seastar/core/file-types.hh>
-#include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/iostream-impl.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/seastar.hh>
-#include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/btree_map.h>
 #include <boost/algorithm/string/detail/sequence.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include <chrono>
 #include <exception>
