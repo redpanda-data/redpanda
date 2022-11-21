@@ -625,16 +625,30 @@ public:
               "remote_segment_batch_consumer not initialized",
               _parent._seg->get_ntp());
 
-            _parent._cur_ot_state->get().add_gap(
-              header.base_offset, header.last_offset());
-            vlog(
-              _ctxlog.debug,
-              "added offset translation gap [{}-{}], current state: {}",
-              header.base_offset,
-              header.last_offset(),
-              _parent._cur_ot_state);
+            if (
+              _parent._cur_ot_state->get().last_gap_offset()
+              < header.base_offset) {
+                _parent._cur_ot_state->get().add_gap(
+                  header.base_offset, header.last_offset());
+                vlog(
+                  _ctxlog.debug,
+                  "added offset translation gap [{}-{}], current state: {}",
+                  header.base_offset,
+                  header.last_offset(),
+                  _parent._cur_ot_state);
 
-            _parent._cur_delta += header.last_offset_delta + model::offset{1};
+                _parent._cur_delta += header.last_offset_delta
+                                      + model::offset{1};
+            } else {
+                // This can happen if we're dealing with overlapping segments
+                vlog(
+                  _ctxlog.debug,
+                  "offset translation gap [{}-{}] is already added, current "
+                  "state: {}",
+                  header.base_offset,
+                  header.last_offset(),
+                  _parent._cur_ot_state);
+            }
         }
     }
 
@@ -705,7 +719,9 @@ remote_segment_batch_reader::read_some(
             _parser = co_await init_parser();
         }
 
-        if (ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
+        if (
+          ot_state.empty()
+          && ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
             vlog(
               _ctxlog.debug,
               "offset translation: add_absolute_delta at offset {}, "
