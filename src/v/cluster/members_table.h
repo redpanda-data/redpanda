@@ -31,7 +31,7 @@ public:
 
     const cache_t& nodes() const;
     std::vector<node_metadata> node_list() const;
-    size_t broker_count() const;
+    size_t node_count() const;
 
     std::vector<model::node_id> broker_ids() const;
 

@@ -199,7 +199,7 @@ std::error_code partition_allocator::check_cluster_limits(
     // The effective values are the node count times the smallest node's
     // resources: this avoids wrongly assuming the system will handle partition
     // counts that only fit when scheduled onto certain nodes.
-    auto broker_count = _members.local().broker_count();
+    auto broker_count = _members.local().node_count();
     uint64_t effective_cpu_count = broker_count * min_core_count;
     uint64_t effective_cluster_memory = broker_count * min_memory_bytes;
     uint64_t effective_cluster_disk = broker_count * min_disk_bytes;

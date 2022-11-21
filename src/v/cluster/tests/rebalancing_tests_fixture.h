@@ -52,7 +52,7 @@ public:
               apps.cbegin(), apps.cend(), [node_count](auto c) {
                   return c.second->controller->get_members_table()
                            .local()
-                           .broker_count()
+                           .node_count()
                          == node_count;
               });
         }).get0();

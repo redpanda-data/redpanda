@@ -133,7 +133,7 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           return try_create_consumer_group_topic(
                    ctx.coordinator_mapper(),
                    ctx.topics_frontend(),
-                   (int16_t)ctx.metadata_cache().broker_count())
+                   (int16_t)ctx.metadata_cache().node_count())
             .then([&ctx, request = std::move(request)](bool created) {
                 /*
                  * if the topic is successfully created then the metadata cache

@@ -109,7 +109,7 @@ public:
     const members_table::cache_t& nodes() const;
 
     /// Returns curent broker count
-    size_t broker_count() const;
+    size_t node_count() const;
 
     /// Returns all brokers, returns copy as the content of broker can change
     ss::future<std::vector<node_metadata>> alive_nodes() const;

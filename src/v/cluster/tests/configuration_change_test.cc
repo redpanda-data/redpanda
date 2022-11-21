@@ -35,9 +35,9 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(
       5s,
       [this, node_0, node_1, node_2] {
-          return get_local_cache(node_0).broker_count() == 3
-                 && get_local_cache(node_1).broker_count() == 3
-                 && get_local_cache(node_2).broker_count() == 3;
+          return get_local_cache(node_0).node_count() == 3
+                 && get_local_cache(node_1).node_count() == 3
+                 && get_local_cache(node_2).node_count() == 3;
       })
       .get0();
 

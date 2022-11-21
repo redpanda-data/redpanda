@@ -30,7 +30,7 @@ std::vector<node_metadata> members_table::node_list() const {
     }
     return nodes;
 }
-size_t members_table::broker_count() const { return _nodes.size(); }
+size_t members_table::node_count() const { return _nodes.size(); }
 
 std::vector<model::node_id> members_table::broker_ids() const {
     std::vector<model::node_id> ids;

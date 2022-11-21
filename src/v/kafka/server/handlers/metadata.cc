@@ -459,7 +459,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // just for the size estimate.
     constexpr size_t extra_bytes_per_broker = 200;
     size_estimate
-      += md_cache.broker_count()
+      += md_cache.node_count()
          * (sizeof(metadata_response_broker) + extra_bytes_per_broker);
 
     for (auto& [tp_ns, topic_metadata] : md_cache.all_topics_metadata()) {

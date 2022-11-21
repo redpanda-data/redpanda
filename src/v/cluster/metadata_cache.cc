@@ -116,8 +116,8 @@ const members_table::cache_t& metadata_cache::nodes() const {
     return _members_table.local().nodes();
 }
 
-size_t metadata_cache::broker_count() const {
-    return _members_table.local().broker_count();
+size_t metadata_cache::node_count() const {
+    return _members_table.local().node_count();
 }
 
 ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
