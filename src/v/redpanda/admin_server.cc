@@ -17,11 +17,13 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
+#include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
+#include "cluster/members_backend.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -2612,6 +2614,12 @@ void admin_server::register_partition_routes() {
           return set_partition_replicas_handler(std::move(req));
       });
 
+    register_route<superuser>(
+      ss::httpd::partition_json::trigger_partitions_rebalance,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return trigger_on_demand_reconfiguration_handler(std::move(req));
+      });
+
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
       [this](std::unique_ptr<ss::httpd::request>) {
@@ -2638,6 +2646,18 @@ void admin_server::register_partition_routes() {
           }
           return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::trigger_on_demand_reconfiguration_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    auto ec = co_await _controller->get_members_backend().invoke_on(
+      cluster::controller_stm_shard, [](cluster::members_backend& backend) {
+          return backend.request_rebalance();
+      });
+
+    co_await throw_on_error(*req, ec, model::controller_ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
 }
 
 void admin_server::register_hbadger_routes() {
