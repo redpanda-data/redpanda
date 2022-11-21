@@ -299,6 +299,17 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
+    auto config = _configuration_manager.get_latest();
+    if (!config.contains(node)) {
+        // We might have sent an append_entries just before removing
+        // a node from configuration: ignore its reply, to avoid
+        // doing things like initiating recovery to this removed node.
+        vlog(
+          _ctxlog.debug,
+          "Ignoring reply from node {}, it is not in members list",
+          physical_node);
+        return success_reply::no;
+    }
 
     auto it = _fstats.find(node);
 
@@ -490,18 +501,6 @@ void consensus::process_append_entries_reply(
   result<append_entries_reply> r,
   follower_req_seq seq_id,
   model::offset dirty_offset) {
-    auto config = _configuration_manager.get_latest();
-    if (!config.contains_broker(physical_node)) {
-        // We might have sent an append_entries just before removing
-        // a node from configuration: ignore its reply, to avoid
-        // doing things like initiating recovery to this removed node.
-        vlog(
-          _ctxlog.debug,
-          "Ignoring reply from node {}, it is not in members list",
-          physical_node);
-        return;
-    }
-
     auto is_success = update_follower_index(
       physical_node, r, seq_id, dirty_offset);
     if (is_success) {
