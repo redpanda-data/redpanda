@@ -176,19 +176,6 @@ group_configuration::make_change_strategy() {
     }
 }
 
-std::optional<model::broker>
-group_configuration::find_broker(model::node_id id) const {
-    auto it = std::find_if(
-      _brokers.cbegin(), _brokers.cend(), [id](const model::broker& broker) {
-          return id == broker.id();
-      });
-
-    if (it != _brokers.cend()) {
-        return *it;
-    }
-    return std::nullopt;
-}
-
 bool group_configuration::has_voters() const {
     return !(_current.voters.empty() || (_old && _old->voters.empty()));
 }
