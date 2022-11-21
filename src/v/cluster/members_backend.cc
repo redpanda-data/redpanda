@@ -592,7 +592,7 @@ ss::future<> members_backend::reconcile() {
       _updates, [](const update_meta& meta) { return meta.finished; });
     // if updates were finished, reset unevenness error
     if (removed > 0) {
-        _last_unevenness_error = std::numeric_limits<double>::max();
+        reset_last_unevenness_error();
     }
     if (!_raft0->is_elected_leader() || _updates.empty()) {
         co_return;
@@ -1008,6 +1008,7 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
 
 void members_backend::stop_node_addition_and_ondemand_rebalance(
   model::node_id id) {
+    reset_last_unevenness_error();
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
@@ -1017,10 +1018,15 @@ void members_backend::stop_node_addition_and_ondemand_rebalance(
 
 void members_backend::handle_reallocation_finished(model::node_id id) {
     // remove all pending added node updates for this node
+    reset_last_unevenness_error();
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update && meta.update->id == id
                && meta.update->type == members_manager::node_update_type::added;
     });
+}
+
+void members_backend::reset_last_unevenness_error() {
+    _last_unevenness_error = 1.0;
 }
 
 std::ostream&
