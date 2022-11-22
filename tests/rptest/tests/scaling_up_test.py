@@ -24,7 +24,7 @@ class ScalingUpTest(EndToEndTest):
     Adding nodes to the cluster should result in partition reallocations to new
     nodes
     """
-
+    rebalance_timeout = 120
     group_topic_partitions = 16
 
     def _replicas_per_node(self):
@@ -113,11 +113,11 @@ class ScalingUpTest(EndToEndTest):
         # add second node
         self.redpanda.start_node(self.redpanda.nodes[1])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=30)
+                                            timeout_sec=self.rebalance_timeout)
         # add third node
         self.redpanda.start_node(self.redpanda.nodes[2])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=30)
+                                            timeout_sec=self.rebalance_timeout)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
@@ -151,7 +151,7 @@ class ScalingUpTest(EndToEndTest):
             self.redpanda.start_node(n)
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=120)
+                                            timeout_sec=self.rebalance_timeout)
 
     @cluster(num_nodes=8)
     @matrix(partition_count=[1, 20])
@@ -176,7 +176,8 @@ class ScalingUpTest(EndToEndTest):
         throughput = 100000 if not self.debug_mode else 1000
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup(min_records=5 * throughput, timeout_sec=120)
+        self.await_startup(min_records=5 * throughput,
+                           timeout_sec=self.rebalance_timeout)
         # add three nodes
         for n in self.redpanda.nodes[3:]:
             self.redpanda.start_node(n)
@@ -192,4 +193,4 @@ class ScalingUpTest(EndToEndTest):
         admin.trigger_rebalance()
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=120)
+                                            timeout_sec=self.rebalance_timeout)
