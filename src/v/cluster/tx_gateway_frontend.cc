@@ -1112,7 +1112,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         break;
     }
 
-    auto status = co_await stm->add_partitions(tx.id, partitions);
+    auto status = co_await stm->add_partitions(term, tx.id, partitions);
     auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
         vlog(txlog.warn, "adding partitions failed with {}", status);
@@ -1232,7 +1232,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     }
 
     auto status = co_await stm->add_group(
-      tx.id, request.group_id, group_info.etag);
+      term, tx.id, request.group_id, group_info.etag);
     auto has_added = status == tm_stm::op_status::success;
     if (!has_added) {
         vlog(txlog.warn, "can't add group to tm_stm: {}", status);

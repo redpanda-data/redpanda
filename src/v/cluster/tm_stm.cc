@@ -620,6 +620,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
 }
 
 ss::future<tm_stm::op_status> tm_stm::add_partitions(
+  model::term_id expected_term,
   kafka::transactional_id tx_id,
   std::vector<tm_transaction::tx_partition> partitions) {
     auto ptx = _mem_txes.find(tx_id);
@@ -627,6 +628,18 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
         co_return tm_stm::op_status::unknown;
     }
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
+        co_return tm_stm::op_status::unknown;
+    }
+    if (ptx->second.etag != expected_term) {
+        vlog(
+          txlog.warn,
+          "An attempt to add partitions to tx:{} pid:{} tx_seq:{} etag:{} "
+          "assuming etag is {}",
+          tx_id,
+          ptx->second.pid,
+          ptx->second.tx_seq,
+          ptx->second.etag,
+          expected_term);
         co_return tm_stm::op_status::unknown;
     }
 
@@ -659,14 +672,27 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
 }
 
 ss::future<tm_stm::op_status> tm_stm::add_group(
+  model::term_id expected_term,
   kafka::transactional_id tx_id,
   kafka::group_id group_id,
-  model::term_id term) {
+  model::term_id etag) {
     auto ptx = _mem_txes.find(tx_id);
     if (ptx == _mem_txes.end()) {
         co_return tm_stm::op_status::unknown;
     }
     if (ptx->second.status != tm_transaction::tx_status::ongoing) {
+        co_return tm_stm::op_status::unknown;
+    }
+    if (ptx->second.etag != expected_term) {
+        vlog(
+          txlog.warn,
+          "An attempt to add group to tx:{} pid:{} tx_seq:{} etag:{} assuming "
+          "etag is {}",
+          tx_id,
+          ptx->second.pid,
+          ptx->second.tx_seq,
+          ptx->second.etag,
+          expected_term);
         co_return tm_stm::op_status::unknown;
     }
 
@@ -677,7 +703,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
         if (just_started) {
             tm_transaction tx = ptx->second;
             tx.groups.push_back(
-              tm_transaction::tx_group{.group_id = group_id, .etag = term});
+              tm_transaction::tx_group{.group_id = group_id, .etag = etag});
             tx.last_update_ts = clock_type::now();
             auto r = co_await update_tx(tx, tx.etag);
 
@@ -690,7 +716,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     }
 
     ptx->second.groups.push_back(
-      tm_transaction::tx_group{.group_id = group_id, .etag = term});
+      tm_transaction::tx_group{.group_id = group_id, .etag = etag});
     ptx->second.last_update_ts = clock_type::now();
     co_return tm_stm::op_status::success;
 }
