@@ -219,3 +219,33 @@ class RawKCL(KCL):
         }
         return self._cmd(['misc', 'raw-req', '-k', '37'],
                          input=json.dumps(create_partitions_request))
+
+    def raw_alter_topic_config(self, version, topic, configs):
+        assert version >= 0 and version <= 1, "version out of supported redpanda range for this API"
+        alter_configs_request = {
+            'Version':
+            version,
+            'ValidateOnly':
+            False,
+            'TimeoutMillis':
+            15000,
+            'Resources': [{
+                'ResourceType': 2,
+                'ResourceName': topic,
+                'Configs': []
+            }],
+            'ValidateOnly':
+            False
+        }
+
+        for k, v in configs.items():
+
+            alter_configs_request['Resources'][0]['Configs'].append({
+                "Name":
+                k,
+                "Value":
+                str(v)
+            })
+        self._redpanda.logger.info(f"DBG: {json.dumps(alter_configs_request)}")
+        return self._cmd(['misc', 'raw-req', '-k', '33'],
+                         input=json.dumps(alter_configs_request))
