@@ -11,7 +11,6 @@
 package redpanda
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,13 +22,11 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -241,6 +238,11 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+	if err != nil && !errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
+		return ctrl.Result{}, fmt.Errorf("creating admin api client: %w", err)
+	}
+
 	var secrets []types.NamespacedName
 	if proxySu != nil {
 		secrets = append(secrets, proxySu.Key())
@@ -249,7 +251,7 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider(), secrets)
+	err = r.setInitialSuperUserPassword(ctx, adminAPI, secrets)
 
 	var e *resources.RequeueAfterError
 	if errors.As(err, &e) {
@@ -307,9 +309,19 @@ func (r *ClusterReconciler) Reconcile(
 	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
-	if err := r.setLicense(ctx, &redpandaCluster, log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("setting license: %w", err)
+
+	// want: refactor above to resources (i.e. setInitialSuperUserPassword, reconcileConfiguration)
+	// ensuring license must be at the end when condition ClusterConfigured=true and AdminAPI is ready
+	license := resources.NewLicense(r.Client, r.Scheme, &redpandaCluster, adminAPI, log)
+	if err := license.Ensure(ctx); err != nil {
+		var raErr *resources.RequeueAfterError
+		if errors.As(err, &raErr) {
+			log.Info(raErr.Error())
+			return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
+		}
+		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -338,33 +350,6 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 	case corev1.PullNever:
 	default:
 		return fmt.Errorf("available image pull policy: \"%s\", \"%s\" or \"%s\": %w", corev1.PullAlways, corev1.PullIfNotPresent, corev1.PullNever, errInvalidImagePullPolicy)
-	}
-	return nil
-}
-
-// setLicense sets the referenced license in Redpanda.
-// If user sets the license and then removes it in the spec, the loaded license is not unset.
-// Currently don't have admin API to unset license.
-func (r *ClusterReconciler) setLicense(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
-) error {
-	log.V(6).Info("setting license")
-	if l := rp.Spec.LicenseRef; l != nil {
-		ll, err := l.GetSecret(ctx, r.Client)
-		if err != nil {
-			return err
-		}
-		license, err := l.GetValue(ll, redpandav1alpha1.DefaultLicenseSecretKey)
-		if err != nil {
-			return err
-		}
-		adminAPI, err := consolepkg.NewAdminAPI(ctx, r.Client, r.Scheme, rp, r.clusterDomain, r.AdminAPIClientFactory, log)
-		if err != nil {
-			return err
-		}
-		if err := adminAPI.SetLicense(ctx, bytes.NewReader(license)); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -860,21 +845,17 @@ func (r *ClusterReconciler) handleClusterDeletion(
 
 func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
-	fqdn string,
-	adminTLSConfigProvider resourcetypes.AdminTLSConfigProvider,
+	adminAPI adminutils.AdminAPIClient,
 	objs []types.NamespacedName,
 ) error {
-	adminAPI, err := r.AdminAPIClientFactory(ctx, r, redpandaCluster, fqdn, adminTLSConfigProvider)
-	if err != nil && errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
+	// might not have internal AdminAPI listener
+	if adminAPI == nil {
 		return nil
-	} else if err != nil {
-		return err
 	}
 
 	for _, obj := range objs {
 		var secret corev1.Secret
-		err = r.Get(ctx, types.NamespacedName{
+		err := r.Get(ctx, types.NamespacedName{
 			Namespace: obj.Namespace,
 			Name:      obj.Name,
 		}, &secret)
