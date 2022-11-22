@@ -91,6 +91,15 @@ If an empty string is given as the value, the property is reset to its default.`
 
 			out.MaybeDie(err, "error setting property: %v", err)
 			fmt.Printf("Successfully updated configuration. New configuration version is %d.\n", result.ConfigVersion)
+
+			status, err := client.ClusterConfigStatus(cmd.Context(), true)
+			out.MaybeDie(err, "unable to check if the cluster needs to be restarted: %v\nCheck the status with 'rpk cluster config status'.", err)
+			for _, value := range status {
+				if value.Restart {
+					fmt.Print("\nCluster needs to be restarted. See more details with 'rpk cluster config status'.\n")
+					break
+				}
+			}
 		},
 	}
 
