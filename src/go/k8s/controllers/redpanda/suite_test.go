@@ -367,6 +367,15 @@ func (m *mockAdminAPI) SetLicense(_ context.Context, _ interface{}) error {
 	return nil
 }
 
+func (m *mockAdminAPI) GetLicenseInfo(_ context.Context) (admin.License, error) {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return admin.License{}, &unavailableError{}
+	}
+	return admin.License{}, nil
+}
+
 //nolint:gocritic // It's test API
 func (m *mockAdminAPI) RegisterPropertySchema(
 	name string, metadata admin.ConfigPropertyMetadata,
