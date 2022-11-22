@@ -127,7 +127,7 @@ the cleanup.policy=compact config option set.
 					} else {
 						msg = err.Error()
 					}
-					// If we're exiting in error, toggle error as well so in structured print mode there's a way to see an eror happen without parsing the message.
+					// If we're exiting in error, toggle error as well so in structured print mode there's a way to see an error happen without parsing the message.
 					// While we could just re-use exit1 here, mixing concerns is not a great idea.
 					createError = true
 					exit1 = true
@@ -139,8 +139,8 @@ the cleanup.policy=compact config option set.
 				})
 			}
 
-			if format != "text" {
-				out.StructredPrint[any](createdTopics, format)
+			if format != out.FmtText {
+				out.PrintFormatted(createdTopics, format)
 			} else {
 				tw := out.NewTable("topic", "status")
 				defer tw.Flush()
@@ -150,7 +150,7 @@ the cleanup.policy=compact config option set.
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value; Config parameters (repeatable; e.g. -c cleanup.policy=compact)")
 	cmd.Flags().Int32VarP(&partitions, "partitions", "p", -1, "Number of partitions to create per topic; -1 defaults to the cluster's default_topic_partitions")
 	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor (must be odd); -1 defaults to the cluster's default_topic_replications")

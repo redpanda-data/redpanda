@@ -26,7 +26,7 @@ import (
 // DescribedGroup contains data from a describe groups response for a single group.
 // Mostly copied here from kadm.describedGroup so tags could be added.
 // DescribedRows is added since the original code did not group the details and the summary together, but we want them together for structured printing.
-type describedGroupForStructredPrint struct {
+type describedGroupForStructuredPrint struct {
 	Group string `json:"group" yaml:"group"` // Group is the name of the described group.
 
 	Coordinator   brokerDetail           `json:"coordinator" yaml:"coordinator"`     // Coordinator is the coordinator broker for this group.
@@ -39,7 +39,7 @@ type describedGroupForStructredPrint struct {
 	Err error `json:"err" yaml:"err"` // Err is non-nil if the group could not be described.
 }
 
-// Coppied from kadm.DescribedGroupMember to add struct tags.
+// Copied from kadm.DescribedGroupMember to add struct tags.
 type describedGroupMember struct {
 	MemberID   string  `json:"member_id" yaml:"member_id"`     // MemberID is the Kafka assigned member ID of this group member.
 	InstanceID *string `json:"instance_id" yaml:"instance_id"` // InstanceID is a potential user assigned instance ID of this group member (KIP-345).
@@ -77,11 +77,11 @@ type describedRows struct {
 	UseInstanceID bool          `json:"use_instance_id" yaml:"use_instance_id"`
 	UseErr        bool          `json:"use_err" yaml:"use_err"`
 }
-type describedGroupCollectionForStructredPrint struct {
-	Groups []describedGroupForStructredPrint `json:"groups" yaml:"groups"`
+type describedGroupCollectionForStructuredPrint struct {
+	Groups []describedGroupForStructuredPrint `json:"groups" yaml:"groups"`
 }
 
-func (collection *describedGroupCollectionForStructredPrint) addGroup(newGroup describedGroupForStructredPrint) {
+func (collection *describedGroupCollectionForStructuredPrint) addGroup(newGroup describedGroupForStructuredPrint) {
 	collection.Groups = append(collection.Groups, newGroup)
 }
 
@@ -114,7 +114,7 @@ information about the members.
 
 			described, err := adm.DescribeGroups(ctx, groups...)
 			out.HandleShardError("DescribeGroups", err)
-			groupCollection := describedGroupCollectionForStructredPrint{}
+			groupCollection := describedGroupCollectionForStructuredPrint{}
 			for _, describedGroup := range described {
 				fetched := adm.FetchManyOffsets(ctx, groups...)
 				fetched.EachError(func(r kadm.FetchOffsetsResponse) {
@@ -151,7 +151,7 @@ information about the members.
 					})
 				}
 
-				groupCollection.addGroup(describedGroupForStructredPrint{
+				groupCollection.addGroup(describedGroupForStructuredPrint{
 					Group:         describedGroup.Group,
 					Coordinator:   coordinator,
 					State:         describedGroup.State,
@@ -162,19 +162,19 @@ information about the members.
 				})
 			}
 
-			if summary && format == "text" {
+			if summary && format == out.FmtText {
 				printDescribedSummary(groupCollection)
 				return
 			}
 
-			if format != "text" {
-				out.StructredPrint[any](groupCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(groupCollection, format)
 			} else {
 				printDescribed(groupCollection)
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
 	return cmd
 }
@@ -199,7 +199,7 @@ type describeRow struct {
 }
 
 func printDescribed(
-	groups describedGroupCollectionForStructredPrint,
+	groups describedGroupCollectionForStructuredPrint,
 ) {
 	for _, group := range groups.Groups {
 		printDescribedGroup(group, group.DescribedRows.Rows, group.DescribedRows.UseInstanceID, group.DescribedRows.UseErr)
@@ -256,13 +256,13 @@ func getDescribedForGroup(
 	}
 }
 
-func printDescribedSummary(groups describedGroupCollectionForStructredPrint) {
+func printDescribedSummary(groups describedGroupCollectionForStructuredPrint) {
 	for _, group := range groups.Groups {
 		printDescribedGroupSummary(group)
 	}
 }
 
-func printDescribedGroupSummary(group describedGroupForStructredPrint) {
+func printDescribedGroupSummary(group describedGroupForStructuredPrint) {
 	tw := out.NewTabWriter()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
@@ -276,7 +276,7 @@ func printDescribedGroupSummary(group describedGroupForStructredPrint) {
 }
 
 func printDescribedGroup(
-	group describedGroupForStructredPrint,
+	group describedGroupForStructuredPrint,
 	rows []describeRow,
 	useInstanceID bool,
 	useErr bool,

@@ -81,7 +81,7 @@ information.
 
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print per-partition information for topics")
 	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "Print internal topics")
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; list any topic that matches any input topic expression")
 	return cmd

@@ -26,6 +26,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const FmtText = "text"
+
 // Confirm prompts the user to confirm the formatted message and returns the
 // confirmation result or an error.
 func Confirm(msg string, args ...interface{}) (bool, error) {
@@ -203,22 +205,22 @@ func (t *TabWriter) Line(sprint ...interface{}) {
 	fmt.Fprint(t.Writer, append(sprint, "\n")...)
 }
 
-// StructuredPrint marshalls and prints the structToPrint based on the format type.
-func StructredPrint[T any](structToPrint T, format string) {
+// 
+func PrintFormatted(v any, format string) {
 	switch format {
 	case "json":
-		jsonBytes, err := json.Marshal(structToPrint)
+		jsonBytes, err := json.Marshal(v)
 		if err != nil {
 			MaybeDie(err, "unable to format your output as %v: %v", format, err)
 		}
 		fmt.Println(string(jsonBytes))
 	case "yaml":
-		yamlBytes, err := yaml.Marshal(structToPrint)
+		yamlBytes, err := yaml.Marshal(v)
 		if err != nil {
 			MaybeDie(err, "unable to format your output as %v: %v", format, err)
 		}
 		fmt.Println(string(yamlBytes))
 	default:
-		Die("unsupported format: '%s'. Suported formats are 'text', 'json', and 'yaml'\n", format)
+		Die("unsupported format: '%s'. Supported formats are 'text', 'json', and 'yaml'\n", format)
 	}
 }

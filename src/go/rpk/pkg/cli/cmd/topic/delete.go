@@ -84,8 +84,8 @@ For example,
 				})
 			}
 
-			if format != "text" {
-				out.StructredPrint[any](topicsCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(topicsCollection, format)
 			} else {
 				tw := out.NewTable("topic", "status")
 				defer tw.Flush()
@@ -95,7 +95,7 @@ For example,
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&re, "regex", "r", false, "Parse topics as regex; delete any topic that matches any input topic expression")
 	return cmd
 }

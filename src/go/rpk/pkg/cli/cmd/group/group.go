@@ -105,7 +105,7 @@ members and their lag), and manage offsets.
 }
 
 // ListedGroup contains data from a list groups response for a single group.
-// Copied here from kadm.ListedGroup so tags can be added for strucured print output.
+// Copied here from kadm.ListedGroup so tags can be added for structured print output.
 type listedGroup struct {
 	Coordinator  int32  `json:"coordinator" yaml:"coordinator"`     // Coordinator is the node ID of the coordinator for this group.
 	Group        string `json:"group" yaml:"group"`                 // Group is the name of this group.
@@ -113,11 +113,11 @@ type listedGroup struct {
 	State        string `json:"state" yaml:"state"`                 // State is the state this group is in (Empty, Dead, Stable, etc.; only if talking to Kafka 2.6+).
 }
 
-type groupCollectionForStructedPrint struct {
+type groupCollectionForStructuredPrint struct {
 	Groups []listedGroup `json:"groups" yaml:"groups"`
 }
 
-func (collection *groupCollectionForStructedPrint) addGroup(newGroup listedGroup) {
+func (collection *groupCollectionForStructuredPrint) addGroup(newGroup listedGroup) {
 	collection.Groups = append(collection.Groups, newGroup)
 }
 
@@ -144,7 +144,7 @@ groups, or to list groups that need to be cleaned up.
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			groupCollection := groupCollectionForStructedPrint{}
+			groupCollection := groupCollectionForStructuredPrint{}
 			// init with 0 length so structured output shows [] instead of null
 			groupCollection.Groups = []listedGroup{}
 			listed, err := adm.ListGroups(context.Background())
@@ -157,8 +157,8 @@ groups, or to list groups that need to be cleaned up.
 				})
 			}
 
-			if format != "text" {
-				out.StructredPrint[any](groupCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(groupCollection, format)
 			} else {
 				out.HandleShardError("ListGroups", err)
 				tw := out.NewTable("BROKER", "GROUP")
@@ -172,7 +172,7 @@ groups, or to list groups that need to be cleaned up.
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	return cmd
 }
 

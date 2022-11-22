@@ -67,7 +67,7 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&format, "format", "text", "Output format (text, json)")
+	command.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json)")
 	return command
 }
 

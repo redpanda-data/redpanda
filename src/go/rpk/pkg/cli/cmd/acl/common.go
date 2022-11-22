@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -98,49 +97,17 @@ type (
 	}
 )
 
-// filteredAndDescribedResults and methods.
 type filteredAndDescribedResults struct {
 	Results []filteredAndDescribed `json:"filtered_acls" yaml:"filtered_acls"`
 }
 
-func (collection *filteredAndDescribedResults) addFilterAndDescribed(filteredACL filteredAndDescribed) {
-	collection.Results = append(collection.Results, filteredACL)
-}
-
-// =======================
-
-// deletedACLCollection and methods.
 type deletedACLCollection struct {
 	Deleted []filteredAndDescribed `json:"deleted_acls" yaml:"deleted_acls"`
 }
 
-func (collection *deletedACLCollection) AddACL(deletedACL filteredAndDescribed) {
-	collection.Deleted = append(collection.Deleted, deletedACL)
-}
-
-// =======================
-
-// createdACLCollection and methods.
 type createdACLCollection struct {
 	ACLS []aclWithMessage `json:"created_acls" yaml:"created_acls"`
 }
-
-func (collection *createdACLCollection) AddACL(newACL kadm.CreateACLsResult) {
-	collection.ACLS = append(collection.ACLS,
-		aclWithMessage{
-			newACL.Principal,
-			newACL.Host,
-			newACL.Type,
-			newACL.Name,
-			newACL.Pattern,
-			newACL.Operation,
-			newACL.Permission,
-			kafka.ErrMessage(newACL.Err),
-		},
-	)
-}
-
-// =======================
 
 // A helper function to ensure we print an empty string.
 func unptr(str *string) string {

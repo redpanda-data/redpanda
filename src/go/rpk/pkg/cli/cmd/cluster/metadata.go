@@ -114,7 +114,7 @@ In the broker section, the controller node is suffixed with *.
 			}
 			if topics && len(m.Topics) > 0 {
 				header("TOPICS", func() {
-					PrintTopics(m.Topics, internal, detailed, "text")
+					PrintTopics(m.Topics, internal, detailed, out.FmtText)
 				})
 			}
 		},
@@ -162,7 +162,6 @@ func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	}
 }
 
-// Used for structured output. Note: structured output is always detailed and doens't require the -d flag.
 type TopicPartitionDetail struct {
 	PartitionID        int32   `json:"partition_id" yaml:"partition_id"`                 // Partition is the partition number these details are for.
 	LeaderID           int32   `json:"leader_id" yaml:"leader_id"`                       // Leader is the broker leader  if there is one  otherwise -1.
@@ -184,7 +183,7 @@ type Topics struct {
 
 func (collection *Topics) sortTopics() {
 	sort.Slice(collection.Topics, func(i, j int) bool {
-		l, r := collection.Topics[i], collection.Topics[j]
+		l, r := &collection.Topics[i], &collection.Topics[j]
 		return l.Name < r.Name
 	})
 }
@@ -192,8 +191,11 @@ func (collection *Topics) sortTopics() {
 func (collection *Topics) AddTopic(newTopic kadm.TopicDetail) {
 	partitionsDetail := []TopicPartitionDetail{}
 	for _, partition := range newTopic.Partitions.Sorted() {
-		// init offlineReplicasts to empty slice so json/yaml print will print [] instead of NULL
-		// Other int32s here should at least have leader 0, replica 0, etc, even on a single node cluster.
+		// init offlineReplicas to empty slice
+		//	so json/yaml print will print [] instead of NULL
+
+		// The other int32s here should at least have 
+		// 	leader 0, replica 0, etc, even on a single node cluster.
 		offlineReplicas := make([]int32, 0)
 		if partition.OfflineReplicas != nil {
 			offlineReplicas = partition.OfflineReplicas
@@ -228,7 +230,7 @@ func PrintTopics(topics kadm.TopicDetails, internal, detailed bool, format strin
 	}
 	topicsCollection.sortTopics()
 
-	if !detailed && format == "text" {
+	if !detailed && format == out.FmtText {
 		tw := out.NewTable("NAME", "PARTITIONS", "REPLICAS")
 		defer tw.Flush()
 		for _, topic := range topicsCollection.Topics {
@@ -240,8 +242,8 @@ func PrintTopics(topics kadm.TopicDetails, internal, detailed bool, format strin
 		return
 	}
 
-	if format != "text" {
-		out.StructredPrint[any](topicsCollection, format)
+	if format != out.FmtText {
+		out.PrintFormatted(topicsCollection, format)
 	} else {
 		buf := new(bytes.Buffer)
 		buf.Grow(512)

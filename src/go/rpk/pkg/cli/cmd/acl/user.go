@@ -21,8 +21,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type userCollection struct {
-	Users []string `json:"users"`
+type singleUserForFormatPrint struct {
+	User string `json:"user" yaml:"user"`
 }
 
 func newUserCommand(fs afero.Fs) *cobra.Command {
@@ -148,16 +148,15 @@ acl help text for more info.
 			err = cl.CreateUser(cmd.Context(), user, pass, mechanism)
 			out.MaybeDie(err, "unable to create user %q: %v", user, err)
 
-			userCollection := userCollection{Users: []string{user}}
-			if format != "text" {
-				out.StructredPrint[any](userCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(singleUserForFormatPrint{user}, format)
 			} else {
 				fmt.Printf("Created user %q.\n", user)
 			}
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
 	cmd.Flags().MarkHidden("new-username")
 
@@ -209,16 +208,15 @@ delete any ACLs that may exist for this user.
 			err = cl.DeleteUser(cmd.Context(), user)
 			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
 
-			userCollection := userCollection{Users: []string{user}}
-			if format != "text" {
-				out.StructredPrint[any](userCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(singleUserForFormatPrint{user}, format)
 			} else {
 				fmt.Printf("Deleted user %q.\n", user)
 			}
 		},
 	}
 
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
 	cmd.Flags().MarkDeprecated("delete-username", "The username now does not require a flag")
 
@@ -242,15 +240,17 @@ func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
 			out.MaybeDie(err, "unable to list users: %v", err)
 
 			sort.Slice(users, func(i, j int) bool {
-				l, r := users[i], users[j]
-				return l < r
-			},
+					l, r := users[i], users[j]
+					return l < r
+				},
 			)
 
-			userCollection := userCollection{Users: users}
+			userCollection := struct {
+				Users []string `json:"users"`
+			}{users}
 
-			if format != "text" {
-				out.StructredPrint[any](userCollection, format)
+			if format != out.FmtText {
+				out.PrintFormatted(userCollection, format)
 			} else {
 				tw := out.NewTable("Username")
 				defer tw.Flush()
@@ -260,6 +260,6 @@ func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	return cmd
 }

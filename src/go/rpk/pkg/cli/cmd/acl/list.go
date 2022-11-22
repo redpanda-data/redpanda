@@ -67,7 +67,7 @@ resource names:
 		},
 	}
 	a.addListFlags(cmd)
-	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json, yaml)")
+	cmd.Flags().StringVar(&format, "format", out.FmtText, "Output format (text, json, yaml)")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }
@@ -125,7 +125,8 @@ func describeReqResp(
 			},
 		}
 		// Acl portion of the result
-		// Init slice to 0 length so if nothing matches filter, json Marshal will return [] instead of NULL
+		// Init slice to 0 length so if nothing matches filter,
+		//	json/yaml marshal will return [] instead of NULL
 		newACL.ACLS = []acl{}
 		for _, described := range result.Described {
 			newACL.ACLS = append(newACL.ACLS,
@@ -140,11 +141,11 @@ func describeReqResp(
 				},
 			)
 		}
-		filteredAndDescribedResults.addFilterAndDescribed(newACL)
+		filteredAndDescribedResults.Results = append(filteredAndDescribedResults.Results, newACL)
 	}
 
-	if format != "text" {
-		out.StructredPrint[any](filteredAndDescribedResults, format)
+	if format != out.FmtText {
+		out.PrintFormatted(filteredAndDescribedResults, format)
 	} else {
 		// If any filters failed, or if all filters are
 		// requested, we print the filter section.

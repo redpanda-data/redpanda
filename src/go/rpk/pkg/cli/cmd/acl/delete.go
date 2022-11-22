@@ -68,7 +68,7 @@ resource names:
 
 			var printDeletionsHeader bool
 			if !noConfirm || dry {
-				describeReqResp(adm, printAllFilters, true, b, "text")
+				describeReqResp(adm, printAllFilters, true, b, out.FmtText)
 				fmt.Println()
 
 				confirmed, err := out.Confirm("Confirm deletion of the above matching ACLs?")
@@ -94,7 +94,7 @@ resource names:
 			types.Sort(results)
 
 			deletedACLs := deletedACLCollection{}
-			// zero init so zero deltede acls doesn't render as { "deleted_acls": null } in structured print format
+			// zero init so zero deleted acls doesn't render as { "deleted_acls": null } in structured print format
 			deletedACLs.Deleted = []filteredAndDescribed{}
 			for _, result := range results {
 				// Filter portion of the result
@@ -125,12 +125,12 @@ resource names:
 							Permission:          described.Permission,
 						},
 					)
-					deletedACLs.AddACL(deletedACL)
+					deletedACLs.Deleted = append(deletedACLs.Deleted, deletedACL)
 				}
 			}
 
-			if a.format != "text" {
-				out.StructredPrint[any](deletedACLs, a.format)
+			if a.format != out.FmtText {
+				out.PrintFormatted(deletedACLs, a.format)
 			} else {
 				deleteReqResp(deletedACLs, printAllFilters, printDeletionsHeader)
 			}
@@ -146,7 +146,7 @@ resource names:
 func (a *acls) addDeleteFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringVar(&a.format, "format", "text", "Output format (text, json, yaml) This option makes the most sense to use with --no-confirm as interactive confirmation will print text tables")
+	cmd.Flags().StringVar(&a.format, "format", out.FmtText, "Output format (text, json, yaml) This option makes the most sense to use with --no-confirm as interactive confirmation will print text tables")
 	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "Topic to remove ACLs for (repeatable)")
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to remove ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to remove ACLs to the cluster")
