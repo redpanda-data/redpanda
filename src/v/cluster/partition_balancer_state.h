@@ -48,10 +48,22 @@ public:
       const std::vector<model::broker_shard>& next);
 
 private:
+    struct probe {
+        explicit probe(const partition_balancer_state&);
+
+        void setup_metrics(ss::metrics::metric_groups&);
+
+        const partition_balancer_state& _parent;
+        ss::metrics::metric_groups _metrics;
+        ss::metrics::metric_groups _public_metrics;
+    };
+
+private:
     topic_table& _topic_table;
     members_table& _members_table;
     partition_allocator& _partition_allocator;
     absl::btree_set<model::ntp> _ntps_with_broken_rack_constraint;
+    probe _probe;
 };
 
 } // namespace cluster

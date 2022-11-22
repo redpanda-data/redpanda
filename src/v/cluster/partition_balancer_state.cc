@@ -12,6 +12,9 @@
 
 #include "cluster/logger.h"
 #include "cluster/scheduling/partition_allocator.h"
+#include "config/configuration.h"
+#include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <absl/container/flat_hash_set.h>
 
@@ -23,7 +26,8 @@ partition_balancer_state::partition_balancer_state(
   ss::sharded<partition_allocator>& pa)
   : _topic_table(topic_table.local())
   , _members_table(members_table.local())
-  , _partition_allocator(pa.local()) {}
+  , _partition_allocator(pa.local())
+  , _probe(*this) {}
 
 void partition_balancer_state::handle_ntp_update(
   const model::ns& ns,
@@ -70,6 +74,33 @@ void partition_balancer_state::handle_ntp_update(
             }
         }
     }
+}
+
+partition_balancer_state::probe::probe(const partition_balancer_state& parent)
+  : _parent(parent)
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
+    if (
+      config::shard_local_cfg().disable_metrics() || ss::this_shard_id() != 0) {
+        return;
+    }
+
+    setup_metrics(_metrics);
+    setup_metrics(_public_metrics);
+}
+
+void partition_balancer_state::probe::setup_metrics(
+  ss::metrics::metric_groups& metrics) {
+    namespace sm = ss::metrics;
+    metrics.add_group(
+      prometheus_sanitize::metrics_name("cluster:partition"),
+      {
+        sm::make_gauge(
+          "num_with_broken_rack_constraint",
+          [this] { return _parent.ntps_with_broken_rack_constraint().size(); },
+          sm::description("Number of partitions that don't satisfy the rack "
+                          "awareness constraint"))
+          .aggregate({sm::shard_label}),
+      });
 }
 
 } // namespace cluster
