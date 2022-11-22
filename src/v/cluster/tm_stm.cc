@@ -327,18 +327,48 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
+        vlog(
+          txlog.info,
+          "got error {} on updating tx:{} pid:{} etag:{} tx_seq:{}",
+          r.error(),
+          tx.id,
+          tx.pid,
+          tx.etag,
+          tx.tx_seq);
+        if (_c->is_leader() && _c->term() == term) {
+            co_await _c->step_down(
+              "txn coordinator update_tx replication error");
+        }
         if (r.error() == raft::errc::shutting_down) {
             co_return tm_stm::op_status::timeout;
         }
         co_return tm_stm::op_status::unknown;
     }
 
-    if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), _sync_timeout)) {
+    auto offset = model::offset(r.value().last_offset());
+    if (!co_await wait_no_throw(offset, _sync_timeout)) {
+        vlog(
+          txlog.info,
+          "timeout on waiting until {} is applied on updating tx:{} pid:{} "
+          "tx_seq:{}",
+          offset,
+          tx.id,
+          tx.pid,
+          tx.tx_seq);
+        if (_c->is_leader() && _c->term() == term) {
+            co_await _c->step_down("txn coordinator apply timeout");
+        }
         co_return tm_stm::op_status::unknown;
     }
     if (_c->term() != term) {
-        // we lost leadership during waiting
+        vlog(
+          txlog.info,
+          "lost leadership while waiting until {} is applied on updating tx:{} "
+          "pid:{} tx_seq:{}",
+          offset,
+          tx.id,
+          tx.pid,
+          tx.tx_seq);
         co_return tm_stm::op_status::unknown;
     }
 
@@ -570,6 +600,10 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
     auto r = co_await replicate_quorum_ack(expected_term, std::move(batch));
 
     if (!r) {
+        if (_c->is_leader() && _c->term() == expected_term) {
+            co_await _c->step_down(
+              "txn coordinator register_new_producer replication error");
+        }
         co_return tm_stm::op_status::unknown;
     }
 
