@@ -57,7 +57,8 @@ using initial_revision_id
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties
-  : serde::envelope<broker_properties, serde::version<0>> {
+  : serde::
+      envelope<broker_properties, serde::version<0>, serde::compat_version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
@@ -84,7 +85,8 @@ struct broker_properties
 };
 
 struct broker_endpoint final
-  : serde::envelope<broker_endpoint, serde::version<0>> {
+  : serde::
+      envelope<broker_endpoint, serde::version<0>, serde::compat_version<0>> {
     ss::sstring name;
     net::unresolved_address address;
 
@@ -149,7 +151,9 @@ enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
 
-class broker : public serde::envelope<broker, serde::version<0>> {
+class broker
+  : public serde::
+      envelope<broker, serde::version<0>, serde::compat_version<0>> {
 public:
     broker() noexcept = default;
 
@@ -260,7 +264,10 @@ struct broker_shard {
 };
 
 struct partition_metadata
-  : serde::envelope<partition_metadata, serde::version<0>> {
+  : serde::envelope<
+      partition_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(p) {}
@@ -384,7 +391,9 @@ struct topic_namespace_eq {
     }
 };
 
-struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
+struct topic_metadata
+  : serde::
+      envelope<topic_metadata, serde::version<0>, serde::compat_version<0>> {
     topic_metadata() noexcept = default;
     explicit topic_metadata(topic_namespace v) noexcept
       : tp_ns(std::move(v)) {}

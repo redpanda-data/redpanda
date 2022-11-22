@@ -22,7 +22,10 @@
 namespace cluster {
 
 struct put_ephemeral_credential_request
-  : serde::envelope<put_ephemeral_credential_request, serde::version<0>> {
+  : serde::envelope<
+      put_ephemeral_credential_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     put_ephemeral_credential_request() = default;
@@ -42,7 +45,10 @@ struct put_ephemeral_credential_request
 };
 
 struct put_ephemeral_credential_reply
-  : serde::envelope<put_ephemeral_credential_reply, serde::version<0>> {
+  : serde::envelope<
+      put_ephemeral_credential_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     put_ephemeral_credential_reply() = default;

@@ -38,7 +38,8 @@ inline disk_space_alert max_severity(disk_space_alert a, disk_space_alert b) {
     return std::max(a, b);
 }
 
-struct disk : serde::envelope<disk, serde::version<0>> {
+struct disk
+  : serde::envelope<disk, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     ss::sstring path;

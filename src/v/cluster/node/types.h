@@ -35,7 +35,8 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
 /**
  * A snapshot of node-local state: i.e. things that don't depend on consensus.
  */
-struct local_state : serde::envelope<local_state, serde::version<0>> {
+struct local_state
+  : serde::envelope<local_state, serde::version<0>, serde::compat_version<0>> {
     application_version redpanda_version;
     cluster_version logical_version{invalid_version};
     std::chrono::milliseconds uptime;

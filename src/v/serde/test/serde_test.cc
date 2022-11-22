@@ -234,7 +234,8 @@ SEASTAR_THREAD_TEST_CASE(uuid_test) {
     BOOST_REQUIRE_EQUAL(u, r);
 }
 
-struct uuid_struct : serde::envelope<uuid_struct, serde::version<0>> {
+struct uuid_struct
+  : serde::envelope<uuid_struct, serde::version<0>, serde::compat_version<0>> {
     uuid_t single;
     std::optional<uuid_t> opt1;
     std::optional<uuid_t> opt2;
@@ -308,11 +309,15 @@ SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
 // vector length may take different size (vint)
 // vector data may have different size (_ints.size() * sizeof(int))
 struct inner_differing_sizes
-  : serde::envelope<inner_differing_sizes, serde::version<1>> {
+  : serde::envelope<
+      inner_differing_sizes,
+      serde::version<1>,
+      serde::compat_version<1>> {
     std::vector<int32_t> _ints;
 };
 
-struct complex_msg : serde::envelope<complex_msg, serde::version<3>> {
+struct complex_msg
+  : serde::envelope<complex_msg, serde::version<3>, serde::compat_version<3>> {
     std::vector<inner_differing_sizes> _vec;
     int32_t _x;
 };
