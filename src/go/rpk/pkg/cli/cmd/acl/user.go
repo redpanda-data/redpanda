@@ -240,10 +240,9 @@ func newListUsersCommand(fs afero.Fs, format string) *cobra.Command {
 			out.MaybeDie(err, "unable to list users: %v", err)
 
 			sort.Slice(users, func(i, j int) bool {
-					l, r := users[i], users[j]
-					return l < r
-				},
-			)
+				l, r := users[i], users[j]
+				return l < r
+			})
 
 			userCollection := struct {
 				Users []string `json:"users"`

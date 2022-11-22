@@ -205,7 +205,6 @@ func (t *TabWriter) Line(sprint ...interface{}) {
 	fmt.Fprint(t.Writer, append(sprint, "\n")...)
 }
 
-// 
 func PrintFormatted(v any, format string) {
 	switch format {
 	case "json":

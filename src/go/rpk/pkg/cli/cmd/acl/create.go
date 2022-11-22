@@ -67,7 +67,7 @@ Allow write permissions to user buzz to transactional id "txn":
 
 			createdACLS := createdACLCollection{}
 			for _, newACL := range results {
-				createdACLS.ACLS = append(createdACLS.ACLS, 
+				createdACLS.ACLS = append(createdACLS.ACLS,
 					aclWithMessage{
 						newACL.Principal,
 						newACL.Host,
@@ -78,7 +78,7 @@ Allow write permissions to user buzz to transactional id "txn":
 						newACL.Permission,
 						kafka.ErrMessage(newACL.Err),
 					},
-			  )
+				)
 			}
 
 			if a.format != out.FmtText {
