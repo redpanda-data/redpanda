@@ -13,7 +13,7 @@
 #
 # Start a 3 node cluster:
 #
-#   [jerry@winterland]$ panda.py -e vbuild/debug/clang/bin/redpanda
+#   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
 import asyncio
 import pathlib
