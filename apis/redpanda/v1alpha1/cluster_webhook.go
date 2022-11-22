@@ -684,6 +684,10 @@ func (r *Cluster) validateRedpandaResources(
 
 func (r *Cluster) validateLicense(old *Cluster) field.ErrorList {
 	var allErrs field.ErrorList
+	// Cluster has finalizers now, no validation if it is deleting
+	if r.GetDeletionTimestamp() != nil {
+		return allErrs
+	}
 	if l := r.Spec.LicenseRef; l != nil {
 		key := &SecretKeyRef{Namespace: l.Namespace, Name: l.Name, Key: l.Key}
 		secret, err := key.GetSecret(context.Background(), kclient)
