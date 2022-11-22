@@ -11,6 +11,7 @@ package tuners
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
@@ -50,6 +51,10 @@ func NewClockSourceTuner(fs afero.Fs, executor executors.Executor) Tunable {
 			return NewTuneResult(false)
 		},
 		func() (bool, string) {
+			// tsc clocksource is only available in x86 architectures.
+			if runtime.GOARCH != "amd64" && runtime.GOARCH != "386" {
+				return false, "Clocksource setting not available for this architecture"
+			}
 			content, err := afero.ReadFile(fs,
 				"/sys/devices/system/clocksource/clocksource0/available_clocksource")
 			if err != nil {
@@ -63,7 +68,7 @@ func NewClockSourceTuner(fs afero.Fs, executor executors.Executor) Tunable {
 				}
 			}
 			return false, fmt.Sprintf(
-				"Preferred clocksource '%s' not avaialable", preferredClkSource)
+				"Preferred clocksource '%s' not available", preferredClkSource)
 		},
 		executor.IsLazy(),
 	)
