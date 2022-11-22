@@ -88,6 +88,7 @@ static void parse_and_set_topic_replication_factor(
     if (!value) {
         property.value = std::nullopt;
     } else {
+        property.op = cluster::incremental_update_operation::set;
         property.value = cluster::parsing_replication_factor(*value);
     }
 }
@@ -128,7 +129,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
      * sent in the request, if given resource value isn't set in the request,
      * override for this value has to be removed. We override all defaults to
      * set, even if value for given property isn't set it will override
-     * configuration in topic table
+     * configuration in topic table, the only difference is the replication
+     * factor, if not set in the request explicitly it will not be overriden.
      */
     update.properties.cleanup_policy_bitflags.op
       = cluster::incremental_update_operation::set;
@@ -147,7 +149,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
     update.properties.shadow_indexing.op
       = cluster::incremental_update_operation::set;
     update.custom_properties.replication_factor.op
-      = cluster::incremental_update_operation::set;
+      = cluster::incremental_update_operation::none;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
 
