@@ -29,6 +29,12 @@ class ExampleRunner(BackgroundThreadService):
 
         self._stopping = threading.Event()
 
+        self._error = None
+
+    @property
+    def logger(self):
+        return self.context.logger
+
     def _worker(self, idx, node):
         self._stopping.clear()
 
@@ -42,16 +48,22 @@ class ExampleRunner(BackgroundThreadService):
         start_time = time.time()
 
         while True:
-
             # Terminate loop on timeout or stop_node
             if time.time() > start_time + self._timeout:
                 break
             if self._stopping.is_set():
                 break
 
-            line = next(output_iter)
-            line = line.strip()
-            self.logger.debug(line)
+            try:
+                line = next(output_iter)
+                line = line.strip()
+                self.logger.debug(line)
+            except RemoteCommandError as e:
+                self.logger.exception(f"Command {cmd} returned an error: {e}")
+                self._error = e
+                # No retries: thread is complete, test will fail when it calls
+                # condition_met and sees the error.
+                break
 
             # Take first line as pid
             if not self._pid:
@@ -62,6 +74,8 @@ class ExampleRunner(BackgroundThreadService):
                 self._example.condition(line)
 
     def condition_met(self):
+        if self._error:
+            raise self._error
         return self._example.condition_met()
 
     # Returns the node name that the example is running on
