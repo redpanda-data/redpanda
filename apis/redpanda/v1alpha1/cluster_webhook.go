@@ -689,13 +689,12 @@ func (r *Cluster) validateLicense(old *Cluster) field.ErrorList {
 		return allErrs
 	}
 	if l := r.Spec.LicenseRef; l != nil {
-		key := &SecretKeyRef{Namespace: l.Namespace, Name: l.Name, Key: l.Key}
-		secret, err := key.GetSecret(context.Background(), kclient)
+		secret, err := l.GetSecret(context.Background(), kclient)
 		if err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("licenseRef"), r.Spec.LicenseRef, err.Error()))
 		}
 		if secret != nil {
-			if _, err := key.GetValue(secret, DefaultLicenseSecretKey); err != nil {
+			if _, err := l.GetValue(secret, DefaultLicenseSecretKey); err != nil {
 				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("licenseRef"), r.Spec.LicenseRef, err.Error()))
 			}
 		}
