@@ -633,6 +633,18 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("cluster can be deleted even if licenseRef not found", func(t *testing.T) {
+		license := redpandaCluster.DeepCopy()
+		license.Spec.LicenseRef = &v1alpha1.SecretKeyRef{Name: "notfound", Namespace: "notfound"}
+
+		// Set cluster to deleting state
+		now := metav1.Now()
+		license.SetDeletionTimestamp(&now)
+
+		err := license.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
+
 	decreaseCases := []struct {
 		initial    string
 		target     string
