@@ -53,32 +53,33 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       del_cmd.key, *topic_assignments);
                 }
                 return dispatch_updates_to_cores(del_cmd, base_offset)
-                  .then([this,
-                         tp_ns = std::move(del_cmd.key),
-                         topic_assignments = std::move(topic_assignments),
-                         in_progress = std::move(in_progress),
-                         allocation_domain = get_allocation_domain(
-                           del_cmd.key)](std::error_code ec) {
-                      if (ec == errc::success) {
-                          vassert(
-                            topic_assignments.has_value(),
-                            "Topic had to exist before successful delete");
-                          deallocate_topic(
-                            *topic_assignments, in_progress, allocation_domain);
+                  .then(
+                    [this,
+                     tp_ns = std::move(del_cmd.key),
+                     topic_assignments = std::move(topic_assignments),
+                     in_progress = std::move(in_progress)](std::error_code ec) {
+                        if (ec == errc::success) {
+                            vassert(
+                              topic_assignments.has_value(),
+                              "Topic had to exist before successful delete");
+                            deallocate_topic(
+                              *topic_assignments,
+                              in_progress,
+                              get_allocation_domain(tp_ns));
 
-                          for (const auto& p_as : *topic_assignments) {
-                              _partition_balancer_state.local()
-                                .handle_ntp_update(
-                                  tp_ns.ns,
-                                  tp_ns.tp,
-                                  p_as.id,
-                                  p_as.replicas,
-                                  {});
-                          }
-                      }
+                            for (const auto& p_as : *topic_assignments) {
+                                _partition_balancer_state.local()
+                                  .handle_ntp_update(
+                                    tp_ns.ns,
+                                    tp_ns.tp,
+                                    p_as.id,
+                                    p_as.replicas,
+                                    {});
+                            }
+                        }
 
-                      return ec;
-                  });
+                        return ec;
+                    });
             },
             [this, base_offset](create_topic_cmd create_cmd) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
