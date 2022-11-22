@@ -286,8 +286,7 @@ private:
     ss::future<ss::json::json_return_type>
       set_partition_replicas_handler(std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
-      trigger_on_demand_reconfiguration_handler(
-        std::unique_ptr<ss::httpd::request>);
+      trigger_on_demand_rebalance_handler(std::unique_ptr<ss::httpd::request>);
 
     /// Transaction routes
     ss::future<ss::json::json_return_type>
