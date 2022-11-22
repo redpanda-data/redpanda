@@ -544,8 +544,7 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     incremental_alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
-
+    log_request(ctx.header(), request);
     auto groupped = group_alter_config_resources(
       std::move(request.data.resources));
 

@@ -148,6 +148,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     create_partitions_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
     create_partitions_response resp;
 
     if (request.data.topics.empty()) {

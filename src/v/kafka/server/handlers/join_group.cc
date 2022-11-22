@@ -40,6 +40,7 @@ process_result_stages join_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request;
     decode_request(ctx, request);
+    log_request(ctx.header(), request);
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         return process_result_stages::single_stage(ctx.respond(

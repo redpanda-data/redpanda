@@ -29,11 +29,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         add_partitions_to_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
-        vlog(
-          klog.trace,
-          "processing add_partitions_to_txn request: {} for {}",
-          request,
-          ctx.header().client_id);
+        log_request(ctx.header(), request);
 
         cluster::add_paritions_tx_request tx_request{
           .transactional_id = request.data.transactional_id,

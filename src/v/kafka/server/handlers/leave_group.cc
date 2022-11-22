@@ -36,6 +36,7 @@ template<>
 ss::future<response_ptr> leave_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     leave_group_request request = decode_request(ctx);
+    log_request(ctx.header(), request);
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(

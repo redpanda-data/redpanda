@@ -411,6 +411,7 @@ ss::future<response_ptr> metadata_handler::handle(
 
     metadata_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
 
     reply.data.topics = co_await get_topic_metadata(ctx, request);
 

@@ -29,11 +29,7 @@ ss::future<response_ptr> end_txn_handler::handle(
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         end_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
-        vlog(
-          klog.trace,
-          "processing end_txn request: {} for {}",
-          request,
-          ctx.header().client_id);
+        log_request(ctx.header(), request);
         cluster::end_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
           .producer_id = request.data.producer_id,

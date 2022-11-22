@@ -82,12 +82,7 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
   request_context ctx, ss::smp_service_group ssg) {
     txn_offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
-
-    vlog(
-      klog.trace,
-      "processing txn_offset_commit request: {} for {}",
-      request,
-      ctx.header().client_id);
+    log_request(ctx.header(), request);
 
     txn_offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 

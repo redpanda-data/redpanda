@@ -119,8 +119,7 @@ ss::future<response_ptr> create_topics_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     kafka::create_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(
-      klog.debug, "Handling {} request: {}", create_topics_api::name, request);
+    log_request(ctx.header(), request);
 
     create_topics_response response;
     auto begin = request.data.topics.begin();

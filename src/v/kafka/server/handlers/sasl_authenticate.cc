@@ -21,6 +21,7 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     sasl_authenticate_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
 
     auto result = ctx.sasl()->authenticate(std::move(request.data.auth_bytes));

@@ -548,7 +548,7 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
       std::make_unique<op_context>(std::move(rctx), ssg),
       [](std::unique_ptr<op_context>& octx_ptr) {
           auto& octx = *octx_ptr;
-          vlog(klog.trace, "handling fetch request: {}", octx.request);
+          log_request(octx.rctx.header(), octx.request);
           // top-level error is used for session-level errors
           if (octx.session_ctx.has_error()) {
               octx.response.data.error_code = octx.session_ctx.error();

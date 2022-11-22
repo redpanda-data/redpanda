@@ -36,7 +36,7 @@ ss::future<response_ptr> create_acls_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     create_acls_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    log_request(ctx.header(), request);
 
     if (!ctx.authorized(
           security::acl_operation::alter, security::default_cluster_name)) {
