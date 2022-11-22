@@ -115,18 +115,6 @@ tm_stm::tm_stm(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _feature_table(feature_table) {}
 
-std::optional<tm_transaction> tm_stm::do_get_tx(kafka::transactional_id tx_id) {
-    auto tx = _mem_txes.find(tx_id);
-    if (tx != _mem_txes.end()) {
-        return tx->second;
-    }
-    tx = _log_txes.find(tx_id);
-    if (tx != _log_txes.end()) {
-        return tx->second;
-    }
-    return std::nullopt;
-}
-
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_tx(kafka::transactional_id tx_id) {
     auto r = co_await sync(_sync_timeout);
@@ -372,11 +360,11 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
         co_return tm_stm::op_status::unknown;
     }
 
-    auto tx_opt = do_get_tx(tx.id);
-    if (!tx_opt.has_value()) {
+    auto tx_it = _log_txes.find(tx.id);
+    if (tx_it == _log_txes.end()) {
         co_return tm_stm::op_status::conflict;
     }
-    co_return tx_opt.value();
+    co_return tx_it->second;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
