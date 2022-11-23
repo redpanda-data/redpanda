@@ -13,6 +13,7 @@ import uuid
 import requests
 import time
 import random
+import socket
 
 from rptest.util import inject_remote_script
 from rptest.services.cluster import cluster
@@ -25,6 +26,9 @@ from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaTyp
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
+from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
+from rptest.services import tls
+from rptest.clients.rpk import RpkTool
 
 
 def create_topic_names(count):
@@ -88,7 +92,12 @@ class SchemaRegistryEndpoints(RedpandaTest):
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
-    def _request(self, verb, path, hostname=None, **kwargs):
+    def _request(self,
+                 verb,
+                 path,
+                 hostname=None,
+                 tls_enabled: bool = False,
+                 **kwargs):
         """
 
         :param verb: String, as for first arg to requests.request
@@ -105,7 +114,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
             node = nodes[0]
             hostname = node.account.hostname
 
-        uri = f"http://{hostname}:8081/{path}"
+        scheme = "https" if tls_enabled else "http"
+        uri = f"{scheme}://{hostname}:8081/{path}"
 
         if 'timeout' not in kwargs:
             kwargs['timeout'] = 60
@@ -229,10 +239,14 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "mode", headers=headers, **kwargs)
 
-    def _get_schemas_types(self, headers=HTTP_GET_HEADERS, **kwargs):
+    def _get_schemas_types(self,
+                           headers=HTTP_GET_HEADERS,
+                           tls_enabled: bool = False,
+                           **kwargs):
         return self._request("GET",
                              f"schemas/types",
                              headers=headers,
+                             tls_enabled=tls_enabled,
                              **kwargs)
 
     def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS, **kwargs):
@@ -1690,3 +1704,131 @@ class SchemaRegistryAutoAuthTest(SchemaRegistryTestMethods):
             for n in self.redpanda.nodes:
                 check_connection(n.account.hostname)
             restart_leader()
+
+
+class SchemaRegistryMTLSBase(SchemaRegistryEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super(SchemaRegistryMTLSBase, self).__init__(*args, **kwargs)
+
+        self.security = SecurityConfig()
+
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        self.admin_user = User(0)
+        self.admin_user.username = super_username
+        self.admin_user.password = super_password
+        self.admin_user.algorithm = super_algorithm
+
+        self.schema_registry_config = SchemaRegistryConfig()
+        self.schema_registry_config.require_client_auth = True
+
+    def setup_cluster(self, basic_auth_enabled: bool = False):
+        tls_manager = tls.TLSCertManager(self.logger)
+        self.security.require_client_auth = True
+        self.security.principal_mapping_rules = 'RULE:.*CN=(.*).*/$1/'
+
+        if basic_auth_enabled:
+            self.security.kafka_enable_authorization = True
+            self.security.endpoint_authn_method = 'sasl'
+            self.schema_registry_config.authn_method = 'http_basic'
+        else:
+            self.security.endpoint_authn_method = 'mtls_identity'
+
+        # cert for principal with no explicitly granted permissions
+        self.admin_user.certificate = tls_manager.create_cert(
+            socket.gethostname(),
+            common_name=self.admin_user.username,
+            name='test_admin_client')
+
+        self.security.tls_provider = PandaProxyTLSProvider(tls_manager)
+
+        self.schema_registry_config.client_key = self.admin_user.certificate.key
+        self.schema_registry_config.client_crt = self.admin_user.certificate.crt
+
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.set_schema_registry_settings(self.schema_registry_config)
+        self.redpanda.start()
+
+        admin = Admin(self.redpanda)
+
+        # Create the users
+        admin.create_user(self.admin_user.username, self.admin_user.password,
+                          self.admin_user.algorithm)
+
+        # Hack: create a user, so that we can watch for this user in order to
+        # confirm that all preceding controller log writes landed: this is
+        # an indirect way to check that ACLs (and users) have propagated
+        # to all nodes before we proceed.
+        checkpoint_user = "_test_checkpoint"
+        admin.create_user(checkpoint_user, "_password",
+                          self.admin_user.algorithm)
+
+        # wait for users to propagate to nodes
+        def auth_metadata_propagated():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if checkpoint_user not in users:
+                    return False
+                elif self.security.sasl_enabled(
+                ) or self.security.kafka_enable_authorization:
+                    assert self.admin_user.username in users
+                    assert self.admin_user.username in users
+            return True
+
+        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+
+        # Create topic with rpk instead of KafkaCLITool because rpk is configured to use TLS certs
+        self.super_client(basic_auth_enabled).create_topic(self.topic)
+
+    def super_client(self, basic_auth_enabled: bool = False):
+        if basic_auth_enabled:
+            return RpkTool(self.redpanda,
+                           username=self.admin_user.username,
+                           password=self.admin_user.password,
+                           sasl_mechanism=self.admin_user.algorithm,
+                           tls_cert=self.admin_user.certificate)
+        else:
+            return RpkTool(self.redpanda, tls_cert=self.admin_user.certificate)
+
+
+class SchemaRegistryMTLSTest(SchemaRegistryMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super(SchemaRegistryMTLSTest, self).__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster()
+
+    @cluster(num_nodes=3)
+    def test_mtls(self):
+        result_raw = self._get_schemas_types(
+            tls_enabled=True,
+            verify=self.admin_user.certificate.ca.crt,
+            cert=(self.admin_user.certificate.crt,
+                  self.admin_user.certificate.key))
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert set(result) == {"PROTOBUF", "AVRO"}
+
+
+class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super(SchemaRegistryMTLSAndBasicAuthTest,
+              self).__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster(basic_auth_enabled=True)
+
+    @cluster(num_nodes=3)
+    def test_mtls_and_basic_auth(self):
+        result_raw = self._get_schemas_types(
+            tls_enabled=True,
+            auth=(self.admin_user.username, self.admin_user.password),
+            verify=self.admin_user.certificate.ca.crt,
+            cert=(self.admin_user.certificate.crt,
+                  self.admin_user.certificate.key))
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert set(result) == {"PROTOBUF", "AVRO"}
