@@ -69,6 +69,15 @@ pandaproxy:
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
 
+  {% if pandaproxy_config.truststore_file is not none %}
+  pandaproxy_api_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.server_key }}
+    cert_file: {{ pandaproxy_config.server_crt }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
+
 pandaproxy_client:
   # kafka-api compatible brokers
   brokers:
@@ -76,6 +85,15 @@ pandaproxy_client:
     - address: "{{node.account.hostname}}"
       port: 9092
   {% endfor %}
+
+  {% if pandaproxy_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.PP_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ pandaproxy_config.PP_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
 
   retries: 10
   retry_base_backoff_ms: 10

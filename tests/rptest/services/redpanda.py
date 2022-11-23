@@ -441,7 +441,35 @@ class AuthConfig:
         self.authn_method: Optional[str] = None
 
 
-class PandaproxyConfig(AuthConfig):
+class TlsConfig(AuthConfig):
+    def __init__(self):
+        super(TlsConfig, self).__init__()
+        self.server_key: Optional[str] = None
+        self.server_crt: Optional[str] = None
+        self.truststore_file: Optional[str] = None
+        self.client_key: Optional[str] = None
+        self.client_crt: Optional[str] = None
+        self.require_client_auth: bool = True
+
+    def maybe_write_client_certs(self, node, logger, tls_client_key_file: str,
+                                 tls_client_crt_file: str):
+        if self.client_key is not None:
+            logger.info(f"Writing client tls key file: {tls_client_key_file}")
+            logger.debug(open(self.client_key, "r").read())
+            node.account.mkdirs(os.path.dirname(tls_client_key_file))
+            node.account.copy_to(self.client_key, tls_client_key_file)
+
+        if self.client_crt is not None:
+            logger.info(f"Writing client tls crt file: {tls_client_crt_file}")
+            logger.debug(open(self.client_crt, "r").read())
+            node.account.mkdirs(os.path.dirname(tls_client_crt_file))
+            node.account.copy_to(self.client_crt, tls_client_crt_file)
+
+
+class PandaproxyConfig(TlsConfig):
+    PP_TLS_CLIENT_KEY_FILE = "/etc/redpanda/pp_client.key"
+    PP_TLS_CLIENT_CRT_FILE = "/etc/redpanda/pp_client.crt"
+
     def __init__(self):
         super(PandaproxyConfig, self).__init__()
         self.cache_keep_alive_ms: int = 300000
@@ -671,6 +699,9 @@ class RedpandaService(Service):
     def set_security_settings(self, settings):
         self._security = settings
         self._init_tls()
+
+    def set_pandaproxy_settings(self, settings: PandaproxyConfig):
+        self._pandaproxy_config = settings
 
     def _init_tls(self):
         """
@@ -941,6 +972,14 @@ class RedpandaService(Service):
             node.account.mkdirs(
                 os.path.dirname(RedpandaService.TLS_CA_CRT_FILE))
             node.account.copy_to(ca.crt, RedpandaService.TLS_CA_CRT_FILE)
+
+            if self._pandaproxy_config is not None:
+                self._pandaproxy_config.maybe_write_client_certs(
+                    node, self.logger, PandaproxyConfig.PP_TLS_CLIENT_KEY_FILE,
+                    PandaproxyConfig.PP_TLS_CLIENT_CRT_FILE)
+                self._pandaproxy_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
+                self._pandaproxy_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
+                self._pandaproxy_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
 
     def security_config(self):
         return self._security_config
