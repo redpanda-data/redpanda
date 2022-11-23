@@ -74,16 +74,19 @@ class Redpanda:
         self.process.terminate()
         return await self.process.wait()
 
+
 async def input_helper(configs):
     def dump_endpoints():
         for config, _ in configs:
-            print("admin endpoint:", f"http://localhost:{config.redpanda.admin.port}")
+            print("admin endpoint:",
+                  f"http://localhost:{config.redpanda.admin.port}")
 
     while True:
         loop = asyncio.get_event_loop()
         content = await loop.run_in_executor(None, sys.stdin.readline)
         if "h" in content:
             dump_endpoints()
+
 
 async def main():
     parser = argparse.ArgumentParser()
@@ -98,7 +101,10 @@ async def main():
                         type=pathlib.Path,
                         help="data directory",
                         default="data")
-    parser.add_argument("--base-rpc-port", type=int, help="rpc port", default=33145)
+    parser.add_argument("--base-rpc-port",
+                        type=int,
+                        help="rpc port",
+                        default=33145)
     parser.add_argument("--base-kafka-port",
                         type=int,
                         help="kafka port",
