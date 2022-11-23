@@ -194,7 +194,7 @@ func (collection *Topics) AddTopic(newTopic kadm.TopicDetail) {
 		// init offlineReplicas to empty slice
 		//	so json/yaml print will print [] instead of NULL
 
-		// The other int32s here should at least have 
+		// The other int32s here should at least have
 		// 	leader 0, replica 0, etc, even on a single node cluster.
 		offlineReplicas := make([]int32, 0)
 		if partition.OfflineReplicas != nil {
