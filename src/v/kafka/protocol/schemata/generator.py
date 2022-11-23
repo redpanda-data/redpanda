@@ -319,6 +319,11 @@ path_type_map = {
             },
         }
     },
+    "DescribeProducersRequestData": {
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    }
 }
 
 # a few kafka field types specify an entity type
@@ -508,6 +513,10 @@ STRUCT_TYPES = [
     "ListPartitionReassignmentsTopics",
     "OngoingTopicReassignment",
     "OngoingPartitionReassignment",
+    "TopicRequest",
+    "TopicResponse",
+    "PartitionResponse",
+    "ProducerState",
 ]
 
 # a list of struct types which are ineligible to have default-generated
