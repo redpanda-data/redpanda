@@ -264,7 +264,6 @@ class SISettings:
             cloud_storage_access_key: str = 'panda-user',
             cloud_storage_secret_key: str = 'panda-secret',
             cloud_storage_region: str = 'panda-region',
-            cloud_storage_bucket: Optional[str] = None,
             cloud_storage_api_endpoint: str = 'minio-s3',
             cloud_storage_api_endpoint_port: int = 9000,
             cloud_storage_cache_size: int = 160 * 1000000,
@@ -282,7 +281,7 @@ class SISettings:
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
         self.cloud_storage_region = cloud_storage_region
-        self.cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}' if cloud_storage_bucket is None else cloud_storage_bucket
+        self.cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}'
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
         self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         self.cloud_storage_cache_size = cloud_storage_cache_size
