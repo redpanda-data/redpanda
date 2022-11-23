@@ -18,7 +18,7 @@
 #include <cstring>
 
 using chunk = storage::segment_appender::chunk;
-static constexpr size_t alignment = 4096;
+static constexpr storage::alignment alignment{4096};
 
 SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
     const auto b = random_generators::gen_alphanum_string(1024 * 1024);
@@ -53,7 +53,7 @@ SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
         // 10 bytes on the next page
         BOOST_REQUIRE_EQUAL(c.flushed_pos() % alignment, 10);
         BOOST_TEST_MESSAGE("10 bytes spill over: " << c);
-        c.append(b.data() + i, alignment + 10);
+        c.append(b.data() + i, alignment() + 10);
         BOOST_TEST_MESSAGE("Should be full: " << c.is_full() << ", " << c);
         BOOST_REQUIRE(c.is_full());
         // we flushed after 3 pages. so the dma_size() should be 1 page left

@@ -28,7 +28,7 @@ public:
      * same device and file system. For convenience we use the fail safe size
      * specified by seastar, and dynamically verify compatibility for each file.
      */
-    static constexpr const size_t alignment = 4_KiB;
+    static constexpr const alignment alignment{4_KiB};
 
     chunk_cache() noexcept
       : _size_target(memory_groups::chunk_cache_min_memory())
