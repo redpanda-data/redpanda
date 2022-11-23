@@ -109,6 +109,12 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create

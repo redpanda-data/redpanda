@@ -18,9 +18,9 @@ metadata:
 {{ include "redpanda-operator.labels" . | indent 4 }}
 rules:
 - apiGroups:
-  - apps
+  - ""
   resources:
-  - statefulsets
+  - events
   verbs:
   - create
   - get
@@ -28,7 +28,42 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - apps
+  resources:
+  - configmaps
+  verbs:
+  - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - cert-manager.io
   resources:
@@ -41,6 +76,7 @@ rules:
   - get
   - list
   - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -48,6 +84,7 @@ rules:
   - configmaps
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
@@ -64,12 +101,28 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
+  - persistentvolumeclaims
   verbs:
+  - delete
   - get
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
   - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/finalizers
+  verbs:
+  - update
 - apiGroups:
   - ""
   resources:
@@ -78,6 +131,7 @@ rules:
   - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - ""
@@ -96,6 +150,30 @@ rules:
   - services
   verbs:
   - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
   - get
   - list
   - patch
@@ -140,9 +218,9 @@ rules:
   - patch
   - update
 - apiGroups:
-  - networking.k8s.io
+  - redpanda.vectorized.io
   resources:
-  - ingresses
+  - consoles
   verbs:
   - create
   - delete
@@ -152,15 +230,17 @@ rules:
   - update
   - watch
 - apiGroups:
-  - policy
+  - redpanda.vectorized.io
   resources:
-  - poddisruptionbudgets
+  - consoles/finalizers
   verbs:
-  - create
-  - delete
+  - update
+- apiGroups:
+  - redpanda.vectorized.io
+  resources:
+  - consoles/status
+  verbs:
   - get
-  - list
   - patch
   - update
-  - watch
 {{- end -}}
