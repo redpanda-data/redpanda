@@ -415,10 +415,33 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.start_consumer(1)
         self.await_startup()
 
+        def num_with_broken_rack_constraint() -> int:
+            metrics = self.redpanda.metrics_sample(
+                "num_with_broken_rack_constraint",
+                nodes=self.redpanda.nodes[0:3])
+            self.logger.debug(f"samples: {metrics.samples}")
+
+            val = int(max(s.value for s in metrics.samples))
+            self.logger.debug(
+                f"number of partitions with broken rack constraint: {val}")
+            return val
+
         with self.NodeStopper(self) as ns:
+            assert num_with_broken_rack_constraint() == 0
+
             node = self.redpanda.nodes[3]
+            num_partitions_on_killed_node = len(
+                Admin(self.redpanda).get_partitions(node=node))
+            self.logger.info(
+                f"number of partitions on killed node: {num_partitions_on_killed_node}"
+            )
+
             ns.make_unavailable(node)
             self.wait_until_ready(expected_unavailable_node=node)
+
+            # - 1 comes from the controller partition
+            assert num_with_broken_rack_constraint(
+            ) == num_partitions_on_killed_node - 1
 
             self.redpanda.start_node(self.redpanda.nodes[4])
 
@@ -426,6 +449,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.check_rack_placement(self.topic, rack_layout)
 
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+        assert num_with_broken_rack_constraint() == 0
 
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_fuzz_admin_ops(self):
