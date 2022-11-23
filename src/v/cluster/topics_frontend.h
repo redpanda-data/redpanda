@@ -136,7 +136,9 @@ private:
       custom_assignable_topic_configuration, model::timeout_clock::time_point);
 
     ss::future<topic_result> replicate_create_topic(
-      topic_configuration, allocation_units, model::timeout_clock::time_point);
+      topic_configuration,
+      allocation_units::pointer,
+      model::timeout_clock::time_point);
 
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
