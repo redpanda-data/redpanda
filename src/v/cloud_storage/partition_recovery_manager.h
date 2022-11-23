@@ -165,8 +165,18 @@ private:
     /// The downloaded file will have a custom suffix
     /// which has to be changed. The downloaded file path
     /// is returned by the futue.
-    ss::future<std::optional<offset_range>>
+    ss::future<std::optional<cloud_storage::stream_stats>>
     download_segment_file(const segment& segm, const download_part& part);
+
+    /// Helper for download_segment_file
+    ss::future<uint64_t> download_segment_file_stream(
+      uint64_t,
+      ss::input_stream<char>,
+      const download_part&,
+      remote_segment_path,
+      std::filesystem::path,
+      offset_translator,
+      stream_stats&);
 
     using offset_map_t = absl::btree_map<model::offset, segment>;
 
