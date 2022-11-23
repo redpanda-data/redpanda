@@ -23,6 +23,7 @@ set(handlers_srcs
   server/handlers/handler_interface.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
+  server/handlers/describe_producers.cc
 )
 
 v_cc_library(
