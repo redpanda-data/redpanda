@@ -71,6 +71,7 @@ ss::future<response_ptr> find_coordinator_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
 
     if (request.data.key_type == coordinator_type::group) {
         if (!ctx.authorized(

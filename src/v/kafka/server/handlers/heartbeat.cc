@@ -26,6 +26,7 @@ ss::future<response_ptr> heartbeat_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     heartbeat_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(

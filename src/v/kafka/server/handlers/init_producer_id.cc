@@ -50,6 +50,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         init_producer_id_request request;
         request.decode(ctx.reader(), ctx.header().version);
+        log_request(ctx.header(), request);
 
         if (request.data.transactional_id) {
             if (!ctx.authorized(

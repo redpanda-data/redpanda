@@ -66,7 +66,7 @@ ss::future<response_ptr>
 delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     delete_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    log_request(ctx.header(), request);
 
     auto unauthorized_it = std::partition(
       request.data.topic_names.begin(),

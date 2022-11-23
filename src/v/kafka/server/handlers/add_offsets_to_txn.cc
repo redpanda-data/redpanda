@@ -29,12 +29,8 @@ ss::future<response_ptr>
 add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         add_offsets_to_txn_request request;
-        vlog(
-          klog.trace,
-          "processing add_offsets_to_txn request: {} for {}",
-          request,
-          ctx.header().client_id);
         request.decode(ctx.reader(), ctx.header().version);
+        log_request(ctx.header(), request);
 
         cluster::add_offsets_tx_request tx_request{
           .transactional_id = request.data.transactional_id,
