@@ -26,6 +26,7 @@
 #include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/describe_log_dirs.h"
 #include "kafka/server/handlers/describe_producers.h"
+#include "kafka/server/handlers/describe_transactions.h"
 #include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/find_coordinator.h"
@@ -92,7 +93,8 @@ using request_types = make_request_types<
   offset_for_leader_epoch_handler,
   alter_partition_reassignments_handler,
   list_partition_reassignments_handler,
-  describe_producers_handler>;
+  describe_producers_handler,
+  describe_transactions_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
