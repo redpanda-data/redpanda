@@ -83,12 +83,10 @@ inline iobuf generate_segment(
   model::offset base_offset, const std::vector<batch_t>& batches) {
     auto buff = make_random_batches(base_offset, batches);
     iobuf result;
-    int ix = 0;
     for (auto&& batch : buff) {
         auto hdr = storage::disk_header_to_iobuf(batch.header());
         result.append(std::move(hdr));
         result.append(iobuf_deep_copy(batch.data()));
-        ix++;
     }
     return result;
 }
