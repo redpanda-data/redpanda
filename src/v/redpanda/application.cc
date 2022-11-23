@@ -351,7 +351,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
         config::shard_local_cfg().for_each(config_printer("redpanda"));
 
         vlog(_log.info, "Node configuration properties:");
-        vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
+        vlog(
+          _log.info, "(use `rpk redpanda config set <cfg> <value>` to change)");
         config::node().for_each(config_printer("redpanda"));
     }
     if (config["pandaproxy"]) {
