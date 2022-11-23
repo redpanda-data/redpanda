@@ -33,8 +33,6 @@
 namespace archival {
 namespace internal {
 
-class archiver_replacer;
-
 using namespace std::chrono_literals;
 
 /// Shard-local archiver service.
@@ -48,8 +46,6 @@ using namespace std::chrono_literals;
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
-    friend class archiver_replacer;
-
 public:
     /// \brief create scheduler service
     ///
@@ -144,6 +140,13 @@ private:
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
     ss::lowres_clock::duration _initial_backoff;
     ss::scheduling_group _upload_sg;
+
+    // Storing the stopped state allows the scheduler stop method to be called
+    // multiple times safely without triggering assertions in the gate and in
+    // the archivers which have already been stopped. This makes it possible to
+    // stop early in test code where the scheduler has been wired into the
+    // redpanda app which will try to stop scheduler again during test shutdown.
+    bool _stopped{false};
 };
 
 } // namespace internal
