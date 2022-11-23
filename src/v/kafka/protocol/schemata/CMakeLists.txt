@@ -47,6 +47,8 @@ set(schemata
   describe_log_dirs_response.json
   describe_producers_request.json
   describe_producers_response.json
+  describe_transactions_request.json
+  describe_transactions_response.json
   create_acls_request.json
   create_acls_response.json
   delete_acls_request.json

@@ -323,6 +323,11 @@ path_type_map = {
         "Topics": {
             "PartitionIndexes": ("model::partition_id", "int32"),
         }
+    },
+    "DescribeTransactionsResponseData": {
+        "Topics": {
+            "Partitions": ("model::partition_id", "int32"),
+        }
     }
 }
 
@@ -517,6 +522,8 @@ STRUCT_TYPES = [
     "TopicResponse",
     "PartitionResponse",
     "ProducerState",
+    "DescribeTransactionState",
+    "TopicData",
 ]
 
 # a list of struct types which are ineligible to have default-generated
