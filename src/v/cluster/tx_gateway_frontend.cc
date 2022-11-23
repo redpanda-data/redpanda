@@ -20,6 +20,7 @@
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/tm_stm.h"
+#include "cluster/tm_stm_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_helpers.h"
@@ -32,6 +33,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 
 #include <algorithm>
 
@@ -3297,6 +3299,343 @@ tx_gateway_frontend::get_all_transactions() {
 
           co_return res.value();
       });
+}
+
+ss::future<result<tm_transaction, tx_errc>>
+tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
+    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+
+    if (!shard.has_value()) {
+        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        return ss::make_ready_future<result<tm_transaction, tx_errc>>(
+          tx_errc::shard_not_found);
+    }
+
+    return container().invoke_on(
+      *shard,
+      _ssg,
+      [tid](tx_gateway_frontend& self)
+        -> ss::future<result<tm_transaction, tx_errc>> {
+          auto partition = self._partition_manager.local().get(
+            model::tx_manager_ntp);
+          if (!partition) {
+              vlog(
+                txlog.warn,
+                "transaction manager partition: {} not found",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<result<tm_transaction, tx_errc>>(
+                tx_errc::partition_not_found);
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                txlog.error,
+                "can't get tm stm of the {}' partition",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<result<tm_transaction, tx_errc>>(
+                tx_errc::stm_not_found);
+          }
+
+          return ss::with_gate(self._gate, [&stm, &self, tid] {
+              return stm->read_lock().then(
+                [&self, stm, tid](ss::basic_rwlock<>::holder unit) {
+                    return with(
+                             stm,
+                             tid,
+                             "get_tx",
+                             [&self, stm, tid]() {
+                                 return self.describe_tx(stm, tid);
+                             })
+                      .finally([u = std::move(unit)] {});
+                });
+          });
+      });
+}
+
+ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
+  ss::shared_ptr<tm_stm> stm, kafka::transactional_id tid) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::coordinator_not_available;
+    }
+    auto term = term_opt.value();
+
+    auto tx_opt = co_await stm->get_tx(tid);
+    if (!tx_opt.has_value()) {
+        auto status = tx_opt.error();
+        tx_errc err = tx_errc::unknown_server_error;
+        if (status == tm_stm::op_status::not_leader) {
+            err = tx_errc::leader_not_found;
+        } else if (status == tm_stm::op_status::timeout) {
+            err = tx_errc::timeout;
+        } else if (status == tm_stm::op_status::not_found) {
+            err = tx_errc::tx_id_not_found;
+        }
+        co_return err;
+    }
+
+    auto tx = tx_opt.value();
+    if (term == tx.etag) {
+        co_return tx;
+    }
+
+    auto old_tx = tx;
+
+    if (!is_fetch_tx_supported()) {
+        vlog(
+          txlog.warn,
+          "tm_stm_cache feature is not supported. The tx({}) has "
+          "started "
+          "on the previous term and we can not get current state",
+          tx.id);
+        co_return tx_errc::invalid_txn_state;
+    }
+
+    if (
+      tx.status == tm_transaction::tx_status::tombstone
+      || tx.status == tm_transaction::tx_status::preparing) {
+        // We can just ignore this statuses
+        co_return tx;
+    } else if (tx.status == tm_transaction::tx_status::killed) {
+        // We can just return current tx, becasue old tx also should be expired
+        co_return tx;
+    } else if (tx.status == tm_transaction::tx_status::ready) {
+        auto r1 = co_await fetch_tx(tx.id, tx.etag);
+        if (!r1) {
+            vlog(
+              txlog.warn,
+              "Fetching a cached tx from old leader (tx:{} pid:{} etag:{}"
+              "tx_seq:{}) failed with error:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              r1.error());
+            // Return possibly stale data
+            co_return tx;
+        }
+
+        old_tx = r1.value();
+
+        if (old_tx.status == tm_transaction::tx_status::ongoing) {
+            if (old_tx.pid != tx.pid) {
+                vlog(
+                  txlog.warn,
+                  "An ongoing tx (tx:{} pid:{} etag:{} tx_seq:{}) should"
+                  "have the same pid as a preceding ready tx (pid:{} "
+                  "etag:{} tx_seq:{})",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.etag,
+                  old_tx.tx_seq,
+                  tx.pid,
+                  tx.etag,
+                  tx.tx_seq);
+                co_return tx_errc::unknown_server_error;
+            }
+        } else if (old_tx.status == tm_transaction::tx_status::ready) {
+            if (old_tx.tx_seq > tx.tx_seq) {
+                vlog(
+                  txlog.warn,
+                  "A preceding ready tx (tx:{} pid:{} etag:{} tx_seq:{})"
+                  "should have lesser tx_seq than current ready tx (pid:{} "
+                  "etag:{} tx_seq:{})",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.etag,
+                  old_tx.tx_seq,
+                  tx.pid,
+                  tx.etag,
+                  tx.tx_seq);
+                co_return tx_errc::unknown_server_error;
+            }
+            old_tx = tx;
+        } else if (old_tx.tx_seq < tx.tx_seq) {
+            old_tx = tx;
+        } else {
+            vlog(
+              txlog.warn,
+              "cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{})"
+              "isn't aligned with persisted ready tx (pid:{} etag:{} "
+              "tx_seq:{})",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq);
+            co_return tx_errc::unknown_server_error;
+        }
+    } else if (
+      tx.status == tm_transaction::tx_status::prepared
+      || tx.status == tm_transaction::tx_status::aborting) {
+        auto r1 = co_await fetch_tx(tx.id, tx.etag);
+        if (!r1) {
+            vlog(
+              txlog.warn,
+              "Fetching a cached tx from old leader (tx:{} pid:{} etag:{}"
+              "tx_seq:{}) failed with error:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              r1.error());
+            // Return possibly stale data
+            co_return tx;
+        }
+
+        old_tx = r1.value();
+
+        if (old_tx.pid != tx.pid) {
+            vlog(
+              txlog.warn,
+              "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) should"
+              "have the same pid as the persisted tx (pid:{} etag:{} tx_seq:{} "
+              "status:{})",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              old_tx.get_status(),
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              tx.get_status());
+            co_return tx_errc::unknown_server_error;
+        }
+
+        if (old_tx.status == tm_transaction::tx_status::ongoing) {
+            if (old_tx.tx_seq() == tx.tx_seq()) {
+                old_tx = tx;
+            } else if (old_tx.tx_seq() != tx.tx_seq() + 1) {
+                vlog(
+                  txlog.warn,
+                  "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) isn't"
+                  "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+                  "status:{}))",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.etag,
+                  old_tx.tx_seq,
+                  old_tx.get_status(),
+                  tx.pid,
+                  tx.etag,
+                  tx.tx_seq,
+                  tx.get_status());
+                co_return tx_errc::unknown_server_error;
+            }
+        } else if (
+          old_tx.status == tm_transaction::tx_status::prepared
+          || old_tx.status == tm_transaction::tx_status::aborting) {
+            if (old_tx.tx_seq != tx.tx_seq || old_tx.status != tx.status) {
+                vlog(
+                  txlog.warn,
+                  "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) isn't"
+                  "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+                  "status:{}))",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.etag,
+                  old_tx.tx_seq,
+                  old_tx.get_status(),
+                  tx.pid,
+                  tx.etag,
+                  tx.tx_seq,
+                  tx.get_status());
+                co_return tx_errc::unknown_server_error;
+            }
+        } else {
+            vlog(
+              txlog.warn,
+              "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) isn't"
+              "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+              "status:{}))",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              old_tx.get_status(),
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              tx.get_status());
+            co_return tx_errc::unknown_server_error;
+        }
+    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+        auto r1 = co_await fetch_tx(tx.id, tx.etag);
+        if (!r1) {
+            vlog(
+              txlog.warn,
+              "Fetching a cached tx from old leader (tx:{} pid:{} etag:{}"
+              "tx_seq:{}) failed with error:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              r1.error());
+            // It means we should kill current tx and return error
+            co_await stm->expire_tx(tx.id);
+            co_return tx_errc::invalid_txn_state;
+        }
+
+        auto old_tx = r1.value();
+
+        if (old_tx.pid != tx.pid) {
+            vlog(
+              txlog.warn,
+              "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) isn't"
+              "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+              "status:{}))",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              old_tx.get_status(),
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              tx.get_status());
+            co_return tx_errc::unknown_server_error;
+        }
+
+        if (old_tx.status != tm_transaction::tx_status::ongoing) {
+            vlog(
+              txlog.warn,
+              "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) isn't"
+              "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+              "status:{}))",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              old_tx.get_status(),
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              tx.get_status());
+            co_return tx_errc::unknown_server_error;
+        }
+    } else {
+        vlog(txlog.error, "Unexpected tx status {}", tx.status);
+        co_return tx_errc::unknown_server_error;
+    }
+
+    old_tx.etag = term;
+    auto r2 = co_await stm->update_tx(old_tx, term);
+    if (!r2) {
+        vlog(txlog.info, "got {} on updating fetched tx", r2.error());
+        co_return tx_errc::not_coordinator;
+    }
+
+    tx = r2.value();
+
+    co_return tx;
 }
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(

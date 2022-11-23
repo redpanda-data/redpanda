@@ -71,6 +71,8 @@ public:
 
     using return_all_txs_res = result<std::vector<tm_transaction>, tx_errc>;
     ss::future<return_all_txs_res> get_all_transactions();
+    ss::future<result<tm_transaction, tx_errc>>
+      describe_tx(kafka::transactional_id);
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
@@ -233,6 +235,9 @@ private:
 
     ss::future<tm_transaction> remove_deleted_partitions_from_tx(
       ss::shared_ptr<tm_stm>, model::term_id term, cluster::tm_transaction tx);
+
+    ss::future<result<tm_transaction, tx_errc>>
+      describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
