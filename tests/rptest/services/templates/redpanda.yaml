@@ -115,6 +115,15 @@ schema_registry:
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
 
+  {% if schema_registry_config.truststore_file is not none %}
+  schema_registry_api_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.server_key }}
+    cert_file: {{ schema_registry_config.server_crt }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
+
 schema_registry_client:
   # kafka-api compatible brokers
   brokers:
@@ -122,6 +131,15 @@ schema_registry_client:
     - address: "{{node.account.hostname}}"
       port: 9092
   {% endfor %}
+
+  {% if schema_registry_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.SR_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ schema_registry_config.SR_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
 
   retries: 10
   retry_base_backoff_ms: 10

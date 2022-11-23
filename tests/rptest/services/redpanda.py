@@ -475,7 +475,10 @@ class PandaproxyConfig(TlsConfig):
         self.cache_max_size: int = 10
 
 
-class SchemaRegistryConfig(AuthConfig):
+class SchemaRegistryConfig(TlsConfig):
+    SR_TLS_CLIENT_KEY_FILE = "/etc/redpanda/sr_client.key"
+    SR_TLS_CLIENT_CRT_FILE = "/etc/redpanda/sr_client.crt"
+
     def __init__(self):
         super(SchemaRegistryConfig, self).__init__()
 
@@ -702,6 +705,9 @@ class RedpandaService(Service):
 
     def set_pandaproxy_settings(self, settings: PandaproxyConfig):
         self._pandaproxy_config = settings
+
+    def set_schema_registry_settings(self, settings: SchemaRegistryConfig):
+        self._schema_registry_config = settings
 
     def _init_tls(self):
         """
@@ -980,6 +986,15 @@ class RedpandaService(Service):
                 self._pandaproxy_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._pandaproxy_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._pandaproxy_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
+
+            if self._schema_registry_config is not None:
+                self._schema_registry_config.maybe_write_client_certs(
+                    node, self.logger,
+                    SchemaRegistryConfig.SR_TLS_CLIENT_KEY_FILE,
+                    SchemaRegistryConfig.SR_TLS_CLIENT_CRT_FILE)
+                self._schema_registry_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
+                self._schema_registry_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
+                self._schema_registry_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
 
     def security_config(self):
         return self._security_config
