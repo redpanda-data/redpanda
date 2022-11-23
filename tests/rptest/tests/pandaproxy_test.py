@@ -12,6 +12,8 @@ import http.client
 import json
 import uuid
 import requests
+import socket
+import subprocess
 import threading
 from rptest.services.cluster import cluster
 from ducktape.mark import matrix
@@ -22,8 +24,9 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig
+from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
 from rptest.services.admin import Admin
+from rptest.services import tls
 from typing import Optional, List, Dict, Union
 
 
@@ -226,10 +229,11 @@ class PandaProxyEndpoints(RedpandaTest):
                              user=cfg.get('sasl_plain_username'),
                              passwd=cfg.get('sasl_plain_password'))
 
-    def _base_uri(self, hostname=None):
+    def _base_uri(self, hostname=None, tls_enabled: bool = False):
         hostname = hostname if hostname else self.redpanda.nodes[
             0].account.hostname
-        return f"http://{hostname}:8082"
+        scheme = "https" if tls_enabled else "http"
+        return f"{scheme}://{hostname}:8082"
 
     def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS, **kwargs):
         return requests.get(f"{self._base_uri()}/brokers",
@@ -265,10 +269,12 @@ class PandaProxyEndpoints(RedpandaTest):
     def _get_topics(self,
                     headers=HTTP_GET_TOPICS_HEADERS,
                     hostname=None,
+                    tls_enabled: bool = False,
                     **kwargs):
-        return requests.get(f"{self._base_uri(hostname)}/topics",
-                            headers=headers,
-                            **kwargs)
+        return requests.get(
+            f"{self._base_uri(hostname, tls_enabled=tls_enabled)}/topics",
+            headers=headers,
+            **kwargs)
 
     def _produce_topic(self,
                        topic,
@@ -1441,6 +1447,7 @@ class User:
         self.username = f'user_{idx}'
         self.password = f'secret_{self.username}'
         self.algorithm = 'SCRAM-SHA-256'
+        self.certificate = None
 
     def __str__(self):
         return self.username
@@ -1537,3 +1544,153 @@ class BasicAuthScaleTest(PandaProxyEndpoints):
 
             assert res[
                 0] == self.topic, f'Incorrect topic, user: {task.user} -- {res}'
+
+
+class PandaProxyTLSProvider(TLSProvider):
+    def __init__(self, tls):
+        self.tls = tls
+
+    @property
+    def ca(self):
+        return self.tls.ca
+
+    def create_broker_cert(self, redpanda, node):
+        assert node in redpanda.nodes
+        return self.tls.create_cert(node.name)
+
+    def create_service_client_cert(self, _, name):
+        return self.tls.create_cert(socket.gethostname(),
+                                    name=name,
+                                    common_name=name)
+
+
+class PandaProxyMTLSBase(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super(PandaProxyMTLSBase, self).__init__(*args, **kwargs)
+
+        self.security = SecurityConfig()
+
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        self.admin_user = User(0)
+        self.admin_user.username = super_username
+        self.admin_user.password = super_password
+        self.admin_user.algorithm = super_algorithm
+
+        self.pandaproxy_config = PandaproxyConfig()
+
+    def setup_cluster(self, basic_auth_enabled: bool = False):
+        tls_manager = tls.TLSCertManager(self.logger)
+        self.security.require_client_auth = True
+        self.security.principal_mapping_rules = 'RULE:.*CN=(.*).*/$1/'
+
+        if basic_auth_enabled:
+            self.security.kafka_enable_authorization = True
+            self.security.endpoint_authn_method = 'sasl'
+            self.pandaproxy_config.authn_method = 'http_basic'
+        else:
+            self.security.endpoint_authn_method = 'mtls_identity'
+
+        # cert for principal with no explicitly granted permissions
+        self.admin_user.certificate = tls_manager.create_cert(
+            socket.gethostname(),
+            common_name=self.admin_user.username,
+            name='test_admin_client')
+
+        self.security.tls_provider = PandaProxyTLSProvider(tls_manager)
+
+        self.pandaproxy_config.client_key = self.admin_user.certificate.key
+        self.pandaproxy_config.client_crt = self.admin_user.certificate.crt
+
+        self.redpanda.set_security_settings(self.security)
+        self.redpanda.set_pandaproxy_settings(self.pandaproxy_config)
+        self.redpanda.start()
+
+        admin = Admin(self.redpanda)
+
+        # Create the users
+        admin.create_user(self.admin_user.username, self.admin_user.password,
+                          self.admin_user.algorithm)
+
+        # Hack: create a user, so that we can watch for this user in order to
+        # confirm that all preceding controller log writes landed: this is
+        # an indirect way to check that ACLs (and users) have propagated
+        # to all nodes before we proceed.
+        checkpoint_user = "_test_checkpoint"
+        admin.create_user(checkpoint_user, "_password",
+                          self.admin_user.algorithm)
+
+        # wait for users to propagate to nodes
+        def auth_metadata_propagated():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if checkpoint_user not in users:
+                    return False
+                elif self.security.sasl_enabled(
+                ) or self.security.kafka_enable_authorization:
+                    assert self.admin_user.username in users
+                    assert self.admin_user.username in users
+            return True
+
+        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+
+        # Create topic with rpk instead of KafkaCLITool because rpk is configured to use TLS certs
+        self.super_client(basic_auth_enabled).create_topic(self.topic)
+
+    def super_client(self, basic_auth_enabled: bool = False):
+        if basic_auth_enabled:
+            return RpkTool(self.redpanda,
+                           username=self.admin_user.username,
+                           password=self.admin_user.password,
+                           sasl_mechanism=self.admin_user.algorithm,
+                           tls_cert=self.admin_user.certificate)
+        else:
+            return RpkTool(self.redpanda, tls_cert=self.admin_user.certificate)
+
+
+class PandaProxyMTLSTest(PandaProxyMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super(PandaProxyMTLSTest, self).__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster()
+
+    @cluster(num_nodes=3)
+    def test_mtls(self):
+        result_raw = self._get_topics(
+            tls_enabled=True,
+            verify=self.admin_user.certificate.ca.crt,
+            cert=(self.admin_user.certificate.crt,
+                  self.admin_user.certificate.key))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        result = result_raw.json()
+        self.logger.debug(result)
+        assert result[0] == self.topic
+
+
+class PandaProxyMTLSAndBasicAuthTest(PandaProxyMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super(PandaProxyMTLSAndBasicAuthTest, self).__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster(basic_auth_enabled=True)
+
+    @cluster(num_nodes=3)
+    def test_mtls_and_basic_auth(self):
+        result_raw = self._get_topics(
+            tls_enabled=True,
+            auth=(self.admin_user.username, self.admin_user.password),
+            verify=self.admin_user.certificate.ca.crt,
+            cert=(self.admin_user.certificate.crt,
+                  self.admin_user.certificate.key))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        result = result_raw.json()
+        self.logger.debug(result)
+        assert result[0] == self.topic
