@@ -11,7 +11,7 @@
 from collections import defaultdict
 from rptest.services.cluster import cluster
 
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -349,9 +349,13 @@ class ConsumerGroupTest(RedpandaTest):
         rpk.delete_topic(self.topic_spec.name)
 
         def group_is_dead():
-            rpk_group = rpk.group_describe(group)
-
-            return rpk_group.members == 0 and rpk_group.state == "Dead"
+            try:
+                rpk_group = rpk.group_describe(group)
+                return rpk_group.members == 0 and rpk_group.state == "Dead"
+            except RpkException as e:
+                # allow RPK to throw an exception as redpanda nodes were
+                # restarted and the request may require a retry
+                return False
 
         wait_until(group_is_dead, 30, 2)
 
