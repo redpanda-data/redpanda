@@ -73,6 +73,7 @@ class EndToEndTest(Test):
         self.records_consumed = []
         self.last_consumed_offsets = {}
         self.redpanda: Optional[RedpandaService] = None
+        self.si_settings = si_settings
         self.topic = None
         self._client = None
 
@@ -82,7 +83,9 @@ class EndToEndTest(Test):
                        si_settings=None,
                        environment=None,
                        install_opts: Optional[InstallOptions] = None):
-        self.si_settings = si_settings
+        if si_settings is not None:
+            self.si_settings = si_settings
+
         if self.si_settings:
             self.si_settings.load_context(self.logger, self.test_context)
 
