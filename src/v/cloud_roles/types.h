@@ -26,6 +26,8 @@ namespace cloud_roles {
 static constexpr auto retryable_system_error_codes = std::to_array(
   {ECONNREFUSED, ENETUNREACH, ETIMEDOUT, ECONNRESET, EPIPE});
 
+bool is_retryable(const std::system_error& ec);
+
 static constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::request_timeout,
   boost::beast::http::status::gateway_timeout,
@@ -35,6 +37,8 @@ static constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::network_connect_timeout_error,
 });
 
+bool is_retryable(boost::beast::http::status status);
+
 enum class api_request_error_kind { failed_abort, failed_retryable };
 
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind);
@@ -43,6 +47,12 @@ struct api_request_error {
     ss::sstring reason;
     api_request_error_kind error_kind;
 };
+
+api_request_error make_abort_error(const std::exception& ex);
+api_request_error make_abort_error(ss::sstring reason);
+
+api_request_error make_retryable_error(const std::exception& ex);
+api_request_error make_retryable_error(ss::sstring reason);
 
 std::ostream&
 operator<<(std::ostream& os, const api_request_error& request_error);

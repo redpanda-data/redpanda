@@ -23,6 +23,11 @@ public:
     static constexpr uint httpd_port_number = 4430;
 
 public:
+    using request_predicate
+      = ss::noncopyable_function<bool(ss::httpd::request)>;
+
+    using predicates = std::vector<request_predicate>;
+
     http_imposter_fixture();
     virtual ~http_imposter_fixture();
 
@@ -57,6 +62,11 @@ public:
     http_test_utils::registered_urls& when() { return _urls; }
 
     bool has_call(std::string_view url) const;
+
+    /// Enables requests with a specific condition to fail. The failing
+    /// request is also added to the set of calls stored by fixture.
+    void fail_request_if(
+      request_predicate predicate, http_test_utils::response response);
 
     // Helper to progress over a range and check if the current element is
     // present in it. If the element is found at a position, the range for
@@ -109,4 +119,7 @@ private:
     std::multimap<ss::sstring, ss::httpd::request> _targets;
 
     http_test_utils::registered_urls _urls;
+    predicates _fail_requests_when;
+
+    absl::flat_hash_map<size_t, http_test_utils::response> _fail_responses;
 };

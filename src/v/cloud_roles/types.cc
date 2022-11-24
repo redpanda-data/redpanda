@@ -68,4 +68,43 @@ operator<<(std::ostream& os, const api_response_parse_error& err) {
     return os;
 }
 
+bool is_retryable(const std::system_error& ec) {
+    auto code = ec.code();
+    return std::find(
+             retryable_system_error_codes.begin(),
+             retryable_system_error_codes.end(),
+             code.value())
+           != retryable_system_error_codes.end();
+}
+
+bool is_retryable(boost::beast::http::status status) {
+    return std::find(
+             retryable_http_status.begin(), retryable_http_status.end(), status)
+           != retryable_http_status.end();
+}
+
+api_request_error make_abort_error(const std::exception& ex) {
+    return api_request_error{
+      .reason = ex.what(),
+      .error_kind = api_request_error_kind::failed_abort,
+    };
+}
+
+api_request_error make_abort_error(ss::sstring reason) {
+    return api_request_error{
+      .reason = reason, .error_kind = api_request_error_kind::failed_abort};
+}
+
+api_request_error make_retryable_error(const std::exception& ex) {
+    return api_request_error{
+      .reason = ex.what(),
+      .error_kind = api_request_error_kind::failed_retryable,
+    };
+}
+
+api_request_error make_retryable_error(ss::sstring reason) {
+    return api_request_error{
+      .reason = reason, .error_kind = api_request_error_kind::failed_retryable};
+}
+
 } // namespace cloud_roles

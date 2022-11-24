@@ -14,8 +14,6 @@
 #include "http/client.h"
 #include "json/document.h"
 
-#include <boost/property_tree/ptree.hpp>
-
 namespace cloud_roles {
 
 inline constexpr std::chrono::milliseconds default_request_timeout{5000};

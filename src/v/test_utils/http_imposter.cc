@@ -90,3 +90,10 @@ bool http_imposter_fixture::has_call(std::string_view url) const {
              [&url](const auto& r) { return r._url == url; })
            != _requests.cend();
 }
+
+void http_imposter_fixture::fail_request_if(
+  http_imposter_fixture::request_predicate predicate,
+  http_test_utils::response response) {
+    _fail_requests_when.push_back(std::move(predicate));
+    _fail_responses[_fail_requests_when.size() - 1] = std::move(response);
+}
