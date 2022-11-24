@@ -30,6 +30,7 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
           .name = ss::sstring(name), .state = state._state});
     }
     fts.applied_offset = ft.get_applied_offset();
+    fts.original_version = ft.get_original_version();
 
     return fts;
 }
@@ -59,6 +60,7 @@ void feature_table_snapshot::apply(feature_table& ft) const {
     }
 
     ft.set_applied_offset(applied_offset);
+    ft.set_original_version(original_version);
 
     ft.on_update();
 }
