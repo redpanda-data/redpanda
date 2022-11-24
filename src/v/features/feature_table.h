@@ -324,6 +324,9 @@ private:
 
     // The controller log offset of last batch applied to this state machine
     void set_applied_offset(model::offset o) { _applied_offset = o; }
+    void set_original_version(cluster::cluster_version v) {
+        _original_version = v;
+    }
 
     void on_update();
 
