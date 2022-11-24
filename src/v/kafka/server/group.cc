@@ -2590,11 +2590,17 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
               "Replicated group cleanup record {} at offset {}",
               _id,
               result.value().last_offset);
+        } else if (result.error() == raft::errc::shutting_down) {
+            vlog(
+              klog.debug,
+              "Cannot replicate group {} cleanup records due to shutdown",
+              _id);
         } else {
             vlog(
               klog.error,
-              "Error occured replicating group {} cleanup records {}",
+              "Error occured replicating group {} cleanup records {} ({})",
               _id,
+              result.error().message(),
               result.error());
         }
     } catch (const std::exception& e) {
