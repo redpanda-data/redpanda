@@ -89,7 +89,8 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
   ss::lw_shared_ptr<segment> segment,
   model::timestamp base_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  should_fail_on_missing_offset fail_on_missing_offset) {
     auto ix_begin = segment->index().find_nearest(begin_inclusive);
     size_t scan_from = ix_begin ? ix_begin->filepos : 0;
     model::offset sto = ix_begin ? ix_begin->offset
@@ -127,14 +128,14 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
         throw std::system_error(res.error());
     }
 
-    if (!offset_found) {
+    if (!offset_found && fail_on_missing_offset) {
         vlog(
           stlog.warn,
           "Segment does not contain searched for offset: {}, segment offsets: "
           "{}",
           sto,
           segment->offsets());
-        co_return std::make_error_code(std::errc::result_out_of_range);
+        co_return std::make_error_code(std::errc::invalid_seek);
     }
 
     bytes_to_skip = scan_from + res.value();
@@ -154,7 +155,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
   ss::lw_shared_ptr<segment> segment,
   model::timestamp max_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  should_fail_on_missing_offset fail_on_missing_offset) {
     // Handle truncated segment upload (if the upload was triggered by time
     // limit). Note that the upload is not necessarily started at the beginning
     // of the segment.
@@ -222,14 +224,14 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
         throw std::system_error(res.error());
     }
 
-    if (!offset_found) {
+    if (!offset_found && fail_on_missing_offset) {
         vlog(
           stlog.warn,
           "Segment does not contain searched for offset: {}, segment offsets: "
           "{}",
           end_inclusive,
           segment->offsets());
-        co_return std::make_error_code(std::errc::result_out_of_range);
+        co_return std::make_error_code(std::errc::invalid_seek);
     }
 
     stop_at = scan_from + res.value();
