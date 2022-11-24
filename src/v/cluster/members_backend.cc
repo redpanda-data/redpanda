@@ -591,12 +591,8 @@ ss::future<> members_backend::reconcile() {
         }
     }
     // remove finished updates
-    auto removed = std::erase_if(
+    std::erase_if(
       _updates, [](const update_meta& meta) { return meta.finished; });
-    // if updates were finished, reset unevenness error
-    if (removed > 0) {
-        reset_last_unevenness_error();
-    }
     if (!_raft0->is_elected_leader() || _updates.empty()) {
         co_return;
     }
@@ -684,7 +680,7 @@ ss::future<> members_backend::reconcile() {
               meta.finished);
             co_return;
         }
-        _last_unevenness_error = current_error;
+        meta.last_unevenness_error = current_error;
     }
 
     // execute reallocations
@@ -778,12 +774,12 @@ bool members_backend::should_stop_rebalancing_update(
     }
     static auto const stop_condition_improvement = 0.05;
 
-    auto improvement = _last_unevenness_error - current_error;
+    auto improvement = meta.last_unevenness_error - current_error;
     vlog(
       clusterlog.info,
       "balance unevenness error - current: {}, previous: {}, improvement: {}",
       current_error,
-      _last_unevenness_error,
+      meta.last_unevenness_error,
       improvement);
 
     return meta.partition_reallocations.empty()
@@ -1011,7 +1007,6 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
 
 void members_backend::stop_node_addition_and_ondemand_rebalance(
   model::node_id id) {
-    reset_last_unevenness_error();
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
@@ -1021,7 +1016,6 @@ void members_backend::stop_node_addition_and_ondemand_rebalance(
 
 void members_backend::handle_reallocation_finished(model::node_id id) {
     // remove all pending added node updates for this node
-    reset_last_unevenness_error();
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update && meta.update->id == id
                  && (meta.update->type
@@ -1029,10 +1023,6 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
                || meta.update->type
                     == members_manager::node_update_type::recommissioned);
     });
-}
-
-void members_backend::reset_last_unevenness_error() {
-    _last_unevenness_error = 1.0;
 }
 
 std::ostream&

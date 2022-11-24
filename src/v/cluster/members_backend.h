@@ -73,6 +73,8 @@ public:
 
         std::vector<partition_reallocation> partition_reallocations;
         bool finished = false;
+        // unevenness error is normalized to be at most 1.0, set to max
+        double last_unevenness_error = 1.0;
     };
 
     members_backend(
@@ -125,7 +127,6 @@ private:
     bool should_stop_rebalancing_update(double, const update_meta&) const;
 
     static size_t calculate_total_replicas(const node_replicas_map_t&);
-    void reset_last_unevenness_error();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -146,8 +147,7 @@ private:
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
-    // unevenness error is normalized to be at most 1.0, set to max
-    double _last_unevenness_error = 1.0;
+
     /**
      * store revision of node decommissioning update, decommissioning command
      * revision is stored when node is being decommissioned, it is used to
