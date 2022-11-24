@@ -766,9 +766,10 @@ class SizeBasedRetention(BaseCase):
         for topic in self.expected_recovered_topics:
             for _, manifest in topic_manifests:
                 if manifest['topic'] == topic.name:
-                    self._restore_topic(
-                        manifest,
-                        {"retention.bytes": self.restored_size_bytes})
+                    self._restore_topic(manifest, {
+                        "retention.local.target.bytes":
+                        self.restored_size_bytes
+                    })
 
     def validate_cluster(self, baseline, restored):
         """Check size of every partition."""
@@ -904,7 +905,8 @@ class TimeBasedRetention(BaseCase):
             for _, manifest in topic_manifests:
                 if manifest['topic'] == topic.name:
                     # retention - 1 hour
-                    self._restore_topic(manifest, {"retention.ms": 3600000})
+                    self._restore_topic(manifest,
+                                        {"retention.local.target.ms": 3600000})
 
     def validate_cluster(self, baseline, restored):
         """Check that the topic is writeable"""
