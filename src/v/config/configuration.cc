@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 
 #include "config/base_property.h"
+#include "config/bounded_property.h"
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
@@ -517,7 +518,8 @@ configuration::configuration()
       "default_topic_replications",
       "Default replication factor for new topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      1)
+      1,
+      {.min = 1, .oddeven = odd_even_constraint::odd})
   , transaction_coordinator_replication(
       *this, "transaction_coordinator_replication")
   , id_allocator_replication(*this, "id_allocator_replication")

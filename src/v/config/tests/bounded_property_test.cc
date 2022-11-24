@@ -17,6 +17,7 @@ namespace {
 struct test_config : public config::config_store {
     config::bounded_property<int32_t> bounded_int;
     config::bounded_property<std::optional<int32_t>> bounded_int_opt;
+    config::bounded_property<int16_t> odd_constraint;
 
     test_config()
       : bounded_int(
@@ -32,7 +33,14 @@ struct test_config : public config::config_store {
           "An optional integer with some bounds set",
           {},
           std::nullopt,
-          {.min = 4096, .max = 32768, .align = 16}) {}
+          {.min = 4096, .max = 32768, .align = 16})
+      , odd_constraint(
+          *this,
+          "odd_constraint",
+          "Property value has to be odd",
+          {},
+          1,
+          {.oddeven = config::odd_even_constraint::odd}) {}
 };
 
 SEASTAR_THREAD_TEST_CASE(numeric_bounds) {
@@ -44,6 +52,8 @@ SEASTAR_THREAD_TEST_CASE(numeric_bounds) {
     auto valid_values = {"4096", "32768", "16384", "4112", "0x1000"};
     auto invalid_values = {
       "0", "1", "-1", "4095", "4097", "32769", "2000000000"};
+    auto even_values = {"2", "10", "100"};
+    auto odd_values = {"1", "9", "21"};
 
     std::optional<config::validation_error> verr;
 
@@ -61,6 +71,16 @@ SEASTAR_THREAD_TEST_CASE(numeric_bounds) {
 
         verr = cfg.bounded_int_opt.validate(YAML::Load(v));
         BOOST_CHECK(verr.has_value());
+    }
+
+    for (const auto& v : even_values) {
+        verr = cfg.odd_constraint.validate(YAML::Load(v));
+        BOOST_CHECK(verr.has_value());
+    }
+
+    for (const auto& v : odd_values) {
+        verr = cfg.odd_constraint.validate(YAML::Load(v));
+        BOOST_CHECK(!verr.has_value());
     }
 
     // Optional variant should also always consider nullopt to be valid.
