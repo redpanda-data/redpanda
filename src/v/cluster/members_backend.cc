@@ -309,6 +309,9 @@ members_backend::calculate_replicas_per_node(
     ret.reserve(_allocator.local().state().allocation_nodes().size());
 
     for (const auto& [id, n] : _allocator.local().state().allocation_nodes()) {
+        if (!n->is_active()) {
+            continue;
+        }
         auto [it, _] = ret.try_emplace(
           id,
           node_replicas{
