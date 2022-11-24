@@ -171,7 +171,8 @@ class TopicDeleteTest(RedpandaTest):
 
 
 class TopicDeleteCloudStorageTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=3,
+    partition_count = 3
+    topics = (TopicSpec(partition_count=partition_count,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
@@ -196,13 +197,13 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self.kafka_tools.alter_topic_config(
             topic_name, {'retention.local.target.bytes': 5 * 1024 * 1024})
 
-        # Write out 10MB
+        # Write out 10MB per partition
         self.kafka_tools.produce(topic_name,
                                  record_size=4096,
-                                 num_records=2560)
+                                 num_records=2560 * self.partition_count)
 
         # Wait for segments evicted from local storage
-        for i in range(0, 3):
+        for i in range(0, self.partition_count):
             wait_for_segments_removal(self.redpanda, topic_name, i, 5)
 
         # Confirm objects in remote storage
@@ -254,7 +255,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         next_topic = "next_topic"
         self.kafka_tools.create_topic(
             TopicSpec(name=next_topic,
-                      partition_count=3,
+                      partition_count=self.partition_count,
                       cleanup_policy=TopicSpec.CLEANUP_DELETE))
         self._populate_topic(next_topic)
         after_keys = set(o.Key for o in self.redpanda.s3_client.list_objects(
