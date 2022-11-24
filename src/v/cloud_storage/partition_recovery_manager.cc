@@ -225,10 +225,25 @@ get_retention_policy(const storage::ntp_config::default_overrides& prop) {
       flags
       && (flags.value() & model::cleanup_policy_bitflags::deletion)
            == model::cleanup_policy_bitflags::deletion) {
-        if (prop.retention_bytes.has_value()) {
-            return size_bound_deletion_parameters{prop.retention_bytes.value()};
-        } else if (prop.retention_time.has_value()) {
-            return time_bound_deletion_parameters{prop.retention_time.value()};
+        // If a space constraint is set on the topic, use that: otherwise
+        // use time based constraint if present.  If total retention setting
+        // is less than local retention setting, take the smallest.
+        //
+        // This differs from ordinary storage GC, in that we are applying
+        // space _or_ time bounds: not both together.
+        if (prop.retention_local_target_bytes.has_value()) {
+            auto v = prop.retention_local_target_bytes.value();
+
+            if (prop.retention_bytes.has_value()) {
+                v = std::min(prop.retention_bytes.value(), v);
+            }
+            return size_bound_deletion_parameters{v};
+        } else if (prop.retention_local_target_ms.has_value()) {
+            auto v = prop.retention_local_target_ms.value();
+            if (prop.retention_time.has_value()) {
+                v = std::min(prop.retention_time.value(), v);
+            }
+            return time_bound_deletion_parameters{v};
         }
     }
     return std::monostate();
