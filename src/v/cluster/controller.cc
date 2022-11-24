@@ -118,7 +118,7 @@ ss::future<> controller::wire_up() {
 }
 
 ss::future<> controller::start(cluster_discovery& discovery) {
-    const auto initial_raft0_brokers = discovery.founding_brokers();
+    auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
     std::transform(
@@ -127,11 +127,16 @@ ss::future<> controller::start(cluster_discovery& discovery) {
       std::back_inserter(seed_nodes),
       [](const model::broker& b) { return b.id(); });
 
-    return create_raft0(
-             _partition_manager,
-             _shard_table,
-             config::node().data_directory().as_sstring(),
-             std::move(initial_raft0_brokers))
+    return validate_configuration_invariants()
+      .then(
+        [this,
+         initial_raft0_brokers = std::move(initial_raft0_brokers)]() mutable {
+            return create_raft0(
+              _partition_manager,
+              _shard_table,
+              config::node().data_directory().as_sstring(),
+              std::move(initial_raft0_brokers));
+        })
       .then([this](consensus_ptr c) { _raft0 = c; })
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then(
@@ -147,10 +152,6 @@ ss::future<> controller::start(cluster_discovery& discovery) {
             std::ref(_storage),
             std::ref(_drain_manager),
             std::ref(_as));
-      })
-      .then([this] {
-          // validate configuration invariants to exit early
-          return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
           return _feature_backend.start_single(
@@ -460,9 +461,6 @@ ss::future<> controller::shutdown_input() {
 
 ss::future<> controller::stop() {
     auto f = ss::now();
-    if (unlikely(!_raft0)) {
-        return f;
-    }
 
     if (!_as.local().abort_requested()) {
         f = shutdown_input();
@@ -627,6 +625,76 @@ int16_t controller::internal_topic_replication() const {
         // nodes were available.
         return replication_factor;
     }
+}
+
+/**
+ * Validate that:
+ * - node_id never changes
+ * - core count only increases, never decreases.
+ *
+ * Core count decreases are forbidden because our partition placement
+ * code does not know how to re-assign partitions away from non-existent
+ * cores if some cores are removed.  This may be improved in future, at
+ * which time we may remove this restriction on core count decreases.
+ *
+ * These checks are applied early during startup based on a locally
+ * stored record from previous startup, to prevent a misconfigured node
+ * from startup up far enough to disrupt the rest of the cluster.
+ * @return
+ */
+ss::future<> controller::validate_configuration_invariants() {
+    static const bytes invariants_key("configuration_invariants");
+    auto invariants_buf = _storage.local().kvs().get(
+      storage::kvstore::key_space::controller, invariants_key);
+    vassert(
+      config::node().node_id(),
+      "Node id must be set before checking configuration invariants");
+
+    auto current = configuration_invariants(
+      *config::node().node_id(), ss::smp::count);
+
+    if (!invariants_buf) {
+        // store configuration invariants
+        return _storage.local().kvs().put(
+          storage::kvstore::key_space::controller,
+          invariants_key,
+          reflection::to_iobuf(std::move(current)));
+    }
+    auto invariants = reflection::from_iobuf<configuration_invariants>(
+      std::move(*invariants_buf));
+    // node id changed
+
+    if (invariants.node_id != current.node_id) {
+        vlog(
+          clusterlog.error,
+          "Detected node id change from {} to {}. Node id change is not "
+          "supported",
+          invariants.node_id,
+          current.node_id);
+        return ss::make_exception_future(
+          configuration_invariants_changed(invariants, current));
+    }
+    if (invariants.core_count > current.core_count) {
+        vlog(
+          clusterlog.error,
+          "Detected change in number of cores dedicated to run redpanda."
+          "Decreasing redpanda core count is not allowed. Expected core "
+          "count "
+          "{}, currently have {} cores.",
+          invariants.core_count,
+          ss::smp::count);
+        return ss::make_exception_future(
+          configuration_invariants_changed(invariants, current));
+    } else if (invariants.core_count != current.core_count) {
+        // Update the persistent invariants to reflect increased core
+        // count -- this tracks the high water mark of core count, to
+        // reject subsequent decreases.
+        return _storage.local().kvs().put(
+          storage::kvstore::key_space::controller,
+          invariants_key,
+          reflection::to_iobuf(std::move(current)));
+    }
+    return ss::now();
 }
 
 } // namespace cluster
