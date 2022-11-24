@@ -337,8 +337,6 @@ FIXTURE_TEST(
     std::vector<ss::sstring> all_properties = {
       "retention.ms",
       "retention.bytes",
-      "replication_factor",
-      "partition_count",
       "segment.bytes",
       "cleanup.policy",
       "compression.type",
@@ -373,8 +371,6 @@ FIXTURE_TEST(
     std::vector<ss::sstring> first_group_config_properties = {
       "retention.ms",
       "retention.bytes",
-      "replication_factor",
-      "partition_count",
       "segment.bytes",
       "redpanda.remote.read",
       "redpanda.remote.write"};
