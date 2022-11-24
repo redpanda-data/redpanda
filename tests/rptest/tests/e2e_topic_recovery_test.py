@@ -313,10 +313,27 @@ class EndToEndTopicRecovery(RedpandaTest):
             consumed.extend([(m.key(), m.offset()) for m in msgs])
 
         first_mismatch = ''
-        for p_key, (c_key, c_offset) in zip_longest(producer.keys, consumed):
+        for p_key, c_item in zip_longest(producer.keys, consumed):
+            if c_item is None:
+                first_mismatch = f"consumed too few messages!  {p_key} has no matching consumed record"
+                break
+            elif p_key is None:
+                first_mismatch = f"consumed too many messages!  Unexpected consumer item {c_item}"
+                break
+
+            (c_key, c_offset) = c_item
             if p_key != c_key:
                 first_mismatch = f"produced: {p_key}, consumed: {c_key} (offset: {c_offset})"
                 break
+
+        # On failure, dump full lists of produced + consumed keys
+        if first_mismatch:
+            self.logger.error(f"Produced {len(producer.keys)} (on failure):")
+            for p_key in producer.keys:
+                self.logger.error(f"  {p_key}")
+            self.logger.error(f"Consumed {len(consumed)} (on failure):")
+            for c_item in consumed:
+                self.logger.error(f"  {c_item}")
 
         assert (not first_mismatch), (
             f"produced and consumed messages differ, "
