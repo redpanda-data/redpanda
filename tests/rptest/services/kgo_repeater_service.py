@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 from ducktape.services.service import Service
+from ducktape.errors import TimeoutError
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 
@@ -182,43 +183,36 @@ class KgoRepeaterService(Service):
         self.logger.debug("Activating producer loop")
         self.remote_to_all("activate")
 
-    def await_group_ready(self):
-
+    def _group_ready(self):
+        rpk = RpkTool(self.redpanda)
         expect_members = self.workers * len(self.nodes)
+        group = rpk.group_describe(self.group_name, summary=True)
+        if group is None:
+            self.logger.debug(
+                f"group_ready: {self.group_name} got None from describe")
+            return False
+        elif group.state != "Stable":
+            self.logger.debug(
+                f"group_ready: waiting for stable, current state {group.state}"
+            )
+            return False
+        elif group.members < expect_members:
+            self.logger.debug(
+                f"group_ready: waiting for node count ({group.members} != {expect_members})"
+            )
+            return False
+        else:
+            return True
 
-        def group_ready():
-            rpk = RpkTool(self.redpanda)
-            try:
-                group = rpk.group_describe(self.group_name, summary=True)
-            except Exception as e:
-                self.logger.debug(
-                    f"group_ready: {self.group_name} got exception from describe: {e}"
-                )
-                return False
-
-            if group is None:
-                self.logger.debug(
-                    f"group_ready: {self.group_name} got None from describe")
-                return False
-            elif group.state != "Stable":
-                self.logger.debug(
-                    f"group_ready: waiting for stable, current state {group.state}"
-                )
-                return False
-            elif group.members < expect_members:
-                self.logger.debug(
-                    f"group_ready: waiting for node count ({group.members} != {expect_members})"
-                )
-                return False
-            else:
-                return True
-
+    def await_group_ready(self):
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
+
         try:
-            self.redpanda.wait_until(group_ready,
-                                     timeout_sec=120,
-                                     backoff_sec=10)
+            self.redpanda.wait_until(
+                lambda: self._group_ready(),
+                timeout_sec=120,
+                backoff_sec=10)
         except:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
@@ -279,11 +273,21 @@ class KgoRepeaterService(Service):
         produced+consumed & how long you expect it to take.
         """
         initial_p, initial_c = self.total_messages()
+        last_c = initial_c
 
         # Give it at least some chance to progress before we start checking
         time.sleep(0.5)
 
-        def check():
+        # Minimum window for checking for progress: otherwise when the bandwidth
+        # expection is high, we end up failing if we happen to check at a moment
+        # the system isn't at peak throughput (e.g. when it's just warming up)
+        timeout_sec = max(timeout_sec, 60)
+        started_at = time.time()
+
+        group_sync_retries = 3
+
+        ready = False
+        while not ready:
             p, c = self.total_messages()
             pct = min(
                 float(p - initial_p) / (msg_count),
@@ -291,14 +295,30 @@ class KgoRepeaterService(Service):
             self.logger.debug(
                 f"await_progress: {pct:.1f}% p={p} c={c}, initial_p={initial_p}, initial_c={initial_c}, await count {msg_count})"
             )
-            return p >= initial_p + msg_count and c >= initial_c + msg_count
 
-        # Minimum window for checking for progress: otherwise when the bandwidth
-        # expectation is high, we end up failing if we happen to check at a moment
-        # the system isn't at peak throughput (e.g. when it's just warming up)
-        timeout_sec = max(timeout_sec, 60)
+            if last_c == c:
+                # Consumer isn't progressing: maybe the group fell out of sync?
+                if group_sync_retries > 0 and not self._group_ready():
+                    self.await_group_ready()
 
-        self.redpanda.wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
+                    # Reset the timeout clock: this function is about produce/consume data progress, we shouldn't
+                    # consider it a failure if the progress is delayed because a consumer group had to be renegotiated.
+                    started_at = time.time()
+
+                    group_sync_retries -= 1
+
+            last_c = c
+
+            ready = p >= initial_p + msg_count and c >= initial_c + msg_count
+
+            if not ready:
+                elapsed = time.time() - started_at
+                if elapsed > timeout_sec:
+                    raise TimeoutError(
+                        f"{self.who_am_i()} did not reach target progress after {elapsed} seconds",
+                    )
+                else:
+                    time.sleep(1)
 
 
 @contextmanager
