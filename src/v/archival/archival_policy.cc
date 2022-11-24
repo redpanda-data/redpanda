@@ -256,7 +256,14 @@ static ss::future<std::optional<std::error_code>> get_file_range(
     }
     if (end_inclusive) {
         auto seek_result = co_await storage::convert_end_offset_to_file_pos(
-          end_inclusive.value(), segment, upl->max_timestamp, io_priority);
+          end_inclusive.value(),
+          segment,
+          upl->max_timestamp,
+          io_priority,
+          // Even if the offset is not found in the segment, allow upload
+          // candidate creation for non-compacted upload. The entire segment
+          // will be used to create the upload candidate, ensuring progress.
+          storage::should_fail_on_missing_offset::no);
         if (seek_result.has_error()) {
             co_return seek_result.error();
         }
@@ -334,7 +341,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
         vlog(
           archival_log.error,
           "Upload candidate not created, failed to get file range: {}",
-          *file_range_result);
+          file_range_result.value().message());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
     if (result->starting_offset != segment->offsets().base_offset) {

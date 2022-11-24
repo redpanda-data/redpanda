@@ -58,16 +58,23 @@ struct offset_to_file_pos_result {
     auto operator<=>(const offset_to_file_pos_result&) const = default;
 };
 
+using should_fail_on_missing_offset
+  = ss::bool_class<struct should_fail_on_missing_offset_tag>;
+
 ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp base_timestamp,
-  ss::io_priority_class io_priority);
+  ss::io_priority_class io_priority,
+  should_fail_on_missing_offset fail_on_missing_offset
+  = should_fail_on_missing_offset::yes);
 
 ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp max_timestamp,
-  ss::io_priority_class io_priority);
+  ss::io_priority_class io_priority,
+  should_fail_on_missing_offset fail_on_missing_offset
+  = should_fail_on_missing_offset::yes);
 
 } // namespace storage
