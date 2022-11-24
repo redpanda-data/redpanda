@@ -193,10 +193,12 @@ ss::future<> ntp_archiver::upload_loop() {
         auto result = co_await upload_next_candidates();
         if (result.num_failed != 0) {
             // The logic in class `remote` already does retries: if we get here,
-            // it means the upload failed after several retries, indicating
-            // something non-transient may be wrong.  Hence error severity.
+            // it means the upload failed after several retries, justifying
+            // a warning to the operator: something non-transient may be wrong,
+            // although we do also see this in practice on AWS S3 occasionally
+            // during normal operation.
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Failed to upload {} segments out of {}",
               result.num_failed,
               result.num_succeded + result.num_failed + result.num_cancelled);
