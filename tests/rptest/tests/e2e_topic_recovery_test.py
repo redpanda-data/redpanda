@@ -23,7 +23,7 @@ import re
 from itertools import zip_longest
 
 from rptest.util import segments_count
-from rptest.utils.si_utils import Producer
+from rptest.utils.si_utils import TxProducer
 
 import confluent_kafka as ck
 
@@ -254,8 +254,8 @@ class EndToEndTopicRecovery(RedpandaTest):
                 "Skipping test in debug mode (requires release build)")
             return
 
-        producer = Producer(self.redpanda.brokers(), "topic-recovery-tx-test",
-                            self.logger)
+        producer = TxProducer(self.redpanda.brokers(),
+                              "topic-recovery-tx-test", self.logger)
 
         def done():
             for _ in range(100):

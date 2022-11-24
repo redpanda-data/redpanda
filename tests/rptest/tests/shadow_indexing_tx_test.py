@@ -17,7 +17,7 @@ from rptest.util import (
     segments_count,
     wait_for_segments_removal,
 )
-from rptest.utils.si_utils import Producer
+from rptest.utils.si_utils import TxProducer
 
 from ducktape.utils.util import wait_until
 
@@ -62,8 +62,8 @@ class ShadowIndexingTxTest(RedpandaTest):
         when fetching from remote segments."""
         topic = self.topics[0]
 
-        producer = Producer(self.redpanda.brokers(), "shadow-indexing-tx-test",
-                            self.logger)
+        producer = TxProducer(self.redpanda.brokers(),
+                              "shadow-indexing-tx-test", self.logger)
 
         def done():
             for _ in range(100):

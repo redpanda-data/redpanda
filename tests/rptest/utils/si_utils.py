@@ -333,8 +333,17 @@ class PathMatcher:
         return any(t in path for t in self.topic_names)
 
 
-class Producer:
-    def __init__(self, brokers, name, logger, timeout_sec: float = 60.0):
+class TxProducer:
+    """
+    A transactional producer that runs directly on the test runner, and aborts some fraction
+    of the transactions it opens.
+    """
+    def __init__(self,
+                 brokers,
+                 name,
+                 logger,
+                 timeout_sec: float = 60.0,
+                 abort_fraction=0.1):
         self.keys = []
         self.cur_offset = 0
         self.brokers = brokers
@@ -342,6 +351,7 @@ class Producer:
         self.num_aborted = 0
         self.name = name
         self.timeout_sec = timeout_sec
+        self.abort_fraction = abort_fraction
         self.reconnect()
 
     def reconnect(self):
@@ -380,7 +390,7 @@ class Producer:
 
         self.logger.info(f"writing {len(keys)} msgs: {keys[0]}-{keys[-1]}...")
         self.producer.flush()
-        if random.random() < 0.1:
+        if random.random() < self.abort_fraction:
             self.producer.abort_transaction()
             self.num_aborted += 1
             self.logger.info("aborted txn")
