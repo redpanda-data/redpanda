@@ -524,6 +524,7 @@ STRUCT_TYPES = [
     "ProducerState",
     "DescribeTransactionState",
     "TopicData",
+    "ListTransactionState",
 ]
 
 # a list of struct types which are ineligible to have default-generated
