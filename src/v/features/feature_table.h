@@ -217,7 +217,7 @@ public:
         return _active_version;
     }
 
-    cluster_version get_original_version() const noexcept {
+    cluster::cluster_version get_original_version() const noexcept {
         return _original_version;
     }
 
@@ -307,7 +307,7 @@ private:
     // The earliest version this cluster ever saw: guaranteed that no
     // on-disk structures were written with an encoding that predates
     // this.
-    cluster_version _original_version{invalid_version};
+    cluster::cluster_version _original_version{cluster::invalid_version};
 
     std::vector<feature_state> _feature_state;
 
