@@ -191,12 +191,12 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
 
 // Parameters used to exclude data based on total size.
 struct size_bound_deletion_parameters {
-    size_t retention_bytes;
+    size_t bytes;
 };
 
 // Parameters used to exclude data based on time.
 struct time_bound_deletion_parameters {
-    std::chrono::milliseconds retention_duration;
+    std::chrono::milliseconds duration;
 };
 
 // Retention policy that should be used during recovery
@@ -210,10 +210,10 @@ std::ostream& operator<<(std::ostream& o, const retention& r) {
         fmt::print(o, "{{none}}");
     } else if (std::holds_alternative<size_bound_deletion_parameters>(r)) {
         auto p = std::get<size_bound_deletion_parameters>(r);
-        fmt::print(o, "{{size-bytes: {}}}", p.retention_bytes);
+        fmt::print(o, "{{size-bytes: {}}}", p.bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(r)) {
         auto p = std::get<time_bound_deletion_parameters>(r);
-        fmt::print(o, "{{time-ms: {}}}", p.retention_duration.count());
+        fmt::print(o, "{{time-ms: {}}}", p.duration.count());
     }
     return o;
 }
@@ -278,18 +278,18 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
         vlog(
           _ctxlog.info,
           "Size bound retention is used. Size limit: {} bytes.",
-          r.retention_bytes);
+          r.bytes);
         part = co_await download_log_with_capped_size(
-          offset_map, mat.partition_manifest, prefix, r.retention_bytes);
+          offset_map, mat.partition_manifest, prefix, r.bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
         vlog(
           _ctxlog.info,
           "Time bound retention is used. Time limit: {}ms.",
-          r.retention_duration.count());
+          r.duration.count());
         part = co_await download_log_with_capped_time(
-          offset_map, mat.partition_manifest, prefix, r.retention_duration);
+          offset_map, mat.partition_manifest, prefix, r.duration);
     }
     // Move parts to final destinations
     co_await move_parts(part);
