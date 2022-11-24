@@ -634,15 +634,16 @@ class ClusterConfigTest(RedpandaTest):
             file.flush()
             import_stdout = self.rpk.cluster_config_import(file.name, all)
 
-        last_line = import_stdout.strip().split("\n")[-1]
-        m = re.match(r"^.+New configuration version is (\d+).*$", last_line)
+        m = re.match(r"^.+New configuration version is (\d+).*$",
+                     import_stdout,
+                     flags=re.DOTALL)
 
-        self.logger.debug(f"_import status: {last_line}")
+        self.logger.debug(f"_import status: {import_stdout}")
 
         if m is None and allow_noop:
             return None
 
-        assert m is not None, f"Config version not found: {last_line}"
+        assert m is not None, f"Config version not found: {import_stdout}"
         version = int(m.group(1))
         return version
 
