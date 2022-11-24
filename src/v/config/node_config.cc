@@ -65,9 +65,12 @@ node_config::node_config() noexcept
   , empty_seed_starts_cluster(
       *this,
       "empty_seed_starts_cluster",
-      "If enabled, requires exactly one node in a cluster-to-be to have its "
-      "seed_servers list empty. Otherwise, seed_servers list cannot be empty, "
-      "and must be the same in each node from that list",
+      "If true, an empty seed_servers list will denote that this node should "
+      "form a cluster. At most one node in the cluster should be configured "
+      "configured with an empty seed_servers list. If no such configured node "
+      "exists, or if configured to false, all nodes denoted by the "
+      "seed_servers list must be identical among those nodes' configurations, "
+      "and those nodes will form the initial cluster.",
       {.visibility = visibility::user},
       true)
   , rpc_server(
