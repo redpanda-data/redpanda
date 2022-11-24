@@ -136,7 +136,7 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
             return
 
         # Upload a license
-        self.admin.put_license(license)
+        assert self.admin.put_license(license).status_code == 200
 
         # Update all nodes to newest version
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -144,5 +144,11 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         _ = wait_for_num_versions(self.redpanda, 1)
 
         # Attempt to read license written by older version
-        license = self.admin.get_license()
-        assert license is not None and license['loaded'] is True
+        def license_loaded_ok():
+            license = self.admin.get_license()
+            return license is not None and license['loaded'] is True
+
+        wait_until(license_loaded_ok,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Timeout waiting for license to exist in cluster")
