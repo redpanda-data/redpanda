@@ -12,7 +12,7 @@ from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService, SISettings
-from rptest.util import Scale, segments_count
+from rptest.util import Scale, segments_count, wait_for_local_storage_truncate
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
@@ -210,7 +210,7 @@ class EndToEndTopicRecovery(RedpandaTest):
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
 
-        # Whipe out the state on the nodes
+        # Wipe out the state on the nodes
         self._stop_redpanda_nodes()
         self._wipe_data()
         # Run recovery
@@ -232,14 +232,14 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert produce_acked >= num_messages
         assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
 
-    @cluster(num_nodes=4, log_allow_list=ALLOWED_ERROR_LOG_LINES)
+    @cluster(num_nodes=5, log_allow_list=ALLOWED_ERROR_LOG_LINES)
     @matrix(recovery_overrides=[{}, {
         'retention.local.target.bytes': 1024,
         'redpanda.remote.write': True,
         'redpanda.remote.read': True,
     }])
     def test_restore_with_aborted_tx(self, recovery_overrides):
-        """Produce data using transactions includin some percentage of aborted
+        """Produce data using transactions including some percentage of aborted
         transactions. Run recovery and make sure that record batches generated
         by aborted transactions are not visible.
         This should work because rm_stm will rebuild its snapshot right after
@@ -254,38 +254,79 @@ class EndToEndTopicRecovery(RedpandaTest):
                 "Skipping test in debug mode (requires release build)")
             return
 
-        producer = TxProducer(self.redpanda.brokers(),
-                              "topic-recovery-tx-test", self.logger)
+        # Abort an unrealistically high fraction of transactions, to give a good probability
+        # of exercising code paths that might e.g. seek to an abort marker
+        # (reproduce https://github.com/redpanda-data/redpanda/issues/7043)
+        msg_size = 16384
+        msg_count = 10000
+        per_transaction = 10
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count,
+                                       use_transactions=True,
+                                       transaction_abort_rate=0.5,
+                                       msgs_per_transaction=per_transaction,
+                                       debug_logs=True)
+        producer.start()
+        producer.wait()
+        producer.free()
+        self.logger.info(f"Producer status: {producer.produce_status}")
 
-        def done():
-            for _ in range(100):
-                try:
-                    producer.produce(self.topic)
-                except ck.KafkaException as err:
-                    self.logger.warn(f"producer error: {err}")
-                    time.sleep(10)
-                    producer.reconnect()
-            self.logger.info("producer iteration complete")
-            topic_partitions = segments_count(self.redpanda,
-                                              self.topic,
-                                              partition_idx=0)
-            partitions = []
-            for p in topic_partitions:
-                partitions.append(p >= 10)
-            return all(partitions)
+        rpk = RpkTool(self.redpanda)
+        hwm = next(rpk.describe_topic(self.topic)).high_watermark
+        self.logger.info(f"Produced to HWM {hwm}")
 
-        wait_until(done,
-                   timeout_sec=120,
-                   backoff_sec=1,
-                   err_msg="producing failed")
+        # Each transaction is amplified with one tx start and one tx end marker
+        assert hwm == msg_count + (msg_count / per_transaction) * 2
 
-        assert producer.num_aborted > 0
-
-        time.sleep(10)
-        wait_until(lambda: self._s3_has_all_data(producer.cur_offset),
-                   timeout_sec=300,
+        wait_until(lambda: self._s3_has_all_data(hwm),
+                   timeout_sec=600,
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
+
+        def validate(free=True):
+            consumer = KgoVerifierSeqConsumer(self.test_context,
+                                              self.redpanda,
+                                              self.topic,
+                                              msg_size,
+                                              loop=False,
+                                              debug_logs=True)
+            consumer.start(clean=False)
+            consumer.wait()
+            status = consumer.consumer_status
+            self.logger.info(f"Consumer status: {status}")
+            try:
+                assert status.errors == 0
+
+                # We aborted some fraction: should never see all messages valid
+                assert status.validator.valid_reads < msg_count
+
+                # No aborted messages should be visible
+                assert status.validator.invalid_reads == 0
+
+                # No junk on the topic outside of the ranges our producer produced
+                assert status.validator.out_of_scope_invalid_reads == 0
+            except Exception:
+                self.logger.exception("I need an adult")
+                time.sleep(3600)
+
+            if free:
+                consumer.free()
+
+        # Validate that transactional reads of the produced data are correct
+        validate()
+
+        # Let local data age out validate that transaction reads that hit S3 are correct
+        rpk.alter_topic_config(self.topic, "retention.local.target.bytes",
+                               "1024")
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        0,
+                                        int(msg_size * msg_count * 0.5),
+                                        timeout_sec=30)
+        validate()
 
         # Whipe out the state on the nodes
         self._stop_redpanda_nodes()
@@ -295,47 +336,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         for topic_spec in self.topics:
             self._restore_topic(topic_spec, recovery_overrides)
 
-        # Consume and validate
-        consumer = ck.Consumer(
-            {
-                'bootstrap.servers': self.redpanda.brokers(),
-                'group.id': 'topic-recovery-tx-test',
-                'auto.offset.reset': 'earliest',
-            },
-            logger=self.logger)
-        consumer.subscribe([self.topic])
+        restore_hwm = next(rpk.describe_topic(self.topic)).high_watermark
+        assert restore_hwm == hwm
 
-        consumed = []
-        while True:
-            msgs = consumer.consume(timeout=5.0)
-            if len(msgs) == 0:
-                break
-            consumed.extend([(m.key(), m.offset()) for m in msgs])
-
-        first_mismatch = ''
-        for p_key, c_item in zip_longest(producer.keys, consumed):
-            if c_item is None:
-                first_mismatch = f"consumed too few messages!  {p_key} has no matching consumed record"
-                break
-            elif p_key is None:
-                first_mismatch = f"consumed too many messages!  Unexpected consumer item {c_item}"
-                break
-
-            (c_key, c_offset) = c_item
-            if p_key != c_key:
-                first_mismatch = f"produced: {p_key}, consumed: {c_key} (offset: {c_offset})"
-                break
-
-        # On failure, dump full lists of produced + consumed keys
-        if first_mismatch:
-            self.logger.error(f"Produced {len(producer.keys)} (on failure):")
-            for p_key in producer.keys:
-                self.logger.error(f"  {p_key}")
-            self.logger.error(f"Consumed {len(consumed)} (on failure):")
-            for c_item in consumed:
-                self.logger.error(f"  {c_item}")
-
-        assert (not first_mismatch), (
-            f"produced and consumed messages differ, "
-            f"produced length: {len(producer.keys)}, consumed length: {len(consumed)}, "
-            f"first mismatch: {first_mismatch}")
+        validate(free=False)

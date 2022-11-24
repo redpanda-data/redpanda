@@ -418,13 +418,15 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
                  max_msgs=None,
                  max_throughput_mb=None,
                  nodes=None,
-                 debug_logs=False):
+                 debug_logs=False,
+                 loop=True):
         super(KgoVerifierSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes,
                              debug_logs)
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
+        self._loop = loop
 
     @property
     def consumer_status(self):
@@ -434,7 +436,8 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop --client-name {self.who_am_i()}"
+        loop = "--loop" if self._loop else ""
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
