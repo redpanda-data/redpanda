@@ -697,7 +697,7 @@ ss::future<> members_backend::reconcile() {
       meta.update
       && meta.update->type
            == members_manager::node_update_type::decommissioned) {
-        auto node = _members.local().get_broker(meta.update->id);
+        auto node = _members.local().get_node_metadata_ref(meta.update->id);
         if (!node) {
             vlog(
               clusterlog.debug,
@@ -705,7 +705,7 @@ ss::future<> members_backend::reconcile() {
               meta.update->id);
             co_return;
         }
-        const auto is_draining = node.value()->get_membership_state()
+        const auto is_draining = node->get().state.get_membership_state()
                                  == model::membership_state::draining;
         const auto all_reallocations_finished = std::all_of(
           meta.partition_reallocations.begin(),
@@ -995,7 +995,7 @@ void members_backend::handle_recommissioned(
 }
 
 void members_backend::stop_node_decommissioning(model::node_id id) {
-    if (_members.local().get_broker(id) == std::nullopt) {
+    if (!_members.local().contains(id)) {
         return;
     }
     // remove all pending decommissioned updates for this node

@@ -74,6 +74,9 @@ struct broker_properties
                && etc_props == other.etc_props;
     }
 
+    friend std::ostream&
+    operator<<(std::ostream&, const model::broker_properties&);
+
     auto serde_fields() {
         return std::tie(
           cores,
@@ -150,6 +153,7 @@ enum class membership_state : int8_t { active, draining, removed };
 enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
+std::ostream& operator<<(std::ostream&, maintenance_state);
 
 class broker
   : public serde::
@@ -184,6 +188,7 @@ public:
 
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
+    broker& operator=(const broker&) noexcept = default;
     broker(const broker&) = default;
     const node_id& id() const { return _id; }
 
@@ -193,16 +198,6 @@ public:
     }
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
-
-    membership_state get_membership_state() const { return _membership_state; }
-    void set_membership_state(membership_state st) { _membership_state = st; }
-
-    maintenance_state get_maintenance_state() const {
-        return _maintenance_state;
-    }
-    void set_maintenance_state(maintenance_state st) {
-        _maintenance_state = st;
-    }
 
     void replace_unassigned_node_id(const node_id id) {
         vassert(
@@ -225,9 +220,6 @@ private:
     net::unresolved_address _rpc_address;
     std::optional<rack_id> _rack;
     broker_properties _properties;
-    // in memory state, not serialized
-    membership_state _membership_state = membership_state::active;
-    maintenance_state _maintenance_state{maintenance_state::inactive};
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };

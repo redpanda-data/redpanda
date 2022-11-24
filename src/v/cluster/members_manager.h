@@ -184,6 +184,12 @@ public:
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
+    struct changed_nodes {
+        std::vector<model::broker> added;
+        std::vector<model::broker> updated;
+        std::vector<model::node_id> removed;
+    };
+
     // Cluster join
     void join_raft0();
     bool is_already_member() const;
@@ -217,7 +223,9 @@ private:
     // Raft 0 config updates
     ss::future<>
       handle_raft0_cfg_update(raft::group_configuration, model::offset);
-    ss::future<> update_connections(patch<broker_ptr>);
+    changed_nodes
+    calculate_changed_nodes(const raft::group_configuration&) const;
+    ss::future<> update_connections(changed_nodes);
 
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);

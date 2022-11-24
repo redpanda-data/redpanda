@@ -307,7 +307,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
  *         be used in kafka metadata responses.
  */
 static const std::optional<model::broker_endpoint>
-guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
+guess_peer_listener(request_context& ctx, const cluster::node_metadata& nm) {
     // Peer has no listener with name matching the name of the
     // listener serving this Kafka request.  This can happen during
     // configuration changes
@@ -318,7 +318,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
       klog.warn,
       "Broker {} has no listener named '{}', falling "
       "back to guessing peer listener",
-      broker->id(),
+      nm.broker.id(),
       ctx.listener());
 
     // Look up port for the listener in use for this request
@@ -333,7 +333,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
             // is not yet consistent with what's in members_table,
             // because a node configuration update didn't propagate
             // via raft0 yet
-            if (broker->id() == *config::node().node_id()) {
+            if (nm.broker.id() == *config::node().node_id()) {
                 return l;
             }
         }
@@ -350,7 +350,7 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
     }
 
     // Fallback 1: Try to match by port
-    for (const auto& listener : broker->kafka_advertised_listeners()) {
+    for (const auto& listener : nm.broker.kafka_advertised_listeners()) {
         // filter broker listeners by active connection
         if (listener.address.port() == my_port) {
             return listener;
@@ -359,8 +359,8 @@ guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
 
     // Fallback 2: no name or port match, return first listener from
     // peer.
-    if (!broker->kafka_advertised_listeners().empty()) {
-        return broker->kafka_advertised_listeners()[0];
+    if (!nm.broker.kafka_advertised_listeners().empty()) {
+        return nm.broker.kafka_advertised_listeners()[0];
     } else {
         // A broker with no kafka listeners, there is no way to
         // include it in our response
@@ -372,10 +372,10 @@ template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     metadata_response reply;
-    auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
-    for (const auto& broker : alive_brokers) {
+    auto alive_brokers = co_await ctx.metadata_cache().alive_nodes();
+    for (const auto& nm : alive_brokers) {
         std::optional<model::broker_endpoint> peer_listener;
-        for (const auto& listener : broker->kafka_advertised_listeners()) {
+        for (const auto& listener : nm.broker.kafka_advertised_listeners()) {
             // filter broker listeners by active connection
             if (listener.name == ctx.listener()) {
                 peer_listener = listener;
@@ -384,15 +384,15 @@ ss::future<response_ptr> metadata_handler::handle(
         }
 
         if (!peer_listener) {
-            peer_listener = guess_peer_listener(ctx, broker);
+            peer_listener = guess_peer_listener(ctx, nm);
         }
 
         if (peer_listener) {
             reply.data.brokers.push_back(metadata_response::broker{
-              .node_id = broker->id(),
+              .node_id = nm.broker.id(),
               .host = peer_listener->address.host(),
               .port = peer_listener->address.port(),
-              .rack = broker->rack()});
+              .rack = nm.broker.rack()});
         }
     }
 
@@ -459,7 +459,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // just for the size estimate.
     constexpr size_t extra_bytes_per_broker = 200;
     size_estimate
-      += md_cache.all_brokers().size()
+      += md_cache.node_count()
          * (sizeof(metadata_response_broker) + extra_bytes_per_broker);
 
     for (auto& [tp_ns, topic_metadata] : md_cache.all_topics_metadata()) {

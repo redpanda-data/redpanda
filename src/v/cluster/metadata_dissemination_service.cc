@@ -114,13 +114,13 @@ ss::future<> metadata_dissemination_service::start() {
     }
     _dispatch_timer.arm(_dissemination_interval);
     // poll either seed servers or configuration
-    auto all_brokers = _members_table.local().all_brokers();
+    const auto& all_brokers = _members_table.local().nodes();
     // use hash set to deduplicate ids
     absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
     all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
-    for (auto& b : all_brokers) {
-        all_broker_addresses.emplace(b->rpc_address());
+    for (auto& [_, b] : all_brokers) {
+        all_broker_addresses.emplace(b.broker.rpc_address());
     }
     for (auto& id : _seed_servers) {
         all_broker_addresses.emplace(id);
@@ -281,7 +281,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& ntp_leader : _requests) {
         auto assignment = _topics.local().get_partition_assignment(
           ntp_leader.ntp);
@@ -321,7 +321,7 @@ void metadata_dissemination_service::collect_pending_updates() {
 void metadata_dissemination_service::cleanup_finished_updates() {
     std::vector<model::node_id> _to_remove;
     _to_remove.reserve(_pending_updates.size());
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& [node_id, meta] : _pending_updates) {
         auto it = std::find(brokers.begin(), brokers.end(), node_id);
         if (meta.finished || it == brokers.end()) {

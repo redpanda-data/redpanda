@@ -42,7 +42,6 @@
 
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
-using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
 // A cluster version is a logical protocol version describing the content
 // of the raft0 on disk structures, and available features.  These are
@@ -1685,17 +1684,6 @@ struct update_topic_properties_reply
     auto serde_fields() { return std::tie(results); }
 };
 
-template<typename T>
-struct patch {
-    std::vector<T> additions;
-    std::vector<T> deletions;
-    std::vector<T> updates;
-
-    bool empty() const {
-        return additions.empty() && deletions.empty() && updates.empty();
-    }
-};
-
 // generic type used for various registration handles such as in ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
 constexpr notification_id_type notification_id_type_invalid{-1};
@@ -2827,6 +2815,56 @@ struct cancel_partition_movements_reply
 
     errc general_error;
     std::vector<move_cancellation_result> partition_results;
+};
+
+/**
+ * Broker state transitions are coordinated centrally as opposite to
+ * configuration which change is requested by the described node itself. Broker
+ * state represents centrally managed node properties. The difference between
+ * broker state and configuration is that the configuration change is made on
+ * the node while state changes are managed by the cluster controller.
+ */
+class broker_state
+  : public serde::
+      envelope<broker_state, serde::version<0>, serde::compat_version<0>> {
+public:
+    model::membership_state get_membership_state() const {
+        return _membership_state;
+    }
+    void set_membership_state(model::membership_state st) {
+        _membership_state = st;
+    }
+
+    model::maintenance_state get_maintenance_state() const {
+        return _maintenance_state;
+    }
+    void set_maintenance_state(model::maintenance_state st) {
+        _maintenance_state = st;
+    }
+    friend bool operator==(const broker_state&, const broker_state&) = default;
+
+    friend std::ostream& operator<<(std::ostream&, const broker_state&);
+
+    auto serde_fields() {
+        return std::tie(_membership_state, _maintenance_state);
+    }
+
+private:
+    model::membership_state _membership_state = model::membership_state::active;
+    model::maintenance_state _maintenance_state
+      = model::maintenance_state::inactive;
+};
+
+/**
+ * Node metadata describes a cluster node with its state and configuration
+ */
+struct node_metadata {
+    model::broker broker;
+    broker_state state;
+
+    friend bool operator==(const node_metadata&, const node_metadata&)
+      = default;
+    friend std::ostream& operator<<(std::ostream&, const node_metadata&);
 };
 
 /*

@@ -16,6 +16,7 @@
 #include "cluster/partition_balancer_state.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_updates_dispatcher.h"
+#include "cluster/types.h"
 #include "model/metadata.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
@@ -178,8 +179,8 @@ struct partition_balancer_planner_fixture {
         auto& members_table = workers.members.local();
 
         std::vector<model::broker> new_brokers;
-        for (auto broker_ptr : members_table.all_brokers()) {
-            new_brokers.push_back(*broker_ptr);
+        for (auto [id, nm] : members_table.nodes()) {
+            new_brokers.push_back(nm.broker);
         }
 
         for (size_t i = 0; i < nodes_amount; ++i) {
@@ -319,20 +320,20 @@ struct partition_balancer_planner_fixture {
     void set_maintenance_mode(model::node_id id) {
         workers.members.local().apply(
           model::offset{}, cluster::maintenance_mode_cmd(id, true));
-        auto broker = workers.members.local().get_broker(id);
+        auto broker = workers.members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
         BOOST_REQUIRE(
-          broker.value()->get_maintenance_state()
+          broker.value().get().state.get_maintenance_state()
           == model::maintenance_state::active);
     }
 
     void set_decommissioning(model::node_id id) {
         workers.members.local().apply(
           model::offset{}, cluster::decommission_node_cmd(id, 0));
-        auto broker = workers.members.local().get_broker(id);
+        auto broker = workers.members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
         BOOST_REQUIRE(
-          broker.value()->get_membership_state()
+          broker.value().get().state.get_membership_state()
           == model::membership_state::draining);
     }
 

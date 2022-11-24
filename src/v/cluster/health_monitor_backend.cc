@@ -139,7 +139,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
         refresh_nodes_status();
     }
 
-    auto nodes = filter.nodes.empty() ? _members.local().all_broker_ids()
+    auto nodes = filter.nodes.empty() ? _members.local().node_ids()
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
@@ -166,20 +166,20 @@ void health_monitor_backend::refresh_nodes_status() {
     absl::erase_if(
       _status, [this](auto& e) { return !_members.local().contains(e.first); });
 
-    for (auto& b : _members.local().all_brokers()) {
+    for (auto& [id, nm] : _members.local().nodes()) {
         node_state status;
-        status.id = b->id();
-        status.membership_state = b->get_membership_state();
+        status.id = id;
+        status.membership_state = nm.state.get_membership_state();
 
         // current node is always alive
-        if (b->id() == _raft0->self().id()) {
+        if (id == _raft0->self().id()) {
             status.is_alive = alive::yes;
         }
-        auto res = _raft0->get_follower_metrics(b->id());
+        auto res = _raft0->get_follower_metrics(id);
         if (res) {
             status.is_alive = alive(res.value().is_live);
         }
-        _status.insert_or_assign(b->id(), status);
+        _status.insert_or_assign(id, status);
     }
 }
 
@@ -566,7 +566,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
      */
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
-    auto ids = _members.local().all_broker_ids();
+    auto ids = _members.local().node_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _raft0->self().id()) {
@@ -763,17 +763,17 @@ health_monitor_backend::get_cluster_health_overview(
       force_refresh::no, deadline);
 
     cluster_health_overview ret;
-    const auto brokers = _members.local().all_brokers();
+    const auto& brokers = _members.local().nodes();
     ret.all_nodes.reserve(brokers.size());
 
-    for (auto& broker : brokers) {
-        ret.all_nodes.push_back(broker->id());
-        if (broker->id() == _raft0->self().id()) {
+    for (auto& [id, _] : brokers) {
+        ret.all_nodes.push_back(id);
+        if (id == _raft0->self().id()) {
             continue;
         }
-        auto it = _status.find(broker->id());
+        auto it = _status.find(id);
         if (it == _status.end() || !it->second.is_alive) {
-            ret.nodes_down.push_back(broker->id());
+            ret.nodes_down.push_back(id);
         }
     }
     absl::node_hash_set<model::ntp> leaderless;

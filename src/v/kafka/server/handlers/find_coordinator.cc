@@ -27,13 +27,15 @@ namespace kafka {
 
 static ss::future<response_ptr>
 handle_leader(request_context& ctx, model::node_id leader) {
-    auto broker = ctx.metadata_cache().get_broker(leader);
+    auto broker = ctx.metadata_cache().get_node_metadata(leader);
     if (broker) {
         auto& b = *broker;
-        for (const auto& listener : b->kafka_advertised_listeners()) {
+        for (const auto& listener : b.broker.kafka_advertised_listeners()) {
             if (listener.name == ctx.listener()) {
                 return ctx.respond(find_coordinator_response(
-                  b->id(), listener.address.host(), listener.address.port()));
+                  b.broker.id(),
+                  listener.address.host(),
+                  listener.address.port()));
             }
         }
     }
@@ -131,7 +133,7 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           return try_create_consumer_group_topic(
                    ctx.coordinator_mapper(),
                    ctx.topics_frontend(),
-                   (int16_t)ctx.metadata_cache().all_brokers().size())
+                   (int16_t)ctx.metadata_cache().node_count())
             .then([&ctx, request = std::move(request)](bool created) {
                 /*
                  * if the topic is successfully created then the metadata cache

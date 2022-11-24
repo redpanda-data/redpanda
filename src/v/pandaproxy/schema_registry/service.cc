@@ -234,7 +234,7 @@ ss::future<> service::inform(model::node_id id) {
 
     // Inform all nodes
     return seastar::parallel_for_each(
-      _controller->get_members_table().local().all_broker_ids(),
+      _controller->get_members_table().local().node_ids(),
       [this](model::node_id id) { return do_inform(id); });
 }
 

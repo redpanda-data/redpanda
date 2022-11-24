@@ -390,8 +390,7 @@ public:
 
               // Await initial config status messages from all nodes
               auto& members = app.controller->get_members_table().local();
-              return config_mgr.get_status().size()
-                     == members.all_brokers().size();
+              return config_mgr.get_status().size() == members.node_count();
           });
     }
 

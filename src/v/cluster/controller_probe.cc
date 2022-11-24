@@ -71,7 +71,7 @@ void controller_probe::setup_metrics() {
           [this] {
               const auto& members_table
                 = _controller.get_members_table().local();
-              return members_table.all_brokers_count();
+              return members_table.node_count();
           },
           sm::description("Number of configured brokers in the cluster"))
           .aggregate({sm::shard_label}),

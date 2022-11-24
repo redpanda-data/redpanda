@@ -493,8 +493,8 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
                 .count());
         }
 
-        if (auto broker_ptr = _members.get_broker(follower.id); broker_ptr) {
-            auto maintenance_state = (*broker_ptr)->get_maintenance_state();
+        if (auto nm = _members.get_node_metadata_ref(follower.id); nm) {
+            auto maintenance_state = (*nm).get().state.get_maintenance_state();
 
             if (maintenance_state == model::maintenance_state::active) {
                 nodes.insert(follower.id);

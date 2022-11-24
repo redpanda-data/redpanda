@@ -450,7 +450,8 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
           ss::httpd::reply::status_type::service_unavailable);
     }
 
-    auto leader_opt = _metadata_cache.local().get_broker(leader_id_opt.value());
+    auto leader_opt = _metadata_cache.local().get_node_metadata(
+      leader_id_opt.value());
     if (!leader_opt.has_value()) {
         throw ss::httpd::base_exception(
           fmt::format(
@@ -518,7 +519,8 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
             auto listener_idx = size_t(
               std::distance(kafka_endpoints.begin(), match_i));
 
-            auto leader_advertised_addrs = leader->kafka_advertised_listeners();
+            auto leader_advertised_addrs
+              = leader.broker.kafka_advertised_listeners();
             if (leader_advertised_addrs.size() < listener_idx + 1) {
                 vlog(
                   logger.debug,
@@ -526,7 +528,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
                   "index for {}, "
                   "falling back to internal RPC address",
                   req_hostname);
-                target_host = leader->rpc_address().host();
+                target_host = leader.broker.rpc_address().host();
             } else {
                 target_host
                   = leader_advertised_addrs[listener_idx].address.host();
@@ -643,22 +645,22 @@ get_brokers(cluster::controller* const controller) {
 
           // Collect broker information from the members table.
           auto& members_table = controller->get_members_table().local();
-          for (auto& broker : members_table.all_brokers()) {
+          for (auto& [id, nm] : members_table.nodes()) {
               ss::httpd::broker_json::broker b;
-              b.node_id = broker->id();
-              b.num_cores = broker->properties().cores;
-              if (broker->rack()) {
-                  b.rack = *broker->rack();
+              b.node_id = id;
+              b.num_cores = nm.broker.properties().cores;
+              if (nm.broker.rack()) {
+                  b.rack = *nm.broker.rack();
               }
               b.membership_status = fmt::format(
-                "{}", broker->get_membership_state());
+                "{}", nm.state.get_membership_state());
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
               b.is_alive = true;
               b.maintenance_status = fill_maintenance_status(std::nullopt);
 
-              broker_map[broker->id()] = b;
+              broker_map[id] = b;
           }
 
           // Enrich the broker information with data from the health report.
@@ -1883,8 +1885,8 @@ void admin_server::register_features_routes() {
 ss::future<ss::json::json_return_type>
 admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
     model::node_id id = parse_broker_id(*req);
-    auto broker = _metadata_cache.local().get_broker(id);
-    if (!broker) {
+    auto node_meta = _metadata_cache.local().get_node_metadata(id);
+    if (!node_meta) {
         throw ss::httpd::not_found_exception(
           fmt::format("broker with id: {} not found", id));
     }
@@ -1901,13 +1903,13 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     ss::httpd::broker_json::broker ret;
-    ret.node_id = (*broker)->id();
-    ret.num_cores = (*broker)->properties().cores;
-    if ((*broker)->rack()) {
-        ret.rack = *(*broker)->rack();
+    ret.node_id = node_meta->broker.id();
+    ret.num_cores = node_meta->broker.properties().cores;
+    if (node_meta->broker.rack()) {
+        ret.rack = node_meta->broker.rack().value();
     }
     ret.membership_status = fmt::format(
-      "{}", (*broker)->get_membership_state());
+      "{}", node_meta->state.get_membership_state());
     ret.maintenance_status = fill_maintenance_status(
       maybe_drain_status.value());
 
@@ -1947,7 +1949,7 @@ admin_server::start_broker_maintenance_handler(
           "progress?)");
     }
 
-    if (_controller->get_members_table().local().all_brokers().size() < 2) {
+    if (_controller->get_members_table().local().node_count() < 2) {
         throw ss::httpd::bad_request_exception(
           "Maintenance mode may not be used on a single node "
           "cluster");
@@ -2532,7 +2534,7 @@ void admin_server::register_partition_routes() {
               }
               // special case, controller is raft group 0
               p.raft_group_id = 0;
-              for (const auto& i : _metadata_cache.local().all_broker_ids()) {
+              for (const auto& i : _metadata_cache.local().node_ids()) {
                   if (!leader_opt.has_value() || leader_opt.value() != i) {
                       ss::httpd::partition_json::assignment a;
                       a.node_id = i;

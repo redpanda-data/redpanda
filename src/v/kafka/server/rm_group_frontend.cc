@@ -124,10 +124,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
         auto has_created = co_await try_create_consumer_group_topic(
           _group_router.local().coordinator_mapper().local(),
           _controller->get_topics_frontend().local(),
-          (int16_t)_controller->get_members_table()
-            .local()
-            .all_brokers()
-            .size());
+          (int16_t)_controller->get_members_table().local().node_count());
         if (!has_created) {
             vlog(
               cluster::txlog.warn,

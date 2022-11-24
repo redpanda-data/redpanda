@@ -202,13 +202,12 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
     fmt::print(
       o,
       "{{id: {}, kafka_advertised_listeners: {}, rpc_address: {}, rack: {}, "
-      "properties: {}, membership_state: {}}}",
+      "properties: {}}}",
       b.id(),
       b.kafka_advertised_listeners(),
       b.rpc_address(),
       b.rack(),
-      b.properties(),
-      b.get_membership_state());
+      b.properties());
     return o;
 }
 
@@ -369,6 +368,17 @@ std::ostream& operator<<(std::ostream& o, membership_state st) {
         return o << "removed";
     }
     return o << "unknown membership state {" << static_cast<int>(st) << "}";
+}
+
+std::ostream& operator<<(std::ostream& o, maintenance_state st) {
+    switch (st) {
+    case maintenance_state::active:
+        return o << "active";
+    case maintenance_state::inactive:
+        return o << "inactive";
+    }
+
+    __builtin_unreachable();
 }
 
 std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs) {

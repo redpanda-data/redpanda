@@ -107,30 +107,35 @@ const topic_table::underlying_t& metadata_cache::all_topics_metadata() const {
     return _topics_state.local().all_topics_metadata();
 }
 
-std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
-    return _members_table.local().get_broker(nid);
+std::optional<node_metadata>
+metadata_cache::get_node_metadata(model::node_id nid) const {
+    return _members_table.local().get_node_metadata(nid);
 }
 
-std::vector<broker_ptr> metadata_cache::all_brokers() const {
-    return _members_table.local().all_brokers();
+const members_table::cache_t& metadata_cache::nodes() const {
+    return _members_table.local().nodes();
 }
 
-ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
-    std::vector<broker_ptr> brokers;
+size_t metadata_cache::node_count() const {
+    return _members_table.local().node_count();
+}
+
+ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
+    std::vector<node_metadata> brokers;
     auto res = co_await _health_monitor.local().get_nodes_status(
       config::shard_local_cfg().metadata_status_wait_timeout_ms()
       + model::timeout_clock::now());
     if (!res) {
         // if we were not able to refresh the cache, return all brokers
         // (controller may be unreachable)
-        co_return _members_table.local().all_brokers();
+        co_return _members_table.local().node_list();
     }
 
     std::set<model::node_id> brokers_with_health;
     for (auto& st : res.value()) {
         brokers_with_health.insert(st.id);
         if (st.is_alive) {
-            auto broker = _members_table.local().get_broker(st.id);
+            auto broker = _members_table.local().get_node_metadata(st.id);
             if (broker) {
                 brokers.push_back(std::move(*broker));
             }
@@ -142,17 +147,17 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
     // presume it is newly added and assume it is alive.  This avoids
     // newly added nodes being inconsistently excluded from metadata
     // responses until all nodes' health caches update.
-    for (const auto& broker : _members_table.local().all_brokers()) {
-        if (!brokers_with_health.contains(broker->id())) {
+    for (const auto& [id, broker] : _members_table.local().nodes()) {
+        if (!brokers_with_health.contains(id)) {
             brokers.push_back(broker);
         }
     }
 
-    co_return !brokers.empty() ? brokers : _members_table.local().all_brokers();
+    co_return !brokers.empty() ? brokers : _members_table.local().node_list();
 }
 
-std::vector<model::node_id> metadata_cache::all_broker_ids() const {
-    return _members_table.local().all_broker_ids();
+std::vector<model::node_id> metadata_cache::node_ids() const {
+    return _members_table.local().node_ids();
 }
 
 bool metadata_cache::should_reject_writes() const {

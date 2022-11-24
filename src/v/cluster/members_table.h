@@ -16,7 +16,7 @@
 #include "model/metadata.h"
 #include "utils/waiter_queue.h"
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -25,16 +25,19 @@ namespace cluster {
 /// cluster::members_manager
 class members_table {
 public:
-    using broker_ptr = ss::lw_shared_ptr<model::broker>;
+    using cache_t = absl::node_hash_map<model::node_id, node_metadata>;
 
-    std::vector<broker_ptr> all_brokers() const;
+    const cache_t& nodes() const;
+    std::vector<node_metadata> node_list() const;
+    size_t node_count() const;
 
-    size_t all_brokers_count() const;
-
-    std::vector<model::node_id> all_broker_ids() const;
+    std::vector<model::node_id> node_ids() const;
 
     /// Returns single broker if exists in cache
-    std::optional<broker_ptr> get_broker(model::node_id) const;
+    std::optional<std::reference_wrapper<const node_metadata>>
+      get_node_metadata_ref(model::node_id) const;
+
+    std::optional<node_metadata> get_node_metadata(model::node_id) const;
 
     bool contains(model::node_id) const;
 
@@ -71,8 +74,12 @@ public:
     void unregister_members_updated_notification(notification_id_type);
 
 private:
-    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    broker_cache_t _brokers;
+    cache_t _nodes;
+
+    // we keep track of removed nodes in a separate map to make accessing
+    // brokers faster
+    cache_t _removed_nodes;
+
     model::revision_id _version;
 
     waiter_queue<model::node_id> _waiters;
