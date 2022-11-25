@@ -1487,9 +1487,6 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         _migrators.push_back(
           std::make_unique<features::migrators::cloud_storage_config>(
             *controller));
-        _migrators.push_back(
-          std::make_unique<features::migrators::group_metadata_migration>(
-            *controller, group_router));
     }
 
     if (cd.is_cluster_founder().get()) {
