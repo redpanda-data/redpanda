@@ -76,6 +76,7 @@ public:
         // unevenness error is normalized to be at most 1.0, set to max
         absl::flat_hash_map<partition_allocation_domain, double>
           last_unevenness_error;
+        absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
     };
 
     members_backend(
