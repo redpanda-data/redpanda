@@ -186,9 +186,6 @@ private:
     const partition_manifest& _manifest;
     s3::bucket_name _bucket;
 
-    // Deleting from _segments is not supported.
-    // absl::btree_map doesn't provide a pointer stabilty. We are
-    // using remote_partition::btree_map_stable_iterator to work around this.
     segment_map_t _segments;
     partition_probe _probe;
 };
