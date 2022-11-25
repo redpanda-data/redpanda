@@ -223,6 +223,11 @@ ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
     });
 }
 
+ss::future<fetch_tx_reply>
+tx_gateway_frontend::fetch_tx_locally(kafka::transactional_id, model::term_id) {
+    co_return fetch_tx_reply(tx_errc::tx_not_found);
+}
+
 ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
   model::partition_id tm,
   model::producer_identity pid,

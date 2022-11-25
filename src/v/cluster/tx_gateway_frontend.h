@@ -40,6 +40,8 @@ public:
       ss::sharded<cluster::tm_stm_cache>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
+    ss::future<fetch_tx_reply>
+      fetch_tx_locally(kafka::transactional_id, model::term_id);
     ss::future<try_abort_reply> try_abort(
       model::partition_id,
       model::producer_identity,
