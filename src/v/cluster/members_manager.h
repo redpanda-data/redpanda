@@ -122,9 +122,6 @@ public:
       ss::sharded<drain_manager>&,
       ss::sharded<ss::abort_source>&);
 
-    // Checks invariants. Must be called before calling start().
-    ss::future<> validate_configuration_invariants();
-
     // Initializes connections to all known members.
     ss::future<> start();
 
