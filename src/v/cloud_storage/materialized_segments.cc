@@ -271,14 +271,12 @@ void materialized_segments::trim_segments(std::optional<size_t> target_free) {
     }
 
     vlog(cst_log.debug, "found {} eviction candidates ", to_offload.size());
-    for (const auto& i : to_offload) {
-        remote_partition* p = i.first->parent.get();
-
+    for (auto [p, offset] : to_offload) {
         // Should not happen because we handled the case of parent==null
         // above, before inserting into to_offload
         vassert(p, "Unexpected orphan segment!");
 
-        p->offload_segment(i.second);
+        p->offload_segment(offset);
     }
 } // namespace cloud_storage
 
@@ -304,7 +302,8 @@ void materialized_segments::maybe_trim_segment(
         // this will delete and unlink the object from
         // _materialized collection
         if (st.parent) {
-            to_offload.push_back(std::make_pair(&st, st.base_rp_offset));
+            to_offload.push_back(
+              std::make_pair(st.parent.get(), st.base_rp_offset));
         } else {
             // This cannot happen, because materialized_segment_state
             // is only instantiated by remote_partition and will
