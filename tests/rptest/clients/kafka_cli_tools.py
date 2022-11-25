@@ -294,6 +294,102 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
 
         return output.splitlines()
 
+    def describe_producers(self, topic, partition):
+        expected_columns = [
+            "ProducerId", "ProducerEpoch", "LatestCoordinatorEpoch",
+            "LastSequence", "LastTimestamp", "CurrentTransactionStartOffset"
+        ]
+        self._redpanda.logger.debug(
+            "Describe producers for topic %s partition %s", topic, partition)
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["describe-producers"]
+        cmd += ["--topic", topic]
+        cmd += ["--partition", str(partition)]
+        res = self._execute(cmd)
+
+        producers = []
+        split_str = res.split("\n")
+        info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[-1] == ""
+
+        lines = split_str[1:-1]
+        for line in lines:
+            producer_raw = line.strip().split("\t")
+            assert len(producer_raw) == len(expected_columns)
+            producer = {}
+            for i in range(len(info_key)):
+                producer_info = producer_raw[i].strip()
+                producer[info_key[i]] = producer_info
+            producers.append(producer)
+
+        return producers
+
+    def list_transactions(self):
+        expected_columns = [
+            "TransactionalId", "Coordinator", "ProducerId", "TransactionState"
+        ]
+        self._redpanda.logger.debug("List transactions")
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["list"]
+        res = self._execute(cmd)
+
+        txs = []
+        split_str = res.split("\n")
+        info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[-1] == ""
+
+        lines = split_str[1:-1]
+        for line in lines:
+            tx_raw = line.strip().split("\t")
+            assert len(tx_raw) == len(expected_columns)
+            tx = {}
+            for i in range(len(info_key)):
+                tx_info = tx_raw[i].strip()
+                tx[info_key[i]] = tx_info
+            txs.append(tx)
+        return txs
+
+    def describe_transaction(self, tx_id):
+        expected_columns = [
+            "CoordinatorId", "TransactionalId", "ProducerId", "ProducerEpoch",
+            "TransactionState", "TransactionTimeoutMs",
+            "CurrentTransactionStartTimeMs", "TransactionDurationMs",
+            "TopicPartitions"
+        ]
+        self._redpanda.logger.debug("Describe transaction tx_id: %s", tx_id)
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["describe"]
+        cmd += ["--transactional-id", str(tx_id)]
+        res = self._execute(cmd)
+        # 0 - keys, 1 - tx info, 2 - empty string
+        split_str = res.split("\n")
+        assert len(split_str) == 3
+
+        info_str = info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[2] == ""
+
+        line = split_str[1]
+        tx_raw = line.strip().split("\t")
+        assert len(tx_raw) == len(expected_columns)
+
+        tx = {}
+        for i in range(len(info_key)):
+            tx_info = tx_raw[i].strip()
+            tx[info_key[i]] = tx_info
+        return tx
+
     def _run(self, script, args, classname=None):
         cmd = [self._script(script)]
         if classname is not None:
