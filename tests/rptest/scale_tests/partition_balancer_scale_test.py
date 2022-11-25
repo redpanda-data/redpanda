@@ -177,6 +177,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             consumers = 1
             partitions_count = 40
             max_concurrent_moves = 5
+            timeout = 80
         elif type == self.MANY_PARTITIONS:
             message_size = 128 * (2 ^ 10)
             message_cnt = 2000000
