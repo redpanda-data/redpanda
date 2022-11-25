@@ -747,9 +747,6 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
   std::vector<model::broker_shard> new_replica_set,
   model::timeout_clock::time_point tout,
   std::optional<model::term_id> term) {
-    if (_partition_movement_disabled) {
-        return ss::make_ready_future<std::error_code>(errc::feature_disabled);
-    }
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
     return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout, term);

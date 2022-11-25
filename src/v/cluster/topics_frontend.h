@@ -110,9 +110,6 @@ public:
 
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
-    void disable_partition_movement() { _partition_movement_disabled = true; }
-    void enable_partition_movement() { _partition_movement_disabled = false; }
-
     ss::future<result<std::vector<move_cancellation_result>>>
       cancel_moving_partition_replicas_node(
         model::node_id,
@@ -222,8 +219,6 @@ private:
     ss::sharded<cluster::members_table>& _members_table;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
-
-    bool _partition_movement_disabled = false;
 
     static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };
