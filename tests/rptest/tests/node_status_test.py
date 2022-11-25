@@ -87,8 +87,8 @@ class StatusGraph:
                 continue
 
             self.redpanda.logger.debug(
-                f"Checking status of peer {self.redpanda.idx(peer)} "
-                f"from node {self.redpanda.idx(node)}")
+                f"Checking status of peer {self.redpanda.node_id(peer)} "
+                f"from node {self.redpanda.node_id(node)}")
             peer_status = self._get_peer_status(admin, node, peer)
 
             if expected_status == ConnectionStatus.UNKNOWN:
@@ -114,7 +114,7 @@ class StatusGraph:
     def _get_peer_status(self, admin: Admin, node: ClusterNode,
                          peer: ClusterNode):
         try:
-            return admin.get_peer_status(node, self.redpanda.idx(peer))
+            return admin.get_peer_status(node, self.redpanda.node_id(peer))
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code
             if status_code != 400:

@@ -105,7 +105,7 @@ class BaseTimeQuery:
                                       count=local_retain_segments)
 
         # Identify partition leader for use in our metrics checks
-        leader_node = cluster.get_node(
+        leader_node = cluster.get_node_by_id(
             next(rpk.describe_topic(topic.name)).leader)
 
         # We know timestamps, they are generated linearly from the

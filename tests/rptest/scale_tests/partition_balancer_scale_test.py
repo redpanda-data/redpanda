@@ -141,7 +141,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         stopped = random.choice(self.redpanda.nodes)
         self.redpanda.stop_node(stopped)
 
-        stopped_id = self.redpanda.idx(stopped)
+        stopped_id = self.redpanda.node_id(stopped)
 
         def stopped_node_is_empty():
             replicas = self.node_replicas([topic.name], stopped_id)

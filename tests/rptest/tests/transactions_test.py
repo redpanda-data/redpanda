@@ -683,7 +683,7 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
             leader_id = admin.get_partition_leader(namespace="kafka_internal",
                                                    topic="tx",
                                                    partition=0)
-            return self.redpanda.get_node(leader_id)
+            return self.redpanda.get_node_by_id(leader_id)
 
         self.do_upgrade_with_tx(get_tx_coordinator)
 
@@ -696,6 +696,6 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
             leader_id = admin.get_partition_leader(namespace="kafka",
                                                    topic=topic_name,
                                                    partition=0)
-            return self.redpanda.get_node(leader_id)
+            return self.redpanda.get_node_by_id(leader_id)
 
         self.do_upgrade_with_tx(get_topic_leader)

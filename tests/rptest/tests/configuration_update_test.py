@@ -25,8 +25,8 @@ class ConfigurationUpdateTest(RedpandaTest):
     """
     @cluster(num_nodes=3)
     def test_two_nodes_update(self):
-        node_1 = self.redpanda.get_node(1)
-        node_2 = self.redpanda.get_node(2)
+        node_1 = self.redpanda.get_node_by_id(1)
+        node_2 = self.redpanda.get_node_by_id(2)
 
         orig_partitions = self.redpanda.storage().partitions(
             "redpanda", "controller")
@@ -80,9 +80,9 @@ class ConfigurationUpdateTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_update_advertised_kafka_api_on_all_nodes(self):
 
-        node_1 = self.redpanda.get_node(1)
-        node_2 = self.redpanda.get_node(2)
-        node_3 = self.redpanda.get_node(3)
+        node_1 = self.redpanda.get_node_by_id(1)
+        node_2 = self.redpanda.get_node_by_id(2)
+        node_3 = self.redpanda.get_node_by_id(3)
 
         # stop all nodes
         self.redpanda.stop_node(node_1)
@@ -122,7 +122,7 @@ class ConfigurationUpdateTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_updating_address_after_data_deletion(self):
-        node = self.redpanda.get_node(2)
+        node = self.redpanda.get_node_by_id(2)
 
         def make_new_address(node, port):
             return dict(address=node.name, port=port)

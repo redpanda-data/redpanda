@@ -58,7 +58,7 @@ class NodesDecommissioningTest(EndToEndTest):
     def _not_decommissioned_node(self, to_decommission):
         return [
             n for n in self.redpanda.nodes
-            if self.redpanda.idx(n) != to_decommission
+            if self.redpanda.node_id(n) != to_decommission
         ][0]
 
     def _node_removed(self, removed_id, node_to_query):
@@ -116,7 +116,7 @@ class NodesDecommissioningTest(EndToEndTest):
         admin = Admin(self.redpanda)
 
         to_decommission = random.choice(self.redpanda.nodes)
-        to_decommission_id = self.redpanda.idx(to_decommission)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
         self.logger.info(f"decommissioning node: {to_decommission_id}", )
         admin.decommission_broker(to_decommission_id)
 
@@ -124,7 +124,7 @@ class NodesDecommissioningTest(EndToEndTest):
         # the admin API from this point onwards.
         survivor_node = self._not_decommissioned_node(to_decommission_id)
         self.logger.info(
-            f"Using survivor node {survivor_node.name} {self.redpanda.idx(survivor_node)}"
+            f"Using survivor node {survivor_node.name} {self.redpanda.node_id(survivor_node)}"
         )
 
         wait_until(
@@ -153,7 +153,7 @@ class NodesDecommissioningTest(EndToEndTest):
         admin = Admin(self.redpanda)
 
         to_decommission = self.redpanda.nodes[1]
-        node_id = self.redpanda.idx(to_decommission)
+        node_id = self.redpanda.node_id(to_decommission)
         survivor_node = survivor_node = self._not_decommissioned_node(node_id)
         self.redpanda.stop_node(node=to_decommission)
         self.logger.info(f"decommissioning node: {node_id}", )
@@ -221,7 +221,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=2)
 
         # stop decommissioned node
-        self.redpanda.stop_node(self.redpanda.get_node(to_decommission))
+        self.redpanda.stop_node(self.redpanda.get_node_by_id(to_decommission))
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=90)
 

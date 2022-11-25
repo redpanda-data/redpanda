@@ -54,8 +54,9 @@ class ShutdownTest(EndToEndTest):
                                                     partition=0)
                 return (True,
                         next(
-                            filter(lambda n: self.redpanda.idx(n) == leader,
-                                   self.redpanda.nodes)))
+                            filter(
+                                lambda n: self.redpanda.node_id(n) == leader,
+                                self.redpanda.nodes)))
             except:
                 return False
 

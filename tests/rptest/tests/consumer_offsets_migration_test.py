@@ -81,7 +81,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
                 f_type = random.choice(FailureSpec.FAILURE_TYPES)
                 length = 0
                 node = random.choice(self.redpanda.nodes)
-                while not mark_node_busy(self.redpanda.idx(node)):
+                while not mark_node_busy(self.redpanda.node_id(node)):
                     node = random.choice(self.redpanda.nodes)
 
                 try:
@@ -94,7 +94,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
                     f_injector.inject_failure(
                         FailureSpec(node=node, type=f_type, length=length))
                 finally:
-                    mark_node_free(self.redpanda.idx(node))
+                    mark_node_free(self.redpanda.node_id(node))
 
                 delay = random.randint(
                     ConsumerOffsetsMigrationTest.min_inter_failure_time_sec,
@@ -162,7 +162,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         # enable consumer offsets support
         self.redpanda.set_environment({})
         for n in self.redpanda.nodes:
-            idx = self.redpanda.idx(n)
+            idx = self.redpanda.node_id(n)
             wait_until(lambda: mark_node_busy(idx), 90, backoff_sec=2)
             try:
                 self.redpanda.restart_nodes(n, stop_timeout=60)
@@ -246,7 +246,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         def get_raft0_follower():
             ctrl = self.redpanda.controller
             node = random.choice(self.redpanda.nodes)
-            while self.redpanda.idx(node) == self.redpanda.idx(ctrl):
+            while self.redpanda.node_id(node) == self.redpanda.node_id(ctrl):
                 node = random.choice(self.redpanda.nodes)
 
             return node
@@ -256,7 +256,7 @@ class ConsumerOffsetsMigrationTest(EndToEndTest):
         self.logger.info(f"restarting node {n.account.hostname}")
         self.redpanda.stop_node(n, timeout=60)
         # wait for leader balancer to start evening out leadership
-        wait_until(lambda: node_stopped(self.redpanda.idx(n)),
+        wait_until(lambda: node_stopped(self.redpanda.node_id(n)),
                    90,
                    backoff_sec=2)
         self.redpanda.start_node(n)

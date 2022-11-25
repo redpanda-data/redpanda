@@ -30,7 +30,7 @@ class MetadataTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         nodes = rpk.cluster_info()
         assert len(nodes) == 3
-        all_ids = [self.redpanda.idx(n) for n in self.redpanda.nodes]
+        all_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
         returned_node_ids = [n.id for n in nodes]
         assert sorted(all_ids) == sorted(returned_node_ids)
 
@@ -47,7 +47,7 @@ class MetadataTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
         nodes = rpk.cluster_info()
         assert len(nodes) == 3
-        redpanda_ids = [self.redpanda.idx(n) for n in self.redpanda.nodes]
+        redpanda_ids = [self.redpanda.node_id(n) for n in self.redpanda.nodes]
         node_ids = [n.id for n in nodes]
         assert sorted(redpanda_ids) == sorted(node_ids)
 
@@ -61,7 +61,7 @@ class MetadataTest(RedpandaTest):
                 return n
 
         node = get_node()
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
         self.redpanda.logger.info(
             f"Injecting failure on node {node.account.hostname} with id: {node_id}",
         )

@@ -464,7 +464,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             namespace="kafka",
             topic=topic,
             partition=newdata_p,
-            target_id=self.redpanda.idx(new_version_node))
+            target_id=self.redpanda.node_id(new_version_node))
 
         # Create some new segments in S3 from a new-version node: later we will
         # cause the old node to try and read them to check that compatibility.
@@ -493,7 +493,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         admin.transfer_leadership_to(namespace="kafka",
                                      topic=topic,
                                      partition=newdata_p,
-                                     target_id=self.redpanda.idx(old_node))
+                                     target_id=self.redpanda.node_id(old_node))
 
         # Verify all data readable
         verify()

@@ -407,7 +407,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         node = self.redpanda.nodes[-1]
         self.logger.info(f"Single node restart on node {node.name}")
-        node_id = self.redpanda.idx(node)
+        node_id = self.redpanda.node_id(node)
 
         self.redpanda.stop_node(node)
 

@@ -124,7 +124,7 @@ class ScramTest(RedpandaTest):
             if time.time() - t1 > 10:
                 raise RuntimeError("Timed out waiting for a leader")
 
-        leader_node = self.redpanda.get_node(controller_id)
+        leader_node = self.redpanda.get_node_by_id(controller_id)
 
         # Request to all nodes, with redirect-following disabled.  Expect success
         # from the leader, and redirect responses from followers.
