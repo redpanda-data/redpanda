@@ -26,7 +26,7 @@ auto group_router::route(Request&& r, FwdFunc func) {
     using resp_type = typename return_type::value_type;
 
     auto m = shard_for(r.data.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         vlog(klog.trace, "in route() not coordinator for {}", r.data.group_id);
         return ss::make_ready_future<resp_type>(
           resp_type(r, error_code::not_coordinator));
@@ -48,7 +48,7 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
     using resp_type = typename return_type::value_type;
 
     auto m = shard_for(r.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         resp_type reply;
         // route_tx routes internal intra cluster so it uses
         // cluster::tx_errc instead of kafka::error_code
@@ -72,7 +72,7 @@ auto group_router::route_stages(Request r, FwdFunc func) {
       Request&&>;
     using resp_type = typename return_type::value_type;
     auto m = shard_for(r.data.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         return group::stages(resp_type(r, error_code::not_coordinator));
     }
     r.ntp = std::move(m->first);
@@ -196,14 +196,6 @@ group_router::delete_groups(std::vector<group_id> groups) {
     // partition groups by owner shard
     sharded_groups groups_by_shard;
     for (auto& group : groups) {
-        if (unlikely(_disabled)) {
-            results.push_back(deletable_group_result{
-              .group_id = std::move(group),
-              .error_code = error_code::not_coordinator,
-            });
-            continue;
-        }
-
         if (auto m = shard_for(group); m) {
             groups_by_shard[m->second].emplace_back(
               std::make_pair(std::move(m->first), std::move(group)));
