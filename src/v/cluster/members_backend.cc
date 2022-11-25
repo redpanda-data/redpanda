@@ -461,7 +461,9 @@ void members_backend::calculate_reallocations_batch(
               node_replicas[id].allocated_replicas);
         }
     }
+    auto [idx_it, _] = meta.last_ntp_index.try_emplace(domain, 0);
     auto& topics = _topics.local().topics_map();
+    size_t current_idx = 0;
     // 4. Pass over all partition metadata
     for (auto& [tp_ns, metadata] : topics) {
         // skip partitions outside of current domain
@@ -493,6 +495,11 @@ void members_backend::calculate_reallocations_batch(
             }
         }
         for (const auto& p : metadata.get_assignments()) {
+            if (idx_it->second > current_idx++) {
+                continue;
+            }
+            idx_it->second++;
+
             std::erase_if(to_move_from_node, [](const replicas_to_move& v) {
                 return v.left_to_move == 0;
             });
@@ -531,6 +538,10 @@ void members_backend::calculate_reallocations_batch(
             }
         }
     }
+    // reset after moving over all the partitions, the only case if the idx
+    // iterator is not reset is the case when we reached max concurrent
+    // reallocations.
+    idx_it->second = 0;
 }
 
 std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
