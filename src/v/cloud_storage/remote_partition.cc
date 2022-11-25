@@ -82,9 +82,12 @@ remote_partition::materialize_segment(const segment_meta& meta) {
     vassert(
       ok,
       "Segment with base log offset {} and base kafka offset {} is already "
-      "materialized",
+      "materialized, max offset of the new segment {}, max offset of the "
+      "existing segment {}",
       meta.base_offset,
-      key_offset);
+      key_offset,
+      meta.committed_offset,
+      iter->second->segment->get_max_rp_offset());
     _probe.segment_materialized();
     return iter;
 }
@@ -134,14 +137,29 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
                 // in the manifest. In this case we want to start
                 // scanning from the begining of the partition if
                 // some conditions are met.
-                auto so = _manifest.get_start_offset().value_or(
-                  model::offset::min());
+                auto so = _manifest.get_start_kafka_offset().value_or(
+                  kafka::offset::min());
                 if (config.start_offset < so && config.max_offset > so) {
                     mit = _manifest.begin();
                 }
             }
         } else {
             mit = _manifest.segment_containing(hint);
+            while (mit != _manifest.end()) {
+                // The segment 'mit' points to might not have any
+                // data batches. In this case we need to move iterator forward.
+                // The check can only be done if we have 'delta_offset_end'.
+                if (mit->second.delta_offset_end == model::offset_delta{}) {
+                    break;
+                }
+                auto b = mit->second.base_offset - mit->second.delta_offset;
+                auto m = mit->second.committed_offset
+                         - mit->second.delta_offset_end;
+                if (b != m) {
+                    break;
+                }
+                mit++;
+            }
         }
         if (mit == _manifest.end()) {
             // No such segment
@@ -337,7 +355,7 @@ private:
         auto [reader, next_offset] = find_cached_reader(config);
         if (reader) {
             _reader = std::move(reader);
-            _next_offset = next_offset;
+            _next_segment_base_offset = next_offset;
             return;
         }
         vlog(
@@ -346,7 +364,7 @@ private:
           "segment not "
           "found");
         _reader = {};
-        _next_offset = {};
+        _next_segment_base_offset = {};
     }
 
     remote_partition::borrow_result_t
@@ -412,17 +430,18 @@ private:
               config.start_offset,
               _reader->max_rp_offset(),
               _reader->is_eof(),
-              _next_offset);
+              _next_segment_base_offset);
             _partition->materialized().evict_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset",
               config.start_offset,
-              _next_offset);
-            if (_next_offset != model::offset{}) {
+              _next_segment_base_offset);
+            if (_next_segment_base_offset != model::offset{}) {
                 auto [new_reader, new_next_offset]
-                  = _partition->borrow_next_reader(config, _next_offset);
-                _next_offset = new_next_offset;
+                  = _partition->borrow_next_reader(
+                    config, _next_segment_base_offset);
+                _next_segment_base_offset = new_next_offset;
                 _reader = std::move(new_reader);
             }
             if (_reader != nullptr) {
@@ -462,7 +481,7 @@ private:
     ss::abort_source::subscription _as_sub;
     /// Guard for the partition gate
     gate_guard _gate_guard;
-    model::offset _next_offset{};
+    model::offset _next_segment_base_offset{};
 };
 
 remote_partition::remote_partition(
@@ -482,7 +501,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
-    auto so = _manifest.get_start_kafka_offset().value_or(kafka::offset{});
+    auto so = _manifest.get_start_kafka_offset().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
     return so;
 }
@@ -545,11 +564,14 @@ remote_partition::aborted_transactions(offset_range offsets) {
         // second map lookup to learn if this is the case.
         auto m = _segments.find(it->first);
         if (m == _segments.end()) {
-            // TODO: extract to 'materialize_segment' method
             m = materialize_segment(it->second);
-            auto tx = co_await m->second->segment->aborted_transactions(
-              offsets.begin_rp, offsets.end_rp);
-            std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+        }
+        auto tx = co_await m->second->segment->aborted_transactions(
+          offsets.begin_rp, offsets.end_rp);
+        std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+
+        if (it->second.base_offset > offsets.end_rp) {
+            break;
         }
     }
 
@@ -625,17 +647,17 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
 
 ss::future<std::optional<storage::timequery_result>>
 remote_partition::timequery(storage::timequery_config cfg) {
-    if (_segments.empty()) {
+    if (_manifest.size() == 0) {
         vlog(_ctxlog.debug, "timequery: no segments");
         co_return std::nullopt;
     }
 
-    auto start_offset = _segments.begin()->first;
+    auto start_offset = _manifest.get_start_kafka_offset().value();
 
     // Synthesize a log_reader_config from our timequery_config
     storage::log_reader_config config(
       // TODO: fix
-      start_offset,
+      kafka::offset_cast(start_offset),
       cfg.max_offset,
       0,
       2048, // We just need one record batch
@@ -670,13 +692,9 @@ remote_partition::seek_by_timestamp(model::timestamp t) {
 
     if (segment_meta) {
         auto found = _segments.find(segment_meta->get().base_offset);
-
-        // Cannot happen because timequery() calls
-        // update_segments_incrementally first.
-        vassert(
-          found != _segments.end(),
-          "Timequery t={} found offset {} in manifest, but no segment "
-          "state found for that offset");
+        if (found == _segments.end()) {
+            found = materialize_segment(*segment_meta);
+        }
         return found;
     }
     return _segments.end();
@@ -838,10 +856,9 @@ ss::future<> remote_partition::erase() {
 void remote_partition::offload_segment(model::offset o) {
     vlog(_ctxlog.debug, "about to offload segment {}", o);
     auto it = _segments.find(o);
-    if (it != _segments.end()) {
-        it->second->offload(this);
-        _segments.erase(it);
-    }
+    vassert(it != _segments.end(), "Can't find offset {}", o);
+    it->second->offload(this);
+    _segments.erase(it);
 }
 
 materialized_segments& remote_partition::materialized() {
