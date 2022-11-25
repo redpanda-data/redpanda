@@ -39,6 +39,9 @@ public:
     ss::future<init_tm_tx_reply>
     init_tm_tx(init_tm_tx_request&&, rpc::streaming_context&) override;
 
+    ss::future<fetch_tx_reply>
+    fetch_tx(fetch_tx_request&&, rpc::streaming_context&) override;
+
     ss::future<try_abort_reply>
     try_abort(try_abort_request&&, rpc::streaming_context&) override;
 
