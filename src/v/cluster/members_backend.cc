@@ -189,12 +189,12 @@ bool is_in_replica_set(
 ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
     // on demand update
     if (!meta.update) {
-        co_await calculate_reallocations_for_even_partition_count(
+        reallocations_for_even_partition_count(
           meta, partition_allocation_domains::consumer_offsets);
         if (
           meta.partition_reallocations.size()
           < _max_concurrent_reallocations()) {
-            co_await calculate_reallocations_for_even_partition_count(
+            reallocations_for_even_partition_count(
               meta, partition_allocation_domains::common);
         }
         co_return;
@@ -210,12 +210,12 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
           == model::partition_autobalancing_mode::off) {
             co_return;
         }
-        co_await calculate_reallocations_for_even_partition_count(
+        reallocations_for_even_partition_count(
           meta, partition_allocation_domains::consumer_offsets);
         if (
           meta.partition_reallocations.size()
           < _max_concurrent_reallocations()) {
-            co_await calculate_reallocations_for_even_partition_count(
+            reallocations_for_even_partition_count(
               meta, partition_allocation_domains::common);
         }
         co_return;
@@ -226,6 +226,34 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
         co_return;
     }
 }
+
+void members_backend::reallocations_for_even_partition_count(
+  members_backend::update_meta& meta, partition_allocation_domain domain) {
+    calculate_reallocations_batch(meta, domain);
+
+    auto current_error = calculate_unevenness_error(domain);
+    auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
+    static const auto min_improvement = 0.05;
+
+    auto improvement = it->second - current_error;
+    vlog(
+      clusterlog.info,
+      "[update: {}] unevenness error: {}, previous error: {}, "
+      "improvement: {}, min improvement: {}",
+      meta.update,
+      current_error,
+      it->second,
+      improvement,
+      min_improvement);
+
+    it->second = current_error;
+
+    // drop all reallocations if there is no improvement
+    if (improvement < min_improvement) {
+        meta.partition_reallocations.clear();
+    }
+}
+
 /**
  * Simple helper class representing how many replicas have to be moved from the
  * node.
@@ -334,58 +362,54 @@ size_t members_backend::calculate_total_replicas(
     return total_replicas;
 }
 
-double members_backend::calculate_unevenness_error() const {
+double members_backend::calculate_unevenness_error(
+  partition_allocation_domain domain) const {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
       partition_allocation_domains::common};
-    double err = 0;
-    double max_err = 0;
 
     const auto node_cnt = _allocator.local().state().available_nodes();
-    for (auto d : domains) {
-        const auto node_replicas = calculate_replicas_per_node(d);
-        const auto total_replicas = calculate_total_replicas(node_replicas);
 
-        if (total_replicas == 0) {
-            continue;
-        }
+    const auto node_replicas = calculate_replicas_per_node(domain);
+    const auto total_replicas = calculate_total_replicas(node_replicas);
 
-        const auto target_replicas_per_node
-          = total_replicas / _allocator.local().state().available_nodes();
-        // max error is an error calculated when all replicas are allocated on
-        // the same node
-        double domain_max_err = (total_replicas - target_replicas_per_node)
-                                + target_replicas_per_node * (node_cnt - 1);
-        // divide by total replicas and node count to make the error independent
-        // from number of nodes and number of topics.
-        domain_max_err /= static_cast<double>(total_replicas);
-        domain_max_err /= static_cast<double>(node_cnt);
-
-        double domain_err = 0;
-        for (auto& [id, allocation_info] : node_replicas) {
-            double diff = static_cast<double>(target_replicas_per_node)
-                          - static_cast<double>(
-                            allocation_info.allocated_replicas);
-
-            vlog(
-              clusterlog.trace,
-              "node {} has {} replicas allocated, requested replicas per node "
-              "{}, difference: {}",
-              id,
-              allocation_info.allocated_replicas,
-              target_replicas_per_node,
-              diff);
-            domain_err += std::abs(diff);
-        }
-        err += domain_err / (static_cast<double>(total_replicas) * node_cnt);
-        max_err += domain_max_err;
+    if (total_replicas == 0) {
+        return 0.0;
     }
+
+    const auto target_replicas_per_node
+      = total_replicas / _allocator.local().state().available_nodes();
+    // max error is an error calculated when all replicas are allocated on
+    // the same node
+    double max_err = (total_replicas - target_replicas_per_node)
+                     + target_replicas_per_node * (node_cnt - 1);
+    // divide by total replicas and node count to make the error independent
+    // from number of nodes and number of replicas.
+    max_err /= static_cast<double>(total_replicas);
+    max_err /= static_cast<double>(node_cnt);
+
+    double err = 0;
+    for (auto& [id, allocation_info] : node_replicas) {
+        double diff = static_cast<double>(target_replicas_per_node)
+                      - static_cast<double>(allocation_info.allocated_replicas);
+
+        vlog(
+          clusterlog.trace,
+          "node {} has {} replicas allocated, requested replicas per node "
+          "{}, difference: {}",
+          id,
+          allocation_info.allocated_replicas,
+          target_replicas_per_node,
+          diff);
+        err += std::abs(diff);
+    }
+    err /= (static_cast<double>(total_replicas) * node_cnt);
 
     // normalize error to stay in range (0,1)
     return err / max_err;
 }
 
-ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
+void members_backend::calculate_reallocations_batch(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
     // 1. count current node allocations
     auto node_replicas = calculate_replicas_per_node(domain);
@@ -417,7 +441,7 @@ ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
       [](const replicas_to_move& m) { return m.left_to_move == 0; });
     // nothing to do, exit early
     if (all_empty) {
-        co_return;
+        return;
     }
 
     auto cmp = [](const replicas_to_move& lhs, const replicas_to_move& rhs) {
@@ -500,7 +524,7 @@ ss::future<> members_backend::calculate_reallocations_for_even_partition_count(
                           clusterlog.info,
                           "reached limit of max concurrent reallocations: {}",
                           meta.partition_reallocations.size());
-                        co_return;
+                        return;
                     }
                     break;
                 }
@@ -656,8 +680,7 @@ ss::future<> members_backend::reconcile() {
           "[update: {}] calculated reallocations: {}",
           meta.update,
           meta.partition_reallocations);
-        auto current_error = calculate_unevenness_error();
-        if (should_stop_rebalancing_update(current_error, meta)) {
+        if (should_stop_rebalancing_update(meta)) {
             if (meta.update) {
                 auto err = co_await _members_frontend.local()
                              .finish_node_reallocations(meta.update->id);
@@ -680,7 +703,6 @@ ss::future<> members_backend::reconcile() {
               meta.finished);
             co_return;
         }
-        meta.last_unevenness_error = current_error;
     }
 
     // execute reallocations
@@ -763,8 +785,8 @@ ss::future<> members_backend::reconcile() {
 }
 
 bool members_backend::should_stop_rebalancing_update(
-  double current_error, const members_backend::update_meta& meta) const {
-    // do not finish decommissioning and finish updates as they have
+  const members_backend::update_meta& meta) const {
+    // do not finish decommissioning and recommissioning updates as they have
     // strict stop conditions
     using update_t = members_manager::node_update_type;
     if (
@@ -772,18 +794,8 @@ bool members_backend::should_stop_rebalancing_update(
       && (meta.update->type == update_t::decommissioned || meta.update->type == update_t::reallocation_finished)) {
         return false;
     }
-    static auto const stop_condition_improvement = 0.05;
 
-    auto improvement = meta.last_unevenness_error - current_error;
-    vlog(
-      clusterlog.info,
-      "balance unevenness error - current: {}, previous: {}, improvement: {}",
-      current_error,
-      meta.last_unevenness_error,
-      improvement);
-
-    return meta.partition_reallocations.empty()
-           || improvement <= stop_condition_improvement;
+    return meta.partition_reallocations.empty();
 }
 
 ss::future<>
