@@ -22,7 +22,7 @@
 #include "storage/log_manager.h"
 #include "storage/logger.h"
 #include "storage/offset_assignment.h"
-#include "storage/offset_to_filepos_consumer.h"
+#include "storage/offset_to_filepos.h"
 #include "storage/readers_cache.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"

@@ -43,24 +43,6 @@ struct upload_candidate_with_locks {
     std::vector<ss::rwlock::holder> read_locks;
 };
 
-struct offset_to_file_pos_result {
-    model::offset offset;
-    size_t bytes;
-    model::timestamp ts;
-};
-
-ss::future<offset_to_file_pos_result> convert_begin_offset_to_file_pos(
-  model::offset begin_inclusive,
-  ss::lw_shared_ptr<storage::segment> segment,
-  model::timestamp base_timestamp,
-  ss::io_priority_class io_priority);
-
-ss::future<offset_to_file_pos_result> convert_end_offset_to_file_pos(
-  model::offset end_inclusive,
-  ss::lw_shared_ptr<storage::segment> segment,
-  model::timestamp max_timestamp,
-  ss::io_priority_class io_priority);
-
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.
 ///
