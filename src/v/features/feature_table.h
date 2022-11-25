@@ -109,7 +109,7 @@ constexpr static std::array feature_schema{
     "consumer_offsets",
     feature::consumer_offsets,
     feature_spec::available_policy::always,
-    feature_spec::prepare_policy::requires_migration},
+    feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{3},
     "maintenance_mode",
