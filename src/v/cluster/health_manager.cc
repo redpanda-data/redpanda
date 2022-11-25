@@ -196,12 +196,9 @@ ss::future<> health_manager::do_tick() {
          * back off and wait before trying to fix replication for any
          * other internal topics.
          */
-        auto ok = co_await ensure_topic_replication(model::kafka_group_nt);
+        auto ok = co_await ensure_topic_replication(
+          model::kafka_consumer_offsets_nt);
 
-        if (ok) {
-            ok = co_await ensure_topic_replication(
-              model::kafka_consumer_offsets_nt);
-        }
         if (ok) {
             ok = co_await ensure_topic_replication(model::id_allocator_nt);
         }
