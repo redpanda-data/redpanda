@@ -100,6 +100,10 @@ private:
         size_t allocated_replicas;
         size_t max_capacity;
     };
+    struct unevenness_error_info {
+        double e;
+        double e_step;
+    };
     using node_replicas_map_t
       = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
@@ -128,7 +132,8 @@ private:
     absl::node_hash_map<model::node_id, node_replicas>
       calculate_replicas_per_node(partition_allocation_domain) const;
 
-    double calculate_unevenness_error(partition_allocation_domain) const;
+    unevenness_error_info
+      calculate_unevenness_error(partition_allocation_domain) const;
     bool should_stop_rebalancing_update(const update_meta&) const;
 
     static size_t calculate_total_replicas(const node_replicas_map_t&);

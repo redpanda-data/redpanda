@@ -233,20 +233,22 @@ void members_backend::reallocations_for_even_partition_count(
 
     auto current_error = calculate_unevenness_error(domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
-    static const auto min_improvement = 0.05;
+    const auto min_improvement = std::max<size_t>(
+                                   meta.partition_reallocations.size() / 10, 1)
+                                 * current_error.e_step;
 
-    auto improvement = it->second - current_error;
+    auto improvement = it->second - current_error.e;
     vlog(
       clusterlog.info,
       "[update: {}] unevenness error: {}, previous error: {}, "
       "improvement: {}, min improvement: {}",
       meta.update,
-      current_error,
+      current_error.e,
       it->second,
       improvement,
       min_improvement);
 
-    it->second = current_error;
+    it->second = current_error.e;
 
     // drop all reallocations if there is no improvement
     if (improvement < min_improvement) {
@@ -362,7 +364,73 @@ size_t members_backend::calculate_total_replicas(
     return total_replicas;
 }
 
-double members_backend::calculate_unevenness_error(
+/**
+ * The new replicas placement optimization stop condition is based on evenness
+ * error.
+ *
+ * When there is no improvement of unevenness error after requesting partition
+ * rebalancing the rebalancing stops.
+ *
+ * Error is calculated as:
+ *
+ *                                    N
+ *                                   ___
+ *                                   ╲    |R - r |
+ *                                   ╱    |     n|
+ *                                   ‾‾‾
+ *                                  n = 0
+ *                           e    = ──────────────
+ *                            raw        T ⋅ N
+ *
+ *
+ *                               T
+ *                           R = ─
+ *                               N
+ *
+ * Where:
+ *
+ * T - total number or replicas in cluster
+ * R - requested replicas per node
+ * N - number of nodes in the cluster
+ * r_n - number of replicas on the node n
+ *
+ *
+ * then the error is normalized to be in range [0,1].
+ * To do this we calculate the maximum error:
+ *                                              N
+ *                                             ___
+ *                                             ╲
+ *                                  (T - R) +  ╱    R
+ *                                             ‾‾‾
+ *                                            n = 1
+ *                           e    = ─────────────────
+ *                            max         T ⋅ N
+ *
+ * normalized error is equal to:
+ *
+ *                                 e
+ *                           e = ────
+ *                               e
+ *                                max
+ *
+ *
+ * Since the improvement depends on the number of replicas moved in a single
+ * batch we need to calculate the improvement that would moving a single
+ * partition replica introduce. Since single move requested by a balancer moves
+ * partition from node A->B (where A has more than requested number of replicas
+ * per nd B should have less than requested number of replicas) we can calculate
+ * the error improvement introduced by single move as:
+ *
+ *                                     2
+ *                           e     = ─────
+ *                            step   N ⋅ T
+ *
+ * Single step error must be normalized as well. We stop if the improvement is
+ * less than the equivalent of the improvement made by 1/10th of the number of
+ * moves in a batch (or 1 move if that is bigger)
+ **/
+members_backend::unevenness_error_info
+members_backend::calculate_unevenness_error(
   partition_allocation_domain domain) const {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
@@ -374,7 +442,7 @@ double members_backend::calculate_unevenness_error(
     const auto total_replicas = calculate_total_replicas(node_replicas);
 
     if (total_replicas == 0) {
-        return 0.0;
+        return {.e = 0.0, .e_step = 0.0};
     }
 
     const auto target_replicas_per_node
@@ -405,8 +473,12 @@ double members_backend::calculate_unevenness_error(
     }
     err /= (static_cast<double>(total_replicas) * node_cnt);
 
+    double e_step
+      = 2.0
+        / (static_cast<double>(total_replicas) * static_cast<double>(node_cnt) * max_err);
+
     // normalize error to stay in range (0,1)
-    return err / max_err;
+    return {.e = err / max_err, .e_step = e_step};
 }
 
 void members_backend::calculate_reallocations_batch(
