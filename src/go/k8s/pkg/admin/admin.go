@@ -97,6 +97,8 @@ type AdminAPIClient interface {
 
 	EnableMaintenanceMode(ctx context.Context, node int) error
 	DisableMaintenanceMode(ctx context.Context, node int) error
+
+	GetHealthOverview(ctx context.Context) (admin.ClusterHealthOverview, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
