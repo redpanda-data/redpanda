@@ -12,6 +12,7 @@
 #include "cluster/controller.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -70,6 +71,54 @@ static auto with(
                   txlog.trace, "released_lock name:{}, tx_id:{}", name, tx_id);
             });
       });
+}
+
+static tm_transaction as_tx(
+  kafka::transactional_id tx_id, model::term_id term, fetch_tx_reply reply) {
+    vassert(
+      reply.ec == tx_errc::none,
+      "can't extract a tx from a failed (ec:{}) reply",
+      reply.ec);
+    tm_transaction tx;
+    tx.id = tx_id;
+    tx.pid = reply.pid;
+    tx.last_pid = reply.last_pid;
+    tx.tx_seq = reply.tx_seq;
+    tx.etag = term;
+    tx.timeout_ms = reply.timeout_ms;
+    switch (reply.status) {
+    case fetch_tx_reply::tx_status::ongoing:
+        tx.status = tm_transaction::tx_status::ongoing;
+        break;
+    case fetch_tx_reply::tx_status::preparing:
+        tx.status = tm_transaction::tx_status::preparing;
+        break;
+    case fetch_tx_reply::tx_status::prepared:
+        tx.status = tm_transaction::tx_status::prepared;
+        break;
+    case fetch_tx_reply::tx_status::aborting:
+        tx.status = tm_transaction::tx_status::aborting;
+        break;
+    case fetch_tx_reply::tx_status::killed:
+        tx.status = tm_transaction::tx_status::killed;
+        break;
+    case fetch_tx_reply::tx_status::ready:
+        tx.status = tm_transaction::tx_status::ready;
+        break;
+    case fetch_tx_reply::tx_status::tombstone:
+        tx.status = tm_transaction::tx_status::tombstone;
+        break;
+    }
+    tx.partitions.reserve(reply.partitions.size());
+    for (auto& p : reply.partitions) {
+        tx.partitions.push_back(
+          tm_transaction::tx_partition{p.ntp, p.etag, p.topic_revision});
+    }
+    tx.groups.reserve(reply.groups.size());
+    for (auto& g : reply.groups) {
+        tx.groups.push_back(tm_transaction::tx_group{g.group_id, g.etag});
+    }
+    return tx;
 }
 
 template<typename Func>
@@ -280,6 +329,117 @@ ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
         reply.groups.push_back(fetch_tx_reply::tx_group(g.group_id, g.etag));
     }
     co_return reply;
+}
+
+ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::fetch_tx(
+  kafka::transactional_id tx_id, model::term_id term) {
+    auto outcome = ss::make_lw_shared<
+      available_promise<checked<tm_transaction, tx_errc>>>();
+    ssx::spawn_with_gate(_gate, [this, tx_id, term, outcome] {
+        return dispatch_fetch_tx(
+                 tx_id, term, _metadata_dissemination_retry_delay_ms, outcome)
+          .finally([outcome]() {
+              if (!outcome->available()) {
+                  outcome->set_value(tx_errc::tx_not_found);
+              }
+          });
+    });
+    return outcome->get_future();
+}
+
+ss::future<> tx_gateway_frontend::dispatch_fetch_tx(
+  kafka::transactional_id tx_id,
+  model::term_id term,
+  model::timeout_clock::duration timeout,
+  ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>
+    outcome) {
+    auto& members_table = _controller->get_members_table();
+    auto node_ids = members_table.local().node_ids();
+
+    std::vector<ss::future<fetch_tx_reply>> inflight;
+    inflight.reserve(node_ids.size());
+    auto self = _controller->self();
+    for (auto node_id : node_ids) {
+        if (node_id == self) {
+            vlog(
+              txlog.trace,
+              "fetching tx:{} in term:{} from {}",
+              tx_id,
+              term,
+              node_id);
+            inflight.push_back(
+              fetch_tx_locally(tx_id, term)
+                .then([tx_id, term, outcome, node_id](fetch_tx_reply reply) {
+                    vlog(
+                      txlog.trace,
+                      "got {} on fetching tx:{} in term:{} from {}",
+                      reply.ec,
+                      tx_id,
+                      term,
+                      node_id);
+                    if (reply.ec == tx_errc::none) {
+                        if (!outcome->available()) {
+                            auto tx = as_tx(tx_id, term, reply);
+                            outcome->set_value(tx);
+                        }
+                    }
+                    return reply;
+                }));
+        } else {
+            inflight.push_back(
+              dispatch_fetch_tx(node_id, tx_id, term, timeout, outcome));
+        }
+    }
+    co_await when_all_succeed(inflight.begin(), inflight.end());
+}
+
+ss::future<fetch_tx_reply> tx_gateway_frontend::dispatch_fetch_tx(
+  model::node_id target,
+  kafka::transactional_id tx_id,
+  model::term_id term,
+  model::timeout_clock::duration timeout,
+  ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>
+    outcome) {
+    vlog(txlog.trace, "fetching tx:{} in term:{} from {}", tx_id, term, target);
+    return _connection_cache.local()
+      .with_node_client<tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        target,
+        timeout,
+        [tx_id, term, timeout](tx_gateway_client_protocol cp) {
+            return cp.fetch_tx(
+              fetch_tx_request(tx_id, term),
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<fetch_tx_reply>)
+      .then([outcome, tx_id, term, target](result<fetch_tx_reply> r) {
+          if (r.has_error()) {
+              vlog(
+                txlog.warn,
+                "got error {} on fetching tx:{} in term:{} from {}",
+                r.error(),
+                tx_id,
+                term,
+                target);
+              return fetch_tx_reply(tx_errc::unknown_server_error);
+          }
+          auto reply = r.value();
+          vlog(
+            txlog.trace,
+            "got {} on fetching tx:{} in term:{} from {}",
+            reply.ec,
+            tx_id,
+            term,
+            target);
+          if (reply.ec == tx_errc::none) {
+              if (!outcome->available()) {
+                  auto tx = as_tx(tx_id, term, reply);
+                  outcome->set_value(tx);
+              }
+          }
+          return r.value();
+      });
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::try_abort(

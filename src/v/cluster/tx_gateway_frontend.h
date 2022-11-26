@@ -133,6 +133,19 @@ private:
       kafka::transactional_id,
       model::timeout_clock::duration);
 
+    ss::future<checked<tm_transaction, tx_errc>>
+      fetch_tx(kafka::transactional_id, model::term_id);
+    ss::future<> dispatch_fetch_tx(
+      kafka::transactional_id,
+      model::term_id,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
+    ss::future<fetch_tx_reply> dispatch_fetch_tx(
+      model::node_id,
+      kafka::transactional_id,
+      model::term_id,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
     ss::future<try_abort_reply> dispatch_try_abort(
       model::node_id,
       model::partition_id,
