@@ -558,6 +558,12 @@ func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
 	return nil
 }
 
+func (m *mockAdminAPI) GetHealthOverview(_ context.Context) (admin.ClusterHealthOverview, error) {
+	return admin.ClusterHealthOverview{
+		IsHealthy: true,
+	}, nil
+}
+
 //nolint:goerr113 // test code
 func (m *mockAdminAPI) SetBrokerStatus(
 	id int, status admin.MembershipStatus,

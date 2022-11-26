@@ -23,6 +23,7 @@ import (
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -78,7 +79,12 @@ func (r *StatefulSetResource) runUpdate(
 	if err = r.updateRestartingStatus(ctx, true); err != nil {
 		return fmt.Errorf("unable to turn on restarting status in cluster custom resource: %w", err)
 	}
+
 	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
+		return err
+	}
+
+	if err = r.isClusterHealthy(ctx); err != nil {
 		return err
 	}
 
@@ -89,6 +95,37 @@ func (r *StatefulSetResource) runUpdate(
 	// Update is complete for all pods (and all are ready). Set restarting status to false.
 	if err = r.updateRestartingStatus(ctx, false); err != nil {
 		return fmt.Errorf("unable to turn off restarting status in cluster custom resource: %w", err)
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) isClusterHealthy(ctx context.Context) error {
+	if !featuregates.ClusterHealth(r.pandaCluster.Status.Version) {
+		r.logger.V(debugLogLevel).Info("Cluster health endpoint is not available", "version", r.pandaCluster.Spec.Version)
+		return nil
+	}
+
+	adminAPIClient, err := r.getAdminAPIClient(ctx)
+	if err != nil {
+		return fmt.Errorf("creating admin API client: %w", err)
+	}
+
+	health, err := adminAPIClient.GetHealthOverview(ctx)
+	if err != nil {
+		return fmt.Errorf("getting cluster health overview: %w", err)
+	}
+
+	restarting := "not restarting"
+	if r.pandaCluster.Status.IsRestarting() {
+		restarting = "restarting"
+	}
+
+	if !health.IsHealthy {
+		return &RequeueAfterError{
+			RequeueAfter: RequeueDuration,
+			Msg:          fmt.Sprintf("wait for cluster to become healthy (cluster %s)", restarting),
+		}
 	}
 
 	return nil
