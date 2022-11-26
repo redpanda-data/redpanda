@@ -19,7 +19,7 @@ type NodeConfig struct {
 	// TODO: add the rest of the fields
 }
 
-// NodeConfig returns a single node configuration.
+// GetNodeConfig returns a single node configuration.
 // It's expected to be called from an AdminAPI with a single broker URL,
 // otherwise the method will return an error.
 func (a *AdminAPI) GetNodeConfig(ctx context.Context) (NodeConfig, error) {
