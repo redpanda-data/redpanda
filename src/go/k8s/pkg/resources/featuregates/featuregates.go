@@ -38,6 +38,12 @@ func CentralizedConfiguration(version string) bool {
 	return atLeastVersion(V22_1, version)
 }
 
+// ClusterHealth feature gate should be removed when the operator
+// will no longer support 21.x or older versions
+func ClusterHealth(version string) bool {
+	return atLeastVersion(V22_1, version)
+}
+
 // MaintenanceMode feature gate should be removed when the operator
 // will no longer support 21.x or older versions
 func MaintenanceMode(version string) bool {
