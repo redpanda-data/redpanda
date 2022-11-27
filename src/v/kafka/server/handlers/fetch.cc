@@ -69,14 +69,17 @@ static ss::future<read_result> read_from_partition(
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    auto hw = part.high_watermark();
     auto lso = part.last_stable_offset();
+    if (unlikely(!lso)) {
+        co_return read_result(lso.error());
+    }
+    auto hw = part.high_watermark();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
     if (
       hw < config.start_offset || config.skip_read
       || config.start_offset > config.max_offset) {
-        co_return read_result(start_o, hw, lso);
+        co_return read_result(start_o, hw, lso.value());
     }
 
     storage::log_reader_config reader_config(
@@ -124,12 +127,16 @@ static ss::future<read_result> read_from_partition(
           ss::make_foreign<read_result::data_t>(std::move(data)),
           start_o,
           hw,
-          lso,
+          lso.value(),
           std::move(aborted_transactions));
     }
 
     co_return read_result(
-      std::move(data), start_o, hw, lso, std::move(aborted_transactions));
+      std::move(data),
+      start_o,
+      hw,
+      lso.value(),
+      std::move(aborted_transactions));
 }
 
 /**
@@ -170,11 +177,12 @@ static ss::future<read_result> do_read_from_ntp(
         if (
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
-            ntp_config.cfg.max_offset = kafka_partition->last_stable_offset();
-            if (ntp_config.cfg.max_offset > model::offset{0}) {
-                ntp_config.cfg.max_offset = ntp_config.cfg.max_offset
-                                            - model::offset{1};
+            auto maybe_lso = kafka_partition->last_stable_offset();
+            if (unlikely(!maybe_lso)) {
+                // partition is still bootstrapping
+                co_return read_result(maybe_lso.error());
             }
+            ntp_config.cfg.max_offset = model::prev_offset(maybe_lso.value());
         }
     }
 
