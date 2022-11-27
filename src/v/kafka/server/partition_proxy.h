@@ -34,7 +34,8 @@ public:
         virtual const model::ntp& ntp() const = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
-        virtual model::offset last_stable_offset() const = 0;
+        virtual checked<model::offset, error_code>
+        last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
         virtual std::optional<model::offset>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
@@ -67,7 +68,7 @@ public:
 
     model::offset high_watermark() const { return _impl->high_watermark(); }
 
-    model::offset last_stable_offset() const {
+    checked<model::offset, error_code> last_stable_offset() const {
         return _impl->last_stable_offset();
     }
 

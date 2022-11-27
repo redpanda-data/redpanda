@@ -1648,16 +1648,14 @@ model::offset rm_stm::last_stable_offset() {
     //
     // We optimize for the case where there are no inflight transactional
     // batches to return the high water mark.
-    if (unlikely(!_bootstrap_committed_offset)) {
-        // return next offset to offset::min, to follow the policy that the LSO
-        // is a next offset to the one for which all transactions are resolved
-        return model::next_offset(model::offset::min());
-    }
-
     auto last_applied = last_applied_offset();
-    auto next_to_apply = model::next_offset(last_applied);
-    if (last_applied < _bootstrap_committed_offset.value()) {
-        return next_to_apply;
+    if (unlikely(
+          !_bootstrap_committed_offset
+          || last_applied < _bootstrap_committed_offset.value())) {
+        // To preserve the monotonicity of LSO from a client perspective,
+        // we return this unknown offset marker that is translated to
+        // an appropriate retry-able Kafka error code for clients.
+        return model::invalid_lso;
     }
 
     // Check for any in-flight transactions.
@@ -1680,6 +1678,7 @@ model::offset rm_stm::last_stable_offset() {
     }
 
     auto last_visible_index = _c->last_visible_index();
+    auto next_to_apply = model::next_offset(last_applied);
     if (first_tx_start <= last_visible_index) {
         // There are in flight transactions < high water mark that may
         // not be applied yet. We still need to consider only applied

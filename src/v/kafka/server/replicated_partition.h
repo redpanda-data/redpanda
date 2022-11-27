@@ -66,7 +66,7 @@ public:
         return _translator->from_log_offset(_partition->high_watermark());
     }
 
-    model::offset last_stable_offset() const final {
+    checked<model::offset, error_code> last_stable_offset() const final {
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
                 // There is no difference between HWM and LO in this mode
@@ -75,7 +75,11 @@ public:
                 return model::offset(0);
             }
         }
-        return _translator->from_log_offset(_partition->last_stable_offset());
+        auto maybe_lso = _partition->last_stable_offset();
+        if (maybe_lso == model::invalid_lso) {
+            return error_code::offset_not_available;
+        }
+        return _translator->from_log_offset(maybe_lso);
     }
 
     bool is_elected_leader() const final {
