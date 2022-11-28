@@ -853,6 +853,32 @@ void read_nested(
 }
 
 template<typename T>
+void read_nested(
+  iobuf_parser& in, tristate<T>& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+
+    int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
+    if (flag == -1) {
+        // disabled
+        t = tristate<T>{};
+    } else if (flag == 0) {
+        // empty
+        t = tristate<T>(std::nullopt);
+    } else if (flag == 1) {
+        t = tristate<T>(read_nested<T>(in, bytes_left_limit));
+    } else {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "reading type {} of size {}: {} bytes left - unexpected tristate "
+          "state flag: {}, expected states are -1,0,1",
+          type_str<Type>(),
+          sizeof(Type),
+          in.bytes_left(),
+          flag));
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -862,27 +888,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (reflection::is_tristate<T>) {
-        int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
-        if (flag == -1) {
-            // disabled
-            t = T{};
-        } else if (flag == 0) {
-            // empty
-            t = T(std::nullopt);
-        } else if (flag == 1) {
-            t = T(read_nested<typename T::value_type>(in, bytes_left_limit));
-        } else {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "reading type {} of size {}: {} bytes left - unexpected tristate "
-              "state flag: {}, expected states are -1,0,1",
-              type_str<Type>(),
-              sizeof(Type),
-              in.bytes_left(),
-              flag));
-        }
-    } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
+    if constexpr (std::is_same_v<T, ss::net::inet_address>) {
         bool is_ipv4 = read_nested<bool>(in, bytes_left_limit);
         auto address_buf = read_nested<iobuf>(in, bytes_left_limit);
         auto address_bytes = iobuf_to_bytes(address_buf);
