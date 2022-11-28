@@ -37,6 +37,7 @@ local_monitor_fixture::local_monitor_fixture()
     config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
     config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
     config::shard_local_cfg().storage_min_free_bytes.bind(),
+    config::node_config().data_directory().as_sstring(),
     _storage_node_api,
     _storage_api) {
     _storage_node_api.start_single().get0();

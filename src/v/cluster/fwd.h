@@ -53,4 +53,8 @@ class node_status_backend;
 class node_status_table;
 class ephemeral_credential_frontend;
 
+namespace node {
+class local_monitor;
+} // namespace node
+
 } // namespace cluster

@@ -17,6 +17,7 @@
 #include "storage/log_manager.h"
 #include "storage/probe.h"
 #include "storage/storage_resources.h"
+#include "utils/notification_list.h"
 
 namespace storage {
 
@@ -35,8 +36,12 @@ public:
 
     ss::future<> stop() { return ss::now(); }
 
+    using notification_id = named_type<int32_t, struct notification_id_t>;
+    using disk_cb_t = ss::noncopyable_function<void(uint64_t, uint64_t)>;
+
     void set_disk_metrics(
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
+        _watchers.notify(uint64_t(total_bytes), uint64_t(free_bytes));
         _probe.set_disk_metrics(total_bytes, free_bytes, alert);
     }
 
@@ -44,8 +49,18 @@ public:
         return _probe.get_disk_metrics();
     };
 
+    notification_id register_disk_notification(disk_cb_t cb) {
+        return _watchers.register_cb(std::move(cb));
+    }
+
+    void unregister_disk_notification(notification_id id) {
+        _watchers.unregister_cb(id);
+    }
+
 private:
     storage::node_probe _probe;
+
+    notification_list<disk_cb_t, notification_id> _watchers;
 };
 
 // Top-level sharded storage API.

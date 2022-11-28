@@ -35,17 +35,24 @@
 #include <chrono>
 #include <seastarx.h>
 
+using namespace std::chrono_literals;
+
 namespace cluster::node {
+
+// Period between updates where we will issue system call to get free space
+constexpr ss::lowres_clock::duration tick_period = 1s;
 
 local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
   config::binding<unsigned> alert_percent,
   config::binding<size_t> min_bytes,
+  ss::sstring data_directory,
   ss::sharded<storage::node_api>& node_api,
   ss::sharded<storage::api>& api)
   : _free_bytes_alert_threshold(alert_bytes)
   , _free_percent_alert_threshold(alert_percent)
   , _min_free_bytes(min_bytes)
+  , _data_directory(data_directory)
   , _storage_node_api(node_api)
   , _storage_api(api) {
     // Intentionally undocumented environment variable, only for use
@@ -54,6 +61,29 @@ local_monitor::local_monitor(
     if (test_disk_size_str) {
         _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
     }
+}
+
+ss::future<> local_monitor::_update_loop() {
+    while (!_abort_source.abort_requested()) {
+        co_await update_state();
+        co_await ss::sleep_abortable(tick_period, _abort_source);
+    }
+}
+
+ss::future<> local_monitor::start() {
+    // Load disk stats inline on start, so that anything relying on these
+    // stats downstream can get them without waiting for our first tick.
+    co_await update_state();
+
+    ssx::spawn_with_gate(_gate, [this]() { return _update_loop(); });
+
+    co_return;
+}
+
+ss::future<> local_monitor::stop() {
+    _abort_source.request_abort();
+
+    co_await _gate.close();
 }
 
 ss::future<> local_monitor::update_state() {
@@ -90,9 +120,7 @@ size_t local_monitor::alert_percent_in_bytes(
 }
 
 ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
-    auto path = _path_for_test.empty()
-                  ? config::node().data_directory().as_sstring()
-                  : _path_for_test;
+    auto path = _path_for_test.empty() ? _data_directory : _path_for_test;
 
     auto svfs = co_await get_statvfs(path);
 
@@ -112,7 +140,7 @@ ss::future<std::vector<storage::disk>> local_monitor::get_disks() {
     }
 
     co_return std::vector<storage::disk>{storage::disk{
-      .path = config::node().data_directory().as_sstring(),
+      .path = _data_directory,
       .free = free,
       .total = total,
     }};
@@ -207,11 +235,6 @@ ss::future<> local_monitor::update_disk_metrics() {
     auto total_space = _state.disks[0].total;
     auto free_space = _state.disks[0].free;
     auto alert = _state.storage_space_alert;
-
-    co_await _storage_api.invoke_on_all(
-      [total_space, free_space](storage::api& api) {
-          api.resources().update_allowance(total_space, free_space);
-      });
 
     co_await _storage_node_api.invoke_on_all(
       &storage::node_api::set_disk_metrics, total_space, free_space, alert);

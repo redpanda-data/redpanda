@@ -140,9 +140,7 @@ void group_manager::trigger_leadership_notification(
         leader_id = st.current_leader->id();
     }
 
-    for (auto& cb : _notifications) {
-        cb.second(st.group, st.term, leader_id);
-    }
+    _notifications.notify(st.group, st.term, leader_id);
 }
 
 void group_manager::setup_metrics() {

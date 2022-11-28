@@ -53,13 +53,9 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
-      ss::sharded<storage::node_api>&,
-      ss::sharded<storage::api>&,
+      ss::sharded<node::local_monitor>&,
       ss::sharded<drain_manager>&,
-      ss::sharded<features::feature_table>&,
-      config::binding<size_t> min_bytes_alert,
-      config::binding<unsigned> min_percent_alert,
-      config::binding<size_t> min_bytes);
+      ss::sharded<features::feature_table>&);
 
     ss::future<> stop();
 
@@ -164,7 +160,7 @@ private:
 
     ss::gate _gate;
     mutex _refresh_mutex;
-    node::local_monitor _local_monitor;
+    ss::sharded<node::local_monitor>& _local_monitor;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;
