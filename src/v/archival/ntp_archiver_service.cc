@@ -105,6 +105,17 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
     return _parent.archival_meta_stm()->manifest();
 }
 
+ss::future<> ntp_archiver::start() {
+    if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
+        ssx::spawn_with_gate(
+          _gate, [this] { return run_sync_manifest_loop(); });
+    } else {
+        ssx::spawn_with_gate(_gate, [this] { return outer_upload_loop(); });
+    }
+
+    return ss::now();
+}
+
 void ntp_archiver::run_sync_manifest_loop() {
     vassert(
       _upload_loop_state == loop_state::initial,

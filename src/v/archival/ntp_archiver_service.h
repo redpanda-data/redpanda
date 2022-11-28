@@ -84,6 +84,10 @@ public:
 
     void run_sync_manifest_loop();
 
+    /// Spawn background fibers, which depending on the mode (read replica or
+    /// not) will either do uploads, or periodically read back the manifest.
+    ss::future<> start();
+
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be

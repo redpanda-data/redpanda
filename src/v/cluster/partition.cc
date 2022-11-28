@@ -138,7 +138,6 @@ partition::partition(
 
             _archiver = ss::make_lw_shared<archival::ntp_archiver>(
               log().config(), archiver_conf, cloud_storage_api.local(), *this);
-            // TODO: run outer_upload_loop in the background
         }
     }
 }
@@ -318,6 +317,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _cloud_storage_partition->start(); });
     }
 
+    if (_archiver) {
+        f = f.then([this] { return _archiver->start(); });
+    }
+
     return f;
 }
 
@@ -340,6 +343,10 @@ ss::future<> partition::stop() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->stop(); });
+    }
+
+    if (_archiver) {
+        f = f.then([this] { return _archiver->stop(); });
     }
 
     if (_archival_meta_stm) {
