@@ -178,6 +178,18 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             iter = materialize_segment(mit->second);
         }
         auto next_it = std::next(mit);
+        while (next_it != _manifest.end()) {
+            // Normally, the segments in the manifest do not overlap.
+            // But in some cases we may see them overlapping, for instance
+            // if they were produced by older version of redpanda.
+            // In this case we want to skip segment if its offset range
+            // lies withing the offset range of the current segment.
+            if (
+              mit->second.committed_offset < next_it->second.committed_offset) {
+                break;
+            }
+            next_it++;
+        }
         model::offset next_offset = next_it == _manifest.end() ? model::offset{}
                                                                : next_it->first;
         return borrow_result_t{
