@@ -3489,14 +3489,28 @@ class RedpandaService(RedpandaServiceBase):
         return accum
 
     def search_log_node(self, node: ClusterNode, pattern: str):
-        for line in node.account.ssh_capture(
-                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
-                timeout_sec=60):
+        for line in self.filter_log(patterns=[pattern], node=node):
             # We got a match
             self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
             return True
 
         return False
+
+    def filter_log(self, *, patterns: list[str], node: ClusterNode):
+        """
+        Helper for tests to search for specific log lines of interest
+        :param patterns: one or more grep-compatible regex
+        :param node: which node's log to search
+        :return: yields zero or more matching lines as string
+        """
+
+        assert len(patterns) > 0
+        search_expr = " ".join(f"-e \"{p}\"" for p in patterns)
+
+        for line in node.account.ssh_capture(
+                f"grep {search_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+        ):
+            yield line.strip()
 
     def search_log_any(self,
                        pattern: str,
