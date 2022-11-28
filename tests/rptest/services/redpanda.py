@@ -2348,24 +2348,31 @@ class RedpandaService(Service):
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
 
-    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
-        # Test helper for grepping the redpanda log.
-        # The design follows python's built-in any() function.
-        # https://docs.python.org/3/library/functions.html#any
+    def search_log_node(self, node: ClusterNode, pattern: str):
+        for line in node.account.ssh_capture(
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+        ):
+            # We got a match
+            self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
+            return True
 
-        # :param pattern: the string to search for
-        # :param nodes: a list of nodes to run grep on
-        # :return:  true if any instances of `pattern` found
+        return False
+
+    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
+        """
+        Test helper for grepping the redpanda log.
+        The design follows python's built-in any() function.
+        https://docs.python.org/3/library/functions.html#any
+
+        :param pattern: the string to search for
+        :param nodes: a list of nodes to run grep on
+        :return:  true if any instances of `pattern` found
+        """
         if nodes is None:
             nodes = self.nodes
 
         for node in nodes:
-            for line in node.account.ssh_capture(
-                    f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            ):
-                # We got a match
-                self.logger.debug(
-                    f"Found {pattern} on node {node.name}: {line}")
+            if self.search_log_node(node, pattern):
                 return True
 
         # Fall through, no matches
