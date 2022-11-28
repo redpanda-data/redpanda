@@ -102,7 +102,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                         extra_rp_conf=extra_rp_conf)
         if num_to_upgrade > 0:
             installer = self.redpanda._installer
-            installer.install(self.redpanda.nodes, (22, 1, 4))
+            installer.install(
+                self.redpanda.nodes,
+                installer.highest_from_prior_feature_version(
+                    RedpandaInstaller.HEAD))
             self.redpanda.start()
             installer.install(self.redpanda.nodes[:num_to_upgrade],
                               RedpandaInstaller.HEAD)
