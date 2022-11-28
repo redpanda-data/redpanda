@@ -35,6 +35,7 @@ type MockAdminAPI struct {
 	brokers          []admin.Broker
 	monitor          sync.Mutex
 	Log              logr.Logger
+	clusterHealth    bool
 }
 
 var _ AdminAPIClient = &MockAdminAPI{Log: ctrl.Log.WithName("AdminAPIClient").WithName("mockAdminAPI")}
@@ -48,6 +49,12 @@ type unavailableError struct{}
 
 func (*unavailableError) Error() string {
 	return "unavailable"
+}
+
+func (m *MockAdminAPI) SetClusterHealth(health bool) {
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	m.clusterHealth = health
 }
 
 func (m *MockAdminAPI) Config(context.Context, bool) (admin.Config, error) {
@@ -394,7 +401,7 @@ func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
 func (m *MockAdminAPI) GetHealthOverview(_ context.Context) (admin.ClusterHealthOverview, error) {
 	m.Log.WithName("GetHealthOverview").Info("called")
 	return admin.ClusterHealthOverview{
-		IsHealthy: true,
+		IsHealthy: m.clusterHealth,
 	}, nil
 }
 

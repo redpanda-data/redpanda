@@ -102,6 +102,8 @@ var _ = BeforeSuite(func(done Done) {
 		}
 		return testAdminAPI, nil
 	}
+	testAdminAPI.SetClusterHealth(true)
+
 	testStore = consolepkg.NewStore(k8sManager.GetClient(), k8sManager.GetScheme())
 	testKafkaAdmin = &mockKafkaAdmin{}
 	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster, *consolepkg.Store) (consolepkg.KafkaAdminClient, error) {
