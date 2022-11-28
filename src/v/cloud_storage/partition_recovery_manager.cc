@@ -179,12 +179,12 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
 
 // Parameters used to exclude data based on total size.
 struct size_bound_deletion_parameters {
-    size_t retention_bytes;
+    size_t bytes;
 };
 
 // Parameters used to exclude data based on time.
 struct time_bound_deletion_parameters {
-    std::chrono::milliseconds retention_duration;
+    std::chrono::milliseconds duration;
 };
 
 // Retention policy that should be used during recovery
@@ -198,10 +198,10 @@ std::ostream& operator<<(std::ostream& o, const retention& r) {
         fmt::print(o, "{{none}}");
     } else if (std::holds_alternative<size_bound_deletion_parameters>(r)) {
         auto p = std::get<size_bound_deletion_parameters>(r);
-        fmt::print(o, "{{size-bytes: {}}}", p.retention_bytes);
+        fmt::print(o, "{{size-bytes: {}}}", p.bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(r)) {
         auto p = std::get<time_bound_deletion_parameters>(r);
-        fmt::print(o, "{{time-ms: {}}}", p.retention_duration.count());
+        fmt::print(o, "{{time-ms: {}}}", p.duration.count());
     }
     return o;
 }
@@ -213,10 +213,25 @@ get_retention_policy(const storage::ntp_config::default_overrides& prop) {
       flags
       && (flags.value() & model::cleanup_policy_bitflags::deletion)
            == model::cleanup_policy_bitflags::deletion) {
-        if (prop.retention_bytes.has_value()) {
-            return size_bound_deletion_parameters{prop.retention_bytes.value()};
-        } else if (prop.retention_time.has_value()) {
-            return time_bound_deletion_parameters{prop.retention_time.value()};
+        // If a space constraint is set on the topic, use that: otherwise
+        // use time based constraint if present.  If total retention setting
+        // is less than local retention setting, take the smallest.
+        //
+        // This differs from ordinary storage GC, in that we are applying
+        // space _or_ time bounds: not both together.
+        if (prop.retention_local_target_bytes.has_value()) {
+            auto v = prop.retention_local_target_bytes.value();
+
+            if (prop.retention_bytes.has_value()) {
+                v = std::min(prop.retention_bytes.value(), v);
+            }
+            return size_bound_deletion_parameters{v};
+        } else if (prop.retention_local_target_ms.has_value()) {
+            auto v = prop.retention_local_target_ms.value();
+            if (prop.retention_time.has_value()) {
+                v = std::min(prop.retention_time.value(), v);
+            }
+            return time_bound_deletion_parameters{v};
         }
     }
     return std::monostate();
@@ -266,24 +281,24 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
         vlog(
           _ctxlog.info,
           "Size bound retention is used. Size limit: {} bytes.",
-          r.retention_bytes);
+          r.bytes);
         part = co_await download_log_with_capped_size(
           build_offset_map(mat.partition_manifest),
           mat.partition_manifest,
           prefix,
-          r.retention_bytes);
+          r.bytes);
     } else if (std::holds_alternative<time_bound_deletion_parameters>(
                  retention)) {
         auto r = std::get<time_bound_deletion_parameters>(retention);
         vlog(
           _ctxlog.info,
           "Time bound retention is used. Time limit: {}ms.",
-          r.retention_duration.count());
+          r.duration.count());
         part = co_await download_log_with_capped_time(
           build_offset_map(mat.partition_manifest),
           mat.partition_manifest,
           prefix,
-          r.retention_duration);
+          r.duration);
     }
     // Move parts to final destinations
     co_await move_parts(part);
