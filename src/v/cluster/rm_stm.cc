@@ -1171,6 +1171,16 @@ rm_stm::get_expiration_info(model::producer_identity pid) const {
     return it->second;
 }
 
+std::optional<int32_t>
+rm_stm::get_seq_number(model::producer_identity pid) const {
+    auto it = _log_state.seq_table.find(pid);
+    if (it == _log_state.seq_table.end()) {
+        return std::nullopt;
+    }
+
+    return it->second.entry.seq;
+}
+
 ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
@@ -1189,6 +1199,7 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
         tx_info.lso_bound = offset;
         tx_info.status = rm_stm::transaction_info::status_t::initiating;
         tx_info.info = get_expiration_info(id);
+        tx_info.seq = get_seq_number(id);
         ans.emplace(id, tx_info);
     }
 
@@ -1198,6 +1209,7 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
             tx_info.lso_bound = offset;
             tx_info.status = get_tx_status(id);
             tx_info.info = get_expiration_info(id);
+            tx_info.seq = get_seq_number(id);
             ans.emplace(id, tx_info);
         }
     }
@@ -1207,6 +1219,7 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
         tx_info.lso_bound = offset.first;
         tx_info.status = get_tx_status(id);
         tx_info.info = get_expiration_info(id);
+        tx_info.seq = get_seq_number(id);
         ans.emplace(id, tx_info);
     }
 
