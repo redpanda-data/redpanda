@@ -765,12 +765,12 @@ ss::future<> members_backend::reconcile() {
 
 bool members_backend::should_stop_rebalancing_update(
   double current_error, const members_backend::update_meta& meta) const {
-    // do not finish decommissioning and recommissioning updates as they have
+    // do not finish decommissioning and finish updates as they have
     // strict stop conditions
-
+    using update_t = members_manager::node_update_type;
     if (
       meta.update
-      && meta.update->type != members_manager::node_update_type::added) {
+      && (meta.update->type == update_t::decommissioned || meta.update->type == update_t::reallocation_finished)) {
         return false;
     }
     static auto const stop_condition_improvement = 0.05;
@@ -1021,7 +1021,10 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
     reset_last_unevenness_error();
     std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update && meta.update->id == id
-               && meta.update->type == members_manager::node_update_type::added;
+                 && (meta.update->type
+                      == members_manager::node_update_type::added
+               || meta.update->type
+                    == members_manager::node_update_type::recommissioned);
     });
 }
 
