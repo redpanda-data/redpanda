@@ -726,6 +726,15 @@ void read_nested(
     }
 }
 
+template<typename T, typename Tag, typename IsConstexpr>
+void read_nested(
+  iobuf_parser& in,
+  ::detail::base_named_type<T, Tag, IsConstexpr>& t,
+  std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+    t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
+}
+
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -736,9 +745,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (reflection::is_rp_named_type<Type>) {
-        t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
-    } else if constexpr (reflection::is_ss_bool_class<Type>) {
+    if constexpr (reflection::is_ss_bool_class<Type>) {
         t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
