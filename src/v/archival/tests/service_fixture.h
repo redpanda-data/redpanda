@@ -152,12 +152,6 @@ public:
     void wait_for_lso(const model::ntp&);
     /// Provides access point for segment_matcher CRTP template
     storage::api& get_local_storage_api();
-    /// Get archival scheduler service
-    archival::internal::scheduler_service_impl& get_scheduler_service() {
-        auto p = reinterpret_cast<archival::internal::scheduler_service_impl*>(
-          &app.archival_scheduler.local());
-        return *p;
-    }
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
     void init_storage_api_local(
@@ -182,15 +176,6 @@ public:
     ss::future<> create_archival_snapshot(
       const storage::ntp_config& cfg,
       cloud_storage::partition_manifest manifest);
-
-    /// Stops the scheduler service before listening to incoming HTTP calls.
-    /// Intended to be used in tests which create their own archiver, where
-    /// stopping the scheduler first is necessary so that the built in archiver
-    /// does not interfere with the archiver in test.
-    void stop_archiver_scheduler_and_listen() {
-        get_scheduler_service().stop().get();
-        listen();
-    }
 
 private:
     void initialize_shard(

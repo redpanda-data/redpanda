@@ -277,6 +277,10 @@ public:
 
     consensus_ptr raft() const { return _raft; }
 
+    /// Fixture testing hook, for tests that would like to stop the
+    /// usual archiver and start their own
+    ss::future<> stop_archiver();
+
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;

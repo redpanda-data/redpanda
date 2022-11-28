@@ -249,13 +249,7 @@ struct reupload_fixture : public archiver_fixture {
           remote_conf.cloud_credentials_source);
 
         auto part = app.partition_manager.local().get(manifest_ntp);
-
-        archiver.emplace(
-          get_ntp_conf(),
-          app.partition_manager.local(),
-          arch_conf,
-          *remote,
-          part);
+        archiver.emplace(get_ntp_conf(), arch_conf, *remote, *part);
     }
 
     ss::lw_shared_ptr<storage::segment>
@@ -310,14 +304,15 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("1000-4-v1.log", manifest);
@@ -380,14 +375,15 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("1000-4-v1.log", manifest);
@@ -440,7 +436,8 @@ FIXTURE_TEST(
     stm_acc.replace_manifest(misaligned_lco);
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     mark_segments_as_compacted({0, 1});
 
@@ -477,7 +474,8 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     mark_segments_as_compacted({0});
 
@@ -516,7 +514,8 @@ FIXTURE_TEST(test_upload_compacted_segments_ends_in_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     mark_segments_as_compacted({0});
 
@@ -554,7 +553,8 @@ FIXTURE_TEST(test_upload_compacted_segments_begins_in_gap, reupload_fixture) {
 
     const auto& stm_manifest = part->archival_meta_stm()->manifest();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     mark_segments_as_compacted({0, 1});
 
@@ -581,7 +581,9 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
@@ -589,7 +591,6 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("20-4-v1.log", manifest);
@@ -646,7 +647,9 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
@@ -654,7 +657,6 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("20-4-v1.log", manifest);
@@ -721,7 +723,9 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     initialize(segments, false);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
 
@@ -729,7 +733,6 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("1000-4-v1.log", manifest);
@@ -766,7 +769,9 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // Upload two non compacted segments, no segment is compacted yet.
 
@@ -774,7 +779,6 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    auto part = app.partition_manager.local().get(manifest_ntp);
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
     verify_segment_request("1000-4-v1.log", manifest);
@@ -824,15 +828,15 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     initialize(segments);
     auto action = ss::defer([this] { archiver->stop().get(); });
 
-    stop_archiver_scheduler_and_listen();
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    part->stop_archiver().get();
+    listen();
 
     // 4 out of 5 segments uploaded due to archiver limit of 4
     archival::ntp_archiver::batch_result expected{{4, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
-
-    auto part = app.partition_manager.local().get(manifest_ntp);
 
     auto manifest = load_manifest(
       get_targets().find(manifest_url)->second.content);

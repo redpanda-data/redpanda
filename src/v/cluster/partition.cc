@@ -480,6 +480,17 @@ ss::future<> partition::remove_remote_persistent_state() {
     }
 }
 
+ss::future<> partition::stop_archiver() {
+    if (_archiver) {
+        return _archiver->stop().then([this] {
+            // Drop it so that we don't end up double-stopping on shutdown
+            _archiver = nullptr;
+        });
+    } else {
+        return ss::now();
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }

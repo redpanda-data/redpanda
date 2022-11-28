@@ -108,14 +108,14 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
       remote_conf.client_config,
       remote_conf.cloud_credentials_source);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -224,15 +224,15 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
       remote_conf.connection_limit,
       remote_conf.client_config,
       remote_conf.cloud_credentials_source);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -329,7 +329,8 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
         return part->last_stable_offset() >= model::offset(3000);
     }).get();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
     config::shard_local_cfg().delete_retention_ms.set_value(
       std::chrono::milliseconds{1min});
     config::shard_local_cfg()
@@ -340,8 +341,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       remote_conf.connection_limit,
       remote_conf.client_config,
       remote_conf.cloud_credentials_source);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     auto res = upload_next_with_retries(archiver).get0();
@@ -702,7 +702,8 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       ->add_segments(old_segments, ss::lowres_clock::now() + 1s)
       .get();
 
-    stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
@@ -710,8 +711,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       remote_conf.client_config,
       remote_conf.cloud_credentials_source);
 
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), app.partition_manager.local(), arch_conf, remote, part);
+    archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -923,12 +923,12 @@ static void test_partial_upload_impl(
 
     aconf.time_limit = segment_time_limit(0s);
 
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), test.app.partition_manager.local(), aconf, remote, part);
+    archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
-    test.stop_archiver_scheduler_and_listen();
+    part->stop_archiver().get();
+    test.listen();
     auto res = upload_next_with_retries(archiver, lso).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
