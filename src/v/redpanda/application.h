@@ -105,7 +105,6 @@ public:
 
     ss::sharded<features::feature_table> feature_table;
 
-    ss::sharded<kafka::coordinator_ntp_mapper> co_coordinator_ntp_mapper;
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     ss::sharded<kafka::group_router> group_router;
@@ -208,7 +207,6 @@ private:
 
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<kafka::group_manager> _co_group_manager;
     ss::sharded<rpc::rpc_server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;

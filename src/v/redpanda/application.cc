@@ -991,21 +991,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     }
 
     // group membership
-    syschecks::systemd_message("Creating kafka group managers").get();
+    syschecks::systemd_message("Creating kafka group manager").get();
     construct_service(
       _group_manager,
-      model::kafka_group_nt,
-      std::ref(raft_group_manager),
-      std::ref(partition_manager),
-      std::ref(controller->get_topics_state()),
-      std::ref(tx_gateway_frontend),
-      std::ref(controller->get_feature_table()),
-      &kafka::make_backward_compatible_serializer,
-      std::ref(config::shard_local_cfg()),
-      kafka::enable_group_metrics::no)
-      .get();
-    construct_service(
-      _co_group_manager,
       model::kafka_consumer_offsets_nt,
       std::ref(raft_group_manager),
       std::ref(partition_manager),
@@ -1018,10 +1006,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();
     construct_service(
-      coordinator_ntp_mapper, std::ref(metadata_cache), model::kafka_group_nt)
-      .get();
-    construct_service(
-      co_coordinator_ntp_mapper,
+      coordinator_ntp_mapper,
       std::ref(metadata_cache),
       model::kafka_consumer_offsets_nt)
       .get();
@@ -1031,10 +1016,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       _scheduling_groups.kafka_sg(),
       smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
-      std::ref(_co_group_manager),
       std::ref(shard_table),
       std::ref(coordinator_ntp_mapper),
-      std::ref(co_coordinator_ntp_mapper),
       std::ref(controller->get_feature_table()))
       .get();
     if (coproc_enabled()) {
@@ -1561,7 +1544,6 @@ void application::start_runtime_services(cluster::cluster_discovery& cd) {
 
     syschecks::systemd_message("Starting Kafka group manager").get();
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
-    _co_group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     // Initialize the Raft RPC endpoint before the rest of the runtime RPC
     // services so the cluster seeds can elect a leader and write a cluster
