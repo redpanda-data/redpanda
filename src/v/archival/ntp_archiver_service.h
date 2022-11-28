@@ -74,10 +74,9 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
-      cluster::partition_manager&,
       const configuration& conf,
       cloud_storage::remote& remote,
-      ss::lw_shared_ptr<cluster::partition> part);
+      cluster::partition& parent);
 
     /// Start the fiber that will upload the partition data to the cloud
     /// storage. Can be started only once.
@@ -267,8 +266,12 @@ private:
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();
 
-    /// Launch the upload loop fiber.
+    /// Within a particular term, while leader, keep trying to upload data.
     ss::future<> upload_loop();
+
+    /// Run upload loop until term change, then start it again.  Stop when
+    /// abort source fires.
+    ss::future<> outer_upload_loop();
 
     /// Launch the sync manifest loop fiber.
     ss::future<> sync_manifest_loop();
@@ -297,9 +300,8 @@ private:
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
-    cluster::partition_manager& _partition_manager;
     cloud_storage::remote& _remote;
-    ss::lw_shared_ptr<cluster::partition> _partition;
+    cluster::partition& _parent;
     model::term_id _start_term;
     archival_policy _policy;
     cloud_storage_clients::bucket_name _bucket;

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
@@ -52,6 +53,8 @@ public:
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
+
+    ~partition();
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -126,6 +129,8 @@ public:
     }
 
     const model::ntp& ntp() const { return _raft->ntp(); }
+
+    storage::log log() const { return _raft->log(); }
 
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
@@ -287,6 +292,7 @@ private:
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    ss::lw_shared_ptr<archival::ntp_archiver> _archiver;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};

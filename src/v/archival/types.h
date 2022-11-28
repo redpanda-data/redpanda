@@ -70,4 +70,13 @@ struct configuration {
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 };
 
+/// \brief create scheduler service config
+/// This mehtod will use shard-local redpanda configuration
+/// to generate the configuration.
+/// \param sg is a scheduling group used to run all uploads
+/// \param p is an io priority class used to throttle upload file reads
+archival::configuration get_archival_service_config(
+  ss::scheduling_group sg = ss::default_scheduling_group(),
+  ss::io_priority_class p = ss::default_priority_class());
+
 } // namespace archival

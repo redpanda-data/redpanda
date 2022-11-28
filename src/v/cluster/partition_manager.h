@@ -88,10 +88,6 @@ public:
 
     ss::future<> remove(const model::ntp& ntp, partition_removal_mode mode);
 
-    std::optional<storage::log> log(const model::ntp& ntp) {
-        return _storage.log_mgr().get(ntp);
-    }
-
     /*
      * register for notification of new partitions within the specific topic
      * being managed. this will invoke the callback for existing partitions

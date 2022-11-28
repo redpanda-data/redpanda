@@ -161,6 +161,7 @@ v_cc_library(
     v::model
     v::v8_engine
     v::cloud_storage
+    v::archival
     v::features
   )
 add_subdirectory(tests)

@@ -9,6 +9,7 @@
 
 #include "cluster/partition.h"
 
+#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
@@ -131,9 +132,18 @@ partition::partition(
           config::shard_local_cfg().cloud_storage_enabled()
           && cloud_storage_api.local_is_initialized()
           && _raft->ntp().ns == model::kafka_namespace) {
+            // TODO: pass in scheduling group, io priority group once we have
+            // plumbing for passing those through from the top level.
+            auto archiver_conf = archival::get_archival_service_config();
+
+            _archiver = ss::make_lw_shared<archival::ntp_archiver>(
+              log().config(), archiver_conf, cloud_storage_api.local(), *this);
+            // TODO: run outer_upload_loop in the background
         }
     }
 }
+
+partition::~partition() {}
 
 ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
   const cloud_storage::offset_range& offsets) {

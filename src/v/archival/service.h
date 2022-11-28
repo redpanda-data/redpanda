@@ -71,15 +71,6 @@ public:
     ///       service is initialized in ss::sharded container
     void configure(configuration c);
 
-    /// \brief create scheduler service config
-    /// This mehtod will use shard-local redpanda configuration
-    /// to generate the configuration.
-    /// \param sg is a scheduling group used to run all uploads
-    /// \param p is an io priority class used to throttle upload file reads
-    static ss::future<archival::configuration> get_archival_service_config(
-      ss::scheduling_group sg = ss::default_scheduling_group(),
-      ss::io_priority_class p = ss::default_priority_class());
-
     /// Start archiver
     ss::future<> start();
 
@@ -171,9 +162,6 @@ public:
     /// \note two step initialization is needed when the
     ///       service is initialized in ss::sharded container
     using internal::scheduler_service_impl::configure;
-
-    /// Generate configuration
-    using internal::scheduler_service_impl::get_archival_service_config;
 
     /// Get remote that service uses
     using internal::scheduler_service_impl::get_remote;
