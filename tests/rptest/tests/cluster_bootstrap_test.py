@@ -93,13 +93,17 @@ class ClusterBootstrapNew(RedpandaTest):
             assert expected_node_id == node_id, f"Expected {expected_node_id} but got {node_id}"
 
 
+def ver_str(ver) -> str:
+    return 'v' + '.'.join(str(k) for k in ver)
+
+
 class ClusterBootstrapUpgrade(RedpandaTest):
     """
     Tests verifying upgrade of cluster from a pre-Seed-Driven-Bootstrap version
     """
 
     OLDVER = (22, 2, 7)
-    OLDVER_STR = 'v' + '.'.join(str(k) for k in OLDVER)
+    NEWVER = (22, 3, 4)
 
     def __init__(self, test_context):
         super(ClusterBootstrapUpgrade,
@@ -108,8 +112,6 @@ class ClusterBootstrapUpgrade(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        # NOTE: `rpk redpanda admin brokers list` requires versions v22.1.x and
-        # above.
         self.installer.install(self.redpanda.nodes, self.OLDVER)
         set_seeds_for_cluster(self.redpanda, 3)
         super(ClusterBootstrapUpgrade, self).setUp()
@@ -120,7 +122,7 @@ class ClusterBootstrapUpgrade(RedpandaTest):
                                                     empty_seed_starts_cluster):
         # Upgrade the cluster to begin using the new binary, but don't change
         # any configs yet.
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, self.NEWVER)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
 
         # Now update the configs.
@@ -136,7 +138,7 @@ class ClusterBootstrapUpgrade(RedpandaTest):
     def test_change_bootstrap_configs_during_upgrade(
             self, empty_seed_starts_cluster):
         # Upgrade the cluster as we change the configs node-by-node.
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, self.NEWVER)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             override_cfg_params={
                                                 "empty_seed_starts_cluster":
@@ -164,15 +166,15 @@ class ClusterBootstrapUpgrade(RedpandaTest):
             return u_prev
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.OLDVER_STR in unique_versions, unique_versions
+        assert ver_str(self.OLDVER) in unique_versions, unique_versions
 
         # Upgrade all but 1 node, verify cluster UUID is not created in 10s
         one_node = [self.redpanda.nodes[0]]
         but_one_node = self.redpanda.nodes[1:]
-        self.installer.install(but_one_node, RedpandaInstaller.HEAD)
+        self.installer.install(but_one_node, self.NEWVER)
         self.redpanda.restart_nodes(but_one_node)
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert self.OLDVER_STR in unique_versions, unique_versions
+        assert ver_str(self.OLDVER) in unique_versions, unique_versions
         try:
             wait_until(lambda: get_cluster_uuid() is not None,
                        timeout_sec=10,
@@ -182,8 +184,8 @@ class ClusterBootstrapUpgrade(RedpandaTest):
             pass
 
         # Upgrade all nodes, verify the cluster has a UUID now
-        self.installer.install(one_node, RedpandaInstaller.HEAD)
+        self.installer.install(one_node, self.NEWVER)
         self.redpanda.restart_nodes(one_node)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.OLDVER_STR not in unique_versions, unique_versions
+        assert ver_str(self.OLDVER) not in unique_versions, unique_versions
         wait_until(lambda: get_cluster_uuid() is not None, timeout_sec=30)
