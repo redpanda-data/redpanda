@@ -183,8 +183,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         def failure_injector_loop():
             with FailureInjector(self.redpanda) as f_injector:
                 while enable_failures:
-                    f_type = random.choice(FailureSpec.NETEM_FAILURE_TYPES +
-                                           FailureSpec.FAILURE_TYPES)
+                    f_type = random.choice(FailureSpec.FAILURE_TYPES)
                     length = 0
                     # allow suspending any node
                     if f_type == FailureSpec.FAILURE_SUSPEND:
