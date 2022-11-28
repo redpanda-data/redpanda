@@ -837,6 +837,21 @@ void read_nested(
     t.shrink_to_fit();
 }
 
+template<class R, class P>
+void read_nested(
+  iobuf_parser& in,
+  std::chrono::duration<R, P>& t,
+  std::size_t const bytes_left_limit) {
+    using Type = std::chrono::duration<R, P>;
+
+    static_assert(
+      !std::is_floating_point_v<R>,
+      "Floating point duration conversions are prone to precision and "
+      "rounding issues.");
+    auto rep = read_nested<int64_t>(in, bytes_left_limit);
+    t = std::chrono::duration_cast<Type>(std::chrono::nanoseconds{rep});
+}
+
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -847,14 +862,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_chrono_duration<Type>) {
-        static_assert(
-          !std::is_floating_point_v<typename Type::rep>,
-          "Floating point duration conversions are prone to precision and "
-          "rounding issues.");
-        auto rep = read_nested<int64_t>(in, bytes_left_limit);
-        t = std::chrono::duration_cast<Type>(std::chrono::nanoseconds{rep});
-    } else if constexpr (reflection::is_tristate<T>) {
+    if constexpr (reflection::is_tristate<T>) {
         int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
         if (flag == -1) {
             // disabled
