@@ -672,6 +672,23 @@ read_nested(iobuf_parser& in, bool& t, std::size_t const bytes_left_limit) {
 }
 
 template<typename T>
+requires serde_is_enum_v<std::decay_t<T>>
+void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<T>;
+
+    auto const val = read_nested<serde_enum_serialized_t>(in, bytes_left_limit);
+    if (unlikely(
+          val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "enum value {} too large for {}",
+          val,
+          type_str<Type>()));
+    }
+    t = static_cast<Type>(val);
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -681,19 +698,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (serde_is_enum_v<Type>) {
-        auto const val = read_nested<serde_enum_serialized_t>(
-          in, bytes_left_limit);
-        if (unlikely(
-              val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "enum value {} too large for {}",
-              val,
-              type_str<Type>()));
-        }
-        t = static_cast<Type>(val);
-    } else if constexpr (std::is_scalar_v<Type>) {
+    if constexpr (std::is_scalar_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
             throw serde_exception(fmt_with_ctx(
               ssx::sformat,
