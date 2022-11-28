@@ -49,8 +49,6 @@ const (
 	svcFQDNEnvVar                                        = "SERVICE_FQDN"
 )
 
-type brokerID int
-
 type configuratorConfig struct {
 	configDestination                              string
 	configSourceDir                                string
@@ -124,7 +122,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	hostIndex, err := hostIndex(c.hostName)
+	hostIndex, err := podOrdinal(c.hostName)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to extract host index: %w", err))
 	}
@@ -150,7 +148,7 @@ func main() {
 		cfg.Redpanda.ID = nil
 	} else {
 		cfg.Redpanda.ID = new(int)
-		*cfg.Redpanda.ID = int(hostIndex)
+		*cfg.Redpanda.ID = hostIndex
 
 		// In case of a single seed server, the list should contain the current node itself.
 		// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
@@ -237,7 +235,7 @@ func getNode(nodeName string) (*corev1.Node, error) {
 }
 
 func registerAdvertisedKafkaAPI(
-	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
+	c *configuratorConfig, cfg *config.Config, index int, kafkaAPIPort int,
 ) error {
 	cfg.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{
 		{
@@ -252,7 +250,7 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
+		data := utils.NewEndpointTemplateData(index, c.hostIP)
 		ep, err := utils.ComputeEndpoint(c.externalConnectivityKafkaEndpointTemplate, data)
 		if err != nil {
 			return err
@@ -281,7 +279,7 @@ func registerAdvertisedKafkaAPI(
 }
 
 func registerAdvertisedPandaproxyAPI(
-	c *configuratorConfig, cfg *config.Config, index brokerID, proxyAPIPort int,
+	c *configuratorConfig, cfg *config.Config, index int, proxyAPIPort int,
 ) error {
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = []config.NamedSocketAddress{
 		{
@@ -297,7 +295,7 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
+		data := utils.NewEndpointTemplateData(index, c.hostIP)
 		ep, err := utils.ComputeEndpoint(c.externalConnectivityPandaProxyEndpointTemplate, data)
 		if err != nil {
 			return err
@@ -455,12 +453,11 @@ func checkEnvVars() (configuratorConfig, error) {
 	return c, result
 }
 
-// hostIndex takes advantage of pod naming convention in Kubernetes StatfulSet
-// the last number is the index of replica. This index is then propagated
-// to redpanda.node_id.
-func hostIndex(hostName string) (brokerID, error) {
+// podOrdinal takes advantage of pod naming convention in Kubernetes StatfulSet
+// the last number is the index of replica.
+func podOrdinal(hostName string) (int, error) {
 	s := strings.Split(hostName, "-")
 	last := len(s) - 1
 	i, err := strconv.Atoi(s[last])
-	return brokerID(i), err
+	return i, err
 }
