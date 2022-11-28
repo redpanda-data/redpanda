@@ -716,6 +716,19 @@ requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
 }
 
 template<typename T>
+void read_nested(
+  iobuf_parser& in, std::vector<T>& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+
+    using value_type = typename Type::value_type;
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    t.reserve(size);
+    for (auto i = 0U; i < size; ++i) {
+        t.push_back(read_nested<value_type>(in, bytes_left_limit));
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -725,14 +738,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (reflection::is_std_vector<Type>) {
-        using value_type = typename Type::value_type;
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            t.push_back(read_nested<value_type>(in, bytes_left_limit));
-        }
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
+    if constexpr (reflection::is_rp_named_type<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (reflection::is_ss_bool_class<Type>) {
         t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
