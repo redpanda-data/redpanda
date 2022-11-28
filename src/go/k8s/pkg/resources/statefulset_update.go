@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
+	"github.com/prometheus/common/expfmt"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
@@ -35,10 +36,13 @@ const (
 	// RequeueDuration is the time controller should
 	// requeue resource reconciliation.
 	RequeueDuration = time.Second * 10
-	adminAPITimeout = time.Millisecond * 100
+	adminAPITimeout = time.Second * 2
 )
 
-var errRedpandaNotReady = errors.New("redpanda not ready")
+var (
+	errRedpandaNotReady         = errors.New("redpanda not ready")
+	errUnderReplicatedPartition = errors.New("partition under replicated")
+)
 
 // runUpdate handles image changes and additional storage in the redpanda cluster
 // CR by removing statefulset with orphans Pods. The stateful set is then recreated
@@ -183,6 +187,15 @@ func (r *StatefulSetResource) rollingUpdate(
 		r.logger.Info("Verify that Ready endpoint returns HTTP status OK")
 		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
 			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
+		}
+
+		adminURL.Path = "metrics"
+
+		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("broker reported under replicated partitions: %v", err),
+			}
 		}
 	}
 
@@ -507,6 +520,85 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 
 	if resp.StatusCode != http.StatusOK {
 		return errRedpandaNotReady
+	}
+
+	return nil
+}
+
+// Temporarily using the status/ready endpoint until we have a specific one for restarting.
+func (r *StatefulSetResource) evaluateUnderReplicatedPartitions(
+	ctx context.Context, adminURL *url.URL,
+) error {
+	client := &http.Client{Timeout: adminAPITimeout}
+
+	// TODO right now we support TLS only on one listener so if external
+	// connectivity is enabled, TLS is enabled only on external listener. This
+	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
+	if r.pandaCluster.AdminAPITLS() != nil &&
+		r.pandaCluster.AdminAPIExternal() == nil {
+		tlsConfig, err := r.adminTLSConfigProvider.GetTLSConfig(ctx, r)
+		if err != nil {
+			return err
+		}
+
+		client.Transport = &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		adminURL.Scheme = "https"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), http.NoBody)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("getting broker metrics (%s): %w", adminURL.String(), errRedpandaNotReady)
+	}
+
+	var parser expfmt.TextParser
+	metrics, err := parser.TextToMetricFamilies(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	for name, metricFamily := range metrics {
+		if name != "vectorized_cluster_partition_under_replicated_replicas" {
+			continue
+		}
+
+		for _, m := range metricFamily.Metric {
+			if m == nil {
+				continue
+			}
+			if m.Gauge == nil {
+				r.logger.Info("cluster_partition_under_replicated_replicas metric does not have value", "labels", m.Label)
+				continue
+			}
+
+			var namespace, partition, shard, topic string
+			for _, l := range m.Label {
+				switch *l.Name {
+				case "namespace":
+					namespace = *l.Value
+				case "partition":
+					partition = *l.Value
+				case "shard":
+					shard = *l.Value
+				case "topic":
+					topic = *l.Value
+				}
+			}
+
+			if r.pandaCluster.Spec.RestartConfig != nil && *m.Gauge.Value > float64(r.pandaCluster.Spec.RestartConfig.UnderReplicatedPartitionThreshold) {
+				return fmt.Errorf("in topic (%s), partition (%s), shard (%s), namespace (%s): %w", topic, partition, shard, namespace, errUnderReplicatedPartition)
+			}
+		}
 	}
 
 	return nil
