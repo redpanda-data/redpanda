@@ -824,6 +824,21 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     }
 }
 
+template<typename T, size_t fragment_size>
+void read_nested(
+  iobuf_parser& in,
+  fragmented_vector<T, fragment_size>& t,
+  std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+
+    using value_type = typename Type::value_type;
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    for (auto i = 0U; i < size; ++i) {
+        t.push_back(read_nested<value_type>(in, bytes_left_limit));
+    }
+    t.shrink_to_fit();
+}
+
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -834,14 +849,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_fragmented_vector<Type>) {
-        using value_type = typename Type::value_type;
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        for (auto i = 0U; i < size; ++i) {
-            t.push_back(read_nested<value_type>(in, bytes_left_limit));
-        }
-        t.shrink_to_fit();
-    } else if constexpr (is_chrono_duration<Type>) {
+    if constexpr (is_chrono_duration<Type>) {
         static_assert(
           !std::is_floating_point_v<typename Type::rep>,
           "Floating point duration conversions are prone to precision and "
