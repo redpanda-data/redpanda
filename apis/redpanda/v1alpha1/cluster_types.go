@@ -177,6 +177,26 @@ type ClusterSpec struct {
 type RestartConfig struct {
 	// DisableMaintenanceModeHooks deactivates the preStop and postStart hooks that force nodes to enter maintenance mode when stopping and exit maintenance mode when up again
 	DisableMaintenanceModeHooks *bool `json:"disableMaintenanceModeHooks,omitempty"`
+
+	// UnderReplicatedPartitionThreshold controls when rolling update will continue with
+	// restarts. The procedure can be described as follows:
+	//
+	// 1. Rolling update checks if Pod specification needs to be replaced and deletes it
+	// 2. Deleted Redpanda Pod is put into maintenance mode (postStart hook will disable
+	//    maintenance mode when new Pod starts)
+	// 3. Rolling update waits for Pod to be in Ready state
+	// 4. Rolling update checks if cluster is in healthy state
+	// 5. Rolling update checks if restarted Redpanda Pod admin API Ready endpoint returns HTTP 200 response
+	// 6. Using UnderReplicatedPartitionThreshold each under replicated partition metric is compared with the threshold
+	// 7. Rolling update moves to the next Redpanda pod
+	//
+	// The metric `vectorized_cluster_partition_under_replicated_replicas` is used in the comparison
+	//
+	// Mentioned metrics has the following help description:
+	// `vectorized_cluster_partition_under_replicated_replicas` Number of under replicated replicas
+	//
+	// By default, the UnderReplicatedPartitionThreshold will be 0, which means all partitions needs to catch up without any lag.
+	UnderReplicatedPartitionThreshold int `json:"underReplicatedPartitionThreshold,omitempty"`
 }
 
 // PDBConfig specifies how the PodDisruptionBudget should be created for the

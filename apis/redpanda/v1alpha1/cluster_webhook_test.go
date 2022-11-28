@@ -217,6 +217,19 @@ func TestDefault(t *testing.T) {
 		redpandaCluster.Default()
 		assert.Equal(t, v1alpha1.DefaultLicenseSecretKey, redpandaCluster.Spec.LicenseRef.Key)
 	})
+
+	t.Run("when restart config is nil, set UnderReplicatedPartitionThreshold to 0", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{},
+		}
+		redpandaCluster.Default()
+		assert.NotNil(t, redpandaCluster.Spec.RestartConfig)
+		assert.Equal(t, 0, redpandaCluster.Spec.RestartConfig.UnderReplicatedPartitionThreshold)
+	})
 }
 
 func TestValidateUpdate(t *testing.T) {
