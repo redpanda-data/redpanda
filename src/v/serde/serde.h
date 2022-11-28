@@ -1,4 +1,3 @@
-
 // Copyright 2021 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
@@ -613,6 +612,61 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
 }
 
 template<typename T>
+requires is_envelope<std::decay_t<T>>
+void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<T>;
+
+    auto const h = read_header<Type>(in, bytes_left_limit);
+
+    if constexpr (is_checksum_envelope<Type>) {
+        auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
+        auto read_only_in = iobuf_const_parser{shared};
+        auto crc = crc::crc32c{};
+        read_only_in.consume(
+          read_only_in.bytes_left(), [&crc](char const* src, size_t const n) {
+              crc.extend(src, n);
+              return ss::stop_iteration::no;
+          });
+        if (unlikely(crc.value() != h._checksum)) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "serde: envelope {} (ends at bytes_left={}) has bad "
+              "checksum: stored={}, actual={}",
+              type_str<Type>(),
+              h._bytes_left_limit,
+              h._checksum,
+              crc.value()));
+        }
+    }
+
+    if constexpr (has_serde_read<Type>) {
+        t.serde_read(in, h);
+    } else {
+        envelope_for_each_field(t, [&](auto& f) {
+            using FieldType = std::decay_t<decltype(f)>;
+            if (h._bytes_left_limit == in.bytes_left()) {
+                return false;
+            }
+            if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+                throw serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "field spill over in {}, field type {}: envelope_end={}, "
+                  "in.bytes_left()={}",
+                  type_str<Type>(),
+                  type_str<FieldType>(),
+                  h._bytes_left_limit,
+                  in.bytes_left()));
+            }
+            f = read_nested<FieldType>(in, bytes_left_limit);
+            return true;
+        });
+    }
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -622,57 +676,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_envelope<Type>) {
-        auto const h = read_header<Type>(in, bytes_left_limit);
-
-        if constexpr (is_checksum_envelope<Type>) {
-            auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
-            auto read_only_in = iobuf_const_parser{shared};
-            auto crc = crc::crc32c{};
-            read_only_in.consume(
-              read_only_in.bytes_left(),
-              [&crc](char const* src, size_t const n) {
-                  crc.extend(src, n);
-                  return ss::stop_iteration::no;
-              });
-            if (unlikely(crc.value() != h._checksum)) {
-                throw serde_exception(fmt_with_ctx(
-                  ssx::sformat,
-                  "serde: envelope {} (ends at bytes_left={}) has bad "
-                  "checksum: stored={}, actual={}",
-                  type_str<Type>(),
-                  h._bytes_left_limit,
-                  h._checksum,
-                  crc.value()));
-            }
-        }
-
-        if constexpr (has_serde_read<Type>) {
-            t.serde_read(in, h);
-        } else {
-            envelope_for_each_field(t, [&](auto& f) {
-                using FieldType = std::decay_t<decltype(f)>;
-                if (h._bytes_left_limit == in.bytes_left()) {
-                    return false;
-                }
-                if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
-                    throw serde_exception(fmt_with_ctx(
-                      ssx::sformat,
-                      "field spill over in {}, field type {}: envelope_end={}, "
-                      "in.bytes_left()={}",
-                      type_str<Type>(),
-                      type_str<FieldType>(),
-                      h._bytes_left_limit,
-                      in.bytes_left()));
-                }
-                f = read_nested<FieldType>(in, bytes_left_limit);
-                return true;
-            });
-        }
-        if (in.bytes_left() > h._bytes_left_limit) {
-            in.skip(in.bytes_left() - h._bytes_left_limit);
-        }
-    } else if constexpr (std::is_same_v<Type, bool>) {
+    if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
     } else if constexpr (serde_is_enum_v<Type>) {
         auto const val = read_nested<serde_enum_serialized_t>(
