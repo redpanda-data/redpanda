@@ -919,15 +919,15 @@ inline void read_nested(
     }
 }
 
-template<typename T>
-void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
-    using Type = std::decay_t<T>;
+template<typename Clock, typename Duration>
+void read_nested(
+  iobuf_parser&,
+  std::chrono::time_point<Clock, Duration>& t,
+  std::size_t const /* bytes_left_limit */) {
     static_assert(
-      !is_chrono_time_point<Type>,
+      !is_chrono_time_point<decltype(t)>,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
-    static_assert(are_bytes_and_string_different<Type>);
-    static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 }
 
 template<typename T>
