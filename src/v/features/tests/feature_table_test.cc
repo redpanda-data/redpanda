@@ -178,27 +178,26 @@ FIXTURE_TEST(feature_table_preparing, feature_table_fixture) {
     set_active_version(cluster_version{1});
     BOOST_REQUIRE_EQUAL(ft.get_active_version(), cluster_version{1});
     BOOST_REQUIRE(
-      ft.get_state(feature::consumer_offsets).get_state()
+      ft.get_state(feature::cloud_retention).get_state()
       == feature_state::state::unavailable);
 
-    auto f_active = ft.await_feature(feature::consumer_offsets, as);
-    auto f_preparing = ft.await_feature_preparing(
-      feature::consumer_offsets, as);
+    auto f_active = ft.await_feature(feature::cloud_retention, as);
+    auto f_preparing = ft.await_feature_preparing(feature::cloud_retention, as);
     BOOST_REQUIRE(!f_preparing.available());
 
-    // consumer_offsets is an auto-activating feature, as soon
+    // cloud_retention is an auto-activating feature, as soon
     // as the cluster is upgraded it should go into preparing mode
-    set_active_version(cluster_version{2});
-    BOOST_REQUIRE_EQUAL(ft.get_active_version(), cluster_version{2});
+    set_active_version(cluster_version{7});
+    BOOST_REQUIRE_EQUAL(ft.get_active_version(), cluster_version{7});
     BOOST_REQUIRE(
-      ft.get_state(feature::consumer_offsets).get_state()
+      ft.get_state(feature::cloud_retention).get_state()
       == feature_state::state::available);
-    BOOST_REQUIRE(!ft.is_preparing(feature::consumer_offsets));
-    BOOST_REQUIRE(!ft.is_active(feature::consumer_offsets));
+    BOOST_REQUIRE(!ft.is_preparing(feature::cloud_retention));
+    BOOST_REQUIRE(!ft.is_active(feature::cloud_retention));
 
-    execute_action("consumer_offsets", action_t::activate);
-    BOOST_REQUIRE(ft.is_preparing(feature::consumer_offsets));
-    BOOST_REQUIRE(!ft.is_active(feature::consumer_offsets));
+    execute_action("cloud_retention", action_t::activate);
+    BOOST_REQUIRE(ft.is_preparing(feature::cloud_retention));
+    BOOST_REQUIRE(!ft.is_active(feature::cloud_retention));
 
     ss::sleep(10ms).get();
     BOOST_REQUIRE(f_preparing.available());
@@ -206,20 +205,20 @@ FIXTURE_TEST(feature_table_preparing, feature_table_fixture) {
 
     // While in preparing mode, it is still valid to deactivate+activate
     // the feature.
-    execute_action("consumer_offsets", action_t::deactivate);
-    BOOST_REQUIRE(!ft.is_preparing(feature::consumer_offsets));
+    execute_action("cloud_retention", action_t::deactivate);
+    BOOST_REQUIRE(!ft.is_preparing(feature::cloud_retention));
     BOOST_REQUIRE(
-      ft.get_state(feature::consumer_offsets).get_state()
+      ft.get_state(feature::cloud_retention).get_state()
       == feature_state::state::disabled_preparing);
 
     // Re-activating the feature should revert it to preparing
-    execute_action("consumer_offsets", action_t::activate);
-    BOOST_REQUIRE(ft.is_preparing(feature::consumer_offsets));
+    execute_action("cloud_retention", action_t::activate);
+    BOOST_REQUIRE(ft.is_preparing(feature::cloud_retention));
 
     // Finally, completing preparing should make the feature active
-    execute_action("consumer_offsets", action_t::complete_preparing);
-    BOOST_REQUIRE(ft.is_active(feature::consumer_offsets));
-    BOOST_REQUIRE(!ft.is_preparing(feature::consumer_offsets));
+    execute_action("cloud_retention", action_t::complete_preparing);
+    BOOST_REQUIRE(ft.is_active(feature::cloud_retention));
+    BOOST_REQUIRE(!ft.is_preparing(feature::cloud_retention));
 
     ss::sleep(10ms).get();
     BOOST_REQUIRE(f_active.available());

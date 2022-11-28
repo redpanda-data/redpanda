@@ -36,9 +36,9 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.topic = random.choice(topics).name
 
-    def _partitions_moving(self):
+    def _partitions_moving(self, node=None):
         admin = Admin(self.redpanda)
-        reconfigurations = admin.list_reconfigurations()
+        reconfigurations = admin.list_reconfigurations(node=node)
         return len(reconfigurations) > 0
 
     def _partitions_not_moving(self):
@@ -55,10 +55,11 @@ class NodesDecommissioningTest(EndToEndTest):
                 if predicate(p):
                     return (tp, p.id, p.replicas)
 
-    def _not_decommissioned_node(self, to_decommission):
+    def _not_decommissioned_node(self, *args):
+        decom_node_ids = args
         return [
             n for n in self.redpanda.nodes
-            if self.redpanda.idx(n) != to_decommission
+            if self.redpanda.idx(n) not in decom_node_ids
         ][0]
 
     def _node_removed(self, removed_id, node_to_query):
@@ -91,9 +92,13 @@ class NodesDecommissioningTest(EndToEndTest):
         new_replicas.append({"node_id": to_add, "core": 0})
         return new_replicas
 
-    def _wait_until_status(self, node_id, status, timeout_sec=15):
+    def _wait_until_status(self,
+                           node_id,
+                           status,
+                           timeout_sec=15,
+                           api_node=None):
         def requested_status():
-            brokers = Admin(self.redpanda).get_brokers()
+            brokers = Admin(self.redpanda).get_brokers(node=api_node)
             for broker in brokers:
                 if broker['node_id'] == node_id:
                     return broker['membership_status'] == status
@@ -332,30 +337,41 @@ class NodesDecommissioningTest(EndToEndTest):
         while to_decommission_1 == to_decommission_2:
             to_decommission_2 = random.choice(brokers)['node_id']
 
+        # Send all our subsequent admin API requests to a node which is
+        # not going to be decommed.
+        survivor_node = self._not_decommissioned_node(to_decommission_1,
+                                                      to_decommission_2)
+
         # throttle recovery
         rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
 
         self.logger.info(f"decommissioning node: {to_decommission_1}", )
-        admin.decommission_broker(to_decommission_1)
+        admin.decommission_broker(to_decommission_1, node=survivor_node)
         self.logger.info(f"decommissioning node: {to_decommission_2}", )
-        admin.decommission_broker(to_decommission_2)
+        admin.decommission_broker(to_decommission_2, node=survivor_node)
 
-        self._wait_until_status(to_decommission_1, 'draining')
-        self._wait_until_status(to_decommission_2, 'draining')
+        self._wait_until_status(to_decommission_1,
+                                'draining',
+                                api_node=survivor_node)
+        self._wait_until_status(to_decommission_2,
+                                'draining',
+                                api_node=survivor_node)
 
-        wait_until(lambda: self._partitions_moving(),
+        wait_until(lambda: self._partitions_moving(node=survivor_node),
                    timeout_sec=15,
                    backoff_sec=1)
 
         # recommission broker that was decommissioned first
-        admin.recommission_broker(to_decommission_1)
-        self._wait_until_status(to_decommission_1, 'active')
+        admin.recommission_broker(to_decommission_1, node=survivor_node)
+        self._wait_until_status(to_decommission_1,
+                                'active',
+                                api_node=survivor_node)
 
         rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
 
         def node_removed():
-            brokers = admin.get_brokers()
+            brokers = admin.get_brokers(node=survivor_node)
             for broker in brokers:
                 if broker['node_id'] == to_decommission_2:
                     return False

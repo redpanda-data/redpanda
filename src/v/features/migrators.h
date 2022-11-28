@@ -10,4 +10,3 @@
 // This header is a convenience to avoid application.cc having to list
 // out the headers for each migrator class
 #include "features/migrators/cloud_storage_config.h"
-#include "features/migrators/group_metadata.h"

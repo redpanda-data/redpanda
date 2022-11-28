@@ -108,10 +108,6 @@ public:
         return _coordinators;
     }
 
-    void disable() { _disabled = true; }
-
-    void enable() { _disabled = false; }
-
     ss::sharded<group_manager>& get_group_manager() {
         if (use_consumer_offsets_topic()) {
             return _consumer_offsets_group_manager;
@@ -161,7 +157,6 @@ private:
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
     ss::sharded<coordinator_ntp_mapper>& _consumer_offsets_coordinators;
     ss::sharded<features::feature_table>& _feature_table;
-    bool _disabled = false;
 };
 
 } // namespace kafka

@@ -6,7 +6,6 @@ v_cc_library(
     feature_table_snapshot.cc
     feature_migrator.cc
     migrators/cloud_storage_config.cc
-    migrators/group_metadata.cc
     logger.cc
   DEPS
     Seastar::seastar
