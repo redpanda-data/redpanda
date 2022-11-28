@@ -136,4 +136,23 @@ concept KafkaApi = requires(T request) {
     { T::min_flexible } -> std::convertible_to<const api_version&>;
 };
 
+/*
+ * Data type of the configuration entry.
+ */
+enum class describe_configs_type : int8_t {
+    not_supported = -1,
+    unknown = 0, // This is the default config type
+    boolean = 1,
+    string = 2,
+    int_type = 3,
+    short_type = 4,
+    long_type = 5,
+    double_type = 6,
+    list = 7,
+    class_type = 8,
+    password = 9
+};
+
+std::ostream& operator<<(std::ostream&, describe_configs_type t);
+
 } // namespace kafka
