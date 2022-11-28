@@ -46,8 +46,8 @@ spec:
                   \"3\"   pandaproxy_client.produce_batch_size_bytes: \"2097152\"
                   \n Notes: 1. versioning is not supported for map keys 2. key names
                   not supported by Redpanda will lead to failure on start up 3. updating
-                  this map requires a manual restart of the Redpanda pods. Please
-                  be aware of sync period when one Redpandais POD is restarted 4.
+                  this map requires a manual restart of the Redpanda Pods. Please
+                  be aware of sync period when one Redpanda's Pod is restarted 4.
                   cannot have keys that conflict with existing struct fields - it
                   leads to panic \n By default if Replicas is 3 or more and redpanda.default_topic_partitions
                   is not set default webhook is setting redpanda.default_topic_partitions
@@ -198,7 +198,7 @@ spec:
                                 the endpoint computed from the template. The following
                                 variables are available to the template: - Index:
                                 the Redpanda broker progressive number - HostIP: the
-                                ip address of the Node, as reported in pod status
+                                ip address of the Node, as reported in Pod status
                                 \n Common template functions from Sprig (http://masterminds.github.io/sprig/)
                                 are also available. The set of available functions
                                 is limited to hermetic functions because template
@@ -287,7 +287,7 @@ spec:
                                 the endpoint computed from the template. The following
                                 variables are available to the template: - Index:
                                 the Redpanda broker progressive number - HostIP: the
-                                ip address of the Node, as reported in pod status
+                                ip address of the Node, as reported in Pod status
                                 \n Common template functions from Sprig (http://masterminds.github.io/sprig/)
                                 are also available. The set of available functions
                                 is limited to hermetic functions because template
@@ -440,7 +440,7 @@ spec:
                                 the endpoint computed from the template. The following
                                 variables are available to the template: - Index:
                                 the Redpanda broker progressive number - HostIP: the
-                                ip address of the Node, as reported in pod status
+                                ip address of the Node, as reported in Pod status
                                 \n Common template functions from Sprig (http://masterminds.github.io/sprig/)
                                 are also available. The set of available functions
                                 is limited to hermetic functions because template
@@ -620,7 +620,7 @@ spec:
                               the endpoint computed from the template. The following
                               variables are available to the template: - Index: the
                               Redpanda broker progressive number - HostIP: the ip
-                              address of the Node, as reported in pod status \n Common
+                              address of the Node, as reported in Pod status \n Common
                               template functions from Sprig (http://masterminds.github.io/sprig/)
                               are also available. The set of available functions is
                               limited to hermetic functions because template application
@@ -787,8 +787,8 @@ spec:
                     - type: integer
                     - type: string
                     description: An eviction is allowed if at most "maxUnavailable"
-                      pods selected by "selector" are unavailable after the eviction,
-                      i.e. even in absence of the evicted pod. For example, one can
+                      Pods selected by "selector" are unavailable after the eviction,
+                      i.e. even in absence of the evicted Pod. For example, one can
                       prevent all voluntary evictions by specifying 0. This is a mutually
                       exclusive setting with "minAvailable". This property defaults
                       to 1. you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
@@ -798,8 +798,8 @@ spec:
                     - type: integer
                     - type: string
                     description: An eviction is allowed if at least "minAvailable"
-                      pods selected by "selector" will still be available after the
-                      eviction, i.e. even in the absence of the evicted pod.  So for
+                      Pods selected by "selector" will still be available after the
+                      eviction, i.e. even in the absence of the evicted Pod.  So for
                       example you can prevent all voluntary evictions by specifying
                       "100%". This is a mutually exclusive setting with "maxUnavailable".
                       you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
@@ -870,7 +870,7 @@ spec:
                     properties:
                       enabled:
                         description: Enabled if false, the sidecar won't be added
-                          to the pod running redpanda node
+                          to the Pod running Redpanda
                         type: boolean
                       resources:
                         description: Resources are resource requirements and limits
@@ -1015,7 +1015,7 @@ spec:
                 format: int32
                 type: integer
               decommissioningNode:
-                description: Indicates that a node is currently being decommissioned
+                description: Indicates that a Pod is currently being decommissioned
                   from the cluster and provides its ordinal number
                 format: int32
                 type: integer

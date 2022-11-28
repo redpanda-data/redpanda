@@ -114,13 +114,14 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 				cluster.Spec.Replicas = pointer.Int32Ptr(1)
 			}), timeout, interval).Should(Succeed())
 
-			By("Start decommissioning node with ordinal 2")
+			By("Start decommissioning pod with ordinal 2")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				if redpandaCluster.Status.DecommissioningNode == nil {
 					return nil
 				}
 				return *redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
+			}), timeout, interval).Should(Equal(int32(2)), "pod node2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
+
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 			Consistently(testAdminAPI.BrokerStatusGetter(1), timeoutShort, intervalShort).Should(Equal(admin.MembershipStatusActive))
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {

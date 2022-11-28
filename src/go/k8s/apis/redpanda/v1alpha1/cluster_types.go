@@ -154,8 +154,8 @@ type ClusterSpec struct {
 	// Notes:
 	// 1. versioning is not supported for map keys
 	// 2. key names not supported by Redpanda will lead to failure on start up
-	// 3. updating this map requires a manual restart of the Redpanda pods. Please be aware of
-	// sync period when one Redpandais POD is restarted
+	// 3. updating this map requires a manual restart of the Redpanda Pods. Please be aware of
+	// sync period when one Redpanda's Pod is restarted
 	// 4. cannot have keys that conflict with existing struct fields - it leads to panic
 	//
 	// By default if Replicas is 3 or more and redpanda.default_topic_partitions is not set
@@ -185,16 +185,16 @@ type RestartConfig struct {
 type PDBConfig struct {
 	// Enabled specifies whether PDB should be generated for the cluster. It defaults to true
 	Enabled bool `json:"enabled,omitempty"`
-	// An eviction is allowed if at least "minAvailable" pods selected by
+	// An eviction is allowed if at least "minAvailable" Pods selected by
 	// "selector" will still be available after the eviction, i.e. even in the
-	// absence of the evicted pod.  So for example you can prevent all voluntary
+	// absence of the evicted Pod.  So for example you can prevent all voluntary
 	// evictions by specifying "100%". This is a mutually exclusive setting with "maxUnavailable".
 	// you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
 	// +optional
 	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
-	// An eviction is allowed if at most "maxUnavailable" pods selected by
+	// An eviction is allowed if at most "maxUnavailable" Pods selected by
 	// "selector" are unavailable after the eviction, i.e. even in absence of
-	// the evicted pod. For example, one can prevent all voluntary evictions
+	// the evicted Pod. For example, one can prevent all voluntary evictions
 	// by specifying 0. This is a mutually exclusive setting with "minAvailable".
 	// This property defaults to 1.
 	// you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
@@ -212,7 +212,7 @@ type Sidecars struct {
 // Sidecar is a container running alongside redpanda, there's couple of them
 // added by default via defaulting webhook
 type Sidecar struct {
-	// Enabled if false, the sidecar won't be added to the pod running redpanda node
+	// Enabled if false, the sidecar won't be added to the Pod running Redpanda
 	Enabled bool `json:"enabled,omitempty"`
 	// Resources are resource requirements and limits for the container running
 	// this sidecar. For the default sidecars this is defaulted
@@ -314,7 +314,7 @@ type ExternalConnectivityConfig struct {
 	// computed from the template.
 	// The following variables are available to the template:
 	// - Index: the Redpanda broker progressive number
-	// - HostIP: the ip address of the Node, as reported in pod status
+	// - HostIP: the ip address of the Node, as reported in Pod status
 	//
 	// Common template functions from Sprig (http://masterminds.github.io/sprig/)
 	// are also available. The set of available functions is limited to hermetic
@@ -374,7 +374,7 @@ type ClusterStatus struct {
 	// Indicates that a cluster is restarting due to an upgrade or a different reason
 	// +optional
 	Restarting bool `json:"restarting"`
-	// Indicates that a node is currently being decommissioned from the cluster and provides its ordinal number
+	// Indicates that a Pod is currently being decommissioned from the cluster and provides its ordinal number
 	// +optional
 	DecommissioningNode *int32 `json:"decommissioningNode,omitempty"`
 	// Current version of the cluster.
@@ -1000,7 +1000,7 @@ func (r *Cluster) IsSchemaRegistryAuthHTTPBasic() bool {
 		r.Spec.Configuration.SchemaRegistry.AuthenticationMethod == httpBasicAuthorizationMechanism
 }
 
-// IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the pods.
+// IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the Pods.
 // Maintenance mode feature needs to be enabled for this to be relevant.
 func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
 	// enabled unless explicitly stated
