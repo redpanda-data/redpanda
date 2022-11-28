@@ -782,6 +782,33 @@ void read_nested(
 }
 
 template<typename T>
+void read_nested(
+  iobuf_parser& in,
+  absl::node_hash_set<T>& t,
+  std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    t.reserve(size);
+    for (auto i = 0U; i < size; ++i) {
+        auto elem = read_nested<typename Type::key_type>(in, bytes_left_limit);
+        t.emplace(std::move(elem));
+    }
+}
+
+template<typename T>
+void read_nested(
+  iobuf_parser& in, absl::btree_set<T>& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<decltype(t)>;
+
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    for (auto i = 0U; i < size; ++i) {
+        auto elem = read_nested<typename Type::key_type>(in, bytes_left_limit);
+        t.emplace(std::move(elem));
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -791,23 +818,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_absl_node_hash_set<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            auto elem = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(elem));
-        }
-    } else if constexpr (is_absl_btree_set<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        for (auto i = 0U; i < size; ++i) {
-            auto elem = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(elem));
-        }
-    } else if constexpr (
-      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
+    if constexpr (is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
