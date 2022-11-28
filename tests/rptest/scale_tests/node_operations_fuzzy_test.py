@@ -127,7 +127,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             "default_topic_replications": 3,
             # make segments small to ensure that they are compacted during
             # the test (only sealed i.e. not being written segments are compacted)
-            "compacted_log_segment_size": 5 * (2 ^ 20)
+            "compacted_log_segment_size": 5 * (2 ^ 20),
+            "raft_learner_recovery_rate": 512 * (1024 * 1024)
         }
         if num_to_upgrade > 0:
             # Use the deprecated config to bootstrap older nodes.
