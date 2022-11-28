@@ -1017,8 +1017,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
       std::ref(shard_table),
-      std::ref(coordinator_ntp_mapper),
-      std::ref(controller->get_feature_table()))
+      std::ref(coordinator_ntp_mapper))
       .get();
     if (coproc_enabled()) {
         syschecks::systemd_message("Creating coproc::api").get();

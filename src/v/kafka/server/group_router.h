@@ -52,14 +52,12 @@ public:
       ss::smp_service_group smp_group,
       ss::sharded<group_manager>& gr_manager,
       ss::sharded<cluster::shard_table>& shards,
-      ss::sharded<coordinator_ntp_mapper>& coordinators,
-      ss::sharded<features::feature_table>& feature_table)
+      ss::sharded<coordinator_ntp_mapper>& coordinators)
       : _sg(sched_group)
       , _ssg(smp_group)
       , _group_manager(gr_manager)
       , _shards(shards)
-      , _coordinators(coordinators)
-      , _feature_table(feature_table) {}
+      , _coordinators(coordinators) {}
 
     group::join_group_stages join_group(join_group_request&& request);
 
@@ -137,7 +135,6 @@ private:
     ss::sharded<group_manager>& _group_manager;
     ss::sharded<cluster::shard_table>& _shards;
     ss::sharded<coordinator_ntp_mapper>& _coordinators;
-    ss::sharded<features::feature_table>& _feature_table;
 };
 
 } // namespace kafka
