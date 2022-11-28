@@ -1254,6 +1254,7 @@ void application::wire_up_bootstrap_services() {
       config::shard_local_cfg()
         .storage_space_alert_free_threshold_percent.bind(),
       config::shard_local_cfg().storage_min_free_bytes.bind(),
+      config::node().data_directory().as_sstring(),
       std::ref(storage_node),
       std::ref(storage))
       .get();

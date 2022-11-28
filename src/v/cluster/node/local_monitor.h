@@ -31,6 +31,7 @@ public:
       config::binding<size_t> min_bytes_alert,
       config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes,
+      ss::sstring data_directory,
       ss::sharded<storage::node_api>&,
       ss::sharded<storage::api>&);
     local_monitor(const local_monitor&) = delete;
@@ -82,6 +83,10 @@ private:
     config::binding<size_t> _free_bytes_alert_threshold;
     config::binding<unsigned> _free_percent_alert_threshold;
     config::binding<size_t> _min_free_bytes;
+
+    // We must carry a copy of data dir, because fixture tests mutate the
+    // global node_config::data_directory
+    ss ::sstring _data_directory;
 
     ss::sharded<storage::node_api>& _storage_node_api; // single instance
     ss::sharded<storage::api>& _storage_api;
