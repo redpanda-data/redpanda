@@ -881,11 +881,20 @@ class RedpandaService(Service):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            if not set(node.ns) == {"redpanda"} or not set(
-                    node.ns["redpanda"].topics) == {"controller", "kvstore"}:
+            unexpected_ns = set(node.ns) - {"redpanda"}
+            if unexpected_ns:
+                for ns in unexpected_ns:
+                    self.logger.error(
+                        f"node {node.name}: unexpected namespace: {ns}, "
+                        f"topics: {set(node.ns[ns].topics)}")
+                raise RuntimeError("Unexpected files in data directory")
+
+            unexpected_rp_topics = set(
+                node.ns["redpanda"].topics) - {"controller", "kvstore"}
+            if unexpected_rp_topics:
                 self.logger.error(
-                    f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
-                )
+                    f"node {node.name}: unexpected topics in redpanda namespace: "
+                    f"{unexpected_rp_topics}")
                 raise RuntimeError("Unexpected files in data directory")
 
         if self.sasl_enabled():
