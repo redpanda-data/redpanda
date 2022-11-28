@@ -11,6 +11,7 @@ package resources_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -65,17 +66,25 @@ func TestEnsure(t *testing.T) {
 	// Remove shadow-indexing-cache from the volume claim templates
 	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
 
+	unhealthyRedpandaCluster := cluster.DeepCopy()
+
 	tests := []struct {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster
 		expectedObject *v1.StatefulSet
+		clusterHealth  bool
+		expectedError  error
 	}{
-		{"none existing", nil, cluster, stsResource},
-		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
-		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
-		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
-		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
+		{"none existing", nil, cluster, stsResource, true, nil},
+		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts, true, nil},
+		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts, true, nil},
+		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts, true, nil},
+		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume, true, nil},
+		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &res.RequeueAfterError{
+			RequeueAfter: res.RequeueDuration,
+			Msg:          "wait for cluster to become healthy (cluster restarting)",
+		}},
 	}
 
 	for _, tt := range tests {
@@ -112,13 +121,20 @@ func TestEnsure(t *testing.T) {
 				},
 				func(ctx context.Context) (string, error) { return hash, nil },
 				func(ctx context.Context, k8sClient client.Reader, redpandaCluster *redpandav1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
-					return &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}, nil
+					health := tt.clusterHealth
+					adminAPI := &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
+					adminAPI.SetClusterHealth(health)
+					return adminAPI, nil
 				},
 				time.Second,
 				ctrl.Log.WithName("test"))
 
 			err = sts.Ensure(context.Background())
-			assert.NoError(t, err, tt.name)
+			if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err, tt.name)
+			}
 
 			actual := &v1.StatefulSet{}
 			err = c.Get(context.Background(), sts.Key(), actual)
