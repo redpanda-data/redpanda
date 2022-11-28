@@ -1084,6 +1084,7 @@ class TopicRecoveryTest(RedpandaTest):
         for node in self.redpanda.nodes:
             self.logger.info(f"Starting node {node.account.hostname}")
             self.redpanda.start_node(node)
+        self.redpanda.wait_for_membership(first_start=False)
         self._started = True
 
     def _wipe_data(self):
@@ -1237,8 +1238,6 @@ class TopicRecoveryTest(RedpandaTest):
         self._wipe_data()
 
         self._start_redpanda_nodes()
-
-        time.sleep(5)
 
         self.logger.info("Restoring topic data")
         controller_cs = self._collect_controller_log_checksums()

@@ -790,6 +790,17 @@ class RedpandaService(Service):
         """
         return 0.2 if first_start else 1.0
 
+    def wait_for_membership(self, first_start):
+        self.logger.info("Waiting for all brokers to join cluster")
+        expected = set(self._started)
+
+        wait_until(lambda: {n
+                            for n in self._started
+                            if self.registered(n)} == expected,
+                   timeout_sec=30,
+                   backoff_sec=self._startup_poll_interval(first_start),
+                   err_msg="Cluster membership did not stabilize")
+
     def start(self,
               nodes=None,
               clean_nodes=True,
@@ -868,15 +879,7 @@ class RedpandaService(Service):
         if not self._skip_create_superuser:
             self._admin.create_user(*self._superuser)
 
-        self.logger.info("Waiting for all brokers to join cluster")
-        expected = set(self._started)
-
-        wait_until(lambda: {n
-                            for n in self._started
-                            if self.registered(n)} == expected,
-                   timeout_sec=30,
-                   backoff_sec=self._startup_poll_interval(first_start),
-                   err_msg="Cluster membership did not stabilize")
+        self.wait_for_membership(first_start=first_start)
 
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
