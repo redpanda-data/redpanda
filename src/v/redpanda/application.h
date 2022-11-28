@@ -88,8 +88,6 @@ public:
     smp_groups smp_service_groups;
 
     // Sorted list of services (public members)
-    ss::sharded<archival::scheduler_service> archival_scheduler;
-
     ss::sharded<cloud_storage::cache> shadow_index_cache;
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
@@ -223,7 +221,7 @@ private:
     std::unique_ptr<pandaproxy::rest::api> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
-    ss::sharded<archival::upload_controller> _archival_upload_controller;
+    // ss::sharded<archival::upload_controller> _archival_upload_controller;
 
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;

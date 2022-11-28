@@ -639,7 +639,6 @@ void application::configure_admin_server() {
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(archival_scheduler),
       std::ref(_connection_cache),
       std::ref(node_status_table),
       std::ref(self_test_frontend))
@@ -738,38 +737,41 @@ static storage::backlog_controller_config compaction_controller_config(
       config::shard_local_cfg().compaction_ctrl_max_shares());
 }
 
-static storage::backlog_controller_config
-make_upload_controller_config(ss::scheduling_group sg) {
-    // This settings are similar to compaction_controller_config.
-    // The desired setpoint for archival is set to 0 since the goal is to upload
-    // all data that we have.
-    // If the size of the backlog (the data which should be uploaded to S3) is
-    // larger than this value we need to bump the scheduling priority.
-    // Otherwise, we're good with the minimal.
-    // Since the setpoint is 0 we can't really use integral component of the
-    // controller. This is because upload backlog size never gets negative so
-    // once integral part will rump up high enough it won't be able to go down
-    // even if everything is uploaded.
-
-    auto available
-      = ss::fs_avail(config::node().data_directory().path.string()).get();
-    int64_t setpoint = 0;
-    int64_t normalization = static_cast<int64_t>(available)
-                            / (1000 * ss::smp::count);
-    return {
-      config::shard_local_cfg().cloud_storage_upload_ctrl_p_coeff(),
-      0,
-      config::shard_local_cfg().cloud_storage_upload_ctrl_d_coeff(),
-      normalization,
-      setpoint,
-      static_cast<int>(
-        priority_manager::local().archival_priority().get_shares()),
-      config::shard_local_cfg().cloud_storage_upload_ctrl_update_interval_ms(),
-      sg,
-      priority_manager::local().archival_priority(),
-      config::shard_local_cfg().cloud_storage_upload_ctrl_min_shares(),
-      config::shard_local_cfg().cloud_storage_upload_ctrl_max_shares()};
-}
+// static storage::backlog_controller_config
+// make_upload_controller_config(ss::scheduling_group sg) {
+//     // This settings are similar to compaction_controller_config.
+//     // The desired setpoint for archival is set to 0 since the goal is to
+//     upload
+//     // all data that we have.
+//     // If the size of the backlog (the data which should be uploaded to S3)
+//     is
+//     // larger than this value we need to bump the scheduling priority.
+//     // Otherwise, we're good with the minimal.
+//     // Since the setpoint is 0 we can't really use integral component of the
+//     // controller. This is because upload backlog size never gets negative so
+//     // once integral part will rump up high enough it won't be able to go
+//     down
+//     // even if everything is uploaded.
+//
+//     auto available
+//       = ss::fs_avail(config::node().data_directory().path.string()).get();
+//     int64_t setpoint = 0;
+//     int64_t normalization = static_cast<int64_t>(available)
+//                             / (1000 * ss::smp::count);
+//     return {
+//       config::shard_local_cfg().cloud_storage_upload_ctrl_p_coeff(),
+//       0,
+//       config::shard_local_cfg().cloud_storage_upload_ctrl_d_coeff(),
+//       normalization,
+//       setpoint,
+//       static_cast<int>(
+//         priority_manager::local().archival_priority().get_shares()),
+//       config::shard_local_cfg().cloud_storage_upload_ctrl_update_interval_ms(),
+//       sg,
+//       priority_manager::local().archival_priority(),
+//       config::shard_local_cfg().cloud_storage_upload_ctrl_min_shares(),
+//       config::shard_local_cfg().cloud_storage_upload_ctrl_max_shares()};
+// }
 
 // add additional services in here
 void application::wire_up_runtime_services(model::node_id node_id) {
@@ -988,33 +990,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             [](cloud_storage::cache& cache) { return cache.start(); })
           .get();
 
-        syschecks::systemd_message("Starting archival scheduler").get();
-        ss::sharded<archival::configuration> arch_configs;
-        arch_configs.start().get();
-        arch_configs
-          .invoke_on_all([this](archival::configuration& c) {
-              return archival::scheduler_service::get_archival_service_config(
-                       _scheduling_groups.archival_upload(),
-                       archival_priority())
-                .then(
-                  [&c](archival::configuration cfg) { c = std::move(cfg); });
-          })
-          .get();
-        construct_service(
-          archival_scheduler,
-          std::ref(cloud_storage_api),
-          std::ref(partition_manager),
-          std::ref(controller->get_topics_state()),
-          std::ref(arch_configs),
-          std::ref(feature_table))
-          .get();
-        arch_configs.stop().get();
-
-        construct_service(
-          _archival_upload_controller,
-          std::ref(archival_scheduler),
-          make_upload_controller_config(_scheduling_groups.archival_upload()))
-          .get();
+        //        construct_service(
+        //          _archival_upload_controller,
+        //          std::ref(archival_scheduler),
+        //          make_upload_controller_config(_scheduling_groups.archival_upload()))
+        //          .get();
     }
 
     // group membership
@@ -1724,13 +1704,6 @@ void application::start_runtime_services(
         &cluster::members_manager::join_cluster)
       .get();
 
-    if (archival_storage_enabled()) {
-        syschecks::systemd_message("Starting archival storage").get();
-        archival_scheduler
-          .invoke_on_all(
-            [](archival::scheduler_service& svc) { return svc.start(); })
-          .get();
-    }
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     if (!config::node().admin().empty()) {
@@ -1739,9 +1712,9 @@ void application::start_runtime_services(
 
     _compaction_controller.invoke_on_all(&storage::compaction_controller::start)
       .get();
-    _archival_upload_controller
-      .invoke_on_all(&archival::upload_controller::start)
-      .get();
+    //    _archival_upload_controller
+    //      .invoke_on_all(&archival::upload_controller::start)
+    //      .get();
 
     for (const auto& m : _migrators) {
         m->start(controller->get_abort_source().local());

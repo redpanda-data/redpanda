@@ -52,7 +52,6 @@ public:
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::metadata_cache>&,
-      ss::sharded<archival::scheduler_service>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<cluster::node_status_table>&,
       ss::sharded<cluster::self_test_frontend>&);
@@ -354,7 +353,6 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     request_authenticator _auth;
     bool _ready{false};
-    ss::sharded<archival::scheduler_service>& _archival_service;
     ss::sharded<cluster::node_status_table>& _node_status_table;
     ss::sharded<cluster::self_test_frontend>& _self_test_frontend;
 };

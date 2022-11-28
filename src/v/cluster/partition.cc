@@ -85,6 +85,7 @@ partition::partition(
             stm_manager->add_stm(_rm_stm);
         }
 
+        // Construct cloud_storage read path (remote_partition)
         if (
           config::shard_local_cfg().cloud_storage_enabled()
           && cloud_storage_api.local_is_initialized()
@@ -123,6 +124,13 @@ partition::partition(
                     cloud_storage_cache.local(),
                     cloud_storage_clients::bucket_name{*bucket});
             }
+        }
+
+        // Construct cloud_storage write path (ntp_archiver)
+        if (
+          config::shard_local_cfg().cloud_storage_enabled()
+          && cloud_storage_api.local_is_initialized()
+          && _raft->ntp().ns == model::kafka_namespace) {
         }
     }
 }

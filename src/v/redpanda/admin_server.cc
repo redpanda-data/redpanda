@@ -109,7 +109,6 @@ admin_server::admin_server(
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
-  ss::sharded<archival::scheduler_service>& archival_service,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend)
@@ -123,7 +122,6 @@ admin_server::admin_server(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
-  , _archival_service(archival_service)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend) {}
 
@@ -3310,18 +3308,20 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         vlog(logger.info, "Need to redirect bucket syncup request");
         throw co_await redirect_to_leader(*request, ntp);
     } else {
-        auto result = co_await _archival_service.map_reduce(
-          manifest_reducer(), [ntp](archival::scheduler_service& service) {
-              return service.maybe_truncate_manifest(ntp);
-          });
-        vlog(logger.info, "Requested bucket syncup completed");
-        if (result) {
-            std::stringstream sts;
-            result->serialize(sts);
-            vlog(logger.info, "Requested bucket syncup result {}", sts.str());
-        } else {
-            vlog(logger.info, "Requested bucket syncup result empty");
-        }
+        //        auto result = co_await _archival_service.map_reduce(
+        //          manifest_reducer(), [ntp](archival::scheduler_service&
+        //          service) {
+        //              return service.maybe_truncate_manifest(ntp);
+        //          });
+        //        vlog(logger.info, "Requested bucket syncup completed");
+        //        if (result) {
+        //            std::stringstream sts;
+        //            result->serialize(sts);
+        //            vlog(logger.info, "Requested bucket syncup result {}",
+        //            sts.str());
+        //        } else {
+        //            vlog(logger.info, "Requested bucket syncup result empty");
+        //        }
     }
     co_return ss::json::json_return_type(ss::json::json_void());
 }
