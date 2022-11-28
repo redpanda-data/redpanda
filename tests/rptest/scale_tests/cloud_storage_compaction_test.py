@@ -127,7 +127,6 @@ class CloudStorageCompactionTest(EndToEndTest):
 
     def _init_redpanda_read_replica(self):
         self.rr_si_settings = SISettings(
-            cloud_storage_bucket='none',
             bypass_bucket_creation=True,
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
