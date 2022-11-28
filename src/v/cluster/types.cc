@@ -101,6 +101,9 @@ std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     case tx_errc::tx_not_found:
         o << "tx_errc::tx_not_found";
         break;
+    case tx_errc::tx_id_not_found:
+        o << "tx_errc::tx_id_not_found";
+        break;
     }
     return o;
 }
