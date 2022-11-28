@@ -666,6 +666,11 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     }
 }
 
+inline void
+read_nested(iobuf_parser& in, bool& t, std::size_t const bytes_left_limit) {
+    t = read_nested<int8_t>(in, bytes_left_limit) != 0;
+}
+
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
@@ -676,9 +681,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (std::is_same_v<Type, bool>) {
-        t = read_nested<int8_t>(in, bytes_left_limit) != 0;
-    } else if constexpr (serde_is_enum_v<Type>) {
+    if constexpr (serde_is_enum_v<Type>) {
         auto const val = read_nested<serde_enum_serialized_t>(
           in, bytes_left_limit);
         if (unlikely(
