@@ -211,6 +211,7 @@ path_type_map = {
             "ResourceType": ("kafka::config_resource_type", "int8"),
             "Configs": {
                 "ConfigSource": ("kafka::describe_configs_source", "int8"),
+                "ConfigType": ("kafka::describe_configs_type", "int8"),
             },
         },
     },
