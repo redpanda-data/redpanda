@@ -691,6 +691,31 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
 }
 
 template<typename T>
+requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>) void read_nested(
+  iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<T>;
+
+    if (unlikely(in.bytes_left() - bytes_left_limit < sizeof(Type))) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "reading type {} of size {}: {} bytes left",
+          type_str<Type>(),
+          sizeof(Type),
+          in.bytes_left()));
+    }
+
+    if constexpr (sizeof(Type) == 1) {
+        t = in.consume_type<Type>();
+    } else if constexpr (std::is_same_v<float, Type>) {
+        t = bit_cast<float>(le32toh(in.consume_type<uint32_t>()));
+    } else if constexpr (std::is_same_v<double, Type>) {
+        t = bit_cast<double>(le64toh(in.consume_type<uint64_t>()));
+    } else {
+        t = ss::le_to_cpu(in.consume_type<Type>());
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -700,26 +725,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (std::is_scalar_v<Type>) {
-        if (unlikely(in.bytes_left() < sizeof(Type))) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "reading type {} of size {}: {} bytes left",
-              type_str<Type>(),
-              sizeof(Type),
-              in.bytes_left()));
-        }
-
-        if constexpr (sizeof(Type) == 1) {
-            t = in.consume_type<Type>();
-        } else if constexpr (std::is_same_v<float, Type>) {
-            t = bit_cast<float>(le32toh(in.consume_type<uint32_t>()));
-        } else if constexpr (std::is_same_v<double, Type>) {
-            t = bit_cast<double>(le64toh(in.consume_type<uint64_t>()));
-        } else {
-            t = ss::le_to_cpu(in.consume_type<Type>());
-        }
-    } else if constexpr (reflection::is_std_vector<Type>) {
+    if constexpr (reflection::is_std_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
