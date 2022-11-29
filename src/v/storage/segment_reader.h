@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/fs_utils.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
@@ -107,7 +108,7 @@ public:
 class segment_reader {
 public:
     segment_reader(
-      ss::sstring filename,
+      segment_full_path filename,
       size_t buffer_size,
       unsigned read_ahead,
       debug_sanitize_files) noexcept;
@@ -124,7 +125,8 @@ public:
     size_t file_size() const { return _file_size; }
 
     /// file name
-    const ss::sstring& filename() const { return _filename; }
+    const ss::sstring filename() const { return path(); }
+    const segment_full_path& path() const { return _path; }
 
     bool empty() const { return _file_size == 0; }
 
@@ -145,7 +147,7 @@ public:
     data_stream(size_t pos_begin, size_t pos_end, const ss::io_priority_class);
 
 private:
-    ss::sstring _filename;
+    segment_full_path _path;
 
     // Protects open/close of _data_file, to avoid double-opening on
     // concurrent calls to get()

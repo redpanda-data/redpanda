@@ -13,6 +13,7 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
@@ -77,8 +78,7 @@ public:
       std::optional<compacted_index_writer>,
       std::optional<batch_cache_index>,
       storage_resources&,
-      generation_id = generation_id{},
-      bool is_internal = false) noexcept;
+      generation_id = generation_id{}) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -119,13 +119,12 @@ public:
     bool finished_self_compaction() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
-    bool is_internal_topic() { return _is_internal; }
-
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
     size_t file_size() const { return _reader.file_size(); }
-    const ss::sstring& filename() const { return _reader.filename(); }
+    const ss::sstring filename() const { return _reader.filename(); }
+    const segment_full_path& path() const { return _reader.path(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -218,7 +217,6 @@ private:
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
     ss::gate _gate;
-    bool _is_internal;
 
     absl::btree_map<size_t, model::offset> _inflight;
 
@@ -241,13 +239,12 @@ private:
  * exist
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources&,
-  bool is_internal);
+  storage_resources&);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,

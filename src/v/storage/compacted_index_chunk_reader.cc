@@ -33,11 +33,11 @@
 namespace storage::internal {
 
 compacted_index_chunk_reader::compacted_index_chunk_reader(
-  ss::sstring name,
+  segment_full_path path,
   ss::file in,
   ss::io_priority_class pc,
   size_t max_chunk_memory) noexcept
-  : compacted_index_reader::impl(std::move(name))
+  : compacted_index_reader::impl(std::move(path))
   , _handle(std::move(in))
   , _iopc(pc)
   , _max_chunk_memory(max_chunk_memory) {}
@@ -140,8 +140,8 @@ compacted_index_chunk_reader::load_footer() {
           !_file_size || _file_size == 0
           || _file_size < compacted_index::footer_size) {
             return ss::make_exception_future<compacted_index::footer>(
-              std::runtime_error(fmt::format(
-                "Cannot read footer from empty file: {}", filename())));
+              std::runtime_error(
+                fmt::format("Cannot read footer from empty file: {}", path())));
         }
         ss::file_input_stream_options options;
         options.buffer_size = 4096;
@@ -248,13 +248,13 @@ operator<<(std::ostream& o, const compacted_index_chunk_reader& r) {
 
 namespace storage {
 compacted_index_reader make_file_backed_compacted_reader(
-  ss::sstring filename,
+  segment_full_path path,
   ss::file f,
   ss::io_priority_class iopc,
   size_t step_chunk) {
     return compacted_index_reader(
       ss::make_shared<internal::compacted_index_chunk_reader>(
-        std::move(filename), std::move(f), iopc, step_chunk));
+        std::move(path), std::move(f), iopc, step_chunk));
 }
 
 } // namespace storage

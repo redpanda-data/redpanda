@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "storage/fs_utils.h"
 #include "storage/segment.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -90,7 +91,7 @@ private:
 };
 
 ss::future<segment_set> recover_segments(
-  std::filesystem::path path,
+  partition_path path,
   debug_sanitize_files sanitize_fileops,
   bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> batch_cache_factory,
@@ -98,7 +99,6 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
-  storage_resources&,
-  bool is_internal_topic);
+  storage_resources&);
 
 } // namespace storage

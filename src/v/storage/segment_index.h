@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "storage/fs_utils.h"
 #include "storage/index_state.h"
 #include "storage/types.h"
 
@@ -50,11 +51,10 @@ public:
     static constexpr size_t default_data_buffer_step = 4096 * 8;
 
     segment_index(
-      ss::sstring filename,
+      segment_full_path path,
       model::offset base,
       size_t step,
-      debug_sanitize_files,
-      bool is_internal = false);
+      debug_sanitize_files);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -70,13 +70,14 @@ public:
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
-    const ss::sstring& filename() const { return _name; }
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
     ss::future<> truncate(model::offset);
 
     ss::future<ss::file> open();
+
+    const segment_full_path& path() const { return _path; }
 
     /// \brief erases the underlying file and resets the index
     /// this is used during compacted index recovery, as we must first
@@ -94,22 +95,16 @@ private:
     ss::future<bool> materialize_index_from_file(ss::file);
     ss::future<> flush_to_file(ss::file);
 
-    ss::sstring _name;
+    segment_full_path _path;
     size_t _step;
     size_t _acc{0};
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
 
-    /** We need to know if it's an internal topic or a user topic, because
-     *  indexing behavior is different (user topics only index user data
-     *  batches)
-     */
-    bool _is_internal;
-
     /** Constructor with mock file content for unit testing */
     segment_index(
-      ss::sstring filename,
+      segment_full_path path,
       ss::file mock_file,
       model::offset base,
       size_t step);

@@ -59,7 +59,7 @@ ss::future<compaction_result> self_compact_segment(
 ss::future<
   std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
 make_concatenated_segment(
-  std::filesystem::path,
+  segment_full_path,
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config,
   storage_resources& resources);
@@ -110,7 +110,7 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
   storage_resources& resources);
 
 ss::future<segment_appender_ptr> make_segment_appender(
-  const std::filesystem::path& path,
+  const segment_full_path& path,
   storage::debug_sanitize_files debug,
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
@@ -171,8 +171,6 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   probe&);
-
-std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
 
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.

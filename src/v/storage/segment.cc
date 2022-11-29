@@ -50,8 +50,7 @@ segment::segment(
   std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c,
   storage_resources& resources,
-  segment::generation_id gen,
-  bool is_internal) noexcept
+  segment::generation_id gen) noexcept
   : _resources(resources)
   , _appender_callbacks(this)
   , _generation_id(gen)
@@ -60,8 +59,7 @@ segment::segment(
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
-  , _cache(std::move(c))
-  , _is_internal(is_internal) {
+  , _cache(std::move(c)) {
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
     }
@@ -104,10 +102,9 @@ ss::future<> segment::remove_persistent_state() {
     std::vector<std::filesystem::path> rm;
     rm.reserve(3);
     rm.emplace_back(reader().filename().c_str());
-    rm.emplace_back(index().filename().c_str());
+    rm.emplace_back(index().path().string());
     if (is_compacted_segment()) {
-        rm.push_back(
-          internal::compacted_index_path(reader().filename().c_str()));
+        rm.push_back(reader().path().to_compacted_index());
     }
     vlog(stlog.info, "removing: {}", rm);
     return ss::do_with(
@@ -266,9 +263,9 @@ ss::future<> segment::do_flush() {
     });
 }
 
-ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
-    auto path = internal::compacted_index_path(reader_path.c_str());
-    return ss::remove_file(path.c_str())
+ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
+    auto path = reader_path.to_compacted_index();
+    return ss::remove_file(path.string())
       .handle_exception([path](const std::exception_ptr& e) {
           try {
               rethrow_exception(e);
@@ -316,8 +313,7 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
               });
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then(
-          [this] { return remove_compacted_index(_reader.filename()); });
+        f = f.then([this] { return remove_compacted_index(_reader.path()); });
     }
 
     f = f.then(
@@ -596,40 +592,32 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 }
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources,
-  bool is_internal) {
-    auto const meta = segment_path::parse_segment_filename(
-      path.filename().string());
-    if (!meta || meta->version != record_version_type::v1) {
+  storage_resources& resources) {
+    if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
-          meta->version,
+          path.get_version(),
           record_version_type::v1,
           path));
     }
 
     auto rdr = std::make_unique<segment_reader>(
-      path.string(), buf_size, read_ahead, sanitize_fileops);
+      path, buf_size, read_ahead, sanitize_fileops);
     co_await rdr->load_size();
 
-    auto index_name = std::filesystem::path(rdr->filename().c_str())
-                        .replace_extension("base_index")
-                        .string();
-
     auto idx = segment_index(
-      index_name,
-      meta->base_offset,
+      rdr->path().to_index(),
+      path.get_base_offset(),
       segment_index::default_data_buffer_step,
-      sanitize_fileops,
-      is_internal);
+      sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
-      segment::offset_tracker(meta->term, meta->base_offset),
+      segment::offset_tracker(path.get_term(), path.get_base_offset()),
       std::move(*rdr),
       std::move(idx),
       nullptr,
@@ -649,18 +637,15 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   storage_resources& resources) {
-    auto path = segment_path::make_segment_path(
-      ntpc, base_offset, term, version);
-
-    vlog(stlog.info, "Creating new segment {}", path.string());
+    auto path = segment_full_path(ntpc, base_offset, term, version);
+    vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
              path,
              sanitize_fileops,
              std::move(batch_cache),
              buf_size,
              read_ahead,
-             resources,
-             ntpc.is_internal_topic())
+             resources)
       .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
@@ -685,9 +670,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt,
-                          resources,
-                          segment::generation_id{},
-                          seg->is_internal_topic()));
+                          resources));
                   });
             });
       })
@@ -700,7 +683,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
             seg,
             [path, sanitize_fileops, pc, &resources](
               const ss::lw_shared_ptr<segment>& seg) {
-                auto compacted_path = internal::compacted_index_path(path);
+                auto compacted_path = path.to_compacted_index();
                 return internal::make_compacted_index_writer(
                          compacted_path, sanitize_fileops, pc, resources)
                   .then([seg, &resources](compacted_index_writer compact) {
@@ -714,9 +697,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt,
-                          resources,
-                          segment::generation_id{},
-                          seg->is_internal_topic()));
+                          resources));
                   });
             });
       });

@@ -39,21 +39,19 @@ static inline segment_index::entry translate_index_entry(
 }
 
 segment_index::segment_index(
-  ss::sstring filename,
+  segment_full_path path,
   model::offset base,
   size_t step,
-  debug_sanitize_files sanitize,
-  bool is_internal)
-  : _name(std::move(filename))
+  debug_sanitize_files sanitize)
+  : _path(std::move(path))
   , _step(step)
-  , _sanitize(sanitize)
-  , _is_internal(is_internal) {
+  , _sanitize(sanitize) {
     _state.base_offset = base;
 }
 
 segment_index::segment_index(
-  ss::sstring filename, ss::file mock_file, model::offset base, size_t step)
-  : _name(std::move(filename))
+  segment_full_path path, ss::file mock_file, model::offset base, size_t step)
+  : _path(std::move(path))
   , _step(step)
   , _mock_file(mock_file) {
     _state.base_offset = base;
@@ -66,10 +64,7 @@ ss::future<ss::file> segment_index::open() {
     }
 
     return internal::make_handle(
-      std::filesystem::path{_name},
-      ss::open_flags::create | ss::open_flags::rw,
-      {},
-      _sanitize);
+      _path, ss::open_flags::create | ss::open_flags::rw, {}, _sanitize);
 }
 
 void segment_index::reset() {
@@ -96,7 +91,8 @@ void segment_index::maybe_track(
           hdr.last_offset(),
           hdr.first_timestamp,
           hdr.max_timestamp,
-          _is_internal || hdr.type == model::record_batch_type::raft_data)) {
+          path().is_internal_topic()
+            || hdr.type == model::record_batch_type::raft_data)) {
         _acc = 0;
     }
     _needs_persistence = true;
@@ -241,7 +237,7 @@ ss::future<> segment_index::flush_to_file(ss::file backing_file) {
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
-    return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
+    return o << "{file:" << i.path() << ", offsets:" << i.base_offset()
              << ", index:" << i._state << ", step:" << i._step
              << ", needs_persistence:" << i._needs_persistence << "}";
 }

@@ -35,6 +35,7 @@ v_cc_library(
     backlog_controller.cc
     compaction_controller.cc
     offset_to_filepos.cc
+    fs_utils.cc
   DEPS
     Seastar::seastar
     v::bytes

@@ -53,9 +53,15 @@ public:
           segment_appender::options(
             ss::default_priority_class(), 1, std::nullopt, resources));
         auto indexer = segment_index(
-          base_name + ".index", std::move(fidx), base, 4096);
+          segment_full_path::mock(base_name + ".index"),
+          std::move(fidx),
+          base,
+          4096);
         auto reader = segment_reader(
-          base_name, 128_KiB, 10, debug_sanitize_files::no);
+          segment_full_path::mock(base_name),
+          128_KiB,
+          10,
+          debug_sanitize_files::no);
         reader.load_size().get();
         _seg = ss::make_lw_shared<segment>(
           segment::offset_tracker(model::term_id(0), base),
