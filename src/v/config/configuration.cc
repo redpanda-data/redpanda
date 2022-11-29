@@ -1019,7 +1019,8 @@ configuration::configuration()
   , cloud_storage_reconciliation_ms(
       *this,
       "cloud_storage_reconciliation_interval_ms",
-      "Interval at which the archival service runs reconciliation (ms)",
+      "Cloud storage upload code waits this long between checks for whether"
+      "a partition is a leader and eligible to run uploads.",
       {.visibility = visibility::tunable},
       1s)
   , cloud_storage_upload_loop_initial_backoff_ms(

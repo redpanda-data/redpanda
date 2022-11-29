@@ -139,7 +139,7 @@ ss::future<> ntp_archiver::outer_upload_loop() {
 
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
-            co_await ss::sleep_abortable(5s, _as);
+            co_await ss::sleep_abortable(_conf->reconciliation_interval, _as);
             continue;
         }
 
