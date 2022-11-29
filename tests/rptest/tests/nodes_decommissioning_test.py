@@ -265,6 +265,55 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_recommissioning_node_finishes(self):
+        self.start_redpanda(num_nodes=4)
+        self._create_topics()
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+        admin = Admin(self.redpanda)
+
+        brokers = admin.get_brokers()
+        to_decommission = random.choice(brokers)['node_id']
+
+        # throttle recovery
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+
+        self.logger.info(f"decommissioning node: {to_decommission}", )
+        admin.decommission_broker(to_decommission)
+
+        self._wait_until_status(to_decommission, 'draining')
+
+        wait_until(lambda: self._partitions_moving(),
+                   timeout_sec=15,
+                   backoff_sec=1)
+
+        # recommission broker
+        admin.recommission_broker(to_decommission)
+        self._wait_until_status(to_decommission, 'active')
+
+        wait_until(lambda: self._partitions_not_moving(),
+                   timeout_sec=15,
+                   backoff_sec=1)
+
+        admin.decommission_broker(to_decommission)
+
+        self._wait_until_status(to_decommission, 'draining')
+        rpk.cluster_config_set("raft_learner_recovery_rate",
+                               str(1024 * 1024 * 1024))
+
+        def node_removed():
+            brokers = admin.get_brokers()
+            for broker in brokers:
+                if broker['node_id'] == to_decommission:
+                    return False
+            return True
+
+        wait_until(node_removed, 60, 2)
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_do_not_stop_all_moves_node(self):
         self.start_redpanda(num_nodes=4)
         self._create_topics()
