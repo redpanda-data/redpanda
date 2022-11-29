@@ -136,7 +136,7 @@ public:
 
     /// \brief Probe remote storage and truncate the manifest if needed
     ss::future<std::optional<cloud_storage::partition_manifest>>
-    maybe_truncate_manifest(retry_chain_node& rtc);
+    maybe_truncate_manifest();
 
     /// \brief Perform housekeeping operations.
     ss::future<> housekeeping();

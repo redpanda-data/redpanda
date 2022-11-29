@@ -3308,20 +3308,26 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         vlog(logger.info, "Need to redirect bucket syncup request");
         throw co_await redirect_to_leader(*request, ntp);
     } else {
-        //        auto result = co_await _archival_service.map_reduce(
-        //          manifest_reducer(), [ntp](archival::scheduler_service&
-        //          service) {
-        //              return service.maybe_truncate_manifest(ntp);
-        //          });
-        //        vlog(logger.info, "Requested bucket syncup completed");
-        //        if (result) {
-        //            std::stringstream sts;
-        //            result->serialize(sts);
-        //            vlog(logger.info, "Requested bucket syncup result {}",
-        //            sts.str());
-        //        } else {
-        //            vlog(logger.info, "Requested bucket syncup result empty");
-        //        }
+        auto result = co_await _partition_manager.map_reduce(
+          manifest_reducer(), [ntp](cluster::partition_manager& p) {
+              auto partition = p.get(ntp);
+              if (partition) {
+                  auto archiver = partition->archiver();
+                  if (archiver) {
+                      return archiver->maybe_truncate_manifest();
+                  }
+              }
+              return ss::make_ready_future<
+                std::optional<cloud_storage::partition_manifest>>(std::nullopt);
+          });
+        vlog(logger.info, "Requested bucket syncup completed");
+        if (result) {
+            std::stringstream sts;
+            result->serialize(sts);
+            vlog(logger.info, "Requested bucket syncup result {}", sts.str());
+        } else {
+            vlog(logger.info, "Requested bucket syncup result empty");
+        }
     }
     co_return ss::json::json_return_type(ss::json::json_void());
 }
