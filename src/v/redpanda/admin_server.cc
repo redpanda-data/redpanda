@@ -11,7 +11,7 @@
 
 #include "redpanda/admin_server.h"
 
-#include "archival/service.h"
+#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"

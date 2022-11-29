@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "archival/service.h"
 #include "cluster/fwd.h"
 #include "seastarx.h"
 #include "storage/backlog_controller.h"

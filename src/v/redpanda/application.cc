@@ -10,7 +10,6 @@
 #include "redpanda/application.h"
 
 #include "archival/ntp_archiver_service.h"
-#include "archival/service.h"
 #include "archival/upload_controller.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"

@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "archival/service.h"
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
