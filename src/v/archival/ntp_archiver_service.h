@@ -153,6 +153,16 @@ public:
 
     virtual ~ntp_archiver() = default;
 
+    /**
+     * Partition 0 carries a copy of the topic configuration, updated by
+     * the controller, so that its archiver can make updates to the topic
+     * manifest in cloud storage
+     */
+    void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg) {
+        _topic_cfg = std::move(cfg);
+        _topic_manifest_dirty = true;
+    }
+
 private:
     /// Information about started upload
     struct scheduled_upload {
@@ -180,10 +190,11 @@ private:
     };
 
     using allow_reuploads_t = ss::bool_class<struct allow_reupload_tag>;
-    /// An upload context represents a range of offsets to be uploaded. It will
-    /// search for segments within this range and upload them, it also carries
-    /// some context information like whether re-uploads are allowed, what is
-    /// the maximum number of in-flight uploads that can be processed etc.
+    /// An upload context represents a range of offsets to be uploaded. It
+    /// will search for segments within this range and upload them, it also
+    /// carries some context information like whether re-uploads are
+    /// allowed, what is the maximum number of in-flight uploads that can be
+    /// processed etc.
     struct upload_context {
         /// The kind of segment being uploaded
         segment_upload_kind upload_kind;
@@ -191,8 +202,8 @@ private:
         model::offset start_offset;
         /// Uploads will stop at this offset
         model::offset last_offset;
-        /// Controls checks for reuploads, compacted segments have this check
-        /// disabled
+        /// Controls checks for reuploads, compacted segments have this
+        /// check disabled
         allow_reuploads_t allow_reuploads;
         /// Collection of uploads scheduled so far
         std::vector<scheduled_upload> uploads{};
@@ -227,8 +238,9 @@ private:
       std::vector<ntp_archiver::scheduled_upload> scheduled);
 
     /// Waits for scheduled segment uploads. The uploaded segments could be
-    /// compacted or non-compacted, the actions taken are similar in both cases
-    /// with the major difference being the probe updates done after the upload.
+    /// compacted or non-compacted, the actions taken are similar in both
+    /// cases with the major difference being the probe updates done after
+    /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
       std::vector<scheduled_upload> scheduled,
       segment_upload_kind segment_kind);
@@ -304,6 +316,8 @@ private:
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
+
+    std::optional<std::unique_ptr<cluster::topic_configuration>> _topic_cfg;
 
     std::optional<ntp_level_probe> _probe{std::nullopt};
 

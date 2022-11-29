@@ -1498,10 +1498,22 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
 
     return f
-      .then([this, ntp = std::move(ntp), group_id, rev]() mutable {
+      .then([this, ntp, group_id, rev]() mutable {
           // we create only partitions that belongs to current shard
           return add_to_shard_table(
             std::move(ntp), group_id, ss::this_shard_id(), rev);
+      })
+      .then([this, ntp = std::move(ntp), cfg = std::move(*cfg)] {
+          // Tip off the 0th partition of each topic with its topic
+          // configuration, so that its archiver can upload a topic manifest.
+          if (ntp.tp.partition == 0) {
+              auto partition = _partition_manager.local().get(ntp);
+              if (partition) {
+                  partition->set_topic_config(
+                    std::make_unique<topic_configuration>(cfg));
+              }
+          }
+          return ss::now();
       })
       .then([] { return make_error_code(errc::success); });
 }

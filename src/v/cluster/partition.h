@@ -284,6 +284,13 @@ public:
 
     uint64_t upload_backlog_size() const;
 
+    /**
+     * Partition 0 carries a copy of the topic configuration, updated by
+     * the controller, so that its archiver can make updates to the topic
+     * manifest in cloud storage
+     */
+    void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg);
+
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;

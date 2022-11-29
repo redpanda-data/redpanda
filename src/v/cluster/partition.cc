@@ -496,6 +496,13 @@ uint64_t partition::upload_backlog_size() const {
     }
 }
 
+void partition::set_topic_config(
+  std::unique_ptr<cluster::topic_configuration> cfg) {
+    if (_archiver) {
+        _archiver->set_topic_config(std::move(cfg));
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
