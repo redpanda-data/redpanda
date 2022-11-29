@@ -12,8 +12,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -325,6 +327,9 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// once is used to ensure that we only print the rpc_server_tls bug warning once.
+var once sync.Once
+
 func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Directory                  weakString                `yaml:"data_directory"`
@@ -333,7 +338,6 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		EmptySeedStartsCluster     *weakBool                 `yaml:"empty_seed_starts_cluster"`
 		SeedServers                seedServers               `yaml:"seed_servers"`
 		RPCServer                  SocketAddress             `yaml:"rpc_server"`
-		RPCServerTLS               serverTLSArray            `yaml:"rpc_server_tls"`
 		KafkaAPI                   namedAuthNSocketAddresses `yaml:"kafka_api"`
 		KafkaAPITLS                serverTLSArray            `yaml:"kafka_api_tls"`
 		AdminAPI                   namedSocketAddresses      `yaml:"admin"`
@@ -352,13 +356,21 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
+
+	// redpanda won't recognize rpc_server_tls if is a list.
+	v := reflect.ValueOf(internal.Other["rpc_server_tls"])
+	if v.Kind() == reflect.Slice {
+		once.Do(func() {
+			fmt.Fprintf(os.Stderr, "WARNING: Due to an old rpk bug, your redpanda.yaml's redpanda.rpc_server_tls property is an array, and redpanda reads the field as a struct. rpk cannot automatically fix this: brokers would not be able to rejoin the cluster during a rolling upgrade. To enable TLS on broker RPC ports, you must turn off your cluster, switch the redpanda.rpc_server_tls field to a struct, and then turn your cluster back on. To switch from a list to a struct, replace the single dash under redpanda.rpc_server_tls with a space. This message will continue to appear while redpanda.rpc_server_tls exists and is an array\n")
+		})
+	}
+
 	rpc.Directory = string(internal.Directory)
 	rpc.ID = (*int)(internal.ID)
 	rpc.Rack = string(internal.Rack)
 	rpc.EmptySeedStartsCluster = (*bool)(internal.EmptySeedStartsCluster)
 	rpc.SeedServers = internal.SeedServers
 	rpc.RPCServer = internal.RPCServer
-	rpc.RPCServerTLS = internal.RPCServerTLS
 	rpc.KafkaAPI = internal.KafkaAPI
 	rpc.KafkaAPITLS = internal.KafkaAPITLS
 	rpc.AdminAPI = internal.AdminAPI
