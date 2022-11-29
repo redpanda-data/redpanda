@@ -169,6 +169,9 @@ public:
         }
     }
 
+    /// Report the aggregate backlog of all archivers for all managed partitions
+    uint64_t upload_backlog_size() const;
+
 private:
     /// Download log if partition_recovery_manager is initialized.
     ///

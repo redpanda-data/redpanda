@@ -283,6 +283,14 @@ ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     return do_shutdown(partition);
 }
 
+uint64_t partition_manager::upload_backlog_size() const {
+    uint64_t size = 0;
+    for (const auto& [_, partition] : _ntp_table) {
+        size += partition->upload_backlog_size();
+    }
+    return size;
+}
+
 std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
     return o << "{shard:" << ss::this_shard_id() << ", mngr:{}"
              << pm._storage.log_mgr()

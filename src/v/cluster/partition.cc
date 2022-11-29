@@ -491,6 +491,14 @@ ss::future<> partition::stop_archiver() {
     }
 }
 
+uint64_t partition::upload_backlog_size() const {
+    if (_archiver) {
+        return _archiver->estimate_backlog_size();
+    } else {
+        return 0;
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }

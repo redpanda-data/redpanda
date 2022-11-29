@@ -11,26 +11,32 @@
 #include "archival/upload_controller.h"
 
 #include "archival/logger.h"
+#include "cluster/partition_manager.h"
 
 #include <fmt/format.h>
 
 namespace archival {
 
 struct upload_backlog_sampler : public storage::backlog_controller::sampler {
-    explicit upload_backlog_sampler(ss::sharded<scheduler_service>& api)
-      : _service(api) {}
+    explicit upload_backlog_sampler(
+      ss::sharded<cluster::partition_manager>& partition_manager)
+      : _partition_manager(partition_manager) {}
 
     ss::future<int64_t> sample_backlog() final {
-        co_return _service.local().estimate_backlog_size();
+        co_return _partition_manager.local().upload_backlog_size();
     }
 
 private:
-    ss::sharded<scheduler_service>& _service;
+    ss::sharded<cluster::partition_manager>& _partition_manager;
 };
 
 upload_controller::upload_controller(
-  ss::sharded<scheduler_service>& api, storage::backlog_controller_config cfg)
-  : _ctrl(std::make_unique<upload_backlog_sampler>(api), upload_ctrl_log, cfg) {
+  ss::sharded<cluster::partition_manager>& partition_manager,
+  storage::backlog_controller_config cfg)
+  : _ctrl(
+    std::make_unique<upload_backlog_sampler>(partition_manager),
+    upload_ctrl_log,
+    cfg) {
     _ctrl.setup_metrics("archival:upload");
 }
 

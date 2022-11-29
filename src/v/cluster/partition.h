@@ -281,6 +281,8 @@ public:
     /// usual archiver and start their own
     ss::future<> stop_archiver();
 
+    uint64_t upload_backlog_size() const;
+
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
