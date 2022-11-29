@@ -54,7 +54,7 @@ static group get() {
       nullptr,
       fr,
       feature_table,
-      make_backward_compatible_serializer(),
+      make_consumer_offsets_serializer(),
       enable_group_metrics::no);
 }
 
