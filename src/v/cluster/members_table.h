@@ -39,6 +39,11 @@ public:
 
     std::optional<node_metadata> get_node_metadata(model::node_id) const;
 
+    /// Returns reference to removed node metadata
+    ///  TODO: remove after we stop keeping track of configuration in raft
+    std::optional<std::reference_wrapper<const node_metadata>>
+      get_removed_node_metadata_ref(model::node_id) const;
+
     bool contains(model::node_id) const;
 
     void update_brokers(model::offset, const std::vector<model::broker>&);
