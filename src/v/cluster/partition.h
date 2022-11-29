@@ -48,6 +48,7 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
+      ss::lw_shared_ptr<archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>,

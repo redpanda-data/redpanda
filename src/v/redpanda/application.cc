@@ -891,6 +891,18 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
+      ss::sharded_parameter(
+        [sg = _scheduling_groups.archival_upload(),
+         p = archival_priority(),
+         enabled = archival_storage_enabled()]()
+          -> ss::lw_shared_ptr<archival::configuration> {
+            if (enabled) {
+                return ss::make_lw_shared<archival::configuration>(
+                  archival::get_archival_service_config(sg, p));
+            } else {
+                return nullptr;
+            }
+        }),
       std::ref(feature_table),
       std::ref(tm_stm_cache),
       ss::sharded_parameter([] {

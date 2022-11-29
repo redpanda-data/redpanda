@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
@@ -40,6 +41,7 @@ public:
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
+      ss::lw_shared_ptr<archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>);
@@ -95,8 +97,8 @@ public:
      *
      * the callback must not block.
      *
-     * we don't currently have any mechanism for un-managing partitions, so that
-     * interface is non-existent.
+     * we don't currently have any mechanism for un-managing partitions, so
+     * that interface is non-existent.
      */
     notification_id_type register_manage_notification(
       const model::ns& ns, const model::topic& topic, manage_cb_t cb) {
@@ -123,8 +125,8 @@ public:
      *
      * the callback must not block.
      *
-     * we don't currently have any mechanism for un-managing partitions, so that
-     * interface is non-existent.
+     * we don't currently have any mechanism for un-managing partitions, so
+     * that interface is non-existent.
      */
     notification_id_type register_unmanage_notification(
       const model::ns& ns, const model::topic& topic, unmanage_cb_t cb) {
@@ -169,7 +171,8 @@ public:
         }
     }
 
-    /// Report the aggregate backlog of all archivers for all managed partitions
+    /// Report the aggregate backlog of all archivers for all managed
+    /// partitions
     uint64_t upload_backlog_size() const;
 
 private:
@@ -199,6 +202,7 @@ private:
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
+    ss::lw_shared_ptr<archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     ss::gate _gate;

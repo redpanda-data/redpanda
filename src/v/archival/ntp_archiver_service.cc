@@ -80,10 +80,6 @@ ntp_archiver::ntp_archiver(
   , _manifest_tags(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev)) {
-    vassert(
-      _partition && _partition->is_elected_leader(),
-      "must be the leader to launch ntp_archiver {}",
-      _ntp);
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {

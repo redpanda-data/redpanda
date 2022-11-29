@@ -15,5 +15,6 @@ namespace archival {
 class scheduler_service;
 class upload_controller;
 class ntp_archiver;
+struct configuration;
 
 } // namespace archival

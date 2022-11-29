@@ -35,6 +35,7 @@ partition::partition(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::lw_shared_ptr<archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
   config::binding<uint64_t> max_concurrent_producer_ids,
@@ -132,12 +133,8 @@ partition::partition(
           config::shard_local_cfg().cloud_storage_enabled()
           && cloud_storage_api.local_is_initialized()
           && _raft->ntp().ns == model::kafka_namespace) {
-            // TODO: pass in scheduling group, io priority group once we have
-            // plumbing for passing those through from the top level.
-            auto archiver_conf = archival::get_archival_service_config();
-
             _archiver = ss::make_lw_shared<archival::ntp_archiver>(
-              log().config(), archiver_conf, cloud_storage_api.local(), *this);
+              log().config(), *archival_conf, cloud_storage_api.local(), *this);
         }
     }
 }

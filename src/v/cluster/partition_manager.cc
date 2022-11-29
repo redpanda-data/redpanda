@@ -9,6 +9,7 @@
 
 #include "cluster/partition_manager.h"
 
+#include "archival/types.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_recovery_manager.h"
@@ -52,6 +53,7 @@ partition_manager::partition_manager(
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::lw_shared_ptr<archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
   config::binding<uint64_t> max_concurrent_producer_ids)
@@ -61,6 +63,7 @@ partition_manager::partition_manager(
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
+  , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
   , _tm_stm_cache(tm_stm_cache)
   , _max_concurrent_producer_ids(max_concurrent_producer_ids) {}
@@ -158,6 +161,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _tx_gateway_frontend,
       _cloud_storage_api,
       _cloud_storage_cache,
+      _archival_conf,
       _feature_table,
       _tm_stm_cache,
       _max_concurrent_producer_ids,
