@@ -575,15 +575,6 @@ controller::create_cluster(const bootstrap_cluster_cmd_data cmd_data) {
  */
 ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
     if (co_await discovery.is_cluster_founder()) {
-        if (config::node().empty_seed_starts_cluster()) {
-            vassert(
-              config::node().seed_servers().empty(),
-              "Cluster founder is not the root node");
-            vassert(
-              _raft0->config().brokers().size() == 1,
-              "Root is a cluster founder but joiners are in the cluster alrdy");
-        }
-
         // Full cluster bootstrap
         bootstrap_cluster_cmd_data cmd_data;
         cmd_data.uuid = model::cluster_uuid(uuid_t::create());
