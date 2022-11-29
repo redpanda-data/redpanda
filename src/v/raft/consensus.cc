@@ -982,42 +982,31 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
       });
 }
 
-ss::future<std::error_code> consensus::add_group_members(
-  std::vector<model::broker> nodes, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Adding members: {}", nodes);
-    return change_configuration([nodes = std::move(nodes), new_revision](
+ss::future<std::error_code> consensus::add_group_member(
+  model::broker node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Adding member: {}", node);
+    return change_configuration([node = std::move(node), new_revision](
                                   group_configuration current) mutable {
-        auto contains_already = std::any_of(
-          nodes.cbegin(),
-          nodes.cend(),
-          [&current](const model::broker& broker) {
-              return current.contains_broker(broker.id());
-          });
-
-        if (contains_already) {
+        if (current.contains_broker(node.id())) {
             return result<group_configuration>(errc::node_already_exists);
         }
         current.set_revision(new_revision);
-        current.add(std::move(nodes), new_revision);
+        current.add(std::move(node), new_revision);
 
         return result<group_configuration>(std::move(current));
     });
 }
 
-ss::future<std::error_code> consensus::remove_members(
-  std::vector<model::node_id> ids, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Removing members: {}", ids);
+ss::future<std::error_code>
+consensus::remove_member(model::node_id id, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Removing member: {}", id);
     return change_configuration(
-      [ids = std::move(ids), new_revision](group_configuration current) {
-          auto all_exists = std::all_of(
-            ids.cbegin(), ids.cend(), [&current](model::node_id id) {
-                return current.contains_broker(id);
-            });
-          if (!all_exists) {
+      [id, new_revision](group_configuration current) {
+          if (!current.contains_broker(id)) {
               return result<group_configuration>(errc::node_does_not_exists);
           }
           current.set_revision(new_revision);
-          current.remove(ids);
+          current.remove(id);
 
           if (current.current_config().voters.empty()) {
               return result<group_configuration>(

@@ -835,10 +835,8 @@ ss::future<std::error_code> members_backend::reconcile() {
               "[update: {}] decommissioning finished, removing node from "
               "cluster",
               meta.update);
-            // workaround: https://github.com/redpanda-data/redpanda/issues/891
-            std::vector<model::node_id> ids{meta.update->id};
             co_await _raft0
-              ->remove_members(std::move(ids), model::revision_id{0})
+              ->remove_member(meta.update->id, model::revision_id{0})
               .discard_result();
         } else {
             // Decommissioning still in progress

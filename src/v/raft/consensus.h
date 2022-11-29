@@ -117,16 +117,14 @@ public:
 
     ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
 
-    /// This method adds multiple members to the group and performs
-    /// configuration update
+    /// This method adds member to a group
     ss::future<std::error_code>
-      add_group_members(std::vector<model::broker>, model::revision_id);
+      add_group_member(model::broker, model::revision_id);
     /// Updates given member configuration
     ss::future<std::error_code> update_group_member(model::broker);
-    // Removes members from group
+    // Removes member from group
     ss::future<std::error_code>
-      remove_members(std::vector<model::node_id>, model::revision_id);
-
+      remove_member(model::node_id, model::revision_id);
     /**
      * Replace configuration, uses revision provided with brokers
      */

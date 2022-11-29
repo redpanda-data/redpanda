@@ -171,8 +171,8 @@ public:
      * Configuration manipulation API. Each operation cause the configuration to
      * become joint configuration.
      */
-    void add(std::vector<model::broker>, model::revision_id);
-    void remove(const std::vector<model::node_id>&);
+    void add(model::broker, model::revision_id);
+    void remove(model::node_id);
     void replace(std::vector<broker_revision>, model::revision_id);
 
     /**
@@ -298,11 +298,10 @@ public:
          * configuration revision with provided parameter.
          */
         // add
-        virtual void add(
-          std::vector<model::broker> to_add,
-          model::revision_id new_cfg_revision)
+        virtual void
+        add(model::broker to_add, model::revision_id new_cfg_revision)
           = 0;
-        virtual void remove(const std::vector<model::node_id>& to_remove) = 0;
+        virtual void remove(model::node_id to_remove) = 0;
         virtual void replace(
           std::vector<broker_revision> new_replica_set,
           model::revision_id new_cfg_revision)
