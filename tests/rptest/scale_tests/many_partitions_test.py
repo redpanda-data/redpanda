@@ -248,7 +248,15 @@ class ManyPartitionsTest(PreallocNodesTest):
     def _all_elections_done(self, topic_names: list[str], p_per_topic: int):
         any_incomplete = False
         for tn in topic_names:
-            partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+            try:
+                partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+            except RpkException as e:
+                # One retry.  This is a case where running rpk after a full
+                # cluster restart can time out after 30 seconds, but succeed
+                # promptly as soon as you retry.
+                self.logger.error(f"Retrying describe_topic for {e}")
+                partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+
             if len(partitions) < p_per_topic:
                 self.logger.info(f"describe omits partitions for topic {tn}")
                 any_incomplete = True
