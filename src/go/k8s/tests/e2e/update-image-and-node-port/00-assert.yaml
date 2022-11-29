@@ -58,4 +58,4 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 status:
-  version: "v21.11.1"
+  version: "v22.1.10"
