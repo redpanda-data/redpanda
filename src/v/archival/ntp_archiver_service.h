@@ -68,7 +68,7 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
-      const configuration& conf,
+      ss::lw_shared_ptr<configuration> conf,
       cloud_storage::remote& remote,
       cluster::partition& parent);
 
@@ -280,36 +280,31 @@ private:
     /// Method to use with lazy_abort_source
     bool archiver_lost_leadership(cloud_storage::lazy_abort_source& las);
 
+    const cloud_storage_clients::bucket_name& get_bucket_name() const;
+
     model::ntp _ntp;
     model::initial_revision_id _rev;
     cloud_storage::remote& _remote;
     cluster::partition& _parent;
     model::term_id _start_term;
     archival_policy _policy;
-    cloud_storage_clients::bucket_name _bucket;
+    std::optional<cloud_storage_clients::bucket_name> _bucket_override;
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
-    ss::lowres_clock::duration _cloud_storage_initial_backoff;
-    ss::lowres_clock::duration _segment_upload_timeout;
-    ss::lowres_clock::duration _metadata_sync_timeout;
     ssx::semaphore _mutex{1, "archive/ntp"};
-    ss::lowres_clock::duration _upload_loop_initial_backoff;
-    ss::lowres_clock::duration _upload_loop_max_backoff;
+    ss::lw_shared_ptr<configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     config::binding<size_t> _max_segments_pending_deletion;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
-    ss::scheduling_group _upload_sg;
-    ss::io_priority_class _io_priority;
 
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
 
-    per_ntp_metrics_disabled _ntp_metrics_disabled;
     std::optional<ntp_level_probe> _probe{std::nullopt};
 
     const cloud_storage_clients::object_tag_formatter _segment_tags;

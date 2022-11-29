@@ -921,7 +921,7 @@ static void test_partial_upload_impl(
       cconf.client_config,
       cconf.cloud_credentials_source);
 
-    aconf.time_limit = segment_time_limit(0s);
+    aconf->time_limit = segment_time_limit(0s);
 
     archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });

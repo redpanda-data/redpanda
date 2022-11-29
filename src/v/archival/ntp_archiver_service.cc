@@ -46,36 +46,28 @@ namespace archival {
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
-  const configuration& conf,
+  ss::lw_shared_ptr<configuration> conf,
   cloud_storage::remote& remote,
   cluster::partition& parent)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
   , _parent(parent)
-  , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
-  , _bucket(conf.bucket_name)
+  , _policy(_ntp, conf->time_limit, conf->upload_io_priority)
   , _gate()
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
-  , _cloud_storage_initial_backoff(conf.cloud_storage_initial_backoff)
-  , _segment_upload_timeout(conf.segment_upload_timeout)
-  , _metadata_sync_timeout(conf.manifest_upload_timeout)
-  , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
-  , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
+  , _conf(conf)
   , _sync_manifest_timeout(
       config::shard_local_cfg()
         .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
   , _max_segments_pending_deletion(
       config::shard_local_cfg()
         .cloud_storage_max_segments_pending_deletion_per_partition.bind())
-  , _upload_sg(conf.upload_scheduling_group)
-  , _io_priority(conf.upload_io_priority)
   , _housekeeping_interval(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), 5ms)
   , _next_housekeeping(_housekeeping_jitter())
-  , _ntp_metrics_disabled(conf.ntp_metrics_disabled)
   , _segment_tags(cloud_storage::remote::make_segment_tags(_ntp, _rev))
   , _manifest_tags(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
@@ -83,7 +75,7 @@ ntp_archiver::ntp_archiver(
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
-        _bucket = _parent.get_read_replica_bucket();
+        _bucket_override = _parent.get_read_replica_bucket();
     }
 
     vlog(
@@ -141,7 +133,7 @@ void ntp_archiver::run_sync_manifest_loop() {
 
 ss::future<> ntp_archiver::outer_upload_loop() {
     if (!_probe) {
-        _probe.emplace(_ntp_metrics_disabled, _ntp);
+        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
 
     while (!_as.abort_requested()) {
@@ -153,7 +145,7 @@ ss::future<> ntp_archiver::outer_upload_loop() {
         _start_term = _parent.term();
 
         co_await ss::with_scheduling_group(
-          _upload_sg, [this] { return upload_loop(); })
+          _conf->upload_scheduling_group, [this] { return upload_loop(); })
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
@@ -176,7 +168,7 @@ ss::future<> ntp_archiver::outer_upload_loop() {
 }
 
 ss::future<> ntp_archiver::upload_loop() {
-    ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
+    ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
     while (upload_loop_can_continue()) {
         // Bump up archival STM's state to make sure that it's not lagging
@@ -245,9 +237,9 @@ ss::future<> ntp_archiver::upload_loop() {
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
             co_await ss::sleep_abortable(
               backoff + _backoff_jitter.next_jitter_duration(), _as);
-            backoff = std::min(backoff * 2, _upload_loop_max_backoff);
+            backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff);
         } else {
-            backoff = _upload_loop_initial_backoff;
+            backoff = _conf->upload_loop_initial_backoff;
         }
     }
 }
@@ -429,13 +421,16 @@ ss::future<
 ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
     auto path = tmp.get_manifest_path();
     auto key = cloud_storage::remote_manifest_path(
       std::filesystem::path(std::move(path)));
     vlog(_rtclog.debug, "Downloading manifest");
-    auto result = co_await _remote.download_manifest(_bucket, key, tmp, fib);
+    auto result = co_await _remote.download_manifest(
+      get_bucket_name(), key, tmp, fib);
 
     // It's OK if the manifest is not found for a newly created topic. The
     // condition in if statement is not guaranteed to cover all cases for new
@@ -459,14 +454,16 @@ ntp_archiver::download_manifest() {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(
       ctxlog.debug,
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest(), fib, _manifest_tags);
+      get_bucket_name(), manifest(), fib, _manifest_tags);
 }
 
 remote_segment_path
@@ -492,7 +489,9 @@ ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_segment(upload_candidate candidate) {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->segment_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = segment_path_for_candidate(candidate);
@@ -514,11 +513,11 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
             candidate.sources,
             candidate.file_offset,
             candidate.final_file_offset,
-            _io_priority));
+            _conf->upload_io_priority));
     };
 
     co_return co_await _remote.upload_segment(
-      _bucket,
+      get_bucket_name(),
       path,
       candidate.content_length,
       reset_func,
@@ -547,7 +546,9 @@ ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_tx(upload_candidate candidate) {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->segment_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     vlog(
@@ -568,7 +569,7 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
     cloud_storage::tx_range_manifest manifest(path, tx_range);
 
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest, fib, _tx_tags);
+      get_bucket_name(), manifest, fib, _tx_tags);
 }
 
 // The function turns an array of futures that return an error code into a
@@ -609,12 +610,12 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           last_stable_offset,
           log,
           *_parent.get_offset_translator_state(),
-          _segment_upload_timeout);
+          _conf->segment_upload_timeout);
         break;
     case segment_upload_kind::compacted:
         const auto& m = manifest();
         upload_with_locks = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, log, m, _segment_upload_timeout);
+          start_upload_offset, log, m, _conf->segment_upload_timeout);
         break;
     }
 
@@ -857,7 +858,8 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           _parent.archival_meta_stm(),
           "Archival metadata STM is not created for {} archiver",
           _ntp.path());
-        auto deadline = ss::lowres_clock::now() + _metadata_sync_timeout;
+        auto deadline = ss::lowres_clock::now()
+                        + _conf->manifest_upload_timeout;
         auto error = co_await _parent.archival_meta_stm()->add_segments(
           mdiff, deadline, _as);
         if (
@@ -982,11 +984,14 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     const auto& m = manifest();
     for (const auto& [key, meta] : m) {
         retry_chain_node fib(
-          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
+          _conf->manifest_upload_timeout,
+          _conf->upload_loop_initial_backoff,
+          &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           meta.base_offset, meta.segment_term);
         auto spath = m.generate_segment_path(meta);
-        auto result = co_await _remote.segment_exists(_bucket, spath, fib);
+        auto result = co_await _remote.segment_exists(
+          get_bucket_name(), spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
               ctxlog.info,
@@ -1008,10 +1013,12 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
           "manifest, start offset before cleanup: {}",
           manifest().get_start_offset());
         retry_chain_node rc_node(
-          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
+          _conf->manifest_upload_timeout,
+          _conf->upload_loop_initial_backoff,
+          &rtc);
         auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
-          ss::lowres_clock::now() + _metadata_sync_timeout,
+          ss::lowres_clock::now() + _conf->manifest_upload_timeout,
           _as);
         if (error != cluster::errc::success) {
             vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
@@ -1204,21 +1211,32 @@ ntp_archiver::delete_segment(const remote_segment_path& path) {
     _as.check();
 
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
 
     auto res = co_await _remote.delete_object(
-      _bucket, cloud_storage_clients::object_key{path}, fib);
+      get_bucket_name(), cloud_storage_clients::object_key{path}, fib);
 
     if (res == cloud_storage::upload_result::success) {
         auto tx_range_manifest_path
           = cloud_storage::tx_range_manifest(path).get_manifest_path();
         co_await _remote.delete_object(
-          _bucket,
+          _conf->bucket_name,
           cloud_storage_clients::object_key{tx_range_manifest_path},
           fib);
     }
 
     co_return res;
+}
+
+const cloud_storage_clients::bucket_name&
+ntp_archiver::get_bucket_name() const {
+    if (_bucket_override) {
+        return *_bucket_override;
+    } else {
+        return _conf->bucket_name;
+    }
 }
 
 } // namespace archival

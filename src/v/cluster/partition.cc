@@ -134,7 +134,7 @@ partition::partition(
           && cloud_storage_api.local_is_initialized()
           && _raft->ntp().ns == model::kafka_namespace) {
             _archiver = ss::make_lw_shared<archival::ntp_archiver>(
-              log().config(), *archival_conf, cloud_storage_api.local(), *this);
+              log().config(), archival_conf, cloud_storage_api.local(), *this);
         }
     }
 }

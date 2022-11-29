@@ -128,7 +128,9 @@ segment_layout write_random_batches_with_single_record(
     return layout;
 }
 
-std::tuple<archival::configuration, cloud_storage::configuration>
+std::tuple<
+  ss::lw_shared_ptr<archival::configuration>,
+  cloud_storage::configuration>
 get_configurations() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     cloud_storage_clients::configuration s3conf{
@@ -160,7 +162,8 @@ get_configurations() {
     cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
     cconf.cloud_credentials_source
       = model::cloud_credentials_source::config_file;
-    return std::make_tuple(aconf, cconf);
+    return std::make_tuple(
+      ss::make_lw_shared<archival::configuration>(aconf), cconf);
 }
 
 std::unique_ptr<storage::disk_log_builder>

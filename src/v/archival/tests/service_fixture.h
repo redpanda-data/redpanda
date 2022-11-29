@@ -187,7 +187,9 @@ private:
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
 
-std::tuple<archival::configuration, cloud_storage::configuration>
+std::tuple<
+  ss::lw_shared_ptr<archival::configuration>,
+  cloud_storage::configuration>
 get_configurations();
 
 cloud_storage::partition_manifest load_manifest(std::string_view v);
