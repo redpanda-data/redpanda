@@ -748,6 +748,17 @@ class RedpandaService(Service):
         """
         return 0.2 if first_start else 1.0
 
+    def wait_for_membership(self, first_start):
+        self.logger.info("Waiting for all brokers to join cluster")
+        expected = set(self._started)
+
+        wait_until(lambda: {n
+                            for n in self._started
+                            if self.registered(n)} == expected,
+                   timeout_sec=30,
+                   backoff_sec=self._startup_poll_interval(first_start),
+                   err_msg="Cluster membership did not stabilize")
+
     def start(self,
               nodes=None,
               clean_nodes=True,
@@ -822,24 +833,25 @@ class RedpandaService(Service):
         if not self._skip_create_superuser:
             self._admin.create_user(*self._superuser)
 
-        self.logger.info("Waiting for all brokers to join cluster")
-        expected = set(self._started)
-
-        wait_until(lambda: {n
-                            for n in self._started
-                            if self.registered(n)} == expected,
-                   timeout_sec=30,
-                   backoff_sec=self._startup_poll_interval(first_start),
-                   err_msg="Cluster membership did not stabilize")
+        self.wait_for_membership(first_start=first_start)
 
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            if not set(node.ns) == {"redpanda"} or not set(
-                    node.ns["redpanda"].topics) == {"controller", "kvstore"}:
+            unexpected_ns = set(node.ns) - {"redpanda"}
+            if unexpected_ns:
+                for ns in unexpected_ns:
+                    self.logger.error(
+                        f"node {node.name}: unexpected namespace: {ns}, "
+                        f"topics: {set(node.ns[ns].topics)}")
+                raise RuntimeError("Unexpected files in data directory")
+
+            unexpected_rp_topics = set(
+                node.ns["redpanda"].topics) - {"controller", "kvstore"}
+            if unexpected_rp_topics:
                 self.logger.error(
-                    f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
-                )
+                    f"node {node.name}: unexpected topics in redpanda namespace: "
+                    f"{unexpected_rp_topics}")
                 raise RuntimeError("Unexpected files in data directory")
 
         if self.sasl_enabled():
