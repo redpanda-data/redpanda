@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     rest_authn_endpoint.cc
     broker_authn_endpoint.cc
+    client_group_byte_rate_quota.cc
     configuration.cc
     node_config.cc
     base_property.cc

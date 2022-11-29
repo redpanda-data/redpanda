@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/client_group_byte_rate_quota.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -24,5 +25,8 @@ parse_connection_rate_override(const ss::sstring& raw_option);
 
 std::optional<ss::sstring>
 validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit);
+
+std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
+  const std::unordered_map<ss::sstring, config::client_group_quota>&);
 
 }; // namespace config
