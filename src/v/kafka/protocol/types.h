@@ -140,8 +140,7 @@ concept KafkaApi = requires(T request) {
  * Data type of the configuration entry.
  */
 enum class describe_configs_type : int8_t {
-    not_supported = -1,
-    unknown = 0, // This is the default config type
+    unknown = 0,
     boolean = 1,
     string = 2,
     int_type = 3,

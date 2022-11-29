@@ -62,8 +62,6 @@ std::ostream& operator<<(std::ostream& os, describe_configs_type t) {
         return os << "{class}";
     case describe_configs_type::password:
         return os << "{password}";
-    case describe_configs_type::not_supported:
-        break;
     }
     return os << "{unsupported type}";
 }
