@@ -270,6 +270,10 @@ private:
     /// Launch the sync manifest loop fiber.
     ss::future<> sync_manifest_loop();
 
+    /// Attempt to upload topic manifest.  Does not throw on error.  Clears
+    /// _topic_manifest_dirty on success.
+    ss::future<> upload_topic_manifest();
+
     /// Delete a segment and its transaction metadata from S3.
     /// The transaction metadata is only deleted if the segment
     /// deletion was successful.
@@ -317,7 +321,10 @@ private:
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
 
-    std::optional<std::unique_ptr<cluster::topic_configuration>> _topic_cfg;
+    std::unique_ptr<cluster::topic_configuration> _topic_cfg;
+    // 'dirty' in the sense that we need to do another update to S3 to ensure
+    // the object matches our local topic configuration.
+    bool _topic_manifest_dirty{true};
 
     std::optional<ntp_level_probe> _probe{std::nullopt};
 

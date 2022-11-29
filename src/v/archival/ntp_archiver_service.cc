@@ -15,6 +15,7 @@
 #include "archival/retention_calculator.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
@@ -167,6 +168,74 @@ ss::future<> ntp_archiver::outer_upload_loop() {
     }
 }
 
+/// Helper for generating topic manifest to upload
+static cloud_storage::manifest_topic_configuration convert_topic_configuration(
+  const cluster::topic_configuration& cfg,
+  cluster::replication_factor replication_factor) {
+    cloud_storage::manifest_topic_configuration result {
+      .tp_ns = cfg.tp_ns,
+      .partition_count = cfg.partition_count,
+      .replication_factor = replication_factor,
+      .properties = {
+        .compression = cfg.properties.compression,
+        .cleanup_policy_bitflags = cfg.properties.cleanup_policy_bitflags,
+        .compaction_strategy = cfg.properties.compaction_strategy,
+        .timestamp_type = cfg.properties.timestamp_type,
+        .segment_size = cfg.properties.segment_size,
+        .retention_bytes = cfg.properties.retention_bytes,
+        .retention_duration = cfg.properties.retention_duration,
+      },
+    };
+    return result;
+}
+
+ss::future<> ntp_archiver::upload_topic_manifest() {
+    if (!_topic_cfg) {
+        // This is unexpected: by the time partition_manager instantiates
+        // partitions, they should have had their configs loaded by controller
+        // backend.
+        vlog(
+          _rtclog.error,
+          "No topic configuration available for {}",
+          _parent.ntp());
+        co_return;
+    }
+
+    vlog(_rtclog.debug, "Uploading topic manifest for {}", _parent.ntp());
+
+    auto replication_factor = cluster::replication_factor{
+      _parent.raft()->config().current_config().voters.size()};
+
+    try {
+        // This runs asynchronously so we can just retry indefinetly
+        retry_chain_node fib(
+          _conf->manifest_upload_timeout,
+          _conf->cloud_storage_initial_backoff,
+          &_rtcnode);
+        retry_chain_logger ctxlog(archival_log, fib);
+        vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
+        cloud_storage::topic_manifest tm(
+          convert_topic_configuration(*_topic_cfg, replication_factor), _rev);
+        auto key = tm.get_manifest_path();
+        vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
+        auto res = co_await _remote.upload_manifest(
+          _conf->bucket_name, tm, fib);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(ctxlog.warn, "Topic manifest upload failed: {}", key);
+        } else {
+            _topic_manifest_dirty = false;
+        }
+    } catch (const ss::gate_closed_exception& err) {
+    } catch (const ss::abort_requested_exception& err) {
+    } catch (...) {
+        vlog(
+          _rtclog.warn,
+          "Error writing topic manifest for {}: {}",
+          _parent.ntp(),
+          std::current_exception());
+    }
+}
+
 ss::future<> ntp_archiver::upload_loop() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
@@ -178,6 +247,10 @@ ss::future<> ntp_archiver::upload_loop() {
           _parent.archival_meta_stm(),
           "Upload loop: archival metadata STM is not created for {} archiver",
           _ntp.path());
+
+        if (_parent.ntp().tp.partition == 0 && _topic_manifest_dirty) {
+            co_await upload_topic_manifest();
+        }
 
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
