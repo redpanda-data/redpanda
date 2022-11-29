@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "vectorized/redpanda:v22.2.8"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -24,6 +24,9 @@ spec:
       name: tlsadmincert
     - mountPath: /etc/tls/certs/admin/ca
       name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/lib/shadow-index-cache
@@ -42,7 +45,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
+    image: "vectorized/redpanda:v22.2.8"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -52,6 +55,9 @@ spec:
       name: tlsadmincert
     - mountPath: /etc/tls/certs/admin/ca
       name: tlsadminca
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/lib/shadow-index-cache
