@@ -37,11 +37,11 @@ ss::future<> quota_manager::start() {
 
 quota_manager::underlying_t::iterator
 quota_manager::maybe_add_and_retrieve_quota(
-  const std::optional<std::string_view>& client_id,
+  const std::optional<std::string_view>& quota_id,
   const clock::time_point& now) {
     // requests without a client id are grouped into an anonymous group that
     // shares a default quota. the anonymous group is keyed on empty string.
-    auto cid = client_id ? *client_id : "";
+    auto qid = quota_id ? *quota_id : "";
 
     // find or create the throughput tracker for this client
     //
@@ -51,7 +51,7 @@ quota_manager::maybe_add_and_retrieve_quota(
     // now, these client-name strings are small. This will be solved in
     // c++20 via Hash::transparent_key_equal.
     auto [it, inserted] = _quotas.try_emplace(
-      ss::sstring(cid),
+      ss::sstring(qid),
       quota{
         now,
         clock::duration(0),
@@ -70,6 +70,35 @@ quota_manager::maybe_add_and_retrieve_quota(
     }
 
     return it;
+}
+
+// If client is part of some group then client qota is group
+// else client quota is client_id
+std::optional<std::string_view> quota_manager::get_client_quota(
+  const std::optional<std::string_view>& client_id) {
+    if (!client_id) {
+        return std::nullopt;
+    }
+    for (const auto& group_and_limit : _target_tp_rate_per_client_group()) {
+        if (client_id->starts_with(
+              std::string_view(group_and_limit.second.clients_prefix))) {
+            return group_and_limit.first;
+        }
+    }
+    return client_id;
+}
+
+int64_t quota_manager::get_client_target_tp_rate(
+  const std::optional<std::string_view>& quota_id) {
+    if (!quota_id) {
+        return _default_target_tp_rate();
+    }
+    auto group_tp_rate = _target_tp_rate_per_client_group().find(
+      ss::sstring(quota_id.value()));
+    if (group_tp_rate != _target_tp_rate_per_client_group().end()) {
+        return group_tp_rate->second.quota;
+    }
+    return _default_target_tp_rate();
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
@@ -95,7 +124,9 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
     vassert(
       ss::this_shard_id() == quota_manager_shard,
       "This method can only be executed from quota manager home shard");
-    auto it = maybe_add_and_retrieve_quota(client_id, now);
+
+    auto quota_id = get_client_quota(client_id);
+    auto it = maybe_add_and_retrieve_quota(quota_id, now);
     const auto units = it->second.pm_rate->record_and_measure(mutations, now);
     auto delay_ms = 0ms;
     if (units < 0) {
@@ -129,20 +160,23 @@ throttle_delay quota_manager::record_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
-    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    auto quota_id = get_client_quota(client_id);
+    auto it = maybe_add_and_retrieve_quota(quota_id, now);
 
     auto rate = it->second.tp_rate.record_and_measure(bytes, now);
 
     std::chrono::milliseconds delay_ms(0);
-    if (rate > _target_tp_rate()) {
-        auto diff = rate - _target_tp_rate();
-        double delay = (diff / _target_tp_rate())
+    auto target_tp_rate = get_client_target_tp_rate(quota_id);
+    if (rate > target_tp_rate) {
+        auto diff = rate - target_tp_rate;
+        double delay = (diff / target_tp_rate)
                        * static_cast<double>(
                          std::chrono::duration_cast<std::chrono::milliseconds>(
                            it->second.tp_rate.window_size())
                            .count());
         delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
     }
+
     std::chrono::milliseconds max_delay_ms(_max_delay());
     if (delay_ms > max_delay_ms) {
         vlog(
