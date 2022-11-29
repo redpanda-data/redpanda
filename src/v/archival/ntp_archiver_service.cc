@@ -97,7 +97,7 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 ss::future<> ntp_archiver::start() {
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
         ssx::spawn_with_gate(
-          _gate, [this] { return run_sync_manifest_loop(); });
+          _gate, [this] { return outer_sync_manifest_loop(); });
     } else {
         ssx::spawn_with_gate(_gate, [this] { return outer_upload_loop(); });
     }
@@ -107,29 +107,6 @@ ss::future<> ntp_archiver::start() {
     // recreate it.
 
     return ss::now();
-}
-
-void ntp_archiver::run_sync_manifest_loop() {
-    // NOTE: not using ssx::spawn_with_gate_then here because we want to log
-    // inside the gate (so that _rtclog is guaranteed to be alive).
-    ssx::spawn_with_gate(_gate, [this] {
-        return sync_manifest_loop()
-          .handle_exception_type([](const ss::abort_requested_exception&) {})
-          .handle_exception_type([](const ss::sleep_aborted&) {})
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([this](const ss::semaphore_timed_out& e) {
-              vlog(
-                _rtclog.warn,
-                "Semaphore timed out in sync manifest loop: {}. This may be "
-                "due to the system being overloaded. The loop will restart.",
-                e);
-          })
-          .handle_exception([this](std::exception_ptr e) {
-              vlog(_rtclog.error, "sync manifest loop error: {}", e);
-          })
-          .finally(
-            [this] { vlog(_rtclog.debug, "sync manifest loop stopped"); });
-    });
 }
 
 ss::future<> ntp_archiver::outer_upload_loop() {
@@ -160,11 +137,40 @@ ss::future<> ntp_archiver::outer_upload_loop() {
           })
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "upload loop error: {}", e);
-          })
-          .finally([this] {
-              vlog(_rtclog.debug, "upload loop stopped");
-              _probe.reset();
           });
+    }
+}
+
+ss::future<> ntp_archiver::outer_sync_manifest_loop() {
+    if (!_probe) {
+        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+    }
+
+    while (!_as.abort_requested()) {
+        if (!_parent.is_elected_leader()) {
+            co_await ss::sleep_abortable(_conf->reconciliation_interval, _as);
+            continue;
+        }
+
+        _start_term = _parent.term();
+
+        try {
+            co_await sync_manifest_loop()
+              .handle_exception_type(
+                [](const ss::abort_requested_exception&) {})
+              .handle_exception_type([](const ss::sleep_aborted&) {})
+              .handle_exception_type([](const ss::gate_closed_exception&) {});
+        } catch (const ss::semaphore_timed_out& e) {
+            vlog(
+              _rtclog.warn,
+              "Semaphore timed out in the upload loop: {}. This may be "
+              "due to the system being overloaded. The loop will "
+              "restart.",
+              e);
+        } catch (...) {
+            vlog(
+              _rtclog.error, "upload loop error: {}", std::current_exception());
+        }
     }
 }
 

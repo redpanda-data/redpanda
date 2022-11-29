@@ -72,12 +72,6 @@ public:
       cloud_storage::remote& remote,
       cluster::partition& parent);
 
-    /// Start the fiber that will upload the partition data to the cloud
-    /// storage. Can be started only once.
-    void run_upload_loop();
-
-    void run_sync_manifest_loop();
-
     /// Spawn background fibers, which depending on the mode (read replica or
     /// not) will either do uploads, or periodically read back the manifest.
     ss::future<> start();
@@ -269,6 +263,9 @@ private:
 
     /// Launch the sync manifest loop fiber.
     ss::future<> sync_manifest_loop();
+
+    /// Run sync_manifest_loop until shut down
+    ss::future<> outer_sync_manifest_loop();
 
     /// Attempt to upload topic manifest.  Does not throw on error.  Clears
     /// _topic_manifest_dirty on success.
