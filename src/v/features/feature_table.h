@@ -217,6 +217,10 @@ public:
         return _active_version;
     }
 
+    cluster::cluster_version get_original_version() const noexcept {
+        return _original_version;
+    }
+
     const std::vector<feature_state>& get_feature_state() const {
         return _feature_state;
     }
@@ -295,10 +299,18 @@ private:
 
     // The controller log offset of last batch applied to this state machine
     void set_applied_offset(model::offset o) { _applied_offset = o; }
+    void set_original_version(cluster::cluster_version v) {
+        _original_version = v;
+    }
 
     void on_update();
 
     cluster::cluster_version _active_version{cluster::invalid_version};
+
+    // The earliest version this cluster ever saw: guaranteed that no
+    // on-disk structures were written with an encoding that predates
+    // this.
+    cluster::cluster_version _original_version{cluster::invalid_version};
 
     std::vector<feature_state> _feature_state;
 
