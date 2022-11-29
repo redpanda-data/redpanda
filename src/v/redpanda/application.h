@@ -144,7 +144,7 @@ private:
 
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
-    void start_runtime_services(cluster::cluster_discovery&);
+    void start_runtime_services(cluster::cluster_discovery&, ::stop_signal&);
     void start_kafka(const model::node_id&, ::stop_signal&);
 
     // All methods are calleds from Seastar thread

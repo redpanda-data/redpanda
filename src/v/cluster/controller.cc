@@ -117,7 +117,8 @@ ss::future<> controller::wire_up() {
       .then([this] { _probe.start(); });
 }
 
-ss::future<> controller::start(cluster_discovery& discovery) {
+ss::future<>
+controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
     auto initial_raft0_brokers = discovery.founding_brokers();
     std::vector<model::node_id> seed_nodes;
     seed_nodes.reserve(initial_raft0_brokers.size());
@@ -304,13 +305,13 @@ ss::future<> controller::start(cluster_discovery& discovery) {
            */
           return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
       })
-      .then([this] {
+      .then([this, &as = shard0_as] {
           auto disk_dirty_offset = _raft0->log().offsets().dirty_offset;
 
           return _stm
             .invoke_on(
               controller_stm_shard,
-              [disk_dirty_offset](controller_stm& stm) {
+              [disk_dirty_offset, &as = as](controller_stm& stm) {
                   // we do not have to use timeout in here as all the batches to
                   // apply have to be accesssible
                   auto last_applied = stm.bootstrap_last_applied();
@@ -353,7 +354,10 @@ ss::future<> controller::start(cluster_discovery& discovery) {
                   if (last_applied == model::offset{}) {
                       return ss::now();
                   } else {
-                      return stm.wait(last_applied, model::no_timeout);
+                      // The abort source we use here is specific to our startup
+                      // phase, where we can't yet safely use our member abort
+                      // source.
+                      return stm.wait(last_applied, model::no_timeout, as);
                   }
               })
             .then(

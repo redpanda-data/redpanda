@@ -1473,7 +1473,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
         controller->set_ready().get();
     }
 
-    start_runtime_services(cd);
+    start_runtime_services(cd, app_signal);
 
     if (_proxy_config) {
         _proxy->start().get();
@@ -1499,7 +1499,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     syschecks::systemd_notify_ready().get();
 }
 
-void application::start_runtime_services(cluster::cluster_discovery& cd) {
+void application::start_runtime_services(
+  cluster::cluster_discovery& cd, ::stop_signal& app_signal) {
     ssx::background = feature_table.invoke_on_all(
       [this](features::feature_table& ft) {
           return ft.await_feature(features::feature::rpc_v2_by_default)
@@ -1564,7 +1565,7 @@ void application::start_runtime_services(cluster::cluster_discovery& cd) {
           .get();
     }
     syschecks::systemd_message("Starting controller").get();
-    controller->start(cd).get0();
+    controller->start(cd, app_signal.abort_source()).get0();
 
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.

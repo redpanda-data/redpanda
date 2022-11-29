@@ -139,8 +139,11 @@ public:
      * Create raft0, and start the services that the \c controller owns.
      * \param initial_raft0_brokers Brokers to start raft0 with. Empty for
      *      non-seeds.
+     * \param shard0_as an abort source only usable on shard0, and only for
+     *        use within this start function -- for the rest of the lifetime
+     *        of controller, it has its own member abort source.
      */
-    ss::future<> start(cluster_discovery&);
+    ss::future<> start(cluster_discovery&, ss::abort_source&);
 
     // prevents controller from accepting new requests
     ss::future<> shutdown_input();

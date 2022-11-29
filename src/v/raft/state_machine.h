@@ -69,7 +69,11 @@ public:
     virtual ss::future<> stop();
 
     // wait until at least offset is applied to state machine
-    ss::future<> wait(model::offset, model::timeout_clock::time_point);
+    ss::future<> wait(
+      model::offset,
+      model::timeout_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>> as
+      = std::nullopt);
 
     /**
      * This must be implemented by the state machine. The state machine should
