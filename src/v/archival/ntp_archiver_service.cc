@@ -109,21 +109,14 @@ ss::future<> ntp_archiver::start() {
         ssx::spawn_with_gate(_gate, [this] { return outer_upload_loop(); });
     }
 
+    // TODO: implement stopping one background fn and starting another
+    // when we switch modes.  Probably simplest ot destroy archiver and
+    // recreate it.
+
     return ss::now();
 }
 
 void ntp_archiver::run_sync_manifest_loop() {
-    vassert(
-      _upload_loop_state == loop_state::initial,
-      "attempt to start manifest sync loop for {} when upload loop has been "
-      "active",
-      _ntp);
-    vassert(
-      _sync_manifest_loop_state != loop_state::started,
-      "sync manifest loop for ntp {} already started",
-      _ntp);
-    _sync_manifest_loop_state = loop_state::started;
-
     // NOTE: not using ssx::spawn_with_gate_then here because we want to log
     // inside the gate (so that _rtclog is guaranteed to be alive).
     ssx::spawn_with_gate(_gate, [this] {
@@ -141,10 +134,8 @@ void ntp_archiver::run_sync_manifest_loop() {
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "sync manifest loop error: {}", e);
           })
-          .finally([this] {
-              vlog(_rtclog.debug, "sync manifest loop stopped");
-              _sync_manifest_loop_state = loop_state::stopped;
-          });
+          .finally(
+            [this] { vlog(_rtclog.debug, "sync manifest loop stopped"); });
     });
 }
 
@@ -179,8 +170,6 @@ ss::future<> ntp_archiver::outer_upload_loop() {
           })
           .finally([this] {
               vlog(_rtclog.debug, "upload loop stopped");
-              _upload_loop_state = loop_state::stopped;
-
               _probe.reset();
           });
     }

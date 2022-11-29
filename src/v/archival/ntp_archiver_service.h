@@ -60,12 +60,6 @@ public:
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
 
-    enum class loop_state {
-        initial,
-        started,
-        stopped,
-    };
-
     /// Create new instance
     ///
     /// \param ntp is an ntp that archiver is responsible for
@@ -93,22 +87,6 @@ public:
     /// \return future that will become ready when all async operation will be
     /// completed
     ss::future<> stop();
-
-    bool upload_loop_stopped() const {
-        return _upload_loop_state == loop_state::stopped;
-    }
-
-    bool sync_manifest_loop_stopped() const {
-        return _sync_manifest_loop_state == loop_state::stopped;
-    }
-
-    /// Query if either of the manifest sync loop or upload loop has stopped
-    /// These are mutually exclusive loops, and if any one has transitioned to a
-    /// stopped state then the archiver is stopped.
-    bool is_loop_stopped() const {
-        return _sync_manifest_loop_state == loop_state::stopped
-               || _upload_loop_state == loop_state::stopped;
-    }
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -333,9 +311,6 @@ private:
 
     per_ntp_metrics_disabled _ntp_metrics_disabled;
     std::optional<ntp_level_probe> _probe{std::nullopt};
-
-    loop_state _upload_loop_state{loop_state::initial};
-    loop_state _sync_manifest_loop_state{loop_state::initial};
 
     const cloud_storage_clients::object_tag_formatter _segment_tags;
     const cloud_storage_clients::object_tag_formatter _manifest_tags;
