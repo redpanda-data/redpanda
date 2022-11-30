@@ -131,11 +131,14 @@ static in_memory_segment
 make_segment(model::offset base, const std::vector<batch_t>& batches) {
     auto num_config_batches = std::count_if(
       batches.begin(), batches.end(), [](batch_t t) {
-          return t.type != model::record_batch_type::raft_data;
+          return t.type == model::record_batch_type::raft_configuration
+                 || t.type == model::record_batch_type::archival_metadata;
       });
     auto num_config_records = std::accumulate(
       batches.begin(), batches.end(), 0U, [](size_t acc, batch_t b) {
-          if (b.type == model::record_batch_type::raft_data) {
+          if (
+            b.type != model::record_batch_type::raft_configuration
+            && b.type != model::record_batch_type::archival_metadata) {
               return acc;
           }
           return acc + b.num_records;
@@ -1082,12 +1085,13 @@ struct segment_layout {
     size_t num_data_batches;
 };
 
-static segment_layout generate_segment_layout(int num_segments, int seed) {
+static segment_layout generate_segment_layout(
+  int num_segments, int seed, bool exclude_tx_fence = true) {
     static constexpr size_t max_segment_size = 20;
     static constexpr size_t max_batch_size = 10;
     static constexpr size_t max_record_bytes = 2048;
     size_t num_data_batches = 0;
-    auto gen_segment = [&num_data_batches]() {
+    auto gen_segment = [&num_data_batches, exclude_tx_fence]() {
         size_t sz = random_generators::get_int((size_t)1, max_segment_size - 1);
         std::vector<batch_t> res;
         res.reserve(sz);
@@ -1095,15 +1099,19 @@ static segment_layout generate_segment_layout(int num_segments, int seed) {
           model::record_batch_type::raft_data,
           model::record_batch_type::raft_configuration,
           model::record_batch_type::archival_metadata,
+          model::record_batch_type::tx_fence,
         };
-        constexpr auto num_types
-          = (sizeof(types) / sizeof(model::record_batch_type));
+        auto num_types = (sizeof(types) / sizeof(model::record_batch_type))
+                         - static_cast<size_t>(exclude_tx_fence);
         for (size_t i = 0; i < sz; i++) {
             auto type = types[random_generators::get_int(num_types - 1)];
             size_t batch_size = random_generators::get_int(
               (size_t)1, max_batch_size - 1);
-            if (type == model::record_batch_type::raft_configuration) {
+            if (
+              type == model::record_batch_type::raft_configuration
+              || type == model::record_batch_type::tx_fence) {
                 // raft_configuration can only have one record
+                // tx_fence can only have one record
                 // archival_metadata can have more than one records
                 batch_size = 1;
             }
@@ -2037,4 +2045,90 @@ FIXTURE_TEST(
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     scan_remote_partition_incrementally(*this, base, max);
+}
+/// This test scans the entire range of offsets
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_tx_fence, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 9;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t tx_fence = {
+      .num_records = 1, .type = model::record_batch_type::tx_fence};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, tx_fence, data, data, data, data, data, data, data, data},
+      {conf, data, tx_fence, data, data, data, data, data, data, data},
+      {conf, data, data, tx_fence, data, data, data, data, data, data},
+      {conf, data, data, data, tx_fence, data, data, data, data, data},
+      {conf, data, data, data, data, tx_fence, data, data, data, data},
+      {conf, data, data, data, data, data, tx_fence, data, data, data},
+      {conf, data, data, data, data, data, data, tx_fence, data, data},
+      {conf, data, data, data, data, data, data, data, tx_fence, data},
+      {conf, data, data, data, data, data, data, data, data, tx_fence},
+    };
+
+    auto num_conf_batches = 0;
+    auto num_tx_batches = 0;
+    for (const auto& segment : batch_types) {
+        for (const auto& b : segment) {
+            if (b.type == model::record_batch_type::raft_configuration) {
+                num_conf_batches++;
+            } else if (b.type == model::record_batch_type::tx_fence) {
+                num_tx_batches++;
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::none);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t sz : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, sz);
+
+        BOOST_REQUIRE_EQUAL(
+          headers_read.size(),
+          total_batches - num_conf_batches - num_tx_batches);
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_incrementally_random_with_tx_fence,
+  cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [segment_layout, num_data_batches] = generate_segment_layout(
+      num_segments, 42, false);
+    auto segments = setup_s3_imposter(*this, segment_layout);
+    auto base = segments[0].base_offset;
+    auto max = segments.back().max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    auto headers_read = scan_remote_partition_incrementally(*this, base, max);
+    model::offset expected_offset{0};
+    size_t ix_header = 0;
+    for (size_t ix_seg = 0; ix_seg < segment_layout.size(); ix_seg++) {
+        for (size_t ix_batch = 0; ix_batch < segment_layout[ix_seg].size();
+             ix_batch++) {
+            auto batch = segment_layout[ix_seg][ix_batch];
+            if (batch.type == model::record_batch_type::tx_fence) {
+                expected_offset++;
+            } else if (batch.type == model::record_batch_type::raft_data) {
+                auto header = headers_read[ix_header];
+                BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+                expected_offset = header.last_offset() + model::offset(1);
+                ix_header++;
+            } else {
+                // raft_configuratoin or archival_metadata
+                // no need to update expected_offset or ix_header
+            }
+        }
+    }
 }
