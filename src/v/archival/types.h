@@ -42,8 +42,6 @@ using segment_time_limit
 struct configuration {
     /// Bucket used to store all archived data
     cloud_storage_clients::bucket_name bucket_name;
-    /// Time interval to reconcile the set of archivers
-    ss::lowres_clock::duration reconciliation_interval;
     /// Initial backoff for requests to cloud storage
     ss::lowres_clock::duration cloud_storage_initial_backoff;
     /// Long upload timeout

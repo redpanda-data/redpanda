@@ -34,12 +34,10 @@ operator<<(std::ostream& o, const std::optional<segment_time_limit>& tl) {
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
-      "{{bucket_name: {}, interval: {}, initial_backoff: {}, "
+      "{{bucket_name: {}, initial_backoff: {}, "
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-        cfg.reconciliation_interval),
       std::chrono::duration_cast<std::chrono::milliseconds>(
         cfg.cloud_storage_initial_backoff),
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -87,8 +85,6 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
       .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
-      .reconciliation_interval
-      = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .cloud_storage_initial_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
       .segment_upload_timeout

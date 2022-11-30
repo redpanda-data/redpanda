@@ -316,10 +316,6 @@ public:
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                       archival_cfg->cloud_storage_initial_backoff));
-                config.get("cloud_storage_reconciliation_interval_ms")
-                  .set_value(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                      archival_cfg->reconciliation_interval));
                 config.get("cloud_storage_manifest_upload_timeout_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
