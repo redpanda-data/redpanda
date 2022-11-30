@@ -1113,7 +1113,7 @@ disk_log_impl::timequery(timequery_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
-    return make_reader(std::move(cfg))
+    return make_reader(cfg)
       .then([cfg](model::record_batch_reader reader) {
           return model::consume_reader_to_memory(
                    std::move(reader), model::no_timeout)
