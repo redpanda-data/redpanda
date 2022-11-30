@@ -109,6 +109,12 @@ ss::future<> ntp_archiver::start() {
     return ss::now();
 }
 
+void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
+    if (leader_id && *leader_id == _parent.raft()->self().id()) {
+        _leader_cond.signal();
+    }
+}
+
 ss::future<> ntp_archiver::outer_upload_loop() {
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
@@ -116,8 +122,15 @@ ss::future<> ntp_archiver::outer_upload_loop() {
 
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
-            co_await ss::sleep_abortable(_conf->reconciliation_interval, _as);
-            continue;
+            try {
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                // stop() was called
+                break;
+            }
+
+            // We were signalled that we became leader: fall through and
+            // start the upload loop.
         }
 
         _start_term = _parent.term();
@@ -148,8 +161,15 @@ ss::future<> ntp_archiver::outer_sync_manifest_loop() {
 
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
-            co_await ss::sleep_abortable(_conf->reconciliation_interval, _as);
-            continue;
+            try {
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                // stop() was called
+                break;
+            }
+
+            // We were signalled that we became leader: fall through and
+            // start the upload loop.
         }
 
         _start_term = _parent.term();
@@ -481,6 +501,7 @@ bool ntp_archiver::housekeeping_can_continue() const {
 }
 
 ss::future<> ntp_archiver::stop() {
+    _leader_cond.broken();
     _as.request_abort();
     return _gate.close();
 }

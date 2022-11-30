@@ -157,6 +157,12 @@ public:
         _topic_manifest_dirty = true;
     }
 
+    /**
+     * If the group has a leader (non-null argument), and it is ourselves,
+     * then signal _leader_cond to prompt the upload loop to stop waiting.
+     */
+    void notify_leadership(std::optional<model::node_id>);
+
 private:
     /// Information about started upload
     struct scheduled_upload {
@@ -322,6 +328,10 @@ private:
     // 'dirty' in the sense that we need to do another update to S3 to ensure
     // the object matches our local topic configuration.
     bool _topic_manifest_dirty{true};
+
+    // While waiting for leadership, wait on this condition variable. It will
+    // be triggered by notify_leadership.
+    ss::condition_variable _leader_cond;
 
     std::optional<ntp_level_probe> _probe{std::nullopt};
 

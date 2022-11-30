@@ -9,6 +9,7 @@
 
 #include "cluster/partition_manager.h"
 
+#include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
@@ -66,7 +67,29 @@ partition_manager::partition_manager(
   , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
   , _tm_stm_cache(tm_stm_cache)
-  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {}
+  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+    _leader_notify_handle
+      = _raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id term [[maybe_unused]],
+          std::optional<model::node_id> leader_id) {
+            auto p = partition_for(group);
+            if (p) {
+                auto a = p->archiver();
+                if (a) {
+                    a->notify_leadership(leader_id);
+                }
+            }
+        });
+}
+
+partition_manager::~partition_manager() {
+    if (_leader_notify_handle) {
+        _raft_manager.local().unregister_leadership_notification(
+          *_leader_notify_handle);
+    }
+}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -206,6 +229,10 @@ partition_manager::maybe_download_log(
 }
 
 ss::future<> partition_manager::stop_partitions() {
+    _raft_manager.local().unregister_leadership_notification(
+      *_leader_notify_handle);
+    _leader_notify_handle.reset();
+
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});

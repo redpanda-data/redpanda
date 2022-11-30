@@ -46,6 +46,8 @@ public:
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>);
 
+    ~partition_manager();
+
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
     using unmanage_cb_t = ss::noncopyable_function<void(model::partition_id)>;
@@ -209,6 +211,9 @@ private:
     bool _block_new_leadership{false};
 
     config::binding<uint64_t> _max_concurrent_producer_ids;
+
+    // Our handle from registering for leadership notifications on group_manager
+    std::optional<cluster::notification_id_type> _leader_notify_handle;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };
