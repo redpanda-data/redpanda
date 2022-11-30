@@ -462,6 +462,14 @@ ss::future<> partition::update_configuration(topic_properties properties) {
           "exists={}",
           _raft->ntp(),
           bool(_archiver));
+
+        if (_archiver) {
+            // Assume that a partition config may also mean a topic
+            // configuration change.  This could be optimized by hooking
+            // in separate updates from the controller when our topic
+            // configuration changes.
+            _archiver->notify_topic_config();
+        }
     }
 }
 
