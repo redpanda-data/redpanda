@@ -67,7 +67,18 @@ public:
 
         auto units = co_await _os();
         auto guard = gate_guard(_g);
-        co_return co_await _h(std::move(rq), std::move(rp));
+        try {
+            co_return co_await _h(std::move(rq), std::move(rp));
+        } catch (kafka::client::partition_error const& ex) {
+            if (
+              ex.error == kafka::error_code::unknown_topic_or_partition
+              && ex.tp.topic == model::schema_registry_internal_tp.topic) {
+                throw exception(
+                  kafka::error_code::unknown_server_error,
+                  "_schemas topic does not exist");
+            }
+            throw;
+        }
     }
 
 private:
