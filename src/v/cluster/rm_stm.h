@@ -292,6 +292,7 @@ protected:
     ss::future<> handle_eviction() override;
 
 private:
+    void setup_metrics();
     ss::future<> do_remove_persistent_state();
     ss::future<std::vector<rm_stm::tx_range>>
 
@@ -763,9 +764,9 @@ private:
     config::binding<std::chrono::seconds> _log_stats_interval_s;
     ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
-
     config::binding<uint64_t> _max_concurrent_producer_ids;
     mutex _clean_old_pids_mtx;
+    ss::metrics::metric_groups _metrics;
 };
 
 } // namespace cluster
