@@ -102,10 +102,6 @@ ss::future<> ntp_archiver::start() {
         ssx::spawn_with_gate(_gate, [this] { return outer_upload_loop(); });
     }
 
-    // TODO: implement stopping one background fn and starting another
-    // when we switch modes.  Probably simplest ot destroy archiver and
-    // recreate it.
-
     return ss::now();
 }
 

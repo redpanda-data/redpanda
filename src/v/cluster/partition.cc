@@ -47,7 +47,9 @@ partition::partition(
   , _tm_stm_cache(tm_stm_cache)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value()) {
+      config::shard_local_cfg().enable_idempotence.value())
+  , _archival_conf(archival_conf)
+  , _cloud_storage_api(cloud_storage_api) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -90,12 +92,12 @@ partition::partition(
         // Construct cloud_storage read path (remote_partition)
         if (
           config::shard_local_cfg().cloud_storage_enabled()
-          && cloud_storage_api.local_is_initialized()
+          && _cloud_storage_api.local_is_initialized()
           && _raft->ntp().ns == model::kafka_namespace) {
             _archival_meta_stm
               = ss::make_shared<cluster::archival_metadata_stm>(
                 _raft.get(),
-                cloud_storage_api.local(),
+                _cloud_storage_api.local(),
                 _feature_table.local(),
                 clusterlog);
             stm_manager->add_stm(_archival_meta_stm);
@@ -122,20 +124,14 @@ partition::partition(
                 _cloud_storage_partition
                   = ss::make_shared<cloud_storage::remote_partition>(
                     _archival_meta_stm->manifest(),
-                    cloud_storage_api.local(),
+                    _cloud_storage_api.local(),
                     cloud_storage_cache.local(),
                     cloud_storage_clients::bucket_name{*bucket});
             }
         }
 
         // Construct cloud_storage write path (ntp_archiver)
-        if (
-          config::shard_local_cfg().cloud_storage_enabled()
-          && cloud_storage_api.local_is_initialized()
-          && _raft->ntp().ns == model::kafka_namespace) {
-            _archiver = ss::make_lw_shared<archival::ntp_archiver>(
-              log().config(), archival_conf, cloud_storage_api.local(), *this);
-        }
+        maybe_construct_archiver();
     }
 }
 
@@ -412,9 +408,60 @@ partition::timequery(storage::timequery_config cfg) {
     co_return result;
 }
 
+void partition::maybe_construct_archiver() {
+    if (
+      config::shard_local_cfg().cloud_storage_enabled()
+      && _cloud_storage_api.local_is_initialized()
+      && _raft->ntp().ns == model::kafka_namespace
+      && _raft->log().config().is_archival_enabled()) {
+        _archiver = ss::make_lw_shared<archival::ntp_archiver>(
+          log().config(), _archival_conf, _cloud_storage_api.local(), *this);
+    }
+}
 ss::future<> partition::update_configuration(topic_properties properties) {
-    co_await _raft->log().update_configuration(
-      properties.get_ntp_cfg_overrides());
+    auto& old_ntp_config = _raft->log().config();
+    auto new_ntp_config = properties.get_ntp_cfg_overrides();
+
+    // Before applying change, consider whether it changes cloud storage mode
+    bool cloud_storage_changed = false;
+    bool new_archival = new_ntp_config.shadow_indexing_mode
+                        && model::is_archival_enabled(
+                          new_ntp_config.shadow_indexing_mode.value());
+    if (
+      old_ntp_config.is_archival_enabled() != new_archival
+      || old_ntp_config.is_read_replica_mode_enabled()
+           != new_ntp_config.read_replica) {
+        cloud_storage_changed = true;
+    }
+
+    // Pass the configuration update into the storage layer
+    co_await _raft->log().update_configuration(new_ntp_config);
+
+    // If this partition's cloud storage mode changed, rebuild the archiver.
+    // This must happen after raft update, because it reads raft's ntp_config
+    // to decide whether to construct an archiver.
+    if (cloud_storage_changed) {
+        vlog(
+          clusterlog.debug,
+          "update_configuration[{}]: updating archiver for config {}",
+          new_ntp_config,
+          _raft->ntp());
+        if (_archiver) {
+            co_await _archiver->stop();
+            _archiver = nullptr;
+        }
+        maybe_construct_archiver();
+        if (_archiver) {
+            co_await _archiver->start();
+        }
+    } else {
+        vlog(
+          clusterlog.trace,
+          "update_configuration[{}]: no cloud storage change, archiver "
+          "exists={}",
+          _raft->ntp(),
+          bool(_archiver));
+    }
 }
 
 std::optional<model::offset>
