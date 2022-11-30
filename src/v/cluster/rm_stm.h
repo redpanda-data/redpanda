@@ -289,6 +289,7 @@ protected:
     ss::future<> handle_eviction() override;
 
 private:
+    void setup_metrics();
     ss::future<> do_remove_persistent_state();
     ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
@@ -682,9 +683,9 @@ private:
     storage::snapshot_manager _abort_snapshot_mgr;
     ss::sharded<features::feature_table>& _feature_table;
     prefix_logger _ctx_log;
-
     config::binding<uint64_t> _max_concurrent_producer_ids;
     mutex _clean_old_pids_mtx;
+    ss::metrics::metric_groups _metrics;
 };
 
 } // namespace cluster

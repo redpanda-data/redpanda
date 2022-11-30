@@ -16,10 +16,12 @@
 #include "kafka/protocol/response_writer.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 
@@ -282,6 +284,7 @@ rm_stm::rm_stm(
   , _feature_table(feature_table)
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+    setup_metrics();
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
@@ -3007,4 +3010,41 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
     }
 }
 
+void rm_stm::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+
+    const auto& ntp = _c->ntp();
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("tx:partition"),
+      {
+        sm::make_gauge(
+          "idempotency_num_pids_inflight",
+          [this] { return _inflight_requests.size(); },
+          sm::description(
+            "Number of pids with in flight idempotent produce requests."),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "tx_num_inflight_requests",
+          [this] { return _log_state.ongoing_map.size(); },
+          sm::description("Number of ongoing transactional requests."),
+          labels)
+          .aggregate(aggregate_labels),
+      });
+}
 } // namespace cluster
