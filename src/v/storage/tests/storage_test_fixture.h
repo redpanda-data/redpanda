@@ -279,8 +279,8 @@ public:
 
     // clang-format off
     template<typename T = random_batches_generator>
-        requires requires(T generator) {
-            { generator() } -> std::same_as<ss::circular_buffer<model::record_batch>>;
+        requires requires(T generator, std::optional<model::timestamp> ts) {
+            { generator(ts) } -> std::same_as<ss::circular_buffer<model::record_batch>>;
         }
     // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
