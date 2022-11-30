@@ -194,7 +194,6 @@ class CreateTopicsTest(RedpandaTest):
 
     def __init__(self, test_context):
         si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=50,
             cloud_storage_max_connections=5,
             cloud_storage_segment_max_upload_interval_sec=10,
             log_segment_size=100 * 1024 * 1024)

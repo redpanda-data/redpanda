@@ -65,7 +65,6 @@ class CloudStorageCompactionTest(EndToEndTest):
 
     def _init_redpanda(self, test_context, extra_rp_conf, environment):
         self.si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
             log_segment_size=self.configuration["segment_size"],
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
@@ -128,7 +127,6 @@ class CloudStorageCompactionTest(EndToEndTest):
     def _init_redpanda_read_replica(self):
         self.rr_si_settings = SISettings(
             bypass_bucket_creation=True,
-            cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
             log_segment_size=self.configuration["segment_size"],
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,

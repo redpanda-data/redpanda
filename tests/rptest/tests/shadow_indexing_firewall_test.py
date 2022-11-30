@@ -38,8 +38,7 @@ class ShadowIndexingFirewallTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
-                                 cloud_storage_max_connections=5,
+        si_settings = SISettings(cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
 
         super(ShadowIndexingFirewallTest,

@@ -56,7 +56,6 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.topic = self.s3_topic_name
 
         self.si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
             log_segment_size=self.segment_size,  # 1MB
         )
