@@ -50,29 +50,33 @@ redpanda:
   {% endfor %}
 {% endif %}
 
-{% if enable_pp %}
+{% if pandaproxy_config is not none %}
 pandaproxy:
   # Pandaproxy transport
   pandaproxy_api:
     address: "0.0.0.0"
     port: 8082
-    {% if pp_authn_method %}
-    authentication_method: {{ pp_authn_method }}
+    {% if pandaproxy_config.authn_method %}
+    authentication_method: {{ pandaproxy_config.authn_method }}
     {% endif %}
 
-  {% if pp_keep_alive %}
-  client_keep_alive: {{ pp_keep_alive }}
-  {% endif %}
-
-  {% if pp_cache_max_size %}
-  client_cache_max_size: {{ pp_cache_max_size }}
-  {% endif %}
+  client_keep_alive: {{ pandaproxy_config.cache_keep_alive_ms }}
+  client_cache_max_size: {{ pandaproxy_config.cache_max_size }}
 
   advertised_pandaproxy_api:
     address: "{{node.account.hostname}}"
     port: 8082
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+  {% if pandaproxy_config.truststore_file is not none %}
+  pandaproxy_api_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.server_key }}
+    cert_file: {{ pandaproxy_config.server_crt }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
 
 pandaproxy_client:
   # kafka-api compatible brokers
@@ -81,6 +85,15 @@ pandaproxy_client:
     - address: "{{node.account.hostname}}"
       port: 9092
   {% endfor %}
+
+  {% if pandaproxy_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.PP_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ pandaproxy_config.PP_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
 
   retries: 10
   retry_base_backoff_ms: 10
@@ -91,16 +104,25 @@ pandaproxy_client:
   {% endif %}
 {% endif %}
 
-{% if enable_sr %}
+{% if schema_registry_config is not none %}
 schema_registry:
   schema_registry_api:
     address: "{{node.account.hostname}}"
     port: 8081
-    {% if sr_authn_method %}
-    authentication_method: {{ sr_authn_method }}
+    {% if schema_registry_config.authn_method %}
+    authentication_method: {{ schema_registry_config.authn_method }}
     {% endif %}
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+  {% if schema_registry_config.truststore_file is not none %}
+  schema_registry_api_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.server_key }}
+    cert_file: {{ schema_registry_config.server_crt }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
 
 schema_registry_client:
   # kafka-api compatible brokers
@@ -109,6 +131,15 @@ schema_registry_client:
     - address: "{{node.account.hostname}}"
       port: 9092
   {% endfor %}
+
+  {% if schema_registry_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.SR_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ schema_registry_config.SR_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
 
   retries: 10
   retry_base_backoff_ms: 10
