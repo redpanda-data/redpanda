@@ -2010,6 +2010,21 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(
+  test_remote_partition_scan_incrementally_random_with_overlaps,
+  cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [batch_types, num_data_batches] = generate_segment_layout(
+      num_segments, 42);
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::overlapping_segments);
+    auto base = segments[0].base_offset;
+    auto max = segments.back().max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    scan_remote_partition_incrementally(*this, base, max);
+}
+
+FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random_with_duplicates,
   cloud_storage_fixture) {
     constexpr int num_segments = 500;
