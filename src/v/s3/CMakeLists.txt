@@ -3,8 +3,9 @@ v_cc_library(
   NAME s3
   SRCS
     client.cc
-    error.cc
+    client_pool.cc
     client_probe.cc
+    error.cc
   DEPS
     Seastar::seastar
     v::bytes

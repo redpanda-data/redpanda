@@ -13,21 +13,11 @@
 #include "cloud_roles/apply_credentials.h"
 #include "http/client.h"
 #include "model/fundamental.h"
-#include "net/transport.h"
-#include "net/types.h"
 #include "outcome.h"
 #include "s3/client_probe.h"
 #include "s3/configuration.h"
-#include "utils/gate_guard.h"
-#include "utils/intrusive_list_helpers.h"
 
-#include <seastar/core/condition-variable.hh>
-#include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
-
-#include <boost/iterator/counting_iterator.hpp>
-#include <boost/property_tree/ptree_fwd.hpp>
-#include <boost/range/counting_range.hpp>
 
 #include <chrono>
 #include <initializer_list>
@@ -227,101 +217,6 @@ private:
     request_creator _requestor;
     http::client _client;
     ss::shared_ptr<client_probe> _probe;
-};
-
-/// Policy that controls behaviour of the client pool
-/// in situation when number of requested client connections
-/// exceeds pool capacity
-enum class client_pool_overdraft_policy {
-    /// Client pool should wait unitl any existing lease will be canceled
-    wait_if_empty,
-    /// Client pool should create transient client connection to serve the
-    /// request
-    create_new_if_empty
-};
-
-/// Connection pool implementation
-/// All connections share the same configuration
-class client_pool : public ss::weakly_referencable<client_pool> {
-public:
-    using http_client_ptr = ss::shared_ptr<client>;
-    struct client_lease {
-        http_client_ptr client;
-        ss::deleter deleter;
-        intrusive_list_hook _hook;
-
-        client_lease(http_client_ptr p, ss::deleter deleter)
-          : client(std::move(p))
-          , deleter(std::move(deleter)) {}
-
-        client_lease(client_lease&& other) noexcept
-          : client(std::move(other.client))
-          , deleter(std::move(other.deleter)) {
-            _hook.swap_nodes(other._hook);
-        }
-
-        client_lease& operator=(client_lease&& other) noexcept {
-            client = std::move(other.client);
-            deleter = std::move(other.deleter);
-            _hook.swap_nodes(other._hook);
-            return *this;
-        }
-
-        client_lease(const client_lease&) = delete;
-        client_lease& operator=(const client_lease&) = delete;
-    };
-
-    client_pool(
-      size_t size,
-      configuration conf,
-      client_pool_overdraft_policy policy
-      = client_pool_overdraft_policy::wait_if_empty);
-
-    ss::future<> stop();
-
-    void shutdown_connections();
-
-    /// Performs the dual functions of loading refreshed credentials into
-    /// apply_credentials object, as well as initializing the client pool
-    /// the first time this function is called.
-    void load_credentials(cloud_roles::credentials credentials);
-
-    /// \brief Acquire http client from the pool.
-    ///
-    /// \note it's guaranteed that the client can only be acquired once
-    ///       before it gets released (release happens implicitly, when
-    ///       the lifetime of the pointer ends).
-    /// \return client pointer (via future that can wait if all clients
-    ///         are in use)
-    ss::future<client_lease> acquire();
-
-    /// \brief Get number of connections
-    size_t size() const noexcept;
-
-    size_t max_size() const noexcept;
-
-private:
-    void populate_client_pool();
-    void release(ss::shared_ptr<client> leased);
-
-    ///  Wait for credentials to be acquired. Once credentials are acquired,
-    ///  based on the policy, optionally wait for client pool to initialize.
-    ss::future<> wait_for_credentials();
-
-    const size_t _max_size;
-    configuration _config;
-    client_pool_overdraft_policy _policy;
-    std::vector<http_client_ptr> _pool;
-    // List of all connections currently used by clients
-    intrusive_list<client_lease, &client_lease::_hook> _leased;
-    ss::condition_variable _cvar;
-    ss::abort_source _as;
-    ss::gate _gate;
-
-    /// Holds and applies the credentials for requests to S3. Shared pointer to
-    /// enable rotating credentials to all clients.
-    ss::lw_shared_ptr<cloud_roles::apply_credentials> _apply_credentials;
-    ss::condition_variable _credentials_var;
 };
 
 } // namespace s3
