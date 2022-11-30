@@ -40,7 +40,6 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
-    v::s3 # a header mess and needs some boost flags
     absl::flat_hash_map
     absl::flat_hash_set
 )
