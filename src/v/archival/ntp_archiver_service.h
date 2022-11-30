@@ -150,12 +150,12 @@ public:
     /**
      * Partition 0 carries a copy of the topic configuration, updated by
      * the controller, so that its archiver can make updates to the topic
-     * manifest in cloud storage
+     * manifest in cloud storage.
+     *
+     * When that changes, we are notified, so that we may re-upload the
+     * manifest if needed.
      */
-    void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg) {
-        _topic_cfg = std::move(cfg);
-        _topic_manifest_dirty = true;
-    }
+    void notify_topic_config() { _topic_manifest_dirty = true; }
 
     /**
      * If the group has a leader (non-null argument), and it is ourselves,
@@ -324,10 +324,9 @@ private:
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
 
-    std::unique_ptr<cluster::topic_configuration> _topic_cfg;
     // 'dirty' in the sense that we need to do another update to S3 to ensure
     // the object matches our local topic configuration.
-    bool _topic_manifest_dirty{true};
+    bool _topic_manifest_dirty{false};
 
     // While waiting for leadership, wait on this condition variable. It will
     // be triggered by notify_leadership.

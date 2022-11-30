@@ -297,6 +297,15 @@ public:
      */
     void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg);
 
+    std::optional<std::reference_wrapper<cluster::topic_configuration>>
+    get_topic_config() {
+        if (_topic_cfg) {
+            return std::ref(*_topic_cfg);
+        } else {
+            return std::nullopt;
+        }
+    }
+
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
@@ -320,6 +329,10 @@ private:
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};
+
+    // Populated for partition 0 only, used by cloud storage uploads
+    // to generate topic manifests.
+    std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

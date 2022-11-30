@@ -212,7 +212,8 @@ static cloud_storage::manifest_topic_configuration convert_topic_configuration(
 }
 
 ss::future<> ntp_archiver::upload_topic_manifest() {
-    if (!_topic_cfg) {
+    auto topic_cfg_opt = _parent.get_topic_config();
+    if (!topic_cfg_opt) {
         // This is unexpected: by the time partition_manager instantiates
         // partitions, they should have had their configs loaded by controller
         // backend.
@@ -223,13 +224,18 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         co_return;
     }
 
-    vlog(_rtclog.debug, "Uploading topic manifest for {}", _parent.ntp());
+    auto& topic_cfg = *topic_cfg_opt;
+
+    vlog(
+      _rtclog.debug,
+      "Uploading topic manifest for {}, topic config {}",
+      _parent.ntp(),
+      topic_cfg);
 
     auto replication_factor = cluster::replication_factor{
       _parent.raft()->config().current_config().voters.size()};
 
     try {
-        // This runs asynchronously so we can just retry indefinetly
         retry_chain_node fib(
           _conf->manifest_upload_timeout,
           _conf->cloud_storage_initial_backoff,
@@ -237,7 +243,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         retry_chain_logger ctxlog(archival_log, fib);
         vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
         cloud_storage::topic_manifest tm(
-          convert_topic_configuration(*_topic_cfg, replication_factor), _rev);
+          convert_topic_configuration(topic_cfg, replication_factor), _rev);
         auto key = tm.get_manifest_path();
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
         auto res = co_await _remote.upload_manifest(

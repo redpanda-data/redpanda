@@ -452,6 +452,7 @@ ss::future<> partition::update_configuration(topic_properties properties) {
         }
         maybe_construct_archiver();
         if (_archiver) {
+            _archiver->notify_topic_config();
             co_await _archiver->start();
         }
     } else {
@@ -545,8 +546,9 @@ uint64_t partition::upload_backlog_size() const {
 
 void partition::set_topic_config(
   std::unique_ptr<cluster::topic_configuration> cfg) {
+    _topic_cfg = std::move(cfg);
     if (_archiver) {
-        _archiver->set_topic_config(std::move(cfg));
+        _archiver->notify_topic_config();
     }
 }
 
