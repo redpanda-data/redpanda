@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -92,7 +93,7 @@ var _ = BeforeSuite(func(done Done) {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	testAdminAPI = &mockAdminAPI{}
+	testAdminAPI = &mockAdminAPI{log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
 	testAdminAPIFactory = func(
 		_ context.Context,
 		_ client.Reader,
@@ -200,6 +201,7 @@ type mockAdminAPI struct {
 	directValidation bool
 	brokers          []admin.Broker
 	monitor          sync.Mutex
+	log              logr.Logger
 }
 
 type scopedMockAdminAPI struct {
@@ -207,7 +209,7 @@ type scopedMockAdminAPI struct {
 	ordinal int32
 }
 
-var _ adminutils.AdminAPIClient = &mockAdminAPI{}
+var _ adminutils.AdminAPIClient = &mockAdminAPI{log: ctrl.Log.WithName("AdminAPIClient").WithName("mockAdminAPI")}
 
 type unavailableError struct{}
 
@@ -216,6 +218,7 @@ func (*unavailableError) Error() string {
 }
 
 func (m *mockAdminAPI) Config(context.Context, bool) (admin.Config, error) {
+	m.log.WithName("Config").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -229,6 +232,7 @@ func (m *mockAdminAPI) Config(context.Context, bool) (admin.Config, error) {
 func (m *mockAdminAPI) ClusterConfigStatus(
 	_ context.Context, _ bool,
 ) (admin.ConfigStatusResponse, error) {
+	m.log.WithName("ClusterConfigStatus").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -244,6 +248,7 @@ func (m *mockAdminAPI) ClusterConfigStatus(
 func (m *mockAdminAPI) ClusterConfigSchema(
 	_ context.Context,
 ) (admin.ConfigSchema, error) {
+	m.log.WithName("ClusterConfigSchema").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -257,6 +262,7 @@ func (m *mockAdminAPI) ClusterConfigSchema(
 func (m *mockAdminAPI) PatchClusterConfig(
 	_ context.Context, upsert map[string]interface{}, remove []string,
 ) (admin.ClusterConfigWriteResult, error) {
+	m.log.WithName("PatchClusterConfig").WithValues("upsert", upsert, "remove", remove).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -315,6 +321,7 @@ func (m *mockAdminAPI) PatchClusterConfig(
 }
 
 func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
+	m.log.WithName("CreateUser").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -324,6 +331,7 @@ func (m *mockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
 }
 
 func (m *mockAdminAPI) DeleteUser(_ context.Context, _ string) error {
+	m.log.WithName("DeleteUser").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -333,6 +341,7 @@ func (m *mockAdminAPI) DeleteUser(_ context.Context, _ string) error {
 }
 
 func (m *mockAdminAPI) Clear() {
+	m.log.WithName("Clear").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.config = nil
@@ -346,6 +355,7 @@ func (m *mockAdminAPI) Clear() {
 func (m *mockAdminAPI) GetFeatures(
 	_ context.Context,
 ) (admin.FeaturesResponse, error) {
+	m.log.WithName("GetFeatures").Info("called")
 	return admin.FeaturesResponse{
 		ClusterVersion: 0,
 		Features: []admin.Feature{
@@ -359,6 +369,7 @@ func (m *mockAdminAPI) GetFeatures(
 }
 
 func (m *mockAdminAPI) SetLicense(_ context.Context, _ interface{}) error {
+	m.log.WithName("SetLicense").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -368,6 +379,7 @@ func (m *mockAdminAPI) SetLicense(_ context.Context, _ interface{}) error {
 }
 
 func (m *mockAdminAPI) GetLicenseInfo(_ context.Context) (admin.License, error) {
+	m.log.WithName("GetLicenseInfo").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
@@ -380,6 +392,7 @@ func (m *mockAdminAPI) GetLicenseInfo(_ context.Context) (admin.License, error) 
 func (m *mockAdminAPI) RegisterPropertySchema(
 	name string, metadata admin.ConfigPropertyMetadata,
 ) {
+	m.log.WithName("RegisterPropertySchema").WithValues("name", name, "metadata", metadata).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.schema == nil {
@@ -389,6 +402,7 @@ func (m *mockAdminAPI) RegisterPropertySchema(
 }
 
 func (m *mockAdminAPI) PropertyGetter(name string) func() interface{} {
+	m.log.WithName("PropertyGetter").WithValues("name", name).Info("called")
 	return func() interface{} {
 		m.monitor.Lock()
 		defer m.monitor.Unlock()
@@ -397,6 +411,7 @@ func (m *mockAdminAPI) PropertyGetter(name string) func() interface{} {
 }
 
 func (m *mockAdminAPI) ConfigGetter() func() admin.Config {
+	m.log.WithName("ConfigGetter").Info("called")
 	return func() admin.Config {
 		m.monitor.Lock()
 		defer m.monitor.Unlock()
@@ -408,6 +423,7 @@ func (m *mockAdminAPI) ConfigGetter() func() admin.Config {
 
 func (m *mockAdminAPI) PatchesGetter() func() []configuration.CentralConfigurationPatch {
 	return func() []configuration.CentralConfigurationPatch {
+		m.log.WithName("PatchesGetter(func)").Info("called")
 		m.monitor.Lock()
 		defer m.monitor.Unlock()
 		var res []configuration.CentralConfigurationPatch
@@ -418,11 +434,13 @@ func (m *mockAdminAPI) PatchesGetter() func() []configuration.CentralConfigurati
 
 func (m *mockAdminAPI) NumPatchesGetter() func() int {
 	return func() int {
+		m.log.WithName("NumPatchesGetter(func)").Info("called")
 		return len(m.PatchesGetter()())
 	}
 }
 
 func (m *mockAdminAPI) SetProperty(key string, value interface{}) {
+	m.log.WithName("SetProperty").WithValues("key", key, "value", value).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.config == nil {
@@ -432,6 +450,7 @@ func (m *mockAdminAPI) SetProperty(key string, value interface{}) {
 }
 
 func (m *mockAdminAPI) SetUnavailable(unavailable bool) {
+	m.log.WithName("SetUnavailable").WithValues("unavailable", unavailable).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.unavailable = unavailable
@@ -440,6 +459,7 @@ func (m *mockAdminAPI) SetUnavailable(unavailable bool) {
 func (m *mockAdminAPI) GetNodeConfig(
 	_ context.Context,
 ) (admin.NodeConfig, error) {
+	m.log.WithName("GetNodeConfig").Info("called")
 	return admin.NodeConfig{}, nil
 }
 
@@ -460,12 +480,14 @@ func (s *scopedMockAdminAPI) GetNodeConfig(
 }
 
 func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
+	m.log.WithName("SetDirectValicationEnabled").WithValues("directValidation", directValidation).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	m.directValidation = directValidation
 }
 
 func (m *mockAdminAPI) AddBroker(broker admin.Broker) {
+	m.log.WithName("AddBroker").WithValues("broker", broker).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
@@ -473,6 +495,7 @@ func (m *mockAdminAPI) AddBroker(broker admin.Broker) {
 }
 
 func (m *mockAdminAPI) RemoveBroker(id int) bool {
+	m.log.WithName("RemoveBroker").WithValues("id", id).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
@@ -491,6 +514,7 @@ func (m *mockAdminAPI) RemoveBroker(id int) bool {
 }
 
 func (m *mockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
+	m.log.WithName("RemoveBroker").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
@@ -500,6 +524,7 @@ func (m *mockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
 func (m *mockAdminAPI) BrokerStatusGetter(
 	id int,
 ) func() admin.MembershipStatus {
+	m.log.WithName("BrokerStatusGetter(func)").WithValues("id", id).Info("called")
 	return func() admin.MembershipStatus {
 		m.monitor.Lock()
 		defer m.monitor.Unlock()
@@ -514,18 +539,22 @@ func (m *mockAdminAPI) BrokerStatusGetter(
 }
 
 func (m *mockAdminAPI) DecommissionBroker(_ context.Context, id int) error {
+	m.log.WithName("DecommissionBroker").WithValues("id", id).Info("called")
 	return m.SetBrokerStatus(id, admin.MembershipStatusDraining)
 }
 
 func (m *mockAdminAPI) RecommissionBroker(_ context.Context, id int) error {
+	m.log.WithName("RecommissionBroker").WithValues("id", id).Info("called")
 	return m.SetBrokerStatus(id, admin.MembershipStatusActive)
 }
 
 func (m *mockAdminAPI) EnableMaintenanceMode(_ context.Context, _ int) error {
+	m.log.WithName("EnableMaintenanceMode").Info("called")
 	return nil
 }
 
 func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
+	m.log.WithName("DisableMaintenanceMode").Info("called")
 	return nil
 }
 
@@ -533,6 +562,7 @@ func (m *mockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
 func (m *mockAdminAPI) SetBrokerStatus(
 	id int, status admin.MembershipStatus,
 ) error {
+	m.log.WithName("SetBrokerStatus").WithValues("id", id, "status", status).Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
