@@ -22,6 +22,7 @@
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/human.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -296,12 +297,16 @@ rm_stm::rm_stm(
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
   , _feature_table(feature_table)
+  , _log_stats_interval_s(
+      config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
+    _log_stats_timer.set_callback([this] { log_tx_stats(); });
+    _log_stats_timer.arm(clock_type::now() + _log_stats_interval_s());
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -1119,6 +1124,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
+    _log_stats_timer.cancel();
     return raft::state_machine::stop().then([this] {
         for (const auto& entry : _log_state.seq_table) {
             _log_state.unlink_lru_pid(entry.second);
@@ -2946,4 +2952,75 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
     }
 }
 
+std::ostream&
+operator<<(std::ostream& o, const rm_stm::inflight_requests& reqs) {
+    fmt::print(
+      o,
+      "{{ tail: {}, term: {}, request cache size: {} }}",
+      reqs.tail_seq,
+      reqs.term,
+      reqs.cache.size());
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
+    fmt::print(
+      o,
+      "{{ estimated: {}, tx_start: {}, tx_starts: {}, expected: {}, preparing: "
+      "{} }}",
+      state.estimated.size(),
+      state.tx_start.size(),
+      state.tx_starts.size(),
+      state.expected.size(),
+      state.preparing.size());
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
+    fmt::print(
+      o,
+      "{{ fence_epochs: {}, ongoing_m: {}, ongoing_set: {}, prepared: {}, "
+      "aborted: {}, abort_indexes: {}, seq_table: {}, tx_seqs: {}, expiration: "
+      "{}}}",
+      state.fence_pid_epoch.size(),
+      state.ongoing_map.size(),
+      state.ongoing_set.size(),
+      state.prepared.size(),
+      state.aborted.size(),
+      state.abort_indexes.size(),
+      state.seq_table.size(),
+      state.tx_seqs.size(),
+      state.expiration.size());
+    return o;
+}
+
+ss::future<> rm_stm::maybe_log_tx_stats() {
+    if (likely(!_ctx_log.logger().is_enabled(ss::log_level::debug))) {
+        co_return;
+    }
+    auto units = co_await _state_lock.hold_read_lock();
+    _ctx_log.debug(
+      "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
+    _ctx_log.debug(
+      "tx memory snapshot stats: {{mem_state: {}, log_state: "
+      "{} }}",
+      _mem_state,
+      _log_state);
+}
+
+void rm_stm::log_tx_stats() {
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          _ctx_log.info(
+                            "tx root mem_tracker consumption: {}",
+                            human::bytes(static_cast<double>(
+                              _tx_root_tracker.consumption())));
+                          return maybe_log_tx_stats().then([this] {
+                              if (!_gate.is_closed()) {
+                                  _log_stats_timer.rearm(
+                                    clock_type::now()
+                                    + _log_stats_interval_s());
+                              }
+                          });
+                      }).handle_exception([](const std::exception_ptr&) {});
+}
 } // namespace cluster

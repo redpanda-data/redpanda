@@ -294,6 +294,7 @@ protected:
 private:
     ss::future<> do_remove_persistent_state();
     ss::future<std::vector<rm_stm::tx_range>>
+
       do_aborted_transactions(model::offset, model::offset);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -715,6 +716,12 @@ private:
           features::feature::transaction_ga);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const mem_state&);
+    friend std::ostream& operator<<(std::ostream&, const log_state&);
+    friend std::ostream& operator<<(std::ostream&, const inflight_requests&);
+    ss::future<> maybe_log_tx_stats();
+    void log_tx_stats();
+
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
     // stm is still replaying the log.
@@ -753,6 +760,8 @@ private:
     storage::snapshot_manager _abort_snapshot_mgr;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
+    config::binding<std::chrono::seconds> _log_stats_interval_s;
+    ss::timer<clock_type> _log_stats_timer;
     prefix_logger _ctx_log;
 
     config::binding<uint64_t> _max_concurrent_producer_ids;
