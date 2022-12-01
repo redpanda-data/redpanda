@@ -11,6 +11,7 @@ package redpanda_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -22,8 +23,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
@@ -166,6 +169,22 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Start decommissioning node 2")
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        fmt.Sprintf("%s-2", redpandaCluster.GetName()),
+					Namespace:   redpandaCluster.GetNamespace(),
+					Annotations: map[string]string{resources.PodAnnotationNodeIDKey: "2"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "pause",
+							Image: "pause:3.6",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), pod, &client.CreateOptions{})).Should(Succeed())
 			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32Ptr(2)
 			}), timeout, interval).Should(Succeed())
