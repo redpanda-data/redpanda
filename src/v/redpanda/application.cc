@@ -104,7 +104,11 @@ static void set_local_kafka_client_config(
   const config::node_config& config) {
     client_config.emplace();
     const auto& kafka_api = config.kafka_api.value();
-    vassert(!kafka_api.empty(), "There are no kafka_api listeners");
+    if (kafka_api.empty()) {
+        // No Kafka listeners configured, cannot configure
+        // a client.
+        return;
+    }
     client_config->brokers.set_value(
       std::vector<net::unresolved_address>{kafka_api[0].address});
     const auto& kafka_api_tls = config::node().kafka_api_tls.value();

@@ -1378,7 +1378,10 @@ class RedpandaService(Service):
         return self.s3_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
-    def set_cluster_config(self, values: dict, expect_restart: bool = False):
+    def set_cluster_config(self,
+                           values: dict,
+                           expect_restart: bool = False,
+                           admin_client: Admin = None):
         """
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
@@ -1387,11 +1390,14 @@ class RedpandaService(Service):
         :param expect_restart: set to true if you wish to permit a node restart for needs_restart=yes properties.
                                If you set such a property without this flag, an assertion error will be raised.
         """
-        patch_result = self._admin.patch_cluster_config(upsert=values)
+        if admin_client is None:
+            admin_client = self._admin
+
+        patch_result = admin_client.patch_cluster_config(upsert=values)
         new_version = patch_result['config_version']
 
         def is_ready():
-            status = self._admin.get_cluster_config_status(
+            status = admin_client.get_cluster_config_status(
                 node=self.controller())
             ready = all([n['config_version'] >= new_version for n in status])
 
@@ -2045,26 +2051,29 @@ class RedpandaService(Service):
                     f"registered: node {node.name} now visible in peer {peer.name}'s broker list ({admin_brokers})"
                 )
 
-        auth_args = {}
-        if self.sasl_enabled():
-            auth_args = {
-                'username': self._superuser.username,
-                'password': self._superuser.password,
-                'algorithm': self._superuser.algorithm
-            }
+        if self.brokers():  # Conditional in case Kafka API turned off
+            auth_args = {}
+            if self.sasl_enabled():
+                auth_args = {
+                    'username': self._superuser.username,
+                    'password': self._superuser.password,
+                    'algorithm': self._superuser.algorithm
+                }
+            client = PythonLibrdkafka(self,
+                                      tls_cert=self._tls_cert,
+                                      **auth_args)
+            brokers = client.brokers()
+            broker = brokers.get(node_id, None)
+            if broker is None:
+                # This should never happen, because we already checked via the admin API
+                # that the node of interest had become visible to all peers.
+                self.logger.error(
+                    f"registered: node {node.name} not found in kafka metadata!"
+                )
+                assert broker is not None
 
-        client = PythonLibrdkafka(self, tls_cert=self._tls_cert, **auth_args)
+            self.logger.debug(f"registered: found broker info: {broker}")
 
-        brokers = client.brokers()
-        broker = brokers.get(node_id, None)
-        if broker is None:
-            # This should never happen, because we already checked via the admin API
-            # that the node of interest had become visible to all peers.
-            self.logger.error(
-                f"registered: node {node.name} not found in kafka metadata!")
-            assert broker is not None
-
-        self.logger.debug(f"registered: found broker info: {broker}")
         return True
 
     def controller(self):
@@ -2204,8 +2213,12 @@ class RedpandaService(Service):
 
     def broker_address(self, node):
         assert node in self.nodes, f"where node is {node.name}"
+        assert node in self._started
         cfg = self._node_configs[node]
-        return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
+        if cfg['redpanda']['kafka_api']:
+            return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
+        else:
+            return None
 
     def admin_endpoint(self, node):
         assert node in self.nodes, f"where node is {node.name}"
@@ -2224,6 +2237,7 @@ class RedpandaService(Service):
 
     def brokers_list(self, limit=None) -> list[str]:
         brokers = [self.broker_address(n) for n in self._started[:limit]]
+        brokers = [b for b in brokers if b is not None]
         random.shuffle(brokers)
         return brokers
 
