@@ -609,14 +609,11 @@ class RedpandaService(Service):
                     self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
             else:
                 self._log_level = log_level
-            self._log_config = LoggingConfig(
-                self._log_level, {
-                    'exception': 'debug',
-                    'archival': 'debug',
-                    'io': 'debug',
-                    'cloud_storage': 'debug',
-                    'seastar_memory': 'debug'
-                })
+            self._log_config = LoggingConfig(self._log_level, {
+                'exception': 'debug',
+                'io': 'debug',
+                'seastar_memory': 'debug'
+            })
 
         self._admin = Admin(self,
                             auth=(self._superuser.username,
