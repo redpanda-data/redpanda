@@ -165,6 +165,9 @@ public:
       kafka::transactional_id tid,
       tm_transaction::tx_partition ntp);
 
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      update_tx(tm_transaction, model::term_id);
+
 protected:
     ss::future<> handle_eviction() override;
 
@@ -195,8 +198,6 @@ private:
       model::producer_identity);
     ss::future<stm_snapshot> do_take_snapshot();
 
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      update_tx(tm_transaction, model::term_id);
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
         return _c->replicate(
