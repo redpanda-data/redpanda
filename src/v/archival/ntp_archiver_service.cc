@@ -118,11 +118,16 @@ ss::future<> ntp_archiver::outer_upload_loop() {
 
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
+            bool shutdown = false;
             try {
                 vlog(_rtclog.debug, "upload loop waiting for leadership");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
                 // stop() was called
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
                 vlog(_rtclog.trace, "upload loop shutting down");
                 break;
             }
@@ -160,11 +165,16 @@ ss::future<> ntp_archiver::outer_sync_manifest_loop() {
 
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
+            bool shutdown = false;
             try {
                 vlog(
                   _rtclog.debug, "sync manifest loop waiting for leadership");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
                 // stop() was called
                 vlog(_rtclog.trace, "sync manifest loop shutting down");
                 break;
