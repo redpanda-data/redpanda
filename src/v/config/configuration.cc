@@ -1135,6 +1135,12 @@ configuration::configuration()
       "Enable re-uploading data for compacted topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_use_path_style_url(
+      *this,
+      "cloud_storage_use_path_style_url",
+      "Enable re-uploading data for compacted topics",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
