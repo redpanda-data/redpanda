@@ -92,7 +92,7 @@ auto tx_gateway_frontend::with_stm(Func&& func) {
     }
 
     if (stm->gate().is_closed()) {
-        return func(tx_errc::unknown_server_error);
+        return func(tx_errc::not_coordinator);
     }
 
     return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
@@ -945,7 +945,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
         vlog(txlog.trace, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
-            request, tx_errc::not_coordinator));
+            request, tx_errc::coordinator_not_available));
     }
 
     return container().invoke_on(
@@ -999,7 +999,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               request, tx_errc::not_coordinator);
         }
         co_return make_add_partitions_error_response(
-          request, tx_errc::invalid_txn_state);
+          request, tx_errc::coordinator_not_available);
     }
     auto term = term_opt.value();
 
