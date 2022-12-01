@@ -1149,8 +1149,8 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
 
     if (shard == std::nullopt) {
         vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
-        return ss::make_ready_future<add_offsets_tx_reply>(
-          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
+        return ss::make_ready_future<add_offsets_tx_reply>(add_offsets_tx_reply{
+          .error_code = tx_errc::coordinator_not_available});
     }
 
     return container().invoke_on(
@@ -1203,7 +1203,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
               .error_code = tx_errc::not_coordinator};
         }
         co_return add_offsets_tx_reply{
-          .error_code = tx_errc::invalid_txn_state};
+          .error_code = tx_errc::coordinator_not_available};
     }
     auto term = term_opt.value();
 
