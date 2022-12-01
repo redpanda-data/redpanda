@@ -119,9 +119,11 @@ ss::future<> ntp_archiver::outer_upload_loop() {
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
             try {
+                vlog(_rtclog.debug, "upload loop waiting for leadership");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
                 // stop() was called
+                vlog(_rtclog.trace, "upload loop shutting down");
                 break;
             }
 
@@ -130,6 +132,7 @@ ss::future<> ntp_archiver::outer_upload_loop() {
         }
 
         _start_term = _parent.term();
+        vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
 
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group, [this] { return upload_loop(); })
@@ -158,9 +161,12 @@ ss::future<> ntp_archiver::outer_sync_manifest_loop() {
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
             try {
+                vlog(
+                  _rtclog.debug, "sync manifest loop waiting for leadership");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
                 // stop() was called
+                vlog(_rtclog.trace, "sync manifest loop shutting down");
                 break;
             }
 
@@ -169,6 +175,8 @@ ss::future<> ntp_archiver::outer_sync_manifest_loop() {
         }
 
         _start_term = _parent.term();
+        vlog(
+          _rtclog.debug, "sync manifest loop starting in term {}", _start_term);
 
         try {
             co_await sync_manifest_loop()
