@@ -132,7 +132,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<cluster::tm_stm_cache>& tm_stm_cache)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -144,6 +145,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend)
   , _feature_table(feature_table)
+  , _tm_stm_cache(tm_stm_cache)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
