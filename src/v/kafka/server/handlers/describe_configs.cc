@@ -180,6 +180,25 @@ static void add_topic_config(
     });
 }
 
+/**
+ * For faking DEFAULT_CONFIG status for properties that are actually
+ * topic overrides: cloud storage properties.  We do not support cluster
+ * defaults for these, the values are always "sticky" to topics, but
+ * some Kafka clients insist that after an AlterConfig RPC, anything
+ * they didn't set should be DEFAULT_CONFIG.
+ *
+ * See https://github.com/redpanda-data/redpanda/issues/7451
+ */
+template<typename T>
+std::optional<T>
+override_if_not_default(const std::optional<T>& override, const T& def) {
+    if (override && override.value() != def) {
+        return override;
+    } else {
+        return std::nullopt;
+    }
+}
+
 template<typename T, typename Func>
 static void add_topic_config_if_requested(
   const describe_configs_resource& resource,
@@ -189,14 +208,22 @@ static void add_topic_config_if_requested(
   std::string_view override_name,
   const std::optional<T>& overrides,
   bool include_synonyms,
-  Func&& describe_f) {
+  Func&& describe_f,
+  bool hide_default_override = false) {
     if (config_property_requested(resource.configuration_keys, override_name)) {
+        std::optional<T> overrides_val;
+        if (hide_default_override) {
+            overrides_val = override_if_not_default(overrides, default_value);
+        } else {
+            overrides_val = overrides;
+        }
+
         add_topic_config(
           result,
           default_name,
           default_value,
           override_name,
-          overrides,
+          overrides_val,
           include_synonyms,
           std::forward<Func>(describe_f));
     }
@@ -548,7 +575,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   *topic_config->properties.shadow_indexing))
                 : std::nullopt,
               request.data.include_synonyms,
-              &describe_as_string<bool>);
+              &describe_as_string<bool>,
+              true);
 
             add_topic_config_if_requested(
               resource,
@@ -562,7 +590,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   *topic_config->properties.shadow_indexing))
                 : std::nullopt,
               request.data.include_synonyms,
-              &describe_as_string<bool>);
+              &describe_as_string<bool>,
+              true);
 
             add_topic_config_if_requested(
               resource,
@@ -590,8 +619,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   topic_property_remote_delete,
                   storage::ntp_config::default_remote_delete,
                   topic_property_remote_delete,
-                  std::make_optional<bool>(
-                    topic_config->properties.remote_delete),
+                  override_if_not_default(
+                    std::make_optional<bool>(
+                      topic_config->properties.remote_delete),
+                    storage::ntp_config::default_remote_delete),
                   true,
                   [](const bool& b) { return b ? "true" : "false"; });
             }
