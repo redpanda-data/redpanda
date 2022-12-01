@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/auth0"
@@ -128,5 +129,7 @@ func promptClientCfg() (clientID, clientSecret string, err error) {
 			return "", "", fmt.Errorf("failed to retrieve %s: %w", prompt.name, err)
 		}
 	}
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
 	return clientID, clientSecret, nil
 }
