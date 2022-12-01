@@ -87,7 +87,8 @@ ss::future<configuration> configuration::make_configuration(
   const cloud_roles::aws_region_name& region,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
-  net::public_metrics_disabled disable_public_metrics) {
+  net::public_metrics_disabled disable_public_metrics,
+  bool use_path_style_url) {
     configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;
@@ -96,6 +97,7 @@ ss::future<configuration> configuration::make_configuration(
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
+    client_cfg.use_path_style_url = use_path_style_url;
     ss::tls::credentials_builder cred_builder;
     if (overrides.disable_tls == false) {
         // NOTE: this is a pre-defined gnutls priority string that
@@ -162,8 +164,10 @@ std::ostream& operator<<(std::ostream& o, const configuration& c) {
 
 request_creator::request_creator(
   const configuration& conf,
-  ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
+  ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials,
+  bool use_path_style_url)
   : _ap(conf.uri)
+  , _use_path_style_url{use_path_style_url}
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
@@ -197,13 +201,15 @@ result<http::client::request_header> request_creator::make_head_object_request(
     // x-amz-date:{req-datetime}
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto [host, target] = build_host_and_target(
+      _ap, name, key, _use_path_style_url);
     header.method(boost::beast::http::verb::head);
-    header.target(target);
+    header.target(boost::string_view{target.data(), target.size()});
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
-    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::host,
+      boost::string_view{host.data(), host.size()});
     header.insert(boost::beast::http::field::content_length, "0");
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -228,13 +234,15 @@ request_creator::make_unsigned_put_object_request(
     // Expect: 100-continue
     // [11434 bytes of object data]
     http::client::request_header header{};
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto [host, target] = build_host_and_target(
+      _ap, name, key, _use_path_style_url);
     header.method(boost::beast::http::verb::put);
-    header.target(target);
+    header.target(boost::string_view{target.data(), target.size()});
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
-    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::host,
+      boost::string_view{host.data(), host.size()});
     header.insert(
       boost::beast::http::field::content_type, aws_header_values::text_plain);
     header.insert(
@@ -267,13 +275,15 @@ request_creator::make_list_objects_v2_request(
     // x-amz-date: 20160501T000433Z
     // Authorization: authorization string
     http::client::request_header header{};
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/?list-type=2");
+    auto [host, target] = build_host_and_target(
+      _ap, name, object_key{"?list-type=2"}, _use_path_style_url);
     header.method(boost::beast::http::verb::get);
-    header.target(target);
+    header.target(boost::string_view{target.data(), target.size()});
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
-    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::host,
+      boost::string_view{host.data(), host.size()});
     header.insert(boost::beast::http::field::content_length, "0");
 
     if (prefix) {
@@ -305,13 +315,15 @@ request_creator::make_delete_object_request(
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     //
     // NOTE: x-amz-mfa, x-amz-bypass-governance-retention are not used for now
-    auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key().string());
+    auto [host, target] = build_host_and_target(
+      _ap, name, key, _use_path_style_url);
     header.method(boost::beast::http::verb::delete_);
-    header.target(target);
+    header.target(boost::string_view{target.data(), target.size()});
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
-    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::host,
+      boost::string_view{host.data(), host.size()});
     header.insert(boost::beast::http::field::content_length, "0");
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -840,6 +852,24 @@ ss::future<> client_pool::wait_for_credentials() {
         throw ss::gate_closed_exception();
     }
     co_return;
+}
+
+host_and_target build_host_and_target(
+  const access_point_uri& access_point,
+  const bucket_name& bucket,
+  const object_key& key,
+  bool use_path_style_url) {
+    if (use_path_style_url) {
+        return host_and_target{
+          access_point(),
+          fmt::format("/{}/{}", bucket_name(), key().string()),
+        };
+    } else {
+        return host_and_target{
+          fmt::format("{}.{}", bucket(), access_point()),
+          fmt::format("/{}", key().string()),
+        };
+    }
 }
 
 } // namespace s3

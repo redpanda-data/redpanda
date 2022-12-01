@@ -40,6 +40,17 @@ struct object_tag {
     ss::sstring value;
 };
 
+struct host_and_target {
+    ss::sstring host;
+    ss::sstring target;
+};
+
+host_and_target build_host_and_target(
+  const access_point_uri& access_point,
+  const bucket_name& bucket,
+  const object_key& key,
+  bool use_path_style_url);
+
 /// Request formatter for AWS S3
 class request_creator {
 public:
@@ -47,8 +58,8 @@ public:
     /// \param conf is a configuration container
     explicit request_creator(
       const configuration& conf,
-      ss::lw_shared_ptr<const cloud_roles::apply_credentials>
-        apply_credentials);
+      ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials,
+      bool use_path_style_url = false);
 
     /// \brief Create unsigned 'PutObject' request header
     /// The payload is unsigned which means that we don't need to calculate
@@ -103,6 +114,7 @@ public:
 
 private:
     access_point_uri _ap;
+    bool _use_path_style_url;
     /// Applies credentials to http requests by adding headers and signing
     /// request payload. Shared pointer so that the credentials can be rotated
     /// through the client pool.
