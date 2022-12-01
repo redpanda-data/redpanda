@@ -41,6 +41,8 @@
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
+#include "compression/async_stream_zstd.h"
+#include "compression/stream_zstd.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
@@ -349,11 +351,17 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
     /*
-     * allocate per-core zstd decompression workspace. it can be several
-     * megabytes in size, so do it before memory becomes fragmented.
+     * allocate per-core zstd decompression workspace and per-core
+     * async_stream_zstd workspaces. it can be several megabytes in size, so do
+     * it before memory becomes fragmented.
      */
     ss::smp::invoke_on_all([] {
+        // TODO: remove this when stream_zstd is replaced with async_stream_zstd
+        // in v/kafka
         compression::stream_zstd::init_workspace(
+          config::shard_local_cfg().zstd_decompress_workspace_bytes());
+
+        compression::initialize_async_stream_zstd(
           config::shard_local_cfg().zstd_decompress_workspace_bytes());
     }).get0();
 
