@@ -66,9 +66,14 @@ public:
     };
 
     explicit tm_stm(
-      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
+      ss::logger&,
+      raft::consensus*,
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::tm_stm_cache>&);
 
     ss::gate& gate() { return _gate; }
+
+    ss::future<> start() override;
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       get_tx(kafka::transactional_id);
@@ -103,7 +108,7 @@ public:
     }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
-        return _state_lock.hold_read_lock();
+        return _cache.local().read_lock();
     }
 
     ss::future<> checkpoint_ongoing_txs();
@@ -167,16 +172,14 @@ private:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
 
-    ss::basic_rwlock<> _state_lock;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
-    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _log_txes;
-    absl::flat_hash_map<kafka::transactional_id, tm_transaction> _mem_txes;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
       _pid_tx_id;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<cluster::tm_stm_cache>& _cache;
 
     ss::future<> apply(model::record_batch b) override;
 

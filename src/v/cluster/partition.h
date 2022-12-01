@@ -48,6 +48,7 @@ public:
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>,
       std::optional<s3::bucket_name> read_replica_bucket = std::nullopt);
 
@@ -281,6 +282,7 @@ private:
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
