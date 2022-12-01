@@ -116,11 +116,13 @@ func (c *GlobalConfiguration) GetCentralizedConfigurationHash(
 	return fmt.Sprintf("%x", md5Hash), nil
 }
 
-// GetNodeConfigurationHash computes a hash of the node configuration considering only node properties.
+// GetNodeConfigurationHash computes a hash of the node configuration considering only node properties
+// but excluding fields that trigger unnecessary restarts.
 func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 	clone := *c
 	// clean any cluster property from config before serializing
 	clone.ClusterConfiguration = nil
+	removeFieldsThatShouldNotTriggerRestart(&clone)
 	props := clone.NodeConfiguration.Redpanda.Other
 	clone.NodeConfiguration.Redpanda.Other = make(map[string]interface{})
 	for k, v := range props {
@@ -134,6 +136,32 @@ func (c *GlobalConfiguration) GetNodeConfigurationHash() (string, error) {
 	}
 	md5Hash := md5.Sum(serialized.RedpandaFile) //nolint:gosec // this is not encrypting secure info
 	return fmt.Sprintf("%x", md5Hash), nil
+}
+
+// GetFullConfigurationHash computes the hash of the full configuration, i.e., the plain
+// "redpanda.yaml" file, with the exception of fields that trigger unnecessary restarts.
+func (c *GlobalConfiguration) GetFullConfigurationHash() (string, error) {
+	clone := *c
+	removeFieldsThatShouldNotTriggerRestart(&clone)
+	serialized, err := clone.Serialize()
+	if err != nil {
+		return "", err
+	}
+	md5Hash := md5.Sum(serialized.RedpandaFile) //nolint:gosec // this is not encoding secure info
+	return fmt.Sprintf("%x", md5Hash), nil
+}
+
+// Ignore seeds in the hash computation such that any seed changes do not
+// trigger a rolling restart across the nodes. Similarly for pandaproxy and
+// schema registry clients.
+func removeFieldsThatShouldNotTriggerRestart(c *GlobalConfiguration) {
+	c.NodeConfiguration.Redpanda.SeedServers = []config.SeedServer{}
+	if c.NodeConfiguration.PandaproxyClient != nil {
+		c.NodeConfiguration.PandaproxyClient.Brokers = []config.SocketAddress{}
+	}
+	if c.NodeConfiguration.SchemaRegistryClient != nil {
+		c.NodeConfiguration.SchemaRegistryClient.Brokers = []config.SocketAddress{}
+	}
 }
 
 // GetAdditionalRedpandaProperty retrieves a configuration option

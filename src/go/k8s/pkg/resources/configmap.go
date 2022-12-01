@@ -12,7 +12,6 @@ package resources
 import (
 	"bytes"
 	"context"
-	"crypto/md5" //nolint:gosec // this is not encrypting secure info
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -677,24 +676,15 @@ func generatePassword(length int) (string, error) {
 func (r *ConfigMapResource) GetNodeConfigHash(
 	ctx context.Context,
 ) (string, error) {
-	var configString string
-	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
-		cfg, err := r.CreateConfiguration(ctx)
-		if err != nil {
-			return "", err
-		}
-		return cfg.GetNodeConfigurationHash()
-	}
-
-	// Previous behavior for v21.x
-	obj, err := r.obj(ctx)
+	cfg, err := r.CreateConfiguration(ctx)
 	if err != nil {
 		return "", err
 	}
-	configMap := obj.(*corev1.ConfigMap)
-	configString = configMap.Data[configKey]
-	md5Hash := md5.Sum([]byte(configString)) //nolint:gosec // this is not encrypting secure info
-	return fmt.Sprintf("%x", md5Hash), nil
+	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
+		return cfg.GetNodeConfigurationHash()
+	}
+	// Previous behavior for v21.x
+	return cfg.GetFullConfigurationHash()
 }
 
 // globalConfigurationChanged verifies if the new global configuration
