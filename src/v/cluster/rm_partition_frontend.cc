@@ -310,15 +310,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
             .then([ntp, topic_revision](checked<model::term_id, tx_errc> etag) {
                 if (!etag.has_value()) {
-                    vlog(
-                      txlog.warn,
-                      "rm_stm::begin_tx({},...) failed with {}",
-                      ntp,
-                      etag.error());
-                    if (etag.error() == tx_errc::leader_not_found) {
-                        return begin_tx_reply{ntp, tx_errc::leader_not_found};
-                    }
-                    return begin_tx_reply{ntp, tx_errc::unknown_server_error};
+                    return begin_tx_reply{ntp, etag.error()};
                 }
                 return begin_tx_reply{
                   ntp, etag.value(), tx_errc::none, topic_revision};

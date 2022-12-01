@@ -1087,7 +1087,9 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               br.ntp.tp.partition());
 
             bool expected_ec = br.ec == tx_errc::leader_not_found
-                               || br.ec == tx_errc::shard_not_found;
+                               || br.ec == tx_errc::shard_not_found
+                               || br.ec == tx_errc::stale
+                               || br.ec == tx_errc::timeout;
             should_abort = should_abort
                            || (br.ec != tx_errc::none && !expected_ec);
             should_retry = should_retry || expected_ec;
