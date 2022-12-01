@@ -26,7 +26,7 @@ import (
 
 // The auth0 endpoint information to get dev tokens from.
 var prodAuth0Endpoint = auth0.Endpoint{
-	URL:      "https://prod-cloudv2.us.auth0.com",
+	URL:      "https://auth.prd.cloud.redpanda.com",
 	Audience: "cloudv2-production.redpanda.cloud",
 }
 
