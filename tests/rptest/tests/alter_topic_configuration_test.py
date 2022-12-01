@@ -9,6 +9,7 @@
 
 import random
 import string
+from rptest.clients.kcl import RawKCL
 
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
@@ -49,6 +50,25 @@ class AlterTopicConfiguration(RedpandaTest):
         # e.g. retention.ms is TopicSpec.retention_ms
         attr_name = property.replace(".", "_")
         assert getattr(spec, attr_name, None) == value
+
+    @cluster(num_nodes=3)
+    def test_alter_config_does_not_change_replication_factor(self):
+        topic = self.topics[0].name
+        # change default replication factor
+        self.redpanda.set_cluster_config(
+            {"default_topic_replications": str(5)})
+        kcl = RawKCL(self.redpanda)
+        kcl.raw_alter_topic_config(
+            1, topic, {
+                TopicSpec.PROPERTY_RETENTION_TIME: 360000,
+                TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime"
+            })
+        kafka_tools = KafkaCliTools(self.redpanda)
+        spec = kafka_tools.describe_topic(topic)
+
+        assert spec.replication_factor == 3
+        assert spec.retention_ms == 360000
+        assert spec.message_timestamp_type == "LogAppendTime"
 
     @cluster(num_nodes=3)
     def test_altering_multiple_topic_configurations(self):
