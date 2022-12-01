@@ -1244,7 +1244,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     if (shard == std::nullopt) {
         vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<end_tx_reply>(
-          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
+          end_tx_reply{.error_code = tx_errc::coordinator_not_available});
     }
 
     return container().invoke_on(
@@ -1284,7 +1284,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::do_end_txn(
     // is active
     if (stm->gate().is_closed()) {
         return ss::make_ready_future<end_tx_reply>(
-          end_tx_reply{.error_code = tx_errc::unknown_server_error});
+          end_tx_reply{.error_code = tx_errc::coordinator_not_available});
     }
     vlog(txlog.trace, "re-entered tm_stm's gate");
     auto h = stm->gate().hold();
