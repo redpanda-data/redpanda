@@ -78,7 +78,7 @@ partition_manager::partition_manager(
             if (p) {
                 auto a = p->archiver();
                 if (a) {
-                    a->notify_leadership(leader_id);
+                    a.value().get().notify_leadership(leader_id);
                 }
             }
         });

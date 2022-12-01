@@ -282,7 +282,13 @@ public:
 
     consensus_ptr raft() const { return _raft; }
 
-    ss::lw_shared_ptr<archival::ntp_archiver>& archiver() { return _archiver; }
+    std::optional<std::reference_wrapper<archival::ntp_archiver>> archiver() {
+        if (_archiver) {
+            return *_archiver;
+        } else {
+            return std::nullopt;
+        }
+    }
 
     /// Fixture testing hook, for tests that would like to stop the
     /// usual archiver and start their own
@@ -324,7 +330,7 @@ private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
 
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
-    ss::lw_shared_ptr<archival::ntp_archiver> _archiver;
+    std::unique_ptr<archival::ntp_archiver> _archiver;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};

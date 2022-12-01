@@ -414,7 +414,7 @@ void partition::maybe_construct_archiver() {
       && _cloud_storage_api.local_is_initialized()
       && _raft->ntp().ns == model::kafka_namespace
       && _raft->log().config().is_archival_enabled()) {
-        _archiver = ss::make_lw_shared<archival::ntp_archiver>(
+        _archiver = std::make_unique<archival::ntp_archiver>(
           log().config(), _archival_conf, _cloud_storage_api.local(), *this);
     }
 }

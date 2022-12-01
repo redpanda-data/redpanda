@@ -3314,7 +3314,7 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
               if (partition) {
                   auto archiver = partition->archiver();
                   if (archiver) {
-                      return archiver->maybe_truncate_manifest();
+                      return archiver.value().get().maybe_truncate_manifest();
                   }
               }
               return ss::make_ready_future<
