@@ -102,7 +102,7 @@ func Execute() {
 	//
 	// Managed plugins are slightly weirder and are documented below.
 	for _, p := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		if plugin.IsManaged(p.Name) {
+		if p.Managed {
 			mp, managedHook := plugin.LookupManaged(p)
 			if managedHook != nil {
 				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs)
