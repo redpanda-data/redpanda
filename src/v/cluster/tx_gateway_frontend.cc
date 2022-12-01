@@ -223,9 +223,63 @@ ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
     });
 }
 
-ss::future<fetch_tx_reply>
-tx_gateway_frontend::fetch_tx_locally(kafka::transactional_id, model::term_id) {
-    co_return fetch_tx_reply(tx_errc::tx_not_found);
+ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
+  kafka::transactional_id tx_id, model::term_id term) {
+    auto map = [tx_id, term](tm_stm_cache& cache) {
+        return cache.find(term, tx_id);
+    };
+    auto reduce = [](
+                    std::optional<tm_transaction> a,
+                    std::optional<tm_transaction> b) { return a ? a : b; };
+    auto tx_opt = co_await _tm_stm_cache.map_reduce0(
+      map, std::optional<tm_transaction>{}, reduce);
+
+    if (!tx_opt) {
+        co_return fetch_tx_reply(tx_errc::tx_not_found);
+    }
+    auto tx = tx_opt.value();
+
+    fetch_tx_reply reply;
+    reply.ec = tx_errc::none;
+    reply.pid = tx.pid;
+    reply.last_pid = tx.last_pid;
+    reply.tx_seq = tx.tx_seq;
+    reply.timeout_ms = tx.timeout_ms;
+
+    switch (tx.status) {
+    case tm_transaction::tx_status::ongoing:
+        reply.status = fetch_tx_reply::tx_status::ongoing;
+        break;
+    case tm_transaction::tx_status::preparing:
+        reply.status = fetch_tx_reply::tx_status::preparing;
+        break;
+    case tm_transaction::tx_status::prepared:
+        reply.status = fetch_tx_reply::tx_status::prepared;
+        break;
+    case tm_transaction::tx_status::aborting:
+        reply.status = fetch_tx_reply::tx_status::aborting;
+        break;
+    case tm_transaction::tx_status::killed:
+        reply.status = fetch_tx_reply::tx_status::killed;
+        break;
+    case tm_transaction::tx_status::ready:
+        reply.status = fetch_tx_reply::tx_status::ready;
+        break;
+    case tm_transaction::tx_status::tombstone:
+        reply.status = fetch_tx_reply::tx_status::tombstone;
+        break;
+    }
+
+    reply.partitions.reserve(tx.partitions.size());
+    for (auto& p : tx.partitions) {
+        reply.partitions.push_back(
+          fetch_tx_reply::tx_partition(p.ntp, p.etag, p.topic_revision));
+    }
+    reply.groups.reserve(tx.groups.size());
+    for (auto& g : tx.groups) {
+        reply.groups.push_back(fetch_tx_reply::tx_group(g.group_id, g.etag));
+    }
+    co_return reply;
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
