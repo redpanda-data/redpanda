@@ -140,13 +140,16 @@ ss::future<configuration> configuration::get_config() {
     }
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
+    bool use_path_style_url
+      = config::shard_local_cfg().cloud_storage_use_path_style_url;
     auto s3_conf = co_await s3::configuration::make_configuration(
       access_key,
       secret_key,
       region,
       overrides,
       disable_metrics,
-      disable_public_metrics);
+      disable_public_metrics,
+      use_path_style_url);
 
     configuration cfg{
       .client_config = std::move(s3_conf),

@@ -54,6 +54,11 @@ struct configuration : net::base_transport::configuration {
     /// Metrics probe (should be created for every aws account on every shard)
     ss::shared_ptr<client_probe> _probe;
 
+    /// If enabled, directs S3 clients to use path style URL instead of vhost
+    /// style URL
+    /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAPI.html
+    bool use_path_style_url;
+
     /// \brief opinionated configuraiton initialization
     /// Generates uri field from region, initializes credentials for the
     /// transport, resolves the uri to get the server_addr.
@@ -72,7 +77,8 @@ struct configuration : net::base_transport::configuration {
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics
-      = net::public_metrics_disabled::yes);
+      = net::public_metrics_disabled::yes,
+      bool use_path_style_url = false);
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& c);
 };
