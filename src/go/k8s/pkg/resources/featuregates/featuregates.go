@@ -23,6 +23,7 @@ var (
 	V22_1   = mustSemVer("v22.1.0")
 	V22_2_1 = mustSemVer("v22.2.1")
 	V22_3   = mustSemVer("v22.3.0")
+	V22_3_5 = mustSemVer("v22.3.5")
 )
 
 // ShadowIndex feature gate should be removed in 3 version starting
@@ -59,6 +60,12 @@ func EmptySeedStartCluster(version string) bool {
 // or setting the rack id on redpanda versions older than 22.1
 func RackAwareness(version string) bool {
 	return atLeastVersion(V22_1, version)
+}
+
+// MaintenanceModeDecommissionFix feature gate is used for bypassing the workaround
+// for https://github.com/redpanda-data/redpanda/issues/4999 that's fixed in v22.3.5.
+func MaintenanceModeDecommissionFix(version string) bool {
+	return atLeastVersion(V22_3_5, version)
 }
 
 // atLeastVersion tells if the given version is greater or equal than the

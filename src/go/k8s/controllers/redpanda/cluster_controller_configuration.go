@@ -372,7 +372,7 @@ func mapStatusToCondition(
 				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
 				Reason:  redpandav1alpha1.ClusterConfiguredReasonUpdating,
-				Message: fmt.Sprintf("Node %d needs restart", nodeStatus.NodeID),
+				Message: fmt.Sprintf("Node %d needs restart", nodeStatus.NodeID), // actually pod ordinal
 			}
 		} else if configVersion >= 0 && nodeStatus.ConfigVersion != configVersion {
 			condition = &redpandav1alpha1.ClusterCondition{
@@ -401,7 +401,7 @@ func needsRestart(
 ) bool {
 	nodeNeedsRestart := false
 	for i := range clusterStatus {
-		log.Info(fmt.Sprintf("Node %d restart status is %v", clusterStatus[i].NodeID, clusterStatus[i].Restart))
+		log.Info(fmt.Sprintf("Node %d restart status is %v", clusterStatus[i].NodeID, clusterStatus[i].Restart)) // actually pod ordinal
 		if clusterStatus[i].Restart {
 			nodeNeedsRestart = true
 		}
@@ -414,7 +414,7 @@ func isSafeToRestart(
 ) bool {
 	configVersions := make(map[int64]bool)
 	for i := range clusterStatus {
-		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion))
+		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion)) // actually pod ordinal
 		configVersions[clusterStatus[i].ConfigVersion] = true
 	}
 	return len(configVersions) == 1

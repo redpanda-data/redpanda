@@ -151,7 +151,7 @@ func secretKind() string {
 // getPostStartScript creates a script that removes maintenance mode after startup.
 func (r *PreStartStopScriptResource) getPostStartScript() string {
 	// TODO replace scripts with proper RPK calls
-	curlNodeIDCommand := r.composeCURLGetNodeIDCommand("--silent --fail")
+	curlNodeIDCommand := r.composeCURLGetNodeConfigCommand("--silent --fail")
 	curlCommand := r.composeCURLMaintenanceCommand(`-X DELETE --silent -o /dev/null -w "%{http_code}"`, nil)
 	// HTTP code 400 is returned by v22 nodes during an upgrade from v21 until the new version reaches quorum and the maintenance mode feature is enabled
 	// TODO(joe): The command builder shouldn't add auth/tls flags, they should be added to an environment variable
@@ -173,7 +173,8 @@ done`, curlNodeIDCommand, curlCommand)
 // getPrestopScript creates a script that drains the node before shutting down.
 func (r *PreStartStopScriptResource) getPreStopScript() string {
 	// TODO replace scripts with proper RPK calls
-	curlNodeIDCommand := r.composeCURLGetNodeIDCommand("--silent --fail")
+	curlNodeConfigCommand := r.composeCURLGetNodeConfigCommand(`--silent --fail`)
+	curlBrokerStatusCommand := r.composeCURLBrokerStatusCommand(`--silent -w "%{http_code}\n" -o /tmp/broker_status`)
 	curlMaintenanceCommand := r.composeCURLMaintenanceCommand(`-X PUT --silent -o /dev/null -w "%{http_code}"`, nil)
 	genericMaintenancePath := "/v1/maintenance"
 	curlGetMaintenanceCommand := r.composeCURLMaintenanceCommand(`--silent`, &genericMaintenancePath)
@@ -186,21 +187,26 @@ set -e
 until NODE_ID=$(%s | grep -o '\"node_id\":[^,}]*' | grep -o '[^: ]*$'); do
 	sleep 0.5
 done
+status=$(%s)
+if [ "${status:-}" = "404" ] || grep '"membership_status": "draining"' /tmp/broker_status; then
+	echo "This node (${NODE_ID}) has been decommissioned."
+	exit 0
+fi
 echo "Setting maintenance mode on node ${NODE_ID}"
 until [ "${status:-}" = "200" ]; do
-	status=$(%s)
 	sleep 0.5
+	status=$(%s)
 done
 until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do
 	res=$(%s)
 	finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$')
 	draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$')
 	sleep 0.5
-done`, curlNodeIDCommand, curlMaintenanceCommand, curlGetMaintenanceCommand)
+done`, curlNodeConfigCommand, curlBrokerStatusCommand, curlMaintenanceCommand, curlGetMaintenanceCommand)
 }
 
 //nolint:goconst // no need
-func (r *PreStartStopScriptResource) composeCURLGetNodeIDCommand(
+func (r *PreStartStopScriptResource) composeCURLGetNodeConfigCommand(
 	options string,
 ) string {
 	adminAPI := r.pandaCluster.AdminAPIInternal()
@@ -245,5 +251,25 @@ func (r *PreStartStopScriptResource) composeCURLMaintenanceCommand(
 	} else {
 		cmd += *urlOverwrite
 	}
+	return cmd
+}
+
+func (r *PreStartStopScriptResource) composeCURLBrokerStatusCommand(options string) string {
+	adminAPI := r.pandaCluster.AdminAPIInternal()
+
+	cmd := fmt.Sprintf(`curl %s `, options)
+
+	tlsConfig := adminAPI.GetTLS()
+	proto := "http"
+	if tlsConfig != nil && tlsConfig.Enabled {
+		proto = "https"
+		if tlsConfig.RequireClientAuth {
+			cmd += "--cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key "
+		} else {
+			cmd += "--cacert /etc/tls/certs/admin/tls.crt "
+		}
+	}
+	cmd += fmt.Sprintf("%s://${POD_NAME}.%s.%s.svc.cluster.local:%d", proto, r.pandaCluster.Name, r.pandaCluster.Namespace, adminAPI.Port)
+	cmd += "/v1/node_config/${NODE_ID}"
 	return cmd
 }

@@ -47,8 +47,7 @@ import (
 )
 
 const (
-	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
-	FinalizerKey           = "operator.redpanda.com/finalizer"
+	FinalizerKey = "operator.redpanda.com/finalizer"
 )
 
 var (
@@ -399,7 +398,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			}
 		}
 		// get the node id
-		nodeIDStr, ok := pod.GetAnnotations()[PodAnnotationNodeIDKey]
+		nodeIDStr, ok := pod.GetAnnotations()[resources.PodAnnotationNodeIDKey]
 		if !ok {
 			return fmt.Errorf("cannot determine node_id for pod %s: %w. not removing finalizer", pod.Name, err)
 		}
@@ -517,15 +516,15 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		if _, ok := pod.Annotations[PodAnnotationNodeIDKey]; ok {
+		if _, ok := pod.Annotations[resources.PodAnnotationNodeIDKey]; ok {
 			continue
 		}
-		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
+		nodeID, err := r.fetchAdminNodeIDForPod(ctx, rp, pod, log)
 		if err != nil {
 			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
 		}
 		log.WithValues(pod.Name, nodeID).Info("setting node-id annotation")
-		pod.Annotations[PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
+		pod.Annotations[resources.PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
@@ -533,7 +532,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 	return nil
 }
 
-func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, log logr.Logger) (int32, error) {
+func (r *ClusterReconciler) fetchAdminNodeIDForPod(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, log logr.Logger) (int32, error) {
 	redpandaPorts := networking.NewRedpandaPorts(rp)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
 	clusterPorts := collectClusterPorts(redpandaPorts, rp)

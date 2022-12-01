@@ -13,20 +13,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
+	PodAnnotationNodeIDKey       = "operator.redpanda.com/node-id"
 	decommissionWaitJitterFactor = 0.2
 )
 
@@ -111,20 +114,20 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 
 	// User required replicas is lower than current replicas (currentReplicas): start the decommissioning process
 	targetOrdinal := r.pandaCluster.Status.CurrentReplicas - 1 // Always decommission last node
-	r.logger.Info("Start decommission of last broker node", "ordinal", targetOrdinal)
+	r.logger.Info("Start decommission of last broker pod", "ordinal", targetOrdinal)
 	r.pandaCluster.Status.DecommissioningNode = &targetOrdinal
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
 // handleDecommission manages the case of decommissioning of the last node of a cluster.
 //
-// When this handler is called, the `status.decommissioningNode` is populated with the pod ordinal (== nodeID) of the
+// When this handler is called, the `status.decommissioningNode` is populated with the pod ordinal of the
 // node that needs to be decommissioned.
 //
-// The handler verifies that the node is not present in the list of brokers registered in the cluster, via admin API,
-// then downscales the StatefulSet via decreasing the `status.currentReplicas`.
+// The handler verifies that the node_id for that pod is not present in the list of brokers registered in the cluster,
+// via admin API, then downscales the StatefulSet via decreasing the `status.currentReplicas`.
 //
-// Before completing the process, it double-checks if the node is still not registered, for handling cases where the node was
+// Before completing the process, it double-checks if the node_id is still not registered, for handling cases where the node was
 // about to start when the decommissioning process started. If the broker is found, the process is restarted.
 func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 	targetReplicas := *r.pandaCluster.Status.DecommissioningNode
@@ -211,9 +214,10 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 // The process finishes when the node is registered among brokers and the StatefulSet is correctly scaled.
 func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 	r.logger.Info("Handling cluster in recommissioning phase")
+	targetOrdinal := *r.pandaCluster.Status.DecommissioningNode
 
 	// First we ensure we've enough replicas to let the recommissioning node run
-	targetReplicas := *r.pandaCluster.Status.DecommissioningNode + 1
+	targetReplicas := targetOrdinal + 1
 	err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger)
 	if err != nil {
 		return err
@@ -224,25 +228,30 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 		return err
 	}
 
-	broker, err := getNodeInfoFromCluster(ctx, *r.pandaCluster.Status.DecommissioningNode, adminAPI)
+	broker, err := getNodeInfoFromCluster(ctx, targetOrdinal, adminAPI)
+	if err != nil {
+		return err
+	}
+
+	brokerID, err := getPodNodeIDFromAnnotation(ctx, r.Client, r.pandaCluster.GetNamespace(), r.pandaCluster.GetName(), targetOrdinal)
 	if err != nil {
 		return err
 	}
 
 	if broker == nil || broker.MembershipStatus != admin.MembershipStatusActive {
-		err = adminAPI.RecommissionBroker(ctx, int(*r.pandaCluster.Status.DecommissioningNode))
+		err = adminAPI.RecommissionBroker(ctx, brokerID)
 		if err != nil {
-			return fmt.Errorf("error while trying to recommission node %d in cluster %s: %w", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name, err)
+			return fmt.Errorf("error while trying to recommission node %d in cluster %s: %w", brokerID, r.pandaCluster.Name, err)
 		}
-		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", *r.pandaCluster.Status.DecommissioningNode)
+		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", brokerID)
 
 		return &RequeueAfterError{
 			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
-			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name),
+			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", brokerID, r.pandaCluster.Name),
 		}
 	}
 
-	r.logger.Info("Recommissioning process successfully completed", "node_id", *r.pandaCluster.Status.DecommissioningNode)
+	r.logger.Info("Recommissioning process successfully completed", "node_id", brokerID)
 	r.pandaCluster.Status.DecommissioningNode = nil
 	return r.Status().Update(ctx, r.pandaCluster)
 }
@@ -389,4 +398,22 @@ type NodeReappearingError struct {
 // Error makes the NodeReappearingError a proper error
 func (e *NodeReappearingError) Error() string {
 	return fmt.Sprintf("node has appeared in the cluster with id=%d", e.NodeID)
+}
+
+func getPodNodeIDFromAnnotation(ctx context.Context, c k8sclient.Client, clusterNamespace, clusterName string, ordinal int32) (int, error) {
+	podName := fmt.Sprintf("%s-%d", clusterName, ordinal)
+	pod := &corev1.Pod{}
+	pod.SetName(podName)
+	pod.SetNamespace(clusterNamespace)
+
+	err := c.Get(ctx, k8sclient.ObjectKeyFromObject(pod), pod)
+	if err != nil {
+		return 0, err
+	}
+	idString, ok := pod.GetAnnotations()[PodAnnotationNodeIDKey]
+	if !ok {
+		//nolint:goerr113 // this is sufficient
+		return 0, fmt.Errorf("cannot retrieve broker id from annotation for pod %s/%s", clusterNamespace, podName)
+	}
+	return strconv.Atoi(idString)
 }

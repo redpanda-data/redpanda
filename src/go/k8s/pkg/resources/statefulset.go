@@ -178,10 +178,11 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 	r.LastObservedState = &sts
 
-	// Hack for: https://github.com/redpanda-data/redpanda/issues/4999
-	err = r.disableMaintenanceModeOnDecommissionedNodes(ctx)
-	if err != nil {
-		return err
+	if !featuregates.MaintenanceModeDecommissionFix(r.pandaCluster.Spec.Version) {
+		// Hack for: https://github.com/redpanda-data/redpanda/issues/4999
+		if err = r.disableMaintenanceModeOnDecommissionedNodes(ctx); err != nil {
+			return err
+		}
 	}
 
 	r.logger.Info("Running update", "resource name", r.Key().Name)
