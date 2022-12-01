@@ -1667,7 +1667,15 @@ tx_gateway_frontend::do_end_txn(
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
-        if (tx.status == tm_transaction::tx_status::ongoing) {
+        bool is_status_ok = false;
+        if (is_fetch_tx_supported()) {
+            is_status_ok = tx.status == tm_transaction::tx_status::ongoing
+                           || tx.status == tm_transaction::tx_status::prepared
+                           || tx.status == tm_transaction::tx_status::aborting;
+        } else {
+            is_status_ok = tx.status == tm_transaction::tx_status::ongoing;
+        }
+        if (is_status_ok) {
             try {
                 r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
             } catch (...) {
@@ -1685,30 +1693,6 @@ tx_gateway_frontend::do_end_txn(
                 }
             }
         } else {
-            // Lets look when we may observe this situation:
-            //
-            //   1. a client commits a transaction
-            //   2. the transaction is committed
-            //   3. tx coordinator dies just before ack'ing a tx
-            //   4. the client retries the commit
-            //   5. the commit hits server & sees that the transaction may be
-            //   committed
-            //
-            // if we return invalid_txn_state the client interpreters it as a
-            // reject while the tx is committed. it seems that the server should
-            // roll the tx forward since commit is an idempotent op. but there
-            // is a problem with this solution too:
-            //
-            //   1. a client commits a transaction
-            //   2. the transaction is committed
-            //   3. the client initiates next transaction
-            //   4. tx cordinator reboots before the prepare phase
-            //   5. the client retries the commit, tx coordiantor sees prepared
-            //      state of the previous transaction
-            //   6. if we roll it forward the client will think that the current
-            //      transaciton is committed
-            //
-            // so we fail the request with unknow error and let user to recover
             vlog(
               txlog.warn,
               "an ongoing tx:{} pid:{} etag:{} tx_seq:{} in term:{} has "
@@ -1892,17 +1876,306 @@ tx_gateway_frontend::do_commit_tm_tx(
     }
 
     try {
-        if (
-          tx.status != tm_transaction::tx_status::ongoing
-          && tx.status != tm_transaction::tx_status::preparing) {
+        bool is_status_ok = false;
+        if (is_fetch_tx_supported()) {
+            is_status_ok = tx.status == tm_transaction::tx_status::ongoing
+                           || tx.status == tm_transaction::tx_status::preparing
+                           || tx.status == tm_transaction::tx_status::prepared
+                           || tx.status == tm_transaction::tx_status::aborting;
+        } else {
+            is_status_ok = tx.status == tm_transaction::tx_status::ongoing
+                           || tx.status == tm_transaction::tx_status::preparing;
+        }
+
+        if (!is_status_ok) {
+            vlog(
+              txlog.warn,
+              "can't commit {} with pid:{} unexpected status:{}",
+              tx.id,
+              tx.pid,
+              tx.status);
             outcome->set_value(tx_errc::invalid_txn_state);
             co_return tx_errc::invalid_txn_state;
         }
 
         if (tx.status == tm_transaction::tx_status::ongoing) {
             if (tx.etag != expected_term) {
-                outcome->set_value(tx_errc::invalid_txn_state);
-                co_return tx_errc::invalid_txn_state;
+                if (!is_fetch_tx_supported()) {
+                    outcome->set_value(tx_errc::invalid_txn_state);
+                    co_return tx_errc::invalid_txn_state;
+                }
+                vlog(
+                  txlog.trace,
+                  "commit encountered old ongoing tx:{} etag:{} pid:{} "
+                  "tx_seq:{} in term:{}, fetching state from old leader",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  expected_term);
+                auto r1 = co_await fetch_tx(tx.id, tx.etag);
+                if (!r1) {
+                    vlog(
+                      txlog.trace,
+                      "can't find old tx:{} etag:{} status:{} term:{}",
+                      tx.id,
+                      tx.etag,
+                      tx.status,
+                      expected_term);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                auto old_tx = r1.value();
+
+                if (old_tx.status != tm_transaction::tx_status::ongoing) {
+                    vlog(
+                      txlog.warn,
+                      "fetched tx:{} pid:{} etag:{} has unexpected status {}",
+                      tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.status);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                if (old_tx.pid != tx.pid) {
+                    vlog(
+                      txlog.warn,
+                      "fetched tx:{} pid:{} etag:{} should have pid:{}",
+                      tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      tx.pid);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                old_tx.etag = expected_term;
+                auto r2 = co_await stm->update_tx(old_tx, expected_term);
+                if (!r2) {
+                    vlog(
+                      txlog.info, "got {} on updating fetched tx", r2.error());
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
+                tx = r2.value();
+            }
+        }
+
+        if (tx.status == tm_transaction::tx_status::prepared) {
+            if (tx.etag != expected_term) {
+                vlog(
+                  txlog.trace,
+                  "commit encountered already committed tx:{} pid:{} tx_seq:{} "
+                  "etag:{} in term:{}, fetching state from old leader",
+                  tx.id,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.etag,
+                  expected_term);
+                auto r1 = co_await fetch_tx(tx.id, tx.etag);
+                if (!r1) {
+                    // Lets look when we may observe this situation:
+                    //
+                    //   1. a client commits a transaction
+                    //   2. the transaction is committed
+                    //   3. tx coordinator dies just before ack'ing a tx
+                    //   4. the client retries the commit
+                    //   5. the commit hits server & sees that the transaction
+                    //   may be committed
+                    //
+                    // if we return invalid_txn_state the client interpreters it
+                    // as a reject while the tx is committed. it seems that the
+                    // server should roll the tx forward since commit is an
+                    // idempotent op. but there is a problem with this solution
+                    // too:
+                    //
+                    //   1. a client commits a transaction
+                    //   2. the transaction is committed
+                    //   3. the client initiates next transaction
+                    //   4. tx cordinator reboots before the prepare phase
+                    //   5. the client retries the commit, tx coordiantor sees
+                    //   prepared
+                    //      state of the previous transaction
+                    //   6. if we roll it forward the client will think that the
+                    //   current
+                    //      transaciton is committed
+                    //
+                    // so we fail the request with unknow error and let user to
+                    // recover
+                    vlog(
+                      txlog.trace,
+                      "can't find old tx:{} etag:{}",
+                      tx.id,
+                      tx.etag);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                auto old_tx = r1.value();
+                if (
+                  old_tx.status != tm_transaction::tx_status::ongoing
+                  && old_tx.status != tm_transaction::tx_status::prepared) {
+                    vlog(
+                      txlog.warn,
+                      "fetched tx:{} pid:{} etag:{} has unexpected status {}",
+                      tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.status);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                if (old_tx.pid != tx.pid) {
+                    vlog(
+                      txlog.warn,
+                      "fetched tx:{} pid:{} etag:{} should have pid:{}",
+                      tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      tx.pid);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                if (tx.tx_seq() + 1 == old_tx.tx_seq()) {
+                    if (old_tx.status != tm_transaction::tx_status::ongoing) {
+                        vlog(
+                          txlog.warn,
+                          "fetched tx:{} pid:{} etag:{} tx_seq:{} status:{} "
+                          "while current tx has tx_seq:{} status:{}",
+                          tx.id,
+                          old_tx.pid,
+                          old_tx.etag,
+                          old_tx.tx_seq,
+                          old_tx.status,
+                          tx.tx_seq,
+                          tx.status);
+                        outcome->set_value(tx_errc::unknown_server_error);
+                        co_return tx_errc::unknown_server_error;
+                    }
+                    // "old" tx is ahead of the current tx; it means that the
+                    // current tx was already committed and the previous leader
+                    // started new tx so the current commit request has an
+                    // intent to commit the new tx
+                } else if (tx.tx_seq != old_tx.tx_seq) {
+                    vlog(
+                      txlog.warn,
+                      "fetched tx:{} pid:{} etag:{} tx_seq:{} status:{} while "
+                      "tx_seq:{} was expected",
+                      tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.status,
+                      tx.tx_seq);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+
+                old_tx.etag = expected_term;
+                vlog(
+                  txlog.trace,
+                  "updating tx_id:{} pid:{} tx_seq:{} etag:{} as prepared in "
+                  "term:{}",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.tx_seq,
+                  old_tx.etag,
+                  expected_term);
+                auto r2 = co_await stm->update_tx(old_tx, expected_term);
+                if (!r2) {
+                    vlog(
+                      txlog.info, "got {} on updating fetched tx", r2.error());
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
+                tx = r2.value();
+            }
+        }
+
+        if (tx.status == tm_transaction::tx_status::aborting) {
+            if (tx.etag == expected_term) {
+                vlog(
+                  txlog.warn,
+                  "can't commit a tx which is already aborted tx:{} etag:{} "
+                  "pid:{} tx_seq:{}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq);
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            vlog(
+              txlog.trace,
+              "commit encountered old aborted tx:{} etag:{} pid:{} tx_seq:{} "
+              "in term:{}, fetching state from old leader",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              expected_term);
+            auto r1 = co_await fetch_tx(tx.id, tx.etag);
+            if (!r1) {
+                vlog(
+                  txlog.warn,
+                  "can't find old tx:{} etag:{} pid:{} tx_seq:{} in term:{}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  expected_term);
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            auto old_tx = r1.value();
+            if (old_tx.pid != tx.pid) {
+                vlog(
+                  txlog.warn,
+                  "fetched pid:{} doesn't match local tx's pid:{}",
+                  old_tx.pid,
+                  tx.pid);
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            if (old_tx.status == tm_transaction::tx_status::ongoing) {
+                if (old_tx.tx_seq() != tx.tx_seq() + 1) {
+                    vlog(
+                      txlog.warn,
+                      "fetched a tx with unexpected tx_seq:{}",
+                      old_tx.tx_seq);
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    co_return tx_errc::unknown_server_error;
+                }
+                old_tx.etag = expected_term;
+                vlog(
+                  txlog.trace,
+                  "updating tx_id:{} pid:{} tx_seq:{} etag:{} as ongoing in "
+                  "term:{}",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.tx_seq,
+                  old_tx.etag,
+                  expected_term);
+                auto r2 = co_await stm->update_tx(old_tx, expected_term);
+                if (!r2) {
+                    vlog(
+                      txlog.trace, "got {} on updating fetched tx", r2.error());
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
+                tx = r2.value();
+            } else {
+                vlog(
+                  txlog.warn,
+                  "fetched a tx with an unexpected status:{}",
+                  old_tx.status);
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
             }
         }
 
@@ -1978,22 +2251,52 @@ tx_gateway_frontend::do_commit_tm_tx(
             }
         }
     } catch (...) {
+        vlog(
+          txlog.warn,
+          "got {} on committing {} with {}",
+          std::current_exception(),
+          tx.id,
+          tx.pid);
         outcome->set_value(tx_errc::unknown_server_error);
         throw;
     }
 
-    auto changed_tx = co_await stm->mark_tx_prepared(expected_term, tx.id);
-    if (!changed_tx.has_value()) {
-        if (changed_tx.error() == tm_stm::op_status::not_leader) {
+    if (tx.status != tm_transaction::tx_status::prepared) {
+        vlog(
+          txlog.warn,
+          "marking tx_id:{} pid:{} tx_seq:{} etag:{} as prepared in term:{}",
+          tx.id,
+          tx.pid,
+          tx.tx_seq,
+          tx.etag,
+          expected_term);
+        auto changed_tx = co_await stm->mark_tx_prepared(expected_term, tx.id);
+        if (!changed_tx.has_value()) {
+            vlog(
+              txlog.trace,
+              "got {} on committing {} pid:{} tx_seq:{}",
+              changed_tx.error(),
+              tx.id,
+              tx.pid,
+              tx.tx_seq);
+
+            if (!is_fetch_tx_supported()) {
+                if (changed_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
+                if (changed_tx.error() == tm_stm::op_status::timeout) {
+                    outcome->set_value(tx_errc::timeout);
+                    co_return tx_errc::timeout;
+                }
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+
             outcome->set_value(tx_errc::not_coordinator);
             co_return tx_errc::not_coordinator;
         }
-        if (changed_tx.error() == tm_stm::op_status::timeout) {
-            outcome->set_value(tx_errc::timeout);
-            co_return tx_errc::timeout;
-        }
-        outcome->set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::unknown_server_error;
+        tx = changed_tx.value();
     }
 
     // We can reduce the number of disk operation if we will not write
@@ -2005,8 +2308,6 @@ tx_gateway_frontend::do_commit_tm_tx(
     // now we will ans client later than in old versions. So we do not break
     // anything
     outcome->set_value(tx_errc::none);
-    tx = changed_tx.value();
-
     co_return co_await recommit_tm_tx(stm, expected_term, tx, timeout);
 }
 
