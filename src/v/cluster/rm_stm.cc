@@ -959,14 +959,26 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
           "Error \"{}\" on replicating pid:{} abort batch",
           r.error(),
           pid);
-        co_return tx_errc::unknown_server_error;
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("abort_tx replication error");
+        }
+        co_return tx_errc::timeout;
     }
     if (_mem_state.last_end_tx < r.value().last_offset) {
         _mem_state.last_end_tx = r.value().last_offset;
     }
 
     if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
-        co_return tx_errc::unknown_server_error;
+        vlog(
+          _ctx_log.trace,
+          "timeout on waiting until {} is applied (abort_tx pid:{} tx_seq:{})",
+          r.value().last_offset,
+          pid,
+          tx_seq.value_or(model::tx_seq(-1)));
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("abort_tx apply error");
+        }
+        co_return tx_errc::timeout;
     }
 
     co_return tx_errc::none;
