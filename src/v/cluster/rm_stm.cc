@@ -1649,7 +1649,9 @@ model::offset rm_stm::last_stable_offset() {
     // We optimize for the case where there are no inflight transactional
     // batches to return the high water mark.
     if (unlikely(!_bootstrap_committed_offset)) {
-        return model::offset::min();
+        // return next offset to offset::min, to follow the policy that the LSO
+        // is a next offset to the one for which all transactions are resolved
+        return model::next_offset(model::offset::min());
     }
 
     auto last_applied = last_applied_offset();
