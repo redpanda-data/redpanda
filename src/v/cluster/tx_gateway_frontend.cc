@@ -1737,37 +1737,67 @@ tx_gateway_frontend::reabort_tm_tx(
         auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
         auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
         auto ok = true;
+        auto fail = false;
         for (const auto& r : prs) {
-            if (r.ec != tx_errc::none) {
+            if (r.ec == tx_errc::request_rejected) {
+                fail = true;
                 vlog(
-                  txlog.trace,
-                  "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} "
-                  "failed with {}",
+                  txlog.warn,
+                  "abort_tx on data partition tx:{} etag:{} pid:{} "
+                  "tx_seq:{} status:{} in term:{} was rejected",
                   tx.id,
                   tx.etag,
                   tx.pid,
                   tx.tx_seq,
-                  expected_term,
                   tx.status,
+                  expected_term);
+            } else if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "abort_tx on data partition tx:{} etag:{} pid:{} "
+                  "tx_seq:{} status:{} in term:{} failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term,
                   r.ec);
             }
             ok = ok && (r.ec == tx_errc::none);
         }
         for (const auto& r : grs) {
-            if (r.ec != tx_errc::none) {
+            if (r.ec == tx_errc::request_rejected) {
+                fail = true;
                 vlog(
-                  txlog.trace,
-                  "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} "
-                  "failed with {}",
+                  txlog.warn,
+                  "abort_tx on consumer groups tx:{} etag:{} pid:{} "
+                  "tx_seq:{} status:{} in term:{} was rejected",
                   tx.id,
                   tx.etag,
                   tx.pid,
                   tx.tx_seq,
-                  expected_term,
                   tx.status,
+                  expected_term);
+            } else if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "abort_tx on consumer groups tx:{} etag:{} pid:{} "
+                  "tx_seq:{} status:{} in term:{} failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term,
                   r.ec);
             }
             ok = ok && (r.ec == tx_errc::none);
+        }
+        if (fail) {
+            tx = co_await remove_deleted_partitions_from_tx(
+              stm, expected_term, tx);
+            break;
         }
         if (ok) {
             done = true;
@@ -1781,13 +1811,14 @@ tx_gateway_frontend::reabort_tm_tx(
     if (!done) {
         vlog(
           txlog.warn,
-          "remote aborting tx:{} etag:{} pid:{} tx_seq:{} term:{} failed",
+          "remote abort of tx:{} etag:{} pid:{} tx_seq:{} in term:{} "
+          "failed",
           tx.id,
           tx.etag,
           tx.pid,
           tx.tx_seq,
           expected_term);
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::timeout;
     }
     co_return tx;
 }
