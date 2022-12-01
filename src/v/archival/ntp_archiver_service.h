@@ -68,7 +68,7 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
-      ss::lw_shared_ptr<configuration> conf,
+      ss::lw_shared_ptr<const configuration> conf,
       cloud_storage::remote& remote,
       cluster::partition& parent);
 
@@ -313,7 +313,7 @@ private:
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     ssx::semaphore _mutex{1, "archive/ntp"};
-    ss::lw_shared_ptr<configuration> _conf;
+    ss::lw_shared_ptr<const configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     config::binding<size_t> _max_segments_pending_deletion;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};

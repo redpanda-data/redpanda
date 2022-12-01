@@ -48,7 +48,7 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::lw_shared_ptr<archival::configuration>,
+      ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>,
@@ -326,7 +326,7 @@ private:
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
-    ss::lw_shared_ptr<archival::configuration> _archival_conf;
+    ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
 
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;

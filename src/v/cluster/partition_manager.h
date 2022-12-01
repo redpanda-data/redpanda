@@ -41,7 +41,7 @@ public:
       ss::sharded<cloud_storage::partition_recovery_manager>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
-      ss::lw_shared_ptr<archival::configuration>,
+      ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>);
@@ -204,7 +204,7 @@ private:
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
-    ss::lw_shared_ptr<archival::configuration> _archival_conf;
+    ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     ss::gate _gate;

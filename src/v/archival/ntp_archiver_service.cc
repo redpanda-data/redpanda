@@ -47,7 +47,7 @@ namespace archival {
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
-  ss::lw_shared_ptr<configuration> conf,
+  ss::lw_shared_ptr<const configuration> conf,
   cloud_storage::remote& remote,
   cluster::partition& parent)
   : _ntp(ntp.ntp())
