@@ -702,6 +702,73 @@ var _ = Describe("RedPandaCluster controller", func() {
 			}, timeout, interval).Should(BeTrue())
 		})
 
+		It("scaling out does not trigger a rolling restart", func() {
+			const replicas = 3
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+			key := types.NamespacedName{
+				Name:      "redpanda-no-restart",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								Port: kafkaPort,
+							},
+						},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+					},
+					Resources: v1alpha1.RedpandaResourceRequirements{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Limits:   resources,
+							Requests: resources,
+						},
+						Redpanda: nil,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			// configmap annotation should not change when scaling out cluster replicas
+			// to avoid an unnecessary rolling restart
+			configMapHash := sts.Annotations[res.ConfigMapHashAnnotationKey]
+			var existingCluster v1alpha1.Cluster
+			Expect(k8sClient.Get(context.Background(), key, &existingCluster)).Should(Succeed())
+
+			var newReplicas int32 = replicas + 2
+			existingCluster.Spec.Replicas = &newReplicas
+			Expect(k8sClient.Update(context.Background(), &existingCluster)).Should(Succeed())
+
+			// verify scale-out completed and the configmap hash did not change
+			var newSts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &newSts)
+				return err == nil &&
+					*newSts.Spec.Replicas == newReplicas
+			}, timeout, interval).Should(BeTrue())
+			newConfigMapHash := newSts.Annotations[res.ConfigMapHashAnnotationKey]
+			Expect(newConfigMapHash).Should(Equal(configMapHash))
+		})
+
 		It("Should load license", func() {
 			By("Creating the license Secret")
 			licenseSecret := &corev1.Secret{
