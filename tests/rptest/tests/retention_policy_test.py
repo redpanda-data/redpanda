@@ -262,9 +262,11 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                             self.segment_size)
 
         if expect_deletion:
+            # Wait up to just a bit longer than the 10s default config value
+            # for `cloud_storage_upload_loop_max_backoff_ms`.
             wait_until(
                 lambda: self.segments_removed(self.default_retention_segments),
-                timeout_sec=5,
+                timeout_sec=15,
                 backoff_sec=1,
                 err_msg=f"Segments were not removed")
         else:
@@ -299,8 +301,10 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                             bytes_to_produce=self.total_segments *
                             self.segment_size)
 
+        # Wait up to just bit a longer than the 10s default config value for
+        # `cloud_storage_upload_loop_max_backoff_ms`.
         wait_until(lambda: self.segments_removed(self.retention_segments),
-                   timeout_sec=5,
+                   timeout_sec=15,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed")
 
