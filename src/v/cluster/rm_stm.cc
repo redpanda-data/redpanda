@@ -347,18 +347,15 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         // moreover do_abort_tx is co-idempotent with do_commit_tx so if a
         // tx was committed calling do_abort_tx will do nothing
         auto ar = co_await do_abort_tx(old_pid, std::nullopt, _sync_timeout);
-        if (ar == tx_errc::stale) {
-            co_return tx_errc::stale;
-        }
         if (ar != tx_errc::none) {
             vlog(
-              _ctx_log.warn,
-              "can't begin a tx {}: an abort of the fenced ongoing tx {} "
-              "failed with {}",
+              _ctx_log.trace,
+              "can't begin tx {} because abort of a prev tx {} failed with {}; "
+              "retrying",
               pid,
               old_pid,
               ar);
-            co_return tx_errc::unknown_server_error;
+            co_return tx_errc::stale;
         }
 
         if (is_known_session(old_pid)) {
@@ -422,6 +419,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           "Error \"{}\" on replicating pid:{} fencing batch",
           r.error(),
           pid);
+        // begin is idempotent so it's ok to return a retryable error
         co_return tx_errc::leader_not_found;
     }
 
