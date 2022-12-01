@@ -54,6 +54,9 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
             case cluster::tx_errc::not_coordinator:
                 data.error_code = error_code::not_coordinator;
                 break;
+            case cluster::tx_errc::coordinator_not_available:
+                data.error_code = error_code::coordinator_not_available;
+                break;
             case cluster::tx_errc::coordinator_load_in_progress:
                 data.error_code = error_code::coordinator_load_in_progress;
                 break;
