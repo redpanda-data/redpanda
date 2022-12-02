@@ -534,8 +534,13 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         }
     }
     // if last segment term is equal to the one we look for return it
-    if (_manifest.rbegin()->second.segment_term == term) {
-        return _manifest.rbegin()->second.committed_kafka_offset();
+    auto last = _manifest.last_segment();
+    vassert(
+      last.has_value(),
+      "The manifest for {} is not expected to be empty",
+      _manifest.get_ntp());
+    if (last->segment_term == term) {
+        return last->committed_kafka_offset();
     }
 
     return std::nullopt;

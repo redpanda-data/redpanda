@@ -406,13 +406,14 @@ partition_manifest::const_iterator partition_manifest::end() const {
     return _segments.end();
 }
 
-partition_manifest::const_reverse_iterator partition_manifest::rbegin() const {
-    return _segments.rbegin();
+std::optional<segment_meta> partition_manifest::last_segment() const {
+    if (_segments.empty()) {
+        return std::nullopt;
+    }
+    return _segments.rbegin()->second;
 }
 
-partition_manifest::const_reverse_iterator partition_manifest::rend() const {
-    return _segments.rend();
-}
+bool partition_manifest::empty() const { return _segments.size() == 0; }
 
 size_t partition_manifest::size() const { return _segments.size(); }
 
