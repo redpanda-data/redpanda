@@ -415,17 +415,30 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     if (!r) {
         vlog(
-          _ctx_log.warn,
-          "Error \"{}\" on replicating pid:{} fencing batch",
+          _ctx_log.trace,
+          "Error \"{}\" on replicating pid:{} tx_seq:{} fencing batch",
           r.error(),
-          pid);
+          pid,
+          tx_seq);
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("begin_tx replication error");
+        }
         // begin is idempotent so it's ok to return a retryable error
-        co_return tx_errc::leader_not_found;
+        co_return tx_errc::timeout;
     }
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), _sync_timeout)) {
-        co_return tx_errc::leader_not_found;
+        vlog(
+          _ctx_log.trace,
+          "timeout on waiting until {} is applied (begin_tx pid:{} tx_seq:{})",
+          r.value().last_offset(),
+          pid,
+          tx_seq);
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("begin_tx apply error");
+        }
+        co_return tx_errc::timeout;
     }
 
     if (_c->term() != synced_term) {
