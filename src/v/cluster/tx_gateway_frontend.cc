@@ -1449,7 +1449,22 @@ tx_gateway_frontend::do_end_txn(
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
         if (tx.status == tm_transaction::tx_status::ongoing) {
-            r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
+            try {
+                r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
+            } catch (...) {
+                vlog(
+                  txlog.error,
+                  "committing a tx:{} etag:{} pid:{} tx_seq:{} failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  std::current_exception());
+                if (!outcome->available()) {
+                    outcome->set_value(tx_errc::unknown_server_error);
+                    throw;
+                }
+            }
         } else {
             // Lets look when we may observe this situation:
             //
