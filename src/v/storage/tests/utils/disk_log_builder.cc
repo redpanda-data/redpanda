@@ -82,8 +82,8 @@ ss::future<> disk_log_builder::add_batch(
   log_append_config config,
   should_flush_after flush) {
     auto buf = ss::circular_buffer<model::record_batch>();
-    buf.push_back(std::move(batch));
     advance_time(batch);
+    buf.push_back(std::move(batch));
     return write(std::move(buf), config, flush);
 }
 // Log managment

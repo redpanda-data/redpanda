@@ -84,11 +84,12 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       std::move(readers.back()));
 
     readers.pop_back();
+    const auto target_node_id = req.target_node_id;
     auto d = async_serialize_roundtrip_rpc(std::move(req)).get0();
 
     BOOST_REQUIRE_EQUAL(
       d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
-    BOOST_REQUIRE_EQUAL(d.target_node_id, req.target_node_id);
+    BOOST_REQUIRE_EQUAL(d.target_node_id, target_node_id);
     BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
     BOOST_REQUIRE_EQUAL(d.meta.commit_index, meta.commit_index);
     BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);

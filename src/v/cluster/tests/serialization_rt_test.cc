@@ -513,16 +513,17 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
     auto buf = reflection::to_iobuf(std::move(statuses));
     auto result_v0 = reflection::from_iobuf<std::vector<partition_status_v0>>(
       std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
+    for (auto i = 0; i < original.size(); ++i) {
         BOOST_CHECK(result_v0[i].id == original[i].id);
         BOOST_CHECK(result_v0[i].term == original[i].term);
         BOOST_CHECK(result_v0[i].leader_id == original[i].leader_id);
     }
 
+    statuses = original;
     buf = reflection::to_iobuf(std::move(statuses));
     auto result_v1 = reflection::from_iobuf<std::vector<partition_status_v1>>(
       std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
+    for (auto i = 0; i < original.size(); ++i) {
         BOOST_CHECK(result_v1[i].id == original[i].id);
         BOOST_CHECK(result_v1[i].term == original[i].term);
         BOOST_CHECK(result_v1[i].leader_id == original[i].leader_id);

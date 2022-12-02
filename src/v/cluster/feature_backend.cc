@@ -20,9 +20,10 @@ namespace cluster {
 
 ss::future<std::error_code>
 feature_backend::apply_update(model::record_batch b) {
+    const auto base_offset = b.base_offset();
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
-    if (b.base_offset() <= _feature_table.local().get_applied_offset()) {
+    if (base_offset <= _feature_table.local().get_applied_offset()) {
         co_return errc::success;
     }
 
@@ -39,7 +40,7 @@ feature_backend::apply_update(model::record_batch b) {
             });
       });
 
-    auto batch_offset = b.base_offset();
+    auto batch_offset = base_offset;
     co_await _feature_table.invoke_on_all(
       [batch_offset](features::feature_table& t) {
           t.set_applied_offset(batch_offset);

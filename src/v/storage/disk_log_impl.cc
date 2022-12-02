@@ -1113,22 +1113,20 @@ disk_log_impl::timequery(timequery_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<std::optional<timequery_result>>();
     }
-    return make_reader(std::move(cfg))
-      .then([cfg](model::record_batch_reader reader) {
-          return model::consume_reader_to_memory(
-                   std::move(reader), model::no_timeout)
-            .then([cfg](model::record_batch_reader::storage_t st) {
-                using ret_t = std::optional<timequery_result>;
-                auto& batches = std::get<model::record_batch_reader::data_t>(
-                  st);
-                if (
-                  !batches.empty()
-                  && batches.front().header().max_timestamp >= cfg.time) {
-                    return ret_t(batch_timequery(batches.front(), cfg.time));
-                }
-                return ret_t();
-            });
-      });
+    return make_reader(cfg).then([cfg](model::record_batch_reader reader) {
+        return model::consume_reader_to_memory(
+                 std::move(reader), model::no_timeout)
+          .then([cfg](model::record_batch_reader::storage_t st) {
+              using ret_t = std::optional<timequery_result>;
+              auto& batches = std::get<model::record_batch_reader::data_t>(st);
+              if (
+                !batches.empty()
+                && batches.front().header().max_timestamp >= cfg.time) {
+                  return ret_t(batch_timequery(batches.front(), cfg.time));
+              }
+              return ret_t();
+          });
+    });
 }
 
 ss::future<> disk_log_impl::remove_segment_permanently(

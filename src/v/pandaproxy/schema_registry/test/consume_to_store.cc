@@ -112,7 +112,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic1},
       pps::schema_value{{subject0, string_def0}, version0, id0});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_1)).get());
+    BOOST_REQUIRE_NO_THROW(c(good_schema_1.copy()).get());
 
     auto s_res = s.get_subject_schema(
                     subject0, version0, pps::include_deleted::no)
@@ -124,7 +124,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     auto good_schema_ref_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version1, magic1},
       pps::schema_value{{subject0, string_def0, refs}, version1, id1});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_ref_1)).get());
+    BOOST_REQUIRE_NO_THROW(c(good_schema_ref_1.copy()).get());
 
     auto s_ref_res = s.get_subject_schema(
                         subject0, version1, pps::include_deleted::no)
@@ -141,7 +141,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     auto bad_schema_magic = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic2},
       pps::schema_value{{subject0, string_def0}, version0, id0});
-    BOOST_REQUIRE_THROW(c(std::move(bad_schema_magic)).get(), pps::exception);
+    BOOST_REQUIRE_THROW(c(bad_schema_magic.copy()).get(), pps::exception);
 
     BOOST_REQUIRE(
       s.get_compatibility().get() == pps::compatibility_level::backward);
@@ -152,7 +152,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     auto good_config = pps::as_record_batch(
       pps::config_key{sequence, node_id, subject0, magic0},
       pps::config_value{pps::compatibility_level::full});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_config)).get());
+    BOOST_REQUIRE_NO_THROW(c(good_config.copy()).get());
 
     BOOST_REQUIRE(
       s.get_compatibility(subject0, pps::default_to_global::yes).get()
@@ -161,7 +161,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     auto bad_config_magic = pps::as_record_batch(
       pps::config_key{sequence, node_id, subject0, magic1},
       pps::config_value{pps::compatibility_level::full});
-    BOOST_REQUIRE_THROW(c(std::move(bad_config_magic)).get(), pps::exception);
+    BOOST_REQUIRE_THROW(c(bad_config_magic.copy()).get(), pps::exception);
 
     // Test soft delete
     BOOST_REQUIRE_EQUAL(
@@ -169,7 +169,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::yes).get().size(), 1);
     auto delete_sub = make_delete_subject_batch(subject0);
-    BOOST_REQUIRE_NO_THROW(c(std::move(delete_sub)).get());
+    BOOST_REQUIRE_NO_THROW(c(delete_sub.copy()).get());
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::no).get().size(), 0);
     BOOST_REQUIRE_EQUAL(
@@ -180,7 +180,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE_EQUAL(v_res.size(), 2);
     auto perm_delete_sub = make_delete_subject_permanently_batch(
       subject0, v_res);
-    BOOST_REQUIRE_NO_THROW(c(std::move(perm_delete_sub)).get());
+    BOOST_REQUIRE_NO_THROW(c(perm_delete_sub.copy()).get());
     // Perma-deleting all versions also deletes the subject
     BOOST_REQUIRE_THROW(
       s.get_versions(subject0, pps::include_deleted::yes).get(),
