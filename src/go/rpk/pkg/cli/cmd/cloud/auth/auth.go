@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/auth0"
@@ -25,7 +26,7 @@ import (
 
 // The auth0 endpoint information to get dev tokens from.
 var prodAuth0Endpoint = auth0.Endpoint{
-	URL:      "https://prod-cloudv2.us.auth0.com",
+	URL:      "https://auth.prd.cloud.redpanda.com",
 	Audience: "cloudv2-production.redpanda.cloud",
 }
 
@@ -128,5 +129,7 @@ func promptClientCfg() (clientID, clientSecret string, err error) {
 			return "", "", fmt.Errorf("failed to retrieve %s: %w", prompt.name, err)
 		}
 	}
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
 	return clientID, clientSecret, nil
 }

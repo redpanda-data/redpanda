@@ -73,14 +73,15 @@ func calcName(name string) pluginName {
 	}
 }
 
-// IsAutoComplete returns whether the given name is an autocomplete plugin.
+// IsAutoComplete returns whether the given basename of a file is an
+// autocomplete plugin.
 func IsAutoComplete(name string) bool {
-	return calcName(name).autocomplete
+	return calcName(filepath.Base(name)).autocomplete
 }
 
-// IsManaged returns whether the given name is a managed plugin.
+// IsManaged returns whether the given basename of a file is a managed plugin.
 func IsManaged(name string) bool {
-	return calcName(name).managed
+	return calcName(filepath.Base(name)).managed
 }
 
 // IsSamePluginPath returns true if an old plugin path is the "same" as a new

@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/auth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
@@ -70,12 +69,6 @@ autocompletion, start a new terminal and tab complete through it!
 }
 
 func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config, redpandaID string) (binPath string, token string, installed bool, rerr error) {
-	// Logging in and downloading our plugin should not take *that* long,
-	// and we do not want to look like we are just hanging forever if the
-	// cloud API has problems.
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
 	// First load our configuration and token.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
