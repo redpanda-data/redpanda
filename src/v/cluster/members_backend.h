@@ -73,6 +73,10 @@ public:
 
         std::vector<partition_reallocation> partition_reallocations;
         bool finished = false;
+        // unevenness error is normalized to be at most 1.0, set to max
+        absl::flat_hash_map<partition_allocation_domain, double>
+          last_unevenness_error;
+        absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
     };
 
     members_backend(
@@ -96,6 +100,10 @@ private:
         size_t allocated_replicas;
         size_t max_capacity;
     };
+    struct unevenness_error_info {
+        double e;
+        double e_step;
+    };
     using node_replicas_map_t
       = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
@@ -112,7 +120,9 @@ private:
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    ss::future<> calculate_reallocations_for_even_partition_count(
+    void
+    calculate_reallocations_batch(update_meta&, partition_allocation_domain);
+    void reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
@@ -121,11 +131,12 @@ private:
     void setup_metrics();
     absl::node_hash_map<model::node_id, node_replicas>
       calculate_replicas_per_node(partition_allocation_domain) const;
-    double calculate_unevenness_error() const;
-    bool should_stop_rebalancing_update(double, const update_meta&) const;
+
+    unevenness_error_info
+      calculate_unevenness_error(partition_allocation_domain) const;
+    bool should_stop_rebalancing_update(const update_meta&) const;
 
     static size_t calculate_total_replicas(const node_replicas_map_t&);
-    void reset_last_unevenness_error();
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -146,8 +157,7 @@ private:
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
-    // unevenness error is normalized to be at most 1.0, set to max
-    double _last_unevenness_error = 1.0;
+
     /**
      * store revision of node decommissioning update, decommissioning command
      * revision is stored when node is being decommissioned, it is used to

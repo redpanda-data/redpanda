@@ -23,6 +23,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
     NODE_AVAILABILITY_TIMEOUT = 10
     MANY_PARTITIONS = "many_partitions"
     BIG_PARTITIONS = "big_partitions"
+    GROUP_TOPIC_PARTITIONS = 16
 
     def __init__(self, test_context, *args, **kwargs):
         super().__init__(
@@ -36,6 +37,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 "partition_autobalancing_tick_interval_ms": 5000,
                 "members_backend_retry_ms": 1000,
                 "raft_learner_recovery_rate": 1073741824,
+                "group_topic_partitions": self.GROUP_TOPIC_PARTITIONS
             },
             *args,
             **kwargs)
@@ -87,6 +89,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         replicas = set()
         for tp_d in topic_descriptions:
             for p in tp_d.partitions:
+                self.logger.debug(f"{tp_d.name}/{p.id} replicas: {p.replicas}")
                 for r in p.replicas:
                     if r == node_id:
                         replicas.add(f'{tp_d.name}/{p}')
@@ -177,6 +180,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             consumers = 1
             partitions_count = 40
             max_concurrent_moves = 5
+            timeout = 80
         elif type == self.MANY_PARTITIONS:
             message_size = 128 * (2 ^ 10)
             message_cnt = 2000000
@@ -265,12 +269,13 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                                      "seed_servers":
                                      seed_servers_for(to_restart)
                                  })
-        new_node_id = self.redpanda.node_id(to_restart)
-        expected_per_node = partitions_count * replication_factor / len(
-            self.redpanda.nodes)
+        new_node_id = self.redpanda.node_id(to_restart, force_refresh=True)
+        expected_per_node = (partitions_count + self.GROUP_TOPIC_PARTITIONS
+                             ) * replication_factor / len(self.redpanda.nodes)
 
         def partitions_moved_to_new_node():
-            replicas = self.node_replicas([topic.name], new_node_id)
+            replicas = self.node_replicas([topic.name, "__consumer_offsets"],
+                                          new_node_id)
             self.logger.info(
                 f"broker {new_node_id} is a host for {len(replicas)} replicas")
             return len(replicas) > 0.9 * expected_per_node
