@@ -104,6 +104,11 @@ private:
           features::feature::transaction_ga);
     }
 
+    bool is_fetch_tx_supported() {
+        return _feature_table.local().is_active(
+          features::feature::tm_stm_cache);
+    }
+
     void start_expire_timer();
 
     void rearm_expire_timer() {
