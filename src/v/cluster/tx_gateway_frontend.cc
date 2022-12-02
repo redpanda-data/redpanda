@@ -1686,13 +1686,69 @@ tx_gateway_frontend::recommit_tm_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
         }
         auto ok = true;
+        auto fail = false;
         auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
         for (const auto& r : grs) {
+            if (r.ec == tx_errc::request_rejected) {
+                fail = true;
+                vlog(
+                  txlog.warn,
+                  "commit_tx on consumer groups tx:{} etag:{} pid:{} tx_seq:{} "
+                  "status:{} in term:{} was rejected",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term);
+            } else if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "commit_tx on consumer groups tx:{} etag:{} pid:{} tx_seq:{} "
+                  "status:{} in term:{} failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term,
+                  r.ec);
+            }
             ok = ok && (r.ec == tx_errc::none);
         }
         auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
         for (const auto& r : crs) {
+            if (r.ec == tx_errc::request_rejected) {
+                fail = true;
+                vlog(
+                  txlog.warn,
+                  "commit_tx on data partition tx:{} etag:{} pid:{} tx_seq:{} "
+                  "status:{} in term:{} was rejected",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term);
+            } else if (r.ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "commit_tx on data partition tx:{} etag:{} pid:{} "
+                  "tx_seq:{} status:{} in term:{} failed with {}",
+                  tx.id,
+                  tx.etag,
+                  tx.pid,
+                  tx.tx_seq,
+                  tx.status,
+                  expected_term,
+                  r.ec);
+            }
             ok = ok && (r.ec == tx_errc::none);
+        }
+        if (fail) {
+            tx = co_await remove_deleted_partitions_from_tx(
+              stm, expected_term, tx);
+            break;
         }
         if (ok) {
             done = true;
@@ -1706,7 +1762,15 @@ tx_gateway_frontend::recommit_tm_tx(
         }
     }
     if (!done) {
-        vlog(txlog.warn, "re-commiting pid:{} failed", tx.pid);
+        vlog(
+          txlog.warn,
+          "remote commit of tx:{} etag:{} pid:{} tx_seq:{} in term:{} "
+          "failed",
+          tx.id,
+          tx.etag,
+          tx.pid,
+          tx.tx_seq,
+          expected_term);
         co_return tx_errc::timeout;
     }
     co_return tx;
