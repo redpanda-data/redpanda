@@ -405,6 +405,24 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
+        const auto& kafka_noproduce_topics
+          = config::shard_local_cfg().kafka_noproduce_topics();
+        const auto is_noproduce_topic = std::find(
+                                          kafka_noproduce_topics.begin(),
+                                          kafka_noproduce_topics.end(),
+                                          topic.name)
+                                        != kafka_noproduce_topics.end();
+
+        if (is_noproduce_topic) {
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::topic_authorization_failed}));
+            continue;
+        }
+
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.partition_index)) {
