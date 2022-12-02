@@ -31,9 +31,12 @@ def check_node_ids_persist(redpanda):
     restarting we omit the node IDs from the node config files.
     """
     original_node_id_by_idx = {}
+    node_ids = set()
     for node in redpanda.nodes:
         original_node_id = redpanda.node_id(node, force_refresh=True)
         original_node_id_by_idx[redpanda.idx(node)] = original_node_id
+        assert original_node_id not in node_ids
+        node_ids.add(original_node_id)
 
     redpanda.restart_nodes(redpanda.nodes, auto_assign_node_id=True)
     for node in redpanda.nodes:
@@ -117,6 +120,35 @@ class NodeIdAssignment(RedpandaTest):
         self.redpanda.start_node(node,
                                  override_cfg_params=dict({"node_id": 10}),
                                  expect_fail=True)
+
+
+class NodeIdAssignmentParallel(RedpandaTest):
+    """
+    Test that adds several nodes at once, assigning each a unique node ID.
+    """
+    def __init__(self, test_context):
+        super(NodeIdAssignmentParallel,
+              self).__init__(test_context=test_context, num_brokers=4)
+
+    def setUp(self):
+        # Start just one node so we can add several at the same time.
+        self.redpanda.start([self.redpanda.nodes[0]],
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)
+
+    @cluster(num_nodes=4)
+    def test_assign_multiple_nodes(self):
+        self.redpanda.start(self.redpanda.nodes[1:],
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False,
+                            parallel=True)
+
+        def check_num_nodes():
+            brokers = self.redpanda._admin.get_brokers()
+            return len(self.redpanda.nodes) == len(brokers)
+
+        wait_until(check_num_nodes, timeout_sec=30, backoff_sec=1)
+        check_node_ids_persist(self.redpanda)
 
 
 class NodeIdAssignmentUpgrade(RedpandaTest):
