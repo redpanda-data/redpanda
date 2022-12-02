@@ -126,6 +126,8 @@ class AccessControlListTest(RedpandaTest):
         if self.security.sasl_enabled() or enable_authz:
             self.admin.create_user("cluster_describe", self.password,
                                    self.algorithm)
+
+        self.admin.create_user(*self.redpanda.SUPERUSER_CREDENTIALS)
         client = self.get_super_client()
         client.acl_create_allow_cluster("cluster_describe", "describe")
 
@@ -143,7 +145,7 @@ class AccessControlListTest(RedpandaTest):
                 if checkpoint_user not in users:
                     return False
                 elif self.security.sasl_enabled() or enable_authz:
-                    assert "base" in users and "cluster_describe" in users
+                    assert "base" in users and "cluster_describe" in users and "admin" in users
             return True
 
         wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
