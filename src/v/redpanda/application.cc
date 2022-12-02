@@ -891,7 +891,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
-      std::ref(feature_table))
+      std::ref(feature_table),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg().max_concurrent_producer_ids.bind();
+      }))
       .get();
     vlog(_log.info, "Partition manager started");
 

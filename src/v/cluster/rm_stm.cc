@@ -19,6 +19,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 
@@ -259,7 +260,8 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  config::binding<uint64_t> max_concurrent_producer_ids)
   : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -280,7 +282,8 @@ rm_stm::rm_stm(
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
   , _feature_table(feature_table)
-  , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp())) {
+  , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
+  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
@@ -1137,7 +1140,7 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
 }
 
 bool rm_stm::check_seq(model::batch_identity bid) {
-    auto& seq = _log_state.seq_table[bid.pid];
+    auto& seq = _log_state.seq_table[bid.pid].entry;
     auto last_write_timestamp = model::timestamp::now().value();
 
     if (!is_sequence(seq.seq, bid.first_seq)) {
@@ -1160,10 +1163,10 @@ rm_stm::known_seq(model::batch_identity bid) const {
     if (pid_seq == _log_state.seq_table.end()) {
         return std::nullopt;
     }
-    if (pid_seq->second.seq == bid.last_seq) {
-        return pid_seq->second.last_offset;
+    if (pid_seq->second.entry.seq == bid.last_seq) {
+        return pid_seq->second.entry.last_offset;
     }
-    for (auto& entry : pid_seq->second.seq_cache) {
+    for (auto& entry : pid_seq->second.entry.seq_cache) {
         if (entry.seq == bid.last_seq) {
             return entry.offset;
         }
@@ -1176,21 +1179,21 @@ std::optional<int32_t> rm_stm::tail_seq(model::producer_identity pid) const {
     if (pid_seq == _log_state.seq_table.end()) {
         return std::nullopt;
     }
-    return pid_seq->second.seq;
+    return pid_seq->second.entry.seq;
 }
 
 void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
     auto pid_seq = _log_state.seq_table.find(bid.pid);
     if (pid_seq != _log_state.seq_table.end()) {
-        if (pid_seq->second.seq == bid.last_seq) {
-            pid_seq->second.last_offset = last_offset;
+        if (pid_seq->second.entry.seq == bid.last_seq) {
+            pid_seq->second.entry.last_offset = last_offset;
         }
     }
 }
 
 void rm_stm::reset_seq(model::batch_identity bid) {
     _log_state.seq_table.erase(bid.pid);
-    auto& seq = _log_state.seq_table[bid.pid];
+    auto& seq = _log_state.seq_table[bid.pid].entry;
     seq.seq = bid.last_seq;
     seq.last_offset = kafka::offset{-1};
     seq.pid = bid.pid;
@@ -1359,6 +1362,21 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
           bid.pid,
           bid.first_seq,
           bid.last_seq);
+        co_return errc::invalid_request;
+    }
+
+    auto idempotent_lock = get_idempotent_producer_lock(bid.pid);
+    auto units = co_await idempotent_lock->hold_read_lock();
+
+    // Double check that after hold read lock rw_lock still exists in rw map.
+    // Becasue we can not continue replicate_seq if pid was deleted from state
+    // after we lock mutex
+    if (!_idempotent_producer_locks.contains(bid.pid)) {
+        vlog(
+          _ctx_log.error,
+          "[pid: {}] Lock for pid was deleted from map after we hold it. "
+          "Cleaning process was during replicate_seq",
+          bid.pid);
         co_return errc::invalid_request;
     }
 
@@ -1594,15 +1612,29 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         }
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
         if (inserted) {
-            seq_it->second.pid = bid.pid;
-            seq_it->second.seq = front->last_seq;
-            seq_it->second.last_offset = front->r.value().last_offset;
+            seq_it->second.entry.pid = bid.pid;
+            seq_it->second.entry.seq = front->last_seq;
+            seq_it->second.entry.last_offset = front->r.value().last_offset;
         } else {
-            seq_it->second.update(
+            seq_it->second.entry.update(
               front->last_seq, front->r.value().last_offset);
         }
+
+        if (!bid.is_transactional) {
+            if (seq_it->second._hook.is_linked()) {
+                _log_state.lru_idempotent_pids.erase(
+                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
+            }
+            _log_state.lru_idempotent_pids.push_back(seq_it->second);
+        }
+
         session->cache.pop_front();
     }
+
+    // We can not do any async work after replication is finished and we marked
+    // request as finished. Becasue it can do reordering for requests. So we
+    // need to spawn background cleaning thread
+    spawn_background_clean_for_pids(rm_stm::clear_type::idempotent_pids);
 
     if (session->cache.empty() && session->lock.ready()) {
         _inflight_requests.erase(bid.pid);
@@ -1767,7 +1799,7 @@ void rm_stm::compact_snapshot() {
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();
          it++) {
-        lw_tss.push_back(it->second.last_write_timestamp);
+        lw_tss.push_back(it->second.entry.last_write_timestamp);
     }
     std::sort(lw_tss.begin(), lw_tss.end());
     auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
@@ -1782,13 +1814,13 @@ void rm_stm::compact_snapshot() {
          it != _log_state.seq_table.cend();) {
         if (
           size > _seq_table_min_size
-          && it->second.last_write_timestamp <= cutoff_timestamp) {
+          && it->second.entry.last_write_timestamp <= cutoff_timestamp) {
             size--;
             _log_state.seq_table.erase(it++);
         } else {
             next_oldest_session = std::min(
               next_oldest_session,
-              model::timestamp(it->second.last_write_timestamp));
+              model::timestamp(it->second.entry.last_write_timestamp));
             ++it;
         }
     }
@@ -2191,13 +2223,24 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
         auto translated = from_log_offset(last_offset);
         if (inserted) {
-            seq_it->second.pid = bid.pid;
-            seq_it->second.seq = bid.last_seq;
-            seq_it->second.last_offset = translated;
+            seq_it->second.entry.pid = bid.pid;
+            seq_it->second.entry.seq = bid.last_seq;
+            seq_it->second.entry.last_offset = translated;
         } else {
-            seq_it->second.update(bid.last_seq, translated);
+            seq_it->second.entry.update(bid.last_seq, translated);
         }
-        seq_it->second.last_write_timestamp = bid.first_timestamp.value();
+
+        if (!bid.is_transactional) {
+            if (seq_it->second._hook.is_linked()) {
+                _log_state.lru_idempotent_pids.erase(
+                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
+            }
+            _log_state.lru_idempotent_pids.push_back(seq_it->second);
+            spawn_background_clean_for_pids(
+              rm_stm::clear_type::idempotent_pids);
+        }
+
+        seq_it->second.entry.last_write_timestamp = bid.first_timestamp.value();
         _oldest_session = std::min(_oldest_session, bid.first_timestamp);
     }
 
@@ -2227,6 +2270,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
             _log_state.ongoing_set.insert(base_offset);
             _mem_state.estimated.erase(bid.pid);
         }
+        spawn_background_clean_for_pids(rm_stm::clear_type::tx_pids);
     }
 }
 
@@ -2336,12 +2380,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
-          entry.pid, std::move(entry));
+          entry.pid, seq_entry_wrapper{.entry = std::move(entry)});
         // try_emplace does not move from r-value reference if the insertion
         // didn't take place so the clang-tidy warning is a false positive
         // NOLINTNEXTLINE(hicpp-invalid-access-moved)
-        if (!inserted && seq_it->second.seq < entry.seq) {
-            seq_it->second = std::move(entry);
+        if (!inserted && seq_it->second.entry.seq < entry.seq) {
+            seq_it->second.entry = std::move(entry);
         }
     }
 
@@ -2369,6 +2413,28 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             .timeout = entry.timeout,
             .last_update = clock_type::now(),
             .is_expiration_requested = false});
+    }
+
+    // We need to fill order for idempotent requests. So pid is from idempotent
+    // request if it is not inside fence_pid_epoch. For order we just need to
+    // check last_write_timestamp. It contains time last apply for log record.
+    std::vector<log_state::seq_map::iterator> sorted_pids;
+    for (auto it = _log_state.seq_table.begin();
+         it != _log_state.seq_table.end();
+         ++it) {
+        if (!_log_state.fence_pid_epoch.contains(
+              it->second.entry.pid.get_id())) {
+            sorted_pids.emplace_back(it);
+        }
+    }
+
+    std::sort(sorted_pids.begin(), sorted_pids.end(), [](auto& lhs, auto& rhs) {
+        return lhs->second.entry.last_write_timestamp
+               < rhs->second.entry.last_write_timestamp;
+    });
+
+    for (auto it : sorted_pids) {
+        _log_state.lru_idempotent_pids.push_back(it->second);
     }
 
     _last_snapshot_offset = data.offset;
@@ -2510,7 +2576,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& entry : _log_state.seq_table) {
-            tx_ss.seqs.push_back(entry.second.copy());
+            tx_ss.seqs.push_back(entry.second.entry.copy());
         }
         tx_ss.offset = _insync_offset;
 
@@ -2529,7 +2595,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot_v2 tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& entry : _log_state.seq_table) {
-            tx_ss.seqs.push_back(entry.second.copy());
+            tx_ss.seqs.push_back(entry.second.entry.copy());
         }
         tx_ss.offset = _insync_offset;
         reflection::adl<tx_snapshot_v2>{}.to(tx_ss_buf, std::move(tx_ss));
@@ -2537,7 +2603,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
         tx_snapshot_v1 tx_ss;
         fill_snapshot_wo_seqs(tx_ss);
         for (const auto& it : _log_state.seq_table) {
-            auto& entry = it.second;
+            auto& entry = it.second.entry;
             seq_entry_v1 seqs;
             seqs.pid = entry.pid;
             seqs.seq = entry.seq;
@@ -2663,4 +2729,105 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::abort_snapshot& as) {
       as.aborted.size());
     return o;
 }
+
+void rm_stm::spawn_background_clean_for_pids(rm_stm::clear_type type) {
+    switch (type) {
+    case rm_stm::clear_type::tx_pids: {
+        if (
+          _log_state.fence_pid_epoch.size() <= _max_concurrent_producer_ids()) {
+            return;
+        }
+        break;
+    }
+    case rm_stm::clear_type::idempotent_pids: {
+        if (
+          _log_state.lru_idempotent_pids.size()
+          <= _max_concurrent_producer_ids()) {
+            return;
+        }
+        break;
+    }
+    }
+
+    ssx::spawn_with_gate(_gate, [this, type] { return clear_old_pids(type); });
+}
+
+ss::future<> rm_stm::clear_old_pids(clear_type type) {
+    auto try_lock = _clean_old_pids_mtx.try_get_units();
+    if (!try_lock) {
+        co_return;
+    }
+
+    auto read_lock = co_await _state_lock.hold_read_lock();
+
+    switch (type) {
+    case rm_stm::clear_type::tx_pids: {
+        co_return co_await clear_old_tx_pids();
+    }
+    case rm_stm::clear_type::idempotent_pids: {
+        co_return co_await clear_old_idempotent_pids();
+    }
+    }
+}
+
+ss::future<> rm_stm::clear_old_tx_pids() {
+    if (_log_state.fence_pid_epoch.size() < _max_concurrent_producer_ids()) {
+        co_return;
+    }
+
+    std::vector<model::producer_identity> pids_for_delete;
+    for (auto [id, epoch] : _log_state.fence_pid_epoch) {
+        auto pid = model::producer_identity(id, epoch);
+        // If pid is not inside tx_seqs it means we do not have transaction for
+        // it right now
+        if (!_log_state.tx_seqs.contains(pid)) {
+            pids_for_delete.push_back(pid);
+        }
+    }
+
+    vlog(
+      _ctx_log.trace,
+      "Found {} old transaction pids for delete",
+      pids_for_delete.size());
+
+    co_await ss::max_concurrent_for_each(
+      pids_for_delete, 32, [this](auto pid) -> ss::future<> {
+          // We have transaction for this pid
+          if (_log_state.tx_seqs.contains(pid)) {
+              return ss::now();
+          }
+          _mem_state.forget(pid);
+          _log_state.forget(pid);
+          return ss::now();
+      });
+}
+
+ss::future<> rm_stm::clear_old_idempotent_pids() {
+    if (
+      _log_state.lru_idempotent_pids.size() < _max_concurrent_producer_ids()) {
+        co_return;
+    }
+
+    vlog(
+      _ctx_log.trace,
+      "Found {} old idempotent pids for delete",
+      _log_state.lru_idempotent_pids.size() - _max_concurrent_producer_ids());
+
+    while (_log_state.lru_idempotent_pids.size()
+           > _max_concurrent_producer_ids()) {
+        auto pid_for_delete = _log_state.lru_idempotent_pids.front().entry.pid;
+        auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
+        auto lock = rw_lock->try_write_lock();
+        if (lock) {
+            _log_state.lru_idempotent_pids.pop_front();
+            _log_state.seq_table.erase(pid_for_delete);
+            _inflight_requests.erase(pid_for_delete);
+            _idempotent_producer_locks.erase(pid_for_delete);
+            rw_lock->write_unlock();
+        }
+
+        co_await ss::maybe_yield();
+    }
+}
+
 } // namespace cluster

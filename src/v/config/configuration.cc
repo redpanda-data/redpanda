@@ -471,6 +471,14 @@ configuration::configuration()
       "write with the given producer id.",
       {.visibility = visibility::user},
       10080min)
+  , max_concurrent_producer_ids(
+      *this,
+      "max_concurrent_producer_ids",
+      "Max cache size for pids which rm_stm stores inside internal state. In "
+      "overflow rm_stm will delete old pids and clear their status",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1})
   , enable_idempotence(
       *this,
       "enable_idempotence",

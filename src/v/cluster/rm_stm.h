@@ -29,6 +29,8 @@
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
@@ -165,7 +167,8 @@ public:
       ss::logger&,
       raft::consensus*,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      config::binding<uint64_t> max_concurrent_producer_ids);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -380,6 +383,11 @@ private:
         return std::nullopt;
     }
 
+    struct seq_entry_wrapper {
+        seq_entry entry;
+        safe_intrusive_list_hook _hook;
+    };
+
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
@@ -414,11 +422,29 @@ private:
         // conflicts. if the replication fails we reject a command but clients
         // by spec should be ready for thier commands being rejected so it's
         // ok by design to have false rejects
-        absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
+        using seq_map
+          = absl::node_hash_map<model::producer_identity, seq_entry_wrapper>;
+        seq_map seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
+
+        // We need to store replication order for idempotent pids only. So we
+        // will use intrusive list for it.
+        using idempotent_pids_replicate_order = counted_intrusive_list<
+          seq_entry_wrapper,
+          &seq_entry_wrapper::_hook>;
+        idempotent_pids_replicate_order lru_idempotent_pids;
+
+        void forget(const model::producer_identity& pid) {
+            fence_pid_epoch.erase(pid.get_id());
+            ongoing_map.erase(pid);
+            prepared.erase(pid);
+            seq_table.erase(pid);
+            tx_seqs.erase(pid);
+            expiration.erase(pid);
+        }
     };
 
     struct mem_state {
@@ -457,6 +483,17 @@ private:
             }
         }
     };
+
+    enum class clear_type : int8_t {
+        tx_pids,
+        idempotent_pids,
+    };
+
+    void spawn_background_clean_for_pids(clear_type type);
+
+    ss::future<> clear_old_pids(clear_type type);
+    ss::future<> clear_old_tx_pids();
+    ss::future<> clear_old_idempotent_pids();
 
     // When a request is retried while the first appempt is still
     // being replicated the retried request is parked until the
@@ -525,6 +562,14 @@ private:
         return lock_it->second;
     }
 
+    ss::lw_shared_ptr<ss::basic_rwlock<>>
+    get_idempotent_producer_lock(model::producer_identity pid) {
+        auto [it, _] = _idempotent_producer_locks.try_emplace(
+          pid, ss::make_lw_shared<ss::basic_rwlock<>>());
+
+        return it->second;
+    }
+
     kafka::offset from_log_offset(model::offset old_offset) {
         if (old_offset > model::offset{-1}) {
             return kafka::offset(_translator->from_log_offset(old_offset)());
@@ -563,6 +608,10 @@ private:
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     absl::flat_hash_map<
       model::producer_identity,
+      ss::lw_shared_ptr<ss::basic_rwlock<>>>
+      _idempotent_producer_locks;
+    absl::flat_hash_map<
+      model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
       _inflight_requests;
     log_state _log_state;
@@ -584,6 +633,9 @@ private:
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
     prefix_logger _ctx_log;
+
+    config::binding<uint64_t> _max_concurrent_producer_ids;
+    mutex _clean_old_pids_mtx;
 };
 
 } // namespace cluster

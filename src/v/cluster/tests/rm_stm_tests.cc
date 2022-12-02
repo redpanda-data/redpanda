@@ -41,6 +41,20 @@ struct rich_reader {
     model::record_batch_reader reader;
 };
 
+static config::binding<uint64_t> get_config_bound() {
+    static config::config_store store;
+    static config::bounded_property<uint64_t> max_saved_pids_count(
+      store,
+      "max_saved_pids_count",
+      "Max pids count inside rm_stm states",
+      {.needs_restart = config::needs_restart::no,
+       .visibility = config::visibility::user},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1});
+
+    return max_saved_pids_count.bind();
+}
+
 static rich_reader make_rreader(
   model::producer_identity pid,
   int first_seq,
@@ -69,7 +83,11 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -153,7 +171,11 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -238,7 +260,11 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -328,7 +354,11 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -370,7 +400,11 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -432,7 +466,11 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -499,7 +537,11 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
