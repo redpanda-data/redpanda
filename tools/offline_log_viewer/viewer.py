@@ -5,6 +5,7 @@ from os.path import join
 
 from controller import ControllerLog
 from consumer_groups import GroupsLog
+from consumer_offsets import OffsetsLog
 from tx_coordinator import TxLog
 
 from storage import Store
@@ -66,6 +67,22 @@ def print_groups(store):
     logger.info("")
 
 
+def print_consumer_offsets(store):
+    records = []
+    for ntp in store.ntps:
+        if ntp.nspace == "kafka" and ntp.topic == "__consumer_offsets":
+            l = OffsetsLog(ntp)
+            l.decode()
+            records.append({
+                "partition_id": ntp.partition,
+                "records": l.records
+            })
+
+    # Send JSON output to stdout in case caller wants to parse it, other
+    # CLI output goes to stderr via logger
+    print(json.dumps(records, indent=2))
+
+
 def print_tx_coordinator(store):
     for ntp in store.ntps:
         if ntp.nspace == "kafka_internal" and ntp.topic == "tx":
@@ -114,7 +131,8 @@ def main():
         parser.add_argument('--type',
                             type=str,
                             choices=[
-                                'controller', 'kvstore', 'kafka', 'group',
+                                'controller', 'kvstore', 'kafka',
+                                'consumer_offsets', 'legacy-group',
                                 'kafka_records', 'tx_coordinator'
                             ],
                             required=True,
@@ -152,8 +170,10 @@ def main():
     elif options.type == "kafka_records":
         validate_topic(options.path, options.topic)
         print_kafka(store, options.topic, headers_only=False)
-    elif options.type == "group":
+    elif options.type == "legacy-group":
         print_groups(store)
+    elif options.type == "consumer_offsets":
+        print_consumer_offsets(store)
     elif options.type == "tx_coordinator":
         validate_tx_coordinator(options.path)
         print_tx_coordinator(store)
