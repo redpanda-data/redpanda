@@ -149,7 +149,8 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
         cmd['type_string'] = 'create_topic'
-        cmd |= read_topic_assignment_serde(rdr)
+        # FIXME: this fails to read messages written on tip of dev ead54dda
+        #cmd |= read_topic_assignment_serde(rdr)
     elif cmd['type'] == 1:
         cmd['type_string'] = 'delete_topic'
         cmd['namespace'] = rdr.read_string()
@@ -577,6 +578,7 @@ def decode_node_management_command(k_rdr: Reader, rdr: Reader):
         }
     return cmd
 
+
 def decode_cluster_bootstrap_command(record):
     def decode_user_and_credential(r):
         user_cred = {}
@@ -603,6 +605,7 @@ def decode_cluster_bootstrap_command(record):
                 decode_user_and_credential)
 
     return cmd
+
 
 def decode_adl_or_serde(k_rdr: Reader, rdr: Reader, adl_fn, serde_fn):
     either_adl_or_serde = rdr.peek_int8()
