@@ -173,6 +173,7 @@ FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
     BOOST_CHECK_THROW(
       producer
         ->dispatch(
+          // NOLINTNEXTLINE(bugprone-use-after-move)
           kafka::produce_request(std::nullopt, 1, std::move(topics)),
           unsupported_version)
         .get(),

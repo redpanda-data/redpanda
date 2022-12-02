@@ -196,6 +196,7 @@ void check(std::filesystem::path fn) {
     vassert(changed.value(), "Failed to perturb test case {}", fn);
     fmt::print("Negative check with change at path: {}\n", perturb_path);
     BOOST_REQUIRE_EXCEPTION(
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       compat::check_type(std::move(doc)).get(),
       compat::compat_error,
       [perturb_path](const compat::compat_error& e) {
