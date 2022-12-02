@@ -123,9 +123,10 @@ class CompactionEndToEndTest(EndToEndTest):
 
                 return all([predicate(n) for n in segments_per_partition])
 
+            timeout_sec = 300
             # wait for multiple segments to appear in topic partitions
             wait_until(lambda: segment_number_matches(lambda s: s >= 5),
-                       timeout_sec=180,
+                       timeout_sec=timeout_sec,
                        backoff_sec=2)
 
             # enable compaction, if topic isn't compacted
@@ -144,10 +145,8 @@ class CompactionEndToEndTest(EndToEndTest):
             # make compaction frequent
             rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
 
-            # wait for compaction to merge some adjacent segments
-            wait_timeout_sec = 300 if self.debug_mode else 180
             wait_until(lambda: segment_number_matches(lambda s: s < 5),
-                       timeout_sec=wait_timeout_sec,
+                       timeout_sec=timeout_sec,
                        backoff_sec=2)
 
             # enable consumer and validate consumed records
