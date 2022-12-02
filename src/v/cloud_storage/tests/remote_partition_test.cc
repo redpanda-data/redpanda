@@ -2046,6 +2046,7 @@ FIXTURE_TEST(
 
     scan_remote_partition_incrementally(*this, base, max);
 }
+
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_translate_tx_fence, cloud_storage_fixture) {
