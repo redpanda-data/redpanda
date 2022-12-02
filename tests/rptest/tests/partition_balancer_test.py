@@ -240,6 +240,7 @@ class PartitionBalancerService(EndToEndTest):
                 self.cur_failure.node)
 
 
+
 class PartitionBalancerTest(PartitionBalancerService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
