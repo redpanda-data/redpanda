@@ -191,7 +191,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           *shard, [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
               return partition
-                     && partition->committed_offset() >= model::offset(1);
+                     && partition->last_stable_offset() >= model::offset(1);
           });
     }).get();
 

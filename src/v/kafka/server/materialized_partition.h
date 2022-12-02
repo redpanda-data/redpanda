@@ -38,7 +38,7 @@ public:
         return model::next_offset(_partition->dirty_offset());
     }
 
-    model::offset last_stable_offset() const final {
+    checked<model::offset, error_code> last_stable_offset() const final {
         return model::next_offset(_partition->dirty_offset());
     }
 
