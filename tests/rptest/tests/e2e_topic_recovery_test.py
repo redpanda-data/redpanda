@@ -146,11 +146,11 @@ class EndToEndTopicRecovery(RedpandaTest):
     def test_restore_with_config_batches(self, num_messages):
         """related to issue 6413: force the creation of remote segments containing only configuration batches,
         check that older data can be nonetheless recovered even if the total download size
-         would exceed the property retention.bytes.
-         in other words, only segments containing at least some data counts towards retention.bytes limit"""
+         would exceed the property retention.local.target.bytes.
+         in other words, only segments containing at least some data counts towards retention.local.target.bytes limit"""
         """1. generate some messages
         2. restart the cluster to generate some config-only remote segments
-        3. restore topic with a small retention.bytes to force redpanda 
+        3. restore topic with a small retention.local.target.bytes to force redpanda 
            to get over the limit and skip over configuration batches"""
         self.logger.info("start")
         self.init_producer(5000, num_messages)
@@ -175,7 +175,8 @@ class EndToEndTopicRecovery(RedpandaTest):
         # Run recovery
         self._start_redpanda_nodes()
         for topic_spec in self.topics:
-            self._restore_topic(topic_spec, {'retention.bytes': 512})
+            self._restore_topic(topic_spec,
+                                {'retention.local.target.bytes': 512})
 
         self.init_consumer(5000)
         self._consumer.start(clean=False)
@@ -186,7 +187,7 @@ class EndToEndTopicRecovery(RedpandaTest):
     @matrix(message_size=[5000],
             num_messages=[100000],
             recovery_overrides=[{}, {
-                'retention.bytes': 1024
+                'retention.local.target.bytes': 1024
             }])
     def test_restore(self, message_size, num_messages, recovery_overrides):
         """Write some data. Remove local data then restore
@@ -233,7 +234,7 @@ class EndToEndTopicRecovery(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=ALLOWED_ERROR_LOG_LINES)
     @matrix(recovery_overrides=[{}, {
-        'retention.bytes': 1024,
+        'retention.local.target.bytes': 1024,
         'redpanda.remote.write': True,
         'redpanda.remote.read': True,
     }])
