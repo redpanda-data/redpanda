@@ -74,6 +74,13 @@ def read_broker(rdr):
     return br
 
 
+def read_configuration_update(rdr):
+    return {
+        'replicas_to_add': rdr.read_vector(read_vnode),
+        'replicas_to_remove': rdr.read_vector(read_vnode)
+    }
+
+
 def read_raft_config(rdr):
     cfg = {}
     cfg['version'] = rdr.read_int8()
@@ -81,6 +88,11 @@ def read_raft_config(rdr):
     cfg['current_config'] = read_group_nodes(rdr)
     cfg['prev_config'] = rdr.read_optional(read_group_nodes)
     cfg['revision'] = rdr.read_int64()
+
+    if cfg['version'] >= 4:
+        cfg['configuration_update'] = rdr.read_optional(
+            lambda ordr: read_configuration_update(ordr))
+
     return cfg
 
 
