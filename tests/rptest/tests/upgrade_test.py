@@ -17,6 +17,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
@@ -258,6 +259,15 @@ class UpgradeBackToBackTest(PreallocNodesTest):
         assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+
+        # Validate that the data structures written by a mixture of historical
+        # versions remain readable by our current debug tools
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.nodes:
+            controller_records = log_viewer.read_controller(node=node)
+            self.logger.info(
+                f"Read {len(controller_records)} controller records from node {node.name} successfully"
+            )
 
 
 class UpgradeWithWorkloadTest(EndToEndTest):
