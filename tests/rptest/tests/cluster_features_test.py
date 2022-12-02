@@ -22,7 +22,7 @@ from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
-CURRENT_LOGICAL_VERSION = 7
+CURRENT_LOGICAL_VERSION = 8
 
 # The upgrade tests defined below rely on having a logical version lower than
 # CURRENT_LOGICAL_VERSION. For the sake of these tests, the exact version
