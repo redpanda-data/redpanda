@@ -761,6 +761,24 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     request.data.topic_names.erase(
       unauthorized_it, request.data.topic_names.end());
 
+    const auto& kafka_nodelete_topics
+      = config::shard_local_cfg().kafka_nodelete_topics();
+    auto nodelete_it = std::partition(
+      request.data.topic_names.begin(),
+      request.data.topic_names.end(),
+      [&kafka_nodelete_topics](const model::topic& topic) {
+          return std::find(
+                   kafka_nodelete_topics.begin(),
+                   kafka_nodelete_topics.end(),
+                   topic)
+                 == kafka_nodelete_topics.end();
+      });
+    std::vector<model::topic> nodelete_topics(
+      std::make_move_iterator(nodelete_it),
+      std::make_move_iterator(request.data.topic_names.end()));
+
+    request.data.topic_names.erase(nodelete_it, request.data.topic_names.end());
+
     std::vector<cluster::topic_result> res;
 
     // Measure the partition mutation rate
