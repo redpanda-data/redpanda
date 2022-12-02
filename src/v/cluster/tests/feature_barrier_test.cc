@@ -367,9 +367,10 @@ SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {
     BOOST_REQUIRE_EQUAL(req.peer, req_decoded.peer);
     BOOST_REQUIRE_EQUAL(req.entered, req_decoded.entered);
 
-    feature_barrier_response resp{.entered = true, .complete = true};
+    const feature_barrier_response resp{.entered = true, .complete = true};
+    auto orig_resp = resp;
 
-    iobuf resp_io = reflection::to_iobuf(std::move(resp));
+    iobuf resp_io = reflection::to_iobuf(std::move(orig_resp));
     iobuf_parser resp_parser(std::move(resp_io));
     auto resp_decoded = reflection::adl<feature_barrier_response>{}.from(
       resp_parser);
