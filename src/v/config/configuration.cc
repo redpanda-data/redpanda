@@ -865,6 +865,19 @@ configuration::configuration()
       "limit applies to compressed batch size",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_MiB)
+  , kafka_nodelete_topics(
+      *this,
+      "kafka_nodelete_topics",
+      "Prevents the topics in the list from being deleted via the kafka api",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"__audit", "__consumer_offsets", "__redpanda_e2e_probe", "_schemas"})
+  , kafka_noproduce_topics(
+      *this,
+      "kafka_noproduce_topics",
+      "Prevents the topics in the list from having message produced to them "
+      "via the kafka api",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"__audit"})
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",
