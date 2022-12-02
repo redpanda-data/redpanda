@@ -352,7 +352,8 @@ class RpkTool:
                 offset=None,
                 partition=None,
                 fetch_max_bytes=None,
-                quiet=False):
+                quiet=False,
+                timeout=None):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -369,7 +370,7 @@ class RpkTool:
         if quiet:
             cmd += ["-f", "_\\n"]
 
-        return self._run_topic(cmd)
+        return self._run_topic(cmd, timeout=timeout)
 
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
