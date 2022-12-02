@@ -84,7 +84,7 @@ std::ostream& operator<<(std::ostream& o, const upload_result& r);
 
 struct configuration {
     /// S3 configuration
-    s3::configuration client_config;
+    s3::client_configuration client_config;
     /// Number of simultaneous S3 uploads
     s3_connection_limit connection_limit;
     /// Disable metrics in the remote

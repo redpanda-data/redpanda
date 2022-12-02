@@ -76,4 +76,17 @@ struct configuration : net::base_transport::configuration {
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& c);
 };
+
+template<typename T>
+concept net_base_configuration
+  = std::is_base_of_v<net::base_transport::configuration, T>;
+
+template<net_base_configuration... Ts>
+using client_configuration_variant = std::variant<Ts...>;
+
+using client_configuration = client_configuration_variant<configuration>;
+
+template<typename>
+inline constexpr bool always_false_v = false;
+
 } // namespace s3

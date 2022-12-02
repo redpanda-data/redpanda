@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "net/connection.h"
 #include "s3/client.h"
+#include "s3/configuration.h"
 #include "ssx/sformat.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
@@ -43,14 +44,16 @@ using namespace std::chrono_literals;
 
 remote::remote(
   s3_connection_limit limit,
-  const s3::configuration& conf,
+  const s3::client_configuration& conf,
   model::cloud_credentials_source cloud_credentials_source)
   : _pool(limit(), conf)
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
   , _materialized(std::make_unique<materialized_segments>())
   , _probe(
-      remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)),
-      remote_metrics_disabled(static_cast<bool>(conf.disable_public_metrics)),
+      remote_metrics_disabled(static_cast<bool>(
+        std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),
+      remote_metrics_disabled(static_cast<bool>(std::visit(
+        [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
       *_materialized) {
     // If the credentials source is from config file, bypass the background op
     // to refresh credentials periodically, and load pool with static
@@ -625,12 +628,11 @@ remote::propagate_credentials(cloud_roles::credentials credentials) {
 auth_refresh_bg_op::auth_refresh_bg_op(
   ss::gate& gate,
   ss::abort_source& as,
-  s3::configuration s3_conf,
+  s3::client_configuration client_conf,
   model::cloud_credentials_source cloud_credentials_source)
   : _gate(gate)
   , _as(as)
-  , _s3_conf(std::move(s3_conf))
-  , _region_name{_s3_conf.region}
+  , _client_conf(std::move(client_conf))
   , _cloud_credentials_source(cloud_credentials_source) {}
 
 void auth_refresh_bg_op::maybe_start_auth_refresh_op(
@@ -659,12 +661,24 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         // Create an implementation of refresh_credentials based on the setting
         // cloud_credentials_source.
         try {
+            auto region_name = std::visit(
+              [](const auto& cfg) {
+                  using cfg_type = std::decay_t<decltype(cfg)>;
+                  if constexpr (std::is_same_v<s3::configuration, cfg_type>) {
+                      return cloud_roles::aws_region_name{cfg.region};
+                  } else {
+                      static_assert(
+                        s3::always_false_v<cfg_type>, "Unknown client type");
+                      return cloud_roles::aws_region_name{};
+                  }
+              },
+              _client_conf);
             _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
               _cloud_credentials_source,
               _gate,
               _as,
               std::move(credentials_update_cb),
-              _region_name));
+              region_name));
 
             vlog(
               cst_log.info,
@@ -688,11 +702,22 @@ bool auth_refresh_bg_op::is_static_config() const {
 }
 
 cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
-    return cloud_roles::aws_credentials{
-      _s3_conf.access_key.value(),
-      _s3_conf.secret_key.value(),
-      std::nullopt,
-      _region_name};
+    return std::visit(
+      [](const auto& cfg) {
+          using cfg_type = std::decay_t<decltype(cfg)>;
+          if constexpr (std::is_same_v<s3::configuration, cfg_type>) {
+              return cloud_roles::aws_credentials{
+                cfg.access_key.value(),
+                cfg.secret_key.value(),
+                std::nullopt,
+                cfg.region};
+          } else {
+              static_assert(
+                s3::always_false_v<cfg_type>, "Unknown client type");
+              return cloud_roles::aws_credentials{};
+          }
+      },
+      _client_conf);
 }
 
 s3::object_tag_formatter remote::make_partition_manifest_tags(

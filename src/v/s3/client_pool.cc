@@ -3,7 +3,7 @@
 namespace s3 {
 
 client_pool::client_pool(
-  size_t size, configuration conf, client_pool_overdraft_policy policy)
+  size_t size, client_configuration conf, client_pool_overdraft_policy policy)
   : _max_size(size)
   , _config(std::move(conf))
   , _policy(policy) {}
@@ -51,9 +51,7 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
             if (_policy == client_pool_overdraft_policy::wait_if_empty) {
                 co_await _cvar.wait();
             } else {
-                auto cl = ss::make_shared<client>(
-                  _config, _as, _apply_credentials);
-                _pool.emplace_back(std::move(cl));
+                _pool.emplace_back(make_client());
             }
         }
     } catch (const ss::broken_condition_variable&) {
@@ -81,12 +79,25 @@ size_t client_pool::max_size() const noexcept { return _max_size; }
 
 void client_pool::populate_client_pool() {
     for (size_t i = 0; i < _max_size; i++) {
-        auto cl = ss::make_shared<client>(_config, _as, _apply_credentials);
-        _pool.emplace_back(std::move(cl));
+        _pool.emplace_back(make_client());
     }
 }
 
-void client_pool::release(ss::shared_ptr<client> leased) {
+client_pool::http_client_ptr client_pool::make_client() const {
+    return std::visit(
+      [this](const auto& cfg) {
+          using cfg_type = std::decay_t<decltype(cfg)>;
+          static_assert(std::is_same_v<configuration, cfg_type>);
+          if constexpr (std::is_same_v<configuration, cfg_type>) {
+              return ss::make_shared<client>(cfg, _as, _apply_credentials);
+          } else {
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
+          }
+      },
+      _config);
+}
+
+void client_pool::release(http_client_ptr leased) {
     if (_pool.size() == _max_size) {
         return;
     }

@@ -68,7 +68,7 @@ public:
     auth_refresh_bg_op(
       ss::gate& gate,
       ss::abort_source& as,
-      s3::configuration s3_conf,
+      s3::client_configuration client_conf,
       model::cloud_credentials_source cloud_credentials_source);
 
     /// Helper to decide if credentials will be regularly fetched from
@@ -92,8 +92,7 @@ private:
 
     ss::gate& _gate;
     ss::abort_source& _as;
-    s3::configuration _s3_conf;
-    cloud_roles::aws_region_name _region_name;
+    s3::client_configuration _client_conf;
     model::cloud_credentials_source _cloud_credentials_source;
     std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
 };
@@ -137,7 +136,7 @@ public:
     /// \param conf is an S3 configuration
     remote(
       s3_connection_limit limit,
-      const s3::configuration& conf,
+      const s3::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
     ~remote();
