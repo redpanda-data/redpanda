@@ -1,0 +1,49 @@
+# Copyright 2022 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: Render PR Body Release Notes
+on:
+  pull_request:
+    types: [opened, edited]
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: redpanda-data/sparse-checkout
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          path: sparse-checkout
+      - uses: ./sparse-checkout
+        with:
+          repository: redpanda-data/vtools
+          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          directories: scripts/rpchangelog
+          ref: dev
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      - run: pip3 install -r ./scripts/rpchangelog/requirements.txt
+      - name: Render PR body release notes to job summary
+        env:
+          PR_NUM: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/rpchangelog/rpchangelog.py --log-level=DEBUG --github-owner="$GITHUB_REPOSITORY_OWNER" pr "$PR_NUM" >> "$GITHUB_STEP_SUMMARY"
+          LINK_TO_SUMMARY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          FINAL_MSG="View rendered release notes of PR #$PR_NUM in the job summary: $LINK_TO_SUMMARY"
+          if grep -q '## Unclear' "$GITHUB_STEP_SUMMARY"; then
+             echo '❌ Release Notes Unclear'
+             echo $FINAL_MSG
+             exit 1
+          else
+             echo '✔ Release Notes Clear'
+             echo $FINAL_MSG
+          fi
