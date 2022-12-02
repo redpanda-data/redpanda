@@ -97,7 +97,7 @@ class KvStoreRecordDecoder:
 
         keyspace = k_rdr.read_int8()
 
-        key_buf = self.k_stream.read()
+        key_buf = k_rdr.stream.read()
 
         ret['key_space'] = self._decode_ks(keyspace)
         ret['key_buf'] = key_buf

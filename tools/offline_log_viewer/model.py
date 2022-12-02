@@ -83,6 +83,7 @@ def read_configuration_update(rdr):
 
 def read_raft_config(rdr):
     cfg = {}
+
     cfg['version'] = rdr.read_int8()
     cfg['brokers'] = rdr.read_vector(read_broker)
     cfg['current_config'] = read_group_nodes(rdr)
