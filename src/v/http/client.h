@@ -11,26 +11,19 @@
 
 #pragma once
 
-#include "bytes/details/io_fragment.h"
 #include "bytes/iobuf.h"
 #include "http/chunk_encoding.h"
 #include "http/iobuf_body.h"
-#include "http/logger.h"
 #include "http/probe.h"
 #include "net/transport.h"
 #include "seastarx.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/deleter.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/timer.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/core.hpp>
@@ -39,8 +32,6 @@
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/string_body.hpp>
 #include <boost/beast/http/verb.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/system/system_error.hpp>
 
 #include <chrono>
 #include <exception>
