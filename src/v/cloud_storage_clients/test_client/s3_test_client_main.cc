@@ -54,8 +54,9 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
 
     opt(
       "object",
-      po::value<std::string>()->default_value("test.txt"),
-      "s3 object id");
+      po::value<std::vector<std::string>>()->default_value({"test.txt"}),
+      "s3 object id, can be called multiple times to use with "
+      "--delete-multiple");
 
     opt(
       "bucket",
@@ -91,11 +92,20 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
       "list-with-prefix", po::value<std::string>(), "list objects in a bucket");
 
     opt("delete", po::value<std::string>(), "delete object in a bucket");
+
+    opt("delete-multiple", "issue a delete objects request");
+
+    opt(
+      "uri", po::value<std::string>(), "alternative uri for the api endpoint");
+
+    opt("port", po::value<uint16_t>(), "alternative port for the api endpoint");
+
+    opt("disable-tls", "disable tls for this connection");
 }
 
 struct test_conf {
     cloud_storage_clients::bucket_name bucket;
-    cloud_storage_clients::object_key object;
+    std::vector<cloud_storage_clients::object_key> objects;
 
     cloud_storage_clients::configuration client_cfg;
 
@@ -103,14 +113,31 @@ struct test_conf {
     std::string out;
     bool list_with_prefix;
     bool delete_object;
+    bool delete_multiple;
 };
 
-inline std::ostream& operator<<(std::ostream& out, const test_conf& cfg) {
-    // make the output json-able so we can consume it in python for analysis
-    return out << "["
-               << "'bucket': " << cfg.bucket << ", "
-               << "'object': " << cfg.object << "]";
-}
+template<>
+struct fmt::formatter<test_conf> : public fmt::formatter<std::string_view> {
+    auto format(const test_conf& cfg, auto& ctx) const {
+        // make the output json-able so we can consume it in python for analysis
+        return formatter<std::string_view>::format(
+          fmt::format(
+            "[ 'bucket': '{}', 'objects': ['{}'] ]",
+            cfg.bucket,
+            fmt::join(cfg.objects, "', '")),
+          ctx);
+    }
+};
+
+template<>
+struct fmt::formatter<
+  cloud_storage_clients::client::delete_objects_result::key_reason>
+  : public fmt::formatter<std::string_view> {
+    auto format(auto const& kr, auto& ctx) const {
+        return formatter<std::string_view>::format(
+          fmt::format(R"kr(key:"{}" reason:"{}")kr", kr.key, kr.reason), ctx);
+    }
+};
 
 test_conf cfg_from(boost::program_options::variables_map& m) {
     auto access_key = cloud_roles::public_key_str(
@@ -118,21 +145,53 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
     auto secret_key = cloud_roles::private_key_str(
       m["secretkey"].as<std::string>());
     auto region = cloud_roles::aws_region_name(m["region"].as<std::string>());
-    cloud_storage_clients::configuration client_cfg
+
+    auto client_cfg
       = cloud_storage_clients::configuration::make_configuration(
-          access_key, secret_key, region)
+          access_key,
+          secret_key,
+          region,
+          cloud_storage_clients::default_overrides{
+            .endpoint =
+              [&]() -> std::optional<cloud_storage_clients::endpoint_url> {
+                if (m.count("uri") > 0) {
+                    return cloud_storage_clients::endpoint_url{
+                      m["uri"].as<std::string>()};
+                }
+                return std::nullopt;
+            }(),
+            .port = [&]() -> std::optional<uint16_t> {
+                if (m.contains("port") > 0) {
+                    return m["port"].as<uint16_t>();
+                }
+                return std::nullopt;
+            }(),
+            .disable_tls = m.contains("disable-tls") > 0,
+          })
           .get0();
     vlog(test_log.info, "connecting to {}", client_cfg.server_addr);
     return test_conf{
       .bucket = cloud_storage_clients::bucket_name(
         m["bucket"].as<std::string>()),
-      .object = cloud_storage_clients::object_key(
-        m["object"].as<std::string>()),
+      .objects =
+        [&] {
+            auto keys = m["object"].as<std::vector<std::string>>();
+            auto out = std::vector<cloud_storage_clients::object_key>{};
+            std::transform(
+              keys.begin(),
+              keys.end(),
+              std::back_inserter(out),
+              [](auto const& ks) {
+                  return cloud_storage_clients::object_key(ks);
+              });
+            return out;
+        }(),
       .client_cfg = std::move(client_cfg),
       .in = m["in"].as<std::string>(),
       .out = m["out"].as<std::string>(),
       .list_with_prefix = m.count("list-with-prefix") > 0,
       .delete_object = m.count("delete") > 0,
+      .delete_multiple = m.count("delete-multiple") > 0,
     };
 }
 
@@ -175,6 +234,7 @@ int main(int args, char** argv, char** env) {
     ss::app_template app;
     cli_opts(app.add_options());
     ss::sharded<cloud_storage_clients::s3_client> client;
+
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
         return ss::async([&] {
@@ -196,7 +256,7 @@ int main(int args, char** argv, char** env) {
                         const auto result = cli
                                               .get_object(
                                                 lcfg.bucket,
-                                                lcfg.object,
+                                                lcfg.objects.front(),
                                                 http::default_connect_timeout)
                                               .get0();
                         if (result) {
@@ -221,7 +281,7 @@ int main(int args, char** argv, char** env) {
                         const auto result = cli
                                               .put_object(
                                                 lcfg.bucket,
-                                                lcfg.object,
+                                                lcfg.objects.front(),
                                                 payload_size,
                                                 std::move(payload),
                                                 {},
@@ -270,7 +330,7 @@ int main(int args, char** argv, char** env) {
                         const auto result = cli
                                               .delete_object(
                                                 lcfg.bucket,
-                                                lcfg.object,
+                                                lcfg.objects.front(),
                                                 http::default_connect_timeout)
                                               .get();
 
@@ -281,6 +341,29 @@ int main(int args, char** argv, char** env) {
                               test_log.error,
                               "Delete request failed: {}",
                               result.error());
+                        }
+                    } else if (lcfg.delete_multiple) {
+                        vlog(test_log.info, "delete multiple objects");
+                        if (auto undeleted = cli
+                                               .delete_objects(
+                                                 lcfg.bucket,
+                                                 lcfg.objects,
+                                                 http::default_connect_timeout)
+                                               .get();
+                            undeleted.has_value()) {
+                            vlog(test_log.info, "DeleteObjects completed");
+                            if (!undeleted.value().undeleted_keys.empty()) {
+                                vlog(
+                                  test_log.warn,
+                                  "keys not deleted: [{}]",
+                                  fmt::join(
+                                    undeleted.value().undeleted_keys, "] ["));
+                            }
+                        } else {
+                            vlog(
+                              test_log.error,
+                              "DeleteObject request failes: {}",
+                              undeleted.error());
                         }
                     }
                 })
