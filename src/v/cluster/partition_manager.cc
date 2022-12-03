@@ -52,14 +52,16 @@ partition_manager::partition_manager(
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  config::binding<uint64_t> max_concurrent_producer_ids)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
-  , _feature_table(feature_table) {}
+  , _feature_table(feature_table)
+  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -155,6 +157,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _cloud_storage_api,
       _cloud_storage_cache,
       _feature_table,
+      _max_concurrent_producer_ids,
       read_replica_bucket);
 
     _ntp_table.emplace(log.config().ntp(), p);
