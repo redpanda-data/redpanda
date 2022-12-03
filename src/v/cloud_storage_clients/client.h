@@ -19,6 +19,7 @@
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>
+#include <vector>
 
 namespace cloud_storage_clients {
 
@@ -157,6 +158,36 @@ public:
       const bucket_name& bucket,
       const object_key& key,
       const ss::lowres_clock::duration& timeout)
+      = 0;
+
+    struct delete_objects_result {
+        struct key_reason {
+            object_key key;
+            ss::sstring reason;
+        };
+        std::vector<key_reason> undeleted_keys{};
+    };
+
+    constexpr static auto delete_objects_max_keys = 1000;
+
+    /// DeleteObjects request.
+    ///
+    /// \pre the number of keys is <= s3::client::delete_objects_max_keys (as
+    /// per the S3 api)
+    ///
+    /// \param bucket the name of the bucket
+    /// \param keys the keys in the bucket to delete
+    /// \param timeout request timeout
+    /// \return a future of delete_objects_result. This contains
+    /// a list of keys that where not deleted, each with the Error.Code returned
+    /// from the server
+    /// note that keys not found in the bucket are NOT reported (they are
+    /// considered as successfully deleted)
+    virtual ss::future<result<delete_objects_result, error_outcome>>
+    delete_objects(
+      const bucket_name& bucket,
+      std::vector<object_key> keys,
+      ss::lowres_clock::duration timeout)
       = 0;
 };
 

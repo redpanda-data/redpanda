@@ -176,6 +176,11 @@ public:
       const object_key& key,
       const ss::lowres_clock::duration& timeout) override;
 
+    ss::future<result<delete_objects_result, error_outcome>> delete_objects(
+      const bucket_name& bucket,
+      std::vector<object_key> keys,
+      ss::lowres_clock::duration timeout) override;
+
 private:
     ss::future<head_object_result> do_head_object(
       bucket_name const& name,
@@ -209,13 +214,16 @@ private:
       const object_key& key,
       const ss::lowres_clock::duration& timeout);
 
+    ss::future<delete_objects_result> do_delete_objects(
+      const bucket_name& bucket,
+      std::span<const object_key> keys,
+      ss::lowres_clock::duration timeout);
+
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(
       ss::future<T> request_future,
       const bucket_name& bucket,
       const object_key& key);
-
-    constexpr static auto delete_objects_max_keys = 1000;
 
 private:
     request_creator _requestor;

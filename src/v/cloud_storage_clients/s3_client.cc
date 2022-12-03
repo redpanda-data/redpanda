@@ -371,9 +371,6 @@ request_creator::make_delete_objects_request(
         }
 
         auto out = std::ostringstream{};
-        // to indent with 1 tab, pass
-        // boost::property_tree::xml_writer_settings<std::string>('\t', 1) as
-        // third parameter
         boost::property_tree::write_xml(out, delete_tree);
         return out.str();
     }();
@@ -995,4 +992,85 @@ ss::future<> s3_client::do_delete_object(
       });
 }
 
+static auto iobuf_to_delete_objects_result(iobuf&& buf) {
+    auto root = iobuf_to_ptree(std::move(buf));
+    auto result = client::delete_objects_result{};
+    try {
+        for (auto const& [tag, value] : root.get_child("DeleteResult")) {
+            if (tag != "Error") {
+                continue;
+            }
+            auto code = value.get_optional<ss::sstring>("Code");
+            auto key = value.get_optional<ss::sstring>("Key");
+            auto message = value.get_optional<ss::sstring>("Message");
+            auto version_id = value.get_optional<ss::sstring>("VersionId");
+            vlog(
+              s3_log.trace,
+              R"(delete_objects_result::undeleted_keys Key:"{}" Code: "{}" Message:"{}" VersionId:"{}")",
+              key.value_or("[no key present]"),
+              code.value_or("[no error code present]"),
+              message.value_or("[no error message present]"),
+              version_id.value_or("[no version id present]"));
+            if (key.has_value()) {
+                result.undeleted_keys.push_back({
+                  object_key{key.value()},
+                  code.value_or("[no error code present]"),
+                });
+            } else {
+                vlog(
+                  s3_log.warn,
+                  "an DeleteResult.Error does not contain the Key tag");
+            }
+        }
+    } catch (...) {
+        vlog(
+          s3_log.error,
+          "DeleteObjects response parse failed: {}",
+          std::current_exception());
+        throw;
+    }
+    return result;
+}
+
+auto s3_client::do_delete_objects(
+  bucket_name const& bucket,
+  std::span<const object_key> keys,
+  ss::lowres_clock::duration timeout)
+  -> ss::future<client::delete_objects_result> {
+    auto request = _requestor.make_delete_objects_request(bucket, keys);
+    if (!request) {
+        return ss::make_exception_future<delete_objects_result>(
+          std::system_error(request.error()));
+    }
+    auto& [header, body] = request.value();
+    vlog(s3_log.trace, "send DeleteObjects request:\n{}", header);
+
+    return ss::do_with(
+             std::move(body),
+             [&_client = _client, header = std::move(header), timeout](
+               auto& to_delete) mutable {
+                 return _client.request(std::move(header), to_delete, timeout)
+                   .finally([&] { return to_delete.close(); });
+             })
+      .then([](http::client::response_stream_ref const& response) {
+          return drain_response_stream(response).then([response](iobuf&& res) {
+              auto status = response->get_headers().result();
+              if (status != boost::beast::http::status::ok) {
+                  return parse_rest_error_response<delete_objects_result>(
+                    status, std::move(res));
+              }
+              return ss::make_ready_future<delete_objects_result>(
+                iobuf_to_delete_objects_result(std::move(res)));
+          });
+      });
+}
+
+auto s3_client::delete_objects(
+  const bucket_name& bucket,
+  std::vector<object_key> keys,
+  ss::lowres_clock::duration timeout)
+  -> ss::future<result<delete_objects_result, error_outcome>> {
+    return send_request(
+      do_delete_objects(bucket, keys, timeout), bucket, object_key{""});
+}
 } // namespace cloud_storage_clients
