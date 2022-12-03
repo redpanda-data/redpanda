@@ -10,9 +10,7 @@
 
 #include "cloud_storage_clients/s3_client.h"
 
-#include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_parser.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "hashing/secure.h"
@@ -25,17 +23,12 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
-#include <seastar/core/lowres_clock.hh>
-#include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/net/dns.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/util/log.hh>
