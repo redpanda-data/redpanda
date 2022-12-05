@@ -201,3 +201,38 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta) {
       10000000, details::delta_delta<int64_t>(0));
 }
 
+template<class delta_alg>
+void at_test_case(const int64_t max_value, delta_alg initial) {
+    using frame_t = frame<int64_t, delta_alg>;
+    frame_t frame(std::move(initial));
+    size_t total_size = 0;
+    std::vector<std::pair<int64_t, size_t>> samples;
+    for (int64_t value = 0; value < max_value;
+         value += random_generators::get_int(1, 100)) {
+        frame.append(value);
+        if (samples.empty() || random_generators::get_int(10) == 0) {
+            samples.emplace_back(value, total_size);
+        }
+        total_size++;
+    }
+    BOOST_REQUIRE_EQUAL(total_size, frame.size());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(samples.begin(), samples.end(), g);
+
+    for (auto [expected, index] : samples) {
+        auto it = frame.at(index);
+        BOOST_REQUIRE(it != frame.end());
+        auto actual = *it;
+        BOOST_REQUIRE_EQUAL(actual, expected);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_xor) {
+    at_test_case<details::delta_xor>(10000000, {});
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta) {
+    at_test_case<details::delta_delta<int64_t>>(
+      10000000, details::delta_delta<int64_t>{0});
+}

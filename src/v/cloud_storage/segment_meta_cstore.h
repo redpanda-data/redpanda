@@ -17,6 +17,7 @@
 #include <boost/iterator/iterator_facade.hpp>
 
 #include <functional>
+#include <iterator>
 
 namespace cloud_storage {
 
@@ -112,6 +113,15 @@ public:
             }
             _tail->add(_head);
         }
+    }
+
+    const_iterator at(size_t index) const {
+        if (index >= _size) {
+            return end();
+        }
+        auto it = begin();
+        std::advance(it, index);
+        return it;
     }
 
     size_t size() const { return _size; }
