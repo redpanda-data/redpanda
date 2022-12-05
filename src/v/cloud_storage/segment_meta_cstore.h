@@ -22,20 +22,20 @@
 namespace cloud_storage {
 
 template<class value_t, class decoder_t>
-class frame_iterator_impl
+class segment_meta_frame_const_iterator
   : public boost::iterator_facade<
-      frame_iterator_impl<value_t, decoder_t>,
+      segment_meta_frame_const_iterator<value_t, decoder_t>,
       value_t const,
       boost::iterators::forward_traversal_tag> {
     constexpr static uint32_t buffer_depth = details::FOR_buffer_depth;
     constexpr static uint32_t index_mask = buffer_depth - 1;
 
     friend class boost::iterator_core_access;
-    using self_t = frame_iterator_impl<value_t, decoder_t>;
+    using self_t = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
 public:
     /// Create iterator that points to the begining
-    explicit frame_iterator_impl(
+    explicit segment_meta_frame_const_iterator(
       decoder_t decoder,
       const std::array<value_t, buffer_depth>& head,
       uint32_t size)
@@ -48,7 +48,7 @@ public:
     }
 
     /// Create iterator that points to the end
-    frame_iterator_impl() = default;
+    segment_meta_frame_const_iterator() = default;
 
     uint32_t index() const { return _pos; }
 
@@ -87,7 +87,7 @@ private:
 };
 
 template<class value_t, class delta_t = details::delta_xor>
-class frame {
+class segment_meta_column_frame {
     constexpr static uint32_t buffer_depth = details::FOR_buffer_depth;
     constexpr static uint32_t index_mask = buffer_depth - 1;
     using encoder_t = deltafor_encoder<value_t, delta_t>;
@@ -99,9 +99,10 @@ class frame {
     };
 
 public:
-    using const_iterator = frame_iterator_impl<value_t, decoder_t>;
+    using const_iterator
+      = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
-    explicit frame(delta_t d)
+    explicit segment_meta_column_frame(delta_t d)
       : _delta_alg(std::move(d)) {}
 
     void append(value_t value) {

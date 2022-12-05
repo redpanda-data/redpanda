@@ -27,7 +27,7 @@ using namespace cloud_storage;
 
 template<class delta_alg>
 void append_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     for (int64_t ix = 0; ix < max_value;
@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_delta) {
 
 template<class delta_alg>
 void iter_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     std::vector<int64_t> expected;
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_iter_delta) {
 
 template<class delta_alg>
 void find_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     std::vector<int64_t> samples;
@@ -124,7 +124,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_delta_small) {
 
 template<class delta_alg>
 void lower_bound_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     std::vector<int64_t> samples;
@@ -179,7 +179,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_delta_small) {
 
 template<class delta_alg>
 void upper_bound_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     std::vector<int64_t> samples;
@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta_small) {
 
 template<class delta_alg>
 void at_test_case(const int64_t max_value, delta_alg initial) {
-    using frame_t = frame<int64_t, delta_alg>;
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
     frame_t frame(std::move(initial));
     size_t total_size = 0;
     std::vector<std::pair<int64_t, size_t>> samples;
