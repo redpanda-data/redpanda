@@ -679,11 +679,12 @@ ss::future<upload_result> remote::delete_object(
             result = upload_result::failed;
             break;
         case error_outcome::notfound:
-            vassert(
-              false,
-              "Unexpected NoSuchKey error response from DeleteObject {}",
+            vlog(
+              ctxlog.info,
+              "Unexpected NoSuchKey error response from DeleteObject {} will "
+              "be ignored",
               path);
-            break;
+            co_return upload_result::success;
         }
     }
     if (!result) {
