@@ -150,8 +150,8 @@ var _ = BeforeSuite(func(done Done) {
 	}()
 	Expect(k8sManager.GetCache().WaitForCacheSync(context.Background())).To(BeTrue())
 
-	k8sClient = k8sManager.GetClient()
-	Expect(k8sClient).ToNot(BeNil())
+	k8sClient, err = client.New(cfg, client.Options{Scheme: k8sManager.GetScheme()})
+	Expect(err).NotTo(HaveOccurred())
 
 	close(done)
 }, 60)
