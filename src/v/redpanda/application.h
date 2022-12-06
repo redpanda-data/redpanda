@@ -282,6 +282,10 @@ private:
     deferred_actions _deferred;
 
     ss::sharded<ss::abort_source> _as;
+
+    // Disable quality of life behaviors like leader transfer on shutdown,
+    // which do not make sense in a unit test.
+    bool _test_mode{false};
 };
 
 namespace debug {

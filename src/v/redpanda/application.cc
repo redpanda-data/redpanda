@@ -194,6 +194,9 @@ application::~application() = default;
  * is shutting down.
  */
 void application::maybe_drain_leaderships() {
+    if (_test_mode) {
+        return;
+    }
     auto& health_monitor = controller->get_health_monitor();
 
     // Load cluster health status with a short timeout
@@ -2023,6 +2026,8 @@ void application::start_bootstrap_services() {
 }
 
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
+    _test_mode = test_mode;
+
     // Setup the app level abort service
     construct_service(_as).get();
 
