@@ -2035,7 +2035,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random_with_duplicates,
   cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
+    constexpr int num_segments = 500;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
     auto segments = setup_s3_imposter(
