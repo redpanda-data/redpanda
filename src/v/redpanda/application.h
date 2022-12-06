@@ -89,6 +89,7 @@ public:
     ~application();
 
     void shutdown();
+    void maybe_drain_leaderships();
 
     ss::future<> set_proxy_config(ss::sstring name, std::any val);
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);

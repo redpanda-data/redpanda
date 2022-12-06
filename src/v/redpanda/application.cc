@@ -27,6 +27,7 @@
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/members_manager.h"
@@ -184,11 +185,98 @@ application::application(ss::sstring logger_name)
 
 application::~application() = default;
 
+/**
+ * During shutdown, attempt to drain raft leaderships to other nodes, if the
+ * cluster appears to be in a fit state to receive them.
+ *
+ * This is aimed at the case of a healthy cluster where one node is being shut
+ * down: the cases where we skip are aimed at the case where the whole cluster
+ * is shutting down.
+ */
+void application::maybe_drain_leaderships() {
+    auto& health_monitor = controller->get_health_monitor();
+
+    // Load cluster health status with a short timeout
+    auto nodes_status_r = health_monitor.local()
+                            .get_nodes_status(model::timeout_clock::now() + 1s)
+                            .get();
+
+    // If we can't refresh health promptly, it's a sign that the rest of the
+    // cluster is not fully available: skip trying to drain
+    if (!nodes_status_r) {
+        vlog(
+          _log.info,
+          "Shutting down: skipping leadership drain: cluster health status "
+          "unavailable.");
+        return;
+    }
+
+    // Count the peers that are up and likely to be ready to receive leaderships
+    auto nodes_status = nodes_status_r.value();
+    size_t nodes_up = 0;
+    for (const auto& s : nodes_status) {
+        if (
+          s.is_alive == cluster::alive::yes
+          && s.membership_state == model::membership_state::active) {
+            nodes_up += 1;
+        }
+    }
+
+    // We only do this if we can see that at least two peers are up, i.e.
+    // we have some chance of other nodes taking over leadership.
+    if (nodes_up < 2) {
+        vlog(
+          _log.info,
+          "Shutting down: skipping leadership drain: too few peers available.");
+        return;
+    }
+
+    // Start the drain process in the background
+    auto& drain_manager = controller->get_drain_manager();
+    drain_manager
+      .invoke_on_all([](cluster::drain_manager& dm) { return dm.drain(); })
+      .get();
+
+    // Poll, up to timeout, for leaderships to drain.
+    auto t_initial = ss::lowres_clock::now();
+    static constexpr ss::lowres_clock::duration timeout = 5s;
+    while (true) {
+        auto status = drain_manager.local().status().get();
+        if (status && status->finished) {
+            vlog(_log.info, "Leadership drain complete, shutting down...");
+            break;
+        } else {
+            if (ss::lowres_clock::now() - t_initial > timeout) {
+                vlog(
+                  _log.warn,
+                  "Leadership drain timed out, shutting down while still "
+                  "holding leaderships.");
+                return;
+            } else {
+                vlog(_log.info, "Leadership drain in progress, waiting...");
+                ss::sleep(500ms).get();
+            }
+        }
+    }
+}
+
 void application::shutdown() {
-    // Stop accepting new requests.
+    // Conditional on controller startup having progressed far enough to
+    // do a leadership drain: may be false if we aborted during startup.
+    if (controller && controller->get_drain_manager().local_is_initialized()) {
+        // Try and cleanly offload any work we can: this improves the chance
+        // of avoiding interrupting transactional consumers, and gives active
+        // clients a cleaner "not leader" error, rather than the client suddenly
+        // seeing connections dropped/refused.
+        maybe_drain_leaderships();
+    }
+
+    // Stop accepting new user requests.
     if (_kafka_server.local_is_initialized()) {
         _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
     }
+
+    // We have offloaded what work we can: stop internal RPCs
     if (_rpc.local_is_initialized()) {
         _rpc.invoke_on_all(&rpc::rpc_server::shutdown_input).get();
     }
