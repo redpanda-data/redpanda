@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
+#include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "s3/client.h"
 #include "storage/segment_reader.h"
@@ -105,6 +106,11 @@ private:
 /// things like reconnects, backpressure and backoff.
 class remote : public ss::peering_sharded_service<remote> {
 public:
+    /// Default tags applied to objects
+    static const std::vector<s3::object_tag> default_segment_tags;
+    static const std::vector<s3::object_tag> default_partition_manifest_tags;
+    static const std::vector<s3::object_tag> default_topic_manifest_tags;
+
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream = ss::noncopyable_function<
@@ -196,7 +202,8 @@ public:
     ss::future<upload_result> upload_manifest(
       const s3::bucket_name& bucket,
       const base_manifest& manifest,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      std::vector<s3::object_tag> tags = default_partition_manifest_tags);
 
     /// \brief Upload segment to S3
     ///
@@ -212,7 +219,8 @@ public:
       uint64_t content_length,
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source);
+      lazy_abort_source& lazy_abort_source,
+      std::vector<s3::object_tag> tags = default_segment_tags);
 
     /// \brief Download segment from S3
     ///
@@ -253,6 +261,16 @@ public:
       bool expect_missing = false);
 
     materialized_segments& materialized() { return *_materialized; }
+
+    /// Add partition manifest tags (includes partition id)
+    static std::vector<s3::object_tag>
+    get_manifest_tags(const model::ntp& ntp, model::initial_revision_id rev);
+    /// Add topic manifest tags (no partition id)
+    static std::vector<s3::object_tag> get_manifest_tags(
+      const model::topic_namespace& ntp, model::initial_revision_id rev);
+    /// Add segment level tags
+    static std::vector<s3::object_tag>
+    get_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
 
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
