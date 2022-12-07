@@ -127,4 +127,4 @@ class ConnectionRateLimitTest(PreallocNodesTest):
                               self.redpanda.nodes[0], RATE_METRIC, {})
         metrics.evaluate([(RATE_METRIC, lambda a, b: b > 0)])
 
-        assert time2 >= time1 * 1.7, f'Time for first iteration:{time1} Time for second iteration:{time2}'
+        assert time2 >= time1 * 1.6, f'Time for first iteration:{time1} Time for second iteration:{time2}'
