@@ -108,9 +108,18 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_xor) {
     find_test_case<details::delta_xor>(10000000, {});
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_xor_small) {
+    find_test_case<details::delta_xor>(random_generators::get_int(16), {});
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_delta) {
     find_test_case<details::delta_delta<int64_t>>(
       10000000, details::delta_delta<int64_t>(0));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_delta_small) {
+    find_test_case<details::delta_delta<int64_t>>(
+      random_generators::get_int(16), details::delta_delta<int64_t>(0));
 }
 
 template<class delta_alg>
@@ -153,9 +162,19 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_xor) {
     lower_bound_test_case<details::delta_xor>(10000000, {});
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_xor_small) {
+    lower_bound_test_case<details::delta_xor>(
+      random_generators::get_int(16), {});
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_delta) {
     lower_bound_test_case<details::delta_delta<int64_t>>(
       10000000, details::delta_delta<int64_t>(0));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_delta_small) {
+    lower_bound_test_case<details::delta_delta<int64_t>>(
+      random_generators::get_int(16), details::delta_delta<int64_t>(0));
 }
 
 template<class delta_alg>
@@ -196,9 +215,19 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_xor) {
     upper_bound_test_case<details::delta_xor>(10000000, {});
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_xor_small) {
+    upper_bound_test_case<details::delta_xor>(
+      random_generators::get_int(16), {});
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta) {
     upper_bound_test_case<details::delta_delta<int64_t>>(
       10000000, details::delta_delta<int64_t>(0));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta_small) {
+    upper_bound_test_case<details::delta_delta<int64_t>>(
+      random_generators::get_int(16), details::delta_delta<int64_t>(0));
 }
 
 template<class delta_alg>
@@ -230,6 +259,10 @@ void at_test_case(const int64_t max_value, delta_alg initial) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_xor) {
     at_test_case<details::delta_xor>(10000000, {});
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_xor_small) {
+    at_test_case<details::delta_xor>(random_generators::get_int(16), {});
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta) {
