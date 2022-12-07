@@ -228,8 +228,9 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               rev);
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
+            auto tags = cloud_storage::remote::get_manifest_tags(topic_ns, rev);
             auto res = co_await _remote.local().upload_manifest(
-              _conf.bucket_name, tm, fib);
+              _conf.bucket_name, tm, fib, std::move(tags));
             uploaded = res == cloud_storage::upload_result::success;
             if (!uploaded) {
                 vlog(ctxlog.warn, "Topic manifest upload timed out: {}", key);
