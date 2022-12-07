@@ -269,3 +269,42 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta) {
     at_test_case<details::delta_delta<int64_t>>(
       10000000, details::delta_delta<int64_t>{0});
 }
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta_small) {
+    at_test_case<details::delta_delta<int64_t>>(
+      random_generators::get_int(16), details::delta_delta<int64_t>{0});
+}
+
+template<class delta_alg>
+void prefix_truncate_test_case(const int64_t max_value, delta_alg initial) {
+    using frame_t = segment_meta_column_frame<int64_t, delta_alg>;
+    frame_t frame(std::move(initial));
+    size_t total_size = 0;
+    std::vector<int64_t> samples;
+    for (int64_t value = 0; value < max_value;
+         value += random_generators::get_int(1, 100)) {
+        frame.append(value);
+        if (samples.empty() || random_generators::get_int(10) == 0) {
+            samples.push_back(value);
+        }
+        total_size++;
+    }
+    BOOST_REQUIRE_EQUAL(total_size, frame.size());
+
+    for (auto value : samples) {
+        frame.prefix_truncate(value);
+        auto it = frame.begin();
+        BOOST_REQUIRE(it != frame.end());
+        auto actual = *it;
+        BOOST_REQUIRE_EQUAL(actual, value);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_xor) {
+    prefix_truncate_test_case<details::delta_xor>(10, {});
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_delta) {
+    prefix_truncate_test_case<details::delta_delta<int64_t>>(
+      10, details::delta_delta<int64_t>{0});
+}

@@ -168,6 +168,16 @@ public:
 
     bool contains(value_t value) const { return find(value) != end(); }
 
+    void prefix_truncate(value_t new_start) {
+        segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
+        for (auto it = find(new_start); it != end(); ++it) {
+            tmp.append(*it);
+        }
+        _head = tmp._head;
+        _tail = std::move(tmp._tail);
+        _size = tmp._size;
+    }
+
 private:
     template<class PredT>
     const_iterator pred_search(value_t value) const {
