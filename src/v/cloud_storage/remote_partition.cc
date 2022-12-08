@@ -76,7 +76,7 @@ remote_partition::materialize_segment(const segment_meta& meta) {
     auto key_offset = meta.base_offset - meta.delta_offset;
     auto units = materialized().get_segment_units();
     auto st = std::make_unique<materialized_segment_state>(
-      meta.base_offset, key_offset, *this, std::move(units));
+      meta.base_offset, *this, std::move(units));
     auto [iter, ok] = _segments.insert(
       std::make_pair(meta.base_offset, std::move(st)));
     vassert(
@@ -611,7 +611,9 @@ ss::future<> remote_partition::stop() {
 
     for (auto& s : _segments) {
         vlog(
-          _ctxlog.debug, "remote partition stop {}", s.second->base_rp_offset);
+          _ctxlog.debug,
+          "remote partition stop {}",
+          s.second->base_rp_offset());
         co_await s.second->stop();
     }
 

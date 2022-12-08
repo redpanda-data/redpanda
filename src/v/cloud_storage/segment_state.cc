@@ -27,14 +27,9 @@ void materialized_segment_state::offload(remote_partition* partition) {
 }
 
 materialized_segment_state::materialized_segment_state(
-  model::offset base_offset,
-  kafka::offset off_key,
-  remote_partition& p,
-  ssx::semaphore_units u)
-  : base_rp_offset(base_offset)
-  , offset_key(off_key)
-  , segment(ss::make_lw_shared<remote_segment>(
-      p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
+  model::offset base_offset, remote_partition& p, ssx::semaphore_units u)
+  : segment(ss::make_lw_shared<remote_segment>(
+    p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
   , atime(ss::lowres_clock::now())
   , parent(p.weak_from_this())
   , _units(std::move(u)) {
@@ -95,6 +90,10 @@ const model::ntp& materialized_segment_state::ntp() const {
         static model::ntp blank;
         return blank;
     }
+}
+
+model::offset materialized_segment_state::base_rp_offset() const {
+    return segment->get_base_rp_offset();
 }
 
 } // namespace cloud_storage
