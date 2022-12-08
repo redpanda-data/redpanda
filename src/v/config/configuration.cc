@@ -254,12 +254,18 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target quota byte rate (bytes per second) - 2GB default",
+      "Target request size quota byte rate (bytes per second) - 2GB default",
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
+  , target_fetch_quota_byte_rate(
+      *this,
+      "target_fetch_quota_byte_rate",
+      "Target fetch size quota byte rate (bytes per second) - disabled default",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
   , kafka_admin_topic_api_rate(
       *this,
       "kafka_admin_topic_api_rate",

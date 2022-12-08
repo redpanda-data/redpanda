@@ -54,8 +54,8 @@ public:
     using clock = ss::lowres_clock;
 
     struct throttle_delay {
-        bool first_violation;
-        clock::duration duration;
+        bool first_violation{true};
+        clock::duration duration{std::chrono::milliseconds(0)};
     };
 
     quota_manager()
@@ -63,11 +63,13 @@ public:
         config::shard_local_cfg().default_num_windows.bind())
       , _default_window_width(
           config::shard_local_cfg().default_window_sec.bind())
-      , _default_target_tp_rate(
+      , _default_target_produce_tp_rate(
           config::shard_local_cfg().target_quota_byte_rate.bind())
+      , _target_fetch_tp_rate(
+          config::shard_local_cfg().target_fetch_quota_byte_rate.bind())
       , _target_partition_mutation_quota(
           config::shard_local_cfg().kafka_admin_topic_api_rate.bind())
-      , _target_tp_rate_per_client_group(
+      , _target_produce_tp_rate_per_client_group(
           config::shard_local_cfg().kafka_client_group_byte_rate_quota.bind())
       , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
       , _max_delay(
@@ -89,10 +91,20 @@ public:
 
     ss::future<> start();
 
-    // record a new observation and return <previous delay, new delay>
-    throttle_delay record_tp_and_throttle(
+    // record a new observation
+    throttle_delay record_produce_tp_and_throttle(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
+      clock::time_point now = clock::now());
+
+    // record a new observation
+    void record_fetch_tp(
+      std::optional<std::string_view> client_id,
+      uint64_t bytes,
+      clock::time_point now = clock::now());
+
+    throttle_delay throttle_fetch_tp(
+      std::optional<std::string_view> client_id,
       clock::time_point now = clock::now());
 
     // Used to record new number of partitions mutations
@@ -113,6 +125,13 @@ private:
       uint32_t mutations,
       clock::time_point now);
 
+    // throttle, return <previous delay, new delay>
+    std::chrono::milliseconds throttle(
+      std::optional<std::string_view> client_id,
+      uint32_t target_rate,
+      const clock::time_point& now,
+      rate_tracker& rate_tracker);
+
     // last_seen: used for gc keepalive
     // delay: last calculated delay
     // tp_rate: throughput tracking
@@ -120,7 +139,8 @@ private:
     struct quota {
         clock::time_point last_seen;
         clock::duration delay;
-        rate_tracker tp_rate;
+        rate_tracker tp_produce_rate;
+        rate_tracker tp_fetch_rate;
         std::optional<token_bucket_rate_tracker> pm_rate;
     };
     using underlying_t = absl::flat_hash_map<ss::sstring, quota>;
@@ -135,17 +155,18 @@ private:
 
     std::optional<std::string_view>
     get_client_quota(const std::optional<std::string_view>& client_id);
-    int64_t
-    get_client_target_tp_rate(const std::optional<std::string_view>& quota_id);
+    int64_t get_client_target_produce_tp_rate(
+      const std::optional<std::string_view>& quota_id);
 
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
 
-    config::binding<uint32_t> _default_target_tp_rate;
+    config::binding<uint32_t> _default_target_produce_tp_rate;
+    config::binding<std::optional<uint32_t>> _target_fetch_tp_rate;
     config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
-      _target_tp_rate_per_client_group;
+      _target_produce_tp_rate_per_client_group;
 
     underlying_t _quotas;
 

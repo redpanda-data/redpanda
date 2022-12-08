@@ -56,6 +56,7 @@ quota_manager::maybe_add_and_retrieve_quota(
         now,
         clock::duration(0),
         {static_cast<size_t>(_default_num_windows()), _default_window_width()},
+        {static_cast<size_t>(_default_num_windows()), _default_window_width()},
         /// pm_rate is only non-nullopt on the qm home shard
         (ss::this_shard_id() == quota_manager_shard)
           ? std::optional<token_bucket_rate_tracker>(
@@ -79,7 +80,8 @@ std::optional<std::string_view> quota_manager::get_client_quota(
     if (!client_id) {
         return std::nullopt;
     }
-    for (const auto& group_and_limit : _target_tp_rate_per_client_group()) {
+    for (const auto& group_and_limit :
+         _target_produce_tp_rate_per_client_group()) {
         if (client_id->starts_with(
               std::string_view(group_and_limit.second.clients_prefix))) {
             return group_and_limit.first;
@@ -88,17 +90,17 @@ std::optional<std::string_view> quota_manager::get_client_quota(
     return client_id;
 }
 
-int64_t quota_manager::get_client_target_tp_rate(
+int64_t quota_manager::get_client_target_produce_tp_rate(
   const std::optional<std::string_view>& quota_id) {
     if (!quota_id) {
-        return _default_target_tp_rate();
+        return _default_target_produce_tp_rate();
     }
-    auto group_tp_rate = _target_tp_rate_per_client_group().find(
+    auto group_tp_rate = _target_produce_tp_rate_per_client_group().find(
       ss::sstring(quota_id.value()));
-    if (group_tp_rate != _target_tp_rate_per_client_group().end()) {
+    if (group_tp_rate != _target_produce_tp_rate_per_client_group().end()) {
         return group_tp_rate->second.quota;
     }
-    return _default_target_tp_rate();
+    return _default_target_produce_tp_rate();
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
@@ -155,51 +157,92 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
     return delay_ms;
 }
 
+static std::chrono::milliseconds calculate_delay(
+  double rate, uint32_t target_rate, clock::duration window_size) {
+    std::chrono::milliseconds delay_ms(0);
+    if (rate > target_rate) {
+        auto diff = rate - target_rate;
+        double delay = (diff / target_rate)
+                       * static_cast<double>(
+                         std::chrono::duration_cast<std::chrono::milliseconds>(
+                           window_size)
+                           .count());
+        delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
+    }
+    return delay_ms;
+}
+
+std::chrono::milliseconds quota_manager::throttle(
+  std::optional<std::string_view> quota_id,
+  uint32_t target_rate,
+  const clock::time_point& now,
+  rate_tracker& rate_tracker) {
+    auto rate = rate_tracker.measure(now);
+    auto delay_ms = calculate_delay(
+      rate, target_rate, rate_tracker.window_size());
+
+    std::chrono::milliseconds max_delay_ms(_max_delay());
+    if (delay_ms > max_delay_ms) {
+        vlog(
+          klog.info,
+          "Found data rate for window of: {} bytes. Client:{}, "
+          "Estimated "
+          "backpressure delay of {}. Limiting to {} backpressure delay",
+          rate,
+          quota_id,
+          delay_ms,
+          max_delay_ms);
+        delay_ms = max_delay_ms;
+    }
+    return delay_ms;
+}
+
 // record a new observation and return <previous delay, new delay>
-throttle_delay quota_manager::record_tp_and_throttle(
+throttle_delay quota_manager::record_produce_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
     auto quota_id = get_client_quota(client_id);
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
 
-    auto rate = it->second.tp_rate.record_and_measure(bytes, now);
-
-    std::chrono::milliseconds delay_ms(0);
-    auto target_tp_rate = get_client_target_tp_rate(quota_id);
-    if (rate > target_tp_rate) {
-        auto diff = rate - target_tp_rate;
-        double delay = (diff / target_tp_rate)
-                       * static_cast<double>(
-                         std::chrono::duration_cast<std::chrono::milliseconds>(
-                           it->second.tp_rate.window_size())
-                           .count());
-        delay_ms = std::chrono::milliseconds(static_cast<uint64_t>(delay));
-    }
-
-    std::chrono::milliseconds max_delay_ms(_max_delay());
-    if (delay_ms > max_delay_ms) {
-        vlog(
-          klog.info,
-          "Found data rate for window of: {} bytes. Client:{}, Estimated "
-          "backpressure delay of {}. Limiting to {} backpressure delay",
-          rate,
-          it->first,
-          delay_ms,
-          max_delay_ms);
-        delay_ms = max_delay_ms;
-    }
-
+    it->second.tp_produce_rate.record(bytes, now);
+    auto target_tp_rate = get_client_target_produce_tp_rate(quota_id);
+    auto delay_ms = throttle(
+      quota_id, target_tp_rate, now, it->second.tp_produce_rate);
     auto prev = it->second.delay;
     it->second.delay = delay_ms;
-
     throttle_delay res{};
     res.first_violation = prev.count() == 0;
     res.duration = it->second.delay;
     return res;
 }
-// erase inactive tracked quotas. windows are considered inactive if they
-// have not received any updates in ten window's worth of time.
+
+void quota_manager::record_fetch_tp(
+  std::optional<std::string_view> client_id,
+  uint64_t bytes,
+  clock::time_point now) {
+    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    it->second.tp_fetch_rate.record(bytes, now);
+}
+
+throttle_delay quota_manager::throttle_fetch_tp(
+  std::optional<std::string_view> client_id, clock::time_point now) {
+    if (!_target_fetch_tp_rate()) {
+        return {};
+    }
+    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    it->second.tp_fetch_rate.maybe_advance_current(now);
+    auto delay_ms = throttle(
+      client_id, *_target_fetch_tp_rate(), now, it->second.tp_fetch_rate);
+
+    throttle_delay res{};
+    res.first_violation = false;
+    res.duration = delay_ms;
+    return res;
+}
+
+// erase inactive tracked quotas. windows are considered inactive if
+// they have not received any updates in ten window's worth of time.
 void quota_manager::gc(clock::duration full_window) {
     auto now = clock::now();
     auto expire_age = full_window * 10;
