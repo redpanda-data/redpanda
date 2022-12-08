@@ -32,12 +32,43 @@
 #include <chrono>
 #include <initializer_list>
 #include <limits>
+#include <string_view>
 
 namespace s3 {
 
-struct object_tag {
-    ss::sstring key;
-    ss::sstring value;
+/// Object tag formatter that can be used
+/// to format tags for x_amz_tagging field
+/// The value is supposed to be cached and
+/// not re-created on every request.
+class object_tag_formatter {
+public:
+    object_tag_formatter() = default;
+
+    object_tag_formatter(
+      std::initializer_list<std::pair<std::string_view, std::string_view>>&&
+        il) {
+        for (auto [key, value] : il) {
+            add(key, value);
+        }
+    }
+
+    template<class ValueT>
+    void add(std::string_view tag, const ValueT& value) {
+        if (empty()) {
+            _tags += ssx::sformat("{}={}", tag, value);
+        } else {
+            _tags += ssx::sformat("&{}={}", tag, value);
+        }
+    }
+
+    bool empty() const { return _tags.empty(); }
+
+    boost::beast::string_view str() const {
+        return {_tags.data(), _tags.size()};
+    }
+
+private:
+    ss::sstring _tags;
 };
 
 /// Request formatter for AWS S3
@@ -62,7 +93,7 @@ public:
       bucket_name const& name,
       object_key const& key,
       size_t payload_size_bytes,
-      const std::vector<object_tag>& tags);
+      const object_tag_formatter& tags);
 
     /// \brief Create a 'GetObject' request header
     ///
@@ -165,7 +196,7 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char>&& body,
-      const std::vector<object_tag>& tags,
+      const object_tag_formatter& tags,
       const ss::lowres_clock::duration& timeout);
 
     struct list_bucket_item {
