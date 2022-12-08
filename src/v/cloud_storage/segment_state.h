@@ -32,10 +32,7 @@ class partition_probe;
 /// remote segment.
 struct materialized_segment_state {
     materialized_segment_state(
-      model::offset bo,
-      kafka::offset offk,
-      remote_partition& p,
-      ssx::semaphore_units);
+      model::offset bo, remote_partition& p, ssx::semaphore_units);
 
     void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 
@@ -53,9 +50,8 @@ struct materialized_segment_state {
     const model::ntp& ntp() const;
 
     /// Base offsetof the segment
-    model::offset base_rp_offset;
-    /// Key of the segment in _segments collection of the remote_partition
-    kafka::offset offset_key;
+    model::offset base_rp_offset() const;
+
     ss::lw_shared_ptr<remote_segment> segment;
     /// Batch readers that can be used to scan the segment
     std::list<std::unique_ptr<remote_segment_batch_reader>> readers;
