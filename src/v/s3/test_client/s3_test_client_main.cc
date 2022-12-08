@@ -190,27 +190,23 @@ int main(int args, char** argv, char** env) {
                     if (!lcfg.out.empty()) {
                         vlog(test_log.info, "receiving file {}", lcfg.out);
                         auto out_file = get_output_file_as_stream(lcfg.out);
-                        try {
-                            auto resp = cli
-                                          .get_object(
-                                            lcfg.bucket,
-                                            lcfg.object,
-                                            http::default_connect_timeout)
-                                          .get0()
-                                          ->as_input_stream();
+                        const auto result = cli
+                                              .get_object(
+                                                lcfg.bucket,
+                                                lcfg.object,
+                                                http::default_connect_timeout)
+                                              .get0();
+                        if (result) {
+                            auto resp = result.value()->as_input_stream();
                             vlog(test_log.info, "response: OK");
                             ss::copy(resp, out_file).get();
                             vlog(test_log.info, "file write done");
                             resp.close().get();
-                        } catch (const s3::rest_error_response& err) {
+                        } else {
                             vlog(
                               test_log.error,
-                              "Error response: {}, code: {}, "
-                              "resource: {}, request_id: {}",
-                              err.message(),
-                              err.code(),
-                              err.resource(),
-                              err.request_id());
+                              "GET request failed: {}",
+                              result.error());
                         }
                         out_file.flush().get();
                         out_file.close().get();
@@ -219,77 +215,69 @@ int main(int args, char** argv, char** env) {
                         vlog(test_log.info, "sending file {}", lcfg.in);
                         auto [payload, payload_size] = get_input_file_as_stream(
                           lcfg.in);
-                        try {
-                            cli
-                              .put_object(
-                                lcfg.bucket,
-                                lcfg.object,
-                                payload_size,
-                                std::move(payload),
-                                {},
-                                http::default_connect_timeout)
-                              .get0();
-                        } catch (const s3::rest_error_response& err) {
+                        const auto result = cli
+                                              .put_object(
+                                                lcfg.bucket,
+                                                lcfg.object,
+                                                payload_size,
+                                                std::move(payload),
+                                                {},
+                                                http::default_connect_timeout)
+                                              .get0();
+
+                        if (!result) {
                             vlog(
                               test_log.error,
-                              "Error response: {}, code: {}, "
-                              "resource: {}, request_id: {}",
-                              err.message(),
-                              err.code(),
-                              err.resource(),
-                              err.request_id());
+                              "PUT request failed: {}",
+                              result.error());
                         }
                     } else if (lcfg.list_with_prefix) {
-                        // put
                         vlog(test_log.info, "listing objects");
-                        try {
-                            auto res = cli.list_objects_v2(lcfg.bucket).get0();
+                        const auto result
+                          = cli.list_objects_v2(lcfg.bucket).get0();
+
+                        if (result) {
+                            const auto& val = result.value();
                             vlog(
                               test_log.info,
-                              "ListBucketV2 result, prefix: {}, is-truncated: "
+                              "ListBucketV2 result, prefix: {}, "
+                              "is-truncated: "
                               "{}, "
                               "contents:",
-                              res.prefix,
-                              res.is_truncated);
-                            for (const auto& item : res.contents) {
+                              val.prefix,
+                              val.is_truncated);
+                            for (const auto& item : val.contents) {
                                 vlog(
                                   test_log.info,
-                                  "\tkey: {}, last_modified: {}, size_bytes: "
+                                  "\tkey: {}, last_modified: {}, "
+                                  "size_bytes: "
                                   "{}",
                                   item.key,
                                   time_to_string(item.last_modified),
                                   item.size_bytes);
                             }
-                        } catch (const s3::rest_error_response& err) {
+                        } else {
                             vlog(
                               test_log.error,
-                              "Error response: {}, code: {}, "
-                              "resource: {}, request_id: {}",
-                              err.message(),
-                              err.code(),
-                              err.resource(),
-                              err.request_id());
+                              "List request failed: {}",
+                              result.error());
                         }
                     } else if (lcfg.delete_object) {
-                        // put
                         vlog(test_log.info, "deleting objects");
-                        try {
-                            cli
-                              .delete_object(
-                                lcfg.bucket,
-                                lcfg.object,
-                                http::default_connect_timeout)
-                              .get();
+                        const auto result = cli
+                                              .delete_object(
+                                                lcfg.bucket,
+                                                lcfg.object,
+                                                http::default_connect_timeout)
+                                              .get();
+
+                        if (result) {
                             vlog(test_log.info, "DeleteObject completed");
-                        } catch (const s3::rest_error_response& err) {
+                        } else {
                             vlog(
                               test_log.error,
-                              "Error response: {}, code: {}, "
-                              "resource: {}, request_id: {}",
-                              err.message(),
-                              err.code(),
-                              err.resource(),
-                              err.request_id());
+                              "Delete request failed: {}",
+                              result.error());
                         }
                     }
                 })

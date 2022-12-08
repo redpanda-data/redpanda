@@ -41,115 +41,6 @@ namespace cloud_storage {
 
 using namespace std::chrono_literals;
 
-enum class error_outcome {
-    /// Error condition that could be retried
-    retry,
-    /// The service asked us to retry (SlowDown response)
-    retry_slowdown,
-    /// Error condition that couldn't be retried
-    fail,
-    /// NotFound API error (only suitable for downloads)
-    notfound
-};
-
-/// @brief Analyze exception
-/// @return error outcome - retry, fail (with exception), or notfound (can only
-/// be used with download)
-///
-/// There're several error scopes that we're trying to choose from:
-/// - errors that can be retried
-///   - some network errors (connection reset by peer)
-///   - S3 service backpressure (SlowDown responses)
-///   - Short read errors (appear when S3 throttles redpanda)
-/// - errors for which retrying is not an effective solution
-///   - NotFound error for downloads
-///   - FS errors
-///   - errors generated during graceful shutdown, etc
-static error_outcome categorize_error(
-  const std::exception_ptr& err,
-  retry_chain_node& fib,
-  const s3::bucket_name& bucket,
-  const s3::object_key& path) {
-    auto result = error_outcome::retry;
-    retry_chain_logger ctxlog(cst_log, fib);
-    try {
-        std::rethrow_exception(err);
-    } catch (const s3::rest_error_response& err) {
-        if (err.code() == s3::s3_error_code::no_such_key) {
-            // Unexpected 404s are logged elsewhere by the s3 client at warn
-            // level, so only log at debug level here.
-            vlog(ctxlog.debug, "NoSuchKey response received {}", path);
-            result = error_outcome::notfound;
-        } else if (
-          err.code() == s3::s3_error_code::slow_down
-          || err.code() == s3::s3_error_code::internal_error) {
-            // This can happen when we're dealing with high request rate to
-            // the manifest's prefix. Backoff algorithm should be applied.
-            // In principle only slow_down should occur, but in practice
-            // AWS S3 does return internal_error as well sometimes.
-            vlog(ctxlog.warn, "{} response received {}", err.code(), path);
-            result = error_outcome::retry_slowdown;
-        } else {
-            // Unexpected REST API error, we can't recover from this
-            // because the issue is not temporary (e.g. bucket doesn't
-            // exist)
-            vlog(
-              ctxlog.error,
-              "Accessing {}, unexpected REST API error \"{}\" detected, "
-              "code: "
-              "{}, request_id: {}, resource: {}",
-              bucket,
-              err.message(),
-              err.code_string(),
-              err.request_id(),
-              err.resource());
-            result = error_outcome::fail;
-        }
-    } catch (const std::system_error& cerr) {
-        // The system_error is type erased and not convenient for selective
-        // handling. The following errors should be retried:
-        // - connection refused, timed out or reset by peer
-        // - network temporary unavailable
-        // Shouldn't be retried
-        // - any filesystem error
-        // - broken-pipe
-        // - any other network error (no memory, bad socket, etc)
-        if (net::is_reconnect_error(cerr)) {
-            vlog(
-              ctxlog.warn,
-              "System error susceptible for retry {}",
-              cerr.what());
-        } else {
-            vlog(ctxlog.error, "System error {}", cerr);
-            result = error_outcome::fail;
-        }
-    } catch (const ss::timed_out_error& terr) {
-        // This should happen when the connection pool was disconnected
-        // from the S3 endpoint and subsequent connection attmpts failed.
-        vlog(ctxlog.warn, "Connection timeout {}", terr.what());
-    } catch (const boost::system::system_error& err) {
-        if (err.code() != boost::beast::http::error::short_read) {
-            vlog(cst_log.warn, "Connection failed {}", err.what());
-            result = error_outcome::fail;
-        } else {
-            // This is a short read error that can be caused by the abrupt TLS
-            // shutdown. The content of the received buffer is discarded in this
-            // case and http client receives an empty buffer.
-            vlog(
-              ctxlog.info,
-              "Server disconnected: '{}', retrying HTTP request",
-              err.what());
-        }
-    } catch (const ss::abort_requested_exception&) {
-        vlog(ctxlog.debug, "Abort requested");
-        throw;
-    } catch (...) {
-        vlog(ctxlog.error, "Unexpected error {}", std::current_exception());
-        result = error_outcome::fail;
-    }
-    return result;
-}
-
 remote::remote(
   s3_connection_limit limit,
   const s3::configuration& conf,
@@ -238,12 +129,12 @@ ss::future<download_result> remote::do_download_manifest(
     vlog(ctxlog.debug, "Download manifest {}", key());
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->get_object(
-              bucket, path, fib.get_timeout(), expect_missing);
+        auto resp = co_await lease.client->get_object(
+          bucket, path, fib.get_timeout(), expect_missing);
+
+        if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            co_await manifest.update(resp->as_input_stream());
+            co_await manifest.update(resp.value()->as_input_stream());
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
                 _probe.partition_manifest_download();
@@ -256,15 +147,17 @@ ss::future<download_result> remote::do_download_manifest(
                 break;
             }
             co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
         }
+
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+
+        switch (resp.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "Downloading manifest from {}, {} backoff required",
@@ -275,7 +168,7 @@ ss::future<download_result> remote::do_download_manifest(
             co_await ss::sleep_abortable(retry_permit.delay, _as);
             retry_permit = fib.retry();
             break;
-        case error_outcome::fail:
+        case s3::error_outcome::fail:
             result = download_result::failed;
             vlog(
               ctxlog.warn,
@@ -284,7 +177,7 @@ ss::future<download_result> remote::do_download_manifest(
               *result,
               path);
             break;
-        case error_outcome::notfound:
+        case s3::error_outcome::notfound:
             result = download_result::notfound;
             vlog(
               ctxlog.debug,
@@ -323,11 +216,11 @@ ss::future<upload_result> remote::upload_manifest(
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto [is, size] = manifest.serialize();
-            co_await lease.client->put_object(
-              bucket, path, size, std::move(is), tags, fib.get_timeout());
+        auto [is, size] = manifest.serialize();
+        const auto res = co_await lease.client->put_object(
+          bucket, path, size, std::move(is), tags, fib.get_timeout());
+
+        if (res) {
             vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
@@ -342,15 +235,17 @@ ss::future<upload_result> remote::upload_manifest(
             }
             _probe.register_upload_size(size);
             co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
         }
+
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+
+        switch (res.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "Uploading manifest {} to {}, {} backoff required",
@@ -362,9 +257,9 @@ ss::future<upload_result> remote::upload_manifest(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case error_outcome::notfound:
+        case s3::error_outcome::notfound:
             // not expected during upload
-        case error_outcome::fail:
+        case s3::error_outcome::fail:
             result = upload_result::failed;
             break;
         }
@@ -426,34 +321,34 @@ ss::future<upload_result> remote::upload_segment(
         auto reader_handle = co_await reset_str();
         auto path = s3::object_key(segment_path());
         vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
-        std::exception_ptr eptr = nullptr;
-        try {
-            // Segment upload attempt
-            co_await lease.client->put_object(
-              bucket,
-              path,
-              content_length,
-              reader_handle->take_stream(),
-              tags,
-              fib.get_timeout());
-            _probe.successful_upload();
-            _probe.register_upload_size(content_length);
-            co_await reader_handle->close();
-            co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
+        // Segment upload attempt
+        auto res = co_await lease.client->put_object(
+          bucket,
+          path,
+          content_length,
+          reader_handle->take_stream(),
+          tags,
+          fib.get_timeout());
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
         co_await reader_handle->close();
 
+        if (res) {
+            _probe.successful_upload();
+            _probe.register_upload_size(content_length);
+            co_await reader_handle->close();
+            co_return upload_result::success;
+        }
+
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+        switch (res.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "Uploading segment {} to {}, {} backoff required",
@@ -465,9 +360,9 @@ ss::future<upload_result> remote::upload_segment(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case error_outcome::notfound:
-            // not expected during upload
-        case error_outcome::fail:
+        case s3::error_outcome::notfound:
+        // not expected during upload
+        case s3::error_outcome::fail:
             result = upload_result::failed;
             break;
         }
@@ -507,27 +402,30 @@ ss::future<download_result> remote::download_segment(
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->get_object(
-              bucket, path, fib.get_timeout());
+        auto resp = co_await lease.client->get_object(
+          bucket, path, fib.get_timeout());
+
+        if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
-              boost::beast::http::field::content_length));
+            auto length = boost::lexical_cast<uint64_t>(
+              resp.value()->get_headers().at(
+                boost::beast::http::field::content_length));
             uint64_t content_length = co_await cons_str(
-              length, resp->as_input_stream());
+              length, resp.value()->as_input_stream());
             _probe.successful_download();
             _probe.register_download_size(content_length);
             co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
         }
+
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+
+        switch (resp.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "Downloading segment from {}, {} backoff required",
@@ -538,10 +436,10 @@ ss::future<download_result> remote::download_segment(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case error_outcome::fail:
+        case s3::error_outcome::fail:
             result = download_result::failed;
             break;
-        case error_outcome::notfound:
+        case s3::error_outcome::notfound:
             result = download_result::notfound;
             break;
         }
@@ -578,27 +476,28 @@ ss::future<download_result> remote::segment_exists(
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->head_object(
-              bucket, path, fib.get_timeout());
+        auto resp = co_await lease.client->head_object(
+          bucket, path, fib.get_timeout());
+        if (resp) {
             vlog(
               ctxlog.debug,
               "Receive OK HeadObject response from {}, object size: {}, etag: "
               "{}",
               path,
-              resp.object_size,
-              resp.etag);
+              resp.value().object_size,
+              resp.value().etag);
             co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
         }
+
+        // Error path
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+        switch (resp.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "HeadObject from {}, {} backoff required",
@@ -608,10 +507,10 @@ ss::future<download_result> remote::segment_exists(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case error_outcome::fail:
+        case s3::error_outcome::fail:
             result = download_result::failed;
             break;
-        case error_outcome::notfound:
+        case s3::error_outcome::notfound:
             result = download_result::notfound;
             break;
         }
@@ -647,26 +546,28 @@ ss::future<upload_result> remote::delete_object(
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            // NOTE: DeleteObject in S3 doesn't return an error
-            // if the object doesn't exist. Because of that we're
-            // using 'upload_result' type as a return type. No need
-            // to handle NoSuchKey error. The 'upload_result' represents
-            // any mutable operation.
-            co_await lease.client->delete_object(
-              bucket, path, fib.get_timeout());
+        // NOTE: DeleteObject in S3 doesn't return an error
+        // if the object doesn't exist. Because of that we're
+        // using 'upload_result' type as a return type. No need
+        // to handle NoSuchKey error. The 'upload_result' represents
+        // any mutable operation.
+        auto res = co_await lease.client->delete_object(
+          bucket, path, fib.get_timeout());
+
+        if (res) {
             vlog(ctxlog.debug, "Receive OK DeleteObject {} response", path);
             co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
         }
+
         lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
+
+        switch (res.error()) {
+        case s3::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case s3::error_outcome::retry_slowdown:
             [[fallthrough]];
-        case error_outcome::retry:
+        case s3::error_outcome::retry:
             vlog(
               ctxlog.debug,
               "DeleteObject {}, {} backoff required",
@@ -676,10 +577,10 @@ ss::future<upload_result> remote::delete_object(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case error_outcome::fail:
+        case s3::error_outcome::fail:
             result = upload_result::failed;
             break;
-        case error_outcome::notfound:
+        case s3::error_outcome::notfound:
             vlog(
               ctxlog.info,
               "Unexpected NoSuchKey error response from DeleteObject {} will "

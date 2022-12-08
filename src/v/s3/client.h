@@ -61,6 +61,48 @@ private:
     ss::sstring _tags;
 };
 
+enum class error_outcome {
+    none = 0,
+    /// Error condition that could be retried
+    retry,
+    /// The service asked us to retry (SlowDown response)
+    retry_slowdown,
+    /// Error condition that couldn't be retried
+    fail,
+    /// NotFound API error (only suitable for downloads)
+    notfound
+};
+
+struct error_outcome_category final : public std::error_category {
+    const char* name() const noexcept final { return "s3::error_outcome"; }
+
+    std::string message(int c) const final {
+        switch (static_cast<error_outcome>(c)) {
+        case error_outcome::none:
+            return "No error";
+        case error_outcome::retry:
+            return "Retryable error";
+        case error_outcome::retry_slowdown:
+            return "Cloud service asked us to slow down";
+        case error_outcome::fail:
+            return "Non retriable error";
+        case error_outcome::notfound:
+            return "Key not found error";
+        default:
+            return "Undefined error_outcome encountered";
+        }
+    }
+};
+
+inline const std::error_category& error_category() noexcept {
+    static error_outcome_category e;
+    return e;
+}
+
+inline std::error_code make_error_code(error_outcome e) noexcept {
+    return {static_cast<int>(e), error_category()};
+}
+
 /// Request formatter for AWS S3
 class request_creator {
 public:
@@ -86,6 +128,7 @@ public:
       const object_tag_formatter& tags);
 
     /// \brief Create a 'GetObject' request header
+    ///
     ///
     /// \param name is a bucket that has the object
     /// \param key is an object name
@@ -133,6 +176,8 @@ private:
 /// S3 REST-API client
 class client {
 public:
+    struct no_response {};
+
     client(
       const configuration& conf,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
@@ -155,7 +200,8 @@ public:
     /// \param timeout is a timeout of the operation
     /// \param expect_no_such_key log 404 as warning if set to false
     /// \return future that gets ready after request was sent
-    ss::future<http::client::response_stream_ref> get_object(
+    ss::future<result<http::client::response_stream_ref, error_outcome>>
+    get_object(
       bucket_name const& name,
       object_key const& key,
       const ss::lowres_clock::duration& timeout,
@@ -170,7 +216,7 @@ public:
     /// \param name is a bucket name
     /// \param key is an id of the object
     /// \return future that becomes ready when the request is completed
-    ss::future<head_object_result> head_object(
+    ss::future<result<head_object_result, error_outcome>> head_object(
       bucket_name const& name,
       object_key const& key,
       const ss::lowres_clock::duration& timeout);
@@ -181,7 +227,7 @@ public:
     /// \param payload_size is a size of the object in bytes
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the upload is completed
-    ss::future<> put_object(
+    ss::future<result<no_response, error_outcome>> put_object(
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
@@ -200,7 +246,7 @@ public:
         ss::sstring prefix;
         std::vector<list_bucket_item> contents;
     };
-    ss::future<list_bucket_result> list_objects_v2(
+    ss::future<result<list_bucket_result, error_outcome>> list_objects_v2(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
@@ -208,10 +254,49 @@ public:
       const ss::lowres_clock::duration& timeout
       = http::default_connect_timeout);
 
-    ss::future<> delete_object(
+    ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
       const object_key& key,
       const ss::lowres_clock::duration& timeout);
+
+private:
+    ss::future<head_object_result> do_head_object(
+      bucket_name const& name,
+      object_key const& key,
+      const ss::lowres_clock::duration& timeout);
+
+    ss::future<http::client::response_stream_ref> do_get_object(
+      bucket_name const& name,
+      object_key const& key,
+      const ss::lowres_clock::duration& timeout,
+      bool expect_no_such_key = false);
+
+    ss::future<> do_put_object(
+      bucket_name const& name,
+      object_key const& key,
+      size_t payload_size,
+      ss::input_stream<char>&& body,
+      const object_tag_formatter& tags,
+      const ss::lowres_clock::duration& timeout);
+
+    ss::future<list_bucket_result> do_list_objects_v2(
+      const bucket_name& name,
+      std::optional<object_key> prefix = std::nullopt,
+      std::optional<object_key> start_after = std::nullopt,
+      std::optional<size_t> max_keys = std::nullopt,
+      const ss::lowres_clock::duration& timeout
+      = http::default_connect_timeout);
+
+    ss::future<> do_delete_object(
+      const bucket_name& bucket,
+      const object_key& key,
+      const ss::lowres_clock::duration& timeout);
+
+    template<typename T>
+    ss::future<result<T, error_outcome>> send_request(
+      ss::future<T> request_future,
+      const bucket_name& bucket,
+      const object_key& key);
 
 private:
     request_creator _requestor;
@@ -220,3 +305,8 @@ private:
 };
 
 } // namespace s3
+
+namespace std {
+template<>
+struct is_error_code_enum<s3::error_outcome> : true_type {};
+} // namespace std

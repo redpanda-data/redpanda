@@ -15,6 +15,7 @@
 #include "bytes/iobuf_parser.h"
 #include "hashing/secure.h"
 #include "http/client.h"
+#include "net/connection.h"
 #include "net/tls.h"
 #include "net/types.h"
 #include "s3/error.h"
@@ -473,6 +474,92 @@ drain_response_stream(http::client::response_stream_ref resp) {
       });
 }
 
+template<typename T>
+ss::future<result<T, error_outcome>> client::send_request(
+  ss::future<T> request_future,
+  const bucket_name& bucket,
+  const object_key& key) {
+    auto outcome = error_outcome::retry;
+
+    try {
+        co_return co_await std::move(request_future);
+    } catch (const s3::rest_error_response& err) {
+        if (err.code() == s3::s3_error_code::no_such_key) {
+            // Unexpected 404s are logged elsewhere by the s3 client at warn
+            // level, so only log at debug level here.
+            vlog(s3_log.debug, "NoSuchKey response received {}", key);
+            outcome = error_outcome::notfound;
+        } else if (
+          err.code() == s3::s3_error_code::slow_down
+          || err.code() == s3::s3_error_code::internal_error) {
+            // This can happen when we're dealing with high request rate to
+            // the manifest's prefix. Backoff algorithm should be applied.
+            // In principle only slow_down should occur, but in practice
+            // AWS S3 does return internal_error as well sometimes.
+            vlog(s3_log.warn, "{} response received {}", err.code(), bucket);
+            outcome = error_outcome::retry_slowdown;
+        } else {
+            // Unexpected REST API error, we can't recover from this
+            // because the issue is not temporary (e.g. bucket doesn't
+            // exist)
+            vlog(
+              s3_log.error,
+              "Accessing {}, unexpected REST API error \"{}\" detected, "
+              "code: "
+              "{}, request_id: {}, resource: {}",
+              bucket,
+              err.message(),
+              err.code_string(),
+              err.request_id(),
+              err.resource());
+            outcome = error_outcome::fail;
+        }
+    } catch (const std::system_error& cerr) {
+        // The system_error is type erased and not convenient for selective
+        // handling. The following errors should be retried:
+        // - connection refused, timed out or reset by peer
+        // - network temporary unavailable
+        // Shouldn't be retried
+        // - any filesystem error
+        // - broken-pipe
+        // - any other network error (no memory, bad socket, etc)
+        if (net::is_reconnect_error(cerr)) {
+            vlog(
+              s3_log.warn,
+              "System error susceptible for retry {}",
+              cerr.what());
+        } else {
+            vlog(s3_log.error, "System error {}", cerr);
+            outcome = error_outcome::fail;
+        }
+    } catch (const ss::timed_out_error& terr) {
+        // This should happen when the connection pool was disconnected
+        // from the S3 endpoint and subsequent connection attmpts failed.
+        vlog(s3_log.warn, "Connection timeout {}", terr.what());
+    } catch (const boost::system::system_error& err) {
+        if (err.code() != boost::beast::http::error::short_read) {
+            vlog(s3_log.warn, "Connection failed {}", err.what());
+            outcome = error_outcome::fail;
+        } else {
+            // This is a short read error that can be caused by the abrupt TLS
+            // shutdown. The content of the received buffer is discarded in this
+            // case and http client receives an empty buffer.
+            vlog(
+              s3_log.info,
+              "Server disconnected: '{}', retrying HTTP request",
+              err.what());
+        }
+    } catch (const ss::abort_requested_exception&) {
+        vlog(s3_log.debug, "Abort requested");
+        throw;
+    } catch (...) {
+        vlog(s3_log.error, "Unexpected error {}", std::current_exception());
+        outcome = error_outcome::fail;
+    }
+
+    co_return outcome;
+}
+
 client::client(
   const configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
@@ -492,7 +579,17 @@ ss::future<> client::stop() { return _client.stop(); }
 
 void client::shutdown() { _client.shutdown(); }
 
-ss::future<http::client::response_stream_ref> client::get_object(
+ss::future<result<http::client::response_stream_ref, error_outcome>>
+client::get_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout,
+  bool expect_no_such_key) {
+    return send_request(
+      do_get_object(name, key, timeout, expect_no_such_key), name, key);
+}
+
+ss::future<http::client::response_stream_ref> client::do_get_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout,
@@ -541,7 +638,15 @@ ss::future<http::client::response_stream_ref> client::get_object(
       });
 }
 
-ss::future<client::head_object_result> client::head_object(
+ss::future<result<client::head_object_result, error_outcome>>
+client::head_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(do_head_object(name, key, timeout), name, key);
+}
+
+ss::future<client::head_object_result> client::do_head_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout) {
@@ -592,7 +697,22 @@ ss::future<client::head_object_result> client::head_object(
       });
 }
 
-ss::future<> client::put_object(
+ss::future<result<client::no_response, error_outcome>> client::put_object(
+  bucket_name const& name,
+  object_key const& key,
+  size_t payload_size,
+  ss::input_stream<char>&& body,
+  const object_tag_formatter& tags,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_put_object(name, key, payload_size, std::move(body), tags, timeout)
+        .then(
+          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+      name,
+      key);
+}
+
+ss::future<> client::do_put_object(
   bucket_name const& name,
   object_key const& id,
   size_t payload_size,
@@ -645,7 +765,20 @@ ss::future<> client::put_object(
       });
 }
 
-ss::future<client::list_bucket_result> client::list_objects_v2(
+ss::future<result<client::list_bucket_result, error_outcome>>
+client::list_objects_v2(
+  const bucket_name& name,
+  std::optional<object_key> prefix,
+  std::optional<object_key> start_after,
+  std::optional<size_t> max_keys,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_list_objects_v2(name, prefix, start_after, max_keys, timeout),
+      name,
+      object_key{""});
+}
+
+ss::future<client::list_bucket_result> client::do_list_objects_v2(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
@@ -693,7 +826,19 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
       });
 }
 
-ss::future<> client::delete_object(
+ss::future<result<client::no_response, error_outcome>> client::delete_object(
+  const bucket_name& bucket,
+  const object_key& key,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_delete_object(bucket, key, timeout).then([] {
+          return ss::make_ready_future<no_response>(no_response{});
+      }),
+      bucket,
+      key);
+}
+
+ss::future<> client::do_delete_object(
   const bucket_name& bucket,
   const object_key& key,
   const ss::lowres_clock::duration& timeout) {
