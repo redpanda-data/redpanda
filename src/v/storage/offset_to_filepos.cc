@@ -173,7 +173,9 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
         vlog(stlog.debug, "The position is not flushed {}", *ix_end);
         auto lookup_offset = ix_end->offset - model::offset(1);
         ix_end = segment->index().find_nearest(lookup_offset);
-        vlog(stlog.debug, "Re-adjusted position {}", *ix_end);
+        if (ix_end) {
+            vlog(stlog.debug, "Re-adjusted position {}", *ix_end);
+        }
     }
 
     size_t scan_from = ix_end ? ix_end->filepos : 0;
