@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/remote_partition.h"
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"
 #include "random/simple_time_jitter.h"
@@ -138,7 +139,7 @@ private:
 
     // List of segments to offload, accumulated during trim_segments
     using offload_list_t
-      = std::vector<std::pair<materialized_segment_state*, kafka::offset>>;
+      = std::vector<std::pair<remote_partition*, model::offset>>;
 
     void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
 

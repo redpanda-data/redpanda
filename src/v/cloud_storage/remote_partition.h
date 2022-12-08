@@ -45,122 +45,6 @@ using namespace std::chrono_literals;
 class partition_record_batch_reader_impl;
 struct materialized_segment_state;
 
-namespace details {
-
-/// Iterator adapter for absl::btree_map that privides
-/// iterator stability guarantee by caching the key and
-/// doing a lookup on every increment.
-/// This turns iterator increment into O(logN) operation
-/// Deleting from underlying btree_map is not supported.
-template<class TKey, class TVal>
-class btree_map_stable_iterator
-  : public boost::iterator_facade<
-      btree_map_stable_iterator<TKey, TVal>,
-      typename absl::btree_map<TKey, TVal>::value_type,
-      boost::bidirectional_traversal_tag> {
-    using map_t = absl::btree_map<TKey, TVal>;
-    using self_t = btree_map_stable_iterator<TKey, TVal>;
-    using value_t = typename map_t::value_type;
-
-public:
-    /// Creates an iterator that points to the end of the sequence
-    explicit btree_map_stable_iterator(map_t& map)
-      : _key(std::nullopt)
-      , _map(std::ref(map)) {}
-
-    /// Create an iterator that points to the arbitrary element
-    explicit btree_map_stable_iterator(map_t& map, TKey o)
-      : _key(std::nullopt)
-      , _map(std::ref(map)) {
-        // Invariant: the iterator is pointing to end (_map is null) or
-        // _key is initialized using correct value.
-        if (map.empty()) {
-            set_end();
-        }
-        if (auto it = _map.get().find(o); it != _map.get().end()) {
-            _key = it->first;
-        } else {
-            // Same behaviour as map::find, if key can't be found setup
-            // iterator to point to end of key sequence.
-            set_end();
-        }
-    }
-
-    /// Returns true if the element referenced by this iterator
-    /// was removed from the collection.
-    bool is_invalidated() const {
-        if (!_key) {
-            return true;
-        }
-        return _map.get().count(*_key) == 0;
-    }
-
-private:
-    friend class boost::iterator_core_access;
-
-    // Increment iterator if possible.
-    // The _key will be set to next element key or nullopt.
-    void increment() {
-        vassert(
-          _key.has_value(), "btree_map_stable_iterator can't be incremented");
-        auto it = _map.get().find(*_key);
-        // _key should be present since deletions are not supported
-        if (it == _map.get().end()) {
-            // The element referenced by this iterator was
-            // deleted.
-            set_end();
-            return;
-        }
-        ++it;
-        if (it == _map.get().end()) {
-            set_end();
-        } else {
-            _key = it->first;
-        }
-    }
-
-    // Decrement iterator if possible.
-    // The _key will be set to prev element key.
-    void decrement() {
-        if (_key) {
-            auto it = _map.get().find(*_key);
-            if (it == _map.get().end()) {
-                set_end();
-                return;
-            }
-            --it;
-            _key = it->first;
-        } else {
-            if (_map.get().empty()) {
-                return;
-            }
-            auto it = _map.get().end();
-            --it;
-            _key = it->first;
-        }
-    }
-
-    bool equal(const self_t& other) const { return _key == other._key; }
-
-    value_t& dereference() const {
-        vassert(
-          _key.has_value(),
-          "btree_map_stable_iterator doesn't point to an element and can't be "
-          "dereferenced");
-        auto it = _map.get().find(*_key);
-        return *it;
-    }
-
-    void set_end() { _key = std::nullopt; }
-
-    /// Key of the current element, nullopt is iter == end
-    std::optional<TKey> _key;
-    /// Reference to the container
-    std::reference_wrapper<map_t> _map;
-};
-
-} // namespace details
-
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
 /// maintained per segment. The idea here is that the
@@ -236,29 +120,19 @@ public:
     ss::future<> erase();
 
     /// Hook for materialized_segment to notify us when a segment is evicted
-    void offload_segment(kafka::offset);
+    void offload_segment(model::offset);
 
 private:
-    /// Create new remote_segment instances for all new
-    /// items in the manifest.
-    void maybe_sync_with_manifest();
-
     ss::future<> run_eviction_loop();
 
-    friend struct offloaded_segment_state;
     friend struct materialized_segment_state;
 
     using materialized_segment_ptr
       = std::unique_ptr<materialized_segment_state>;
-    using segment_state
-      = std::variant<offloaded_segment_state, materialized_segment_ptr>;
 
-    static_assert(
-      sizeof(segment_state) == sizeof(std::variant<size_t>),
-      "segment_state has unexpected size");
-
-    using iterator
-      = details::btree_map_stable_iterator<kafka::offset, segment_state>;
+    using segment_map_t
+      = absl::btree_map<model::offset, materialized_segment_ptr>;
+    using iterator = segment_map_t::iterator;
 
     /// This is exposed for the benefit of offloaded_segment_state and
     /// materialized_segment_state
@@ -272,19 +146,37 @@ private:
     std::unique_ptr<remote_segment_batch_reader> borrow_reader(
       storage::log_reader_config config,
       kafka::offset offset_key,
-      segment_state& st);
+      materialized_segment_ptr& st);
 
     /// Return reader back to segment_state
-    void return_reader(
-      std::unique_ptr<remote_segment_batch_reader>, segment_state& st);
+    void return_reader(std::unique_ptr<remote_segment_batch_reader>);
 
     /// Iterators used by the partition_record_batch_reader_impl class
-    iterator begin();
-    iterator end();
-    iterator upper_bound(kafka::offset);
     iterator seek_by_timestamp(model::timestamp);
 
-    using segment_map_t = absl::btree_map<kafka::offset, segment_state>;
+    /// The result of the borrow_next_reader method
+    ///
+    struct borrow_result_t {
+        /// The reader (can be set to null)
+        std::unique_ptr<remote_segment_batch_reader> reader;
+        /// The offset of the next segment, default value means that there is no
+        /// next segment yet
+        model::offset next_segment_offset;
+    };
+
+    /// Borrow next reader in a sequence
+    ///
+    /// If the invocation is first the method will use config.start_offset to
+    /// find the target. It can find already materialized segment and reuse the
+    /// reader. Alternatively, it can materialize the segment and create a
+    /// reader.
+    borrow_result_t borrow_next_reader(
+      storage::log_reader_config config, model::offset hint = {});
+
+    /// Materialize new segment
+    /// @return iterator that points to newly added segment (always valid
+    /// iterator)
+    iterator materialize_segment(const segment_meta&);
 
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
@@ -292,12 +184,8 @@ private:
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
-    model::offset _insync_offset;
     s3::bucket_name _bucket;
 
-    // Deleting from _segments is not supported.
-    // absl::btree_map doesn't provide a pointer stabilty. We are
-    // using remote_partition::btree_map_stable_iterator to work around this.
     segment_map_t _segments;
     partition_probe _probe;
 };
