@@ -186,6 +186,8 @@ private:
 
     // For backing off on apparent thrash/saturation of the local cache
     simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
+
+    bool _compacted{false};
 };
 
 class remote_segment_batch_consumer;
