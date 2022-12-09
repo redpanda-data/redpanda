@@ -44,27 +44,6 @@ compacted_index_chunk_reader::compacted_index_chunk_reader(
 
 ss::future<> compacted_index_chunk_reader::close() { return _handle.close(); }
 
-static inline ss::future<compacted_index::footer>
-footer_from_stream(ss::input_stream<char>& in) {
-    return in.read_exactly(compacted_index::footer_size)
-      .then([](ss::temporary_buffer<char> tmp) {
-          if (tmp.size() != compacted_index::footer_size) {
-              return ss::make_exception_future<compacted_index::footer>(
-                std::runtime_error(fmt::format(
-                  "could not read enough bytes to parse "
-                  "footer. read:{}, expected:{}",
-                  tmp.size(),
-                  compacted_index::footer_size)));
-          }
-          iobuf b;
-          b.append(std::move(tmp));
-          iobuf_parser parser(std::move(b));
-          auto footer
-            = reflection::adl<storage::compacted_index::footer>{}.from(parser);
-          return ss::make_ready_future<compacted_index::footer>(footer);
-      });
-}
-
 ss::future<> compacted_index_chunk_reader::verify_integrity() {
     reset();
     return load_footer().then([this](compacted_index::footer) {
@@ -128,39 +107,46 @@ bool compacted_index_chunk_reader::is_footer_loaded() const {
 ss::future<compacted_index::footer>
 compacted_index_chunk_reader::load_footer() {
     if (is_footer_loaded()) {
-        return ss::make_ready_future<compacted_index::footer>(_footer.value());
+        co_return _footer.value();
     }
-    auto f = ss::now();
+
     if (!_file_size) {
-        f = _handle.stat().then(
-          [this](struct stat s) { _file_size = s.st_size; });
+        auto s = co_await _handle.stat();
+        _file_size = s.st_size;
     }
-    return f.then([this] {
-        if (
-          !_file_size || _file_size == 0
-          || _file_size < compacted_index::footer_size) {
-            return ss::make_exception_future<compacted_index::footer>(
-              std::runtime_error(
-                fmt::format("Cannot read footer from empty file: {}", path())));
-        }
-        ss::file_input_stream_options options;
-        options.buffer_size = 4096;
-        options.io_priority_class = _iopc;
-        options.read_ahead = 0;
-        return ss::do_with(
-                 ss::make_file_input_stream(
-                   _handle,
-                   _file_size.value() - compacted_index::footer_size,
-                   compacted_index::footer_size,
-                   std::move(options)),
-                 [](ss::input_stream<char>& in) {
-                     return footer_from_stream(in);
-                 })
-          .then([this](compacted_index::footer f) {
-              _footer = f;
-              return f;
-          });
-    });
+
+    if (
+      !_file_size || _file_size == 0
+      || _file_size < compacted_index::footer_size) {
+        throw std::runtime_error(
+          fmt::format("Cannot read footer from empty file: {}", path()));
+    }
+
+    ss::file_input_stream_options options;
+    options.buffer_size = 4096;
+    options.io_priority_class = _iopc;
+    options.read_ahead = 0;
+    auto in = ss::make_file_input_stream(
+      _handle,
+      _file_size.value() - compacted_index::footer_size,
+      compacted_index::footer_size,
+      std::move(options));
+    ss::temporary_buffer<char> tmp = co_await in.read_exactly(
+      compacted_index::footer_size);
+
+    if (tmp.size() != compacted_index::footer_size) {
+        throw std::runtime_error(fmt::format(
+          "could not read enough bytes to parse "
+          "footer. read:{}, expected:{}",
+          tmp.size(),
+          compacted_index::footer_size));
+    }
+
+    iobuf b;
+    b.append(std::move(tmp));
+    iobuf_parser parser(std::move(b));
+    _footer = reflection::adl<storage::compacted_index::footer>{}.from(parser);
+    co_return _footer.value();
 }
 
 void compacted_index_chunk_reader::print(std::ostream& o) const { o << *this; }
