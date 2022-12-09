@@ -240,10 +240,23 @@ public:
     /// Get base offset (redpanda offset)
     model::offset base_rp_offset() const { return _seg->get_base_rp_offset(); }
 
+    kafka::offset base_kafka_offset() const {
+        return _seg->get_base_kafka_offset();
+    }
+
     bool is_eof() const { return _cur_rp_offset > _seg->get_max_rp_offset(); }
 
     void set_eof() {
         _cur_rp_offset = _seg->get_max_rp_offset() + model::offset{1};
+    }
+
+    model::offset current_rp_offset() const { return _cur_rp_offset; }
+    kafka::offset current_kafka_offset() const {
+        return _cur_rp_offset - _cur_delta;
+    }
+
+    bool reads_from_segment(const remote_segment& segm) const {
+        return &segm == _seg.get();
     }
 
 private:

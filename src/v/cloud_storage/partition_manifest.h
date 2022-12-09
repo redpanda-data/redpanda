@@ -179,6 +179,7 @@ public:
 
     /// Get starting offset
     std::optional<model::offset> get_start_offset() const;
+    std::optional<kafka::offset> get_start_kafka_offset() const;
 
     /// Get last uploaded compacted offset
     model::offset get_last_uploaded_compacted_offset() const;
@@ -274,6 +275,7 @@ public:
     /// Returns an iterator to the segment containing offset o, such that o >=
     /// segment.base_offset and o <= segment.committed_offset.
     const_iterator segment_containing(model::offset o) const;
+    const_iterator segment_containing(kafka::offset o) const;
 
     // Return collection of segments that were replaced in lightweight format.
     std::vector<partition_manifest::lw_segment_meta>
