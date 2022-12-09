@@ -234,7 +234,7 @@ int main(int args, char** argv, char** env) {
                     } else if (lcfg.list_with_prefix) {
                         vlog(test_log.info, "listing objects");
                         const auto result
-                          = cli.list_objects_v2(lcfg.bucket).get0();
+                          = cli.list_objects(lcfg.bucket).get0();
 
                         if (result) {
                             const auto& val = result.value();

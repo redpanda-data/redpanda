@@ -357,7 +357,7 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
         iobuf payload;
         auto payload_stream = make_iobuf_ref_output_stream(payload);
         const auto result = client
-                              ->list_objects_v2(
+                              ->list_objects(
                                 s3::bucket_name("test-bucket"),
                                 s3::object_key("test"))
                               .get0();
@@ -386,7 +386,7 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
         const auto result = client
-                              ->list_objects_v2(
+                              ->list_objects(
                                 s3::bucket_name("test-bucket"),
                                 s3::object_key("test-error"))
                               .get0();

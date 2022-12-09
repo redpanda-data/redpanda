@@ -766,7 +766,7 @@ ss::future<> client::do_put_object(
 }
 
 ss::future<result<client::list_bucket_result, error_outcome>>
-client::list_objects_v2(
+client::list_objects(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,

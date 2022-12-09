@@ -246,7 +246,7 @@ public:
         ss::sstring prefix;
         std::vector<list_bucket_item> contents;
     };
-    ss::future<result<list_bucket_result, error_outcome>> list_objects_v2(
+    ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
