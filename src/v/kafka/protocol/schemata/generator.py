@@ -305,6 +305,20 @@ path_type_map = {
             },
         }
     },
+    "ListPartitionReassignmentsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    },
+    "ListPartitionReassignmentsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -491,6 +505,9 @@ STRUCT_TYPES = [
     "ReassignablePartition",
     "ReassignableTopicResponse",
     "ReassignablePartitionResponse",
+    "ListPartitionReassignmentsTopics",
+    "OngoingTopicReassignment",
+    "OngoingPartitionReassignment",
 ]
 
 # a list of struct types which are ineligible to have default-generated

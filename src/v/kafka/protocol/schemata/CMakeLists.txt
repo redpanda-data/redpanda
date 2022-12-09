@@ -68,6 +68,8 @@ set(schemata
   offset_for_leader_epoch_request.json
   offset_for_leader_epoch_response.json
   alter_partition_reassignments_request.json
-  alter_partition_reassignments_response.json)
+  alter_partition_reassignments_response.json
+  list_partition_reassignments_request.json
+  list_partition_reassignments_response.json)
 
 set(schemata ${schemata} PARENT_SCOPE)
