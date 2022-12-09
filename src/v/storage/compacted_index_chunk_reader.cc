@@ -145,7 +145,16 @@ compacted_index_chunk_reader::load_footer() {
     iobuf b;
     b.append(std::move(tmp));
     iobuf_parser parser(std::move(b));
-    _footer = reflection::adl<storage::compacted_index::footer>{}.from(parser);
+    auto footer = reflection::adl<storage::compacted_index::footer>{}.from(
+      parser);
+    if (footer.version != compacted_index::footer::current_version) {
+        // If the index is of different version than the current one, request a
+        // rebuild. It is easier than dealing with compatibility issues.
+        throw compacted_index::needs_rebuild_error{
+          fmt::format("incompatible index version: {}", footer.version)};
+    }
+
+    _footer = footer;
     co_return _footer.value();
 }
 

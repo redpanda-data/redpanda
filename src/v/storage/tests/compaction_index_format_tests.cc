@@ -104,8 +104,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
       sizeof(uint16_t) + 1 /*type*/ + 1 /*offset*/ + 2 /*delta*/
         + 1 /*batch_type*/ + 1024 /*key*/);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
 }
 FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
@@ -157,8 +156,7 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
     auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
@@ -184,8 +182,7 @@ FIXTURE_TEST(
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
     auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
