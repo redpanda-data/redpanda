@@ -145,6 +145,27 @@ struct segment_meta {
     /// Segment name format specifier
     segment_name_format sname_format{segment_name_format::v1};
 
+    kafka::offset base_kafka_offset() const {
+        // Manifests created with the old version of redpanda won't have the
+        // delta_offset field. In this case the value will be initialized to
+        // model::offset::min(). In this case offset translation couldn't be
+        // performed.
+        auto delta = delta_offset == model::offset_delta::min()
+                       ? model::offset_delta(0)
+                       : delta_offset;
+        return base_offset - delta;
+    }
+
+    kafka::offset committed_kafka_offset() const {
+        // Manifests created with the old version of redpanda won't have the
+        // delta_offset_end field. In this case offset translation couldn't be
+        // performed.
+        auto delta = delta_offset_end == model::offset_delta::min()
+                       ? model::offset_delta(0)
+                       : delta_offset_end;
+        return committed_offset - delta;
+    }
+
     auto operator<=>(const segment_meta&) const = default;
 };
 
