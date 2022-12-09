@@ -464,7 +464,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
       ctxlog.debug,
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
-    co_return co_await _remote.upload_manifest(_bucket, manifest(), fib);
+    auto tags = cloud_storage::remote::get_manifest_tags(_ntp, _rev);
+    co_return co_await _remote.upload_manifest(
+      _bucket, manifest(), fib, std::move(tags));
 }
 
 remote_segment_path
@@ -528,13 +530,15 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
             _io_priority));
     };
 
+    auto tags = cloud_storage::remote::get_segment_tags(_ntp, _rev);
     co_return co_await _remote.upload_segment(
       _bucket,
       path,
       candidate.content_length,
       reset_func,
       fib,
-      lazy_abort_source);
+      lazy_abort_source,
+      std::move(tags));
 }
 
 ss::future<cloud_storage::upload_result>
@@ -561,7 +565,13 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
 
     cloud_storage::tx_range_manifest manifest(path, tx_range);
 
-    co_return co_await _remote.upload_manifest(_bucket, manifest, fib);
+    // Note: tx-manifest is uploaded using 'remote::upload_manifest'
+    // method but it has the same tags as the segment because it has
+    // the same lifetime as corresponding segment and associated with
+    // the segment.
+    auto tags = cloud_storage::remote::get_segment_tags(_ntp, _rev);
+    co_return co_await _remote.upload_manifest(
+      _bucket, manifest, fib, std::move(tags));
 }
 
 ss::future<ntp_archiver::scheduled_upload>
