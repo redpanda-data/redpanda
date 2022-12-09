@@ -115,11 +115,11 @@ compacted_index_chunk_reader::load_footer() {
         _file_size = s.st_size;
     }
 
-    if (
-      !_file_size || _file_size == 0
-      || _file_size < compacted_index::footer_size) {
-        throw std::runtime_error(
-          fmt::format("Cannot read footer from empty file: {}", path()));
+    if (!_file_size || _file_size < compacted_index::footer_size) {
+        throw std::runtime_error(fmt::format(
+          "Cannot read footer: file {} size is too small ({} bytes)",
+          path(),
+          _file_size));
     }
 
     ss::file_input_stream_options options;
