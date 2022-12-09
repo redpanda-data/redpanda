@@ -299,8 +299,9 @@ do_detect_compaction_index_state(segment_full_path p, compaction_config cfg) {
       .handle_exception([](std::exception_ptr e) {
           vlog(
             stlog.warn,
-            "detected error while attempting recovery, {}. marking as 'needs "
-            "rebuild'. Common situation during crashes or hard shutdowns.",
+            "detected error while attempting compacted index recovery, {}. "
+            "marking as 'needs rebuild'. Common situation during crashes or "
+            "hard shutdowns.",
             e);
           return compacted_index::recovery_state::index_needs_rebuild;
       });
