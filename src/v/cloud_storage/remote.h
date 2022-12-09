@@ -107,9 +107,9 @@ private:
 class remote : public ss::peering_sharded_service<remote> {
 public:
     /// Default tags applied to objects
-    static const std::vector<s3::object_tag> default_segment_tags;
-    static const std::vector<s3::object_tag> default_partition_manifest_tags;
-    static const std::vector<s3::object_tag> default_topic_manifest_tags;
+    static const s3::object_tag_formatter default_segment_tags;
+    static const s3::object_tag_formatter default_partition_manifest_tags;
+    static const s3::object_tag_formatter default_topic_manifest_tags;
 
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -203,7 +203,7 @@ public:
       const s3::bucket_name& bucket,
       const base_manifest& manifest,
       retry_chain_node& parent,
-      std::vector<s3::object_tag> tags = default_partition_manifest_tags);
+      const s3::object_tag_formatter& tags = default_partition_manifest_tags);
 
     /// \brief Upload segment to S3
     ///
@@ -220,7 +220,7 @@ public:
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source,
-      std::vector<s3::object_tag> tags = default_segment_tags);
+      const s3::object_tag_formatter& tags = default_segment_tags);
 
     /// \brief Download segment from S3
     ///
@@ -263,14 +263,17 @@ public:
     materialized_segments& materialized() { return *_materialized; }
 
     /// Add partition manifest tags (includes partition id)
-    static std::vector<s3::object_tag>
-    get_manifest_tags(const model::ntp& ntp, model::initial_revision_id rev);
+    static s3::object_tag_formatter make_partition_manifest_tags(
+      const model::ntp& ntp, model::initial_revision_id rev);
     /// Add topic manifest tags (no partition id)
-    static std::vector<s3::object_tag> get_manifest_tags(
+    static s3::object_tag_formatter make_topic_manifest_tags(
       const model::topic_namespace& ntp, model::initial_revision_id rev);
     /// Add segment level tags
-    static std::vector<s3::object_tag>
-    get_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
+    static s3::object_tag_formatter
+    make_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
+    /// Add tags for tx-manifest
+    static s3::object_tag_formatter make_tx_manifest_tags(
+      const model::ntp& ntp, model::initial_revision_id rev);
 
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);

@@ -79,7 +79,11 @@ ntp_archiver::ntp_archiver(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), 5ms)
   , _next_housekeeping(_housekeeping_jitter())
-  , _ntp_metrics_disabled(conf.ntp_metrics_disabled) {
+  , _ntp_metrics_disabled(conf.ntp_metrics_disabled)
+  , _segment_tags(cloud_storage::remote::make_segment_tags(_ntp, _rev))
+  , _manifest_tags(
+      cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
+  , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev)) {
     vassert(
       _partition && _partition->is_elected_leader(),
       "must be the leader to launch ntp_archiver {}",
@@ -464,9 +468,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
       ctxlog.debug,
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
-    auto tags = cloud_storage::remote::get_manifest_tags(_ntp, _rev);
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest(), fib, std::move(tags));
+      _bucket, manifest(), fib, _manifest_tags);
 }
 
 remote_segment_path
@@ -517,7 +520,6 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
             _io_priority));
     };
 
-    auto tags = cloud_storage::remote::get_segment_tags(_ntp, _rev);
     co_return co_await _remote.upload_segment(
       _bucket,
       path,
@@ -525,7 +527,7 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       reset_func,
       fib,
       lazy_abort_source,
-      std::move(tags));
+      _segment_tags);
 }
 
 bool ntp_archiver::archiver_lost_leadership(
@@ -568,13 +570,8 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
 
     cloud_storage::tx_range_manifest manifest(path, tx_range);
 
-    // Note: tx-manifest is uploaded using 'remote::upload_manifest'
-    // method but it has the same tags as the segment because it has
-    // the same lifetime as corresponding segment and associated with
-    // the segment.
-    auto tags = cloud_storage::remote::get_segment_tags(_ntp, _rev);
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest, fib, std::move(tags));
+      _bucket, manifest, fib, _tx_tags);
 }
 
 // The function turns an array of futures that return an error code into a

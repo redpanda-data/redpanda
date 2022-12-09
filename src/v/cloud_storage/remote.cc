@@ -312,7 +312,7 @@ ss::future<upload_result> remote::upload_manifest(
   const s3::bucket_name& bucket,
   const base_manifest& manifest,
   retry_chain_node& parent,
-  std::vector<s3::object_tag> tags) {
+  const s3::object_tag_formatter& tags) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -396,7 +396,7 @@ ss::future<upload_result> remote::upload_segment(
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
   lazy_abort_source& lazy_abort_source,
-  std::vector<s3::object_tag> tags) {
+  const s3::object_tag_formatter& tags) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -794,42 +794,48 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
       _region_name};
 }
 
-std::vector<s3::object_tag> remote::get_manifest_tags(
+s3::object_tag_formatter remote::make_partition_manifest_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     auto tags = default_partition_manifest_tags;
-    tags.push_back({.key = "rp-ns", .value = ntp.ns()});
-    tags.push_back({.key = "rp-topic", .value = ntp.tp.topic()});
-    tags.push_back(
-      {.key = "rp-part", .value = ssx::sformat("{}", ntp.tp.partition())});
-    tags.push_back({.key = "rp-rev", .value = ssx::sformat("{}", rev)});
+    tags.add("rp-ns", ntp.ns());
+    tags.add("rp-topic", ntp.tp.topic());
+    tags.add("rp-part", ntp.tp.partition());
+    tags.add("rp-rev", rev());
     return tags;
 }
 
-std::vector<s3::object_tag> remote::get_manifest_tags(
+s3::object_tag_formatter remote::make_topic_manifest_tags(
   const model::topic_namespace& tns, model::initial_revision_id rev) {
     auto tags = default_topic_manifest_tags;
-    tags.push_back({.key = "rp-ns", .value = tns.ns()});
-    tags.push_back({.key = "rp-topic", .value = tns.tp()});
-    tags.push_back({.key = "rp-rev", .value = ssx::sformat("{}", rev)});
+    tags.add("rp-ns", tns.ns());
+    tags.add("rp-topic", tns.tp());
+    tags.add("rp-rev", rev());
     return tags;
 }
 
-std::vector<s3::object_tag> remote::get_segment_tags(
+s3::object_tag_formatter remote::make_segment_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     auto tags = default_segment_tags;
-    tags.push_back({.key = "rp-ns", .value = ntp.ns()});
-    tags.push_back({.key = "rp-topic", .value = ntp.tp.topic()});
-    tags.push_back(
-      {.key = "rp-part", .value = ssx::sformat("{}", ntp.tp.partition())});
-    tags.push_back({.key = "rp-rev", .value = ssx::sformat("{}", rev)});
+    tags.add("rp-ns", ntp.ns());
+    tags.add("rp-topic", ntp.tp.topic());
+    tags.add("rp-part", ntp.tp.partition());
+    tags.add("rp-rev", rev());
     return tags;
 }
 
-const std::vector<s3::object_tag> remote::default_segment_tags = {
+s3::object_tag_formatter remote::make_tx_manifest_tags(
+  const model::ntp& ntp, model::initial_revision_id rev) {
+    // Note: tx-manifest is related to segment (contains data which are used
+    // to consume data from the segment). Because of that it has the same
+    // tags as the segment.
+    return make_segment_tags(ntp, rev);
+}
+
+const s3::object_tag_formatter remote::default_segment_tags = {
   {"rp-type", "segment"}};
-const std::vector<s3::object_tag> remote::default_topic_manifest_tags = {
+const s3::object_tag_formatter remote::default_topic_manifest_tags = {
   {"rp-type", "topic-manifest"}};
-const std::vector<s3::object_tag> remote::default_partition_manifest_tags = {
+const s3::object_tag_formatter remote::default_partition_manifest_tags = {
   {"rp-type", "partition-manifest"}};
 
 } // namespace cloud_storage
