@@ -33,6 +33,12 @@ from ducktape.utils.util import wait_until
 # consumer timeout than the default 30 seconds
 CONSUMER_TIMEOUT = 90
 
+# We can ignore race between deletion and adding different partitions, because rp retries adding after this error
+RACE_BETWEEN_DELETION_AND_ADDING_PARTITION = [
+    # e.g. cluster - controller_backend.cc:717 - [{kafka/fuzzy-operator-9578-devcbk/1}] exception while executing partition operation: {type: addition, ntp: {kafka/fuzzy-operator-9578-devcbk/1}, offset: 451, new_assignment: { id: 1, group_id: 57, replicas: {{node_id: 5, shard: 1}, {node_id: 4, shard: 0}, {node_id: 3, shard: 1}} }, previous_replica_set: {nullopt}} - std::__1::__fs::filesystem::filesystem_error (error system:2, filesystem error: mkdir failed: No such file or directory ["/var/lib/redpanda/data/kafka/fuzzy-operator-9578-devcbk/1_451"])"
+    "cluster - .*std::__1::__fs::filesystem::filesystem_error \(error system:2, filesystem error: mkdir failed: No such file or directory"
+]
+
 
 class PartitionBalancerService(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
@@ -451,7 +457,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
         assert num_with_broken_rack_constraint() == 0
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST +
+             RACE_BETWEEN_DELETION_AND_ADDING_PARTITION)
     def test_fuzz_admin_ops(self):
         self.start_redpanda(num_nodes=5)
 
