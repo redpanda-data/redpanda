@@ -31,10 +31,11 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 		recHeaders []string
 		partition  int32
 
-		inFormat    string
-		outFormat   string
-		compression string
-		acks        int
+		inFormat        string
+		outFormat       string
+		compression     string
+		acks            int
+		maxMessageBytes int32
 
 		tombstone              bool
 		allowAutoTopicCreation bool
@@ -93,6 +94,9 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 			}
 			if partition >= 0 {
 				opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+			}
+			if maxMessageBytes >= 0 {
+				opts = append(opts, kgo.ProducerBatchMaxBytes(maxMessageBytes))
 			}
 			var defaultTopic string
 			if len(args) == 1 {
@@ -167,6 +171,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
 	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
+	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", 1048576, "Maximum size of a record batch before compression")
 
 	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
 	cmd.Flags().StringVarP(
