@@ -244,7 +244,7 @@ class OMBSampleConfigurations:
         "producer_rate": 625000,
         "consumer_backlog_size_GB": 0,
         "test_duration_minutes": 5,
-        "warmup_duration_minutes": 1,
+        "warmup_duration_minutes": 5,
     }
 
     # ------- Workload configurations end--------
