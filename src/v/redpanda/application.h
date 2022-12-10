@@ -101,6 +101,7 @@ public:
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
     ss::sharded<cluster::shard_table> shard_table;
+    ss::sharded<cluster::tm_stm_cache> tm_stm_cache;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
     ss::sharded<coproc::partition_manager> cp_partition_manager;

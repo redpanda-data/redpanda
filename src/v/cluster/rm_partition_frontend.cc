@@ -123,8 +123,25 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         begin_tx_reply result;
         if (leader == _self) {
+            vlog(
+              txlog.trace,
+              "executing name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{} "
+              "locally",
+              ntp,
+              pid,
+              tx_seq,
+              transaction_timeout_ms);
             result = co_await begin_tx_locally(
               ntp, pid, tx_seq, transaction_timeout_ms);
+            vlog(
+              txlog.trace,
+              "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: "
+              "{} locally",
+              ntp,
+              pid,
+              tx_seq,
+              result.ec,
+              result.etag);
             if (
               result.ec == tx_errc::leader_not_found
               || result.ec == tx_errc::shard_not_found) {
@@ -159,11 +176,13 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         vlog(
           txlog.trace,
-          "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, "
+          "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{}, "
+          "from:{}, "
           "to:{}",
           ntp,
           pid,
           tx_seq,
+          transaction_timeout_ms,
           _self,
           leader);
         result = co_await dispatch_begin_tx(
@@ -310,15 +329,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
             .then([ntp, topic_revision](checked<model::term_id, tx_errc> etag) {
                 if (!etag.has_value()) {
-                    vlog(
-                      txlog.warn,
-                      "rm_stm::begin_tx({},...) failed with {}",
-                      ntp,
-                      etag.error());
-                    if (etag.error() == tx_errc::leader_not_found) {
-                        return begin_tx_reply{ntp, tx_errc::leader_not_found};
-                    }
-                    return begin_tx_reply{ntp, tx_errc::unknown_server_error};
+                    return begin_tx_reply{ntp, etag.error()};
                 }
                 return begin_tx_reply{
                   ntp, etag.value(), tx_errc::none, topic_revision};

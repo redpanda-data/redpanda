@@ -394,9 +394,6 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, model::cleanup_policy_bitflags>) {
         return "string";
-    } else if constexpr (std::
-                           is_same_v<type, model::violation_recovery_policy>) {
-        return "string";
     } else if constexpr (std::is_same_v<type, config::data_directory_path>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::node_id>) {

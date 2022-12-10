@@ -46,6 +46,7 @@ enum class feature : std::uint64_t {
     replication_factor_change = 0x2000,
     ephemeral_secrets = 0x4000,
     seeds_driven_bootstrap_capable = 0x8000,
+    tm_stm_cache = 0x16000,
 
     // Dummy features for testing only
     test_alpha = uint64_t(1) << 63,
@@ -192,6 +193,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{7},
     "seeds_driven_bootstrap_capable",
     feature::seeds_driven_bootstrap_capable,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{8},
+    "tm_stm_cache",
+    feature::tm_stm_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{

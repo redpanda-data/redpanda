@@ -882,6 +882,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         cloud_configs.stop().get();
     }
 
+    syschecks::systemd_message("Creating tm_stm_cache").get();
+    construct_service(tm_stm_cache).get();
+
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
       partition_manager,
@@ -892,6 +895,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
       std::ref(feature_table),
+      std::ref(tm_stm_cache),
       ss::sharded_parameter([] {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }))
@@ -1107,7 +1111,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(id_allocator_frontend),
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
-      std::ref(feature_table))
+      std::ref(feature_table),
+      std::ref(tm_stm_cache))
       .get();
     _kafka_conn_quotas
       .start([]() {

@@ -36,9 +36,12 @@ public:
       ss::sharded<cluster::id_allocator_frontend>&,
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::tm_stm_cache>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
+    ss::future<fetch_tx_reply>
+      fetch_tx_locally(kafka::transactional_id, model::term_id);
     ss::future<try_abort_reply> try_abort(
       model::partition_id,
       model::producer_identity,
@@ -88,6 +91,7 @@ private:
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
@@ -100,6 +104,11 @@ private:
     bool is_transaction_ga() {
         return _feature_table.local().is_active(
           features::feature::transaction_ga);
+    }
+
+    bool is_fetch_tx_supported() {
+        return _feature_table.local().is_active(
+          features::feature::tm_stm_cache);
     }
 
     void start_expire_timer();
@@ -124,6 +133,19 @@ private:
       kafka::transactional_id,
       model::timeout_clock::duration);
 
+    ss::future<checked<tm_transaction, tx_errc>>
+      fetch_tx(kafka::transactional_id, model::term_id);
+    ss::future<> dispatch_fetch_tx(
+      kafka::transactional_id,
+      model::term_id,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
+    ss::future<fetch_tx_reply> dispatch_fetch_tx(
+      model::node_id,
+      kafka::transactional_id,
+      model::term_id,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
     ss::future<try_abort_reply> dispatch_try_abort(
       model::node_id,
       model::partition_id,
@@ -181,12 +203,12 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<tx_errc> recommit_tm_tx(
+    ss::future<checked<cluster::tm_transaction, tx_errc>> recommit_tm_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id,
       tm_transaction,
       model::timeout_clock::duration);
-    ss::future<tx_errc> reabort_tm_tx(
+    ss::future<checked<cluster::tm_transaction, tx_errc>> reabort_tm_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id,
       tm_transaction,

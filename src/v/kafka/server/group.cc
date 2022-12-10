@@ -44,8 +44,6 @@ namespace kafka {
 
 using member_config = join_group_response_member;
 
-using violation_recovery_policy = model::violation_recovery_policy;
-
 group::group(
   kafka::group_id id,
   group_state s,
@@ -64,8 +62,6 @@ group::group(
   , _conf(conf)
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
-  , _recovery_policy(
-      config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
@@ -96,8 +92,6 @@ group::group(
   , _conf(conf)
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
-  , _recovery_policy(
-      config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
