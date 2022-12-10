@@ -29,15 +29,17 @@ using delta_xor_alg = details::delta_xor;
 using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg>;
 using delta_delta_alg = details::delta_delta<int64_t>;
 using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg>;
+using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
 
 static const delta_xor_alg initial_xor{};
 static const delta_delta_alg initial_delta{0};
 
 template<class column_t>
-void append_test_case(const int64_t max_value, column_t& column) {
+void append_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
-    for (int64_t ix = 0; ix < max_value;
-         ix += random_generators::get_int(1, 100)) {
+    int64_t ix = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
         column.append(ix);
         total_size++;
         BOOST_REQUIRE_EQUAL(ix, column.last_value());
@@ -45,22 +47,28 @@ void append_test_case(const int64_t max_value, column_t& column) {
     BOOST_REQUIRE_EQUAL(total_size, column.size());
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_xor) {
     delta_xor_frame frame(initial_xor);
-    append_test_case(10000000, frame);
+    append_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_delta) {
     delta_delta_frame frame(initial_delta);
-    append_test_case(10000000, frame);
+    append_test_case(100000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_xor) {
+    delta_xor_column col(initial_xor);
+    append_test_case(100000, col);
 }
 
 template<class column_t>
-void iter_test_case(const int64_t max_value, column_t& column) {
+void iter_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> expected;
-    for (int64_t ix = 0; ix < max_value;
-         ix += random_generators::get_int(1, 100)) {
+    int64_t ix = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
         column.append(ix);
         expected.push_back(ix);
         total_size++;
@@ -73,22 +81,28 @@ void iter_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_iter_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_iter_xor) {
     delta_xor_frame frame(initial_xor);
-    iter_test_case(10000000, frame);
+    iter_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_iter_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_iter_delta) {
     delta_delta_frame frame(initial_delta);
-    iter_test_case(10000000, frame);
+    iter_test_case(100000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_iter_xor) {
+    delta_xor_column col(initial_xor);
+    iter_test_case(100000, col);
 }
 
 template<class column_t>
-void find_test_case(const int64_t max_value, column_t& column) {
+void find_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> samples;
-    for (int64_t ix = 0; ix < max_value;
-         ix += random_generators::get_int(1, 100)) {
+    int64_t ix = 0;
+    for (auto i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
         column.append(ix);
         if (samples.empty() || random_generators::get_int(10) == 0) {
             samples.push_back(ix);
@@ -108,33 +122,44 @@ void find_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_xor) {
     delta_xor_frame frame(initial_xor);
-    find_test_case(10000000, frame);
+    find_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_xor_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_xor_small) {
     delta_xor_frame frame(initial_xor);
-    find_test_case(random_generators::get_int(16), frame);
+    find_test_case(random_generators::get_int(1, 16), frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_delta) {
     delta_delta_frame frame(initial_delta);
-    find_test_case(10000000, frame);
+    find_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_find_delta_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_delta_small) {
     delta_delta_frame frame(initial_delta);
-    find_test_case(random_generators::get_int(16), frame);
+    find_test_case(random_generators::get_int(1, 16), frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor) {
+    delta_xor_column col(initial_xor);
+    find_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor_small) {
+    delta_xor_column col(initial_xor);
+    find_test_case(random_generators::get_int(1, 16), col);
 }
 
 template<class column_t>
-void lower_bound_test_case(const int64_t max_value, column_t& column) {
+void lower_bound_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> samples;
     int64_t last = 0;
-    for (int64_t ix = 10000; ix < max_value;
-         ix += random_generators::get_int(1, 100)) {
+    int64_t ix = 10000;
+    for (auto i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
         column.append(ix);
         last = ix;
         if (samples.empty() || random_generators::get_int(10) == 0) {
@@ -162,33 +187,44 @@ void lower_bound_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_xor) {
     delta_xor_frame frame(initial_xor);
-    lower_bound_test_case(10000000, frame);
+    lower_bound_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_xor_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_xor_small) {
     delta_xor_frame frame(initial_xor);
-    lower_bound_test_case(random_generators::get_int(16), frame);
+    lower_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_delta) {
     delta_delta_frame frame(initial_delta);
-    lower_bound_test_case(10000000, frame);
+    lower_bound_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_lower_bound_delta_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_delta_small) {
     delta_delta_frame frame(initial_delta);
-    lower_bound_test_case(random_generators::get_int(16), frame);
+    lower_bound_test_case(random_generators::get_int(1, 16), frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_xor) {
+    delta_xor_column col(initial_xor);
+    lower_bound_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_xor_small) {
+    delta_xor_column col(initial_xor);
+    lower_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
 template<class column_t>
-void upper_bound_test_case(const int64_t max_value, column_t& column) {
+void upper_bound_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> samples;
     int64_t last = 0;
-    for (int64_t ix = 10000; ix < max_value;
-         ix += random_generators::get_int(1, 100)) {
+    int64_t ix = 10000;
+    for (auto i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
         column.append(ix);
         if (samples.empty() || random_generators::get_int(10) == 0) {
             samples.push_back(ix);
@@ -214,32 +250,43 @@ void upper_bound_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_xor) {
     delta_xor_frame frame(initial_xor);
-    upper_bound_test_case(10000000, frame);
+    upper_bound_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_xor_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_xor_small) {
     delta_xor_frame frame(initial_xor);
-    upper_bound_test_case(random_generators::get_int(16), frame);
+    upper_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_delta) {
     delta_delta_frame frame(initial_delta);
-    upper_bound_test_case(10000000, frame);
+    upper_bound_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_upper_bound_delta_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_delta_small) {
     delta_delta_frame frame(initial_delta);
-    upper_bound_test_case(random_generators::get_int(16), frame);
+    upper_bound_test_case(random_generators::get_int(1, 16), frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_xor) {
+    delta_xor_column col(initial_xor);
+    upper_bound_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_xor_small) {
+    delta_xor_column col(initial_xor);
+    upper_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
 template<class column_t>
-void at_test_case(const int64_t max_value, column_t& column) {
+void at_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<std::pair<int64_t, size_t>> samples;
-    for (int64_t value = 0; value < max_value;
-         value += random_generators::get_int(1, 100)) {
+    int64_t value = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        value += random_generators::get_int(1, 100);
         column.append(value);
         if (samples.empty() || random_generators::get_int(10) == 0) {
             samples.emplace_back(value, total_size);
@@ -259,32 +306,43 @@ void at_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_xor) {
     delta_xor_frame frame(initial_xor);
-    at_test_case(10000000, frame);
+    at_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_xor_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_xor_small) {
     delta_xor_frame frame(initial_xor);
     at_test_case(random_generators::get_int(16), frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_delta) {
     delta_delta_frame frame(initial_delta);
-    at_test_case(10000000, frame);
+    at_test_case(100000, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_at_delta_small) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_delta_small) {
     delta_delta_frame frame(initial_delta);
     at_test_case(random_generators::get_int(16), frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_xor) {
+    delta_xor_column col(initial_xor);
+    at_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_xor_small) {
+    delta_xor_column col(initial_xor);
+    at_test_case(random_generators::get_int(16), col);
 }
 
 template<class column_t>
-void prefix_truncate_test_case(const int64_t max_value, column_t& column) {
+void prefix_truncate_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> samples;
-    for (int64_t value = 0; value < max_value;
-         value += random_generators::get_int(1, 100)) {
+    int64_t value = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        value += random_generators::get_int(1, 100);
         column.append(value);
         if (samples.empty() || random_generators::get_int(10) == 0) {
             samples.push_back(value);
@@ -302,12 +360,17 @@ void prefix_truncate_test_case(const int64_t max_value, column_t& column) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_xor) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_prefix_truncate_xor) {
     delta_xor_frame frame(initial_xor);
     prefix_truncate_test_case(10, frame);
 }
 
-BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_delta) {
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_prefix_truncate_delta) {
     delta_delta_frame frame(initial_delta);
     prefix_truncate_test_case(10, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_xor) {
+    delta_xor_column col(initial_xor);
+    prefix_truncate_test_case(10, col);
 }
