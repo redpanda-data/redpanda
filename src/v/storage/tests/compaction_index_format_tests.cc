@@ -84,7 +84,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     info("{}", idx);
 
     iobuf data = std::move(index_data).release_iobuf();
-    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1048);
+    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1064);
     iobuf_parser p(data.share(0, data.size_bytes()));
     (void)p.consume_type<uint16_t>(); // SIZE
     (void)p.consume_type<uint8_t>();  // TYPE

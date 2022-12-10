@@ -53,7 +53,7 @@ ss::future<> compacted_index_chunk_reader::verify_integrity() {
         options.io_priority_class = _iopc;
         options.read_ahead = 1;
         return ss::do_with(
-                 int32_t(_footer->size),
+                 int64_t(_footer->size),
                  crc::crc32c{},
                  ss::make_file_input_stream(
                    _handle,
@@ -61,7 +61,7 @@ ss::future<> compacted_index_chunk_reader::verify_integrity() {
                    _file_size.value() - compacted_index::footer_size,
                    std::move(options)),
                  [](
-                   int32_t& max_bytes,
+                   int64_t& max_bytes,
                    crc::crc32c& crc,
                    ss::input_stream<char>& in) {
                      return ss::do_until(
@@ -117,7 +117,8 @@ compacted_index_chunk_reader::load_footer() {
 
     if (!_file_size || _file_size < compacted_index::footer_size) {
         throw std::runtime_error(fmt::format(
-          "Cannot read footer: file {} size is too small ({} bytes)",
+          "Cannot read footer: file {} size is too small ({} bytes). "
+          "Possible cause is old index format.",
           path(),
           _file_size));
     }

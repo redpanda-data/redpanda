@@ -192,6 +192,7 @@ ss::future<> spill_key_index::spill(
   compacted_index::entry_type type, bytes_view b, value_type v) {
     constexpr size_t size_reservation = sizeof(uint16_t);
     ++_footer.keys;
+    ++_footer.keys_deprecated;
     iobuf payload;
     // INT16
     auto ph = payload.reserve(size_reservation);
@@ -219,6 +220,7 @@ ss::future<> spill_key_index::spill(
 
     // update internal state
     _footer.size += payload.size_bytes();
+    _footer.size_deprecated = _footer.size;
     for (auto& f : payload) {
         // NOLINTNEXTLINE
         _crc.extend(reinterpret_cast<const uint8_t*>(f.get()), f.size());
