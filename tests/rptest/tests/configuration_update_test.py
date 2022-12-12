@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
@@ -25,8 +26,12 @@ class ConfigurationUpdateTest(RedpandaTest):
     """
     @cluster(num_nodes=3)
     def test_two_nodes_update(self):
-        node_1 = self.redpanda.get_node(1)
-        node_2 = self.redpanda.get_node(2)
+        # Select two nodes which are not the controller leader
+        controller_node = self.redpanda.controller()
+        other_nodes = [
+            n for n in self.redpanda.nodes if n is not controller_node
+        ]
+        node_1, node_2 = other_nodes
 
         # stop both nodes
         self.redpanda.stop_node(node_1)
@@ -34,6 +39,9 @@ class ConfigurationUpdateTest(RedpandaTest):
 
         orig_partitions = self.redpanda.storage(all_nodes=True).partitions(
             "redpanda", "controller")
+        for old_p in orig_partitions:
+            self.logger.debug(
+                f"{old_p.node.name}: old segments: {old_p.segments}")
 
         # change both ports
         altered_port_cfg_1 = dict(rpc_server=dict(
@@ -54,33 +62,56 @@ class ConfigurationUpdateTest(RedpandaTest):
 
             return all(first == rest for rest in iterator)
 
-        def controller_log_replicated():
-            # make sure that we have new segments
-            node_partitions = dict()
-            for p in self.redpanda.storage(all_nodes=True).partitions(
-                    "redpanda", "controller"):
-                node_partitions[p.node.name] = p
+        # Move controller leadership to one of the restarted nodes, to cause
+        # a term increase (all nodes should see it), and confirm that the
+        # restarted node is functioning well enough to be a leader.
+        admin = Admin(self.redpanda)
+        new_leader = node_1
+        admin.transfer_leadership_to(namespace="redpanda",
+                                     topic="controller",
+                                     partition="0",
+                                     target_id=self.redpanda.idx(new_leader))
 
-            for old_p in orig_partitions:
-                nn = old_p.node.name
-                if len(old_p.segments) <= len(node_partitions[nn].segments):
+        def all_nodes_participating():
+            for node in self.redpanda.nodes:
+                p = admin.get_partitions(namespace="redpanda",
+                                         topic="controller",
+                                         partition="0",
+                                         node=node)
+                # All nodes should agree on controller leader
+                if p['leader_id'] != self.redpanda.idx(new_leader):
+                    self.logger.debug(
+                        f"Node {node.name} doesn't agree on {new_leader.name} leadership yet ({p})"
+                    )
                     return False
 
-            all_segments = list(
-                map(lambda p: p.segments.keys(), node_partitions.values()))
-            return check_elements_equal(all_segments)
+            node_terms = []
+            for p in self.redpanda.storage(all_nodes=True).partitions(
+                    "redpanda", "controller"):
+                names = p.segments.keys()
+                terms = set()
+                for n in names:
+                    offset, term, fmt_v = n.split("-")
+                    terms.add(term)
 
-        wait_until(lambda: controller_log_replicated(),
+                node_terms.append(terms)
+
+            # All nodes should have seen same controller terms
+            r = check_elements_equal(node_terms)
+            if not r:
+                self.logger.debug(f"Terms not yet equal: {node_terms}")
+            return r
+
+        wait_until(lambda: all_nodes_participating(),
                    timeout_sec=60,
                    backoff_sec=2,
-                   err_msg="Controller logs are not the same")
-
-    """
-    Should allow to update port of advertised kafka API on all of the nodes at once
-    """
+                   err_msg="Node states did not converge")
 
     @cluster(num_nodes=3)
     def test_update_advertised_kafka_api_on_all_nodes(self):
+        """
+        Should allow to update port of advertised kafka API on all of the nodes at once
+        """
 
         node_1 = self.redpanda.get_node(1)
         node_2 = self.redpanda.get_node(2)
