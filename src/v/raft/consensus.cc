@@ -3094,12 +3094,27 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
           make_error_code(errc::not_leader));
     }
 
-    // no explicit node was requested. choose the most up to date follower
+    // no explicit node was requested.  Use heuristics to choose who to
+    // transfer to.
     if (!target) {
+        const auto& voters
+          = _configuration_manager.get_latest().current_config().voters;
         auto it = std::max_element(
-          _fstats.begin(), _fstats.end(), [](const auto& a, const auto& b) {
-              return a.second.last_dirty_log_index
-                     < b.second.last_dirty_log_index;
+          _fstats.begin(),
+          _fstats.end(),
+          [&voters](const auto& a, const auto& b) {
+              // Prefer peers that are more up to date, to reduce the latency
+              // of recovery before completing leadership transfer.
+              if (
+                a.second.last_dirty_log_index < b.second.last_dirty_log_index) {
+                  return true;
+              }
+
+              // Prefer to transfer to the same node that would win a free
+              // election, i.e. the next node in order of priority.
+              auto i_a = std::find(voters.begin(), voters.end(), a.first);
+              auto i_b = std::find(voters.begin(), voters.end(), b.first);
+              return i_a > i_b;
           });
 
         if (unlikely(it == _fstats.end())) {
