@@ -108,14 +108,21 @@ class ControllerEraseTest(RedpandaTest):
             storage = self.redpanda.node_storage(victim_node)
             segments = storage.ns['redpanda'].topics['controller'].partitions[
                 "0_0"].segments.keys()
-            assert len(segments) == transfers_leadership_count + 1
+
+            # We have one segment for each roll, plus _maybe_ one extra segment
+            # from leadership transfers occurring on shutdown if the victim node
+            # was controller leader when it shut down.  Remove two segments to
+            # be sure that we are removing some segment that really has data in it.
+            assert len(segments) >= transfers_leadership_count + 1
             segments = sorted(list(segments))
-            victim_path = f"{controller_path}/{segments[-1]}.log"
+            for victim_path in [
+                    f"{controller_path}/{segments[-2]}.log",
+                    f"{controller_path}/{segments[-1]}.log"
+            ]:
+                victim_node.account.remove(victim_path)
         else:
             # Full deletion: remove all log segments.
-            victim_path = f"{controller_path}/*"
-
-        victim_node.account.remove(victim_path)
+            victim_node.account.remove(f"{controller_path}/*")
 
         # Node should come up cleanly
         self.redpanda.start_node(victim_node)
