@@ -16,6 +16,7 @@
 #include "outcome.h"
 #include "s3/client_probe.h"
 #include "s3/configuration.h"
+#include "s3/types.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -60,48 +61,6 @@ public:
 private:
     ss::sstring _tags;
 };
-
-enum class error_outcome {
-    none = 0,
-    /// Error condition that could be retried
-    retry,
-    /// The service asked us to retry (SlowDown response)
-    retry_slowdown,
-    /// Error condition that couldn't be retried
-    fail,
-    /// NotFound API error (only suitable for downloads)
-    notfound
-};
-
-struct error_outcome_category final : public std::error_category {
-    const char* name() const noexcept final { return "s3::error_outcome"; }
-
-    std::string message(int c) const final {
-        switch (static_cast<error_outcome>(c)) {
-        case error_outcome::none:
-            return "No error";
-        case error_outcome::retry:
-            return "Retryable error";
-        case error_outcome::retry_slowdown:
-            return "Cloud service asked us to slow down";
-        case error_outcome::fail:
-            return "Non retriable error";
-        case error_outcome::notfound:
-            return "Key not found error";
-        default:
-            return "Undefined error_outcome encountered";
-        }
-    }
-};
-
-inline const std::error_category& error_category() noexcept {
-    static error_outcome_category e;
-    return e;
-}
-
-inline std::error_code make_error_code(error_outcome e) noexcept {
-    return {static_cast<int>(e), error_category()};
-}
 
 /// Request formatter for AWS S3
 class request_creator {
@@ -305,8 +264,3 @@ private:
 };
 
 } // namespace s3
-
-namespace std {
-template<>
-struct is_error_code_enum<s3::error_outcome> : true_type {};
-} // namespace std
