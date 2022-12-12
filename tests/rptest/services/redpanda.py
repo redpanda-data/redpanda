@@ -208,7 +208,8 @@ class ResourceSettings:
 
         :return: 2 tuple of strings, first goes before the binary, second goes after it
         """
-        preamble = f"ulimit -Sn {self._nfiles}; " if self._nfiles else ""
+        preamble = "ulimit -Sc unlimited"
+        preamble += f" -Sn {self._nfiles}; " if self._nfiles else "; "
 
         if self._num_cpus is None and not dedicated_node:
             num_cpus = self.DEFAULT_NUM_CPUS
@@ -642,9 +643,12 @@ class RedpandaService(Service):
 
         self.s3_client: Optional[S3Client] = None
 
-        if environment is None:
-            environment = dict()
-        self._environment = environment
+        # enable asan abort / core dumps by default
+        self._environment = dict(
+            ASAN_OPTIONS=
+            "abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1")
+        if environment is not None:
+            self._environment.update(environment)
 
         self.config_file_lock = threading.Lock()
 
@@ -671,7 +675,7 @@ class RedpandaService(Service):
         self._skip_if_no_redpanda_log = v
 
     def set_environment(self, environment: dict[str, str]):
-        self._environment = environment
+        self._environment.update(environment)
 
     def set_resource_settings(self, rs):
         self._resource_settings = rs
