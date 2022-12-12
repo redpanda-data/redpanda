@@ -6,8 +6,9 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import re
 
+import re
+import signal
 from typing import Optional, Callable
 from rptest.util import wait_until_result
 from ducktape.cluster.cluster import ClusterNode
@@ -34,12 +35,12 @@ class ClusterMetricsTest(RedpandaTest):
         super(ClusterMetricsTest, self).__init__(test_context=test_context)
         self.admin = Admin(self.redpanda)
 
-    def _stop_controller_node(self) -> ClusterNode:
+    def _stop_controller_node(self, forced=False) -> ClusterNode:
         """
         Stop the current controller node
         """
         prev = self.redpanda.controller()
-        self.redpanda.stop_node(prev)
+        self.redpanda.stop_node(prev, forced=forced)
 
         return prev
 
@@ -63,7 +64,7 @@ class ClusterMetricsTest(RedpandaTest):
         wait for controller leadership to migrate to a new node before
         proceeding with the re-start.
         """
-        prev = self._stop_controller_node()
+        prev = self._stop_controller_node(forced=True)
 
         started_hosts = [
             n.account.hostname for n in self.redpanda.started_nodes()
@@ -81,7 +82,7 @@ class ClusterMetricsTest(RedpandaTest):
         Stop current controller node and wait for failover.
         Returns the new stable controller node.
         """
-        prev = self._stop_controller_node()
+        prev = self._stop_controller_node(forced=True)
 
         started_hosts = [
             n.account.hostname for n in self.redpanda.started_nodes()
@@ -190,8 +191,9 @@ class ClusterMetricsTest(RedpandaTest):
 
         # Stop the controller node and assert again.
         # This time the metrics should not be reported as a controller
-        # couldn't be elected due to lack of quorum.
-        self._stop_controller_node()
+        # couldn't be elected due to lack of quorum (we hard-kill the node
+        # to avoid a graceful leadership handoff)
+        self._stop_controller_node(forced=True)
         self._assert_reported_by_controller(None)
 
     @cluster(num_nodes=3)
