@@ -16,7 +16,7 @@
 #include "s3/client_probe.h"
 #include "s3/types.h"
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// List of default overrides that can be used to workaround issues
 /// that can arise when we want to deal with different S3 API implementations
@@ -80,4 +80,4 @@ using client_configuration = client_configuration_variant<configuration>;
 template<typename>
 inline constexpr bool always_false_v = false;
 
-} // namespace s3
+} // namespace cloud_storage_clients

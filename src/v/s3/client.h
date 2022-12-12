@@ -20,7 +20,7 @@
 
 #include <chrono>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// Object tag formatter that can be used
 /// to format tags for x_amz_tagging or x-ms-tag fields
@@ -160,4 +160,4 @@ public:
       = 0;
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients

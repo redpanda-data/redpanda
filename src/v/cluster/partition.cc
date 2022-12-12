@@ -37,7 +37,7 @@ partition::partition(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
   config::binding<uint64_t> max_concurrent_producer_ids,
-  std::optional<s3::bucket_name> read_replica_bucket)
+  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -121,7 +121,7 @@ partition::partition(
                     _archival_meta_stm->manifest(),
                     cloud_storage_api.local(),
                     cloud_storage_cache.local(),
-                    s3::bucket_name{*bucket});
+                    cloud_storage_clients::bucket_name{*bucket});
             }
         }
     }

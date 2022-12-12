@@ -20,7 +20,7 @@
 
 #include <cstdint>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// \brief S3 client probe
 ///
@@ -72,4 +72,4 @@ private:
       ssx::metrics::public_metrics_handle};
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients

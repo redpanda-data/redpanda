@@ -1469,9 +1469,9 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
     // no partition exists, create one
     if (likely(!partition)) {
-        std::optional<s3::bucket_name> read_replica_bucket;
+        std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
         if (cfg->is_read_replica()) {
-            read_replica_bucket = s3::bucket_name(
+            read_replica_bucket = cloud_storage_clients::bucket_name(
               cfg->properties.read_replica_bucket.value());
         }
         // we use offset as an rev as it is always increasing and it

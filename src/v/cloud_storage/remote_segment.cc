@@ -103,7 +103,7 @@ static ss::sstring generate_log_prefix(
 remote_segment::remote_segment(
   remote& r,
   cache& c,
-  s3::bucket_name bucket,
+  cloud_storage_clients::bucket_name bucket,
   const partition_manifest& m,
   model::offset key,
   retry_chain_node& parent)

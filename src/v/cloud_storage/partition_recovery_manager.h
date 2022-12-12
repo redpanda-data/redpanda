@@ -42,7 +42,7 @@ struct log_recovery_result {
 class partition_recovery_manager {
 public:
     partition_recovery_manager(
-      s3::bucket_name bucket, ss::sharded<remote>& remote);
+      cloud_storage_clients::bucket_name bucket, ss::sharded<remote>& remote);
 
     partition_recovery_manager(const partition_recovery_manager&) = delete;
     partition_recovery_manager(partition_recovery_manager&&) = delete;
@@ -70,7 +70,7 @@ public:
       int32_t remote_partition_count);
 
 private:
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     ss::sharded<remote>& _remote;
     ss::gate _gate;
     retry_chain_node _root;
@@ -88,7 +88,7 @@ public:
       remote* remote,
       model::initial_revision_id remote_revision_id,
       int32_t remote_partition_count,
-      s3::bucket_name bucket,
+      cloud_storage_clients::bucket_name bucket,
       ss::gate& gate_root,
       retry_chain_node& parent,
       storage::opt_abort_source_t as);
@@ -190,7 +190,7 @@ private:
     read_first_record_header(const std::filesystem::path& path);
 
     const storage::ntp_config& _ntpc;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     remote* _remote;
     model::initial_revision_id _remote_revision_id;
     int32_t _remote_partition_count;

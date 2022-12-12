@@ -14,7 +14,7 @@
 
 #include <map>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 struct s3_error_category final : std::error_category {
     const char* name() const noexcept final { return "s3"; }
@@ -459,4 +459,4 @@ std::string_view rest_error_response::resource() const noexcept {
     return _resource;
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients

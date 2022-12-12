@@ -36,16 +36,16 @@ inline ss::logger fixt_log("fixture"); // NOLINT
 static constexpr uint16_t httpd_port_number = 4430;
 static constexpr const char* httpd_host_name = "127.0.0.1";
 
-s3::configuration s3_imposter_fixture::get_configuration() {
+cloud_storage_clients::configuration s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    s3::configuration conf{
-      .uri = s3::access_point_uri(httpd_host_name),
+    cloud_storage_clients::configuration conf{
+      .uri = cloud_storage_clients::access_point_uri(httpd_host_name),
       .access_key = cloud_roles::public_key_str("acess-key"),
       .secret_key = cloud_roles::private_key_str("secret-key"),
       .region = cloud_roles::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
-    conf._probe = ss::make_shared<s3::client_probe>(
+    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
       net::metrics_disabled::yes,
       net::public_metrics_disabled::yes,
       "us-east-1",

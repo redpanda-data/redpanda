@@ -11,8 +11,8 @@
 #include "bytes/iobuf.h"
 #include "cloud_roles/signature.h"
 #include "http/client.h"
-#include "s3/s3_client.h"
 #include "s3/error.h"
+#include "s3/s3_client.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
@@ -94,10 +94,10 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
 }
 
 struct test_conf {
-    s3::bucket_name bucket;
-    s3::object_key object;
+    cloud_storage_clients::bucket_name bucket;
+    cloud_storage_clients::object_key object;
 
-    s3::configuration client_cfg;
+    cloud_storage_clients::configuration client_cfg;
 
     std::string in;
     std::string out;
@@ -118,13 +118,16 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
     auto secret_key = cloud_roles::private_key_str(
       m["secretkey"].as<std::string>());
     auto region = cloud_roles::aws_region_name(m["region"].as<std::string>());
-    s3::configuration client_cfg = s3::configuration::make_configuration(
-                                     access_key, secret_key, region)
-                                     .get0();
+    cloud_storage_clients::configuration client_cfg
+      = cloud_storage_clients::configuration::make_configuration(
+          access_key, secret_key, region)
+          .get0();
     vlog(test_log.info, "connecting to {}", client_cfg.server_addr);
     return test_conf{
-      .bucket = s3::bucket_name(m["bucket"].as<std::string>()),
-      .object = s3::object_key(m["object"].as<std::string>()),
+      .bucket = cloud_storage_clients::bucket_name(
+        m["bucket"].as<std::string>()),
+      .object = cloud_storage_clients::object_key(
+        m["object"].as<std::string>()),
       .client_cfg = std::move(client_cfg),
       .in = m["in"].as<std::string>(),
       .out = m["out"].as<std::string>(),
@@ -149,7 +152,7 @@ static ss::sstring time_to_string(std::chrono::system_clock::time_point tp) {
 }
 
 static ss::lw_shared_ptr<cloud_roles::apply_credentials>
-make_credentials(const s3::configuration& cfg) {
+make_credentials(const cloud_storage_clients::configuration& cfg) {
     return ss::make_lw_shared(
       cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
         cfg.access_key.value(),
@@ -171,12 +174,12 @@ int main(int args, char** argv, char** env) {
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
     ss::app_template app;
     cli_opts(app.add_options());
-    ss::sharded<s3::s3_client> client;
+    ss::sharded<cloud_storage_clients::s3_client> client;
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
         return ss::async([&] {
             const test_conf lcfg = cfg_from(cfg);
-            s3::configuration s3_cfg = lcfg.client_cfg;
+            cloud_storage_clients::configuration s3_cfg = lcfg.client_cfg;
             vlog(test_log.info, "config:{}", lcfg);
             vlog(test_log.info, "constructing client");
             auto credentials_applier = make_credentials(s3_cfg);
@@ -185,7 +188,7 @@ int main(int args, char** argv, char** env) {
             client
               .invoke_on(
                 0,
-                [lcfg](s3::s3_client& cli) {
+                [lcfg](cloud_storage_clients::s3_client& cli) {
                     vlog(test_log.info, "sending request");
                     if (!lcfg.out.empty()) {
                         vlog(test_log.info, "receiving file {}", lcfg.out);

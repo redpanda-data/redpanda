@@ -114,7 +114,7 @@ scheduler_service_impl::get_archival_service_config(
                             segment_time_limit(*time_limit))
                                      : std::nullopt;
     archival::configuration cfg{
-      .bucket_name = s3::bucket_name(get_value_or_throw(
+      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
       .reconciliation_interval
@@ -413,7 +413,7 @@ cloud_storage::remote& scheduler_service_impl::get_remote() {
     return _remote.local();
 }
 
-s3::bucket_name scheduler_service_impl::get_bucket() const {
+cloud_storage_clients::bucket_name scheduler_service_impl::get_bucket() const {
     return _conf.bucket_name;
 }
 

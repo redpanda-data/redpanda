@@ -551,7 +551,7 @@ ss::future<> archival_metadata_stm::handle_eviction() {
 
     retry_chain_node rc_node(_download_as, timeout, backoff);
     auto res = co_await _cloud_storage_api.download_manifest(
-      s3::bucket_name{*bucket},
+      cloud_storage_clients::bucket_name{*bucket},
       _manifest->get_manifest_path(),
       manifest,
       rc_node);

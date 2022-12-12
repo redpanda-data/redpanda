@@ -64,7 +64,7 @@ private:
 };
 
 partition_recovery_manager::partition_recovery_manager(
-  s3::bucket_name bucket, ss::sharded<remote>& remote)
+  cloud_storage_clients::bucket_name bucket, ss::sharded<remote>& remote)
   : _bucket(std::move(bucket))
   , _remote(remote) {}
 
@@ -112,7 +112,7 @@ partition_downloader::partition_downloader(
   remote* remote,
   model::initial_revision_id remote_rev_id,
   int32_t remote_partition_count,
-  s3::bucket_name bucket,
+  cloud_storage_clients::bucket_name bucket,
   ss::gate& gate_root,
   retry_chain_node& parent,
   storage::opt_abort_source_t as)

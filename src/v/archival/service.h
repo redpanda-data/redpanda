@@ -105,7 +105,7 @@ public:
     cloud_storage::remote& get_remote();
 
     /// Get configured bucket
-    s3::bucket_name get_bucket() const;
+    cloud_storage_clients::bucket_name get_bucket() const;
 
     /// Total size of data that have to be uploaded
     uint64_t estimate_backlog_size();

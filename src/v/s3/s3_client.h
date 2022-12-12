@@ -23,7 +23,7 @@
 #include <limits>
 #include <string_view>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// Request formatter for AWS S3
 class request_creator {
@@ -208,4 +208,4 @@ private:
     ss::shared_ptr<client_probe> _probe;
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients

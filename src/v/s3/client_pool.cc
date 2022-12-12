@@ -2,7 +2,7 @@
 
 #include "s3/s3_client.h"
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 client_pool::client_pool(
   size_t size, client_configuration conf, client_pool_overdraft_policy policy)
@@ -132,4 +132,4 @@ ss::future<> client_pool::wait_for_credentials() {
     co_return;
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients

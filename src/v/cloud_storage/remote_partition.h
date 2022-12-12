@@ -67,7 +67,7 @@ public:
       const partition_manifest& m,
       remote& api,
       cache& c,
-      s3::bucket_name bucket);
+      cloud_storage_clients::bucket_name bucket);
 
     /// Start remote partition
     ss::future<> start();
@@ -112,8 +112,8 @@ public:
 
     /// Helper for erase()
     ss::future<bool> tolerant_delete_object(
-      const s3::bucket_name& bucket,
-      const s3::object_key& path,
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
     /// Remove objects from S3
@@ -184,7 +184,7 @@ private:
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
 
     segment_map_t _segments;
     partition_probe _probe;

@@ -65,7 +65,7 @@ public:
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 
-    static s3::configuration get_configuration();
+    static cloud_storage_clients::configuration get_configuration();
 
 private:
     void set_routes(

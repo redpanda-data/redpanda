@@ -58,7 +58,7 @@ public:
     remote_segment(
       remote& r,
       cache& cache,
-      s3::bucket_name bucket,
+      cloud_storage_clients::bucket_name bucket,
       const partition_manifest& m,
       model::offset base_offset,
       retry_chain_node& parent);
@@ -159,7 +159,7 @@ private:
     ss::gate _gate;
     remote& _api;
     cache& _cache;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     const model::ntp& _ntp;
     remote_segment_path _path;
 

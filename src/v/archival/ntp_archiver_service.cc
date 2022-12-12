@@ -1216,13 +1216,15 @@ ntp_archiver::delete_segment(const remote_segment_path& path) {
       _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
 
     auto res = co_await _remote.delete_object(
-      _bucket, s3::object_key{path}, fib);
+      _bucket, cloud_storage_clients::object_key{path}, fib);
 
     if (res == cloud_storage::upload_result::success) {
         auto tx_range_manifest_path
           = cloud_storage::tx_range_manifest(path).get_manifest_path();
         co_await _remote.delete_object(
-          _bucket, s3::object_key{tx_range_manifest_path}, fib);
+          _bucket,
+          cloud_storage_clients::object_key{tx_range_manifest_path},
+          fib);
     }
 
     co_return res;

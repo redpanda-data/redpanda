@@ -18,7 +18,7 @@
 #include <filesystem>
 #include <system_error>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
 using object_key = named_type<std::filesystem::path, struct s3_object_key>;
@@ -39,7 +39,9 @@ enum class error_outcome {
 };
 
 struct error_outcome_category final : public std::error_category {
-    const char* name() const noexcept final { return "s3::error_outcome"; }
+    const char* name() const noexcept final {
+        return "cloud_storage_clients::error_outcome";
+    }
 
     std::string message(int c) const final {
         switch (static_cast<error_outcome>(c)) {
@@ -68,9 +70,9 @@ inline std::error_code make_error_code(error_outcome e) noexcept {
     return {static_cast<int>(e), error_category()};
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients
 
 namespace std {
 template<>
-struct is_error_code_enum<s3::error_outcome> : true_type {};
+struct is_error_code_enum<cloud_storage_clients::error_outcome> : true_type {};
 } // namespace std

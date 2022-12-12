@@ -518,7 +518,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
 
         errc download_res = co_await rr_manager.set_remote_properties_in_config(
           assignable_config,
-          s3::bucket_name(
+          cloud_storage_clients::bucket_name(
             assignable_config.cfg.properties.read_replica_bucket.value()),
           _as.local());
 
@@ -554,7 +554,9 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           _cloud_storage_api.local());
 
         errc download_res = co_await cfg_source.set_recovered_topic_properties(
-          assignable_config, s3::bucket_name(bucket.value()), _as.local());
+          assignable_config,
+          cloud_storage_clients::bucket_name(bucket.value()),
+          _as.local());
 
         if (download_res != errc::success) {
             vlog(

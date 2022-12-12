@@ -18,7 +18,7 @@
 
 #include <s3/client_probe.h>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 client_probe::client_probe(
   net::metrics_disabled disable,
@@ -176,4 +176,4 @@ void client_probe::setup_public_metrics(
       });
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients

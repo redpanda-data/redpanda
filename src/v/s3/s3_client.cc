@@ -48,7 +48,7 @@
 #include <exception>
 #include <utility>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 // Close all connections that were used more than 5 seconds ago.
 // AWS S3 endpoint has timeout of 10 seconds. But since we're supporting
@@ -408,7 +408,7 @@ parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
         // Without a proper code, we treat it as a hint to gracefully retry
         // (synthesize the slow_down code).
         rest_error_response err(
-          fmt::format("{}", s3::s3_error_code::slow_down),
+          fmt::format("{}", cloud_storage_clients::s3_error_code::slow_down),
           fmt::format("Empty error response, status code {}", result),
           "",
           "");
@@ -483,15 +483,15 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 
     try {
         co_return co_await std::move(request_future);
-    } catch (const s3::rest_error_response& err) {
-        if (err.code() == s3::s3_error_code::no_such_key) {
+    } catch (const cloud_storage_clients::rest_error_response& err) {
+        if (err.code() == cloud_storage_clients::s3_error_code::no_such_key) {
             // Unexpected 404s are logged elsewhere by the s3 client at warn
             // level, so only log at debug level here.
             vlog(s3_log.debug, "NoSuchKey response received {}", key);
             outcome = error_outcome::notfound;
         } else if (
-          err.code() == s3::s3_error_code::slow_down
-          || err.code() == s3::s3_error_code::internal_error) {
+          err.code() == s3_error_code::slow_down
+          || err.code() == s3_error_code::internal_error) {
             // This can happen when we're dealing with high request rate to
             // the manifest's prefix. Backoff algorithm should be applied.
             // In principle only slow_down should occur, but in practice
@@ -867,4 +867,4 @@ ss::future<> s3_client::do_delete_object(
       });
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients

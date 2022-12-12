@@ -17,7 +17,7 @@
 
 #include <seastar/core/condition-variable.hh>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// Policy that controls behaviour of the client pool
 /// in situation when number of requested client connections
@@ -115,4 +115,4 @@ private:
     ss::condition_variable _credentials_var;
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients
