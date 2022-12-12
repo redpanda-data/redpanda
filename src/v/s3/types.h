@@ -10,9 +10,21 @@
 
 #pragma once
 
+#include "seastarx.h"
+#include "utils/named_type.h"
+
+#include <seastar/core/sstring.hh>
+
+#include <filesystem>
 #include <system_error>
 
 namespace s3 {
+
+using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
+using object_key = named_type<std::filesystem::path, struct s3_object_key>;
+using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
+using ca_trust_file
+  = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
 enum class error_outcome {
     none = 0,

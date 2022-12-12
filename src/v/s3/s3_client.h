@@ -14,53 +14,16 @@
 #include "http/client.h"
 #include "model/fundamental.h"
 #include "outcome.h"
+#include "s3/client.h"
 #include "s3/client_probe.h"
-#include "s3/configuration.h"
-#include "s3/types.h"
 
 #include <seastar/core/lowres_clock.hh>
 
-#include <chrono>
 #include <initializer_list>
 #include <limits>
 #include <string_view>
 
 namespace s3 {
-
-/// Object tag formatter that can be used
-/// to format tags for x_amz_tagging field
-/// The value is supposed to be cached and
-/// not re-created on every request.
-class object_tag_formatter {
-public:
-    object_tag_formatter() = default;
-
-    object_tag_formatter(
-      std::initializer_list<std::pair<std::string_view, std::string_view>>&&
-        il) {
-        for (auto [key, value] : il) {
-            add(key, value);
-        }
-    }
-
-    template<class ValueT>
-    void add(std::string_view tag, const ValueT& value) {
-        if (empty()) {
-            _tags += ssx::sformat("{}={}", tag, value);
-        } else {
-            _tags += ssx::sformat("&{}={}", tag, value);
-        }
-    }
-
-    bool empty() const { return _tags.empty(); }
-
-    boost::beast::string_view str() const {
-        return {_tags.data(), _tags.size()};
-    }
-
-private:
-    ss::sstring _tags;
-};
 
 /// Request formatter for AWS S3
 class request_creator {
@@ -133,10 +96,8 @@ private:
 };
 
 /// S3 REST-API client
-class s3_client {
+class s3_client : public client {
 public:
-    struct no_response {};
-
     s3_client(
       const configuration& conf,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
@@ -148,9 +109,9 @@ public:
         apply_credentials);
 
     /// Stop the client
-    ss::future<> stop();
+    ss::future<> stop() override;
     /// Shutdown the underlying connection
-    void shutdown();
+    void shutdown() override;
 
     /// Download object from S3 bucket
     ///
@@ -164,12 +125,7 @@ public:
       bucket_name const& name,
       object_key const& key,
       const ss::lowres_clock::duration& timeout,
-      bool expect_no_such_key = false);
-
-    struct head_object_result {
-        uint64_t object_size;
-        ss::sstring etag;
-    };
+      bool expect_no_such_key = false) override;
 
     /// HeadObject request.
     /// \param name is a bucket name
@@ -178,7 +134,7 @@ public:
     ss::future<result<head_object_result, error_outcome>> head_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout);
+      const ss::lowres_clock::duration& timeout) override;
 
     /// Put object to S3 bucket.
     /// \param name is a bucket name
@@ -192,31 +148,20 @@ public:
       size_t payload_size,
       ss::input_stream<char>&& body,
       const object_tag_formatter& tags,
-      const ss::lowres_clock::duration& timeout);
+      const ss::lowres_clock::duration& timeout) override;
 
-    struct list_bucket_item {
-        ss::sstring key;
-        std::chrono::system_clock::time_point last_modified;
-        size_t size_bytes;
-        ss::sstring etag;
-    };
-    struct list_bucket_result {
-        bool is_truncated;
-        ss::sstring prefix;
-        std::vector<list_bucket_item> contents;
-    };
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       const ss::lowres_clock::duration& timeout
-      = http::default_connect_timeout);
+      = http::default_connect_timeout) override;
 
     ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
       const object_key& key,
-      const ss::lowres_clock::duration& timeout);
+      const ss::lowres_clock::duration& timeout) override;
 
 private:
     ss::future<head_object_result> do_head_object(

@@ -11,21 +11,12 @@
 #pragma once
 
 #include "cloud_roles/types.h"
-#include "model/fundamental.h"
 #include "net/transport.h"
 #include "net/types.h"
-
-#include <seastar/core/sstring.hh>
+#include "s3/client_probe.h"
+#include "s3/types.h"
 
 namespace s3 {
-
-class client_probe;
-
-using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
-using object_key = named_type<std::filesystem::path, struct s3_object_key>;
-using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
-using ca_trust_file
-  = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
 /// List of default overrides that can be used to workaround issues
 /// that can arise when we want to deal with different S3 API implementations

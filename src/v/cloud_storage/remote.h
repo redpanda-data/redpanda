@@ -17,8 +17,8 @@
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
+#include "s3/client.h"
 #include "s3/client_pool.h"
-#include "s3/s3_client.h"
 #include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 

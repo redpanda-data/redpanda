@@ -1,5 +1,7 @@
 #include "s3/client_pool.h"
 
+#include "s3/s3_client.h"
+
 namespace s3 {
 
 client_pool::client_pool(
