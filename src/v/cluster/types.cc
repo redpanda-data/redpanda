@@ -98,6 +98,9 @@ std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     case tx_errc::invalid_producer_id_mapping:
         o << "tx_errc::invalid_producer_id_mapping";
         break;
+    case tx_errc::tx_not_found:
+        o << "tx_errc::tx_not_found";
+        break;
     }
     return o;
 }

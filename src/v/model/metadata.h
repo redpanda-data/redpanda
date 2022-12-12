@@ -103,8 +103,6 @@ struct broker_endpoint final
     auto serde_fields() { return std::tie(name, address); }
 };
 
-enum class violation_recovery_policy { crash = 0, best_effort };
-
 /**
  * Node membership can be in one of three states: active, draining and removed.
  *
@@ -397,16 +395,6 @@ struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
 
     auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
-
-inline std::ostream&
-operator<<(std::ostream& o, const model::violation_recovery_policy& x) {
-    switch (x) {
-    case model::violation_recovery_policy::best_effort:
-        return o << "best_effort";
-    case model::violation_recovery_policy::crash:
-        return o << "crash";
-    }
-}
 
 enum class cloud_credentials_source {
     config_file = 0,

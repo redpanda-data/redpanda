@@ -124,7 +124,8 @@ enum class tx_errc {
     request_rejected,
     invalid_producer_id_mapping,
     invalid_txn_state,
-    invalid_producer_epoch
+    invalid_producer_epoch,
+    tx_not_found
 };
 
 std::ostream& operator<<(std::ostream&, const tx_errc&);
@@ -320,6 +321,133 @@ struct end_tx_request {
 struct end_tx_reply {
     tx_errc error_code{};
 };
+struct fetch_tx_request
+  : serde::
+      envelope<fetch_tx_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    kafka::transactional_id tx_id{};
+    model::term_id term;
+
+    fetch_tx_request() noexcept = default;
+
+    fetch_tx_request(kafka::transactional_id tx_id, model::term_id term)
+      : tx_id(tx_id)
+      , term(term) {}
+
+    friend bool operator==(const fetch_tx_request&, const fetch_tx_request&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const fetch_tx_request& r);
+
+    auto serde_fields() { return std::tie(tx_id, term); }
+};
+
+struct fetch_tx_reply
+  : serde::
+      envelope<fetch_tx_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    enum tx_status : int32_t {
+        ongoing,
+        preparing,
+        prepared,
+        aborting,
+        killed,
+        ready,
+        tombstone,
+    };
+
+    struct tx_partition
+      : serde::
+          envelope<tx_partition, serde::version<0>, serde::compat_version<0>> {
+        using rpc_adl_exempt = std::true_type;
+
+        model::ntp ntp;
+        model::term_id etag;
+        model::revision_id topic_revision;
+
+        tx_partition() noexcept = default;
+
+        tx_partition(
+          model::ntp ntp,
+          model::term_id etag,
+          model::revision_id topic_revision)
+          : ntp(ntp)
+          , etag(etag)
+          , topic_revision(topic_revision) {}
+
+        friend bool operator==(const tx_partition&, const tx_partition&)
+          = default;
+
+        friend std::ostream& operator<<(std::ostream& o, const tx_partition& r);
+
+        auto serde_fields() { return std::tie(ntp, etag, topic_revision); }
+    };
+
+    struct tx_group
+      : serde::envelope<tx_group, serde::version<0>, serde::compat_version<0>> {
+        using rpc_adl_exempt = std::true_type;
+
+        kafka::group_id group_id;
+        model::term_id etag;
+
+        tx_group() noexcept = default;
+
+        tx_group(kafka::group_id group_id, model::term_id etag)
+          : group_id(group_id)
+          , etag(etag) {}
+
+        friend bool operator==(const tx_group&, const tx_group&) = default;
+
+        friend std::ostream& operator<<(std::ostream& o, const tx_partition& r);
+
+        auto serde_fields() { return std::tie(group_id, etag); }
+    };
+
+    tx_errc ec{};
+    model::producer_identity pid;
+    model::producer_identity last_pid;
+    model::tx_seq tx_seq;
+    std::chrono::milliseconds timeout_ms;
+    tx_status status;
+    std::vector<tx_partition> partitions;
+    std::vector<tx_group> groups;
+
+    fetch_tx_reply() noexcept = default;
+
+    fetch_tx_reply(tx_errc ec)
+      : ec(ec) {}
+
+    fetch_tx_reply(
+      tx_errc ec,
+      model::producer_identity pid,
+      model::producer_identity last_pid,
+      model::tx_seq tx_seq,
+      std::chrono::milliseconds timeout_ms,
+      tx_status status,
+      std::vector<tx_partition> partitions,
+      std::vector<tx_group> groups)
+      : ec(ec)
+      , pid(pid)
+      , last_pid(last_pid)
+      , tx_seq(tx_seq)
+      , timeout_ms(timeout_ms)
+      , status(status)
+      , partitions(partitions)
+      , groups(groups) {}
+
+    friend bool operator==(const fetch_tx_reply&, const fetch_tx_reply&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const fetch_tx_reply& r);
+
+    auto serde_fields() {
+        return std::tie(
+          ec, pid, last_pid, tx_seq, timeout_ms, status, partitions, groups);
+    }
+};
+
 struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
