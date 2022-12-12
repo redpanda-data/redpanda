@@ -809,6 +809,22 @@ void read_nested(
 }
 
 template<typename T>
+requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
+  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<T>;
+
+    const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+    t.reserve(size);
+    for (auto i = 0U; i < size; ++i) {
+        auto key = read_nested<typename Type::key_type>(in, bytes_left_limit);
+        auto value = read_nested<typename Type::mapped_type>(
+          in, bytes_left_limit);
+        t.emplace(std::move(key), std::move(value));
+    }
+}
+
+template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(
@@ -818,27 +834,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    if constexpr (is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            auto key = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            auto value = read_nested<typename Type::mapped_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(key), std::move(value));
-        }
-    } else if constexpr (is_std_unordered_map<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            auto key = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            auto value = read_nested<typename Type::mapped_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(key), std::move(value));
-        }
-    } else if constexpr (is_fragmented_vector<Type>) {
+    if constexpr (is_fragmented_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         for (auto i = 0U; i < size; ++i) {
