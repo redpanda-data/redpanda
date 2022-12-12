@@ -13,7 +13,6 @@
 #include "bytes/iostream.h"
 #include "cloud_roles/signature.h"
 #include "cloud_storage_clients/client_pool.h"
-#include "cloud_storage_clients/error.h"
 #include "cloud_storage_clients/s3_client.h"
 #include "net/dns.h"
 #include "net/types.h"

@@ -10,7 +10,6 @@
 
 #include "cloud_storage_clients/client_probe.h"
 
-#include "cloud_storage_clients/error.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 

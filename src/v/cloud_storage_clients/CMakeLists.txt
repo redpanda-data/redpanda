@@ -2,10 +2,10 @@
 v_cc_library(
   NAME cloud_storage_clients
   SRCS
-    s3_client.cc
     client_pool.cc
     client_probe.cc
-    error.cc
+    s3_client.cc
+    s3_error.cc
   DEPS
     Seastar::seastar
     v::bytes
