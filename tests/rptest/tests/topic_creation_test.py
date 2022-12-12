@@ -316,14 +316,17 @@ class CreateSITopicsTest(RedpandaTest):
 
         # This topic has topic-level properties set from the cluster defaults
         # and the values should _not_ have been changed by the intervening
-        # change to those defaults.
+        # change to those defaults.  Properties which still match the current
+        # default will be reported as DEFAULT, even though they are sticky,
+        # per issue https://github.com/redpanda-data/redpanda/issues/7451
         assert default_si_configs["redpanda.remote.read"] == (
             "true", "DYNAMIC_TOPIC_CONFIG")
         assert default_si_configs["redpanda.remote.write"] == (
-            "true", "DYNAMIC_TOPIC_CONFIG")
+            "true", "DEFAULT_CONFIG")
 
         # This topic was created with explicit properties that differed
-        # from the defaults
+        # from the defaults.  Both properties differ from the present
+        # defaults so will be reported as DYNAMIC
         assert explicit_si_configs["redpanda.remote.read"] == (
             "true", "DYNAMIC_TOPIC_CONFIG")
         assert explicit_si_configs["redpanda.remote.write"] == (
@@ -491,18 +494,14 @@ class CreateTopicUpgradeTest(RedpandaTest):
 
         # Properties should still be set, but migrated to topic-level
         described = self.rpk.describe_topic_configs(topic)
-        assert described['redpanda.remote.write'] == ('true',
-                                                      'DYNAMIC_TOPIC_CONFIG')
-        assert described['redpanda.remote.read'] == ('true',
-                                                     'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.write'] == ('true', 'DEFAULT_CONFIG')
+        assert described['redpanda.remote.read'] == ('true', 'DEFAULT_CONFIG')
 
         # A new topic picks up these properties too
         self.rpk.create_topic("created-after-enabled")
         described = self.rpk.describe_topic_configs("created-after-enabled")
-        assert described['redpanda.remote.write'] == ('true',
-                                                      'DYNAMIC_TOPIC_CONFIG')
-        assert described['redpanda.remote.read'] == ('true',
-                                                     'DYNAMIC_TOPIC_CONFIG')
+        assert described['redpanda.remote.write'] == ('true', 'DEFAULT_CONFIG')
+        assert described['redpanda.remote.read'] == ('true', 'DEFAULT_CONFIG')
 
         # Switching off cluster defaults shoudln't affect existing topic
         self.redpanda.set_cluster_config(
@@ -520,9 +519,8 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.rpk.create_topic("created-after-disabled")
         described = self.rpk.describe_topic_configs("created-after-disabled")
         assert described['redpanda.remote.write'] == ('false',
-                                                      'DYNAMIC_TOPIC_CONFIG')
-        assert described['redpanda.remote.read'] == ('false',
-                                                     'DYNAMIC_TOPIC_CONFIG')
+                                                      'DEFAULT_CONFIG')
+        assert described['redpanda.remote.read'] == ('false', 'DEFAULT_CONFIG')
 
     @cluster(num_nodes=3)
     def test_retention_config_on_upgrade_from_v22_2_to_v22_3(self):
