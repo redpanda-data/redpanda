@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "cloud_storage_clients/error.h"
+#include "cloud_storage_clients/s3_error.h"
 #include "http/probe.h"
 #include "model/fundamental.h"
 #include "net/types.h"
