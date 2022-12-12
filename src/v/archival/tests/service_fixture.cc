@@ -136,8 +136,11 @@ get_configurations() {
       .access_key = cloud_roles::public_key_str("acess-key"),
       .secret_key = cloud_roles::private_key_str("secret-key"),
       .region = cloud_roles::aws_region_name("us-east-1"),
-      ._probe = ss::make_shared(
-        s3::client_probe(net::metrics_disabled::yes, "", ""))};
+      ._probe = ss::make_shared(s3::client_probe(
+        net::metrics_disabled::yes,
+        net::public_metrics_disabled::yes,
+        "",
+        ""))};
     s3conf.server_addr = server_addr;
     archival::configuration aconf;
     aconf.bucket_name = s3::bucket_name("test-bucket");

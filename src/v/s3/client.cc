@@ -140,7 +140,7 @@ ss::future<configuration> configuration::make_configuration(
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
     client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics, region(), endpoint_uri);
+      disable_metrics, disable_public_metrics, region(), endpoint_uri);
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;

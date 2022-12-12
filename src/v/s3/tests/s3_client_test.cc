@@ -179,7 +179,10 @@ s3::configuration transport_configuration() {
     };
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<s3::client_probe>(
-      net::metrics_disabled::yes, "region", "endpoint");
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      "region",
+      "endpoint");
     return conf;
 }
 
