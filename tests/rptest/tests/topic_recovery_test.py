@@ -165,7 +165,7 @@ class BaseCase:
                 # last_offset in the manifest is the last uploaded redpanda offset. Difference between
                 # kafka and redpanda offsets is equal to the number of non-data records.
                 assert last_offset >= hw, \
-                    f"High watermark has unexpected value {hw}, last offset: {last_offset}"
+                    f"High watermark {topic.name}/{partition.id} has unexpected value {hw}, last offset: {last_offset}"
 
     def _produce_and_verify(self, topic_spec):
         """Try to produce to the topic. The method produces data to the topic and
@@ -1082,12 +1082,10 @@ class TopicRecoveryTest(RedpandaTest):
             for path, value in checksums.items() if include_condition(path)
         }
 
-    def _stop_redpanda_nodes(self):
+    def _stop_redpanda_nodes(self, forced=False):
         """Stop all redpanda nodes"""
         assert self._started
-        for node in self.redpanda.nodes:
-            self.logger.info(f"Node {node.account.hostname} will be stopped")
-            self.redpanda.stop_node(node)
+        self.redpanda.stop(forced=forced)
         self._started = False
 
     def _start_redpanda_nodes(self):
@@ -1252,7 +1250,10 @@ class TopicRecoveryTest(RedpandaTest):
                 test_case.topics,
                 timeout=datetime.timedelta(seconds=upload_delay_sec))
 
-        self._stop_redpanda_nodes()
+        # Do a hard kill, so that we don't generate extra local disk log segments
+        # in the process of shutdown leadership transfers.  This simplifies comparing
+        # the disk state baseline with the eventual S3 state.
+        self._stop_redpanda_nodes(forced=True)
 
         baseline = self._collect_file_checksums()
 
@@ -1280,7 +1281,7 @@ class TopicRecoveryTest(RedpandaTest):
         test_case.validate_cluster(baseline, restored)
 
         if test_case.second_restart_needed:
-            self._stop_redpanda_nodes()
+            self._stop_redpanda_nodes(forced=True)
             self._start_redpanda_nodes()
             time.sleep(20)
             test_case.after_restart_validation()
