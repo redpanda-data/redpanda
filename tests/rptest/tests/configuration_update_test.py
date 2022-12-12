@@ -28,11 +28,13 @@ class ConfigurationUpdateTest(RedpandaTest):
         node_1 = self.redpanda.get_node(1)
         node_2 = self.redpanda.get_node(2)
 
-        orig_partitions = self.redpanda.storage().partitions(
-            "redpanda", "controller")
         # stop both nodes
         self.redpanda.stop_node(node_1)
         self.redpanda.stop_node(node_2)
+
+        orig_partitions = self.redpanda.storage(all_nodes=True).partitions(
+            "redpanda", "controller")
+
         # change both ports
         altered_port_cfg_1 = dict(rpc_server=dict(
             address="{}".format(node_1.name), port=ALTERNATIVE_RPC_PORTS[0]))
@@ -55,17 +57,17 @@ class ConfigurationUpdateTest(RedpandaTest):
         def controller_log_replicated():
             # make sure that we have new segments
             node_partitions = dict()
-            for p in self.redpanda.storage().partitions(
+            for p in self.redpanda.storage(all_nodes=True).partitions(
                     "redpanda", "controller"):
                 node_partitions[p.node.name] = p
 
             for old_p in orig_partitions:
-                nn = p.node.name
+                nn = old_p.node.name
                 if len(old_p.segments) <= len(node_partitions[nn].segments):
                     return False
 
-            all_segments = map(lambda p: p.segments.keys(),
-                               node_partitions.values())
+            all_segments = list(
+                map(lambda p: p.segments.keys(), node_partitions.values()))
             return check_elements_equal(all_segments)
 
         wait_until(lambda: controller_log_replicated(),
