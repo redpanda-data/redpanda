@@ -24,7 +24,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::http
-    v::s3
+    v::cloud_storage_clients
     v::json
     v::model
     v::rphashing

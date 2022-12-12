@@ -1,6 +1,6 @@
 
 v_cc_library(
-  NAME s3
+  NAME cloud_storage_clients
   SRCS
     s3_client.cc
     client_pool.cc

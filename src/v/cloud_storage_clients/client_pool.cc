@@ -1,6 +1,6 @@
-#include "s3/client_pool.h"
+#include "cloud_storage_clients/client_pool.h"
 
-#include "s3/s3_client.h"
+#include "cloud_storage_clients/s3_client.h"
 
 namespace cloud_storage_clients {
 

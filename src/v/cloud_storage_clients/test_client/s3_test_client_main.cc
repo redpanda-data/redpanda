@@ -10,9 +10,9 @@
 
 #include "bytes/iobuf.h"
 #include "cloud_roles/signature.h"
+#include "cloud_storage_clients/error.h"
+#include "cloud_storage_clients/s3_client.h"
 #include "http/client.h"
-#include "s3/error.h"
-#include "s3/s3_client.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"

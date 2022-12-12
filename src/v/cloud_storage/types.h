@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include "cloud_storage_clients/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "s3/configuration.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 

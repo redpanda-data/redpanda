@@ -11,11 +11,11 @@
 #pragma once
 
 #include "cloud_roles/apply_credentials.h"
+#include "cloud_storage_clients/client.h"
+#include "cloud_storage_clients/client_probe.h"
 #include "http/client.h"
 #include "model/fundamental.h"
 #include "outcome.h"
-#include "s3/client.h"
-#include "s3/client_probe.h"
 
 #include <seastar/core/lowres_clock.hh>
 

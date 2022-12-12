@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include "cloud_storage_clients/configuration.h"
+#include "cloud_storage_clients/types.h"
 #include "http/client.h"
 #include "model/fundamental.h"
 #include "outcome.h"
-#include "s3/configuration.h"
-#include "s3/types.h"
 
 #include <seastar/core/lowres_clock.hh>
 

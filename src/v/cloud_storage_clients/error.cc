@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/error.h"
+#include "cloud_storage_clients/error.h"
 
 #include <boost/lexical_cast.hpp>
 

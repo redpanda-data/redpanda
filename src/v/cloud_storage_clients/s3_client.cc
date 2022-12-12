@@ -8,18 +8,18 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/s3_client.h"
+#include "cloud_storage_clients/s3_client.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage_clients/error.h"
+#include "cloud_storage_clients/logger.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/connection.h"
 #include "net/tls.h"
 #include "net/types.h"
-#include "s3/error.h"
-#include "s3/logger.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
 

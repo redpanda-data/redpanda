@@ -10,10 +10,10 @@
 
 #pragma once
 
+#include "cloud_storage_clients/error.h"
 #include "http/probe.h"
 #include "model/fundamental.h"
 #include "net/types.h"
-#include "s3/error.h"
 #include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>

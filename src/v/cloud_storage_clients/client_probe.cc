@@ -8,15 +8,15 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_storage_clients/client_probe.h"
+
+#include "cloud_storage_clients/error.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "s3/error.h"
 #include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
-
-#include <s3/client_probe.h>
 
 namespace cloud_storage_clients {
 

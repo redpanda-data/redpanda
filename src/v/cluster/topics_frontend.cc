@@ -10,6 +10,7 @@
 #include "cluster/topics_frontend.h"
 
 #include "cloud_storage/remote.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
@@ -35,7 +36,6 @@
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
-#include "s3/configuration.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>

@@ -12,9 +12,9 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
-#include "s3/configuration.h"
 
 #include <seastar/core/abort_source.hh>
 

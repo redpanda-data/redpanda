@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include "s3/client.h"
 #include "cloud_roles/apply_credentials.h"
+#include "cloud_storage_clients/client.h"
 #include "utils/gate_guard.h"
 #include "utils/intrusive_list_helpers.h"
 
