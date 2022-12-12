@@ -308,6 +308,25 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
           m.get_insync_offset(),
           m.get_last_offset(),
           m.get_last_uploaded_compacted_offset());
+
+        if (m.get_last_offset() < manifest().get_last_offset()) {
+            // This indicates time travel, possible because the source cluster
+            // had a stale leader node upload a manifest on top of a more
+            // recent manifest uploaded by the current leader.  This is legal
+            // and the reader (us) should ignore the apparent time travel,
+            // in expectation that the current leader eventually wins and
+            // uploads a more recent manifest.
+            vlog(
+              _rtclog.error,
+              "Ignoring remote manifest.json contents: last_offset {} behind "
+              "last"
+              "seen last_offset {} (remote insync_offset {})",
+              m.get_last_offset(),
+              manifest().get_last_offset(),
+              m.get_insync_offset());
+            co_return res;
+        }
+
         std::vector<cloud_storage::segment_meta> mdiff;
         // Several things has to be done:
         // - Add all segments between old last_offset and new last_offset
