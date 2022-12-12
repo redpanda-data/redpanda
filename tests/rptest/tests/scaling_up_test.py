@@ -59,7 +59,7 @@ class ScalingUpTest(EndToEndTest):
             if replicas != total_replicas:
                 return False
 
-            if not all(expected_range[0] < p[1] < expected_range[1]
+            if not all(expected_range[0] <= p[1] <= expected_range[1]
                        for p in per_node.items()):
                 return False
             admin = Admin(self.redpanda)
