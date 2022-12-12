@@ -28,6 +28,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
+#include "utils/tracking_allocator.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -36,6 +37,8 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <system_error>
+
+namespace mt = util::mem_tracked;
 
 namespace cluster {
 
@@ -388,6 +391,7 @@ private:
         safe_intrusive_list_hook _hook;
     };
 
+    util::mem_tracker _tx_root_tracker{"tx-mem-root"};
     // The state of this state machine maybe change via two paths
     //
     //   - by reading the already replicated commands from raft and
@@ -404,16 +408,58 @@ private:
     // different part of the state when it's needed. log_state is used
     // to replay replicated commands and mem_state to keep the effect of
     // not replicated yet commands.
+
+    template<class T>
+    using allocator = util::tracking_allocator<T>;
     struct log_state {
+        explicit log_state(util::mem_tracker& parent)
+          : _tracker(parent.create_child("log-state"))
+          , fence_pid_epoch(mt::map<
+                            absl::flat_hash_map,
+                            model::producer_id,
+                            model::producer_epoch>(_tracker))
+          , ongoing_map(
+              mt::map<absl::flat_hash_map, model::producer_identity, tx_range>(
+                _tracker))
+          , ongoing_set(mt::set<absl::btree_set, model::offset>(_tracker))
+          , prepared(mt::map<
+                     absl::flat_hash_map,
+                     model::producer_identity,
+                     prepare_marker>(_tracker))
+          , seq_table(mt::map<
+                      absl::node_hash_map,
+                      model::producer_identity,
+                      seq_entry_wrapper>(_tracker))
+          , tx_seqs(mt::map<
+                    absl::flat_hash_map,
+                    model::producer_identity,
+                    model::tx_seq>(_tracker))
+          , expiration(mt::map<
+                       absl::flat_hash_map,
+                       model::producer_identity,
+                       expiration_info>(_tracker)) {}
+
+        ss::shared_ptr<util::mem_tracker> _tracker;
         // we enforce monotonicity of epochs related to the same producer_id
         // and fence off out of order requests
-        absl::flat_hash_map<model::producer_id, model::producer_epoch>
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_id,
+          model::producer_epoch>
           fence_pid_epoch;
         // a map from session id (aka producer_identity) to its current tx
-        absl::flat_hash_map<model::producer_identity, tx_range> ongoing_map;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          tx_range>
+          ongoing_map;
         // a heap of the first offsets of the ongoing transactions
-        absl::btree_set<model::offset> ongoing_set;
-        absl::flat_hash_map<model::producer_identity, prepare_marker> prepared;
+        mt::set_t<absl::btree_set, model::offset> ongoing_set;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          prepare_marker>
+          prepared;
         std::vector<tx_range> aborted;
         std::vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
@@ -422,8 +468,10 @@ private:
         // conflicts. if the replication fails we reject a command but clients
         // by spec should be ready for thier commands being rejected so it's
         // ok by design to have false rejects
-        using seq_map
-          = absl::node_hash_map<model::producer_identity, seq_entry_wrapper>;
+        using seq_map = mt::unordered_map_t<
+          absl::node_hash_map,
+          model::producer_identity,
+          seq_entry_wrapper>;
         // Note: When erasing entries from this map, use the the helper
         // 'erase_pid_from_seq_table' that also unlinks the entry from the
         // intrusive list that tracks the LRU order. Not doing so can cause
@@ -431,9 +479,15 @@ private:
         // TODO: Enforce this constraint by hiding seq_table as a private
         // member.
         seq_map seq_table;
-
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
-        absl::flat_hash_map<model::producer_identity, expiration_info>
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          model::tx_seq>
+          tx_seqs;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          expiration_info>
           expiration;
 
         // Tracks the LRU order of the pids with idempotent/non-transactional
@@ -473,6 +527,27 @@ private:
     };
 
     struct mem_state {
+        explicit mem_state(util::mem_tracker& parent)
+          : _tracker(parent.create_child("mem-state"))
+          , estimated(mt::map<
+                      absl::flat_hash_map,
+                      model::producer_identity,
+                      model::offset>(_tracker))
+          , tx_start(mt::map<
+                     absl::flat_hash_map,
+                     model::producer_identity,
+                     model::offset>(_tracker))
+          , tx_starts(mt::set<absl::btree_set, model::offset>(_tracker))
+          , expected(mt::map<
+                     absl::flat_hash_map,
+                     model::producer_identity,
+                     model::tx_seq>(_tracker))
+          , preparing(mt::map<
+                      absl::flat_hash_map,
+                      model::producer_identity,
+                      prepare_marker>(_tracker)) {}
+
+        ss::shared_ptr<util::mem_tracker> _tracker;
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
         // with this approach a combination of mem_state and log_state is
@@ -481,21 +556,37 @@ private:
         // before we replicate the first batch of a transaction we don't know
         // its offset but we must prevent read_comitted fetch from getting it
         // so we use last seen offset to estimate it
-        absl::flat_hash_map<model::producer_identity, model::offset> estimated;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          model::offset>
+          estimated;
         model::offset last_end_tx{-1};
 
         // FIELDS TO GO AFTER GA
         // a map from producer_identity (a session) to the first offset of
         // the current transaction in this session
-        absl::flat_hash_map<model::producer_identity, model::offset> tx_start;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          model::offset>
+          tx_start;
         // a heap of the first offsets of all ongoing transactions
-        absl::btree_set<model::offset> tx_starts;
+        mt::set_t<absl::btree_set, model::offset> tx_starts;
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          model::tx_seq>
+          expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
-        absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
+        mt::unordered_map_t<
+          absl::flat_hash_map,
+          model::producer_identity,
+          prepare_marker>
+          preparing;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
@@ -630,15 +721,21 @@ private:
     std::optional<model::offset> _bootstrap_committed_offset;
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
-    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
-    absl::flat_hash_map<
-      model::producer_identity,
-      ss::lw_shared_ptr<ss::basic_rwlock<>>>
-      _idempotent_producer_locks;
-    absl::flat_hash_map<
+    mt::unordered_map_t<
+      absl::flat_hash_map,
+      model::producer_id,
+      ss::lw_shared_ptr<mutex>>
+      _tx_locks;
+    mt::unordered_map_t<
+      absl::flat_hash_map,
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
       _inflight_requests;
+    mt::unordered_map_t<
+      absl::flat_hash_map,
+      model::producer_identity,
+      ss::lw_shared_ptr<ss::basic_rwlock<>>>
+      _idempotent_producer_locks;
     log_state _log_state;
     mem_state _mem_state;
     ss::timer<clock_type> auto_abort_timer;
