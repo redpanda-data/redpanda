@@ -19,7 +19,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"

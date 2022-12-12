@@ -13,7 +13,7 @@
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"

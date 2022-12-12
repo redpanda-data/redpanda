@@ -17,7 +17,7 @@
 #include "cluster/members_table.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "seastarx.h"
 #include "storage/directories.h"
 #include "storage/disk_log_impl.h"

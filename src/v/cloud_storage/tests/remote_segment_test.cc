@@ -20,7 +20,7 @@
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"

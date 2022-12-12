@@ -19,7 +19,7 @@
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "s3/configuration.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"

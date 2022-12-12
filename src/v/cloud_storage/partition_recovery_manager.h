@@ -14,7 +14,7 @@
 #include "cloud_storage/remote.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "storage/ntp_config.h"
 #include "utils/retry_chain_node.h"
 

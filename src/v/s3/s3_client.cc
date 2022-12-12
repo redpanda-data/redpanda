@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/client.h"
+#include "s3/s3_client.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
@@ -359,7 +359,7 @@ parse_timestamp(std::string_view sv) {
     return std::chrono::system_clock::from_time_t(timegm(&tm));
 }
 
-static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
+static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
     try {
         for (auto& frag : buf) {
             vlog(
@@ -367,11 +367,11 @@ static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
               "iobuf_to_list_bucket_result part {}",
               ss::sstring{frag.get(), frag.size()});
         }
-        client::list_bucket_result result;
+        s3_client::list_bucket_result result;
         auto root = iobuf_to_ptree(std::move(buf));
         for (const auto& [tag, value] : root.get_child("ListBucketResult")) {
             if (tag == "Contents") {
-                client::list_bucket_item item;
+                s3_client::list_bucket_item item;
                 for (const auto& [item_tag, item_value] : value) {
                     if (item_tag == "Key") {
                         item.key = item_value.get_value<ss::sstring>();
@@ -475,7 +475,7 @@ drain_response_stream(http::client::response_stream_ref resp) {
 }
 
 template<typename T>
-ss::future<result<T, error_outcome>> client::send_request(
+ss::future<result<T, error_outcome>> s3_client::send_request(
   ss::future<T> request_future,
   const bucket_name& bucket,
   const object_key& key) {
@@ -560,14 +560,14 @@ ss::future<result<T, error_outcome>> client::send_request(
     co_return outcome;
 }
 
-client::client(
+s3_client::s3_client(
   const configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _probe(conf._probe) {}
 
-client::client(
+s3_client::s3_client(
   const configuration& conf,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
@@ -575,12 +575,12 @@ client::client(
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
 
-ss::future<> client::stop() { return _client.stop(); }
+ss::future<> s3_client::stop() { return _client.stop(); }
 
-void client::shutdown() { _client.shutdown(); }
+void s3_client::shutdown() { _client.shutdown(); }
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
-client::get_object(
+s3_client::get_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout,
@@ -589,7 +589,7 @@ client::get_object(
       do_get_object(name, key, timeout, expect_no_such_key), name, key);
 }
 
-ss::future<http::client::response_stream_ref> client::do_get_object(
+ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout,
@@ -638,21 +638,21 @@ ss::future<http::client::response_stream_ref> client::do_get_object(
       });
 }
 
-ss::future<result<client::head_object_result, error_outcome>>
-client::head_object(
+ss::future<result<s3_client::head_object_result, error_outcome>>
+s3_client::head_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout) {
     return send_request(do_head_object(name, key, timeout), name, key);
 }
 
-ss::future<client::head_object_result> client::do_head_object(
+ss::future<s3_client::head_object_result> s3_client::do_head_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_head_object_request(name, key);
     if (!header) {
-        return ss::make_exception_future<client::head_object_result>(
+        return ss::make_exception_future<s3_client::head_object_result>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
@@ -697,7 +697,7 @@ ss::future<client::head_object_result> client::do_head_object(
       });
 }
 
-ss::future<result<client::no_response, error_outcome>> client::put_object(
+ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   bucket_name const& name,
   object_key const& key,
   size_t payload_size,
@@ -712,7 +712,7 @@ ss::future<result<client::no_response, error_outcome>> client::put_object(
       key);
 }
 
-ss::future<> client::do_put_object(
+ss::future<> s3_client::do_put_object(
   bucket_name const& name,
   object_key const& id,
   size_t payload_size,
@@ -765,8 +765,8 @@ ss::future<> client::do_put_object(
       });
 }
 
-ss::future<result<client::list_bucket_result, error_outcome>>
-client::list_objects(
+ss::future<result<s3_client::list_bucket_result, error_outcome>>
+s3_client::list_objects(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
@@ -778,7 +778,7 @@ client::list_objects(
       object_key{""});
 }
 
-ss::future<client::list_bucket_result> client::do_list_objects_v2(
+ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
@@ -815,7 +815,7 @@ ss::future<client::list_bucket_result> client::do_list_objects_v2(
                           vlog(
                             s3_log.warn, "S3 replied with error: {}", header);
                           return parse_rest_error_response<
-                            client::list_bucket_result>(
+                            s3_client::list_bucket_result>(
                             header.result(), std::move(outbuf));
                       }
                       auto res = iobuf_to_list_bucket_result(std::move(outbuf));
@@ -826,7 +826,8 @@ ss::future<client::list_bucket_result> client::do_list_objects_v2(
       });
 }
 
-ss::future<result<client::no_response, error_outcome>> client::delete_object(
+ss::future<result<s3_client::no_response, error_outcome>>
+s3_client::delete_object(
   const bucket_name& bucket,
   const object_key& key,
   const ss::lowres_clock::duration& timeout) {
@@ -838,7 +839,7 @@ ss::future<result<client::no_response, error_outcome>> client::delete_object(
       key);
 }
 
-ss::future<> client::do_delete_object(
+ss::future<> s3_client::do_delete_object(
   const bucket_name& bucket,
   const object_key& key,
   const ss::lowres_clock::duration& timeout) {

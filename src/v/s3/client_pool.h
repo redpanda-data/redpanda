@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "utils/gate_guard.h"
 #include "utils/intrusive_list_helpers.h"
 
@@ -33,7 +33,7 @@ enum class client_pool_overdraft_policy {
 /// All connections share the same configuration
 class client_pool : public ss::weakly_referencable<client_pool> {
 public:
-    using http_client_ptr = ss::shared_ptr<client>;
+    using http_client_ptr = ss::shared_ptr<s3_client>;
     struct client_lease {
         http_client_ptr client;
         ss::deleter deleter;

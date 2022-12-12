@@ -15,9 +15,9 @@
 #include "net/dns.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
-#include "s3/client.h"
 #include "s3/client_pool.h"
 #include "s3/error.h"
+#include "s3/s3_client.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -166,7 +166,7 @@ void set_routes(ss::httpd::routes& r) {
 /// Http server and client
 struct configured_test_pair {
     ss::shared_ptr<ss::httpd::http_server_control> server;
-    ss::shared_ptr<s3::client> client;
+    ss::shared_ptr<s3::s3_client> client;
 };
 
 s3::configuration transport_configuration() {
@@ -199,7 +199,7 @@ make_credentials(const s3::configuration& cfg) {
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 configured_test_pair started_client_and_server(const s3::configuration& conf) {
-    auto client = ss::make_shared<s3::client>(conf, make_credentials(conf));
+    auto client = ss::make_shared<s3::s3_client>(conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();

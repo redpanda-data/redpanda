@@ -11,7 +11,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_roles/signature.h"
 #include "http/client.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "s3/error.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
@@ -171,7 +171,7 @@ int main(int args, char** argv, char** env) {
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
     ss::app_template app;
     cli_opts(app.add_options());
-    ss::sharded<s3::client> client;
+    ss::sharded<s3::s3_client> client;
     return app.run(args, argv, [&] {
         auto& cfg = app.configuration();
         return ss::async([&] {
@@ -185,7 +185,7 @@ int main(int args, char** argv, char** env) {
             client
               .invoke_on(
                 0,
-                [lcfg](s3::client& cli) {
+                [lcfg](s3::s3_client& cli) {
                     vlog(test_log.info, "sending request");
                     if (!lcfg.out.empty()) {
                         vlog(test_log.info, "receiving file {}", lcfg.out);
