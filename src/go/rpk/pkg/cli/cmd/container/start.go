@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,25 @@ type node struct {
 	addr string
 }
 
+type ports []uint
+
+func (ps *ports) pop() uint {
+	if len(*ps) == 0 {
+		return 0
+	}
+	r := (*ps)[0]
+	(*ps) = (*ps)[1:]
+	return r
+}
+
+type clusterPorts struct {
+	reg   ports
+	proxy ports
+	kafka ports
+	admin ports
+	rpc   ports
+}
+
 func collectFlags(args []string, flag string) []string {
 	flags := []string{}
 	i := 0
@@ -51,11 +71,25 @@ func collectFlags(args []string, flag string) []string {
 }
 
 func newStartCommand() *cobra.Command {
+	const (
+		flagRegPorts   = "schema-registry-ports"
+		flagProxyPorts = "proxy-ports"
+		flagKafkaPorts = "kafka-ports"
+		flagAdminPorts = "admin-ports"
+		flagRPCPorts   = "broker-rpc-ports"
+	)
 	var (
 		nodes   uint
 		retries uint
 		image   string
+
+		regPorts   []string
+		proxyPorts []string
+		kafkaPorts []string
+		adminPorts []string
+		rpcPorts   []string
 	)
+
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start a local container cluster",
@@ -71,6 +105,32 @@ func newStartCommand() *cobra.Command {
 					"--nodes should be 1 or greater",
 				)
 			}
+
+			var p clusterPorts
+			takenPorts := make(map[uint]struct{})
+			for _, assign := range []struct {
+				name    string
+				src     []string
+				dst     *ports
+				require bool
+			}{
+				{flagRegPorts, regPorts, &p.reg, false},
+				{flagProxyPorts, proxyPorts, &p.proxy, false},
+				{flagKafkaPorts, kafkaPorts, &p.kafka, true}, // we require at least one exposed kafka API port
+				{flagAdminPorts, adminPorts, &p.admin, false},
+				{flagRPCPorts, rpcPorts, &p.rpc, false},
+			} {
+				var err error
+				*assign.dst, err = assignPorts(assign.name, assign.src, takenPorts, nodes, assign.require)
+				if err != nil {
+					return err
+				}
+			}
+
+			if err := p.assignAny(takenPorts); err != nil {
+				return err
+			}
+
 			c, err := common.NewDockerClient()
 			if err != nil {
 				return err
@@ -82,6 +142,7 @@ func newStartCommand() *cobra.Command {
 			return common.WrapIfConnErr(startCluster(
 				c,
 				nodes,
+				p,
 				checkBrokers,
 				retries,
 				image,
@@ -102,8 +163,7 @@ func newStartCommand() *cobra.Command {
 		&retries,
 		"retries",
 		10,
-		"The amount of times to check for the cluster before"+
-			" considering it unstable and exiting.",
+		"The amount of times to check for the cluster before considering it unstable and exiting",
 	)
 	imageFlag := "image"
 	command.Flags().StringVar(
@@ -114,12 +174,139 @@ func newStartCommand() *cobra.Command {
 	)
 	command.Flags().MarkHidden(imageFlag)
 
+	command.Flags().StringSliceVar(
+		&regPorts,
+		flagRegPorts,
+		[]string{strconv.Itoa(config.DefaultSchemaRegPort)},
+		"Schema registry ports to listen on",
+	)
+	command.Flags().StringSliceVar(
+		&proxyPorts,
+		flagProxyPorts,
+		[]string{strconv.Itoa(config.DefaultProxyPort)},
+		"Pandaproxy ports to listen on",
+	)
+	command.Flags().StringSliceVar(
+		&kafkaPorts,
+		flagKafkaPorts,
+		[]string{strconv.Itoa(config.DefaultKafkaPort)},
+		"Kafka protocol ports to listen on",
+	)
+	command.Flags().StringSliceVar(
+		&adminPorts,
+		flagAdminPorts,
+		[]string{strconv.Itoa(config.DefaultAdminPort)},
+		"Redpanda Admin API ports to listen on",
+	)
+	command.Flags().StringSliceVar(
+		&rpcPorts,
+		flagRPCPorts,
+		[]string{strconv.Itoa(config.DefaultRPCPort)},
+		"Inter-broker RPC ports to listen on",
+	)
+
 	return command
+}
+
+func (p *clusterPorts) assignAny(takenPorts map[uint]struct{}) error {
+	var need int
+	for _, src := range [][]uint{p.reg, p.proxy, p.kafka, p.admin, p.rpc} {
+		for _, port := range src {
+			if port == 0 {
+				need++
+			}
+		}
+	}
+	random, err := vnet.GetFreePortPool(need, takenPorts)
+	if err != nil {
+		return fmt.Errorf("unable to allocate random ports: %v", err)
+	}
+	for _, src := range [][]uint{p.reg, p.proxy, p.kafka, p.admin, p.rpc} {
+		for i, port := range src {
+			if port == 0 {
+				src[i] = random[0]
+				random = random[1:]
+			}
+		}
+	}
+	return nil
+}
+
+func assignPorts(
+	name string,
+	strPorts []string,
+	takenPorts map[uint]struct{},
+	nodes uint,
+	require bool,
+) (ports, error) {
+	const maxPort = 65535
+
+	if len(strPorts) == 0 {
+		return nil, nil
+	}
+	ports := make(ports, 0, len(strPorts))
+	var isAny, isNone, isPort bool
+	for _, strPort := range strPorts {
+		switch strPort {
+		case "none", "skip":
+			isNone = true
+		case "any":
+			isAny = true
+		default:
+			isPort = true
+			port, err := strconv.ParseUint(strPort, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf(`--%s: invalid port %s must be "none", "any", or a number`, name, strPort)
+			}
+			if _, isTaken := takenPorts[uint(port)]; isTaken {
+				return nil, fmt.Errorf("--%s: port %d is already defined", name, port)
+			}
+			if port <= 1024 || port > maxPort {
+				return nil, fmt.Errorf("--%s: port must be between 1025 and %d", name, maxPort)
+			}
+			takenPorts[uint(port)] = struct{}{}
+			ports = append(ports, uint(port))
+		}
+	}
+	if isAny && isNone {
+		return nil, fmt.Errorf(`--%s: cannot use both "any" and "skip"`, name)
+	}
+	if isPort && isAny {
+		return nil, fmt.Errorf(`--%s: cannot use both specific ports and "any"`, name)
+	}
+	if isPort && isNone {
+		return nil, fmt.Errorf(`--%s: cannot use both specific ports and "none"`, name)
+	}
+	if isPort && len(strPorts) > int(nodes) {
+		return nil, fmt.Errorf("--%s: number of ports defined (%d) exceeds the number of nodes requested (%d)", name, len(strPorts), int(nodes))
+	}
+
+	switch {
+	case isAny:
+		return ports[:nodes], nil
+	case isPort && len(ports) > 0:
+		sort.Slice(ports, func(i, j int) bool { return ports[i] < ports[j] })
+		for port := ports[0]; port < 65535 && len(ports) != int(nodes); port += 100 {
+			if _, isTaken := takenPorts[port]; !isTaken {
+				ports = append(ports, port)
+				takenPorts[port] = struct{}{}
+			}
+		}
+		if len(ports) != int(nodes) {
+			return nil, fmt.Errorf("--%s: unable to pick an unoccupied port from %d to %d with a step of 100", name, ports[0], maxPort)
+		}
+	}
+
+	if require && len(ports) == 0 {
+		return nil, fmt.Errorf(`--%s cannot be empty; this requires at either at least one port defined, or "any"`, name)
+	}
+	return ports, nil
 }
 
 func startCluster(
 	c common.Client,
 	n uint,
+	p clusterPorts,
 	check func([]node) func() error,
 	retries uint,
 	image string,
@@ -135,11 +322,7 @@ func startCluster(
 		log.Info("\nFound an existing cluster:\n")
 		renderClusterInfo(restarted)
 		if len(restarted) != int(n) {
-			log.Infof(
-				"\nTo change the number of nodes, first purge" +
-					" the existing cluster:\n\n" +
-					"rpk container purge\n",
-			)
+			log.Info("\nTo change the number of nodes, first purge the existing cluster:\n\nrpk container purge\n")
 		}
 		return nil
 	}
@@ -175,30 +358,20 @@ func startCluster(
 		return err
 	}
 
-	reqPorts := n * 5 // we need 5 ports per node
-	ports, err := vnet.GetFreePortPool(int(reqPorts))
-	if err != nil {
-		return err
-	}
+	// We copy our Kafka and Admin ports to make building our output below
+	// easier.
+	allKafka := append(ports(nil), p.kafka...)
+	allAdmin := append(ports(nil), p.admin...)
 
-	// Start a seed node.
-	var (
-		seedID            uint
-		seedKafkaPort     = ports[0]
-		seedProxyPort     = ports[1]
-		seedSchemaRegPort = ports[2]
-		seedRPCPort       = ports[3]
-		seedMetricsPort   = ports[4]
-	)
-
+	seedKafkaPort := p.kafka.pop()
 	seedState, err := common.CreateNode(
 		c,
-		seedID,
+		0, // seed ID is 0
+		p.reg.pop(),
+		p.proxy.pop(),
 		seedKafkaPort,
-		seedProxyPort,
-		seedSchemaRegPort,
-		seedRPCPort,
-		seedMetricsPort,
+		p.admin.pop(),
+		p.rpc.pop(),
 		netID,
 		image,
 		extraArgs...,
@@ -216,43 +389,30 @@ func startCluster(
 		return err
 	}
 
-	seedNode := node{
-		seedID,
-		nodeAddr(seedKafkaPort),
-	}
-
-	nodes := []node{seedNode}
-
-	mu := sync.Mutex{}
-
-	grp, _ := errgroup.WithContext(context.Background())
+	var (
+		nodes  = []node{{0, nodeAddr(seedKafkaPort)}}
+		mu     sync.Mutex
+		grp, _ = errgroup.WithContext(context.Background())
+	)
 
 	for nodeID := uint(1); nodeID < n; nodeID++ {
 		id := nodeID
 		grp.Go(func() error {
-			var (
-				kafkaPort     = ports[0+5*id]
-				proxyPort     = ports[1+5*id]
-				schemaRegPort = ports[2+5*id]
-				rpcPort       = ports[3+5*id]
-				metricsPort   = ports[4+5*id]
-			)
-
 			args := []string{
 				"--seeds",
 				net.JoinHostPort(
 					seedState.ContainerIP,
-					strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port),
+					strconv.Itoa(config.DefaultRPCPort),
 				),
 			}
 			state, err := common.CreateNode(
 				c,
 				id,
-				kafkaPort,
-				proxyPort,
-				schemaRegPort,
-				rpcPort,
-				metricsPort,
+				p.reg.pop(),
+				p.proxy.pop(),
+				p.kafka.pop(),
+				p.admin.pop(),
+				p.rpc.pop(),
 				netID,
 				image,
 				append(args, extraArgs...)...,
@@ -292,22 +452,35 @@ func startCluster(
 		return err
 	}
 	renderClusterInfo(nodes)
-	var brokers []string
-	for _, node := range nodes {
-		brokers = append(brokers, node.addr)
+
+	var brokers, admin []string
+	for _, m := range []struct {
+		src []uint
+		dst *[]string
+	}{
+		{allKafka, &brokers},
+		{allAdmin, &admin},
+	} {
+		for _, port := range m.src {
+			*m.dst = append(*m.dst, nodeAddr(port))
+		}
 	}
-	m := `
-Cluster started! You may use rpk to interact with it. E.g:
 
-  rpk cluster info --brokers %s
+	output := fmt.Sprintf(`Cluster started! You may use rpk to interact with it. E.g:
 
-You may also set an environment variable with the comma-separated list of broker addresses:
+  rpk cluster info --brokers %[1]s
 
-  export REDPANDA_BROKERS="%s"
-  rpk cluster info
-`
-	b := strings.Join(brokers, ",")
-	log.Infof(m, b, b)
+You may also set an environment variables:
+
+  export REDPANDA_BROKERS="%[1]s"
+`, strings.Join(brokers, ","))
+	if len(admin) > 0 {
+		output += fmt.Sprintf(`  export REDPANDA_API_ADMIN_ADDRS="%s"
+`, strings.Join(admin, ","))
+	}
+	output += "  rpk cluster info\n"
+
+	fmt.Print(output)
 
 	return nil
 }
@@ -325,8 +498,8 @@ func restartCluster(
 		return nil, nil
 	}
 	grp, _ := errgroup.WithContext(context.Background())
-	mu := sync.Mutex{}
-	nodes := []node{}
+	var mu sync.Mutex
+	var nodes []node
 	for _, s := range states {
 		state := s
 		grp.Go(func() error {
@@ -426,9 +599,4 @@ func renderClusterInfo(nodes []node) {
 	t.Render()
 }
 
-func nodeAddr(port uint) string {
-	return fmt.Sprintf(
-		"127.0.0.1:%d",
-		port,
-	)
-}
+func nodeAddr(port uint) string { return fmt.Sprintf("127.0.0.1:%d", port) }

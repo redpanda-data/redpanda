@@ -37,6 +37,7 @@ var (
 const (
 	redpandaNetwork   = "redpanda"
 	externalKafkaPort = 9093
+	externalProxyPort = 8083
 
 	defaultDockerClientTimeout = 60 * time.Second
 )
@@ -50,10 +51,6 @@ type NodeState struct {
 	ID            uint
 	ContainerIP   string
 	ContainerID   string
-}
-
-func HostAddr(port uint) string {
-	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
 }
 
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
@@ -72,7 +69,7 @@ func AdvertiseAddresses(ip string, internalPort, externalPort uint) string {
 	)
 }
 
-// Returns the container name for the given node ID.
+// Name returns the container name for the given node ID.
 func Name(nodeID uint) string {
 	return fmt.Sprintf("rp-node-%d", nodeID)
 }
@@ -159,8 +156,8 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	}, nil
 }
 
-// Creates a network for the cluster's containers and returns its ID. If it
-// exists already, it returns the existing network's ID.
+// CreateNetwork creates a network for the cluster's containers and returns its
+// ID. If it exists already, it returns the existing network's ID.
 func CreateNetwork(c Client) (string, error) {
 	ctx, _ := DefaultCtx()
 
@@ -207,7 +204,7 @@ func CreateNetwork(c Client) (string, error) {
 	return resp.ID, nil
 }
 
-// Delete the Redpanda network if it exists.
+// RemoveNetwork deletes the Redpanda network if it exists.
 func RemoveNetwork(c Client) error {
 	ctx, _ := DefaultCtx()
 	err := c.NetworkRemove(ctx, redpandaNetwork)
@@ -217,10 +214,18 @@ func RemoveNetwork(c Client) error {
 	return err
 }
 
+// CreateNode creates a redpanda container. The port arguments are ordered
+// from expected lowest to the highest if using defaults.
 func CreateNode(
 	c Client,
-	nodeID, kafkaPort, proxyPort, schemaRegPort, rpcPort, metricsPort uint,
-	netID, image string,
+	nodeID uint,
+	regPort uint,
+	proxyPort uint,
+	kafkaPort uint,
+	adminPort uint,
+	rpcPort uint,
+	netID string,
+	image string,
 	args ...string,
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
@@ -232,7 +237,7 @@ func CreateNode(
 	}
 	kPort, err := nat.NewPort( //nolint:revive // var-naming diff here is intended kPort = kafkaPort.
 		"tcp",
-		strconv.Itoa(int(externalKafkaPort)),
+		strconv.Itoa(externalKafkaPort),
 	)
 	if err != nil {
 		return nil, err
@@ -262,28 +267,45 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
-	hostname := Name(nodeID)
 	cmd := []string{
 		"redpanda",
 		"start",
 		"--node-id",
 		fmt.Sprintf("%d", nodeID),
-		"--kafka-addr",
-		ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
-		"--pandaproxy-addr",
-		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
-		"--schema-registry-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
-		"--rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
-		"--advertise-kafka-addr",
-		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
-		"--advertise-pandaproxy-addr",
-		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
-		"--advertise-rpc-addr",
-		net.JoinHostPort(ip, strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port)),
+		"--pandaproxy-addr", ListenAddresses(ip, config.DefaultProxyPort, externalProxyPort),
+		"--advertise-pandaproxy-addr", AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
+		"--kafka-addr", ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
+		"--advertise-kafka-addr", AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
+		"--schema-registry-addr", net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
+		"--rpc-addr", net.JoinHostPort(ip, strconv.Itoa(config.DefaultRPCPort)),
+		"--advertise-rpc-addr", net.JoinHostPort(ip, strconv.Itoa(config.DefaultRPCPort)),
 		"--mode dev-container",
 	}
+	if proxyPort > 0 {
+		cmd = append(cmd,
+			"--pandaproxy-addr", ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
+			"--advertise-pandaproxy-addr", AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
+		)
+	}
+	hostname := Name(nodeID)
+	portMap := nat.PortMap{
+		kPort: []nat.PortBinding{{
+			HostPort: fmt.Sprint(kafkaPort),
+		}},
+	}
+	if regPort > 0 {
+		portMap[sPort] = []nat.PortBinding{{HostPort: fmt.Sprint(regPort)}}
+	}
+	if proxyPort > 0 {
+		portMap[pPort] = []nat.PortBinding{{HostPort: fmt.Sprint(proxyPort)}}
+	}
+	if adminPort > 0 {
+		portMap[metPort] = []nat.PortBinding{{HostPort: fmt.Sprint(adminPort)}}
+	}
+	if rpcPort > 0 {
+		portMap[rPort] = []nat.PortBinding{{HostPort: fmt.Sprint(rpcPort)}}
+	}
+
 	containerConfig := container.Config{
 		Image:    image,
 		Hostname: hostname,
@@ -299,24 +321,9 @@ func CreateNode(
 			"node-id":    fmt.Sprint(nodeID),
 		},
 	}
+
 	hostConfig := container.HostConfig{
-		PortBindings: nat.PortMap{
-			rPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(rpcPort),
-			}},
-			kPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(kafkaPort),
-			}},
-			pPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(proxyPort),
-			}},
-			sPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(schemaRegPort),
-			}},
-			metPort: []nat.PortBinding{{
-				HostPort: fmt.Sprint(metricsPort),
-			}},
-		},
+		PortBindings: portMap,
 	}
 	networkConfig := network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
