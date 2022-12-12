@@ -42,7 +42,6 @@ deb_deps=(
   rapidjson-dev
   zip
   unzip
-  libre2-dev
 )
 fedora_deps=(
   ccache
@@ -65,7 +64,6 @@ fedora_deps=(
   xz
   zip
   unzip
-  re2-devel
 )
 arch_deps=(
   ccache
