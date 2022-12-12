@@ -263,6 +263,22 @@ rm_stm::rm_stm(
   ss::sharded<features::feature_table>& feature_table,
   config::binding<uint64_t> max_concurrent_producer_ids)
   : persisted_stm("tx.snapshot", logger, c)
+  , _tx_locks(
+      mt::
+        map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(
+          _tx_root_tracker.create_child("tx-locks")))
+  , _inflight_requests(mt::map<
+                       absl::flat_hash_map,
+                       model::producer_identity,
+                       ss::lw_shared_ptr<inflight_requests>>(
+      _tx_root_tracker.create_child("in-flight")))
+  , _idempotent_producer_locks(mt::map<
+                               absl::flat_hash_map,
+                               model::producer_identity,
+                               ss::lw_shared_ptr<ss::basic_rwlock<>>>(
+      _tx_root_tracker.create_child("idempotent-producer-locks")))
+  , _log_state(_tx_root_tracker)
+  , _mem_state(_tx_root_tracker)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
@@ -1920,7 +1936,8 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await persisted_stm::sync(timeout);
     if (ready) {
         if (_mem_state.term != _insync_term) {
-            _mem_state = mem_state{.term = _insync_term};
+            _mem_state = mem_state{_tx_root_tracker};
+            _mem_state.term = _insync_term;
         }
     }
     co_return ready;
@@ -2813,8 +2830,8 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_eviction() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          _log_state = {};
-          _mem_state = {};
+          _log_state = log_state{_tx_root_tracker};
+          _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
           return ss::now();
       });
