@@ -19,6 +19,7 @@
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "s3/client.h"
 #include "s3/configuration.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
@@ -327,6 +328,10 @@ private:
 
     loop_state _upload_loop_state{loop_state::initial};
     loop_state _sync_manifest_loop_state{loop_state::initial};
+
+    const s3::object_tag_formatter _segment_tags;
+    const s3::object_tag_formatter _manifest_tags;
+    const s3::object_tag_formatter _tx_tags;
 };
 
 } // namespace archival
