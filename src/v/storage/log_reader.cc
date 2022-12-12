@@ -202,14 +202,23 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
         _iterator = co_await initialize(timeout, cache_read.next_cached_batch);
     }
     auto ptr = _iterator.get();
-    co_return co_await ptr->consume().then(
-      [this](result<size_t> bytes_consumed) -> result<records_t> {
+    co_return co_await ptr->consume()
+      .then([this](result<size_t> bytes_consumed) -> result<records_t> {
           if (!bytes_consumed) {
               return bytes_consumed.error();
           }
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
-      });
+      })
+      .handle_exception_type(
+        [](const std::system_error& ec) -> ss::future<result<records_t>> {
+            if (ec.code().value() == EIO) {
+                vassert(false, "I/O error during read!  Disk failure?");
+            } else {
+                return ss::make_exception_future<result<records_t>>(
+                  std::current_exception());
+            }
+        });
 }
 
 log_reader::log_reader(
