@@ -42,4 +42,4 @@ collectors:
   - type: command
     command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-schema-registry-sasl
   - type: command
-    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-asl
+    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-sasl
