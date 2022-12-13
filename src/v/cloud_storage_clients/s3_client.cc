@@ -831,12 +831,34 @@ s3_client::delete_object(
   const bucket_name& bucket,
   const object_key& key,
   const ss::lowres_clock::duration& timeout) {
+    using ret_t = result<s3_client::no_response, error_outcome>;
+
     return send_request(
-      do_delete_object(bucket, key, timeout).then([] {
-          return ss::make_ready_future<no_response>(no_response{});
-      }),
-      bucket,
-      key);
+             do_delete_object(bucket, key, timeout).then([] {
+                 return ss::make_ready_future<no_response>(no_response{});
+             }),
+             bucket,
+             key)
+      .then([&bucket, &key](const ret_t& result) {
+          // Google's implementation of S3 returns a NoSuchKey error
+          // when the object to be deleted does not exist. We return
+          // no_response{} in this case in order to get the same behaviour of
+          // AWS S3.
+          //
+          // TODO: Subclass cloud_storage_clients::client with a GCS client
+          // implementation where this edge case is handled.
+          if (!result && result.error() == error_outcome::notfound) {
+              vlog(
+                s3_log.debug,
+                "Object to be deleted was not found in cloud storage: "
+                "object={}, bucket={}. Ignoring ...",
+                bucket,
+                key);
+              return ss::make_ready_future<ret_t>(no_response{});
+          } else {
+              return ss::make_ready_future<ret_t>(result);
+          }
+      });
 }
 
 ss::future<> s3_client::do_delete_object(
