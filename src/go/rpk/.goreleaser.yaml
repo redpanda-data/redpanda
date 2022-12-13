@@ -40,6 +40,13 @@ builds:
         - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
           env:
             - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
+archives:
+  - id: rpk
+    builds:
+      - windows-and-linux
+      - darwin
+    format: zip
+    name_template: "rpk-{{ .Os }}-{{ .Arch }}"
 release:
   github:
     owner: redpanda-data
