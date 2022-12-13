@@ -556,7 +556,6 @@ ss::future<upload_result> remote::delete_object(
           bucket, path, fib.get_timeout());
 
         if (res) {
-            vlog(ctxlog.debug, "Receive OK DeleteObject {} response", path);
             co_return upload_result::success;
         }
 
@@ -582,12 +581,12 @@ ss::future<upload_result> remote::delete_object(
             result = upload_result::failed;
             break;
         case cloud_storage_clients::error_outcome::notfound:
-            vlog(
-              ctxlog.info,
-              "Unexpected NoSuchKey error response from DeleteObject {} will "
-              "be ignored",
-              path);
-            co_return upload_result::success;
+            vassert(
+              false,
+              "Unexpected notfound outcome received when deleting object {} "
+              "from bucket {}",
+              path,
+              bucket);
         }
     }
     if (!result) {
