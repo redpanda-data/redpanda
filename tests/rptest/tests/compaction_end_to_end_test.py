@@ -151,10 +151,9 @@ class CompactionEndToEndTest(EndToEndTest):
 
             # enable consumer and validate consumed records
             self.start_consumer(num_nodes=1, verify_offsets=False)
-            consumer_timeout = 180 if self.debug_mode else 90
             self.run_validation(enable_compaction=True,
                                 enable_transactions=transactions,
-                                consumer_timeout_sec=consumer_timeout)
+                                consumer_timeout_sec=timeout_sec)
         except BaseException:
             self._collect_segment_data()
             raise
