@@ -24,7 +24,6 @@
 #include "security/credential_store.h"
 #include "security/mtls.h"
 #include "utils/ema.h"
-#include "v8_engine/data_policy_table.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -53,7 +52,6 @@ public:
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<coproc::partition_manager>&,
-      ss::sharded<v8_engine::data_policy_table>&,
       std::optional<qdc_monitor::config>) noexcept;
 
     ~server() noexcept override = default;
@@ -111,10 +109,6 @@ public:
         return _security_frontend.local();
     }
 
-    v8_engine::data_policy_table& data_policy_table() {
-        return _data_policy_table.local();
-    }
-
     void update_produce_latency(std::chrono::steady_clock::duration x) {
         if (_qdc_mon) {
             _qdc_mon->ema.update(x);
@@ -159,7 +153,6 @@ private:
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<coproc::partition_manager>& _coproc_partition_manager;
-    ss::sharded<v8_engine::data_policy_table>& _data_policy_table;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;

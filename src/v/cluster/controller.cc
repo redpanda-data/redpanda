@@ -17,7 +17,6 @@
 #include "cluster/controller_backend.h"
 #include "cluster/controller_log_limiter.h"
 #include "cluster/controller_service.h"
-#include "cluster/data_policy_frontend.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
@@ -47,6 +46,7 @@
 #include "features/feature_table.h"
 #include "likely.h"
 #include "model/metadata.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/fwd.h"
 #include "security/acl.h"
@@ -68,7 +68,6 @@ controller::controller(
   ss::sharded<storage::api>& storage,
   ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<raft::group_manager>& raft_manager,
-  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _config_preload(std::move(config_preload))
@@ -83,7 +82,6 @@ controller::controller(
       _partition_leaders,
       _partition_balancer_state)
   , _security_manager(_credentials, _authorizer)
-  , _data_policy_manager(data_policy_table)
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
   , _cloud_storage_api(cloud_storage_api)
@@ -250,10 +248,6 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_connections));
       })
       .then([this] {
-          return _data_policy_frontend.start(
-            std::ref(_stm), std::ref(_feature_table), std::ref(_as));
-      })
-      .then([this] {
           return _tp_frontend.start(
             _raft0->self().id(),
             std::ref(_stm),
@@ -261,7 +255,6 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_partition_allocator),
             std::ref(_partition_leaders),
             std::ref(_tp_state),
-            std::ref(_data_policy_frontend),
             std::ref(_hm_frontend),
             std::ref(_as),
             std::ref(_cloud_storage_api),
@@ -533,7 +526,6 @@ ss::future<> controller::stop() {
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _ephemeral_credential_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
-          .then([this] { return _data_policy_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
           .then([this] { return _config_frontend.stop(); })
           .then([this] { return _feature_backend.stop(); })

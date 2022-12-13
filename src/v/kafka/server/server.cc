@@ -62,7 +62,6 @@ server::server(
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
-  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
@@ -86,7 +85,6 @@ server::server(
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _coproc_partition_manager(coproc_partition_manager)
-  , _data_policy_table(data_policy_table)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind()) {
     if (qdc_config) {

@@ -59,7 +59,6 @@ topics_frontend::topics_frontend(
   ss::sharded<partition_allocator>& pal,
   ss::sharded<partition_leaders_table>& l,
   ss::sharded<topic_table>& topics,
-  ss::sharded<data_policy_frontend>& dp_frontend,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
@@ -72,7 +71,6 @@ topics_frontend::topics_frontend(
   , _connections(con)
   , _leaders(l)
   , _topics(topics)
-  , _dp_frontend(dp_frontend)
   , _hm_frontend(hm_frontend)
   , _as(as)
   , _cloud_storage_api(cloud_storage_api)
@@ -234,28 +232,6 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
       });
 }
 
-// TODO: Maybe user should set data-policy without other topic properties, so we
-// need to do logic with check data-policy update error and reset operations for
-// data-policy
-ss::future<std::error_code> topics_frontend::do_update_data_policy(
-  topic_properties_update& update, model::timeout_clock::time_point timeout) {
-    switch (update.custom_properties.data_policy.op) {
-    case incremental_update_operation::set:
-        co_return co_await _dp_frontend.local().create_data_policy(
-          update.tp_ns,
-          update.custom_properties.data_policy.value.value(),
-          timeout);
-    case incremental_update_operation::remove: {
-        co_return co_await _dp_frontend.local().clear_data_policy(
-          update.tp_ns, timeout);
-    }
-    // Alter config use none for data-policy, because it does not support
-    // updates for data-policy
-    case incremental_update_operation::none:
-        co_return std::error_code(cluster::errc::success);
-    }
-}
-
 ss::future<std::error_code> topics_frontend::do_update_replication_factor(
   topic_properties_update& update, model::timeout_clock::time_point timeout) {
     switch (update.custom_properties.replication_factor.op) {
@@ -295,11 +271,6 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
               update.tp_ns, cluster::errc(update_rf_res.value()));
         }
 
-        auto update_dp_res = co_await do_update_data_policy(update, timeout);
-        if (update_dp_res != std::error_code(cluster::errc::success)) {
-            co_return topic_result(
-              update.tp_ns, cluster::errc(update_dp_res.value()));
-        }
         auto ec = co_await replicate_and_wait(
           _stm, _features, _as, std::move(cmd), timeout);
         co_return topic_result(std::move(update.tp_ns), map_errc(ec));

@@ -66,17 +66,9 @@ static constexpr std::string_view topic_property_replication_factor
 static constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
 
-// Data-policy property
-static constexpr std::string_view topic_property_data_policy_function_name
-  = "redpanda.datapolicy.function.name";
-static constexpr std::string_view topic_property_data_policy_script_name
-  = "redpanda.datapolicy.script.name";
-
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
-  // Invalid name from describe
-  "redpanda.datapolicy",
 
   // Not used in Redpanda
   "unclean.leader.election.enable",

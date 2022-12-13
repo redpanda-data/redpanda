@@ -15,7 +15,6 @@
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
 #include "kafka/server/handlers/configs/config_utils.h"
-#include "kafka/server/handlers/details/data_policy.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -108,15 +107,6 @@ static void parse_and_set_shadow_indexing_mode(
           .match("yes", enabled_value)
           .match("true", enabled_value)
           .default_match(model::shadow_indexing_mode::disabled);
-}
-
-void check_data_policy(std::string_view property_name) {
-    if (
-      property_name == topic_property_data_policy_function_name
-      || property_name == topic_property_data_policy_script_name) {
-        throw v8_engine::data_policy_exeption(
-          "Alter config does not support data-policy");
-    }
 }
 
 checked<cluster::topic_properties_update, alter_configs_resource_response>
@@ -244,8 +234,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
               != std::end(allowlist_topic_noop_confs)) {
                 // Skip unsupported Kafka config
                 continue;
-            }
-            (check_data_policy(cfg.name));
+            };
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               alter_configs_resource_response>(

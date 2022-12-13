@@ -40,7 +40,6 @@ public:
       ss::sharded<storage::api>& storage,
       ss::sharded<node::local_monitor>& local_monitor,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<v8_engine::data_policy_table>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cloud_storage::remote>&);
 
@@ -80,11 +79,6 @@ public:
     ss::sharded<security_frontend>& get_security_frontend() {
         return _security_frontend;
     }
-
-    ss::sharded<data_policy_frontend>& get_data_policy_frontend() {
-        return _data_policy_frontend;
-    }
-    data_policy_manager& dp_manager() { return _data_policy_manager; }
 
     ss::sharded<security::authorizer>& get_authorizer() { return _authorizer; }
 
@@ -197,10 +191,8 @@ private:
     ss::sharded<security::credential_store> _credentials;
     ss::sharded<security::ephemeral_credential_store> _ephemeral_credentials;
     security_manager _security_manager;
-    data_policy_manager _data_policy_manager;
     ss::sharded<security_frontend> _security_frontend;
     ss::sharded<ephemeral_credential_frontend> _ephemeral_credential_frontend;
-    ss::sharded<data_policy_frontend> _data_policy_frontend;
     ss::sharded<security::authorizer> _authorizer;
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<health_monitor_frontend> _hm_frontend; // instance per core

@@ -13,13 +13,9 @@
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "serde/envelope.h"
-#include "vlog.h"
+#include "vassert.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <exception>
-#include <string_view>
-
 namespace v8_engine {
 
 class data_policy_exeption final : public std::exception {
@@ -65,8 +61,34 @@ namespace reflection {
 
 template<>
 struct adl<v8_engine::data_policy> {
-    void to(iobuf& out, v8_engine::data_policy&& dp);
-    v8_engine::data_policy from(iobuf_parser& in);
+    void to(iobuf& out, v8_engine::data_policy&& dp) {
+        reflection::serialize(
+          out, dp.version, dp.function_name(), dp.script_name());
+    }
+    v8_engine::data_policy from(iobuf_parser& in) {
+        auto version = reflection::adl<int8_t>{}.from(in);
+        vassert(
+          version == v8_engine::data_policy::version,
+          "Unexpected data_policy version");
+        auto function_name = reflection::adl<ss::sstring>{}.from(in);
+        auto script_name = reflection::adl<ss::sstring>{}.from(in);
+        return v8_engine::data_policy(
+          std::move(function_name), std::move(script_name));
+    }
 };
 
 } // namespace reflection
+
+namespace v8_engine {
+
+inline std::ostream&
+operator<<(std::ostream& os, const data_policy& datapolicy) {
+    fmt::print(
+      os,
+      "function_name: {} script_name: {}",
+      datapolicy.function_name(),
+      datapolicy.script_name());
+    return os;
+}
+
+} // namespace v8_engine

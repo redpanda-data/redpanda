@@ -13,7 +13,6 @@
 
 #include "cloud_storage/fwd.h"
 #include "cluster/controller_stm.h"
-#include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/remote_topic_configuration_source.h"
@@ -45,7 +44,6 @@ public:
       ss::sharded<partition_allocator>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
-      ss::sharded<data_policy_frontend>&,
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<cloud_storage::remote>&,
@@ -154,8 +152,6 @@ private:
       std::vector<non_replicable_topic> topics,
       model::timeout_clock::duration timeout);
 
-    ss::future<std::error_code> do_update_data_policy(
-      topic_properties_update&, model::timeout_clock::time_point);
     ss::future<std::error_code> do_update_replication_factor(
       topic_properties_update&, model::timeout_clock::time_point);
 
@@ -210,7 +206,6 @@ private:
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<topic_table>& _topics;
-    ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
