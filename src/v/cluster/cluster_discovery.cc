@@ -172,7 +172,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
               clusterlog.debug,
               "Error registering UUID {}: {}, retrying",
               _node_uuid,
-              r.error());
+              r.error().message());
             continue;
         }
         if (!r.has_value() || !r.value().success) {
