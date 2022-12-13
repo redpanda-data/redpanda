@@ -1,6 +1,6 @@
 project_name: rpk
 builds:
-  - id: rpk-windows
+  - id: windows-and-linux
     main: ./cmd/rpk
     binary: rpk
     ldflags:
@@ -11,11 +11,12 @@ builds:
       - CGO_ENABLED=0
     goos:
       - windows
+      - linux
     goarch:
       - amd64
       - arm64
   # we need separate build for darwin to sign/notarize using quill
-  - id: rpk-darwin
+  - id: darwin
     main: ./cmd/rpk
     binary: rpk
     ldflags:
