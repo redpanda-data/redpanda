@@ -69,6 +69,13 @@ static constexpr const char* no_such_key_payload = R"xml(
     <Message>Object not found</Message>
 </Error>
 )xml";
+static constexpr const char* no_such_bucket_payload = R"xml(
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchBucket</Code>
+    <Message>Bucket not found</Message>
+</Error>
+)xml";
 static constexpr const char* list_objects_payload = R"xml(
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>test-bucket</Name>
@@ -157,10 +164,16 @@ void set_routes(ss::httpd::routes& r) {
           return "unexpected!";
       },
       "txt");
-    auto not_found_response = new function_handler(
+    auto key_not_found_response = new function_handler(
       []([[maybe_unused]] const_req req, reply& reply) {
           reply.set_status(reply::status_type::not_found);
           return no_such_key_payload;
+      },
+      "txt");
+    auto bucket_not_found_response = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::not_found);
+          return no_such_bucket_payload;
       },
       "txt");
 
@@ -174,7 +187,14 @@ void set_routes(ss::httpd::routes& r) {
     r.add(
       operation_type::GET, url("/test-unexpected"), unexpected_error_response);
     r.add(operation_type::GET, url("/"), list_objects_response);
-    r.add(operation_type::DELETE, url("/test-not-found"), not_found_response);
+    r.add(
+      operation_type::DELETE,
+      url("/test-key-not-found"),
+      key_not_found_response);
+    r.add(
+      operation_type::DELETE,
+      url("/test-bucket-not-found"),
+      bucket_not_found_response);
 }
 
 /// Http server and client
@@ -369,11 +389,32 @@ SEASTAR_TEST_CASE(test_delete_object_not_found) {
           = client
               ->delete_object(
                 cloud_storage_clients::bucket_name("test-bucket"),
-                cloud_storage_clients::object_key("test-not-found"),
+                cloud_storage_clients::object_key("test-key-not-found"),
                 100ms)
               .get0();
 
         BOOST_REQUIRE(result);
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_delete_bucket_not_found) {
+    return ss::async([] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+
+        const auto result
+          = client
+              ->delete_object(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-bucket-not-found"),
+                100ms)
+              .get0();
+
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE(
+          result.error()
+          == cloud_storage_clients::error_outcome::bucket_not_found);
         server->stop().get();
     });
 }

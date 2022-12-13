@@ -169,6 +169,8 @@ ss::future<download_result> remote::do_download_manifest(
             co_await ss::sleep_abortable(retry_permit.delay, _as);
             retry_permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             vlog(
@@ -178,7 +180,7 @@ ss::future<download_result> remote::do_download_manifest(
               *result,
               path);
             break;
-        case cloud_storage_clients::error_outcome::notfound:
+        case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             vlog(
               ctxlog.debug,
@@ -258,8 +260,11 @@ ss::future<upload_result> remote::upload_manifest(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case cloud_storage_clients::error_outcome::notfound:
+        case cloud_storage_clients::error_outcome::key_not_found:
             // not expected during upload
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
@@ -361,8 +366,11 @@ ss::future<upload_result> remote::upload_segment(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
-        case cloud_storage_clients::error_outcome::notfound:
-        // not expected during upload
+        case cloud_storage_clients::error_outcome::key_not_found:
+            // not expected during upload
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
@@ -437,10 +445,12 @@ ss::future<download_result> remote::download_segment(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             break;
-        case cloud_storage_clients::error_outcome::notfound:
+        case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
         }
@@ -508,10 +518,12 @@ ss::future<download_result> remote::segment_exists(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = download_result::failed;
             break;
-        case cloud_storage_clients::error_outcome::notfound:
+        case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
         }
@@ -577,16 +589,19 @@ ss::future<upload_result> remote::delete_object(
             co_await ss::sleep_abortable(permit.delay, _as);
             permit = fib.retry();
             break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
-        case cloud_storage_clients::error_outcome::notfound:
+        case cloud_storage_clients::error_outcome::key_not_found:
             vassert(
               false,
               "Unexpected notfound outcome received when deleting object {} "
               "from bucket {}",
               path,
               bucket);
+            break;
         }
     }
     if (!result) {

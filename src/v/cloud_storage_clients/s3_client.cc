@@ -483,12 +483,21 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 
     try {
         co_return co_await std::move(request_future);
-    } catch (const cloud_storage_clients::rest_error_response& err) {
-        if (err.code() == cloud_storage_clients::s3_error_code::no_such_key) {
-            // Unexpected 404s are logged elsewhere by the s3 client at warn
+    } catch (const rest_error_response& err) {
+        if (err.code() == s3_error_code::no_such_key) {
+            // Unexpected 404s are logged by 'request_future' at warn
             // level, so only log at debug level here.
             vlog(s3_log.debug, "NoSuchKey response received {}", key);
-            outcome = error_outcome::notfound;
+            outcome = error_outcome::key_not_found;
+        } else if (err.code() == s3_error_code::no_such_bucket) {
+            vlog(
+              s3_log.error,
+              "The specified S3 bucket, {}, could not be found. Ensure that "
+              "your bucket exists and that the cloud_storage_bucket and "
+              "cloud_storage_region cluster configs are correct.",
+              bucket());
+
+            outcome = error_outcome::bucket_not_found;
         } else if (
           err.code() == s3_error_code::slow_down
           || err.code() == s3_error_code::internal_error) {
@@ -847,7 +856,7 @@ s3_client::delete_object(
           //
           // TODO: Subclass cloud_storage_clients::client with a GCS client
           // implementation where this edge case is handled.
-          if (!result && result.error() == error_outcome::notfound) {
+          if (!result && result.error() == error_outcome::key_not_found) {
               vlog(
                 s3_log.debug,
                 "Object to be deleted was not found in cloud storage: "

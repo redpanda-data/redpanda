@@ -34,8 +34,10 @@ enum class error_outcome {
     retry_slowdown,
     /// Error condition that couldn't be retried
     fail,
-    /// NotFound API error (only suitable for downloads)
-    notfound
+    /// Missing key API error (only suitable for downloads and deletions)
+    key_not_found,
+    /// The bucket couldn't be found. Indicates misconfiguration.
+    bucket_not_found
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -53,7 +55,7 @@ struct error_outcome_category final : public std::error_category {
             return "Cloud service asked us to slow down";
         case error_outcome::fail:
             return "Non retriable error";
-        case error_outcome::notfound:
+        case error_outcome::key_not_found:
             return "Key not found error";
         default:
             return "Undefined error_outcome encountered";
