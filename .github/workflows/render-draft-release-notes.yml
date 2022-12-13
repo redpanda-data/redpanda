@@ -1,0 +1,48 @@
+name: Render Draft Release Notes
+on:
+  push:
+    branches: [ dev, 'v[0-9]+.[0-9]+.x' ]
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl rpchangelog
+        run: |
+          mkdir -v -p rpchangelog
+          curl -s -S -f -L -o rpchangelog/requirements.txt https://vectorized-public.s3.us-west-2.amazonaws.com/rpchangelog/requirements.txt
+          curl -s -S -f -L -o rpchangelog/rpchangelog.py https://vectorized-public.s3.us-west-2.amazonaws.com/rpchangelog/rpchangelog.py
+          chmod +x rpchangelog/rpchangelog.py
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      - run: pip3 install -r ./rpchangelog/requirements.txt
+      - name: Render draft release notes to job summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ $GITHUB_REF_NAME == 'dev' ]]; then
+            PREVIOUS_TAG_NAME=$(gh -R "$GITHUB_REPOSITORY_OWNER/redpanda" release list --exclude-drafts -L 1 | tail -1 | cut -f1)
+            YEAR_VER=$(echo "$PREVIOUS_TAG_NAME" | cut -d. -f1)
+            FEATURE_VER=$(echo "$PREVIOUS_TAG_NAME" | cut -d. -f2)
+            TAG_NAME="$YEAR_VER.$((FEATURE_VER+1)).1"
+          else
+            # e.g. GITHUB_REF_NAME=v22.3.x
+            SEARCH_PATTERN=${GITHUB_REF_NAME::-1}
+            PREVIOUS_TAG_NAME=$(gh -R "$GITHUB_REPOSITORY_OWNER/redpanda" release list --exclude-drafts | grep "$SEARCH_PATTERN" | head -1 | cut -f1)
+            YEAR_VER=$(echo "$PREVIOUS_TAG_NAME" | cut -d. -f1)
+            FEATURE_VER=$(echo "$PREVIOUS_TAG_NAME" | cut -d. -f2)
+            PATCH_VER=$(echo "$PREVIOUS_TAG_NAME" | cut -d. -f3)
+            TAG_NAME="$YEAR_VER.$FEATURE_VER.$((PATCH_VER+1))"
+          fi
+          ./rpchangelog/rpchangelog.py --log-level=DEBUG --github-owner="$GITHUB_REPOSITORY_OWNER" rel "$TAG_NAME" "$GITHUB_REF_NAME" "$PREVIOUS_TAG_NAME" >> "$GITHUB_STEP_SUMMARY"
+          LINK_TO_SUMMARY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          FINAL_MSG="View rendered draft release notes in the job summary: $LINK_TO_SUMMARY"
+          if grep -q '## Unclear' "$GITHUB_STEP_SUMMARY"; then
+            echo '❌ Release Notes Unclear'
+            echo $FINAL_MSG
+            exit 1
+          else
+            echo '✔ Release Notes Clear'
+            echo $FINAL_MSG
+          fi
