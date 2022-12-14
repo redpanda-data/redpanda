@@ -405,7 +405,7 @@ make_imposter_expectations(
     }
     m.advance_insync_offset(m.get_last_offset());
     std::stringstream ostr;
-    m.serialize(ostr);
+    m.serialize(ostr).get();
     results.push_back(cloud_storage_fixture::expectation{
       .url = "/" + m.get_manifest_path()().string(),
       .body = ss::sstring(ostr.str())});
