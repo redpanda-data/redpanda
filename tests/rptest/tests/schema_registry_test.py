@@ -1174,6 +1174,38 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 check_connection(n.account.hostname)
             restart_leader()
 
+    @cluster(num_nodes=3)
+    def test_move_leader(self):
+        admin = Admin(self.redpanda)
+
+        def check_connection(hostname: str):
+            result_raw = self._get_subjects(hostname=hostname)
+            self.logger.info(result_raw.status_code)
+            self.logger.info(result_raw.json())
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json() == []
+
+        def get_leader():
+            return admin.get_partition_leader(namespace="kafka",
+                                              topic="_schemas",
+                                              partition=0)
+
+        def move_leader():
+            leader = get_leader()
+            self.logger.info(f"Transferring leadership from node: {leader}")
+            admin.partition_transfer_leadership(namespace="kafka",
+                                                topic="_schemas",
+                                                partition=0)
+            wait_until(lambda: get_leader() != leader,
+                       timeout_sec=10,
+                       backoff_sec=1,
+                       err_msg="Leadership did not stabilize")
+
+        for _ in range(20):
+            for n in self.redpanda.nodes:
+                check_connection(n.account.hostname)
+            move_leader()
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
