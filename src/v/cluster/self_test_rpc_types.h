@@ -15,6 +15,7 @@
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
+#include "random/generators.h"
 #include "serde/serde.h"
 #include "utils/uuid.h"
 
@@ -264,5 +265,35 @@ struct get_status_response
         return o;
     }
 };
+
+struct netcheck_request
+  : serde::
+      envelope<netcheck_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::node_id source;
+    iobuf buf;
+    friend std::ostream&
+    operator<<(std::ostream& o, const netcheck_request& r) {
+        fmt::print(o, "{{source: {} buf: {}}}", r.source, r.buf.size_bytes());
+        return o;
+    }
+};
+
+struct netcheck_response
+  : serde::
+      envelope<netcheck_response, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    size_t bytes_read{0};
+    friend std::ostream&
+    operator<<(std::ostream& o, const netcheck_response& r) {
+        fmt::print(o, "{{bytes_read: {}}}", r.bytes_read);
+        return o;
+    }
+};
+
+/// Creates a netcheck_request with the buffer initialized to random data. The
+/// buffer will be split into fragments of 8192 bytes each.
+ss::future<cluster::netcheck_request>
+make_netcheck_request(model::node_id src, size_t sz);
 
 } // namespace cluster

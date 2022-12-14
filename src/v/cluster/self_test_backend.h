@@ -56,14 +56,30 @@ public:
     /// running or not
     get_status_response get_status() const;
 
+    /// Network benchmark endpoint
+    ///
+    /// The encapsulated logic ensures that at most one benchmark using this
+    /// node can run at a time. It runs by only positively acking requests that
+    /// are sent by the same node within a small configured timeout. Negative
+    /// acks (empty response iobuf) will have clients sleep periodicially until
+    /// they get a chance use the endpoint with success.
+    ss::future<netcheck_response> netcheck(model::node_id, iobuf&&);
+
 private:
     ss::future<std::vector<self_test_result>> do_start_test(
       std::vector<diskcheck_opts> dtos, std::vector<netcheck_opts> ntos);
+
+    struct previous_netcheck_entity {
+        static const inline model::node_id unassigned{-1};
+        model::node_id source{unassigned};
+        ss::lowres_clock::time_point last_request{ss::lowres_clock::now()};
+    };
 
 private:
     // cached values
     uuid_t _id{};
     get_status_response _prev_run{.status = self_test_status::idle};
+    previous_netcheck_entity _prev_nc;
 
     ss::gate _gate;
     ss::scheduling_group _st_sg;

@@ -128,4 +128,21 @@ get_status_response self_test_backend::get_status() const {
     return _prev_run;
 }
 
+ss::future<netcheck_response>
+self_test_backend::netcheck(model::node_id source, iobuf&& iob) {
+    static const auto reset_threshold = 200ms;
+    auto now = ss::lowres_clock::now();
+    if (likely(
+          _prev_nc.source == source
+          || _prev_nc.source == previous_netcheck_entity::unassigned
+          || ((_prev_nc.last_request + reset_threshold) < now))) {
+        _prev_nc = previous_netcheck_entity{
+          .source = source, .last_request = now};
+        co_return netcheck_response{.bytes_read = iob.size_bytes()};
+    }
+    // Clients will respect this empty response and respond by sleeping before
+    // attempting to call this endpoint.
+    co_return netcheck_response{.bytes_read = 0};
+}
+
 } // namespace cluster

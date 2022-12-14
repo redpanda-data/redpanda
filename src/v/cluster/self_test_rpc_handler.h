@@ -33,6 +33,9 @@ public:
     ss::future<get_status_response>
     get_status(empty_request&&, rpc::streaming_context&) final;
 
+    ss::future<netcheck_response>
+    netcheck(netcheck_request&&, rpc::streaming_context&) final;
+
 private:
     ss::sharded<self_test_backend>& _self_test_backend;
 };
