@@ -506,6 +506,10 @@ func (r *StatefulSetResource) obj(
 									ContainerPort: int32(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
 							}, r.getPorts()...),
+							SecurityContext: &corev1.SecurityContext{
+								RunAsUser:  pointer.Int64Ptr(userID),
+								RunAsGroup: pointer.Int64Ptr(groupID),
+							},
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
 								Requests: r.pandaCluster.Spec.Resources.Requests,
