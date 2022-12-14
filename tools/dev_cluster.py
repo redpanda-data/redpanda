@@ -61,10 +61,9 @@ class Redpanda:
         self.process = None
 
     async def run(self):
-        self.process = await asyncio.create_subprocess_exec(
-            self.binary,
-            "--redpanda-cfg",
-            self.config,
+        log_path = pathlib.Path(os.path.dirname(self.config)) / "redpanda.log"
+        self.process = await asyncio.create_subprocess_shell(
+            f"{self.binary} --redpanda-cfg {self.config} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
