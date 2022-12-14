@@ -6,18 +6,18 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
 import random
+import time
 
+from ducktape.errors import TimeoutError
 from ducktape.mark import ok_to_fail, parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.action_injector import random_process_kills
+from rptest.services.action_injector import random_process_kills, ActionConfig
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
@@ -236,6 +236,127 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
             self.start_consumer()
             self.run_validation(consumer_timeout_sec=90)
         ctx.assert_actions_triggered()
+
+
+class EndToEndCloudRetentionTest(EndToEndShadowIndexingBase):
+    segment_size = EndToEndShadowIndexingBase.segment_size // 4
+    retention_bytes = 10 * segment_size
+    topics = (TopicSpec(name=EndToEndShadowIndexingBase.s3_topic_name,
+                        partition_count=1,
+                        replication_factor=3,
+                        retention_bytes=retention_bytes,
+                        segment_bytes=segment_size), )
+
+    def __init__(self, test_context):
+        super().__init__(test_context,
+                         extra_rp_conf={
+                             'default_topic_replications': self.num_brokers,
+                             'cloud_storage_housekeeping_interval_ms': 1000 * 2
+                         })
+
+    @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @skip_debug_mode
+    def test_retention_with_node_failures(self):
+        max_overshoot_percentage = 100
+
+        self.start_producer(throughput=10000)
+
+        def cloud_log_size() -> int:
+            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
+            if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
+                self.logger.debug(f"No manifest present yet")
+                return 0
+
+            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+            ratio = cloud_log_size / self.retention_bytes
+            overshoot_percentage = max(ratio - 1, 0) * 100
+
+            self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
+            self.logger.debug(f"Overshot by {overshoot_percentage}%")
+
+            if overshoot_percentage > max_overshoot_percentage:
+                raise RuntimeError(
+                    f"Cloud log size {overshoot_percentage}% greater than configured"
+                    f" retention (max allowed {max_overshoot_percentage}%)")
+
+            return cloud_log_size
+
+        pkill_config = ActionConfig(cluster_start_lead_time_sec=10,
+                                    min_time_between_actions_sec=10,
+                                    max_time_between_actions_sec=20)
+        with random_process_kills(self.redpanda, pkill_config) as ctx:
+            try:
+                wait_until(lambda: cloud_log_size() == -1,
+                           timeout_sec=120,
+                           backoff_sec=5)
+            except TimeoutError as e:
+                # This is the success path. Timing out means that
+                # we've stayed below the max cloud log size threshold
+                # for the duration of the test.
+                pass
+            finally:
+                self.producer.stop()
+
+        ctx.assert_actions_triggered()
+
+
+class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
+    # Use a small segment size to speed up the test.
+    small_segment_size = EndToEndShadowIndexingBase.segment_size // 4
+    small_interval_ms = 100
+    infinite_topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
+    topics = (TopicSpec(name=infinite_topic_name,
+                        partition_count=1,
+                        replication_factor=1,
+                        retention_bytes=-1,
+                        retention_ms=-1,
+                        segment_bytes=small_segment_size), )
+
+    def __init__(self, test_context):
+        self.num_brokers = 1
+        super().__init__(
+            test_context,
+            extra_rp_conf={
+                # Trigger housekeeping frequently to encourage segment
+                # deletion.
+                "cloud_storage_housekeeping_interval_ms":
+                self.small_interval_ms,
+
+                # Use small cluster-wide retention settings to
+                # encourage cloud segment deletion, as we ensure
+                # nothing will be deleted for an infinite-retention
+                # topic.
+                "delete_retention_ms": self.small_interval_ms,
+                "retention_bytes": self.small_segment_size,
+            })
+
+    @cluster(num_nodes=2)
+    def test_segments_not_deleted(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=2,
+        )
+
+        # Wait for there to be some segments.
+        def manifest_has_segments():
+            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
+            manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
+                                                    0)
+            return "segments" in manifest
+
+        wait_until(manifest_has_segments, timeout_sec=10, backoff_sec=1)
+
+        # Give ample time for would-be segment deletions to occur.
+        time.sleep(5)
+        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                 self.s3_bucket_name, self.logger)
+        manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
+        assert "0-1-v1.log" in manifest["segments"], manifest
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):

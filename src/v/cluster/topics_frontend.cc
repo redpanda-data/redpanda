@@ -478,24 +478,6 @@ errc topics_frontend::validate_topic_configuration(
         }
     }
 
-    const auto& properties = assignable_config.cfg.properties;
-
-    if (
-      properties.retention_bytes.has_value()
-      && properties.retention_local_target_bytes.has_value()
-      && properties.retention_bytes.value()
-           < properties.retention_local_target_bytes.value()) {
-        return errc::invalid_retention_configuration;
-    }
-
-    if (
-      properties.retention_duration.has_value()
-      && properties.retention_local_target_ms.has_value()
-      && properties.retention_duration.value()
-           < properties.retention_local_target_ms.value()) {
-        return errc::invalid_retention_configuration;
-    }
-
     return errc::success;
 }
 

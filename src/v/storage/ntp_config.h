@@ -157,19 +157,31 @@ public:
     }
 
     std::optional<size_t> retention_bytes() const {
-        if (!_overrides || !_overrides->retention_bytes.has_value()) {
-            return config::shard_local_cfg().retention_bytes();
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_bytes.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_bytes.has_value()) {
+                return _overrides->retention_bytes.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
         }
-
-        return _overrides->retention_bytes.value();
+        return config::shard_local_cfg().retention_bytes();
     }
 
     std::optional<std::chrono::milliseconds> retention_duration() const {
-        if (!_overrides || !_overrides->retention_time.has_value()) {
-            return config::shard_local_cfg().delete_retention_ms();
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_time.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_time.has_value()) {
+                return _overrides->retention_time.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
         }
-
-        return _overrides->retention_time.value();
+        return config::shard_local_cfg().delete_retention_ms();
     }
 
     bool is_archival_enabled() const {
