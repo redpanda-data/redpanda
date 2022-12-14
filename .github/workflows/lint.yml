@@ -41,7 +41,7 @@ jobs:
 
     - name: Install gofumpt
       env:
-        GOFUMPT_VER: 0.3.1
+        GOFUMPT_VER: 0.4.0
       run: |
         mkdir -v -p "$HOME/.local/bin"
         wget -O "$HOME/.local/bin/gofumpt" "https://github.com/mvdan/gofumpt/releases/download/v${GOFUMPT_VER}/gofumpt_v${GOFUMPT_VER}_linux_amd64"
@@ -49,7 +49,7 @@ jobs:
 
     - name: Run gofumpt
       run: |
-        find src/go -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.17
+        find src/go -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19
         git diff --exit-code
 
   js:
