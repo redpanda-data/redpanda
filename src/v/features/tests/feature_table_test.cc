@@ -224,3 +224,16 @@ FIXTURE_TEST(feature_table_preparing, feature_table_fixture) {
     BOOST_REQUIRE(f_active.available());
     f_active.get();
 }
+
+FIXTURE_TEST(feature_uniqueness, feature_table_fixture) {
+    for (const auto& schema : feature_schema) {
+        feature current_feature = schema.bits;
+        for (const auto& other : feature_schema) {
+            BOOST_REQUIRE(
+              (static_cast<uint64_t>(other.bits)
+               & static_cast<uint64_t>(current_feature))
+                == 0
+              || other.bits == current_feature);
+        }
+    }
+}

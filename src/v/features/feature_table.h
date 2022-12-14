@@ -30,26 +30,26 @@ namespace features {
 struct feature_table_snapshot;
 
 enum class feature : std::uint64_t {
-    central_config = 0x1,
-    consumer_offsets = 0x2,
-    maintenance_mode = 0x4,
-    mtls_authentication = 0x8,
-    rm_stm_kafka_cache = 0x10,
-    serde_raft_0 = 0x20,
-    license = 0x40,
-    raft_improved_configuration = 0x80,
-    transaction_ga = 0x100,
-    raftless_node_status = 0x200,
-    rpc_v2_by_default = 0x400,
-    cloud_retention = 0x800,
-    node_id_assignment = 0x1000,
-    replication_factor_change = 0x2000,
-    ephemeral_secrets = 0x4000,
-    seeds_driven_bootstrap_capable = 0x8000,
-    tm_stm_cache = 0x16000,
+    central_config = 1ULL,
+    consumer_offsets = 1ULL << 1U,
+    maintenance_mode = 1ULL << 2U,
+    mtls_authentication = 1ULL << 3U,
+    rm_stm_kafka_cache = 1ULL << 4U,
+    serde_raft_0 = 1ULL << 5U,
+    license = 1ULL << 6U,
+    raft_improved_configuration = 1ULL << 7U,
+    transaction_ga = 1ULL << 8U,
+    raftless_node_status = 1ULL << 9U,
+    rpc_v2_by_default = 1ULL << 10U,
+    cloud_retention = 1ULL << 11U,
+    node_id_assignment = 1ULL << 12U,
+    replication_factor_change = 1ULL << 13U,
+    ephemeral_secrets = 1ULL << 14U,
+    seeds_driven_bootstrap_capable = 1ULL << 15U,
+    tm_stm_cache = 1ULL << 16U,
 
     // Dummy features for testing only
-    test_alpha = uint64_t(1) << 63,
+    test_alpha = 1ULL << 63U,
 };
 
 /**
