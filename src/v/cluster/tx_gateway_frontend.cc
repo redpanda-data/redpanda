@@ -2513,7 +2513,7 @@ tx_gateway_frontend::do_commit_tm_tx(
 
     if (tx.status != tm_transaction::tx_status::prepared) {
         vlog(
-          txlog.warn,
+          txlog.trace,
           "marking tx_id:{} pid:{} tx_seq:{} etag:{} as prepared in term:{}",
           tx.id,
           tx.pid,
