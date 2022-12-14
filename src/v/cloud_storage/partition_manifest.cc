@@ -27,6 +27,7 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
@@ -1138,11 +1139,11 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     }
 }
 
-serialized_json_stream partition_manifest::serialize() const {
+ss::future<serialized_json_stream> partition_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
-    serialize(os);
+    co_await serialize(os);
     if (!os.good()) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -1150,12 +1151,12 @@ serialized_json_stream partition_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    return {
+    co_return serialized_json_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
 
-void partition_manifest::serialize(std::ostream& out) const {
+ss::future<> partition_manifest::serialize(std::ostream& out) const {
     json::OStreamWrapper wrapper(out);
     json::Writer<json::OStreamWrapper> w(wrapper);
     w.StartObject();
@@ -1279,6 +1280,7 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.StartObject();
         for (const auto& [key, meta] : _segments) {
             serialize_meta(meta);
+            co_await ss::coroutine::maybe_yield();
         }
         w.EndObject();
     }
@@ -1287,6 +1289,7 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.StartObject();
         for (const auto& meta : _replaced) {
             serialize_lw_meta(meta);
+            co_await ss::coroutine::maybe_yield();
         }
         w.EndObject();
     }

@@ -325,7 +325,7 @@ ss::future<upload_result> remote::upload_manifest(
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
         std::exception_ptr eptr = nullptr;
         try {
-            auto [is, size] = manifest.serialize();
+            auto [is, size] = co_await manifest.serialize();
             co_await lease.client->put_object(
               bucket, path, size, std::move(is), tags, fib.get_timeout());
             vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);

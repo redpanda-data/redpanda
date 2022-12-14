@@ -254,8 +254,8 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
     {
         std::stringstream s1, s2;
-        m.serialize(s1);
-        archival_stm.manifest().serialize(s2);
+        m.serialize(s1).get();
+        archival_stm.manifest().serialize(s2).get();
         vlog(logger.info, "original manifest: {}", s1.str());
         vlog(logger.info, "restored manifest: {}", s2.str());
     }

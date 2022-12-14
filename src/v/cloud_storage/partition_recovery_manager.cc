@@ -274,7 +274,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
     auto offset_map = co_await build_offset_map(mat);
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
-        mat.partition_manifest.serialize(ostr);
+        co_await mat.partition_manifest.serialize(ostr);
         vlog(
           _ctxlog.debug,
           "Partition manifest used for recovery: {}",
