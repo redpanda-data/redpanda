@@ -1151,6 +1151,29 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             else:
                 assert schema.json()["schemaType"] == protocols[i].name
 
+    @cluster(num_nodes=3)
+    def test_restarts(self):
+        admin = Admin(self.redpanda)
+
+        def check_connection(hostname: str):
+            result_raw = self._get_subjects(hostname=hostname)
+            self.logger.info(result_raw.status_code)
+            self.logger.info(result_raw.json())
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json() == []
+
+        def restart_leader():
+            leader = admin.get_partition_leader(namespace="kafka",
+                                                topic="_schemas",
+                                                partition=0)
+            self.logger.info(f"Restarting node: {leader}")
+            self.redpanda.restart_nodes(self.redpanda.get_node(leader))
+
+        for _ in range(20):
+            for n in self.redpanda.nodes:
+                check_connection(n.account.hostname)
+            restart_leader()
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
