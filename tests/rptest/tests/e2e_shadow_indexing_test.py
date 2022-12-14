@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 import os
 import random
+import time
 
 from ducktape.errors import TimeoutError
 from ducktape.mark import ok_to_fail, parametrize
@@ -359,6 +360,64 @@ class EndToEndCloudRetentionTest(EndToEndShadowIndexingBase):
                 self.producer.stop()
 
         ctx.assert_actions_triggered()
+
+
+class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
+    # Use a small segment size to speed up the test.
+    small_segment_size = EndToEndShadowIndexingBase.segment_size // 4
+    small_interval_ms = 100
+    infinite_topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
+    topics = (TopicSpec(name=infinite_topic_name,
+                        partition_count=1,
+                        replication_factor=1,
+                        retention_bytes=-1,
+                        retention_ms=-1,
+                        segment_bytes=small_segment_size), )
+
+    def __init__(self, test_context):
+        self.num_brokers = 1
+        super().__init__(
+            test_context,
+            extra_rp_conf={
+                # Trigger housekeeping frequently to encourage segment
+                # deletion.
+                "cloud_storage_housekeeping_interval_ms":
+                self.small_interval_ms,
+
+                # Use small cluster-wide retention settings to
+                # encourage cloud segment deletion, as we ensure
+                # nothing will be deleted for an infinite-retention
+                # topic.
+                "delete_retention_ms": self.small_interval_ms,
+                "retention_bytes": self.small_segment_size,
+            })
+
+    @cluster(num_nodes=2)
+    def test_segments_not_deleted(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=2,
+        )
+
+        # Wait for there to be some segments.
+        def manifest_has_segments():
+            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                     self.s3_bucket_name, self.logger)
+            manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
+                                                    0)
+            return "segments" in manifest
+
+        wait_until(manifest_has_segments, timeout_sec=10, backoff_sec=1)
+
+        # Give ample time for would-be segment deletions to occur.
+        time.sleep(5)
+        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+                                 self.s3_bucket_name, self.logger)
+        manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
+        assert "0-1-v1.log" in manifest["segments"], manifest
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):
