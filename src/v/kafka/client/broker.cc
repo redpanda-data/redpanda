@@ -12,6 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
+#include "net/connection.h"
 #include "net/dns.h"
 
 #include <seastar/core/coroutine.hh>
@@ -45,9 +46,7 @@ ss::future<shared_broker_t> make_broker(
             });
       })
       .handle_exception_type([node_id](const std::system_error& ex) {
-          if (
-            ex.code() == std::errc::host_unreachable
-            || ex.code() == std::errc::connection_refused) {
+          if (net::is_reconnect_error(ex)) {
               return ss::make_exception_future<shared_broker_t>(
                 broker_error(node_id, error_code::network_exception));
           }
