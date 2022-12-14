@@ -21,11 +21,15 @@ import yaml
 import dataclasses
 import argparse
 import sys
+import os
+import shutil
 
 try:
     from rich import print
 except ImportError:
     pass
+
+BOOTSTRAP_YAML = ".bootstrap.yaml"
 
 
 @dataclasses.dataclass
@@ -158,6 +162,12 @@ async def main():
                       f,
                       indent=2,
                       Dumper=get_config_dumper())
+
+        # If there is a bootstrap file in pwd, propagate it to each node's
+        # directory so that they'll load it on first start
+        if os.path.exists(BOOTSTRAP_YAML):
+            shutil.copyfile(BOOTSTRAP_YAML, node_dir / BOOTSTRAP_YAML)
+
         return config, conf_file
 
     configs = [prepare_node(i) for i in range(args.nodes)]
