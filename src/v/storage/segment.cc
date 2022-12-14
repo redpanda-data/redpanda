@@ -106,7 +106,7 @@ ss::future<> segment::remove_persistent_state() {
     if (is_compacted_segment()) {
         rm.push_back(reader().path().to_compacted_index());
     }
-    vlog(stlog.info, "removing: {}", rm);
+    vlog(stlog.debug, "removing: {}", rm);
     return ss::do_with(
       std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
           return ss::do_for_each(
