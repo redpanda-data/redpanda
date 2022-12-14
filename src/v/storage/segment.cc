@@ -109,7 +109,7 @@ ss::future<> segment::remove_persistent_state() {
         rm.push_back(
           internal::compacted_index_path(reader().filename().c_str()));
     }
-    vlog(stlog.info, "removing: {}", rm);
+    vlog(stlog.debug, "removing: {}", rm);
     return ss::do_with(
       std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
           return ss::do_for_each(
