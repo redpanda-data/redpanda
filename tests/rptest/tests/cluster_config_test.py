@@ -54,6 +54,12 @@ class ClusterConfigUpgradeTest(RedpandaTest):
         node = self.redpanda.nodes[0]
         admin = Admin(self.redpanda)
 
+        # Since we skip RedpandaService.start, must clean node explicitly
+        self.redpanda.clean_node(node)
+
+        # Start node outside of the usual RedpandaService.start, so that we
+        # skip writing out bootstrap.yaml files (the presence of which disables
+        # the upgrade import of values from redpanda.yaml)
         self.redpanda.start_node(
             node, override_cfg_params={'delete_retention_ms': '9876'})
 
