@@ -731,20 +731,38 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
   std::vector<model::broker_shard> new_replica_set,
   model::timeout_clock::time_point tout,
   std::optional<model::term_id> term) {
+    auto result = co_await stm_linearizable_barrier(tout);
+    if (!result) {
+        co_return result.error();
+    }
+
+    if (_topics.local().is_update_in_progress(ntp)) {
+        co_return errc::update_in_progress;
+    }
+
     move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
 
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout, term);
+    co_return co_await replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), tout, term);
 }
 
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
   model::ntp ntp,
   model::timeout_clock::time_point timeout,
   std::optional<model::term_id> term) {
+    auto result = co_await stm_linearizable_barrier(timeout);
+    if (!result) {
+        co_return result.error();
+    }
+    if (!_topics.local().is_update_in_progress(ntp)) {
+        co_return errc::no_update_in_progress;
+    }
+
     cancel_moving_partition_replicas_cmd cmd(
       std::move(ntp),
       cancel_moving_partition_replicas_cmd_data(force_abort_update::no));
 
-    return replicate_and_wait(
+    co_return co_await replicate_and_wait(
       _stm, _features, _as, std::move(cmd), timeout, term);
 }
 
@@ -752,11 +770,19 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
   model::ntp ntp,
   model::timeout_clock::time_point timeout,
   std::optional<model::term_id> term) {
+    auto result = co_await stm_linearizable_barrier(timeout);
+    if (!result) {
+        co_return result.error();
+    }
+
+    if (!_topics.local().is_update_in_progress(ntp)) {
+        co_return errc::no_update_in_progress;
+    }
     cancel_moving_partition_replicas_cmd cmd(
       std::move(ntp),
       cancel_moving_partition_replicas_cmd_data(force_abort_update::yes));
 
-    return replicate_and_wait(
+    co_return co_await replicate_and_wait(
       _stm, _features, _as, std::move(cmd), timeout, term);
 }
 
