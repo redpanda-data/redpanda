@@ -187,10 +187,11 @@ class SchemaRegistryTest(RedpandaTest):
                              f"schemas/ids/{id}/versions",
                              headers=headers)
 
-    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS):
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET",
                              f"subjects{'?deleted=true' if deleted else ''}",
-                             headers=headers)
+                             headers=headers,
+                             **kwargs)
 
     def _post_subjects_subject(self,
                                subject,
