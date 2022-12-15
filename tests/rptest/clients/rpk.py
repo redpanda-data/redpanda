@@ -318,7 +318,10 @@ class RpkTool:
 
     def alter_topic_config(self, topic, set_key, set_value):
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
-        self._run_topic(cmd)
+        out = self._run_topic(cmd)
+        if 'INVALID' in out:
+            raise RpkException(
+                f"Invalid topic config {topic} {set_key}={set_value}")
 
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
