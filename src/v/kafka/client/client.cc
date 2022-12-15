@@ -74,9 +74,16 @@ ss::future<> client::connect() {
       _seeds.begin(), _seeds.end(), random_generators::internal::gen);
 
     return ss::do_with(size_t{0}, [this](size_t& retries) {
-        return gated_retry_with_mitigation([this, &retries]() {
-            return do_connect(_seeds[retries++ % _seeds.size()]);
-        });
+        return retry_with_mitigation(
+          _config.retries(),
+          _config.retry_base_backoff(),
+          [this, retries]() {
+              return do_connect(_seeds[retries % _seeds.size()]);
+          },
+          [this, &retries](std::exception_ptr ex) {
+              ++retries;
+              return _external_mitigate(ex);
+          });
     });
 }
 
@@ -191,9 +198,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
           } catch (const ss::gate_closed_exception&) {
               vlog(kclog.debug, "gate_closed_exception");
           } catch (const std::system_error& ex) {
-              if (
-                ex.code() == std::errc::broken_pipe
-                || ex.code() == std::errc::timed_out) {
+              if (net::is_reconnect_error(ex)) {
                   vlog(kclog.debug, "system_error: {}", ex);
                   return _wait_or_start_update_metadata();
               } else {
