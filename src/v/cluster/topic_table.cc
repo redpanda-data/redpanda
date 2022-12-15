@@ -631,23 +631,40 @@ void topic_table::notify_waiters() {
     /// If by invocation of this method there are no waiters, notify
     /// function_ptrs stored in \ref notifications, without consuming all
     /// pending_deltas for when a subsequent waiter does arrive
+
     std::vector<delta> changes;
+
+    // \ref notify_waiters is called after every apply. Hence for the most
+    // part there should only be a few items towards the end of \ref
+    // _pending_deltas that need to be sent to callbacks in \ref
+    // notifications. \ref _last_consumed_by_notifier_offset allows us to
+    // skip ahead to the items added since the last \ref notify_waiters
+    // call.
+    auto starting_iter = _pending_deltas.begin()
+                         + _last_consumed_by_notifier_offset;
+
     std::copy_if(
-      _pending_deltas.begin(),
+      starting_iter,
       _pending_deltas.end(),
       std::back_inserter(changes),
       [this](const delta& d) { return d.offset > _last_consumed_by_notifier; });
-    for (auto& cb : _notifications) {
-        cb.second(changes);
-    }
+
     if (!changes.empty()) {
+        for (auto& cb : _notifications) {
+            cb.second(changes);
+        }
+
         _last_consumed_by_notifier = changes.back().offset;
     }
+
+    _last_consumed_by_notifier_offset = _pending_deltas.end()
+                                        - _pending_deltas.begin();
 
     /// Consume all pending deltas
     if (!_waiters.empty()) {
         changes.clear();
         changes.swap(_pending_deltas);
+        _last_consumed_by_notifier_offset = 0;
         std::vector<std::unique_ptr<waiter>> active_waiters;
         active_waiters.swap(_waiters);
         for (auto& w : active_waiters) {
@@ -662,6 +679,11 @@ topic_table::wait_for_changes(ss::abort_source& as) {
     if (!_pending_deltas.empty()) {
         ret_t ret;
         ret.swap(_pending_deltas);
+        // \ref notify_waiters uses this member to skip ahead in \ref
+        // _pending_deltas to items not yet sent to callbacks in \ref
+        // _notifications. Since we are clearing \ref _pending_deltas here we
+        // need to clear this member too.
+        _last_consumed_by_notifier_offset = 0;
         return ss::make_ready_future<ret_t>(std::move(ret));
     }
     auto w = std::make_unique<waiter>(_waiter_id++);

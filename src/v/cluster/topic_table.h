@@ -306,6 +306,7 @@ private:
     uint64_t _waiter_id{0};
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
+    std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
 };
 
