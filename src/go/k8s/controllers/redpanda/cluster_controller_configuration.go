@@ -414,7 +414,7 @@ func isSafeToRestart(
 ) bool {
 	configVersions := make(map[int64]bool)
 	for i := range clusterStatus {
-		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion)) // actually pod ordinal
+		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion))
 		configVersions[clusterStatus[i].ConfigVersion] = true
 	}
 	return len(configVersions) == 1

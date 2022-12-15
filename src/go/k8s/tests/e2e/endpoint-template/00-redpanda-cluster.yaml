@@ -23,7 +23,7 @@ spec:
     - external:
         enabled: true
         subdomain: example.com
-        endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-kafka"
+        endpointTemplate: "{{.PodOrdinal}}-{{.HostIP | sha256sum | substr 0 10}}-kafka"
       tls:
         enabled: true
         requireClientAuth: true
@@ -32,7 +32,7 @@ spec:
      - external:
          enabled: true
          subdomain: example.com
-         endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-pandaproxy"
+         endpointTemplate: "{{.PodOrdinal}}-{{.HostIP | sha256sum | substr 0 10}}-pandaproxy"
        tls:
          enabled: true
          requireClientAuth: true

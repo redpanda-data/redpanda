@@ -1207,7 +1207,7 @@ func TestCreation(t *testing.T) {
 			External: v1alpha1.ExternalConnectivityConfig{
 				Enabled:          true,
 				Subdomain:        "example.com",
-				EndpointTemplate: "{{.Index}}-broker",
+				EndpointTemplate: "{{.PodOrdinal}}-broker",
 			},
 		})
 		err := rp.ValidateCreate()
@@ -1224,7 +1224,7 @@ func TestCreation(t *testing.T) {
 		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			Subdomain:        commonDomain,
-			EndpointTemplate: "{{.Index | nonexistent }}",
+			EndpointTemplate: "{{.PodOrinal | nonexistent }}",
 		}}})
 		err := rp.ValidateCreate()
 		assert.Error(t, err)
@@ -1243,7 +1243,7 @@ func TestCreation(t *testing.T) {
 		rp.Spec.Configuration.PandaproxyAPI = append(rp.Spec.Configuration.PandaproxyAPI, v1alpha1.PandaproxyAPI{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 			Enabled:          true,
 			Subdomain:        commonDomain,
-			EndpointTemplate: "{{.Index}}-pp",
+			EndpointTemplate: "{{.PodOrdinal}}-pp",
 		}}})
 		err := rp.ValidateCreate()
 		assert.NoError(t, err)

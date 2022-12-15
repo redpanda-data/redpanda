@@ -25,18 +25,22 @@ func TestTemplateGen(t *testing.T) {
 	}{
 		{
 			tmpl:     "",
-			expected: "2", // Index
+			expected: "2", // PodOrdinal
 		},
 		{
-			tmpl:     "{{.Index}}",
+			tmpl:     "{{.Index}}", // backward compatibility
 			expected: "2",
 		},
 		{
-			tmpl:     "{{.Index}}-{{.HostIP | sha256sum | substr 0 8}}",
+			tmpl:     "{{.PodOrdinal}}",
+			expected: "2",
+		},
+		{
+			tmpl:     "{{.PodOrdinal}}-{{.HostIP | sha256sum | substr 0 8}}",
 			expected: "2-f1412386",
 		},
 		{
-			tmpl:  "abc-{{.Index}}-{{.HostIP}}-xyz",
+			tmpl:  "abc-{{.PodOrdinal}}-{{.HostIP}}-xyz",
 			error: true, // HostIP contains dots
 		},
 		{
@@ -48,11 +52,11 @@ func TestTemplateGen(t *testing.T) {
 			error: true, // undefined variable
 		},
 		{
-			tmpl:  "-{{.Index}}",
+			tmpl:  "-{{.PodOrdinal}}",
 			error: true, // invalid start character
 		},
 		{
-			tmpl:  "{{.Index}}-",
+			tmpl:  "{{.PodOrdinal}}-",
 			error: true, // invalid end character
 		},
 	}

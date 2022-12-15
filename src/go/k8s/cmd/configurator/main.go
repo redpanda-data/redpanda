@@ -122,21 +122,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	hostIndex, err := podOrdinal(c.hostName)
+	podOrdinal, err := getPodOrdinalFromHostname(c.hostName)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to extract host index: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to extract pod ordinal from hostname: %w", err))
 	}
 
-	log.Printf("Host index calculated %d", hostIndex)
+	log.Printf(`calculated Pod ordinal "%d"`, podOrdinal)
 
-	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort)
+	err = registerAdvertisedKafkaAPI(&c, cfg, podOrdinal, kafkaAPIPort)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to register advertised Kafka API: %w", err))
 	}
 
 	if cfg.Pandaproxy != nil && len(cfg.Pandaproxy.PandaproxyAPI) > 0 {
 		proxyAPIPort := getInternalProxyAPIPort(cfg)
-		err = registerAdvertisedPandaproxyAPI(&c, cfg, hostIndex, proxyAPIPort)
+		err = registerAdvertisedPandaproxyAPI(&c, cfg, podOrdinal, proxyAPIPort)
 		if err != nil {
 			log.Fatalf("%s", fmt.Errorf("unable to register advertised Pandaproxy API: %w", err))
 		}
@@ -148,7 +148,7 @@ func main() {
 		cfg.Redpanda.ID = nil
 	} else {
 		cfg.Redpanda.ID = new(int)
-		*cfg.Redpanda.ID = hostIndex
+		*cfg.Redpanda.ID = podOrdinal
 
 		// In case of a single seed server, the list should contain the current node itself.
 		// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
@@ -235,7 +235,7 @@ func getNode(nodeName string) (*corev1.Node, error) {
 }
 
 func registerAdvertisedKafkaAPI(
-	c *configuratorConfig, cfg *config.Config, index int, kafkaAPIPort int,
+	c *configuratorConfig, cfg *config.Config, podOrdinal int, kafkaAPIPort int,
 ) error {
 	cfg.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{
 		{
@@ -250,7 +250,7 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(index, c.hostIP)
+		data := utils.NewEndpointTemplateData(podOrdinal, c.hostIP)
 		ep, err := utils.ComputeEndpoint(c.externalConnectivityKafkaEndpointTemplate, data)
 		if err != nil {
 			return err
@@ -279,7 +279,7 @@ func registerAdvertisedKafkaAPI(
 }
 
 func registerAdvertisedPandaproxyAPI(
-	c *configuratorConfig, cfg *config.Config, index int, proxyAPIPort int,
+	c *configuratorConfig, cfg *config.Config, podOrdinal int, proxyAPIPort int,
 ) error {
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = []config.NamedSocketAddress{
 		{
@@ -295,7 +295,7 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
-		data := utils.NewEndpointTemplateData(index, c.hostIP)
+		data := utils.NewEndpointTemplateData(podOrdinal, c.hostIP)
 		ep, err := utils.ComputeEndpoint(c.externalConnectivityPandaProxyEndpointTemplate, data)
 		if err != nil {
 			return err
@@ -453,9 +453,9 @@ func checkEnvVars() (configuratorConfig, error) {
 	return c, result
 }
 
-// podOrdinal takes advantage of pod naming convention in Kubernetes StatfulSet
-// the last number is the index of replica.
-func podOrdinal(hostName string) (int, error) {
+// getPodOrdinalFromHostname takes advantage of pod naming convention in Kubernetes StatfulSet
+// the last number is the ordinal.
+func getPodOrdinalFromHostname(hostName string) (int, error) {
 	s := strings.Split(hostName, "-")
 	last := len(s) - 1
 	i, err := strconv.Atoi(s[last])

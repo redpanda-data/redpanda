@@ -11,6 +11,7 @@ package utils
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,8 +25,9 @@ var validEndpointRegexp = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-
 
 // EndpointTemplateData provides data necessary to fill endpoint templates.
 type EndpointTemplateData struct {
-	// Index is the Redpanda broker progressive number.
-	Index int
+	// PodOrdinal is the Pod Ordinal.
+	PodOrdinal int
+
 	// HostIP is the underlying host IP address. It should contain the
 	// value of hostIP that is also available in pod status (status.hostIP,
 	// available also in Kubernetes downward API).
@@ -33,22 +35,26 @@ type EndpointTemplateData struct {
 }
 
 // NewEndpointTemplateData creates endpoint template data with all required fields.
-func NewEndpointTemplateData(index int, hostIP string) EndpointTemplateData {
+func NewEndpointTemplateData(podOrdinal int, hostIP string) EndpointTemplateData {
 	return EndpointTemplateData{
-		Index:  index,
-		HostIP: hostIP,
+		PodOrdinal: podOrdinal,
+		HostIP:     hostIP,
 	}
 }
 
 // ComputeEndpoint constructs the expected endpoint name using the given
 // template.
 // In case the template is empty, the legacy method for computing the endpoint
-// name is used, which consists in using the plain index.
+// name is used, which consists in using the plain Pod ordinal.
 func ComputeEndpoint(tmpl string, data EndpointTemplateData) (string, error) {
 	if tmpl == "" {
-		return strconv.Itoa(data.Index), nil
+		return strconv.Itoa(data.PodOrdinal), nil
 	}
-	t, err := template.New("endpoint").Funcs(sprig.HermeticTxtFuncMap()).Parse(tmpl)
+	newTmpl := strings.ReplaceAll(tmpl, ".Index", ".PodOrdinal")
+	if strings.Compare(tmpl, newTmpl) != 0 {
+		log.Printf("warning: EndpointTemplate.Index is deprecated. Use EndpointTemplate.PodOrdinal instead: %s", newTmpl)
+	}
+	t, err := template.New("endpoint").Funcs(sprig.HermeticTxtFuncMap()).Parse(newTmpl)
 	if err != nil {
 		return "", fmt.Errorf("could not parse template %q: %w", tmpl, err)
 	}
