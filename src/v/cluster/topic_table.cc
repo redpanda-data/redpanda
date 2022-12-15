@@ -575,18 +575,15 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       storage::ntp_config::default_remote_delete);
 
     // generate deltas for controller backend
-    std::vector<topic_table_delta> deltas;
-    deltas.reserve(tp->second.get_assignments().size());
-    for (const auto& p_as : tp->second.get_assignments()) {
-        deltas.emplace_back(
+    const auto& assignments = tp->second.get_assignments();
+    _pending_deltas.reserve(_pending_deltas.size() + assignments.size());
+    for (auto& p_as : assignments) {
+        _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
           p_as,
           o,
           delta::op_type::update_properties);
     }
-
-    std::move(
-      deltas.begin(), deltas.end(), std::back_inserter(_pending_deltas));
 
     notify_waiters();
 
