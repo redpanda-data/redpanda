@@ -12,11 +12,11 @@
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
 #include "cloud_roles/signature.h"
+#include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/s3_client.h"
 #include "net/dns.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
-#include "s3/client.h"
-#include "s3/error.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -62,6 +62,20 @@ static constexpr const char* error_payload
     "Code><Message>Error.Message</"
     "Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</"
     "RequestId></Error>";
+static constexpr const char* no_such_key_payload = R"xml(
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchKey</Code>
+    <Message>Object not found</Message>
+</Error>
+)xml";
+static constexpr const char* no_such_bucket_payload = R"xml(
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchBucket</Code>
+    <Message>Bucket not found</Message>
+</Error>
+)xml";
 static constexpr const char* list_objects_payload = R"xml(
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>test-bucket</Name>
@@ -150,6 +164,19 @@ void set_routes(ss::httpd::routes& r) {
           return "unexpected!";
       },
       "txt");
+    auto key_not_found_response = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::not_found);
+          return no_such_key_payload;
+      },
+      "txt");
+    auto bucket_not_found_response = new function_handler(
+      []([[maybe_unused]] const_req req, reply& reply) {
+          reply.set_status(reply::status_type::not_found);
+          return no_such_bucket_payload;
+      },
+      "txt");
+
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -160,30 +187,41 @@ void set_routes(ss::httpd::routes& r) {
     r.add(
       operation_type::GET, url("/test-unexpected"), unexpected_error_response);
     r.add(operation_type::GET, url("/"), list_objects_response);
+    r.add(
+      operation_type::DELETE,
+      url("/test-key-not-found"),
+      key_not_found_response);
+    r.add(
+      operation_type::DELETE,
+      url("/test-bucket-not-found"),
+      bucket_not_found_response);
 }
 
 /// Http server and client
 struct configured_test_pair {
     ss::shared_ptr<ss::httpd::http_server_control> server;
-    ss::shared_ptr<s3::client> client;
+    ss::shared_ptr<cloud_storage_clients::s3_client> client;
 };
 
-s3::configuration transport_configuration() {
+cloud_storage_clients::configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    s3::configuration conf{
-      .uri = s3::access_point_uri(httpd_host_name),
+    cloud_storage_clients::configuration conf{
+      .uri = cloud_storage_clients::access_point_uri(httpd_host_name),
       .access_key = cloud_roles::public_key_str("acess-key"),
       .secret_key = cloud_roles::private_key_str("secret-key"),
       .region = cloud_roles::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
-    conf._probe = ss::make_shared<s3::client_probe>(
-      net::metrics_disabled::yes, "region", "endpoint");
+    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      "region",
+      "endpoint");
     return conf;
 }
 
 static ss::lw_shared_ptr<cloud_roles::apply_credentials>
-make_credentials(const s3::configuration& cfg) {
+make_credentials(const cloud_storage_clients::configuration& cfg) {
     return ss::make_lw_shared(
       cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
         cfg.access_key.value(),
@@ -194,8 +232,10 @@ make_credentials(const s3::configuration& cfg) {
 
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
-configured_test_pair started_client_and_server(const s3::configuration& conf) {
-    auto client = ss::make_shared<s3::client>(conf, make_credentials(conf));
+configured_test_pair
+started_client_and_server(const cloud_storage_clients::configuration& conf) {
+    auto client = ss::make_shared<cloud_storage_clients::s3_client>(
+      conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
@@ -216,8 +256,8 @@ SEASTAR_TEST_CASE(test_put_object_success) {
         auto payload_stream = make_iobuf_input_stream(std::move(payload));
         client
           ->put_object(
-            s3::bucket_name("test-bucket"),
-            s3::object_key("test"),
+            cloud_storage_clients::bucket_name("test-bucket"),
+            cloud_storage_clients::object_key("test"),
             expected_payload_size,
             std::move(payload_stream),
             {},
@@ -232,30 +272,24 @@ SEASTAR_TEST_CASE(test_put_object_success) {
 
 SEASTAR_TEST_CASE(test_put_object_failure) {
     return ss::async([] {
-        bool error_triggered = false;
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
         iobuf payload;
         payload.append(expected_payload, expected_payload_size);
         auto payload_stream = make_iobuf_input_stream(std::move(payload));
-        try {
-            client
-              ->put_object(
-                s3::bucket_name("test-bucket"),
-                s3::object_key("test-error"),
-                expected_payload_size,
-                std::move(payload_stream),
-                {},
-                100ms)
-              .get();
-        } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
-            BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
-            BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
-            BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
-            error_triggered = true;
-        }
-        BOOST_REQUIRE(error_triggered);
+        const auto result = client
+                              ->put_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test-error"),
+                                expected_payload_size,
+                                std::move(payload_stream),
+                                {},
+                                100ms)
+                              .get();
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
         server->stop().get();
     });
 }
@@ -266,13 +300,17 @@ SEASTAR_TEST_CASE(test_get_object_success) {
         auto [server, client] = started_client_and_server(conf);
         iobuf payload;
         auto payload_stream = make_iobuf_ref_output_stream(payload);
-        auto http_response = client
-                               ->get_object(
-                                 s3::bucket_name("test-bucket"),
-                                 s3::object_key("test"),
-                                 100ms)
-                               .get0();
-        auto input_stream = http_response->as_input_stream();
+        const auto result = client
+                              ->get_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test"),
+                                100ms)
+                              .get0();
+
+        BOOST_REQUIRE(result);
+
+        auto input_stream = result.value()->as_input_stream();
         ss::copy(input_stream, payload_stream).get0();
         iobuf_parser p(std::move(payload));
         auto actual_payload = p.read_string(p.bytes_left());
@@ -283,24 +321,18 @@ SEASTAR_TEST_CASE(test_get_object_success) {
 
 SEASTAR_TEST_CASE(test_get_object_failure) {
     return ss::async([] {
-        bool error_triggered = false;
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        try {
-            auto http_response = client
-                                   ->get_object(
-                                     s3::bucket_name("test-bucket"),
-                                     s3::object_key("test-error"),
-                                     100ms)
-                                   .get0();
-        } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
-            BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
-            BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
-            BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
-            error_triggered = true;
-        }
-        BOOST_REQUIRE(error_triggered);
+        const auto result = client
+                              ->get_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test-error"),
+                                100ms)
+                              .get0();
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
         server->stop().get();
     });
 }
@@ -309,54 +341,96 @@ SEASTAR_TEST_CASE(test_delete_object_success) {
     return ss::async([] {
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        client
-          ->delete_object(
-            s3::bucket_name("test-bucket"), s3::object_key("test"), 100ms)
-          .get0();
+        const auto result = client
+                              ->delete_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test"),
+                                100ms)
+                              .get0();
+
+        BOOST_REQUIRE(result);
         server->stop().get();
     });
 }
 
 SEASTAR_TEST_CASE(test_delete_object_failure) {
     return ss::async([] {
-        bool error_triggered = false;
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        try {
-            client
+
+        const auto result = client
+                              ->delete_object(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test-error"),
+                                100ms)
+                              .get0();
+
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_delete_object_not_found) {
+    /*
+     * Google Cloud Storage returns a 404 Not Found response when
+     * attempting to delete an object that does not exist. In order
+     * to mimic the AWS S3 behaviour (where no error is returned),
+     * the error is ignored and logged by the client.
+     */
+    return ss::async([] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+
+        const auto result
+          = client
               ->delete_object(
-                s3::bucket_name("test-bucket"),
-                s3::object_key("test-error"),
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-key-not-found"),
                 100ms)
               .get0();
-        } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
-            BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
-            BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
-            BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
-            error_triggered = true;
-        }
-        BOOST_REQUIRE(error_triggered);
+
+        BOOST_REQUIRE(result);
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_delete_bucket_not_found) {
+    return ss::async([] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+
+        const auto result
+          = client
+              ->delete_object(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-bucket-not-found"),
+                100ms)
+              .get0();
+
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE(
+          result.error()
+          == cloud_storage_clients::error_outcome::bucket_not_found);
         server->stop().get();
     });
 }
 
 SEASTAR_TEST_CASE(test_unexpected_error_message) {
     return ss::async([] {
-        bool error_triggered = false;
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        try {
-            auto http_response = client
-                                   ->get_object(
-                                     s3::bucket_name("test-bucket"),
-                                     s3::object_key("test-unexpected"),
-                                     100ms)
-                                   .get0();
-        } catch (...) {
-            error_triggered = true;
-        }
-        BOOST_REQUIRE(error_triggered);
+        const auto result
+          = client
+              ->get_object(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test-unexpected"),
+                100ms)
+              .get0();
+        BOOST_REQUIRE(!result);
         server->stop().get();
     });
 }
@@ -375,10 +449,16 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
         auto [server, client] = started_client_and_server(conf);
         iobuf payload;
         auto payload_stream = make_iobuf_ref_output_stream(payload);
-        auto lst = client
-                     ->list_objects_v2(
-                       s3::bucket_name("test-bucket"), s3::object_key("test"))
-                     .get0();
+        const auto result = client
+                              ->list_objects(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test"))
+                              .get0();
+
+        BOOST_REQUIRE(result);
+        const auto& lst = result.value();
+
         BOOST_REQUIRE_EQUAL(lst.is_truncated, false);
         BOOST_REQUIRE_EQUAL(lst.prefix, "test-prefix");
         // item 0
@@ -397,23 +477,18 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
 
 SEASTAR_TEST_CASE(test_list_objects_failure) {
     return ss::async([] {
-        bool error_triggered = false;
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        try {
-            auto lst = client
-                         ->list_objects_v2(
-                           s3::bucket_name("test-bucket"),
-                           s3::object_key("test-error"))
-                         .get0();
-        } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
-            BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
-            BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
-            BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
-            error_triggered = true;
-        }
-        BOOST_REQUIRE(error_triggered);
+        const auto result = client
+                              ->list_objects(
+                                cloud_storage_clients::bucket_name(
+                                  "test-bucket"),
+                                cloud_storage_clients::object_key("test-error"))
+                              .get0();
+
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE_EQUAL(
+          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
         server->stop().get();
     });
 }
@@ -421,20 +496,21 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
 /// Http server and client
 struct configured_server_and_client_pool {
     ss::shared_ptr<ss::httpd::http_server_control> server;
-    ss::shared_ptr<s3::client_pool> pool;
+    ss::shared_ptr<cloud_storage_clients::client_pool> pool;
 };
 /// Create server and client connection pool, server is initialized with default
 /// testing paths and listening.
 configured_server_and_client_pool started_pool_and_server(
   size_t size,
-  s3::client_pool_overdraft_policy policy,
-  const s3::configuration& conf) {
+  cloud_storage_clients::client_pool_overdraft_policy policy,
+  const cloud_storage_clients::configuration& conf) {
     auto credentials = cloud_roles::aws_credentials{
       conf.access_key.value(),
       conf.secret_key.value(),
       std::nullopt,
       conf.region};
-    auto client = ss::make_shared<s3::client_pool>(size, conf, policy);
+    auto client = ss::make_shared<cloud_storage_clients::client_pool>(
+      size, conf, policy);
     client->load_credentials(std::move(credentials));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
@@ -449,26 +525,32 @@ configured_server_and_client_pool started_pool_and_server(
 
 static ss::future<> test_client_pool_payload(
   ss::shared_ptr<ss::httpd::http_server_control> server,
-  s3::client_pool::client_lease lease) {
+  cloud_storage_clients::client_pool::client_lease lease) {
     auto client = lease.client;
     iobuf payload;
     auto payload_stream = make_iobuf_ref_output_stream(payload);
-    auto http_response = co_await client->get_object(
-      s3::bucket_name("test-bucket"), s3::object_key("test"), 100ms);
-    auto input_stream = http_response->as_input_stream();
+    auto result = co_await client->get_object(
+      cloud_storage_clients::bucket_name("test-bucket"),
+      cloud_storage_clients::object_key("test"),
+      100ms);
+    BOOST_REQUIRE(result);
+
+    auto input_stream = result.value()->as_input_stream();
     co_await ss::copy(input_stream, payload_stream);
     iobuf_parser p(std::move(payload));
     auto actual_payload = p.read_string(p.bytes_left());
     BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
 }
 
-void test_client_pool(s3::client_pool_overdraft_policy policy) {
+void test_client_pool(
+  cloud_storage_clients::client_pool_overdraft_policy policy) {
     auto conf = transport_configuration();
     auto [server, pool] = started_pool_and_server(2, policy, conf);
     std::vector<ss::future<>> fut;
     for (size_t i = 0; i < 20; i++) {
         auto f = pool->acquire().then(
-          [server = server](s3::client_pool::client_lease lease) {
+          [server = server](
+            cloud_storage_clients::client_pool::client_lease lease) {
               return test_client_pool_payload(server, std::move(lease));
           });
         fut.emplace_back(std::move(f));
@@ -480,27 +562,33 @@ void test_client_pool(s3::client_pool_overdraft_policy policy) {
 
 SEASTAR_TEST_CASE(test_client_pool_wait_strategy) {
     return ss::async([] {
-        test_client_pool(s3::client_pool_overdraft_policy::wait_if_empty);
+        test_client_pool(
+          cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty);
     });
 }
 
 SEASTAR_TEST_CASE(test_client_pool_create_new_strategy) {
     return ss::async([] {
-        test_client_pool(s3::client_pool_overdraft_policy::create_new_if_empty);
+        test_client_pool(cloud_storage_clients::client_pool_overdraft_policy::
+                           create_new_if_empty);
     });
 }
 
 static ss::future<bool> test_client_pool_reconnect_helper(
   ss::shared_ptr<ss::httpd::http_server_control> server,
-  s3::client_pool::client_lease lease) {
+  cloud_storage_clients::client_pool::client_lease lease) {
     auto client = lease.client;
     co_await ss::sleep(100ms);
     iobuf payload;
     auto payload_stream = make_iobuf_ref_output_stream(payload);
     try {
-        auto http_response = co_await client->get_object(
-          s3::bucket_name("test-bucket"), s3::object_key("test"), 100ms);
-        auto input_stream = http_response->as_input_stream();
+        auto result = co_await client->get_object(
+          cloud_storage_clients::bucket_name("test-bucket"),
+          cloud_storage_clients::object_key("test"),
+          100ms);
+        BOOST_REQUIRE(result);
+
+        auto input_stream = result.value()->as_input_stream();
         co_await ss::copy(input_stream, payload_stream);
         iobuf_parser p(std::move(payload));
         auto actual_payload = p.read_string(p.bytes_left());
@@ -517,12 +605,15 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
         using namespace std::chrono_literals;
         auto conf = transport_configuration();
         auto [server, pool] = started_pool_and_server(
-          2, s3::client_pool_overdraft_policy::wait_if_empty, conf);
+          2,
+          cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty,
+          conf);
 
         std::vector<ss::future<bool>> fut;
         for (size_t i = 0; i < 20; i++) {
             auto f = pool->acquire().then(
-              [server = server](s3::client_pool::client_lease lease) {
+              [server = server](
+                cloud_storage_clients::client_pool::client_lease lease) {
                   return test_client_pool_reconnect_helper(
                     server, std::move(lease));
               });

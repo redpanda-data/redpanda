@@ -41,7 +41,7 @@ using segment_time_limit
 /// Archiver service configuration
 struct configuration {
     /// Bucket used to store all archived data
-    s3::bucket_name bucket_name;
+    cloud_storage_clients::bucket_name bucket_name;
     /// Time interval to reconcile the set of archivers
     ss::lowres_clock::duration reconciliation_interval;
     /// Initial backoff for requests to cloud storage

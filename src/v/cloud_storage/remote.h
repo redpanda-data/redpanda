@@ -15,9 +15,10 @@
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/client.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
-#include "s3/client.h"
 #include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 
@@ -67,7 +68,7 @@ public:
     auth_refresh_bg_op(
       ss::gate& gate,
       ss::abort_source& as,
-      s3::configuration s3_conf,
+      cloud_storage_clients::client_configuration client_conf,
       model::cloud_credentials_source cloud_credentials_source);
 
     /// Helper to decide if credentials will be regularly fetched from
@@ -91,8 +92,7 @@ private:
 
     ss::gate& _gate;
     ss::abort_source& _as;
-    s3::configuration _s3_conf;
-    cloud_roles::aws_region_name _region_name;
+    cloud_storage_clients::client_configuration _client_conf;
     model::cloud_credentials_source _cloud_credentials_source;
     std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
 };
@@ -107,9 +107,12 @@ private:
 class remote : public ss::peering_sharded_service<remote> {
 public:
     /// Default tags applied to objects
-    static const s3::object_tag_formatter default_segment_tags;
-    static const s3::object_tag_formatter default_partition_manifest_tags;
-    static const s3::object_tag_formatter default_topic_manifest_tags;
+    static const cloud_storage_clients::object_tag_formatter
+      default_segment_tags;
+    static const cloud_storage_clients::object_tag_formatter
+      default_partition_manifest_tags;
+    static const cloud_storage_clients::object_tag_formatter
+      default_topic_manifest_tags;
 
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -136,7 +139,7 @@ public:
     /// \param conf is an S3 configuration
     remote(
       s3_connection_limit limit,
-      const s3::configuration& conf,
+      const cloud_storage_clients::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
     ~remote();
@@ -170,7 +173,7 @@ public:
     /// \param manifest is a manifest to download
     /// \return future that returns success code
     ss::future<download_result> download_manifest(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
@@ -189,7 +192,7 @@ public:
     /// \param manifest is a manifest to download
     /// \return future that returns success code
     ss::future<download_result> maybe_download_manifest(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
@@ -200,10 +203,11 @@ public:
     /// \param manifest is a manifest to upload
     /// \return future that returns success code
     ss::future<upload_result> upload_manifest(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
       retry_chain_node& parent,
-      const s3::object_tag_formatter& tags = default_partition_manifest_tags);
+      const cloud_storage_clients::object_tag_formatter& tags
+      = default_partition_manifest_tags);
 
     /// \brief Upload segment to S3
     ///
@@ -214,13 +218,14 @@ public:
     /// \param exposed_name is a segment's name in S3
     /// \param manifest is a manifest that should have the segment metadata
     ss::future<upload_result> upload_segment(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& segment_path,
       uint64_t content_length,
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source,
-      const s3::object_tag_formatter& tags = default_segment_tags);
+      const cloud_storage_clients::object_tag_formatter& tags
+      = default_segment_tags);
 
     /// \brief Download segment from S3
     ///
@@ -231,14 +236,14 @@ public:
     /// \param name is a segment's name in S3
     /// \param manifest is a manifest that should have the segment metadata
     ss::future<download_result> download_segment(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
       const try_consume_stream& cons_str,
       retry_chain_node& parent);
 
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
       retry_chain_node& parent);
 
@@ -249,12 +254,12 @@ public:
     /// \param path is a full S3 object path
     /// \param bucket is a name of the S3 bucket
     ss::future<upload_result> delete_object(
-      const s3::bucket_name& bucket,
-      const s3::object_key& path,
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
     ss::future<download_result> do_download_manifest(
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent,
@@ -263,21 +268,22 @@ public:
     materialized_segments& materialized() { return *_materialized; }
 
     /// Add partition manifest tags (includes partition id)
-    static s3::object_tag_formatter make_partition_manifest_tags(
+    static cloud_storage_clients::object_tag_formatter
+    make_partition_manifest_tags(
       const model::ntp& ntp, model::initial_revision_id rev);
     /// Add topic manifest tags (no partition id)
-    static s3::object_tag_formatter make_topic_manifest_tags(
+    static cloud_storage_clients::object_tag_formatter make_topic_manifest_tags(
       const model::topic_namespace& ntp, model::initial_revision_id rev);
     /// Add segment level tags
-    static s3::object_tag_formatter
+    static cloud_storage_clients::object_tag_formatter
     make_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
     /// Add tags for tx-manifest
-    static s3::object_tag_formatter make_tx_manifest_tags(
+    static cloud_storage_clients::object_tag_formatter make_tx_manifest_tags(
       const model::ntp& ntp, model::initial_revision_id rev);
 
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
-    s3::client_pool _pool;
+    cloud_storage_clients::client_pool _pool;
     ss::gate _gate;
     ss::abort_source _as;
     auth_refresh_bg_op _auth_refresh_bg_op;

@@ -14,6 +14,6 @@
 
 #include <seastar/util/log.hh>
 
-namespace s3 {
+namespace cloud_storage_clients {
 inline ss::logger s3_log("s3");
-} // namespace s3
+} // namespace cloud_storage_clients

@@ -12,6 +12,7 @@
 #pragma once
 #include "archival/types.h"
 #include "cloud_roles/types.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
@@ -38,7 +39,6 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "s3/configuration.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -74,7 +74,8 @@ public:
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown,
-      std::optional<s3::configuration> s3_config = std::nullopt,
+      std::optional<cloud_storage_clients::configuration> s3_config
+      = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       configure_node_id use_node_id = configure_node_id::yes,
@@ -192,10 +193,10 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    static s3::configuration get_s3_config() {
+    static cloud_storage_clients::configuration get_s3_config() {
         net::unresolved_address server_addr("127.0.0.1", 4430);
-        s3::configuration s3conf{
-          .uri = s3::access_point_uri("127.0.0.1"),
+        cloud_storage_clients::configuration s3conf{
+          .uri = cloud_storage_clients::access_point_uri("127.0.0.1"),
           .access_key = cloud_roles::public_key_str("acess-key"),
           .secret_key = cloud_roles::private_key_str("secret-key"),
           .region = cloud_roles::aws_region_name("us-east-1"),
@@ -206,7 +207,7 @@ public:
 
     static archival::configuration get_archival_config() {
         archival::configuration aconf;
-        aconf.bucket_name = s3::bucket_name("test-bucket");
+        aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
         aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
         aconf.cloud_storage_initial_backoff = 100ms;
@@ -220,7 +221,7 @@ public:
         auto s3conf = get_s3_config();
         cloud_storage::configuration cconf;
         cconf.client_config = s3conf;
-        cconf.bucket_name = s3::bucket_name("test-bucket");
+        cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
         cconf.connection_limit = archival::s3_connection_limit(4);
         cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
         return cconf;
@@ -232,7 +233,8 @@ public:
       int32_t rpc_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
-      std::optional<s3::configuration> s3_config = std::nullopt,
+      std::optional<cloud_storage_clients::configuration> s3_config
+      = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       configure_node_id use_node_id = configure_node_id::yes,

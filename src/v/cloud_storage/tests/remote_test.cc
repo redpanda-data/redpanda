@@ -18,8 +18,6 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
-#include "s3/client.h"
-#include "s3/client_probe.h"
 #include "seastarx.h"
 #include "storage/directories.h"
 #include "test_utils/async.h"
@@ -89,7 +87,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .download_manifest(
-                   s3::bucket_name("bucket"),
+                   cloud_storage_clients::bucket_name("bucket"),
                    remote_manifest_path(std::filesystem::path(manifest_url)),
                    actual,
                    fib)
@@ -107,7 +105,7 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .download_manifest(
-                   s3::bucket_name("bucket"),
+                   cloud_storage_clients::bucket_name("bucket"),
                    remote_manifest_path(std::filesystem::path(manifest_url)),
                    actual,
                    fib)
@@ -134,7 +132,7 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .upload_segment(
-                   s3::bucket_name("bucket"),
+                   cloud_storage_clients::bucket_name("bucket"),
                    path,
                    clen,
                    reset_stream,
@@ -169,7 +167,7 @@ FIXTURE_TEST(
       "lost leadership", [](auto&) { return true; }};
     auto res = remote
                  .upload_segment(
-                   s3::bucket_name("bucket"),
+                   cloud_storage_clients::bucket_name("bucket"),
                    path,
                    clen,
                    reset_stream,
@@ -198,7 +196,7 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .upload_segment(
-                   s3::bucket_name("bucket"),
+                   cloud_storage_clients::bucket_name("bucket"),
                    path,
                    clen,
                    reset_stream,
@@ -211,7 +209,7 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -253,7 +251,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -272,7 +270,7 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -304,7 +302,7 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
@@ -318,7 +316,7 @@ FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto name = segment_name("0-1-v1.log");
     auto path = generate_remote_segment_path(
@@ -344,7 +342,9 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     // mock to work correctly.
 
     auto expected_success
-      = remote.delete_object(bucket, s3::object_key(path), fib).get();
+      = remote
+          .delete_object(bucket, cloud_storage_clients::object_key(path), fib)
+          .get();
     BOOST_REQUIRE(expected_success == upload_result::success);
 
     auto expected_notfound = remote.segment_exists(bucket, path, fib).get();
@@ -375,7 +375,7 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
     }
 
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     auto path = generate_remote_segment_path(
       test_ntp,

@@ -15,12 +15,11 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/client.h"
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "s3/client.h"
-#include "s3/configuration.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
 #include "utils/retry_chain_node.h"
@@ -303,7 +302,7 @@ private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     model::term_id _start_term;
     archival_policy _policy;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
@@ -332,9 +331,9 @@ private:
     loop_state _upload_loop_state{loop_state::initial};
     loop_state _sync_manifest_loop_state{loop_state::initial};
 
-    const s3::object_tag_formatter _segment_tags;
-    const s3::object_tag_formatter _manifest_tags;
-    const s3::object_tag_formatter _tx_tags;
+    const cloud_storage_clients::object_tag_formatter _segment_tags;
+    const cloud_storage_clients::object_tag_formatter _manifest_tags;
+    const cloud_storage_clients::object_tag_formatter _tx_tags;
 };
 
 } // namespace archival

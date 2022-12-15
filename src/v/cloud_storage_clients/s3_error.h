@@ -19,7 +19,7 @@
 #include <system_error>
 #include <variant>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// \brief Internal s3 client error code
 enum class s3_client_error_code : int {
@@ -158,4 +158,4 @@ private:
     ss::sstring _resource;
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients

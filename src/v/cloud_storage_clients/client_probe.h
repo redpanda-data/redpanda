@@ -10,16 +10,17 @@
 
 #pragma once
 
+#include "cloud_storage_clients/s3_error.h"
 #include "http/probe.h"
 #include "model/fundamental.h"
 #include "net/types.h"
-#include "s3/error.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
 #include <cstdint>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 /// \brief S3 client probe
 ///
@@ -42,12 +43,24 @@ public:
     /// \param region is a cloud provider region
     /// \param endpoint is a cloud provider endpoint
     client_probe(
-      net::metrics_disabled disable, ss::sstring region, ss::sstring endpoint);
+      net::metrics_disabled disable,
+      net::public_metrics_disabled public_disable,
+      ss::sstring region,
+      ss::sstring endpoint);
 
     /// Register S3 rpc error
     void register_failure(s3_error_code err);
 
 private:
+    void setup_internal_metrics(
+      net::metrics_disabled disable,
+      const ss::sstring& region,
+      const ss::sstring& endpoint);
+    void setup_public_metrics(
+      net::public_metrics_disabled disable,
+      const ss::sstring& region,
+      const ss::sstring& endpoint);
+
     /// Total number of rpc errors
     uint64_t _total_rpc_errors;
     /// Total number of SlowDown responses
@@ -55,6 +68,8 @@ private:
     /// Total number of NoSuchKey responses
     uint64_t _total_nosuchkeys;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
-} // namespace s3
+} // namespace cloud_storage_clients

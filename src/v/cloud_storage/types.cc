@@ -124,29 +124,31 @@ ss::future<configuration> configuration::get_config() {
       config::shard_local_cfg().disable_public_metrics());
 
     // Set default overrides
-    s3::default_overrides overrides;
+    cloud_storage_clients::default_overrides overrides;
     overrides.max_idle_time
       = config::shard_local_cfg()
           .cloud_storage_max_connection_idle_time_ms.value();
     if (auto optep
         = config::shard_local_cfg().cloud_storage_api_endpoint.value();
         optep.has_value()) {
-        overrides.endpoint = s3::endpoint_url(*optep);
+        overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
     }
     overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
     if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
         cert.has_value()) {
-        overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
+        overrides.trust_file = cloud_storage_clients::ca_trust_file(
+          std::filesystem::path(*cert));
     }
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
-    auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key,
-      secret_key,
-      region,
-      overrides,
-      disable_metrics,
-      disable_public_metrics);
+    auto s3_conf
+      = co_await cloud_storage_clients::configuration::make_configuration(
+        access_key,
+        secret_key,
+        region,
+        overrides,
+        disable_metrics,
+        disable_public_metrics);
 
     configuration cfg{
       .client_config = std::move(s3_conf),
@@ -154,7 +156,7 @@ ss::future<configuration> configuration::get_config() {
         config::shard_local_cfg().cloud_storage_max_connections.value()),
       .metrics_disabled = remote_metrics_disabled(
         static_cast<bool>(disable_metrics)),
-      .bucket_name = s3::bucket_name(get_value_or_throw(
+      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
       .cloud_credentials_source = cloud_credentials_source,

@@ -13,7 +13,6 @@
 #include "cluster/fwd.h"
 #include "features/fwd.h"
 #include "model/fundamental.h"
-#include "s3/client.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
@@ -106,7 +105,7 @@ public:
     cloud_storage::remote& get_remote();
 
     /// Get configured bucket
-    s3::bucket_name get_bucket() const;
+    cloud_storage_clients::bucket_name get_bucket() const;
 
     /// Total size of data that have to be uploaded
     uint64_t estimate_backlog_size();

@@ -82,7 +82,7 @@ public:
       raft::group_id,
       std::vector<model::broker>,
       std::optional<remote_topic_properties> = std::nullopt,
-      std::optional<s3::bucket_name> = std::nullopt);
+      std::optional<cloud_storage_clients::bucket_name> = std::nullopt);
 
     ss::future<> shutdown(const model::ntp& ntp);
 

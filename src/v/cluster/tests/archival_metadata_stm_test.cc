@@ -55,18 +55,20 @@ struct archival_metadata_stm_base_fixture
     operator=(archival_metadata_stm_base_fixture&&)
       = delete;
 
-    static s3::configuration get_s3_configuration() {
+    static cloud_storage_clients::configuration get_s3_configuration() {
         net::unresolved_address server_addr(
           ss::sstring(httpd_host_name), httpd_port_number);
-        s3::configuration conf{
-          .uri = s3::access_point_uri(ss::sstring(httpd_host_name)),
+        cloud_storage_clients::configuration conf{
+          .uri = cloud_storage_clients::access_point_uri(
+            ss::sstring(httpd_host_name)),
           .access_key = cloud_roles::public_key_str("acess-key"),
           .secret_key = cloud_roles::private_key_str("secret-key"),
           .region = cloud_roles::aws_region_name("us-east-1"),
         };
         conf.server_addr = server_addr;
-        conf._probe = ss::make_shared<s3::client_probe>(
+        conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
           net::metrics_disabled::yes,
+          net::public_metrics_disabled::yes,
           "us-east-1",
           ss::sstring(httpd_host_name));
         return conf;
@@ -79,7 +81,8 @@ struct archival_metadata_stm_base_fixture
         cloud_cfg.start().get();
         cloud_cfg
           .invoke_on_all([](cloud_storage::configuration& cfg) {
-              cfg.bucket_name = s3::bucket_name("panda-bucket");
+              cfg.bucket_name = cloud_storage_clients::bucket_name(
+                "panda-bucket");
               cfg.metrics_disabled
                 = cloud_storage::remote_metrics_disabled::yes;
               cfg.connection_limit = cloud_storage::s3_connection_limit(10);

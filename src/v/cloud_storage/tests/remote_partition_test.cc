@@ -20,13 +20,12 @@
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "s3/client.h"
-#include "s3/configuration.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -461,7 +460,7 @@ static void reupload_compacted_segments(
             };
             api
               .upload_segment(
-                s3::bucket_name("bucket"),
+                cloud_storage_clients::bucket_name("bucket"),
                 url,
                 meta.size_bytes,
                 std::move(reset_stream),
@@ -583,8 +582,8 @@ static auto setup_s3_imposter(
     return segments;
 }
 
-static partition_manifest
-hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
+static partition_manifest hydrate_manifest(
+  remote& api, const cloud_storage_clients::bucket_name& bucket) {
     partition_manifest m(manifest_ntp, manifest_revision);
     retry_chain_node rtc(1s, 200ms);
     auto key = m.get_manifest_path();
@@ -597,7 +596,7 @@ hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
 static model::record_batch_header read_single_batch_from_remote_partition(
   cloud_storage_fixture& fixture, model::offset target) {
     auto conf = fixture.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -628,7 +627,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 static std::vector<model::record_batch_header> scan_remote_partition(
   cloud_storage_fixture& imposter, model::offset base, model::offset max) {
     auto conf = imposter.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1168,7 +1167,7 @@ scan_remote_partition_incrementally(
   model::offset max,
   size_t maybe_max_bytes = 0) {
     auto conf = imposter.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1267,7 +1266,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1326,12 +1325,15 @@ static void remove_segment_from_s3(
   const cloud_storage::partition_manifest& m,
   model::offset o,
   cloud_storage::remote& api,
-  const s3::bucket_name& bucket) {
+  const cloud_storage_clients::bucket_name& bucket) {
     auto meta = m.get(o);
     BOOST_REQUIRE(meta != nullptr);
     auto path = m.generate_segment_path(*meta);
     retry_chain_node fib(10s, 1s);
-    auto res = api.delete_object(bucket, s3::object_key(path()), fib).get();
+    auto res = api
+                 .delete_object(
+                   bucket, cloud_storage_clients::object_key(path()), fib)
+                 .get();
     BOOST_REQUIRE(res == cloud_storage::upload_result::success);
 }
 
@@ -1362,7 +1364,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
 
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1467,7 +1469,7 @@ FIXTURE_TEST(
 
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1556,7 +1558,7 @@ FIXTURE_TEST(
 
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1645,7 +1647,7 @@ scan_remote_partition_incrementally_with_reuploads(
   model::offset max,
   std::vector<in_memory_segment> segments) {
     auto conf = imposter.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });

@@ -11,21 +11,12 @@
 #pragma once
 
 #include "cloud_roles/types.h"
-#include "model/fundamental.h"
+#include "cloud_storage_clients/client_probe.h"
+#include "cloud_storage_clients/types.h"
 #include "net/transport.h"
 #include "net/types.h"
 
-#include <seastar/core/sstring.hh>
-
-namespace s3 {
-
-class client_probe;
-
-using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
-using object_key = named_type<std::filesystem::path, struct s3_object_key>;
-using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
-using ca_trust_file
-  = named_type<std::filesystem::path, struct s3_ca_trust_file>;
+namespace cloud_storage_clients {
 
 /// List of default overrides that can be used to workaround issues
 /// that can arise when we want to deal with different S3 API implementations
@@ -76,4 +67,17 @@ struct configuration : net::base_transport::configuration {
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& c);
 };
-} // namespace s3
+
+template<typename T>
+concept net_base_configuration
+  = std::is_base_of_v<net::base_transport::configuration, T>;
+
+template<net_base_configuration... Ts>
+using client_configuration_variant = std::variant<Ts...>;
+
+using client_configuration = client_configuration_variant<configuration>;
+
+template<typename>
+inline constexpr bool always_false_v = false;
+
+} // namespace cloud_storage_clients

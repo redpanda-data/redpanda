@@ -8,17 +8,18 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/client.h"
+#include "cloud_storage_clients/s3_client.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage_clients/logger.h"
+#include "cloud_storage_clients/s3_error.h"
 #include "hashing/secure.h"
 #include "http/client.h"
+#include "net/connection.h"
 #include "net/tls.h"
 #include "net/types.h"
-#include "s3/error.h"
-#include "s3/logger.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
 
@@ -47,7 +48,7 @@
 #include <exception>
 #include <utility>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 // Close all connections that were used more than 5 seconds ago.
 // AWS S3 endpoint has timeout of 10 seconds. But since we're supporting
@@ -139,7 +140,7 @@ ss::future<configuration> configuration::make_configuration(
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
     client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics, region(), endpoint_uri);
+      disable_metrics, disable_public_metrics, region(), endpoint_uri);
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
@@ -358,7 +359,7 @@ parse_timestamp(std::string_view sv) {
     return std::chrono::system_clock::from_time_t(timegm(&tm));
 }
 
-static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
+static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
     try {
         for (auto& frag : buf) {
             vlog(
@@ -366,11 +367,11 @@ static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
               "iobuf_to_list_bucket_result part {}",
               ss::sstring{frag.get(), frag.size()});
         }
-        client::list_bucket_result result;
+        s3_client::list_bucket_result result;
         auto root = iobuf_to_ptree(std::move(buf));
         for (const auto& [tag, value] : root.get_child("ListBucketResult")) {
             if (tag == "Contents") {
-                client::list_bucket_item item;
+                s3_client::list_bucket_item item;
                 for (const auto& [item_tag, item_value] : value) {
                     if (item_tag == "Key") {
                         item.key = item_value.get_value<ss::sstring>();
@@ -407,7 +408,7 @@ parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
         // Without a proper code, we treat it as a hint to gracefully retry
         // (synthesize the slow_down code).
         rest_error_response err(
-          fmt::format("{}", s3::s3_error_code::slow_down),
+          fmt::format("{}", cloud_storage_clients::s3_error_code::slow_down),
           fmt::format("Empty error response, status code {}", result),
           "",
           "");
@@ -473,14 +474,109 @@ drain_response_stream(http::client::response_stream_ref resp) {
       });
 }
 
-client::client(
+template<typename T>
+ss::future<result<T, error_outcome>> s3_client::send_request(
+  ss::future<T> request_future,
+  const bucket_name& bucket,
+  const object_key& key) {
+    auto outcome = error_outcome::retry;
+
+    try {
+        co_return co_await std::move(request_future);
+    } catch (const rest_error_response& err) {
+        if (err.code() == s3_error_code::no_such_key) {
+            // Unexpected 404s are logged by 'request_future' at warn
+            // level, so only log at debug level here.
+            vlog(s3_log.debug, "NoSuchKey response received {}", key);
+            outcome = error_outcome::key_not_found;
+        } else if (err.code() == s3_error_code::no_such_bucket) {
+            vlog(
+              s3_log.error,
+              "The specified S3 bucket, {}, could not be found. Ensure that "
+              "your bucket exists and that the cloud_storage_bucket and "
+              "cloud_storage_region cluster configs are correct.",
+              bucket());
+
+            outcome = error_outcome::bucket_not_found;
+        } else if (
+          err.code() == s3_error_code::slow_down
+          || err.code() == s3_error_code::internal_error) {
+            // This can happen when we're dealing with high request rate to
+            // the manifest's prefix. Backoff algorithm should be applied.
+            // In principle only slow_down should occur, but in practice
+            // AWS S3 does return internal_error as well sometimes.
+            vlog(s3_log.warn, "{} response received {}", err.code(), bucket);
+            outcome = error_outcome::retry_slowdown;
+        } else {
+            // Unexpected REST API error, we can't recover from this
+            // because the issue is not temporary (e.g. bucket doesn't
+            // exist)
+            vlog(
+              s3_log.error,
+              "Accessing {}, unexpected REST API error \"{}\" detected, "
+              "code: "
+              "{}, request_id: {}, resource: {}",
+              bucket,
+              err.message(),
+              err.code_string(),
+              err.request_id(),
+              err.resource());
+            outcome = error_outcome::fail;
+        }
+    } catch (const std::system_error& cerr) {
+        // The system_error is type erased and not convenient for selective
+        // handling. The following errors should be retried:
+        // - connection refused, timed out or reset by peer
+        // - network temporary unavailable
+        // Shouldn't be retried
+        // - any filesystem error
+        // - broken-pipe
+        // - any other network error (no memory, bad socket, etc)
+        if (net::is_reconnect_error(cerr)) {
+            vlog(
+              s3_log.warn,
+              "System error susceptible for retry {}",
+              cerr.what());
+        } else {
+            vlog(s3_log.error, "System error {}", cerr);
+            outcome = error_outcome::fail;
+        }
+    } catch (const ss::timed_out_error& terr) {
+        // This should happen when the connection pool was disconnected
+        // from the S3 endpoint and subsequent connection attmpts failed.
+        vlog(s3_log.warn, "Connection timeout {}", terr.what());
+    } catch (const boost::system::system_error& err) {
+        if (err.code() != boost::beast::http::error::short_read) {
+            vlog(s3_log.warn, "Connection failed {}", err.what());
+            outcome = error_outcome::fail;
+        } else {
+            // This is a short read error that can be caused by the abrupt TLS
+            // shutdown. The content of the received buffer is discarded in this
+            // case and http client receives an empty buffer.
+            vlog(
+              s3_log.info,
+              "Server disconnected: '{}', retrying HTTP request",
+              err.what());
+        }
+    } catch (const ss::abort_requested_exception&) {
+        vlog(s3_log.debug, "Abort requested");
+        throw;
+    } catch (...) {
+        vlog(s3_log.error, "Unexpected error {}", std::current_exception());
+        outcome = error_outcome::fail;
+    }
+
+    co_return outcome;
+}
+
+s3_client::s3_client(
   const configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _probe(conf._probe) {}
 
-client::client(
+s3_client::s3_client(
   const configuration& conf,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
@@ -488,11 +584,21 @@ client::client(
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
 
-ss::future<> client::stop() { return _client.stop(); }
+ss::future<> s3_client::stop() { return _client.stop(); }
 
-void client::shutdown() { _client.shutdown(); }
+void s3_client::shutdown() { _client.shutdown(); }
 
-ss::future<http::client::response_stream_ref> client::get_object(
+ss::future<result<http::client::response_stream_ref, error_outcome>>
+s3_client::get_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout,
+  bool expect_no_such_key) {
+    return send_request(
+      do_get_object(name, key, timeout, expect_no_such_key), name, key);
+}
+
+ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout,
@@ -541,13 +647,21 @@ ss::future<http::client::response_stream_ref> client::get_object(
       });
 }
 
-ss::future<client::head_object_result> client::head_object(
+ss::future<result<s3_client::head_object_result, error_outcome>>
+s3_client::head_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(do_head_object(name, key, timeout), name, key);
+}
+
+ss::future<s3_client::head_object_result> s3_client::do_head_object(
   bucket_name const& name,
   object_key const& key,
   const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_head_object_request(name, key);
     if (!header) {
-        return ss::make_exception_future<client::head_object_result>(
+        return ss::make_exception_future<s3_client::head_object_result>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
@@ -592,7 +706,22 @@ ss::future<client::head_object_result> client::head_object(
       });
 }
 
-ss::future<> client::put_object(
+ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
+  bucket_name const& name,
+  object_key const& key,
+  size_t payload_size,
+  ss::input_stream<char>&& body,
+  const object_tag_formatter& tags,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_put_object(name, key, payload_size, std::move(body), tags, timeout)
+        .then(
+          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+      name,
+      key);
+}
+
+ss::future<> s3_client::do_put_object(
   bucket_name const& name,
   object_key const& id,
   size_t payload_size,
@@ -645,7 +774,20 @@ ss::future<> client::put_object(
       });
 }
 
-ss::future<client::list_bucket_result> client::list_objects_v2(
+ss::future<result<s3_client::list_bucket_result, error_outcome>>
+s3_client::list_objects(
+  const bucket_name& name,
+  std::optional<object_key> prefix,
+  std::optional<object_key> start_after,
+  std::optional<size_t> max_keys,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_list_objects_v2(name, prefix, start_after, max_keys, timeout),
+      name,
+      object_key{""});
+}
+
+ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
@@ -682,7 +824,7 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
                           vlog(
                             s3_log.warn, "S3 replied with error: {}", header);
                           return parse_rest_error_response<
-                            client::list_bucket_result>(
+                            s3_client::list_bucket_result>(
                             header.result(), std::move(outbuf));
                       }
                       auto res = iobuf_to_list_bucket_result(std::move(outbuf));
@@ -693,7 +835,42 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
       });
 }
 
-ss::future<> client::delete_object(
+ss::future<result<s3_client::no_response, error_outcome>>
+s3_client::delete_object(
+  const bucket_name& bucket,
+  const object_key& key,
+  const ss::lowres_clock::duration& timeout) {
+    using ret_t = result<s3_client::no_response, error_outcome>;
+
+    return send_request(
+             do_delete_object(bucket, key, timeout).then([] {
+                 return ss::make_ready_future<no_response>(no_response{});
+             }),
+             bucket,
+             key)
+      .then([&bucket, &key](const ret_t& result) {
+          // Google's implementation of S3 returns a NoSuchKey error
+          // when the object to be deleted does not exist. We return
+          // no_response{} in this case in order to get the same behaviour of
+          // AWS S3.
+          //
+          // TODO: Subclass cloud_storage_clients::client with a GCS client
+          // implementation where this edge case is handled.
+          if (!result && result.error() == error_outcome::key_not_found) {
+              vlog(
+                s3_log.debug,
+                "Object to be deleted was not found in cloud storage: "
+                "object={}, bucket={}. Ignoring ...",
+                bucket,
+                key);
+              return ss::make_ready_future<ret_t>(no_response{});
+          } else {
+              return ss::make_ready_future<ret_t>(result);
+          }
+      });
+}
+
+ss::future<> s3_client::do_delete_object(
   const bucket_name& bucket,
   const object_key& key,
   const ss::lowres_clock::duration& timeout) {
@@ -721,121 +898,4 @@ ss::future<> client::delete_object(
       });
 }
 
-client_pool::client_pool(
-  size_t size, configuration conf, client_pool_overdraft_policy policy)
-  : _max_size(size)
-  , _config(std::move(conf))
-  , _policy(policy) {}
-
-ss::future<> client_pool::stop() {
-    if (!_as.abort_requested()) {
-        _as.request_abort();
-    }
-    _cvar.broken();
-    // Wait until all leased objects are returned
-    co_await _gate.close();
-}
-
-void client_pool::shutdown_connections() {
-    _as.request_abort();
-    _cvar.broken();
-    for (auto& it : _leased) {
-        it.client->shutdown();
-    }
-    for (auto& it : _pool) {
-        it->shutdown();
-    }
-}
-
-/// \brief Acquire http client from the pool.
-///
-/// \note it's guaranteed that the client can only be acquired once
-///       before it gets released (release happens implicitly, when
-///       the lifetime of the pointer ends).
-/// \return client pointer (via future that can wait if all clients
-///         are in use)
-ss::future<client_pool::client_lease> client_pool::acquire() {
-    gate_guard guard(_gate);
-    try {
-        // If credentials have not yet been acquired, wait for them. It is
-        // possible that credentials are not initialized right after remote
-        // starts, and we have not had a response from the credentials API yet,
-        // but we have scheduled an upload. This wait ensures that when we call
-        // the storage API we have a set of valid credentials.
-        if (unlikely(!_apply_credentials)) {
-            co_await wait_for_credentials();
-        }
-
-        while (_pool.empty() && !_gate.is_closed() && !_as.abort_requested()) {
-            if (_policy == client_pool_overdraft_policy::wait_if_empty) {
-                co_await _cvar.wait();
-            } else {
-                auto cl = ss::make_shared<client>(
-                  _config, _as, _apply_credentials);
-                _pool.emplace_back(std::move(cl));
-            }
-        }
-    } catch (const ss::broken_condition_variable&) {
-    }
-    if (_gate.is_closed() || _as.abort_requested()) {
-        throw ss::gate_closed_exception();
-    }
-    vassert(!_pool.empty(), "'acquire' invariant is broken");
-    auto client = _pool.back();
-    _pool.pop_back();
-    client_lease lease(
-      client,
-      ss::make_deleter([pool = weak_from_this(), client, g = std::move(guard)] {
-          if (pool) {
-              pool->release(client);
-          }
-      }));
-    _leased.push_back(lease);
-    co_return lease;
-}
-
-size_t client_pool::size() const noexcept { return _pool.size(); }
-
-size_t client_pool::max_size() const noexcept { return _max_size; }
-
-void client_pool::populate_client_pool() {
-    for (size_t i = 0; i < _max_size; i++) {
-        auto cl = ss::make_shared<client>(_config, _as, _apply_credentials);
-        _pool.emplace_back(std::move(cl));
-    }
-}
-
-void client_pool::release(ss::shared_ptr<client> leased) {
-    if (_pool.size() == _max_size) {
-        return;
-    }
-    _pool.emplace_back(std::move(leased));
-    _cvar.signal();
-}
-
-void client_pool::load_credentials(cloud_roles::credentials credentials) {
-    if (unlikely(!_apply_credentials)) {
-        _apply_credentials = ss::make_lw_shared(
-          cloud_roles::make_credentials_applier(std::move(credentials)));
-        populate_client_pool();
-        // We signal the waiter only after the client pool is initialized, so
-        // that any upload operations waiting are ready to proceed.
-        _credentials_var.signal();
-    } else {
-        _apply_credentials->reset_creds(std::move(credentials));
-    }
-}
-
-ss::future<> client_pool::wait_for_credentials() {
-    co_await _credentials_var.wait([this]() {
-        return _gate.is_closed() || _as.abort_requested()
-               || (bool{_apply_credentials} && !_pool.empty());
-    });
-
-    if (_gate.is_closed() || _as.abort_requested()) {
-        throw ss::gate_closed_exception();
-    }
-    co_return;
-}
-
-} // namespace s3
+} // namespace cloud_storage_clients

@@ -13,11 +13,11 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "s3/client.h"
 #include "seastarx.h"
 #include "storage/directories.h"
 #include "storage/disk_log_impl.h"
@@ -131,16 +131,19 @@ segment_layout write_random_batches_with_single_record(
 std::tuple<archival::configuration, cloud_storage::configuration>
 get_configurations() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    s3::configuration s3conf{
-      .uri = s3::access_point_uri(httpd_host_name),
+    cloud_storage_clients::configuration s3conf{
+      .uri = cloud_storage_clients::access_point_uri(httpd_host_name),
       .access_key = cloud_roles::public_key_str("acess-key"),
       .secret_key = cloud_roles::private_key_str("secret-key"),
       .region = cloud_roles::aws_region_name("us-east-1"),
-      ._probe = ss::make_shared(
-        s3::client_probe(net::metrics_disabled::yes, "", ""))};
+      ._probe = ss::make_shared(cloud_storage_clients::client_probe(
+        net::metrics_disabled::yes,
+        net::public_metrics_disabled::yes,
+        "",
+        ""))};
     s3conf.server_addr = server_addr;
     archival::configuration aconf;
-    aconf.bucket_name = s3::bucket_name("test-bucket");
+    aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
     aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
     aconf.cloud_storage_initial_backoff = 100ms;
@@ -152,7 +155,7 @@ get_configurations() {
 
     cloud_storage::configuration cconf;
     cconf.client_config = s3conf;
-    cconf.bucket_name = s3::bucket_name("test-bucket");
+    cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     cconf.connection_limit = archival::s3_connection_limit(2);
     cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
     cconf.cloud_credentials_source

@@ -8,13 +8,13 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "s3/error.h"
+#include "cloud_storage_clients/s3_error.h"
 
 #include <boost/lexical_cast.hpp>
 
 #include <map>
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 struct s3_error_category final : std::error_category {
     const char* name() const noexcept final { return "s3"; }
@@ -459,4 +459,4 @@ std::string_view rest_error_response::resource() const noexcept {
     return _resource;
 }
 
-} // namespace s3
+} // namespace cloud_storage_clients

@@ -18,9 +18,9 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "s3/client.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -79,7 +79,7 @@ FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto key = model::offset(1);
@@ -123,7 +123,7 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
@@ -154,7 +154,7 @@ FIXTURE_TEST(
   cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto key = model::offset(1);
@@ -240,7 +240,7 @@ void test_remote_segment_batch_reader(
 
     fixture.set_expectations_and_listen({});
     auto conf = fixture.get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
@@ -352,7 +352,7 @@ FIXTURE_TEST(
 
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 

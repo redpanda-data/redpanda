@@ -82,7 +82,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
   std::optional<remote_topic_properties> rtp,
-  std::optional<s3::bucket_name> read_replica_bucket) {
+  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket) {
     gate_guard guard(_gate);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
     auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]

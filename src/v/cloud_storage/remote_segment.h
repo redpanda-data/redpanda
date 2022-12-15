@@ -17,9 +17,9 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "s3/client.h"
 #include "storage/parser.h"
 #include "storage/segment_reader.h"
 #include "storage/translating_reader.h"
@@ -58,7 +58,7 @@ public:
     remote_segment(
       remote& r,
       cache& cache,
-      s3::bucket_name bucket,
+      cloud_storage_clients::bucket_name bucket,
       const partition_manifest& m,
       model::offset base_offset,
       retry_chain_node& parent);
@@ -159,7 +159,7 @@ private:
     ss::gate _gate;
     remote& _api;
     cache& _cache;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     const model::ntp& _ntp;
     remote_segment_path _path;
 

@@ -43,11 +43,11 @@ inline offset next_offset(offset p) {
 
 } // namespace kafka
 
-namespace s3 {
+namespace cloud_storage_clients {
 
 using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 
-} // namespace s3
+} // namespace cloud_storage_clients
 
 namespace model {
 

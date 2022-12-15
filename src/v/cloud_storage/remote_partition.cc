@@ -497,7 +497,10 @@ private:
 };
 
 remote_partition::remote_partition(
-  const partition_manifest& m, remote& api, cache& c, s3::bucket_name bucket)
+  const partition_manifest& m,
+  remote& api,
+  cache& c,
+  cloud_storage_clients::bucket_name bucket)
   : _rtc()
   , _ctxlog(cst_log, _rtc, m.get_ntp().path())
   , _api(api)
@@ -734,8 +737,8 @@ remote_partition::seek_by_timestamp(model::timestamp t) {
  * retried.
  */
 ss::future<bool> remote_partition::tolerant_delete_object(
-  const s3::bucket_name& bucket,
-  const s3::object_key& path,
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& path,
   retry_chain_node& parent) {
     auto result = co_await _api.delete_object(bucket, path, parent);
     if (result == upload_result::timedout) {
@@ -832,14 +835,18 @@ ss::future<> remote_partition::erase() {
             // TODO: S3 API has a plural delete API, which would be more
             // suitable.
             if (co_await tolerant_delete_object(
-                  _bucket, s3::object_key(path), local_rtc)) {
+                  _bucket,
+                  cloud_storage_clients::object_key(path),
+                  local_rtc)) {
                 co_return;
             };
 
             auto tx_range_manifest_path
               = tx_range_manifest(path).get_manifest_path();
             if (co_await tolerant_delete_object(
-                  _bucket, s3::object_key(tx_range_manifest_path), local_rtc)) {
+                  _bucket,
+                  cloud_storage_clients::object_key(tx_range_manifest_path),
+                  local_rtc)) {
                 co_return;
             };
         }
@@ -847,7 +854,9 @@ ss::future<> remote_partition::erase() {
         // Erase the partition manifest
         vlog(_ctxlog.debug, "Erasing partition manifest {}", manifest_path);
         if (co_await tolerant_delete_object(
-              _bucket, s3::object_key(manifest_path), local_rtc)) {
+              _bucket,
+              cloud_storage_clients::object_key(manifest_path),
+              local_rtc)) {
             co_return;
         };
     }
@@ -861,7 +870,9 @@ ss::future<> remote_partition::erase() {
           get_ntp().ns, get_ntp().tp.topic);
         vlog(_ctxlog.debug, "Erasing topic manifest {}", topic_manifest_path);
         if (co_await tolerant_delete_object(
-              _bucket, s3::object_key(topic_manifest_path), local_rtc)) {
+              _bucket,
+              cloud_storage_clients::object_key(topic_manifest_path),
+              local_rtc)) {
             co_return;
         };
     }
