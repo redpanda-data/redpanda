@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: produce-message
+spec:
+  template:
+    spec:
+      containers:
+        - name: rpk
+          image: localhost/redpanda:dev
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/bash
+            - -c
+            - -ex
+          args:
+            - |
+              curl -s -v -X POST "http://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:8082/topics/test" \
+              -H "Content-Type: application/vnd.kafka.json.v2+json" \
+              -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}' \
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1
