@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <optional>
+#include <span>
+#include <utility>
 
 namespace cluster {
 
@@ -678,14 +680,17 @@ void topic_table::notify_waiters() {
 
     /// Consume all pending deltas
     if (!_waiters.empty()) {
-        changes.clear();
-        changes.swap(_pending_deltas);
-        _last_consumed_by_notifier_offset = 0;
         std::vector<std::unique_ptr<waiter>> active_waiters;
         active_waiters.swap(_waiters);
-        for (auto& w : active_waiters) {
-            w->promise.set_value(changes);
+        for (auto& w :
+             std::span{active_waiters.begin(), active_waiters.size() - 1}) {
+            w->promise.set_value(_pending_deltas);
         }
+
+        active_waiters[active_waiters.size() - 1]->promise.set_value(
+          std::move(_pending_deltas));
+        std::exchange(_pending_deltas, {});
+        _last_consumed_by_notifier_offset = 0;
     }
 }
 
