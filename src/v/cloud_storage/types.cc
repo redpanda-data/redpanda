@@ -152,7 +152,7 @@ ss::future<configuration> configuration::get_config() {
 
     configuration cfg{
       .client_config = std::move(s3_conf),
-      .connection_limit = s3_connection_limit(
+      .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
       .metrics_disabled = remote_metrics_disabled(
         static_cast<bool>(disable_metrics)),

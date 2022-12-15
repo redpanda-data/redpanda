@@ -24,10 +24,10 @@
 
 namespace archival {
 
+using cloud_storage::connection_limit;
 using cloud_storage::local_segment_path;
 using cloud_storage::remote_manifest_path;
 using cloud_storage::remote_segment_path;
-using cloud_storage::s3_connection_limit;
 using cloud_storage::segment_name;
 
 using service_metrics_disabled
