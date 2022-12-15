@@ -107,7 +107,7 @@ struct test_conf {
     cloud_storage_clients::bucket_name bucket;
     std::vector<cloud_storage_clients::object_key> objects;
 
-    cloud_storage_clients::configuration client_cfg;
+    cloud_storage_clients::s3_configuration client_cfg;
 
     std::string in;
     std::string out;
@@ -145,9 +145,8 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
     auto secret_key = cloud_roles::private_key_str(
       m["secretkey"].as<std::string>());
     auto region = cloud_roles::aws_region_name(m["region"].as<std::string>());
-
-    auto client_cfg
-      = cloud_storage_clients::configuration::make_configuration(
+    cloud_storage_clients::s3_configuration client_cfg
+      = cloud_storage_clients::s3_configuration::make_configuration(
           access_key,
           secret_key,
           region,
@@ -211,7 +210,7 @@ static ss::sstring time_to_string(std::chrono::system_clock::time_point tp) {
 }
 
 static ss::lw_shared_ptr<cloud_roles::apply_credentials>
-make_credentials(const cloud_storage_clients::configuration& cfg) {
+make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
     return ss::make_lw_shared(
       cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
         cfg.access_key.value(),
@@ -239,7 +238,7 @@ int main(int args, char** argv, char** env) {
         auto& cfg = app.configuration();
         return ss::async([&] {
             const test_conf lcfg = cfg_from(cfg);
-            cloud_storage_clients::configuration s3_cfg = lcfg.client_cfg;
+            cloud_storage_clients::s3_configuration s3_cfg = lcfg.client_cfg;
             vlog(test_log.info, "config:{}", lcfg);
             vlog(test_log.info, "constructing client");
             auto credentials_applier = make_credentials(s3_cfg);

@@ -55,16 +55,15 @@ struct archival_metadata_stm_base_fixture
     operator=(archival_metadata_stm_base_fixture&&)
       = delete;
 
-    static cloud_storage_clients::configuration get_s3_configuration() {
+    static cloud_storage_clients::s3_configuration get_s3_configuration() {
         net::unresolved_address server_addr(
           ss::sstring(httpd_host_name), httpd_port_number);
-        cloud_storage_clients::configuration conf{
-          .uri = cloud_storage_clients::access_point_uri(
-            ss::sstring(httpd_host_name)),
-          .access_key = cloud_roles::public_key_str("acess-key"),
-          .secret_key = cloud_roles::private_key_str("secret-key"),
-          .region = cloud_roles::aws_region_name("us-east-1"),
-        };
+        cloud_storage_clients::s3_configuration conf;
+        conf.uri = cloud_storage_clients::access_point_uri(
+          ss::sstring(httpd_host_name));
+        conf.access_key = cloud_roles::public_key_str("acess-key");
+        conf.secret_key = cloud_roles::private_key_str("secret-key");
+        conf.region = cloud_roles::aws_region_name("us-east-1");
         conf.server_addr = server_addr;
         conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
           net::metrics_disabled::yes,
