@@ -137,7 +137,8 @@ class RpkRedpandaStartTest(RedpandaTest):
             "group_topic_partitions": "3",
             "storage_min_free_bytes": "10485760",
             "topic_partitions_per_shard": "1000",
-            "fetch_reads_debounce_timeout": "10"
+            "fetch_reads_debounce_timeout": "10",
+            "group_initial_rebalance_delay": "0"
         }
 
         for p in expected_cluster_properties:
