@@ -314,26 +314,18 @@ private:
 template<class value_t, class delta_t>
 class segment_meta_column;
 
-/// Column implementatoin
-///
-/// Contains a list of frames. The frames are not overlapping with each other.
-/// The iterator is used to scan both all frames seamlessly.
-/// This specialization is for xor-delta algorithm. It doesn't allow skipping
-/// frames so all search operations require full scan. Random access by index
-/// can skip frames since indexes are monotonic.
-template<class value_t>
-class segment_meta_column<value_t, details::delta_xor> {
-    using frame_t = segment_meta_column_frame<value_t, details::delta_xor>;
-    using decoder_t = deltafor_decoder<value_t, details::delta_xor>;
+// to get rid of value_t and delta_alg
+template<class value_t, class delta_alg, class Derived>
+class segment_meta_column_impl {
+    using frame_t = segment_meta_column_frame<value_t, delta_alg>;
+    using decoder_t = deltafor_decoder<value_t, delta_alg>;
     static constexpr size_t max_frame_size = 0x1000;
 
 public:
     using const_iterator
-      = segment_meta_column_const_iterator<value_t, details::delta_xor>;
+      = segment_meta_column_const_iterator<value_t, delta_alg>;
 
-    using delta_alg = details::delta_xor;
-
-    explicit segment_meta_column(delta_alg d)
+    explicit segment_meta_column_impl(delta_alg d)
       : _delta_alg(d) {}
 
     void append(value_t value) {
@@ -363,15 +355,18 @@ public:
     const_iterator end() const { return const_iterator(); }
 
     const_iterator find(value_t value) const {
-        return pred_search<std::equal_to<value_t>>(value);
+        return static_cast<const Derived*>(this)
+          ->template pred_search<std::equal_to<value_t>>(value);
     }
 
     const_iterator upper_bound(value_t value) const {
-        return pred_search<std::greater<value_t>>(value);
+        return static_cast<const Derived*>(this)
+          ->template pred_search<std::greater<value_t>>(value);
     }
 
     const_iterator lower_bound(value_t value) const {
-        return pred_search<std::greater_equal<value_t>>(value);
+        return static_cast<const Derived*>(this)
+          ->template pred_search<std::greater_equal<value_t>>(value);
     }
 
     std::optional<value_t> last_value() const {
@@ -400,20 +395,101 @@ public:
         _frames.erase(_frames.begin(), st);
     }
 
-private:
+protected:
+    template<class PredT>
+    const_iterator pred_search_impl(value_t value) const {
+        return static_cast<const Derived*>(this)->template pred_search<PredT>(
+          value);
+    }
+
+    std::list<frame_t> _frames;
+    const delta_alg _delta_alg;
+};
+
+/// Segment metadata column.
+///
+/// Contains a list of frames. The frames are not overlapping with each other.
+/// The iterator is used to scan both all frames seamlessly.
+/// This specialization is for xor-delta algorithm. It doesn't allow skipping
+/// frames so all search operations require full scan. Random access by index
+/// can skip frames since indexes are monotonic.
+template<class value_t>
+class segment_meta_column<value_t, details::delta_xor>
+  : public segment_meta_column_impl<
+      value_t,
+      details::delta_xor,
+      segment_meta_column<value_t, details::delta_xor>> {
+    using base_t = segment_meta_column_impl<
+      value_t,
+      details::delta_xor,
+      segment_meta_column<value_t, details::delta_xor>>;
+
+public:
+    using delta_alg = details::delta_xor;
+    using typename base_t::const_iterator;
+
+    explicit segment_meta_column(delta_alg d)
+      : base_t(d) {}
+
     template<class PredT>
     const_iterator pred_search(value_t value) const {
         PredT pred;
-        for (auto it = begin(); it != end(); ++it) {
+        for (auto it = this->begin(); it != this->end(); ++it) {
             if (pred(*it, value)) {
                 return it;
             }
         }
-        return end();
+        return this->end();
     }
+};
 
-    std::list<frame_t> _frames;
-    const details::delta_xor _delta_alg;
+/// Segment metadata column for monotonic sequences.
+///
+/// Optimized for quick append/at/find operations.
+/// Find/lower_bound/upper_bound operations are complited within
+/// single digit microsecond intervals even with millions of elements
+/// in the column. The actual decoding is only performed for a single frame.
+/// The access by index is also fast (same order of magnitued as search).
+template<class value_t>
+class segment_meta_column<value_t, details::delta_delta<value_t>>
+  : public segment_meta_column_impl<
+      value_t,
+      details::delta_delta<value_t>,
+      segment_meta_column<value_t, details::delta_delta<value_t>>> {
+    using base_t = segment_meta_column_impl<
+      value_t,
+      details::delta_delta<value_t>,
+      segment_meta_column<value_t, details::delta_delta<value_t>>>;
+
+public:
+    using delta_alg = details::delta_delta<value_t>;
+    using typename base_t::const_iterator;
+
+    explicit segment_meta_column(delta_alg d)
+      : base_t(d) {}
+
+    template<class PredT>
+    const_iterator pred_search(value_t value) const {
+        PredT pred;
+        auto it = this->_frames.begin();
+        for (; it != this->_frames.end(); ++it) {
+            // The code is only used with equal/greater/greater_equal predicates
+            // to implement find/lower_bound/upper_bound. Because of that we can
+            // hardcode the '>=' operation here.
+            if (it->last_value().has_value() && *it->last_value() >= value) {
+                break;
+            }
+        }
+        if (it != this->_frames.end()) {
+            auto start = const_iterator(it, this->_frames.end(), 0);
+            for (; start != this->end(); ++start) {
+                if (pred(*start, value)) {
+                    return start;
+                }
+            }
+        }
+        return this->end();
+    }
 };
 
 class segment_meta_cstore {

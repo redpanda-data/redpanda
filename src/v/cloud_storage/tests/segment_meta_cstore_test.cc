@@ -30,6 +30,7 @@ using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg>;
 using delta_delta_alg = details::delta_delta<int64_t>;
 using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg>;
 using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
+using delta_delta_column = segment_meta_column<int64_t, delta_delta_alg>;
 
 static const delta_xor_alg initial_xor{};
 static const delta_delta_alg initial_delta{0};
@@ -59,6 +60,11 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_delta) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_xor) {
     delta_xor_column col(initial_xor);
+    append_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_delta) {
+    delta_delta_column col(initial_delta);
     append_test_case(100000, col);
 }
 
@@ -93,6 +99,11 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_iter_delta) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_iter_xor) {
     delta_xor_column col(initial_xor);
+    iter_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_iter_delta) {
+    delta_delta_column col(initial_delta);
     iter_test_case(100000, col);
 }
 
@@ -149,6 +160,16 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor_small) {
     delta_xor_column col(initial_xor);
+    find_test_case(random_generators::get_int(1, 16), col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_delta) {
+    delta_delta_column col(initial_delta);
+    find_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_delta_small) {
+    delta_delta_column col(initial_delta);
     find_test_case(random_generators::get_int(1, 16), col);
 }
 
@@ -217,6 +238,16 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_xor_small) {
     lower_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_delta) {
+    delta_delta_column col(initial_delta);
+    lower_bound_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_delta_small) {
+    delta_delta_column col(initial_delta);
+    lower_bound_test_case(random_generators::get_int(1, 16), col);
+}
+
 template<class column_t>
 void upper_bound_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
@@ -280,6 +311,16 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_xor_small) {
     upper_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_delta) {
+    delta_delta_column col(initial_delta);
+    upper_bound_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_delta_small) {
+    delta_delta_column col(initial_delta);
+    upper_bound_test_case(random_generators::get_int(1, 16), col);
+}
+
 template<class column_t>
 void at_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
@@ -336,6 +377,16 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_xor_small) {
     at_test_case(random_generators::get_int(16), col);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_delta) {
+    delta_delta_column col(initial_delta);
+    at_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_delta_small) {
+    delta_delta_column col(initial_delta);
+    at_test_case(random_generators::get_int(16), col);
+}
+
 template<class column_t>
 void prefix_truncate_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
@@ -372,5 +423,10 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_prefix_truncate_delta) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_xor) {
     delta_xor_column col(initial_xor);
+    prefix_truncate_test_case(10, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_delta) {
+    delta_delta_column col(initial_delta);
     prefix_truncate_test_case(10, col);
 }
