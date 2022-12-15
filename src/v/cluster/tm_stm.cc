@@ -234,7 +234,7 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
         auto result = co_await update_tx(tx, tx.etag);
         if (!result.has_value()) {
             vlog(
-              txlog.error,
+              txlog.warn,
               "Error {} transferring tx {} to new leader, transferred {}/{} "
               "txns.",
               result.error(),
