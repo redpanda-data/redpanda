@@ -127,7 +127,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             "default_topic_replications": 3,
             # make segments small to ensure that they are compacted during
             # the test (only sealed i.e. not being written segments are compacted)
-            "compacted_log_segment_size": 5 * (2 ^ 20)
+            "compacted_log_segment_size": 5 * (2 ^ 20),
+            "raft_learner_recovery_rate": 512 * (1024 * 1024)
         }
         if num_to_upgrade > 0:
             # Use the deprecated config to bootstrap older nodes.
@@ -143,7 +144,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                         extra_rp_conf=extra_rp_conf)
         if num_to_upgrade > 0:
             installer = self.redpanda._installer
-            installer.install(self.redpanda.nodes, (22, 1, 4))
+            installer.install(
+                self.redpanda.nodes,
+                installer.highest_from_prior_feature_version(
+                    RedpandaInstaller.HEAD))
             self.redpanda.start()
             installer.install(self.redpanda.nodes[:num_to_upgrade],
                               RedpandaInstaller.HEAD)
@@ -183,8 +187,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         def failure_injector_loop():
             with FailureInjector(self.redpanda) as f_injector:
                 while enable_failures:
-                    f_type = random.choice(FailureSpec.NETEM_FAILURE_TYPES +
-                                           FailureSpec.FAILURE_TYPES)
+                    f_type = random.choice(FailureSpec.FAILURE_TYPES)
                     length = 0
                     # allow suspending any node
                     if f_type == FailureSpec.FAILURE_SUSPEND:

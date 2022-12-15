@@ -70,6 +70,19 @@ bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
            && !has_local_replicas(self, *delta.previous_replica_set);
 }
 
+model::broker
+get_node_metadata(const members_table& members, model::node_id id) {
+    auto nm = members.get_node_metadata_ref(id);
+    if (!nm) {
+        nm = members.get_removed_node_metadata_ref(id);
+    }
+    if (!nm) {
+        throw std::logic_error(
+          fmt::format("Replica node {} is not available", id));
+    }
+    return nm->get().broker;
+}
+
 std::vector<model::broker> create_brokers_set(
   const std::vector<model::broker_shard>& replicas,
   cluster::members_table& members) {
@@ -80,12 +93,7 @@ std::vector<model::broker> create_brokers_set(
       std::cend(replicas),
       std::back_inserter(brokers),
       [&members](const model::broker_shard& bs) {
-          auto nm = members.get_node_metadata_ref(bs.node_id);
-          if (!nm) {
-              throw std::logic_error(
-                fmt::format("Replica node {} is not available", bs.node_id));
-          }
-          return nm->get().broker;
+          return get_node_metadata(members, bs.node_id);
       });
     return brokers;
 }
@@ -103,11 +111,7 @@ std::vector<raft::broker_revision> create_brokers_set(
       std::cend(replicas),
       std::back_inserter(brokers),
       [&members, &replica_revisions](const model::broker_shard& bs) {
-          auto nm = members.get_node_metadata_ref(bs.node_id);
-          if (!nm) {
-              throw std::logic_error(
-                fmt::format("Replica node {} is not available", bs.node_id));
-          }
+          auto broker = get_node_metadata(members, bs.node_id);
           auto rev_it = replica_revisions.find(bs.node_id);
           vassert(
             rev_it != replica_revisions.end(),
@@ -116,7 +120,7 @@ std::vector<raft::broker_revision> create_brokers_set(
             bs.node_id,
             replica_revisions.size());
           return raft::broker_revision{
-            .broker = nm->get().broker, .rev = rev_it->second};
+            .broker = std::move(broker), .rev = rev_it->second};
       });
     return brokers;
 }

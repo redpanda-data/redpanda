@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from rptest.clients.kafka_cat import KafkaCat
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
@@ -427,3 +428,71 @@ class NodesDecommissioningTest(EndToEndTest):
             return True
 
         wait_until(node_removed, 60, 2)
+
+    def _replicas_per_node(self):
+        kafkacat = KafkaCat(self.redpanda)
+        node_replicas = {}
+        md = kafkacat.metadata()
+        self.redpanda.logger.debug(f"metadata: {md}")
+        for topic in md['topics']:
+            for p in topic['partitions']:
+                for r in p['replicas']:
+                    id = r['id']
+                    if id not in node_replicas:
+                        node_replicas[id] = 0
+                    node_replicas[id] += 1
+
+        return node_replicas
+
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_multiple_decommissions(self):
+        self._extra_node_conf = {"empty_seed_starts_cluster": False}
+        self.start_redpanda(num_nodes=5, new_bootstrap=True)
+        self._create_topics()
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        def node_by_id(node_id):
+            for n in self.redpanda.nodes:
+                if self.redpanda.node_id(n) == node_id:
+                    return n
+            return None
+
+        admin = Admin(self.redpanda)
+        for i in range(0, 2):
+            for b in self.redpanda.nodes:
+                id = self.redpanda.node_id(b, force_refresh=True)
+                self.logger.info(f"decommissioning node: {id}, iteration: {i}")
+
+                admin.decommission_broker(id)
+                self._wait_until_status(id, 'draining')
+                wait_until(lambda: self._partitions_moving(),
+                           timeout_sec=15,
+                           backoff_sec=1)
+                decom_node = node_by_id(id)
+
+                def node_removed():
+                    brokers = admin.get_brokers()
+                    for broker in brokers:
+                        if broker['node_id'] == id:
+                            return False
+                    return True
+
+                wait_until(node_removed, 180, 2)
+
+                def has_partitions():
+                    id = self.redpanda.node_id(node=decom_node,
+                                               force_refresh=True)
+                    per_node = self._replicas_per_node()
+                    self.logger.info(f'replicas per node: {per_node}')
+                    return id in per_node and per_node[id] > 0
+
+                self.redpanda.stop_node(node=decom_node)
+                self.redpanda.clean_node(node=decom_node, preserve_logs=True)
+                self.redpanda.start_node(node=decom_node,
+                                         auto_assign_node_id=True,
+                                         omit_seeds_on_idx_one=False)
+
+                wait_until(has_partitions, 180, 2)

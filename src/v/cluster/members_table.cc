@@ -58,6 +58,14 @@ members_table::get_node_metadata(model::node_id id) const {
     }
     return it->second;
 }
+std::optional<std::reference_wrapper<const node_metadata>>
+members_table::get_removed_node_metadata_ref(model::node_id id) const {
+    auto it = _removed_nodes.find(id);
+    if (it == _removed_nodes.end()) {
+        return std::nullopt;
+    }
+    return std::make_optional(std::cref(it->second));
+}
 
 void members_table::update_brokers(
   model::offset version, const std::vector<model::broker>& new_brokers) {
