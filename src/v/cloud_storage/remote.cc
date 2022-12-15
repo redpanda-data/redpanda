@@ -41,7 +41,7 @@ namespace cloud_storage {
 using namespace std::chrono_literals;
 
 remote::remote(
-  s3_connection_limit limit,
+  connection_limit limit,
   const cloud_storage_clients::client_configuration& conf,
   model::cloud_credentials_source cloud_credentials_source)
   : _pool(limit(), conf)

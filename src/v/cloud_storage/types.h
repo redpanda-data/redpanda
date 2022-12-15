@@ -44,8 +44,8 @@ using remote_manifest_path
 using local_segment_path
   = named_type<std::filesystem::path, struct archival_local_segment_path_t>;
 /// Number of simultaneous connections to S3
-using s3_connection_limit
-  = named_type<size_t, struct archival_s3_connection_limit_t>;
+using connection_limit
+  = named_type<size_t, struct archival_connection_limit_t>;
 
 /// Version of the segment name format
 enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
@@ -86,7 +86,7 @@ struct configuration {
     /// S3 configuration
     cloud_storage_clients::client_configuration client_config;
     /// Number of simultaneous S3 uploads
-    s3_connection_limit connection_limit;
+    connection_limit connection_limit;
     /// Disable metrics in the remote
     remote_metrics_disabled metrics_disabled;
     /// The bucket to use

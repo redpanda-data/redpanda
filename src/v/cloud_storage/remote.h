@@ -138,7 +138,7 @@ public:
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
     remote(
-      s3_connection_limit limit,
+      connection_limit limit,
       const cloud_storage_clients::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
