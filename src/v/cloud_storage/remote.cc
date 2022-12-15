@@ -677,7 +677,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
               [](const auto& cfg) {
                   using cfg_type = std::decay_t<decltype(cfg)>;
                   if constexpr (std::is_same_v<
-                                  cloud_storage_clients::configuration,
+                                  cloud_storage_clients::s3_configuration,
                                   cfg_type>) {
                       return cloud_roles::aws_region_name{cfg.region};
                   } else {
@@ -721,7 +721,7 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
       [](const auto& cfg) {
           using cfg_type = std::decay_t<decltype(cfg)>;
           if constexpr (std::is_same_v<
-                          cloud_storage_clients::configuration,
+                          cloud_storage_clients::s3_configuration,
                           cfg_type>) {
               return cloud_roles::aws_credentials{
                 cfg.access_key.value(),

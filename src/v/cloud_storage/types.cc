@@ -142,7 +142,7 @@ ss::future<configuration> configuration::get_config() {
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
     auto s3_conf
-      = co_await cloud_storage_clients::configuration::make_configuration(
+      = co_await cloud_storage_clients::s3_configuration::make_configuration(
         access_key,
         secret_key,
         region,
