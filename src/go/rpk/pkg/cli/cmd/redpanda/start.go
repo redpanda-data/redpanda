@@ -1100,6 +1100,7 @@ func setContainerModeCfgFields(cfg *config.Config) {
 	cfg.Redpanda.Other["group_topic_partitions"] = 3
 	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
 	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
+	cfg.Redpanda.Other["group_initial_rebalance_delay"] = 0
 }
 
 const helpMode = `Mode uses well-known configuration properties for development or tests 
@@ -1116,6 +1117,7 @@ environments:
         * group_topic_partitions: 3
         * storage_min_free_bytes: 10485760 (10MiB)
         * topic_partitions_per_shard: 1000
+        * group_initial_rebalance_delay: 0
 
 After redpanda starts you can modify the cluster properties using:
     rpk config set <key> <value>`
