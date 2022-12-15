@@ -76,14 +76,14 @@ static ss::sstring make_endpoint_url(
     return ssx::sformat("s3.{}.amazonaws.com", region());
 }
 
-ss::future<configuration> configuration::make_configuration(
+ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
   const cloud_roles::aws_region_name& region,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {
-    configuration client_cfg;
+    s3_configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;
     // Setup credentials for TLS
@@ -141,7 +141,7 @@ ss::future<configuration> configuration::make_configuration(
     co_return client_cfg;
 }
 
-std::ostream& operator<<(std::ostream& o, const configuration& c) {
+std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
     o << "{access_key:"
       << c.access_key.value_or(cloud_roles::public_key_str{""})
       << ",region:" << c.region() << ",secret_key:****"
@@ -156,7 +156,7 @@ std::ostream& operator<<(std::ostream& o, const configuration& c) {
 // request_creator //
 
 request_creator::request_creator(
-  const configuration& conf,
+  const s3_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _ap(conf.uri)
   , _apply_credentials{std::move(apply_credentials)} {}
@@ -657,14 +657,14 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
 }
 
 s3_client::s3_client(
-  const configuration& conf,
+  const s3_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _requestor(conf, std::move(apply_credentials))
   , _client(conf)
   , _probe(conf._probe) {}
 
 s3_client::s3_client(
-  const configuration& conf,
+  const s3_configuration& conf,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : _requestor(conf, std::move(apply_credentials))

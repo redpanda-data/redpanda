@@ -89,8 +89,7 @@ client_pool::http_client_ptr client_pool::make_client() const {
     return std::visit(
       [this](const auto& cfg) {
           using cfg_type = std::decay_t<decltype(cfg)>;
-          static_assert(std::is_same_v<configuration, cfg_type>);
-          if constexpr (std::is_same_v<configuration, cfg_type>) {
+          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
               return ss::make_shared<s3_client>(cfg, _as, _apply_credentials);
           } else {
               static_assert(always_false_v<cfg_type>, "Unknown client type");

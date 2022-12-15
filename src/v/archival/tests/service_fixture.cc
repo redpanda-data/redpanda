@@ -131,17 +131,15 @@ segment_layout write_random_batches_with_single_record(
 std::tuple<archival::configuration, cloud_storage::configuration>
 get_configurations() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    cloud_storage_clients::configuration s3conf{
-      .uri = cloud_storage_clients::access_point_uri(httpd_host_name),
-      .access_key = cloud_roles::public_key_str("acess-key"),
-      .secret_key = cloud_roles::private_key_str("secret-key"),
-      .region = cloud_roles::aws_region_name("us-east-1"),
-      ._probe = ss::make_shared(cloud_storage_clients::client_probe(
-        net::metrics_disabled::yes,
-        net::public_metrics_disabled::yes,
-        "",
-        ""))};
+    cloud_storage_clients::s3_configuration s3conf;
+    s3conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
+    s3conf.access_key = cloud_roles::public_key_str("acess-key");
+    s3conf.secret_key = cloud_roles::private_key_str("secret-key");
+    s3conf.region = cloud_roles::aws_region_name("us-east-1");
+    s3conf._probe = ss::make_shared(cloud_storage_clients::client_probe(
+      net::metrics_disabled::yes, net::public_metrics_disabled::yes, "", ""));
     s3conf.server_addr = server_addr;
+
     archival::configuration aconf;
     aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
     aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;

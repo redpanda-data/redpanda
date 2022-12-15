@@ -74,7 +74,7 @@ public:
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown,
-      std::optional<cloud_storage_clients::configuration> s3_config
+      std::optional<cloud_storage_clients::s3_configuration> s3_config
       = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
@@ -198,14 +198,13 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    static cloud_storage_clients::configuration get_s3_config() {
+    static cloud_storage_clients::s3_configuration get_s3_config() {
         net::unresolved_address server_addr("127.0.0.1", 4430);
-        cloud_storage_clients::configuration s3conf{
-          .uri = cloud_storage_clients::access_point_uri("127.0.0.1"),
-          .access_key = cloud_roles::public_key_str("acess-key"),
-          .secret_key = cloud_roles::private_key_str("secret-key"),
-          .region = cloud_roles::aws_region_name("us-east-1"),
-        };
+        cloud_storage_clients::s3_configuration s3conf;
+        s3conf.uri = cloud_storage_clients::access_point_uri("127.0.0.1");
+        s3conf.access_key = cloud_roles::public_key_str("acess-key");
+        s3conf.secret_key = cloud_roles::private_key_str("secret-key");
+        s3conf.region = cloud_roles::aws_region_name("us-east-1");
         s3conf.server_addr = server_addr;
         return s3conf;
     }
@@ -243,7 +242,7 @@ public:
       int32_t rpc_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
-      std::optional<cloud_storage_clients::configuration> s3_config
+      std::optional<cloud_storage_clients::s3_configuration> s3_config
       = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,

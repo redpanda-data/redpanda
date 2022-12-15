@@ -35,7 +35,7 @@ public:
     /// C-tor
     /// \param conf is a configuration container
     explicit request_creator(
-      const configuration& conf,
+      const s3_configuration& conf,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
 
@@ -112,11 +112,11 @@ private:
 class s3_client : public client {
 public:
     s3_client(
-      const configuration& conf,
+      const s3_configuration& conf,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
     s3_client(
-      const configuration& conf,
+      const s3_configuration& conf,
       const ss::abort_source& as,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
