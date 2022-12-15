@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     client_pool.cc
     client_probe.cc
+    configuration.cc
     s3_client.cc
     s3_error.cc
   DEPS
