@@ -1043,6 +1043,7 @@ func setContainerModeCfgFields(cfg *config.Config) {
 	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
 	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
 	cfg.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
+	cfg.Redpanda.Other["group_initial_rebalance_delay"] = 0
 }
 
 func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
@@ -1071,6 +1072,7 @@ environments:
         * storage_min_free_bytes: 10485760 (10MiB)
         * topic_partitions_per_shard: 1000
         * fetch_reads_debounce_timeout: 10
+        * group_initial_rebalance_delay: 0
 
 After redpanda starts you can modify the cluster properties using:
     rpk config set <key> <value>`

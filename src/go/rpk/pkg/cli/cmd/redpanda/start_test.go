@@ -244,11 +244,12 @@ func TestStartCommand(t *testing.T) {
 			// We are adding now this cluster properties as default with
 			// redpanda.developer_mode: true.
 			c.Redpanda.Other = map[string]interface{}{
-				"auto_create_topics_enabled":   true,
-				"group_topic_partitions":       3,
-				"storage_min_free_bytes":       10485760,
-				"topic_partitions_per_shard":   1000,
-				"fetch_reads_debounce_timeout": 10,
+				"auto_create_topics_enabled":    true,
+				"group_topic_partitions":        3,
+				"storage_min_free_bytes":        10485760,
+				"topic_partitions_per_shard":    1000,
+				"fetch_reads_debounce_timeout":  10,
+				"group_initial_rebalance_delay": 0,
 			}
 
 			conf, err := new(config.Params).Load(fs)
@@ -1484,11 +1485,12 @@ func TestStartCommand(t *testing.T) {
 			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
 			expectedClusterFields := map[string]interface{}{
-				"auto_create_topics_enabled":   true,
-				"group_topic_partitions":       3,
-				"storage_min_free_bytes":       10485760,
-				"topic_partitions_per_shard":   1000,
-				"fetch_reads_debounce_timeout": 10,
+				"auto_create_topics_enabled":    true,
+				"group_topic_partitions":        3,
+				"storage_min_free_bytes":        10485760,
+				"topic_partitions_per_shard":    1000,
+				"fetch_reads_debounce_timeout":  10,
+				"group_initial_rebalance_delay": 0,
 			}
 			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},
@@ -1534,11 +1536,12 @@ func TestStartCommand(t *testing.T) {
 
 			// Config:
 			expectedClusterFields := map[string]interface{}{
-				"auto_create_topics_enabled":   true,
-				"group_topic_partitions":       3,
-				"storage_min_free_bytes":       10485760,
-				"topic_partitions_per_shard":   1000,
-				"fetch_reads_debounce_timeout": 10,
+				"auto_create_topics_enabled":    true,
+				"group_topic_partitions":        3,
+				"storage_min_free_bytes":        10485760,
+				"topic_partitions_per_shard":    1000,
+				"fetch_reads_debounce_timeout":  10,
+				"group_initial_rebalance_delay": 0,
 			}
 			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
@@ -1577,9 +1580,10 @@ func TestStartCommand(t *testing.T) {
 				"auto_create_topics_enabled": false,
 				"group_topic_partitions":     1,
 				// rest of --mode dev-container cfg fields
-				"storage_min_free_bytes":       10485760,
-				"topic_partitions_per_shard":   1000,
-				"fetch_reads_debounce_timeout": 10,
+				"storage_min_free_bytes":        10485760,
+				"topic_partitions_per_shard":    1000,
+				"fetch_reads_debounce_timeout":  10,
+				"group_initial_rebalance_delay": 0,
 			}
 			require.Exactly(st, expectedClusterFields, conf.Redpanda.Other)
 		},
