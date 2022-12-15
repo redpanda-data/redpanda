@@ -26,4 +26,6 @@ spec:
       issuerRef:
         name: cluster-tls-root-issuer
         kind: ClusterIssuer
+    pandaproxyApi:
+    - port: 8082
     developerMode: true
