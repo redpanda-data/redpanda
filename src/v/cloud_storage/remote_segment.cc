@@ -153,6 +153,11 @@ const kafka::offset remote_segment::get_base_kafka_offset() const {
 const model::term_id remote_segment::get_term() const { return _term; }
 
 ss::future<> remote_segment::stop() {
+    if (_stopped) {
+        vlog(_ctxlog.warn, "remote segment {} already stopped", _path);
+        co_return;
+    }
+
     vlog(_ctxlog.debug, "remote segment stop");
     _bg_cvar.broken();
     co_await _gate.close();
@@ -163,6 +168,8 @@ ss::future<> remote_segment::stop() {
                 _ctxlog.error, "Error '{}' while closing the '{}'", err, _path);
           });
     }
+
+    _stopped = true;
 }
 
 ss::future<storage::segment_reader_handle>

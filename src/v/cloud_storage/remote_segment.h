@@ -188,6 +188,7 @@ private:
     simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
 
     bool _compacted{false};
+    bool _stopped{false};
 };
 
 class remote_segment_batch_consumer;
