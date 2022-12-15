@@ -153,6 +153,9 @@ class RedpandaInstaller:
 
         self._installed_version = self.HEAD
 
+        # memoize result of self.arch()
+        self._arch = None
+
     @property
     def installed_version(self):
         return self._installed_version
@@ -306,11 +309,30 @@ class RedpandaInstaller:
 
         if version == RedpandaInstaller.HEAD:
             version = self._head_version
+
+        # Only allow skipping this many versions for not having packages.  The limit prevents
+        # us from naively ignoring systemic issues in package download, as the skipping is only
+        # meant to happen in transient situations during release.
+        skip_versions = 2
+
         # NOTE: the released versions are sorted highest first.
         result = None
         for v in self._released_versions:
             if (v[0] == version[0]
                     and v[1] < version[1]) or (v[0] < version[0]):
+
+                # Before selecting version, validate that it is really downloadable: this avoids
+                # tests being upset by ongoing releases which might exist in github but not yet
+                # have all their artifacts.
+                r = requests.head(self._version_package_url(v))
+                if r.status_code == 404 and skip_versions > 0:
+                    self._redpanda.logger.warn(
+                        f"Skipping version {v}, no download available")
+                    skip_versions -= 1
+                    continue
+                elif r.status_code != 200:
+                    r.raise_for_status()
+
                 result = v
                 break
 
@@ -386,6 +408,22 @@ class RedpandaInstaller:
         for node in nodes:
             node.account.ssh_output(relink_cmd)
 
+    def _version_package_url(self, version: tuple):
+        return self.TGZ_URL_TEMPLATE.format(
+            arch=self.arch, version=f"{version[0]}.{version[1]}.{version[2]}")
+
+    @property
+    def arch(self):
+        if self._arch is None:
+            node = self._redpanda.nodes[0]
+            self._arch = "amd64"
+            uname = str(node.account.ssh_output("uname -m"))
+            if "aarch" in uname or "arm" in uname:
+                self._arch = "arm64"
+            self._redpanda.logger.debug(
+                f"{node.account.hostname} uname output: {uname}")
+        return self._arch
+
     def _async_download_on_node_unlocked(self, node, version):
         """
         Asynchonously downloads Redpanda of the given version on the given
@@ -394,17 +432,9 @@ class RedpandaInstaller:
         Expects the install lock to have been taken before calling.
         """
         version_root = self.root_for_version(version)
-        arch = "amd64"
-        uname = str(node.account.ssh_output("uname -m"))
-        if "aarch" in uname or "arm" in uname:
-            arch = "arm64"
-        self._redpanda.logger.debug(
-            f"{node.account.hostname} uname output: {uname}")
 
-        url = RedpandaInstaller.TGZ_URL_TEMPLATE.format( \
-            arch=arch, version=f"{version[0]}.{version[1]}.{version[2]}")
         tgz = "redpanda.tar.gz"
-        cmd = f"curl -fsSL {url} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
+        cmd = f"curl -fsSL {self._version_package_url(version)} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
         return node.account.ssh_capture(cmd)
 
     def reset_current_install(self, nodes):
