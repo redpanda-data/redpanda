@@ -85,7 +85,7 @@ struct archival_metadata_stm_base_fixture
                 "panda-bucket");
               cfg.metrics_disabled
                 = cloud_storage::remote_metrics_disabled::yes;
-              cfg.connection_limit = cloud_storage::s3_connection_limit(10);
+              cfg.connection_limit = cloud_storage::connection_limit(10);
               cfg.client_config = get_s3_configuration();
           })
           .get();

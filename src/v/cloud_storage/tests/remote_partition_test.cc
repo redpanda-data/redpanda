@@ -598,7 +598,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   cloud_storage_fixture& fixture, model::offset target) {
     auto conf = fixture.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
@@ -642,7 +642,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
@@ -1198,7 +1198,7 @@ scan_remote_partition_incrementally(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
@@ -1303,7 +1303,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
 
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
@@ -1401,7 +1401,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
@@ -1506,7 +1506,7 @@ FIXTURE_TEST(
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
@@ -1595,7 +1595,7 @@ FIXTURE_TEST(
     // create a reader that consumes segments one by one
     auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
 
@@ -1695,7 +1695,7 @@ scan_remote_partition_incrementally_with_reuploads(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(s3_connection_limit(10), conf, config_file);
+    remote api(connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(

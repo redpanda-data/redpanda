@@ -158,7 +158,7 @@ get_configurations() {
     cloud_storage::configuration cconf;
     cconf.client_config = s3conf;
     cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
-    cconf.connection_limit = archival::s3_connection_limit(2);
+    cconf.connection_limit = archival::connection_limit(2);
     cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
     cconf.cloud_credentials_source
       = model::cloud_credentials_source::config_file;
