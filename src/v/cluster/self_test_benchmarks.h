@@ -74,28 +74,38 @@ private:
 class diskcheck final : public self_test_stub {
 public:
     ss::future<std::vector<self_test_result>> run(diskcheck_opts opts) {
-        auto start = ss::lowres_clock::now();
-        auto was_cancelled = co_await gated_sleep(opts.duration);
-        auto result = self_test_result{
-          .name = opts.name, .duration = ss::lowres_clock::now() - start};
-        if (was_cancelled) {
-            result.warning = "Test aborted during run";
-        }
-        co_return std::vector<self_test_result>{result};
+        return ss::with_scheduling_group(opts.sg, [this, opts]() {
+            auto start = ss::lowres_clock::now();
+            return gated_sleep(opts.duration)
+              .then([opts, start](bool was_cancelled) {
+                  auto result = self_test_result{
+                    .name = opts.name,
+                    .duration = ss::lowres_clock::now() - start};
+                  if (was_cancelled) {
+                      result.warning = "Test aborted during run";
+                  }
+                  return std::vector<self_test_result>{result};
+              });
+        });
     }
 };
 
 class networkcheck final : public self_test_stub {
 public:
     ss::future<std::vector<self_test_result>> run(netcheck_opts opts) {
-        auto start = ss::lowres_clock::now();
-        auto was_cancelled = co_await gated_sleep(opts.duration);
-        auto result = self_test_result{
-          .name = opts.name, .duration = ss::lowres_clock::now() - start};
-        if (was_cancelled) {
-            result.warning = "Test aborted during run";
-        }
-        co_return std::vector<self_test_result>{result};
+        return ss::with_scheduling_group(opts.sg, [this, opts]() {
+            auto start = ss::lowres_clock::now();
+            return gated_sleep(opts.duration)
+              .then([opts, start](bool was_cancelled) {
+                  auto result = self_test_result{
+                    .name = opts.name,
+                    .duration = ss::lowres_clock::now() - start};
+                  if (was_cancelled) {
+                      result.warning = "Test aborted during run";
+                  }
+                  return std::vector<self_test_result>{result};
+              });
+        });
     }
 };
 

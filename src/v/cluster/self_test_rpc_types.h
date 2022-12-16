@@ -45,8 +45,12 @@ struct diskcheck_opts
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
     /// Descriptive name given to test run
     ss::sstring name;
+    /// Scheduling group that the benchmark will operate under
+    ss::scheduling_group sg;
 
     ss::lowres_clock::duration duration;
+
+    auto serde_fields() { return std::tie(name, duration); }
 
     static diskcheck_opts from_json(const json::Value& obj) {
         static const auto default_duration = 5;
@@ -72,8 +76,12 @@ struct netcheck_opts
       envelope<netcheck_opts, serde::version<0>, serde::compat_version<0>> {
     /// Descriptive name given to test run
     ss::sstring name;
+    /// Scheduling group that the benchmark will operate under
+    ss::scheduling_group sg;
 
     ss::lowres_clock::duration duration;
+
+    auto serde_fields() { return std::tie(name, duration); }
 
     static netcheck_opts from_json(const json::Value& obj) {
         static const auto default_duration = 5;

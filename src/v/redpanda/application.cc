@@ -932,7 +932,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
 
-    construct_single_service_sharded(self_test_backend).get();
+    construct_single_service_sharded(
+      self_test_backend, _scheduling_groups.self_test_sg())
+      .get();
 
     construct_single_service_sharded(
       self_test_frontend,

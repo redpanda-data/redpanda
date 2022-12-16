@@ -15,6 +15,7 @@
 #include "utils/mutex.h"
 #include "utils/uuid.h"
 
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/smp.hh>
 
 namespace cluster {
@@ -29,6 +30,8 @@ namespace cluster {
 class self_test_backend {
 public:
     static constexpr ss::shard_id shard = 0;
+
+    explicit self_test_backend(ss::scheduling_group sg);
 
     ss::future<> start();
     ss::future<> stop();
@@ -59,10 +62,11 @@ private:
 
 private:
     // cached values
-    uuid_t _id;
+    uuid_t _id{};
     get_status_response _prev_run{.status = self_test_status::idle};
 
     ss::gate _gate;
+    ss::scheduling_group _st_sg;
     mutex _lock;
     diskcheck _disk_test;
     networkcheck _network_test;
