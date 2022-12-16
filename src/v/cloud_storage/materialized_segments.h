@@ -89,8 +89,13 @@ private:
 
         ss::future<> stop() {
             promise.set_value();
+            stopped = true;
             return ss::now();
         }
+
+        bool stopped{false};
+
+        bool is_stopped() const { return stopped; }
     };
 
     using evicted_resource_t = std::variant<
