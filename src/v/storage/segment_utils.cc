@@ -285,22 +285,20 @@ do_detect_compaction_index_state(segment_full_path p, compaction_config cfg) {
                 if (bool(footer.flags & flags::incomplete)) {
                     return compacted_index::recovery_state::index_needs_rebuild;
                 }
-                // if we deal with old version of index that is not yet
-                // compacted request a rebuild
-                if (
-                  footer.version
-                  < compacted_index::footer::key_prefixed_with_batch_type) {
-                    return compacted_index::recovery_state::index_needs_rebuild;
-                }
                 return compacted_index::recovery_state::index_recovered;
             })
             .finally([reader]() mutable { return reader.close(); });
       })
+      .handle_exception_type([](const compacted_index::needs_rebuild_error& e) {
+          vlog(stlog.info, "compacted index needs rebuild: {}", e);
+          return compacted_index::recovery_state::index_needs_rebuild;
+      })
       .handle_exception([](std::exception_ptr e) {
           vlog(
             stlog.warn,
-            "detected error while attempting recovery, {}. marking as 'needs "
-            "rebuild'. Common situation during crashes or hard shutdowns.",
+            "detected error while attempting compacted index recovery, {}. "
+            "marking as 'needs rebuild'. Common situation during crashes or "
+            "hard shutdowns.",
             e);
           return compacted_index::recovery_state::index_needs_rebuild;
       });

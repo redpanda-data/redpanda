@@ -65,17 +65,23 @@ struct compacted_index {
         incomplete = 1U << 2U,
     };
     struct footer {
-        // initial version of footer
-        static constexpr int8_t base_version = 0;
-        // introduced a key being a tuple of batch_type and the key content
-        static constexpr int8_t key_prefixed_with_batch_type = 1;
+        // footer versions:
+        // 0 - initial version
+        // 1 - introduced a key being a tuple of batch_type and the key content
+        //  of footer
+        // 2 - 64-bit size and keys fields
+        static constexpr int8_t current_version = 2;
 
-        uint32_t size{0};
-        uint32_t keys{0};
+        uint64_t size{0};
+        uint64_t keys{0};
+        // must be kept for backwards compatibility with pre-version 2 code
+        // (that allows using an index with a version greater than current).
+        uint32_t size_deprecated{0};
+        uint32_t keys_deprecated{0};
         footer_flags flags{0};
         uint32_t crc{0}; // crc32
-        // version *must* be the last value
-        int8_t version{key_prefixed_with_batch_type};
+        // version *must* be the last field
+        int8_t version{current_version};
 
         friend std::ostream&
         operator<<(std::ostream& o, const compacted_index::footer& f) {
@@ -103,11 +109,17 @@ struct compacted_index {
          */
         index_recovered
     };
-    static constexpr size_t footer_size = sizeof(footer::size)
-                                          + sizeof(footer::keys)
-                                          + sizeof(footer::flags)
-                                          + sizeof(footer::crc)
-                                          + sizeof(footer::version);
+    static constexpr size_t footer_size
+      = sizeof(footer::size) + sizeof(footer::keys)
+        + sizeof(footer::size_deprecated) + sizeof(footer::keys_deprecated)
+        + sizeof(footer::flags) + sizeof(footer::crc) + sizeof(footer::version);
+
+    struct needs_rebuild_error final : public std::runtime_error {
+    public:
+        explicit needs_rebuild_error(std::string_view msg)
+          : std::runtime_error(msg.data()) {}
+    };
+
     // for the readers and friends
     struct entry {
         entry(
