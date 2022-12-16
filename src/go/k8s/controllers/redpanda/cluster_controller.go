@@ -435,7 +435,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 		// if it's not gone
 		if broker != nil {
 			// decommission it
-			log.WithValues(nodeID).Info("decommissioning broker")
+			log.WithValues("node-id", nodeID).Info("decommissioning broker")
 			if err = adminClient.DecommissionBroker(ctx, nodeID); err != nil {
 				return fmt.Errorf(`unable to decommission node "%d": %w`, nodeID, err)
 			}
@@ -464,7 +464,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 					}
 					continue
 				}
-				log.WithValues(key).Info("deleting PersistentVolumeClaim")
+				log.WithValues("persistent-volume-claim", key).Info("deleting PersistentVolumeClaim")
 				if err := r.Delete(ctx, &pvc, &client.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 					return fmt.Errorf(`unable to delete PersistentVolumeClaim "%s/%s": %w`, key.Name, key.Namespace, err)
 				}
@@ -482,7 +482,7 @@ func (r *ClusterReconciler) removePodFinalizer(
 	ctx context.Context, pod *corev1.Pod, log logr.Logger,
 ) error {
 	if controllerutil.ContainsFinalizer(pod, FinalizerKey) {
-		log.V(7).WithValues(pod.Namespace, pod.Name).Info("removing finalizer")
+		log.V(7).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("removing finalizer")
 		controllerutil.RemoveFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
@@ -495,7 +495,7 @@ func (r *ClusterReconciler) setPodFinalizer(
 	ctx context.Context, pod *corev1.Pod, log logr.Logger,
 ) error {
 	if !controllerutil.ContainsFinalizer(pod, FinalizerKey) {
-		log.V(7).WithValues(pod.Namespace, pod.Name).Info("adding finalizer")
+		log.V(7).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("adding finalizer")
 		controllerutil.AddFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
@@ -524,7 +524,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if err != nil {
 			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
 		}
-		log.WithValues(pod.Name, nodeID).Info("setting node-id annotation")
+		log.WithValues("pod-name", pod.Name, "node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
