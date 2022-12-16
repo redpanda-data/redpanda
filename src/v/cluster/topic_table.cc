@@ -650,22 +650,16 @@ void topic_table::notify_waiters() {
     /// function_ptrs stored in \ref notifications, without consuming all
     /// pending_deltas for when a subsequent waiter does arrive
 
-    std::vector<delta> changes;
-
     // \ref notify_waiters is called after every apply. Hence for the most
     // part there should only be a few items towards the end of \ref
     // _pending_deltas that need to be sent to callbacks in \ref
     // notifications. \ref _last_consumed_by_notifier_offset allows us to
     // skip ahead to the items added since the last \ref notify_waiters
     // call.
-    auto starting_iter = _pending_deltas.begin()
+    auto starting_iter = _pending_deltas.cbegin()
                          + _last_consumed_by_notifier_offset;
 
-    std::copy_if(
-      starting_iter,
-      _pending_deltas.end(),
-      std::back_inserter(changes),
-      [this](const delta& d) { return d.offset > _last_consumed_by_notifier; });
+    std::span changes{starting_iter, _pending_deltas.cend()};
 
     if (!changes.empty()) {
         for (auto& cb : _notifications) {

@@ -72,7 +72,7 @@ private:
     ss::future<> add_to_shard_table(
       model::ntp ntp, ss::shard_id shard, model::revision_id revision);
 
-    void enqueue_events(std::vector<update_t>);
+    void enqueue_events(std::span<const update_t>);
     ss::future<> process_loop();
 
     bool stale_create_non_replicable_partition_request(
