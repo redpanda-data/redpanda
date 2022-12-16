@@ -93,7 +93,7 @@ ss::future<> group_manager::start() {
      */
     _topic_table_notify_handle
       = _topic_table.local().register_delta_notification(
-        [this](const std::vector<cluster::topic_table::delta>& deltas) {
+        [this](std::span<const cluster::topic_table::delta> deltas) {
             handle_topic_delta(deltas);
         });
 
@@ -213,7 +213,7 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
 }
 
 void group_manager::handle_topic_delta(
-  const std::vector<cluster::topic_table_delta>& deltas) {
+  std::span<const cluster::topic_table_delta> deltas) {
     // topic-partition deletions in the kafka namespace are the only deltas that
     // are relevant to the group manager
     std::vector<model::topic_partition> tps;
