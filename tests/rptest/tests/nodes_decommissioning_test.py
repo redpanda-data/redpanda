@@ -546,7 +546,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.start_producer(1, throughput=self.producer_throughput())
         self.start_consumer(1)
-        self.await_startup(min_records=self.records_to_wait())
+        self.await_startup(min_records=self.records_to_wait(), timeout_sec=120)
         # throttle recovery
         rpk = RpkTool(self.redpanda)
         self.redpanda.start_node(self.redpanda.nodes[-1])
