@@ -179,4 +179,7 @@ RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
     chmod +x /opt/scripts/seastar-addr2line
 
+RUN mkdir -p /opt/scripts/offline_log_viewer
+COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
+
 CMD service ssh start && tail -f /dev/null
