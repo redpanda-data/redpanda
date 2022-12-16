@@ -215,7 +215,8 @@ replicated_partition::aborted_transactions(
     }
     if (
       _partition->cloud_data_available()
-      && offsets.begin_rp < _partition->start_offset()) {
+      && offsets.begin
+           < _translator->from_log_offset(_partition->start_offset())) {
         // The fetch request was satisfied using shadow indexing.
         auto tx_remote = co_await aborted_transactions_remote(
           offsets, ot_state);
