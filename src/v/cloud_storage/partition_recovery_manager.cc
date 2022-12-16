@@ -414,7 +414,7 @@ partition_downloader::download_log_with_capped_size(
           });
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
-    if (dlpart.num_files == 0) {
+    if (!data_found) {
         // The segments didn't have data batches
         vlog(_ctxlog.debug, "Log segments didn't have data batches");
         dlpart.range.min_offset = model::offset{0};
@@ -484,10 +484,13 @@ partition_downloader::download_log_with_capped_time(
         .max_offset = model::offset::min(),
       }};
 
+    auto data_found = false;
+
     co_await ss::max_concurrent_for_each(
       staged_downloads,
       max_concurrency,
-      [this, &dlpart, &dloffsets](const segment_meta& s) -> ss::future<> {
+      [this, &dlpart, &dloffsets, &data_found](
+        const segment_meta& s) -> ss::future<> {
           retry_chain_node fib(&_rtcnode);
           retry_chain_logger dllog(cst_log, fib);
           vlog(
@@ -499,17 +502,20 @@ partition_downloader::download_log_with_capped_time(
             dlpart.part_prefix,
             dlpart.dest_prefix);
           return download_segment_file(s, dlpart).then(
-            [&dloffsets](auto offsets) {
+            [&dloffsets, &data_found](auto offsets) {
                 if (offsets) {
                     dloffsets.push_back({
                       .min_offset = offsets->min_offset,
                       .max_offset = offsets->max_offset,
                     });
+                    if (offsets->size_bytes > 0) {
+                        data_found = true;
+                    }
                 }
             });
       });
     update_downloaded_offsets(std::move(dloffsets), dlpart);
-    if (dlpart.num_files == 0) {
+    if (!data_found) {
         // The segments didn't have data batches
         vlog(_ctxlog.debug, "Log segments didn't have data batches");
         dlpart.range.min_offset = model::offset{0};
