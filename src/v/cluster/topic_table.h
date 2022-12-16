@@ -23,6 +23,8 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <span>
+
 namespace cluster {
 
 /// Topic table represent all topics configuration and partition assignments.
@@ -104,8 +106,7 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
-    using delta_cb_t
-      = ss::noncopyable_function<void(const std::vector<delta>&)>;
+    using delta_cb_t = ss::noncopyable_function<void(std::span<const delta>)>;
 
     explicit topic_table()
       : _probe(*this){};
