@@ -536,7 +536,8 @@ class ProduceStatus:
                  restarts=0,
                  latency=None,
                  active=False,
-                 failed_transactions=0):
+                 failed_transactions=0,
+                 aborted_transaction_msgs=0):
         self.sent = sent
         self.acked = acked
         self.bad_offsets = bad_offsets
@@ -546,10 +547,11 @@ class ProduceStatus:
         self.latency = latency
         self.active = active
         self.failed_transactions = failed_transactions
+        self.aborted_transaction_messages = aborted_transaction_msgs
 
     def __str__(self):
         l = self.latency
-        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {l['p50']}/{l['p90']}/{l['p99']}>"
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {l['p50']}/{l['p90']}/{l['p99']}>"
 
 
 class KgoVerifierProducer(KgoVerifierService):
