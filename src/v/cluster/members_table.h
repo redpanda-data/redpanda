@@ -37,6 +37,7 @@ public:
     std::optional<broker_ptr> get_broker(model::node_id) const;
 
     bool contains(model::node_id) const;
+    bool contains_removed(model::node_id) const;
 
     void update_brokers(model::offset, const std::vector<model::broker>&);
 

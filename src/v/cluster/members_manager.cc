@@ -525,7 +525,8 @@ std::optional<model::node_id>
 members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
     const auto it = _id_by_uuid.find(node_uuid);
     if (it == _id_by_uuid.end()) {
-        while (_members_table.local().contains(_next_assigned_id)) {
+        while (_members_table.local().contains(_next_assigned_id)
+               || _members_table.local().contains_removed(_next_assigned_id)) {
             if (_next_assigned_id == INT_MAX) {
                 return std::nullopt;
             }
