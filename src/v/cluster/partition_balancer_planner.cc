@@ -67,12 +67,6 @@ void partition_balancer_planner::init_per_node_state(
   reallocation_request_state& rrs,
   plan_data& result) const {
     for (const auto& [id, broker] : _state.members().nodes()) {
-        if (
-          broker.state.get_membership_state()
-          == model::membership_state::removed) {
-            continue;
-        }
-
         rrs.all_nodes.push_back(id);
 
         if (
