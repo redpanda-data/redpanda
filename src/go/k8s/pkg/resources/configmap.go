@@ -72,6 +72,7 @@ type ConfigMapResource struct {
 	serviceFQDN            string
 	pandaproxySASLUser     types.NamespacedName
 	schemaRegistrySASLUser types.NamespacedName
+	tlsConfigProvider      resourcetypes.BrokerTLSConfigProvider
 	logger                 logr.Logger
 }
 
@@ -83,6 +84,7 @@ func NewConfigMap(
 	serviceFQDN string,
 	pandaproxySASLUser types.NamespacedName,
 	schemaRegistrySASLUser types.NamespacedName,
+	tlsConfigProvider resourcetypes.BrokerTLSConfigProvider,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
@@ -92,6 +94,7 @@ func NewConfigMap(
 		serviceFQDN,
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
+		tlsConfigProvider,
 		logger.WithValues("Kind", configMapKind()),
 	}
 }
@@ -343,7 +346,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	r.preparePandaproxy(&cfg.NodeConfiguration)
 	r.preparePandaproxyTLS(&cfg.NodeConfiguration, mountPoints)
-	err := r.preparePandaproxyClient(ctx, cfg)
+	err := r.preparePandaproxyClient(ctx, cfg, mountPoints)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +366,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 		}
 	}
 	r.prepareSchemaRegistryTLS(&cfg.NodeConfiguration, mountPoints)
-	err = r.prepareSchemaRegistryClient(ctx, cfg)
+	err = r.prepareSchemaRegistryClient(ctx, cfg, mountPoints)
 	if err != nil {
 		return nil, err
 	}
@@ -491,9 +494,14 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 }
 
 func (r *ConfigMapResource) preparePandaproxyClient(
-	ctx context.Context, cfg *configuration.GlobalConfiguration,
+	ctx context.Context, cfg *configuration.GlobalConfiguration, mountPoints *resourcetypes.TLSMountPoints,
 ) error {
 	if internal := r.pandaCluster.PandaproxyAPIInternal(); internal == nil {
+		return nil
+	}
+	kafkaInternal := r.pandaCluster.InternalListener()
+	if kafkaInternal == nil {
+		r.logger.Error(errors.New("pandaproxy is missing internal kafka listener. This state is forbidden by the webhook"), "") //nolint:goerr113 // no need for static error
 		return nil
 	}
 
@@ -504,6 +512,11 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 			Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
 			Port:    r.pandaCluster.InternalListener().Port,
 		})
+	}
+
+	clientBrokerTLS := r.tlsConfigProvider.KafkaClientBrokerTLS(mountPoints)
+	if clientBrokerTLS != nil {
+		cfg.NodeConfiguration.PandaproxyClient.BrokerTLS = *clientBrokerTLS
 	}
 
 	if !r.pandaCluster.IsSASLOnInternalEnabled() {
@@ -524,15 +537,19 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 	cfg.NodeConfiguration.PandaproxyClient.SCRAMUsername = &username
 	cfg.NodeConfiguration.PandaproxyClient.SCRAMPassword = &password
 	cfg.NodeConfiguration.PandaproxyClient.SASLMechanism = &mechanism
-
 	// Add username as superuser
 	return cfg.AppendToAdditionalRedpandaProperty(superusersConfigurationKey, username)
 }
 
 func (r *ConfigMapResource) prepareSchemaRegistryClient(
-	ctx context.Context, cfg *configuration.GlobalConfiguration,
+	ctx context.Context, cfg *configuration.GlobalConfiguration, mountPoints *resourcetypes.TLSMountPoints,
 ) error {
 	if r.pandaCluster.Spec.Configuration.SchemaRegistry == nil {
+		return nil
+	}
+	kafkaInternal := r.pandaCluster.InternalListener()
+	if kafkaInternal == nil {
+		r.logger.Error(errors.New("pandaproxy is missing internal kafka listener. This state is forbidden by the webhook"), "") //nolint:goerr113 // no need for static error
 		return nil
 	}
 
@@ -543,6 +560,11 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 			Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
 			Port:    r.pandaCluster.InternalListener().Port,
 		})
+	}
+
+	clientBrokerTLS := r.tlsConfigProvider.KafkaClientBrokerTLS(mountPoints)
+	if clientBrokerTLS != nil {
+		cfg.NodeConfiguration.SchemaRegistryClient.BrokerTLS = *clientBrokerTLS
 	}
 
 	if !r.pandaCluster.IsSASLOnInternalEnabled() {
