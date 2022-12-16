@@ -16,6 +16,7 @@ from rptest.util import Scale, segments_count, wait_for_local_storage_truncate
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.utils.mode_checks import skip_debug_mode
 from ducktape.utils.util import wait_until
 import time
 import json
@@ -238,6 +239,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         'redpanda.remote.write': True,
         'redpanda.remote.read': True,
     }])
+    @skip_debug_mode
     def test_restore_with_aborted_tx(self, recovery_overrides):
         """Produce data using transactions including some percentage of aborted
         transactions. Run recovery and make sure that record batches generated
@@ -249,10 +251,10 @@ class EndToEndTopicRecovery(RedpandaTest):
         - the partition is downloaded fully;
         - the partition is downloaded partially and SI is used to read from the start;
         """
-        if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
+
+        # Allocate a node that we will re-use for multiple producer+consumer services
+        traffic_node = self.test_context.cluster.alloc(
+            ClusterSpec.simple_linux(1))[0]
 
         # Abort an unrealistically high fraction of transactions, to give a good probability
         # of exercising code paths that might e.g. seek to an abort marker
@@ -268,10 +270,10 @@ class EndToEndTopicRecovery(RedpandaTest):
                                        use_transactions=True,
                                        transaction_abort_rate=0.5,
                                        msgs_per_transaction=per_transaction,
-                                       debug_logs=True)
+                                       debug_logs=True,
+                                       custom_node=[traffic_node])
         producer.start()
         producer.wait()
-        producer.free()
         self.logger.info(f"Producer status: {producer.produce_status}")
 
         rpk = RpkTool(self.redpanda)
@@ -286,22 +288,33 @@ class EndToEndTopicRecovery(RedpandaTest):
                    backoff_sec=5,
                    err_msg=f"Not all data is uploaded to S3 bucket")
 
-        def validate(free=True):
+        # Keep services alive, so that log-capturing gets their logs at the end
+        consumers = []
+
+        def validate(expect_valid_reads=None):
             consumer = KgoVerifierSeqConsumer(self.test_context,
                                               self.redpanda,
                                               self.topic,
                                               msg_size,
                                               loop=False,
-                                              debug_logs=True)
+                                              nodes=[traffic_node],
+                                              debug_logs=True,
+                                              trace_logs=True)
             consumer.start(clean=False)
+            consumers.append(consumer)
             consumer.wait()
             status = consumer.consumer_status
             self.logger.info(f"Consumer status: {status}")
             try:
                 assert status.errors == 0
 
-                # We aborted some fraction: should never see all messages valid
-                assert status.validator.valid_reads < msg_count
+                if expect_valid_reads is None:
+                    # We aborted some fraction: should never see all messages valid
+                    assert status.validator.valid_reads < msg_count
+                else:
+                    # We know from a previous validate exactly how many messages
+                    # to expect
+                    assert status.validator.valid_reads == expect_valid_reads
 
                 # No aborted messages should be visible
                 assert status.validator.invalid_reads == 0
@@ -312,11 +325,12 @@ class EndToEndTopicRecovery(RedpandaTest):
                 self.logger.exception("I need an adult")
                 time.sleep(3600)
 
-            if free:
-                consumer.free()
+            return status.validator.valid_reads
 
         # Validate that transactional reads of the produced data are correct
-        validate()
+        # (we will validate several times before recovery, in order to ensure that if anything
+        #  fails after recovery, it is recovery specific)
+        valid_reads = validate()
 
         # Let local data age out validate that transaction reads that hit S3 are correct
         rpk.alter_topic_config(self.topic, "retention.local.target.bytes",
@@ -326,9 +340,13 @@ class EndToEndTopicRecovery(RedpandaTest):
                                         0,
                                         int(msg_size * msg_count * 0.5),
                                         timeout_sec=30)
-        validate()
+        validate(expect_valid_reads=valid_reads)
 
-        # Whipe out the state on the nodes
+        # Restart, and check that transactional reads to S3 remain correct
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        validate(expect_valid_reads=valid_reads)
+
+        # Wipe out the state on the nodes
         self._stop_redpanda_nodes()
         self._wipe_data()
         # Run recovery
@@ -339,4 +357,4 @@ class EndToEndTopicRecovery(RedpandaTest):
         restore_hwm = next(rpk.describe_topic(self.topic)).high_watermark
         assert restore_hwm == hwm
 
-        validate(free=False)
+        validate(expect_valid_reads=valid_reads)

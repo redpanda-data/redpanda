@@ -1534,6 +1534,8 @@ class RedpandaService(Service):
             if key.endswith('manifest.json') and manifest_dump_limit > 0:
                 manifests_to_dump.append(key)
                 manifest_dump_limit -= 1
+            elif key.endswith(".tx"):
+                manifests_to_dump.append(key)
 
         archive_basename = "cloud_diagnostics.zip"
         archive_path = os.path.join(
