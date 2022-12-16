@@ -123,6 +123,8 @@ public:
         return _path;
     }
 
+    bool is_stopped() const { return _stopped; }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -261,6 +263,8 @@ public:
     bool reads_from_segment(const remote_segment& segm) const {
         return &segm == _seg.get();
     }
+
+    bool is_stopped() const { return _stopped; }
 
 private:
     friend class single_record_consumer;

@@ -66,7 +66,15 @@ ss::future<> materialized_segments::stop() {
     // Do the last pass over the eviction list to stop remaining items returned
     // from readers after the eviction loop stopped.
     for (auto& rs : _eviction_list) {
-        co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
+        co_await std::visit(
+          [](auto&& rs) {
+              if (!rs->is_stopped()) {
+                  return rs->stop();
+              } else {
+                  return ss::make_ready_future<>();
+              }
+          },
+          rs);
     }
 }
 ss::future<> materialized_segments::start() {
