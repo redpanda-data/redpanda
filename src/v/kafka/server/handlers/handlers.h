@@ -13,6 +13,7 @@
 #include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
 #include "kafka/server/handlers/alter_configs.h"
+#include "kafka/server/handlers/alter_partition_reassignments.h"
 #include "kafka/server/handlers/api_versions.h"
 #include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/create_partitions.h"
@@ -86,7 +87,8 @@ using request_types = make_request_types<
   add_offsets_to_txn_handler,
   end_txn_handler,
   create_partitions_handler,
-  offset_for_leader_epoch_handler>;
+  offset_for_leader_epoch_handler,
+  alter_partition_reassignments_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
