@@ -132,20 +132,17 @@ compacted_index_chunk_reader::load_footer() {
       _file_size.value() - compacted_index::footer_size,
       compacted_index::footer_size,
       std::move(options));
-    ss::temporary_buffer<char> tmp = co_await in.read_exactly(
-      compacted_index::footer_size);
+    iobuf buf = co_await read_iobuf_exactly(in, compacted_index::footer_size);
 
-    if (tmp.size() != compacted_index::footer_size) {
+    if (buf.size_bytes() != compacted_index::footer_size) {
         throw std::runtime_error(fmt::format(
           "could not read enough bytes to parse "
           "footer. read:{}, expected:{}",
-          tmp.size(),
+          buf.size_bytes(),
           compacted_index::footer_size));
     }
 
-    iobuf b;
-    b.append(std::move(tmp));
-    iobuf_parser parser(std::move(b));
+    iobuf_parser parser(std::move(buf));
     auto footer = reflection::adl<storage::compacted_index::footer>{}.from(
       parser);
     if (footer.version != compacted_index::footer::current_version) {
