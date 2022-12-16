@@ -1062,6 +1062,14 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
 }
 
 ss::future<> remote_segment_batch_reader::stop() {
+    if (_stopped) {
+        vlog(
+          _ctxlog.warn,
+          "remote_segment_batch_reader::stop called when reader already "
+          "stopped");
+        co_return;
+    }
+
     vlog(_ctxlog.debug, "remote_segment_batch_reader::stop");
     co_await _gate.close();
     if (_parser) {
