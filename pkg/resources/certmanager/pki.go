@@ -43,17 +43,22 @@ type PkiReconciler struct {
 
 // NewPki creates PkiReconciler
 func NewPki(
+	ctx context.Context,
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
 	clusterFQDN string,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
-) *PkiReconciler {
+) (*PkiReconciler, error) {
+	cc, err := NewClusterCertificates(ctx, pandaCluster, keyStoreKey(pandaCluster), client, fqdn, clusterFQDN, scheme, logger)
+	if err != nil {
+		return nil, err
+	}
 	return &PkiReconciler{
 		client, scheme, pandaCluster, fqdn, clusterFQDN, logger.WithValues("Reconciler", "pki"),
-		NewClusterCertificates(pandaCluster, keyStoreKey(pandaCluster), client, fqdn, clusterFQDN, scheme, logger),
-	}
+		cc,
+	}, nil
 }
 
 func keyStoreKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
@@ -90,5 +95,10 @@ func (r *PkiReconciler) StatefulSetVolumeProvider() resourcetypes.StatefulsetTLS
 
 // AdminAPIConfigProvider returns provider of admin TLS configuration
 func (r *PkiReconciler) AdminAPIConfigProvider() resourcetypes.AdminTLSConfigProvider {
+	return r.clusterCertificates
+}
+
+// BrokerTLSConfigProvider returns provider of broker TLS
+func (r *PkiReconciler) BrokerTLSConfigProvider() resourcetypes.BrokerTLSConfigProvider {
 	return r.clusterCertificates
 }
