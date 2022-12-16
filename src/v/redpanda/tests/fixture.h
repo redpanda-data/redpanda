@@ -214,6 +214,11 @@ public:
         aconf.segment_upload_timeout = 1s;
         aconf.manifest_upload_timeout = 1s;
         aconf.time_limit = std::nullopt;
+        // Set the archiver reconciliation interval to be longer than the
+        // duration of any sensible unit test. Unit tests request reconciliation
+        // manually by calling into the scheduler service.
+        // TODO: Remove in PR#7547
+        aconf.reconciliation_interval = 1h;
         return aconf;
     }
 
