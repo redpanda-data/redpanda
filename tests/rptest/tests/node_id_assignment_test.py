@@ -45,6 +45,14 @@ def check_node_ids_persist(redpanda):
         assert new_node_id == original_node_id, f"{new_node_id} vs {original_node_id}"
 
 
+def wait_for_node_removed(admin, node_id):
+    def node_removed():
+        brokers = admin.get_brokers()
+        return not any(b["node_id"] == node_id for b in brokers)
+
+    wait_until(node_removed, timeout_sec=30, backoff_sec=1)
+
+
 class NodeIdAssignment(RedpandaTest):
     """
     Test that exercises cluster formation when node IDs are automatically
@@ -56,8 +64,13 @@ class NodeIdAssignment(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        self.redpanda.start(auto_assign_node_id=True)
+        self.redpanda.set_seed_servers(self.redpanda.nodes)
+        self.redpanda.start(auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)
         self._create_initial_topics()
+
+    def node_ids(self):
+        return [self.redpanda.node_id(n) for n in self.redpanda.nodes]
 
     @cluster(num_nodes=3)
     def test_basic_assignment(self):
@@ -71,12 +84,16 @@ class NodeIdAssignment(RedpandaTest):
         We should be able to get a new node ID after wiping and decommissioning
         a node.
         """
+        original_node_ids = self.node_ids()
         replaced_node = self.redpanda.nodes[-1]
         replaced_node_id = self.redpanda.node_id(replaced_node)
+
         self.admin.decommission_broker(replaced_node_id)
+        wait_for_node_removed(self.admin, replaced_node_id)
+
         wipe_and_restart(self.redpanda, replaced_node)
         new_node_id = self.redpanda.node_id(replaced_node, force_refresh=True)
-        assert replaced_node_id != new_node_id, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
 
     @cluster(num_nodes=3)
     def test_rejoin_after_decommission(self):
@@ -86,7 +103,10 @@ class NodeIdAssignment(RedpandaTest):
         """
         original_node = self.redpanda.nodes[-1]
         original_node_id = self.redpanda.node_id(original_node)
+
         self.admin.decommission_broker(original_node_id)
+        wait_for_node_removed(self.admin, original_node_id)
+
         new_node_id = self.redpanda.node_id(original_node, force_refresh=True)
         assert original_node_id == new_node_id, f"Node came back with different node ID {new_node_id}"
 
@@ -96,17 +116,17 @@ class NodeIdAssignment(RedpandaTest):
         Wiping a node that doesn't have a configured node ID should result in a
         new node ID being assigned to that node.
         """
+        original_node_ids = self.node_ids()
         brokers = self.admin.get_brokers()
         assert 3 == len(brokers), f"Got {len(brokers)} brokers"
 
         clean_node = self.redpanda.nodes[-1]
-        original_node_id = self.redpanda.node_id(clean_node)
         wipe_and_restart(self.redpanda, clean_node)
 
         brokers = self.admin.get_brokers()
         assert 4 == len(brokers), f"Got {len(brokers)} brokers"
         new_node_id = self.redpanda.node_id(clean_node, force_refresh=True)
-        assert original_node_id != new_node_id, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
         check_node_ids_persist(self.redpanda)
 
     @cluster(num_nodes=3, log_allow_list=["doesn't match stored node ID"])
@@ -181,6 +201,9 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         Upgrade a cluster and then immediately start using the node ID
         assignment feature.
         """
+        original_node_ids = [
+            self.redpanda.node_id(n) for n in self.redpanda.nodes
+        ]
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes,
                                     auto_assign_node_id=True)
@@ -191,10 +214,9 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
             err_msg="Timeout waiting for cluster to support 'license' feature")
 
         clean_node = self.redpanda.nodes[-1]
-        original_node_id = self.redpanda.node_id(clean_node)
         wipe_and_restart(self.redpanda, clean_node)
 
         brokers = self.admin.get_brokers()
         assert 4 == len(brokers), f"Got {len(brokers)} brokers"
         new_node_id = self.redpanda.node_id(clean_node, force_refresh=True)
-        assert original_node_id != new_node_id, f"Cleaned node came back with node ID {new_node_id}"
+        assert new_node_id not in original_node_ids, f"Cleaned node came back with node ID {new_node_id}"
