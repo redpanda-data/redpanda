@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
 #include "json/document.h"
 #include "model/metadata.h"
@@ -120,36 +121,63 @@ struct diskcheck_opts
     }
 };
 
-/// TODO: Replace fields with actual fields from real self-tests
 struct netcheck_opts
   : serde::
       envelope<netcheck_opts, serde::version<0>, serde::compat_version<0>> {
     /// Descriptive name given to test run
-    ss::sstring name;
+    ss::sstring name{"Network Test 8192b packet size"};
+    /// Node ids of servers to run the test against
+    std::vector<model::node_id> peers;
+    /// Size of individual request
+    size_t request_size{2 << 12}; // 8192 bytes
+    /// Total duration of an individual benchmark
+    ss::lowres_clock::duration duration{std::chrono::milliseconds(5000)};
+    /// Total duration of the entire benchmark across all nodes, ensures no
+    /// broker will be stuck in a blocked state for infinite time. This is
+    /// automatically set to the number of network benchmarks multiplied by the
+    /// above duration of a single netcheck run
+    ss::lowres_clock::duration max_duration;
+    /// Number of fibers per shard used to make network requests
+    uint16_t parallelism{10};
     /// Scheduling group that the benchmark will operate under
     ss::scheduling_group sg;
 
-    ss::lowres_clock::duration duration;
-
-    auto serde_fields() { return std::tie(name, duration); }
-
     static netcheck_opts from_json(const json::Value& obj) {
-        static const auto default_duration = 5;
-        return cluster::netcheck_opts{
-          .name = obj.HasMember("name") ? obj["name"].GetString() : "",
-          .duration = std::chrono::seconds(
-            obj.HasMember("network_test_execution_time")
-              ? obj["network_test_execution_time"].GetInt()
-              : default_duration)};
+        /// The application using these parameters will perform any validation
+        netcheck_opts opts;
+        if (obj.HasMember("name")) {
+            opts.name = obj["name"].GetString();
+        }
+        if (obj.HasMember("request_size")) {
+            opts.request_size = obj["request_size"].GetUint64();
+        }
+        if (obj.HasMember("duration_ms")) {
+            opts.duration = std::chrono::milliseconds(
+              obj["duration_ms"].GetInt());
+        }
+        if (obj.HasMember("parallelism")) {
+            opts.parallelism = obj["parallelism"].GetInt();
+        }
+        return opts;
+    }
+
+    auto serde_fields() {
+        return std::tie(
+          name, peers, request_size, duration, max_duration, parallelism);
     }
 
     friend std::ostream&
     operator<<(std::ostream& o, const netcheck_opts& opts) {
         fmt::print(
           o,
-          "{{name: {} test_duration: {}}}",
+          "{{name: {} peers: {} request_size: {} duration: "
+          "{} max_duration: {} parallelism: {}}}",
           opts.name,
-          opts.duration.count());
+          opts.peers,
+          opts.request_size,
+          opts.duration.count(),
+          opts.max_duration.count(),
+          opts.parallelism);
         return o;
     }
 };

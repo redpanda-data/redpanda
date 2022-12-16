@@ -26,7 +26,10 @@ namespace cluster {
 self_test_backend::self_test_backend(ss::scheduling_group sg)
   : _st_sg(sg) {}
 
-ss::future<> self_test_backend::start() { co_await _disk_test.start(); }
+ss::future<> self_test_backend::start() {
+    co_await _disk_test.start();
+    co_await _network_test.start();
+}
 
 ss::future<> self_test_backend::stop() {
     co_await _gate.close();
@@ -55,14 +58,22 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     }
     for (auto& nto : ntos) {
         try {
-            vlog(clusterlog.info, "Starting network self test...");
-            nto.sg = _st_sg;
-            auto ntr = co_await _network_test.run(nto).then([](auto results) {
-                vlog(
-                  clusterlog.info, "Network self test finished with success");
-                return results;
-            });
-            std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
+            if (!nto.peers.empty()) {
+                nto.sg = _st_sg;
+                vlog(clusterlog.info, "Starting network self test...");
+                auto ntr = co_await _network_test.run(nto).then(
+                  [](auto results) {
+                      vlog(
+                        clusterlog.info,
+                        "Network self test finished with success");
+                      return results;
+                  });
+                std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
+            } else {
+                results.push_back(self_test_result{
+                  .name = nto.name,
+                  .warning = "No peers to start network test against"});
+            }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Network self test finished with error");
             results.push_back(
