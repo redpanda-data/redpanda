@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
@@ -37,6 +38,17 @@ func TestClusterCertificates(t *testing.T) {
 			"tls.crt": []byte("XXX"),
 			"tls.key": []byte("XXX"),
 			"ca.crt":  []byte("XXX"),
+		},
+	}
+	issuer := cmapiv1.Issuer{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "issuer",
+			Namespace: "test",
+		},
+		Spec: cmapiv1.IssuerSpec{
+			IssuerConfig: cmapiv1.IssuerConfig{
+				SelfSigned: nil,
+			},
 		},
 	}
 	tests := []struct {
@@ -114,6 +126,7 @@ func TestClusterCertificates(t *testing.T) {
 								Enabled: true,
 								IssuerRef: &cmmetav1.ObjectReference{
 									Name: "issuer",
+									Kind: "Issuer",
 								},
 							},
 						},
@@ -122,9 +135,13 @@ func TestClusterCertificates(t *testing.T) {
 			},
 		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1, func(vols []corev1.Volume) bool {
 			// verify the volume does not contain CA in the node tls folder when node cert is injected
-			for _, i := range vols[0].Secret.Items {
-				if i.Key == cmmetav1.TLSCAKey {
-					return false
+			for i, v := range vols {
+				if v.Name == "tlscert" {
+					for _, i := range vols[i].Secret.Items {
+						if i.Key == cmmetav1.TLSCAKey {
+							return false
+						}
+					}
 				}
 			}
 			return true
@@ -155,9 +172,9 @@ func TestClusterCertificates(t *testing.T) {
 			// verify the ca volume contains also client cert
 			foundKey := false
 			foundCrt := false
-			for _, v := range vols {
+			for i, v := range vols {
 				if v.Name == "tlsca" {
-					for _, i := range vols[0].Secret.Items {
+					for _, i := range vols[i].Secret.Items {
 						if i.Key == corev1.TLSCertKey {
 							foundCrt = true
 						}
@@ -354,32 +371,32 @@ func TestClusterCertificates(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		cc := certmanager.NewClusterCertificates(tt.pandaCluster,
-			types.NamespacedName{
-				Name:      "test",
-				Namespace: "test",
-			}, fake.NewClientBuilder().WithRuntimeObjects(&secret).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.DiscardLogger{})
-		resources, err := cc.Resources(context.TODO())
-		require.NoError(t, err)
-		for _, r := range resources {
-			fmt.Println(r.Key().Name)
-		}
-		require.Equal(t, len(tt.expectedNames), len(resources))
-		for _, n := range tt.expectedNames {
-			found := false
-			for _, r := range resources {
-				if r.Key().Name == n {
-					found = true
-					break
+		t.Run(tt.name, func(t *testing.T) {
+			cc, err := certmanager.NewClusterCertificates(context.TODO(), tt.pandaCluster,
+				types.NamespacedName{
+					Name:      "test",
+					Namespace: "test",
+				}, fake.NewClientBuilder().WithRuntimeObjects(&secret, &issuer).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.DiscardLogger{})
+			require.NoError(t, err)
+			resources, err := cc.Resources(context.TODO())
+			require.NoError(t, err)
+			require.Equal(t, len(tt.expectedNames), len(resources))
+			for _, n := range tt.expectedNames {
+				found := false
+				for _, r := range resources {
+					if r.Key().Name == n {
+						found = true
+						break
+					}
 				}
+				require.True(t, found, fmt.Sprintf("name %s not found in resources", n))
 			}
-			require.True(t, found, fmt.Sprintf("name %s not found in resources", n))
-		}
-		v, vm := cc.Volumes()
-		require.Equal(t, tt.volumesCount, len(v), fmt.Sprintf("%s: volumes count don't match", tt.name))
-		require.Equal(t, tt.volumesCount, len(vm), fmt.Sprintf("%s: volume mounts count don't match", tt.name))
-		if tt.verifyVolumes != nil {
-			require.True(t, tt.verifyVolumes(v), "failed during volumes verification")
-		}
+			v, vm := cc.Volumes()
+			require.Equal(t, tt.volumesCount, len(v), fmt.Sprintf("%s: volumes count don't match", tt.name))
+			require.Equal(t, tt.volumesCount, len(vm), fmt.Sprintf("%s: volume mounts count don't match", tt.name))
+			if tt.verifyVolumes != nil {
+				require.True(t, tt.verifyVolumes(v), "failed during volumes verification")
+			}
+		})
 	}
 }
