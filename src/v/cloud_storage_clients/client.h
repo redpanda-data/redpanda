@@ -172,7 +172,7 @@ public:
 
     /// DeleteObjects request.
     ///
-    /// \pre the number of keys is <= s3::client::delete_objects_max_keys (as
+    /// \pre the number of keys is <= delete_objects_max_keys (as
     /// per the S3 api)
     ///
     /// \param bucket the name of the bucket
