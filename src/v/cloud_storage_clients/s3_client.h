@@ -17,10 +17,14 @@
 #include "model/fundamental.h"
 #include "outcome.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/shared_ptr.hh>
 
+#include <chrono>
 #include <initializer_list>
-#include <limits>
+#include <span>
+#include <string>
 #include <string_view>
 
 namespace cloud_storage_clients {
@@ -73,6 +77,15 @@ public:
     /// \return initialized and signed http header or error
     result<http::client::request_header>
     make_delete_object_request(bucket_name const& name, object_key const& key);
+
+    /// \brief Create a 'DeleteObjects' request header and body
+    ///
+    /// \param name of the bucket
+    /// \param keys to delete
+    /// \return the header and an the body as an input_stream
+    result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+    make_delete_objects_request(
+      bucket_name const& name, std::span<const object_key> keys);
 
     /// \brief Initialize http header for 'ListObjectsV2' request
     ///
@@ -163,6 +176,11 @@ public:
       const object_key& key,
       const ss::lowres_clock::duration& timeout) override;
 
+    ss::future<result<delete_objects_result, error_outcome>> delete_objects(
+      const bucket_name& bucket,
+      std::vector<object_key> keys,
+      ss::lowres_clock::duration timeout) override;
+
 private:
     ss::future<head_object_result> do_head_object(
       bucket_name const& name,
@@ -195,6 +213,11 @@ private:
       const bucket_name& bucket,
       const object_key& key,
       const ss::lowres_clock::duration& timeout);
+
+    ss::future<delete_objects_result> do_delete_objects(
+      const bucket_name& bucket,
+      std::span<const object_key> keys,
+      ss::lowres_clock::duration timeout);
 
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(

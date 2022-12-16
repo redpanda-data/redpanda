@@ -14,10 +14,12 @@
 #include "cloud_roles/signature.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/s3_client.h"
+#include "hashing/secure.h"
 #include "net/dns.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
 #include "seastarx.h"
+#include "utils/base64.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -40,6 +42,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/beast/http/field.hpp>
 #include <boost/property_tree/ptree_fwd.hpp>
+#include <boost/property_tree/xml_parser.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -102,6 +105,17 @@ static constexpr const char* list_objects_payload = R"xml(
     <Prefix>test-prefix</Prefix>
   </CommonPrefixes>
 </ListBucketResult>)xml";
+
+constexpr auto delete_objects_payload_result = R"xml(
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">{}</DeleteResult>
+)xml";
+
+constexpr auto delete_objects_payload_error = R"xml(
+    <Error>
+        <Key>{}</Key>
+        <Code>{}</Code>
+    </Error>
+)xml";
 
 void set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
@@ -176,7 +190,81 @@ void set_routes(ss::httpd::routes& r) {
           return no_such_bucket_payload;
       },
       "txt");
+    auto delete_objects_response = new function_handler(
+      [](const_req req, reply& reply) -> std::string {
+          if (!req.query_parameters.contains("delete")) {
+              reply.set_status(reply::status_type::bad_request);
+              return "wrong query_parameter";
+          }
 
+          if (auto computed_md5base64 =
+                [&] {
+                    auto hash = internal::hash<GNUTLS_DIG_MD5, 16>{};
+                    hash.update(req.content);
+                    auto digest = hash.reset();
+
+                    return bytes_to_base64(
+                      {reinterpret_cast<const uint8_t*>(digest.data()),
+                       digest.size()});
+                }();
+              computed_md5base64 != req.get_header("Content-MD5")) {
+              reply.set_status(reply::status_type::bad_request);
+              return fmt::format(
+                "bad Content-MD5, expected:[{}] got:[{}] body:[{}]",
+                computed_md5base64,
+                req.get_header("Content-MD5"),
+                req.content);
+          }
+
+          auto host = std::string{req.get_header("Host")};
+          if (host.starts_with("oknoerror.")) {
+              // this bucket accepts the delete request
+              return fmt::format(delete_objects_payload_result, "");
+          } else if (host.starts_with("okerror.")) {
+              // this bucket accepts the delete request but fails to delete the
+              // files
+              auto req_root = [&] {
+                  auto buffer_stream = std::istringstream{
+                    std::string{req.content}};
+                  auto tree = boost::property_tree::ptree{};
+                  boost::property_tree::read_xml(buffer_stream, tree);
+                  return tree;
+              }();
+
+              auto errors_xml = std::string{};
+
+              // partially validate the request xml and construct the response
+              // with the provided keys
+              for (auto const& [tag, value] : req_root.get_child("Delete")) {
+                  if (tag == "Quiet") {
+                      continue;
+                  }
+                  if (tag != "Object") {
+                      reply.set_status(reply::status_type::bad_request);
+                      return fmt::format("bad xml, unexpected <{}>", tag);
+                  }
+                  auto key = value.find("Key");
+                  if (key == value.not_found()) {
+                      reply.set_status(reply::status_type::bad_request);
+                      return "missing <Key>";
+                  }
+                  fmt::format_to(
+                    std::back_inserter(errors_xml),
+                    delete_objects_payload_error,
+                    value.get<std::string>("Key"),
+                    "InvalidPayer");
+              }
+
+              return fmt::format(delete_objects_payload_result, errors_xml);
+          } else if (host.starts_with("empty-body")) {
+              reply.set_status(reply::status_type::internal_server_error);
+              return "";
+          }
+
+          reply.set_status(reply::status_type::internal_server_error);
+          return "unexpected";
+      },
+      "txt");
     r.add(operation_type::PUT, url("/test"), empty_put_response);
     r.add(operation_type::PUT, url("/test-error"), erroneous_put_response);
     r.add(operation_type::GET, url("/test"), get_response);
@@ -195,6 +283,7 @@ void set_routes(ss::httpd::routes& r) {
       operation_type::DELETE,
       url("/test-bucket-not-found"),
       bucket_not_found_response);
+    r.add(operation_type::POST, url("/"), delete_objects_response);
 }
 
 /// Http server and client
@@ -493,6 +582,72 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
     });
 }
 
+SEASTAR_TEST_CASE(test_delete_objects_success) {
+    return ss::async([] {
+        auto [server, client] = started_client_and_server(
+          transport_configuration());
+        auto result = client
+                        ->delete_objects(
+                          cloud_storage_clients::bucket_name{"oknoerror"},
+                          {cloud_storage_clients::object_key{"key1"},
+                           cloud_storage_clients::object_key{"key2"},
+                           cloud_storage_clients::object_key{"key3"}},
+                          http::default_connect_timeout)
+                        .get0();
+        BOOST_REQUIRE(result);
+        BOOST_REQUIRE(result.value().undeleted_keys.empty());
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_delete_objects_errors) {
+    return ss::async([] {
+        auto [server, client] = started_client_and_server(
+          transport_configuration());
+        auto keys = std::array{
+          cloud_storage_clients::object_key{"key1"},
+          cloud_storage_clients::object_key{"key2"},
+          cloud_storage_clients::object_key{"key3"}};
+
+        auto result = client
+                        ->delete_objects(
+                          cloud_storage_clients::bucket_name{"okerror"},
+                          {keys.begin(), keys.end()},
+                          http::default_connect_timeout)
+                        .get0();
+        auto u_keys = std::vector<cloud_storage_clients::object_key>{};
+        BOOST_REQUIRE(result);
+        std::transform(
+          result.value().undeleted_keys.begin(),
+          result.value().undeleted_keys.end(),
+          std::back_inserter(u_keys),
+          [](auto const& kr) { return kr.key; });
+        std::sort(u_keys.begin(), u_keys.end());
+        BOOST_REQUIRE(
+          std::equal(keys.begin(), keys.end(), u_keys.begin(), u_keys.end()));
+
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_delete_object_retry) {
+    return ss::async([] {
+        auto [server, client] = started_client_and_server(
+          transport_configuration());
+        auto result = client
+                        ->delete_objects(
+                          cloud_storage_clients::bucket_name{"empty-body"},
+                          {cloud_storage_clients::object_key{"key1"}},
+                          http::default_connect_timeout)
+                        .get();
+        BOOST_REQUIRE(!result);
+        BOOST_REQUIRE(
+          result.error()
+          == cloud_storage_clients::error_outcome::retry_slowdown);
+
+        server->stop().get();
+    });
+}
 /// Http server and client
 struct configured_server_and_client_pool {
     ss::shared_ptr<ss::httpd::http_server_control> server;
