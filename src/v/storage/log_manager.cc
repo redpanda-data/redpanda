@@ -206,6 +206,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
     while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
         auto& current_log = _logs_list.front();
 
+
         _logs_list.pop_front();
         _logs_list.push_back(current_log);
 

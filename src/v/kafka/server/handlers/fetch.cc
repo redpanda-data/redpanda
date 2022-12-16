@@ -110,9 +110,14 @@ static ss::future<read_result> read_from_partition(
               result.first_tx_batch_offset.value(),
               result.last_offset,
               std::move(rdr.ot_state));
+            vlog(klog.trace, "fetched aborted_transactions {} {}-{}",
+                 aborted_transactions.size(), result.first_tx_batch_offset, result.last_offset);
+        } else {
+            vlog(klog.trace, "skipping aborted_transactions {} {}", result.first_tx_batch_offset, result.record_count);
         }
 
     } catch (...) {
+        vlog(klog.trace, "exception getting aborted_transactions");
         e = std::current_exception();
     }
 
@@ -266,6 +271,7 @@ static void fill_fetch_responses(
          * According to KIP-74 we have to return first batch even if it would
          * violate max_bytes fetch parameter
          */
+        vlog(klog.trace, "fill_fetch_response[{}]: {} aborted transactions", idx, res.aborted_transactions.size());
         if (
           res.has_data()
           && (octx.bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {

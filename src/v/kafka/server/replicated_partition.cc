@@ -51,6 +51,8 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
 
     auto local_kafka_start_offset = _translator->from_log_offset(
       _partition->start_offset());
+    vlog(klog.trace, "make_reader: cfg.start_offset={}, local_kafka_start_offset={}, local raft start offset={}",
+         cfg.start_offset, local_kafka_start_offset, _partition->start_offset());
     if (
       _partition->is_remote_fetch_enabled()
       && _partition->cloud_data_available()
@@ -162,6 +164,7 @@ replicated_partition::aborted_transactions_remote(
   cloud_storage::offset_range offsets,
   ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
     auto source = co_await _partition->aborted_transactions_cloud(offsets);
+    vlog(klog.trace, "cluster::partition gavbe us {} aborted_transactions", source.size());
     std::vector<cluster::rm_stm::tx_range> target;
     target.reserve(source.size());
     for (const auto& range : source) {
@@ -213,6 +216,9 @@ replicated_partition::aborted_transactions(
         // Always use SI for read replicas
         co_return co_await aborted_transactions_remote(offsets, ot_state);
     }
+    vlog(klog.trace, "Looking up aborted_transactions ({}-{}, {}-{}) {} {}",
+         offsets.begin, offsets.end, offsets.begin_rp, offsets.end_rp,
+         _partition->cloud_data_available(), _partition->start_offset());
     if (
       _partition->cloud_data_available()
       && offsets.begin
@@ -220,6 +226,9 @@ replicated_partition::aborted_transactions(
         // The fetch request was satisfied using shadow indexing.
         auto tx_remote = co_await aborted_transactions_remote(
           offsets, ot_state);
+          vlog(klog.trace, "trying to get remote aborted_transactions {} {} -> {}",
+               offsets.begin_rp,
+               _partition->start_offset(), !tx_remote.empty());
         if (!tx_remote.empty()) {
             // NOTE: we don't have a way to upload tx-manifests to the cloud
             // for segments which was uploaded by old redpanda version because
@@ -234,6 +243,7 @@ replicated_partition::aborted_transactions(
             co_return tx_remote;
         }
     }
+    vlog(klog.trace, "Using local aborted_transactions");
     co_return co_await aborted_transactions_local(offsets, ot_state);
 }
 
