@@ -147,6 +147,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		"cluster.local",
 		types.NamespacedName{},
 		types.NamespacedName{},
+		TestBrokerTLSConfigProvider{},
 		ctrl.Log.WithName("test"))
 
 	err := cm.Ensure(context.Background())

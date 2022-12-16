@@ -14,6 +14,7 @@ import (
 	"context"
 	"crypto/tls"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -23,6 +24,11 @@ import (
 // resource
 type StatefulsetTLSVolumeProvider interface {
 	Volumes() ([]corev1.Volume, []corev1.VolumeMount)
+}
+
+// BrokerTLSConfigProvider provides broker client config for kafka api
+type BrokerTLSConfigProvider interface {
+	KafkaClientBrokerTLS(mountPoints *TLSMountPoints) *config.ServerTLS
 }
 
 // AdminTLSConfigProvider returns TLS config for admin API
