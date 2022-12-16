@@ -21,6 +21,7 @@
 #include "net/tls.h"
 #include "net/types.h"
 #include "ssx/sformat.h"
+#include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -100,7 +101,7 @@ ss::future<configuration> configuration::make_configuration(
     ss::tls::credentials_builder cred_builder;
     if (overrides.disable_tls == false) {
         // NOTE: this is a pre-defined gnutls priority string that
-        // picks the the ciphersuites with 128-bit ciphers which
+        // picks the ciphersuites with 128-bit ciphers which
         // leads to up to 10x improvement in upload speed, compared
         // to 256-bit ciphers
         cred_builder.set_priority_string("PERFORMANCE");
@@ -315,6 +316,102 @@ request_creator::make_delete_object_request(
         return ec;
     }
     return header;
+}
+
+struct delete_objects_body : public ss::data_source_impl {
+    ss::temporary_buffer<char> data;
+    explicit delete_objects_body(std::string_view body) noexcept
+      : data{body.data(), body.size()} {}
+    auto get() -> ss::future<ss::temporary_buffer<char>> override {
+        return ss::make_ready_future<ss::temporary_buffer<char>>(
+          std::exchange(data, {}));
+    }
+};
+
+result<std::tuple<http::client::request_header, ss::input_stream<char>>>
+request_creator::make_delete_objects_request(
+  const bucket_name& name, std::span<const object_key> keys) {
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    // will generate this request:
+    //
+    // POST /?delete HTTP/1.1
+    // Host: <Bucket>.s3.amazonaws.com
+    // Content-MD5: <Computer from body>
+    // Authorization: <applied by _requestor>
+    // Content-Length: <...>
+    //
+    // <?xml version="1.0" encoding="UTF-8"?>
+    // <Delete>
+    //     <Object>
+    //         <Key>object_key</Key>
+    //     </Object>
+    //     <Object>
+    //         <Key>object_key</Key>
+    //     </Object>
+    //      ...
+    //     <Quiet>true</Quiet>
+    // </Delete>
+    //
+    // note:
+    //  - Delete.Quiet true will generate a response that reports only failures
+    //  to delete or errors
+    //  - the actual xml might not be pretty-printed
+    //  - with clang15 and ranges, xml generation could be a one-liner + a
+    //  custom formatter for xml escaping
+
+    auto body = [&] {
+        auto delete_tree = boost::property_tree::ptree{};
+        // request a quiet response
+        delete_tree.put("Delete.Quiet", true);
+        // add an array of Object.Key=key to the Delete root
+        for (auto key_tree = boost::property_tree::ptree{};
+             auto const& k : keys) {
+            key_tree.put("Key", k().c_str());
+            delete_tree.add_child("Delete.Object", key_tree);
+        }
+
+        auto out = std::ostringstream{};
+        // to indent with 1 tab, pass
+        // boost::property_tree::xml_writer_settings<std::string>('\t', 1) as
+        // third parameter
+        boost::property_tree::write_xml(out, delete_tree);
+        return out.str();
+    }();
+
+    auto body_md5 = [&] {
+        // compute md5 and produce a base64 encoded signature for body
+        auto hash = internal::hash<GNUTLS_DIG_MD5, 16>{};
+        hash.update(body);
+        auto bin_digest = hash.reset();
+        return bytes_to_base64(
+          {reinterpret_cast<const uint8_t*>(bin_digest.data()),
+           bin_digest.size()});
+    }();
+
+    auto header = http::client::request_header{};
+    header.method(boost::beast::http::verb::post);
+    header.target("/?delete");
+    header.insert(
+      boost::beast::http::field::host, fmt::format("{}.{}", name(), _ap()));
+    // from experiments, minio is sloppy in checking this field. It will check
+    // that it's valid base64, but seems not to actually check the value
+    header.insert(
+      boost::beast::http::field::content_md5,
+      {body_md5.data(), body_md5.size()});
+
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", body.size()));
+
+    auto ec = _apply_credentials->add_auth(header);
+    if (ec) {
+        return ec;
+    }
+
+    return {
+      std::move(header),
+      ss::input_stream<char>{ss::data_source{
+        std::make_unique<delete_objects_body>(std::move(body))}}};
 }
 
 // client //
