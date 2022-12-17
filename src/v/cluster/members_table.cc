@@ -147,7 +147,10 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     _version = model::revision_id(version());
 
     const auto target = _brokers.find(cmd.key);
-    if (target == _brokers.end()) {
+    if (
+      target == _brokers.end()
+      || target->second->get_membership_state()
+           == model::membership_state::removed) {
         return errc::node_does_not_exists;
     }
 
@@ -182,7 +185,9 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     const auto other = std::find_if(
       _brokers.cbegin(), _brokers.cend(), [](const auto& b) {
           return b.second->get_maintenance_state()
-                 == model::maintenance_state::active;
+                   == model::maintenance_state::active
+                 && b.second->get_membership_state()
+                      != model::membership_state::removed;
       });
 
     if (other != _brokers.cend()) {
