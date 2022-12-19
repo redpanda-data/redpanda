@@ -14,6 +14,7 @@
 #include "cloud_roles/logger.h"
 #include "hashing/secure.h"
 #include "ssx/sformat.h"
+#include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -161,6 +162,7 @@ ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
 ///
 /// \param uri is a target of the http query (everything excluding the domain
 /// name)
+/// TODO(vlad): Template on error code...
 static result<ss::sstring> get_canonical_uri(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(clrl_log.error, "invalid URI {}", target);
@@ -388,4 +390,153 @@ signature_v4::signature_v4(
   , _region(std::move(region))
   , _access_key(std::move(access_key))
   , _private_key(std::move(private_key)) {}
+
+static constexpr auto required_headers = {
+  "Content-Encoding",
+  "Content-Language",
+  "Content-Length",
+  "Content-MD5",
+  "Content-Type",
+  "Date",
+  "If-Modified-Since",
+  "If-Match",
+  "If-None-Match",
+  "If-UnmodifiedSince",
+  "Range"};
+
+result<ss::sstring> signature_abs::get_canonicalized_resource(
+  const http::client::request_header& header) const {
+    const auto target_view = header.target();
+    const ss::sstring target{target_view.data(), target_view.size()};
+
+    if (target.empty() || target[0] != '/') {
+        vlog(clrl_log.error, "invalid URI {}", target);
+        // TODO(vlad): ABS error codes
+        return make_error_code(s3_client_error_code::invalid_uri);
+    }
+
+    const auto canonical_uri = get_canonical_uri(target);
+
+    ss::sstring result = ssx::sformat(
+      "/{}{}", _storage_account(), canonical_uri);
+
+    // TODO(vlad): copied from get_canonical_query_string. Factor out.
+    auto pos = target.find('?');
+    if (pos == ss::sstring::npos || pos == target.size() - 1) {
+        return "";
+    }
+    auto query_str = target.substr(pos + 1);
+    std::vector<ss::sstring> params;
+    boost::split(params, query_str, boost::is_any_of("&"));
+    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
+    for (const auto& param : params) {
+        auto p = param.find('=');
+        if (p == ss::sstring::npos) {
+            // parameter with empty value
+            query_params.emplace_back(param, "");
+        } else {
+            if (p == 0) {
+                // parameter value can be empty but name can't
+                return make_error_code(
+                  s3_client_error_code::invalid_uri_params);
+            }
+            ss::sstring pname = param.substr(0, p);
+            ss::sstring pvalue = param.substr(p + 1);
+            query_params.emplace_back(pname, pvalue);
+        }
+    }
+    std::sort(query_params.begin(), query_params.end());
+
+    for (const auto& [pname, pvalue] : query_params) {
+        // TODO(vlad): URI encode? Docs are not clear
+        // TODO(vlad): List values are not supported.
+        result += ssx::sformat("\n{}:{}", pname, pvalue);
+    }
+
+    return result;
+}
+
+ss::sstring signature_abs::get_canonicalized_headers(
+  const http::client::request_header& header) const {
+    std::vector<std::pair<ss::sstring, ss::sstring>> ms_headers;
+    for (const auto& it : header) {
+        auto name = it.name_string();
+        auto value = it.value();
+
+        if (name.starts_with("x-ms-")) {
+            ss::sstring n{name.data(), name.size()};
+            ss::sstring v{value.data(), value.size()};
+            boost::trim(v);
+
+            ms_headers.emplace_back(n, v);
+        }
+    }
+
+    std::sort(ms_headers.begin(), ms_headers.end());
+
+    ss::sstring result{};
+    for (auto& ms_header : ms_headers) {
+        result += ssx::sformat(
+          "{}:{}\n", std::move(ms_header.first), std::move(ms_header.second));
+    }
+
+    return result;
+}
+
+result<ss::sstring>
+signature_abs::get_string_to_sign(http::client::request_header& header) const {
+    ss::sstring non_ms_headers{};
+    for (const auto& header_name : required_headers) {
+        auto header_value_view = header[header_name];
+        ss::sstring header_value{
+          header_value_view.data(), header_value_view.size()};
+
+        boost::trim(header_value);
+        non_ms_headers += ssx::sformat("{}\n", header_value);
+    }
+
+    const auto canonicalized_ms_headers = get_canonicalized_headers(header);
+    auto canonicalized_res = get_canonicalized_resource(header);
+    if (!canonicalized_res) {
+        return canonicalized_res;
+    }
+
+    return ssx::sformat(
+      "{}\n{}{}{}",
+      header.method_string(),
+      non_ms_headers,
+      canonicalized_ms_headers,
+      canonicalized_res.value());
+}
+
+signature_abs::signature_abs(
+  storage_account storage_account, private_key_str shared_key, time_source ts)
+  : _sig_time(std::move(ts))
+  , _storage_account(std::move(storage_account))
+  , _shared_key(std::move(shared_key)) {}
+
+std::error_code
+signature_abs::sign_header(http::client::request_header& header) const {
+    auto ms_date = _sig_time.format_http_datetime();
+    header.set("x-ms-date", {ms_date.data(), ms_date.size()});
+    // TODO(vlad): Support more versions?
+    header.set("x-ms-version", "2021-08-06");
+
+    const auto to_sign = get_string_to_sign(header);
+    if (!to_sign) {
+        return to_sign.error();
+    }
+
+    vlog(clrl_log.trace, "\n[string_to_sign]\n{}", to_sign.value());
+    auto digest = hmac(base64_to_string(_shared_key()), to_sign.value());
+
+    auto auth_header = fmt::format(
+      "SharedKey {}:{}",
+      _storage_account(),
+      bytes_to_base64(to_bytes_view(digest)));
+    header.set(boost::beast::http::field::authorization, auth_header);
+
+    return {};
+}
+
 } // namespace cloud_roles

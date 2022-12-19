@@ -130,6 +130,44 @@ private:
     private_key_str _private_key;
 };
 
+class signature_abs {
+public:
+    /// \brief Initialize the ABS signature generator
+    ///
+    /// \param storage_account is the storage account to which the
+    /// request will be sent
+    /// \param shared_key is a user provided Shared Key
+    /// \param time_source is a source of timestamps for the signature
+    signature_abs(
+      storage_account storage_account,
+      private_key_str shared_key,
+      time_source c = time_source());
+
+    /// \brief Sign http header
+    /// Calculate the digest based on the header fields and add auth fields to
+    /// header.
+    ///
+    /// \param header is an in/out parameter that contains request headers
+    std::error_code sign_header(http::client::request_header& header) const;
+
+private:
+    result<ss::sstring>
+    get_string_to_sign(http::client::request_header& header) const;
+
+    result<ss::sstring> get_canonicalized_resource(
+      const http::client::request_header& header) const;
+
+    ss::sstring
+    get_canonicalized_headers(const http::client::request_header& header) const;
+
+    /// Time of the signing key
+    time_source _sig_time;
+    /// Name of the storage account in use
+    storage_account _storage_account;
+    /// Shared key
+    private_key_str _shared_key;
+};
+
 template<class Fn>
 time_source::time_source(Fn&& fn, int)
   : _gettime_fn(std::forward<Fn>(fn)) {}
