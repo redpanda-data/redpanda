@@ -110,6 +110,12 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(requested_status, timeout_sec=timeout_sec, backoff_sec=1)
 
+    def _set_recovery_rate(self, rate):
+        # using rpk tool here not to check the versions of a config on each node
+        # as throttling recovery may prevent configuration to be delivered to all nodes
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("raft_learner_recovery_rate", str(rate))
+
     @cluster(
         num_nodes=6,
         # A decom can look like a restart in terms of logs from peers dropping
@@ -192,8 +198,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(brokers)['node_id']
 
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+        self._set_recovery_rate(1)
 
         # schedule partition move to the node that is being decommissioned
 
@@ -223,7 +228,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         survivor_node = self._not_decommissioned_node(to_decommission)
         # adjust recovery throttle to make sure moves will finish
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
+        self._set_recovery_rate(2 << 30)
 
         wait_until(lambda: self._node_removed(to_decommission, survivor_node),
                    timeout_sec=120,
@@ -248,8 +253,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(brokers)['node_id']
 
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+        self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
         admin.decommission_broker(to_decommission)
@@ -282,8 +286,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(brokers)['node_id']
 
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+        self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
         admin.decommission_broker(to_decommission)
@@ -305,8 +308,7 @@ class NodesDecommissioningTest(EndToEndTest):
         admin.decommission_broker(to_decommission)
 
         self._wait_until_status(to_decommission, 'draining')
-        rpk.cluster_config_set("raft_learner_recovery_rate",
-                               str(1024 * 1024 * 1024))
+        self._set_recovery_rate(1024 * 1024 * 1024)
 
         def node_removed():
             brokers = admin.get_brokers()
@@ -331,8 +333,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(brokers)['node_id']
 
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+        self._set_recovery_rate(1)
 
         # schedule partition move from the node being decommissioned before actually calling decommission
 
@@ -396,8 +397,7 @@ class NodesDecommissioningTest(EndToEndTest):
                                                       to_decommission_2)
 
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+        self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission_1}", )
         admin.decommission_broker(to_decommission_1, node=survivor_node)
@@ -421,7 +421,7 @@ class NodesDecommissioningTest(EndToEndTest):
                                 'active',
                                 api_node=survivor_node)
 
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
+        self._set_recovery_rate(2 << 30)
 
         def node_removed():
             brokers = admin.get_brokers(node=survivor_node)
@@ -461,9 +461,8 @@ class NodesDecommissioningTest(EndToEndTest):
         self.start_consumer(1)
         self.await_startup(min_records=self.records_to_wait(), timeout_sec=120)
         # throttle recovery
-        rpk = RpkTool(self.redpanda)
         self.redpanda.start_node(self.redpanda.nodes[-1])
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(10))
+        self._set_recovery_rate(10)
         # wait for rebalancing to start
         admin = Admin(self.redpanda)
 
@@ -482,7 +481,7 @@ class NodesDecommissioningTest(EndToEndTest):
             self.redpanda.stop_node(to_decommission)
 
         # shut the broker down
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
+        self._set_recovery_rate(2 << 30)
 
         def node_removed():
             brokers = admin.get_brokers(node=first_node)
@@ -512,15 +511,14 @@ class NodesDecommissioningTest(EndToEndTest):
         self.logger.info(f"decommissioning node: {node_id}", )
         admin.decommission_broker(id=node_id)
 
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(100))
+        self._set_recovery_rate(100)
         # wait for some partitions to start moving
         wait_until(lambda: self._partitions_moving(node=survivor_node),
                    timeout_sec=15,
                    backoff_sec=1)
         # cancel all reconfigurations
         admin.cancel_all_reconfigurations()
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
+        self._set_recovery_rate(2 << 30)
         wait_until(lambda: self._node_removed(node_id, survivor_node),
                    timeout_sec=120,
                    backoff_sec=2)
