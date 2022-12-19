@@ -172,6 +172,7 @@ protected:
     ss::future<> handle_eviction() override;
 
 private:
+    std::optional<tm_transaction> find_tx(kafka::transactional_id);
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
 
