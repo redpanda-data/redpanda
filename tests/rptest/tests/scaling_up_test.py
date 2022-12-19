@@ -181,6 +181,7 @@ class ScalingUpTest(EndToEndTest):
                            timeout_sec=self.rebalance_timeout)
         # add three nodes
         for n in self.redpanda.nodes[3:]:
+            self.redpanda.clean_node(n)
             self.redpanda.start_node(n)
 
         # verify that all new nodes are empty
