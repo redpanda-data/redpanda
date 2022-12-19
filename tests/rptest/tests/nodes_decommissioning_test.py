@@ -13,6 +13,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.default import DefaultClient
 from time import sleep
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -664,6 +665,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         return node_replicas
 
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_multiple_decommissions(self):
         self._extra_node_conf = {"empty_seed_starts_cluster": False}
