@@ -301,7 +301,15 @@ ss::future<> ntp_archiver::upload_until_term_change() {
 
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
-        co_await _parent.archival_meta_stm()->sync(sync_timeout);
+        bool is_synced = co_await _parent.archival_meta_stm()->sync(
+          sync_timeout);
+        if (!is_synced) {
+            // This can happen on leadership changes, or on timeouts waiting
+            // for stm to catch up: in either case, we should re-check our
+            // loop condition: we will drop out if lost leadership, otherwise
+            // we will end up back here to try the sync again.
+            continue;
+        }
 
         auto [non_compacted_upload_result, compacted_upload_result]
           = co_await upload_next_candidates();
