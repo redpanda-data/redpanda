@@ -36,7 +36,8 @@ class TransactionsTest(RedpandaTest):
         }
 
         super(TransactionsTest, self).__init__(test_context=test_context,
-                                               extra_rp_conf=extra_rp_conf)
+                                               extra_rp_conf=extra_rp_conf,
+                                               log_level="trace")
 
         self.input_t = self.topics[0]
         self.output_t = self.topics[1]
