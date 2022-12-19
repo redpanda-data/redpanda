@@ -49,12 +49,8 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
         co_return co_await _partition->make_cloud_reader(cfg);
     }
 
-    auto local_kafka_start_offset = _translator->from_log_offset(
-      _partition->start_offset());
     if (
-      _partition->is_remote_fetch_enabled()
-      && _partition->cloud_data_available()
-      && cfg.start_offset < local_kafka_start_offset
+      may_read_from_cloud(model::offset_cast(cfg.start_offset))
       && cfg.start_offset >= _partition->start_cloud_offset()) {
         cfg.type_filter = {model::record_batch_type::raft_data};
         co_return co_await _partition->make_cloud_reader(cfg, deadline);
@@ -174,6 +170,16 @@ replicated_partition::aborted_transactions_remote(
     co_return target;
 }
 
+/**
+ * Based on the lower offset of an incoming request, decide whether it should
+ * be sent to cloud storage (return true), or local raft storage (return false)
+ */
+bool replicated_partition::may_read_from_cloud(kafka::offset start_offset) {
+    return _partition->is_remote_fetch_enabled()
+           && _partition->cloud_data_available()
+           && (start_offset < _translator->from_log_offset(_partition->start_offset()));
+}
+
 ss::future<std::vector<cluster::rm_stm::tx_range>>
 replicated_partition::aborted_transactions(
   model::offset base,
@@ -213,9 +219,7 @@ replicated_partition::aborted_transactions(
         // Always use SI for read replicas
         co_return co_await aborted_transactions_remote(offsets, ot_state);
     }
-    if (
-      _partition->cloud_data_available()
-      && offsets.begin_rp < _partition->start_offset()) {
+    if (may_read_from_cloud(model::offset_cast(base))) {
         // The fetch request was satisfied using shadow indexing.
         auto tx_remote = co_await aborted_transactions_remote(
           offsets, ot_state);

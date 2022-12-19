@@ -123,8 +123,6 @@ public:
     void offload_segment(model::offset);
 
 private:
-    ss::future<> run_eviction_loop();
-
     friend struct materialized_segment_state;
 
     using materialized_segment_ptr

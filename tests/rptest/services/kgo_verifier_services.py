@@ -28,7 +28,7 @@ class KgoVerifierService(Service):
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
     def __init__(self, context, redpanda, topic, msg_size, custom_node,
-                 debug_logs):
+                 debug_logs, trace_logs):
         self.use_custom_node = custom_node is not None
 
         # We should pass num_nodes to allocate for our service in BackgroundThreadService,
@@ -52,6 +52,7 @@ class KgoVerifierService(Service):
         self._pid = None
         self._remote_port = None
         self._debug_logs = debug_logs
+        self._trace_logs = trace_logs
 
         for node in self.nodes:
             if not hasattr(node, "kgo_verifier_ports"):
@@ -95,7 +96,9 @@ class KgoVerifierService(Service):
 
         self._remote_port = self._select_port(node)
 
-        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {'--debug' if self._debug_logs else ''}> {self.log_path} 2>&1 & echo $!"
+        debug = '--debug' if self._debug_logs else ''
+        trace = '--trace' if self._trace_logs else ''
+        wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}> {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
         pid_str = node.account.ssh_output(wrapped_cmd)
         self.logger.debug(
@@ -418,13 +421,16 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
                  max_msgs=None,
                  max_throughput_mb=None,
                  nodes=None,
-                 debug_logs=False):
+                 debug_logs=False,
+                 trace_logs=False,
+                 loop=True):
         super(KgoVerifierSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes,
-                             debug_logs)
+                             debug_logs, trace_logs)
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
+        self._loop = loop
 
     @property
     def consumer_status(self):
@@ -434,7 +440,8 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
         if clean:
             self.clean_node(node)
 
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 --loop --client-name {self.who_am_i()}"
+        loop = "--loop" if self._loop else ""
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
@@ -454,8 +461,10 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
                  rand_read_msgs,
                  parallel,
                  nodes=None,
-                 debug_logs=False):
-        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs)
+                 debug_logs=False,
+                 trace_logs=False):
+        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
+                         trace_logs)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
         self._status = ConsumerStatus()
@@ -486,8 +495,10 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
                  max_msgs=None,
                  max_throughput_mb=None,
                  nodes=None,
-                 debug_logs=False):
-        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs)
+                 debug_logs=False,
+                 trace_logs=False):
+        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
+                         trace_logs)
 
         self._readers = readers
         self._loop = loop
@@ -524,7 +535,8 @@ class ProduceStatus:
                  restarts=0,
                  latency=None,
                  active=False,
-                 failed_transactions=0):
+                 failed_transactions=0,
+                 aborted_transaction_msgs=0):
         self.sent = sent
         self.acked = acked
         self.bad_offsets = bad_offsets
@@ -534,10 +546,11 @@ class ProduceStatus:
         self.latency = latency
         self.active = active
         self.failed_transactions = failed_transactions
+        self.aborted_transaction_messages = aborted_transaction_msgs
 
     def __str__(self):
         l = self.latency
-        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {l['p50']}/{l['p90']}/{l['p99']}>"
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {l['p50']}/{l['p90']}/{l['p99']}>"
 
 
 class KgoVerifierProducer(KgoVerifierService):
@@ -550,13 +563,14 @@ class KgoVerifierProducer(KgoVerifierService):
                  custom_node=None,
                  batch_max_bytes=None,
                  debug_logs=False,
+                 trace_logs=False,
                  fake_timestamp_ms=None,
                  use_transactions=False,
                  transaction_abort_rate=None,
                  msgs_per_transaction=None):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
-                             debug_logs)
+                             debug_logs, trace_logs)
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
