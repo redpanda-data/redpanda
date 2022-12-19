@@ -424,24 +424,49 @@ private:
         // ok by design to have false rejects
         using seq_map
           = absl::node_hash_map<model::producer_identity, seq_entry_wrapper>;
+        // Note: When erasing entries from this map, use the the helper
+        // 'erase_pid_from_seq_table' that also unlinks the entry from the
+        // intrusive list that tracks the LRU order. Not doing so can cause
+        // crashes.
+        // TODO: Enforce this constraint by hiding seq_table as a private
+        // member.
         seq_map seq_table;
 
         absl::flat_hash_map<model::producer_identity, model::tx_seq> tx_seqs;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
 
-        // We need to store replication order for idempotent pids only. So we
-        // will use intrusive list for it.
+        // Tracks the LRU order of the pids with idempotent/non-transactional
+        // requests. When the count exceeds _max_concurrent_producer_ids, we
+        // schedule a cleanup fiber that removes pids in the LRU order.
         using idempotent_pids_replicate_order = counted_intrusive_list<
           seq_entry_wrapper,
           &seq_entry_wrapper::_hook>;
         idempotent_pids_replicate_order lru_idempotent_pids;
 
+        void unlink_lru_pid(const seq_entry_wrapper& entry) {
+            if (entry._hook.is_linked()) {
+                lru_idempotent_pids.erase(
+                  lru_idempotent_pids.iterator_to(entry));
+            }
+        }
+
+        // Additionally unlinks from the LRU list before erasing from
+        // the map.
+        void erase_pid_from_seq_table(const model::producer_identity& pid) {
+            auto it = seq_table.find(pid);
+            if (it == seq_table.end()) {
+                return;
+            }
+            unlink_lru_pid(it->second);
+            seq_table.erase(it);
+        }
+
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
             prepared.erase(pid);
-            seq_table.erase(pid);
+            erase_pid_from_seq_table(pid);
             tx_seqs.erase(pid);
             expiration.erase(pid);
         }
