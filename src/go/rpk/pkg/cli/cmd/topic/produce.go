@@ -171,7 +171,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
 	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
-	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", 1048576, "Maximum size of a record batch before compression")
+	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", -1, "If non-negative, maximum size of a record batch before compression")
 
 	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
 	cmd.Flags().StringVarP(
