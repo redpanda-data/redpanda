@@ -155,24 +155,64 @@ ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
     return result;
 }
 
-/// \brief Get canonical URI of the request
-/// Canonical URI is everything that follows domain name starting with '/'
-/// without parameters (everythng after '?' including '?'). The uri is uri
-/// encoded. e.g. https://foo.bar/canonical-url?param=value
-///
-/// \param uri is a target of the http query (everything excluding the domain
-/// name)
-/// TODO(vlad): Template on error code...
-static result<ss::sstring> get_canonical_uri(ss::sstring target) {
+struct target_parts {
+    /// \brief URI Encoded canonical URI
+    /// Canonical URI is everything that follows domain name starting with '/'
+    /// without parameters (everythng after '?' including '?'). The uri is URI
+    /// encoded. e.g. https://foo.bar/canonical-url?param=value
+    ss::sstring canonical_uri;
+    /// \brief Query parameters extracted from target
+    /// They are sorted by key. Note that both the key and the value are *not*
+    /// URI encoded.
+    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
+};
+
+/// \brief Split the target string into the canonical URI and a sorted list
+/// of query params.
+static result<target_parts> split_target(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(clrl_log.error, "invalid URI {}", target);
         return make_error_code(s3_client_error_code::invalid_uri);
     }
+
+    ss::sstring canonical_uri{};
     auto pos = target.find('?');
-    if (pos != ss::sstring::npos) {
-        target.resize(pos);
+    if (pos == ss::sstring::npos) {
+        return target_parts{
+          .canonical_uri = uri_encode(target, false), .query_params = {}};
+    } else {
+        auto canonical_uri = uri_encode(target.substr(0, pos), false);
+        if (pos == target.size() - 1) {
+            return target_parts{
+              .canonical_uri = canonical_uri, .query_params = {}};
+        }
+
+        auto query_str = target.substr(pos + 1);
+        std::vector<ss::sstring> params;
+        boost::split(params, query_str, boost::is_any_of("&"));
+        std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
+        for (const auto& param : params) {
+            auto p = param.find('=');
+            if (p == ss::sstring::npos) {
+                // parameter with empty value
+                query_params.emplace_back(param, "");
+            } else {
+                if (p == 0) {
+                    // parameter value can be empty but name can't
+                    return make_error_code(
+                      s3_client_error_code::invalid_uri_params);
+                }
+                ss::sstring pname = param.substr(0, p);
+                ss::sstring pvalue = param.substr(p + 1);
+                query_params.emplace_back(pname, pvalue);
+            }
+        }
+
+        std::sort(query_params.begin(), query_params.end());
+
+        return target_parts{
+          .canonical_uri = canonical_uri, .query_params = query_params};
     }
-    return uri_encode(target, false);
 }
 
 /// CanonicalQueryString specifies the URI-encoded query string parameters.
@@ -189,37 +229,8 @@ static result<ss::sstring> get_canonical_uri(ss::sstring target) {
 ///   UriEncode("prefix")+"="+UriEncode("somePrefix")
 ///
 /// \param target is a target of the http query (url - domain name)
-static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
-    if (target.empty() || target[0] != '/') {
-        vlog(clrl_log.error, "invalid URI {}", target);
-        return make_error_code(s3_client_error_code::invalid_uri);
-    }
-    auto pos = target.find('?');
-    if (pos == ss::sstring::npos || pos == target.size() - 1) {
-        return "";
-    }
-    auto query_str = target.substr(pos + 1);
-    std::vector<ss::sstring> params;
-    boost::split(params, query_str, boost::is_any_of("&"));
-    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
-    for (const auto& param : params) {
-        auto p = param.find('=');
-        if (p == ss::sstring::npos) {
-            // parameter with empty value
-            query_params.emplace_back(param, "");
-        } else {
-            if (p == 0) {
-                // parameter value can be empty but name can't
-                return make_error_code(
-                  s3_client_error_code::invalid_uri_params);
-            }
-            ss::sstring pname = param.substr(0, p);
-            ss::sstring pvalue = param.substr(p + 1);
-            query_params.emplace_back(pname, pvalue);
-        }
-    }
-    std::sort(query_params.begin(), query_params.end());
-
+static ss::sstring get_canonical_query_string(
+  const std::vector<std::pair<ss::sstring, ss::sstring>>& query_params) {
     // Generate canonical query string
     ss::sstring result;
     int cnt = 0;
@@ -305,19 +316,20 @@ inline result<ss::sstring> create_canonical_request(
     if (target.empty() || target.at(0) != '/') {
         target = "/" + target;
     }
-    auto canonical_uri = get_canonical_uri(target);
-    if (!canonical_uri) {
-        return canonical_uri.error();
+
+    auto split_result = split_target(target);
+    if (!split_result) {
+        return split_result.error();
     }
-    auto canonical_query = get_canonical_query_string(target);
-    if (!canonical_query) {
-        return canonical_query.error();
-    }
+
+    auto& [canonical_uri, query_params] = split_result.value();
+    auto canonical_query = get_canonical_query_string(query_params);
+
     return ssx::sformat(
       "{}\n{}\n{}\n{}\n{}\n{}",
       method,
-      canonical_uri.value(),
-      canonical_query.value(),
+      canonical_uri,
+      canonical_query,
       hdr.canonical_headers,
       hdr.signed_headers,
       hashed_payload);
@@ -408,44 +420,15 @@ result<ss::sstring> signature_abs::get_canonicalized_resource(
   const http::client::request_header& header) const {
     const auto target_view = header.target();
     const ss::sstring target{target_view.data(), target_view.size()};
-
-    if (target.empty() || target[0] != '/') {
-        vlog(clrl_log.error, "invalid URI {}", target);
-        // TODO(vlad): ABS error codes
-        return make_error_code(s3_client_error_code::invalid_uri);
+    auto split_result = split_target(target);
+    if (!split_result) {
+        return split_result.error();
     }
 
-    const auto canonical_uri = get_canonical_uri(target);
+    auto& [canonical_uri, query_params] = split_result.value();
 
     ss::sstring result = ssx::sformat(
       "/{}{}", _storage_account(), canonical_uri);
-
-    // TODO(vlad): copied from get_canonical_query_string. Factor out.
-    auto pos = target.find('?');
-    if (pos == ss::sstring::npos || pos == target.size() - 1) {
-        return "";
-    }
-    auto query_str = target.substr(pos + 1);
-    std::vector<ss::sstring> params;
-    boost::split(params, query_str, boost::is_any_of("&"));
-    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
-    for (const auto& param : params) {
-        auto p = param.find('=');
-        if (p == ss::sstring::npos) {
-            // parameter with empty value
-            query_params.emplace_back(param, "");
-        } else {
-            if (p == 0) {
-                // parameter value can be empty but name can't
-                return make_error_code(
-                  s3_client_error_code::invalid_uri_params);
-            }
-            ss::sstring pname = param.substr(0, p);
-            ss::sstring pvalue = param.substr(p + 1);
-            query_params.emplace_back(pname, pvalue);
-        }
-    }
-    std::sort(query_params.begin(), query_params.end());
 
     for (const auto& [pname, pvalue] : query_params) {
         // TODO(vlad): URI encode? Docs are not clear
