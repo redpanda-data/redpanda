@@ -252,12 +252,12 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    serialized_json_stream serialize() const override;
+    ss::future<serialized_json_stream> serialize() const override;
 
     /// Serialize manifest object
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    ss::future<> serialize(std::ostream& out) const;
 
     /// Compare two manifests for equality
     bool operator==(const partition_manifest& other) const = default;

@@ -351,7 +351,7 @@ ss::future<> remote_segment::do_hydrate_txrange() {
             throw download_exception(res, _path);
         }
 
-        auto [stream, size] = manifest.serialize();
+        auto [stream, size] = co_await manifest.serialize();
         co_await _cache.put(manifest.get_manifest_path(), stream)
           .finally([&s = stream]() mutable { return s.close(); });
     }
