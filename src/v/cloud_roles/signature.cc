@@ -33,23 +33,23 @@ using hmac_digest = std::array<char, sha256_digest_length>;
 
 constexpr std::string_view algorithm = "AWS4-HMAC-SHA256";
 
-struct s3_error_category final : std::error_category {
+struct signing_error_category final : std::error_category {
     const char* name() const noexcept final { return "s3"; }
     std::string message(int ec) const final {
-        switch (static_cast<s3_client_error_code>(ec)) {
-        case s3_client_error_code::invalid_uri:
+        switch (static_cast<signing_error_code>(ec)) {
+        case signing_error_code::invalid_uri:
             return "Target URI shouldn't be empty or include domain name";
-        case s3_client_error_code::invalid_uri_params:
+        case signing_error_code::invalid_uri_params:
             return "Target URI contains invalid query parameters";
-        case s3_client_error_code::not_enough_arguments:
+        case signing_error_code::not_enough_arguments:
             return "Can't make request, not enough arguments";
         }
         return "unknown";
     }
 };
 
-std::error_code make_error_code(s3_client_error_code ec) noexcept {
-    static s3_error_category ecat;
+std::error_code make_error_code(signing_error_code ec) noexcept {
+    static signing_error_category ecat;
     return {static_cast<int>(ec), ecat};
 }
 
@@ -172,7 +172,7 @@ struct target_parts {
 static result<target_parts> split_target(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(clrl_log.error, "invalid URI {}", target);
-        return make_error_code(s3_client_error_code::invalid_uri);
+        return make_error_code(signing_error_code::invalid_uri);
     }
 
     ss::sstring canonical_uri{};
@@ -200,7 +200,7 @@ static result<target_parts> split_target(ss::sstring target) {
                 if (p == 0) {
                     // parameter value can be empty but name can't
                     return make_error_code(
-                      s3_client_error_code::invalid_uri_params);
+                      signing_error_code::invalid_uri_params);
                 }
                 ss::sstring pname = param.substr(0, p);
                 ss::sstring pvalue = param.substr(p + 1);

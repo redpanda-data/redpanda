@@ -24,13 +24,13 @@
 namespace cloud_roles {
 
 /// \brief Internal s3 client error code
-enum class s3_client_error_code : int {
+enum class signing_error_code : int {
     invalid_uri,
     invalid_uri_params,
     not_enough_arguments,
 };
 
-std::error_code make_error_code(s3_client_error_code ec) noexcept;
+std::error_code make_error_code(signing_error_code ec) noexcept;
 
 /// Time source for signature_v4 and signature_abs. Supports
 /// two formats: ISO8601 and RFC9110.
