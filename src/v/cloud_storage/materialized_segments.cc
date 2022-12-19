@@ -295,6 +295,10 @@ void materialized_segments::trim_segments(std::optional<size_t> target_free) {
  */
 void materialized_segments::maybe_trim_segment(
   materialized_segment_state& st, offload_list_t& to_offload) {
+    if (st.segment->is_stopped()) {
+        return;
+    }
+
     if (st.segment->download_in_progress()) {
         return;
     }
