@@ -21,11 +21,15 @@ import yaml
 import dataclasses
 import argparse
 import sys
+import os
+import shutil
 
 try:
     from rich import print
 except ImportError:
     pass
+
+BOOTSTRAP_YAML = ".bootstrap.yaml"
 
 
 @dataclasses.dataclass
@@ -57,10 +61,9 @@ class Redpanda:
         self.process = None
 
     async def run(self):
-        self.process = await asyncio.create_subprocess_exec(
-            self.binary,
-            "--redpanda-cfg",
-            self.config,
+        log_path = pathlib.Path(os.path.dirname(self.config)) / "redpanda.log"
+        self.process = await asyncio.create_subprocess_shell(
+            f"{self.binary} --redpanda-cfg {self.config} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -158,6 +161,12 @@ async def main():
                       f,
                       indent=2,
                       Dumper=get_config_dumper())
+
+        # If there is a bootstrap file in pwd, propagate it to each node's
+        # directory so that they'll load it on first start
+        if os.path.exists(BOOTSTRAP_YAML):
+            shutil.copyfile(BOOTSTRAP_YAML, node_dir / BOOTSTRAP_YAML)
+
         return config, conf_file
 
     configs = [prepare_node(i) for i in range(args.nodes)]
