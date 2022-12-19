@@ -238,9 +238,8 @@ void materialized_segments::trim_readers(size_t target_free) {
 }
 
 /**
- * TTL based demotion of materialized_segment_state objects back to
- * offloaded_segment_state, and background eviction of the underlying
- * segment and reader objects.
+ * TTL based demotion of materialized_segment_state objects and background
+ * eviction of the underlying segment and reader objects.
  *
  * This method does not guarantee to free any resources: it will not do
  * anything if no segments have an atime older than the TTL.  Ssee trim_readers

@@ -46,34 +46,9 @@ namespace cloud_storage {
 using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
-/// This function returns segment base offset as kafka offset
-static kafka::offset
-get_kafka_base_offset(const partition_manifest::segment_meta& m) {
-    // Manifests created with the old version of redpanda won't have the
-    // delta_offset field. In this case the value will be initialized to
-    // model::offset::min(). In this case offset translation couldn't be
-    // performed.
-    auto delta = m.delta_offset == model::offset_delta::min()
-                   ? model::offset_delta(0)
-                   : m.delta_offset;
-    return m.base_offset - delta;
-}
-/// This function returns segment max offset as kafka offset
-static kafka::offset
-get_kafka_max_offset(const partition_manifest::segment_meta& m) {
-    // Manifests created with the old version of redpanda won't have the
-    // delta_offset field. In this case the value will be initialized to
-    // model::offset::min(). In this case offset translation couldn't be
-    // performed.
-    auto delta = m.delta_offset == model::offset_delta::min()
-                   ? model::offset_delta(0)
-                   : m.delta_offset;
-    return m.committed_offset - delta;
-}
-
 remote_partition::iterator
 remote_partition::materialize_segment(const segment_meta& meta) {
-    auto key_offset = meta.base_offset - meta.delta_offset;
+    auto base_kafka_offset = meta.base_offset - meta.delta_offset;
     auto units = materialized().get_segment_units();
     auto st = std::make_unique<materialized_segment_state>(
       meta.base_offset, *this, std::move(units));
@@ -85,7 +60,7 @@ remote_partition::materialize_segment(const segment_meta& meta) {
       "materialized, max offset of the new segment {}, max offset of the "
       "existing segment {}",
       meta.base_offset,
-      key_offset,
+      base_kafka_offset,
       meta.committed_offset,
       iter->second->segment->get_max_rp_offset());
     _probe.segment_materialized();
@@ -105,98 +80,93 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
     //     version of the segment which now became longer.
     // - The config.start_offset matches the base_offset - delta_offset of
     //   the next segment.
-    auto kafka_offset_lookup = [this, hint](
-                                 const storage::log_reader_config& config) {
-        auto ko = model::offset_cast(config.start_offset);
-        // Two level lookup:
-        // - find segment meta based on kafka offset
-        //   this allow us to avoid any abiguity in case if the segment
-        //   doesn't have any data. The 'segment_containing' method of the
-        //   manifest takes this into account.
-        // - find materialized segment or materialize the new one
-        auto mit = _manifest.end();
-        if (hint == model::offset{}) {
-            // This code path is only used for the first lookup. It
-            // could be either lookup by kafka offset or by timestamp.
-            if (config.first_timestamp) {
-                auto maybe_meta = _manifest.timequery(*config.first_timestamp);
-                if (maybe_meta) {
-                    mit = _manifest.segment_containing(
-                      maybe_meta->get().base_offset);
-                }
-            } else {
-                // In this case the lookup is perfomed by kafka offset.
-                // Normally, this would be the first lookup done by the
-                // partition_record_batch_reader_impl. This lookup will
-                // skip segments without data batches (the logic is implemented
-                // inside the partition_manifest).
-                mit = _manifest.segment_containing(ko);
-            }
-            if (mit == _manifest.end()) {
-                // Segment that matches exactly can't be found
-                // in the manifest. In this case we want to start
-                // scanning from the begining of the partition if
-                // some conditions are met.
-                auto so = _manifest.get_start_kafka_offset().value_or(
-                  kafka::offset::min());
-                if (config.start_offset < so && config.max_offset > so) {
-                    mit = _manifest.begin();
-                }
+
+    auto ko = model::offset_cast(config.start_offset);
+    // Two level lookup:
+    // - find segment meta based on kafka offset
+    //   this allow us to avoid any abiguity in case if the segment
+    //   doesn't have any data. The 'segment_containing' method of the
+    //   manifest takes this into account.
+    // - find materialized segment or materialize the new one
+    auto mit = _manifest.end();
+    if (hint == model::offset{}) {
+        // This code path is only used for the first lookup. It
+        // could be either lookup by kafka offset or by timestamp.
+        if (config.first_timestamp) {
+            auto maybe_meta = _manifest.timequery(*config.first_timestamp);
+            if (maybe_meta) {
+                mit = _manifest.segment_containing(
+                  maybe_meta->get().base_offset);
             }
         } else {
-            mit = _manifest.segment_containing(hint);
-            while (mit != _manifest.end()) {
-                // The segment 'mit' points to might not have any
-                // data batches. In this case we need to move iterator forward.
-                // The check can only be done if we have 'delta_offset_end'.
-                if (mit->second.delta_offset_end == model::offset_delta{}) {
-                    break;
-                }
-                auto b = mit->second.base_offset - mit->second.delta_offset;
-                auto m = mit->second.committed_offset
-                         - mit->second.delta_offset_end;
-                if (b != m) {
-                    break;
-                }
-                mit++;
-            }
+            // In this case the lookup is perfomed by kafka offset.
+            // Normally, this would be the first lookup done by the
+            // partition_record_batch_reader_impl. This lookup will
+            // skip segments without data batches (the logic is implemented
+            // inside the partition_manifest).
+            mit = _manifest.segment_containing(ko);
         }
         if (mit == _manifest.end()) {
-            // No such segment
-            return borrow_result_t{};
-        }
-        auto iter = _segments.find(mit->first);
-        if (iter != _segments.end()) {
-            if (
-              iter->second->segment->get_max_rp_offset()
-              != mit->second.committed_offset) {
-                offload_segment(iter->first);
-                iter = _segments.end();
+            // Segment that matches exactly can't be found
+            // in the manifest. In this case we want to start
+            // scanning from the begining of the partition if
+            // some conditions are met.
+            auto so = _manifest.get_start_kafka_offset().value_or(
+              kafka::offset::min());
+            if (config.start_offset < so && config.max_offset > so) {
+                mit = _manifest.begin();
             }
         }
-        if (iter == _segments.end()) {
-            iter = materialize_segment(mit->second);
-        }
-        auto next_it = std::next(mit);
-        while (next_it != _manifest.end()) {
-            // Normally, the segments in the manifest do not overlap.
-            // But in some cases we may see them overlapping, for instance
-            // if they were produced by older version of redpanda.
-            // In this case we want to skip segment if its offset range
-            // lies withing the offset range of the current segment.
-            if (
-              mit->second.committed_offset < next_it->second.committed_offset) {
+    } else {
+        mit = _manifest.segment_containing(hint);
+        while (mit != _manifest.end()) {
+            // The segment 'mit' points to might not have any
+            // data batches. In this case we need to move iterator forward.
+            // The check can only be done if we have 'delta_offset_end'.
+            if (mit->second.delta_offset_end == model::offset_delta{}) {
                 break;
             }
-            next_it++;
+            auto b = mit->second.base_kafka_offset();
+            auto m = mit->second.committed_kafka_offset();
+            if (b != m) {
+                break;
+            }
+            mit++;
         }
-        model::offset next_offset = next_it == _manifest.end() ? model::offset{}
-                                                               : next_it->first;
-        return borrow_result_t{
-          .reader = iter->second->borrow_reader(config, _ctxlog, _probe),
-          .next_segment_offset = next_offset};
-    };
-    return kafka_offset_lookup(config);
+    }
+    if (mit == _manifest.end()) {
+        // No such segment
+        return borrow_result_t{};
+    }
+    auto iter = _segments.find(mit->first);
+    if (iter != _segments.end()) {
+        if (
+          iter->second->segment->get_max_rp_offset()
+          != mit->second.committed_offset) {
+            offload_segment(iter->first);
+            iter = _segments.end();
+        }
+    }
+    if (iter == _segments.end()) {
+        iter = materialize_segment(mit->second);
+    }
+    auto next_it = std::next(mit);
+    while (next_it != _manifest.end()) {
+        // Normally, the segments in the manifest do not overlap.
+        // But in some cases we may see them overlapping, for instance
+        // if they were produced by older version of redpanda.
+        // In this case we want to skip segment if its offset range
+        // lies withing the offset range of the current segment.
+        if (mit->second.committed_offset < next_it->second.committed_offset) {
+            break;
+        }
+        next_it++;
+    }
+    model::offset next_offset = next_it == _manifest.end() ? model::offset{}
+                                                           : next_it->first;
+    return borrow_result_t{
+      .reader = iter->second->borrow_reader(config, _ctxlog, _probe),
+      .next_segment_offset = next_offset};
 }
 
 class partition_record_batch_reader_impl final
@@ -555,12 +525,12 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     // base_offset and term
     for (auto const& p : _manifest) {
         if (p.second.segment_term > term) {
-            return get_kafka_base_offset(p.second) - kafka::offset(1);
+            return p.second.base_kafka_offset() - kafka::offset(1);
         }
     }
     // if last segment term is equal to the one we look for return it
     if (_manifest.rbegin()->second.segment_term == term) {
-        return get_kafka_max_offset(_manifest.rbegin()->second);
+        return _manifest.rbegin()->second.committed_kafka_offset();
     }
 
     return std::nullopt;
@@ -673,7 +643,6 @@ remote_partition::timequery(storage::timequery_config cfg) {
 
     // Synthesize a log_reader_config from our timequery_config
     storage::log_reader_config config(
-      // TODO: fix
       kafka::offset_cast(start_offset),
       cfg.max_offset,
       0,

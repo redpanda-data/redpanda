@@ -291,6 +291,9 @@ partition_manifest::segment_containing(kafka::offset o) const {
     // manifest by log offset and then traverse forward until we
     // will find matching segment.
     auto it = segment_containing(kafka::offset_cast(o));
+    if (it == end()) {
+        return it;
+    }
     auto prev = end();
     while (it != end()) {
         auto base = it->second.base_offset - it->second.delta_offset;
@@ -304,7 +307,7 @@ partition_manifest::segment_containing(kafka::offset o) const {
         prev = it;
         it = std::next(it);
     }
-    if (it == end() && prev != end()) {
+    if (it == end()) {
         if (prev->second.delta_offset_end != model::offset_delta{}) {
             // In case if 'prev' points to the last segment it's not guaranteed
             // that the segment contains the required kafka offset. We need an
