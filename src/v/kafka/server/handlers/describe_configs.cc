@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "reflection/type_traits.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
 
@@ -33,6 +34,7 @@
 
 #include <charconv>
 #include <string_view>
+#include <type_traits>
 
 namespace kafka {
 
@@ -77,12 +79,83 @@ static ss::sstring describe_as_string(const T& t) {
     return ssx::sformat("{}", t);
 }
 
+// Kafka protocol defines integral types by sizes. See
+// https://kafka.apache.org/protocol.html
+// Therefore we should also use type sizes for integrals and use Java type sizes
+// as a guideline. See
+// https://docs.oracle.com/javase/tutorial/java/nutsandbolts/datatypes.html
+template<typename T>
+constexpr auto num_bits = CHAR_BIT * sizeof(T);
+
+template<typename T>
+constexpr bool is_short
+  = std::is_integral_v<T> && !std::is_same_v<T, bool> && num_bits<T> <= 16;
+
+template<typename T>
+constexpr bool is_int = std::is_integral_v<T>&& num_bits<T> > 16
+                        && num_bits<T> <= 32;
+
+template<typename T>
+constexpr bool is_long = std::is_integral_v<T>&& num_bits<T> > 32
+                         && num_bits<T> <= 64;
+
+// property_config_type maps the datatype for a config property to
+// describe_configs_type. Currently class_type and password are not used in
+// Redpanda so we do not include checks for those types. You may find a similar
+// mapping in Apache Kafka at
+// https://github.com/apache/kafka/blob/be032735b39360df1a6de1a7feea8b4336e5bcc0/core/src/main/scala/kafka/server/ConfigHelper.scala
+template<typename T>
+consteval describe_configs_type property_config_type() {
+    if constexpr (reflection::is_std_optional<T>) {
+        return property_config_type<typename T::value_type>();
+    } else if constexpr (reflection::is_tristate<T>) {
+        return property_config_type<typename T::value_type>();
+    } else if constexpr (std::is_same_v<T, bool>) {
+        return describe_configs_type::boolean;
+    } else if constexpr (std::is_same_v<T, ss::sstring>) {
+        return describe_configs_type::string;
+    } else if constexpr (is_short<T>) {
+        return describe_configs_type::short_type;
+    } else if constexpr (is_int<T>) {
+        return describe_configs_type::int_type;
+    } else if constexpr (is_long<T>) {
+        return describe_configs_type::long_type;
+    } else if constexpr (std::is_floating_point_v<T>) {
+        return describe_configs_type::double_type;
+    } else if constexpr (reflection::is_std_vector<T>) {
+        return describe_configs_type::list;
+    } else if constexpr (std::is_same_v<T, model::compression>) {
+        return describe_configs_type::string;
+    } else if constexpr (std::is_same_v<T, model::cleanup_policy_bitflags>) {
+        return describe_configs_type::string;
+    } else if constexpr (std::is_same_v<T, std::chrono::seconds>) {
+        // Long type since seconds is atleast a 35-bit signed integral
+        // https://en.cppreference.com/w/cpp/chrono/duration
+        return describe_configs_type::long_type;
+    } else if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
+        // Long type since milliseconds is atleast a 45-bit signed integral
+        // https://en.cppreference.com/w/cpp/chrono/duration
+        return describe_configs_type::long_type;
+    } else if constexpr (std::is_same_v<T, model::timestamp_type>) {
+        return describe_configs_type::string;
+    } else if constexpr (std::is_same_v<T, config::data_directory_path>) {
+        return describe_configs_type::string;
+    } else if constexpr (std::is_same_v<T, v8_engine::data_policy>) {
+        return describe_configs_type::string;
+    } else {
+        static_assert(
+          config::detail::dependent_false<T>::value,
+          "Type name is not supported in describe_configs_type");
+    }
+}
+
 template<typename T, typename Func>
 static void add_broker_config(
   describe_configs_result& result,
   std::string_view name,
   const config::property<T>& property,
   bool include_synonyms,
+  std::optional<ss::sstring> documentation,
   Func&& describe_f) {
     describe_configs_source src
       = property.is_overriden() ? describe_configs_source::static_broker_config
@@ -120,6 +193,8 @@ static void add_broker_config(
       .value = describe_f(property.value()),
       .config_source = src,
       .synonyms = std::move(synonyms),
+      .config_type = property_config_type<T>(),
+      .documentation = documentation,
     });
 }
 
@@ -130,6 +205,7 @@ static void add_broker_config_if_requested(
   std::string_view name,
   const config::property<T>& property,
   bool include_synonyms,
+  std::optional<ss::sstring> documentation,
   Func&& describe_f) {
     if (config_property_requested(resource.configuration_keys, name)) {
         add_broker_config(
@@ -137,6 +213,7 @@ static void add_broker_config_if_requested(
           name,
           property,
           include_synonyms,
+          documentation,
           std::forward<Func>(describe_f));
     }
 }
@@ -149,6 +226,7 @@ static void add_topic_config(
   std::string_view override_name,
   const std::optional<T>& overrides,
   bool include_synonyms,
+  std::optional<ss::sstring> documentation,
   Func&& describe_f) {
     describe_configs_source src = overrides
                                     ? describe_configs_source::topic
@@ -177,6 +255,8 @@ static void add_topic_config(
       .value = describe_f(overrides.value_or(default_value)),
       .config_source = src,
       .synonyms = std::move(synonyms),
+      .config_type = property_config_type<T>(),
+      .documentation = documentation,
     });
 }
 
@@ -208,6 +288,7 @@ static void add_topic_config_if_requested(
   std::string_view override_name,
   const std::optional<T>& overrides,
   bool include_synonyms,
+  std::optional<ss::sstring> documentation,
   Func&& describe_f,
   bool hide_default_override = false) {
     if (config_property_requested(resource.configuration_keys, override_name)) {
@@ -225,7 +306,19 @@ static void add_topic_config_if_requested(
           override_name,
           overrides_val,
           include_synonyms,
+          documentation,
           std::forward<Func>(describe_f));
+    }
+}
+
+template<typename T>
+static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
+    if (tri.is_disabled()) {
+        return "-1";
+    } else if (tri.has_value()) {
+        return ssx::sformat("{}", tri.value());
+    } else {
+        return "-1";
     }
 }
 
@@ -236,22 +329,24 @@ static void add_topic_config(
   const std::optional<T>& default_value,
   std::string_view override_name,
   const tristate<T>& overrides,
-  bool include_synonyms) {
-    std::optional<ss::sstring> override_value;
-    if (overrides.is_disabled()) {
-        override_value = "-1";
-    } else if (overrides.has_value()) {
-        override_value = ssx::sformat("{}", overrides.value());
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation) {
+    // Wrap overrides in an optional because add_topic_config expects
+    // optional<S> where S = tristate<T>
+    std::optional<tristate<T>> override_value;
+    if (overrides.is_disabled() || overrides.has_value()) {
+        override_value = std::make_optional(overrides);
     }
 
     add_topic_config(
       result,
       default_name,
-      default_value ? ssx::sformat("{}", default_value.value()) : "-1",
+      tristate<T>{default_value},
       override_name,
       override_value,
       include_synonyms,
-      [](const ss::sstring& s) { return s; });
+      documentation,
+      &maybe_print_tristate<T>);
 }
 
 template<typename T>
@@ -262,7 +357,8 @@ static void add_topic_config_if_requested(
   const std::optional<T>& default_value,
   std::string_view override_name,
   const tristate<T>& overrides,
-  bool include_synonyms) {
+  bool include_synonyms,
+  std::optional<ss::sstring> documentation) {
     if (config_property_requested(resource.configuration_keys, override_name)) {
         add_topic_config(
           result,
@@ -270,7 +366,8 @@ static void add_topic_config_if_requested(
           default_value,
           override_name,
           overrides,
-          include_synonyms);
+          include_synonyms,
+          documentation);
     }
 }
 
@@ -310,10 +407,17 @@ static ss::sstring kafka_authn_endpoint_format(
     return ssx::sformat("{}", fmt::join(uris, ","));
 }
 
+static inline std::optional<ss::sstring> maybe_make_documentation(
+  bool include_documentation, const std::string_view& docstring) {
+    return include_documentation ? std::make_optional(ss::sstring{docstring})
+                                 : std::nullopt;
+}
+
 static void report_broker_config(
   const describe_configs_resource& resource,
   describe_configs_result& result,
-  bool include_synonyms) {
+  bool include_synonyms,
+  bool include_documentation) {
     if (!result.resource_name.empty()) {
         int32_t broker_id = -1;
         auto res = std::from_chars(
@@ -344,6 +448,8 @@ static void report_broker_config(
       "listeners",
       config::node().kafka_api,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation, config::node().kafka_api.desc()),
       &kafka_authn_endpoint_format);
 
     add_broker_config_if_requested(
@@ -352,6 +458,9 @@ static void report_broker_config(
       "advertised.listeners",
       config::node().advertised_kafka_api_property(),
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::node().advertised_kafka_api_property().desc()),
       &kafka_endpoint_format);
 
     add_broker_config_if_requested(
@@ -360,6 +469,9 @@ static void report_broker_config(
       "log.segment.bytes",
       config::shard_local_cfg().log_segment_size,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().log_segment_size.desc()),
       &describe_as_string<size_t>);
 
     add_broker_config_if_requested(
@@ -368,6 +480,9 @@ static void report_broker_config(
       "log.retention.bytes",
       config::shard_local_cfg().retention_bytes,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().retention_bytes.desc()),
       [](std::optional<size_t> sz) {
           return ssx::sformat("{}", sz ? sz.value() : -1);
       });
@@ -378,6 +493,9 @@ static void report_broker_config(
       "log.retention.ms",
       config::shard_local_cfg().delete_retention_ms,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().delete_retention_ms.desc()),
       [](const std::optional<std::chrono::milliseconds>& ret) {
           return ssx::sformat("{}", ret.value_or(-1ms).count());
       });
@@ -388,6 +506,9 @@ static void report_broker_config(
       "num.partitions",
       config::shard_local_cfg().default_topic_partitions,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().default_topic_partitions.desc()),
       &describe_as_string<int32_t>);
 
     add_broker_config_if_requested(
@@ -396,6 +517,9 @@ static void report_broker_config(
       "default.replication.factor",
       config::shard_local_cfg().default_topic_replication,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().default_topic_replication.desc()),
       &describe_as_string<int16_t>);
 
     add_broker_config_if_requested(
@@ -404,6 +528,8 @@ static void report_broker_config(
       "log.dirs",
       config::node().data_directory,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation, config::node().data_directory.desc()),
       [](const config::data_directory_path& path) {
           return path.as_sstring();
       });
@@ -414,6 +540,9 @@ static void report_broker_config(
       "auto.create.topics.enable",
       config::shard_local_cfg().auto_create_topics_enabled,
       include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().auto_create_topics_enabled.desc()),
       &describe_as_string<bool>);
 }
 
@@ -497,6 +626,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_property_compression,
               topic_config->properties.compression,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().log_compression_type.desc()),
               &describe_as_string<model::compression>);
 
             add_topic_config_if_requested(
@@ -507,8 +639,15 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_property_cleanup_policy,
               topic_config->properties.cleanup_policy_bitflags,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().log_cleanup_policy.desc()),
               &describe_as_string<model::cleanup_policy_bitflags>);
 
+            const std::string_view docstring{
+              topic_config->properties.is_compacted()
+                ? config::shard_local_cfg().compacted_log_segment_size.desc()
+                : config::shard_local_cfg().log_segment_size.desc()};
             add_topic_config_if_requested(
               resource,
               result,
@@ -522,6 +661,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_property_segment_size,
               topic_config->properties.segment_size,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation, docstring),
               &describe_as_string<size_t>);
 
             add_topic_config_if_requested(
@@ -531,7 +672,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
               ctx.metadata_cache().get_default_retention_duration(),
               topic_property_retention_duration,
               topic_config->properties.retention_duration,
-              request.data.include_synonyms);
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().delete_retention_ms.desc()));
 
             add_topic_config_if_requested(
               resource,
@@ -540,7 +684,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
               ctx.metadata_cache().get_default_retention_bytes(),
               topic_property_retention_bytes,
               topic_config->properties.retention_bytes,
-              request.data.include_synonyms);
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().retention_bytes.desc()));
 
             add_topic_config_if_requested(
               resource,
@@ -550,6 +697,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_property_timestamp_type,
               topic_config->properties.timestamp_type,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().log_message_timestamp_type.desc()),
               &describe_as_string<model::timestamp_type>);
 
             add_topic_config_if_requested(
@@ -560,6 +710,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_property_max_message_bytes,
               topic_config->properties.batch_max_bytes,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().kafka_batch_max_bytes.desc()),
               &describe_as_string<uint32_t>);
 
             // Shadow indexing properties
@@ -575,6 +728,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   *topic_config->properties.shadow_indexing))
                 : std::nullopt,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .cloud_storage_enable_remote_read.desc()),
               &describe_as_string<bool>,
               true);
 
@@ -590,6 +747,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   *topic_config->properties.shadow_indexing))
                 : std::nullopt,
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .cloud_storage_enable_remote_write.desc()),
               &describe_as_string<bool>,
               true);
 
@@ -600,7 +761,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
               ctx.metadata_cache().get_default_retention_local_target_bytes(),
               topic_property_retention_local_target_bytes,
               topic_config->properties.retention_local_target_bytes,
-              request.data.include_synonyms);
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .retention_local_target_bytes_default.desc()));
 
             add_topic_config_if_requested(
               resource,
@@ -610,7 +775,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 ctx.metadata_cache().get_default_retention_local_target_ms()),
               topic_property_retention_local_target_ms,
               topic_config->properties.retention_local_target_ms,
-              request.data.include_synonyms);
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg()
+                  .retention_local_target_ms_default.desc()));
 
             if (config_property_requested(
                   resource.configuration_keys, topic_property_remote_delete)) {
@@ -624,6 +793,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
                       topic_config->properties.remote_delete),
                     storage::ntp_config::default_remote_delete),
                   true,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    "Controls whether topic deletion should imply deletion in "
+                    "S3"),
                   [](const bool& b) { return b ? "true" : "false"; });
             }
 
@@ -637,6 +810,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
               property_name,
               ctx.data_policy_table().get_data_policy(topic),
               request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                "Datapolicy property for v8_engine"),
               &describe_as_string<v8_engine::data_policy>);
 
             break;
@@ -648,7 +824,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 continue;
             }
             report_broker_config(
-              resource, result, request.data.include_synonyms);
+              resource,
+              result,
+              request.data.include_synonyms,
+              request.data.include_documentation);
             break;
 
         // resource types not yet handled

@@ -142,6 +142,24 @@ class KCL:
 
         return self._cmd(cmd, attempts=1)
 
+    def describe_topic(self,
+                       topic: str,
+                       with_docs: bool = False,
+                       with_types: bool = False):
+        """
+        :param topic: the name of the topic to describe
+        :param with_docs: if true, include documention strings in the response
+        :param with_types: if true, include config type information in the reponse
+        :return: stdout string
+        """
+        cmd = ["admin", "configs", "describe", topic, "--type", "topic"]
+        if with_docs:
+            cmd.append("--with-docs")
+        if with_types:
+            cmd.append("--with-types")
+
+        return self._cmd(cmd, attempts=1)
+
     def _cmd(self, cmd, input=None, attempts=5):
         """
 

@@ -40,4 +40,30 @@ std::ostream& operator<<(std::ostream& os, const uuid& u) {
     return os << u.to_string();
 }
 
+std::ostream& operator<<(std::ostream& os, describe_configs_type t) {
+    switch (t) {
+    case describe_configs_type::unknown:
+        return os << "{unknown}";
+    case describe_configs_type::boolean:
+        return os << "{boolean}";
+    case describe_configs_type::string:
+        return os << "{string}";
+    case describe_configs_type::int_type:
+        return os << "{int}";
+    case describe_configs_type::short_type:
+        return os << "{short}";
+    case describe_configs_type::long_type:
+        return os << "{long}";
+    case describe_configs_type::double_type:
+        return os << "{double}";
+    case describe_configs_type::list:
+        return os << "{list}";
+    case describe_configs_type::class_type:
+        return os << "{class}";
+    case describe_configs_type::password:
+        return os << "{password}";
+    }
+    return os << "{unsupported type}";
+}
+
 } // namespace kafka
