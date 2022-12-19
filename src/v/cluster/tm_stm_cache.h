@@ -128,6 +128,31 @@ struct tm_transaction {
         }
     }
 
+    std::string_view get_kafka_status() const {
+        switch (status) {
+        case tx_status::ongoing: {
+            if (groups.empty() && partitions.empty()) {
+                return "Empty";
+            }
+            return "Ongoing";
+        }
+        case tx_status::preparing:
+            return "Ongoing";
+        case tx_status::prepared:
+            return "PrepareCommit";
+        case tx_status::aborting:
+            return "PrepareAbort";
+        case tx_status::killed:
+            // https://issues.apache.org/jira/browse/KAFKA-6119
+            // https://github.com/apache/kafka/commit/501a5e262702bcc043724cb9e1f536e16a66399e
+            return "PrepareEpochFence";
+        case tx_status::ready:
+            return "Empty";
+        case tx_status::tombstone:
+            return "Dead";
+        }
+    }
+
     std::chrono::milliseconds get_staleness() const {
         auto now = ss::lowres_system_clock::now();
         return std::chrono::duration_cast<std::chrono::milliseconds>(
