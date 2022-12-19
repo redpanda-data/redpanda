@@ -686,12 +686,8 @@ class NodesDecommissioningTest(EndToEndTest):
                 id = self.redpanda.node_id(b, force_refresh=True)
                 self.logger.info(f"decommissioning node: {id}, iteration: {i}")
 
-                admin.decommission_broker(id)
-                self._wait_until_status(id, 'draining')
-                wait_until(lambda: self._partitions_moving(),
-                           timeout_sec=15,
-                           backoff_sec=1)
                 decom_node = node_by_id(id)
+                admin.decommission_broker(id)
 
                 def node_removed():
                     brokers = admin.get_brokers()
@@ -700,7 +696,7 @@ class NodesDecommissioningTest(EndToEndTest):
                             return False
                     return True
 
-                wait_until(node_removed, 180, 2)
+                wait_until(node_removed, 240, 2)
 
                 def has_partitions():
                     id = self.redpanda.node_id(node=decom_node,
