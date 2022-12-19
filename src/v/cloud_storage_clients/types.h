@@ -25,7 +25,6 @@ using object_key = named_type<std::filesystem::path, struct s3_object_key>;
 using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
-using storage_account = named_type<ss::sstring, struct storage_account_tag>;
 
 enum class error_outcome {
     none = 0,
