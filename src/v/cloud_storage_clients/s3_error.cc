@@ -16,26 +16,6 @@
 
 namespace cloud_storage_clients {
 
-struct s3_error_category final : std::error_category {
-    const char* name() const noexcept final { return "s3"; }
-    std::string message(int ec) const final {
-        switch (static_cast<s3_client_error_code>(ec)) {
-        case s3_client_error_code::invalid_uri:
-            return "Target URI shouldn't be empty or include domain name";
-        case s3_client_error_code::invalid_uri_params:
-            return "Target URI contains invalid query parameters";
-        case s3_client_error_code::not_enough_arguments:
-            return "Can't make request, not enough arguments";
-        }
-        return "unknown";
-    }
-};
-
-std::error_code make_error_code(s3_client_error_code ec) noexcept {
-    static s3_error_category ecat;
-    return {static_cast<int>(ec), ecat};
-}
-
 std::ostream& operator<<(std::ostream& o, s3_error_code code) {
     switch (code) {
     case s3_error_code::access_denied:
