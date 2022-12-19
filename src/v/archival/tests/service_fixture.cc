@@ -137,7 +137,10 @@ get_configurations() {
     s3conf.secret_key = cloud_roles::private_key_str("secret-key");
     s3conf.region = cloud_roles::aws_region_name("us-east-1");
     s3conf._probe = ss::make_shared(cloud_storage_clients::client_probe(
-      net::metrics_disabled::yes, net::public_metrics_disabled::yes, "", ""));
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      cloud_roles::aws_region_name{},
+      cloud_storage_clients::endpoint_url{}));
     s3conf.server_addr = server_addr;
 
     archival::configuration aconf;

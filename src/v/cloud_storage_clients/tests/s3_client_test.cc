@@ -303,8 +303,8 @@ cloud_storage_clients::s3_configuration transport_configuration() {
     conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
       net::metrics_disabled::yes,
       net::public_metrics_disabled::yes,
-      "region",
-      "endpoint");
+      cloud_roles::aws_region_name{"region"},
+      cloud_storage_clients::endpoint_url{"endpoint"});
     return conf;
 }
 
