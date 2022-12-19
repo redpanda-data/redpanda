@@ -10,7 +10,6 @@
 from collections import defaultdict
 from enum import Enum
 import random
-import re
 import threading
 import time
 import requests
@@ -89,10 +88,12 @@ def generate_random_workload(available_nodes):
 
 
 class NodeOpsExecutor():
-    def __init__(self, redpanda: RedpandaService, logger):
+    def __init__(self, redpanda: RedpandaService, logger,
+                 lock: threading.Lock):
         self.redpanda = redpanda
         self.logger = logger
         self.timeout = 360
+        self.lock = lock
 
     def node_id(self, idx):
         return self.redpanda.node_id(self.redpanda.get_node(idx),
@@ -184,6 +185,9 @@ class NodeOpsExecutor():
 
     def stop_node(self, idx):
         node = self.redpanda.get_node(idx)
+        # remove from started nodes before actually stopping redpanda process
+        # to prevent failures from being injected after this point
+        self.redpanda.remove_from_started_nodes(node)
         self.redpanda.stop_node(node)
         self.redpanda.clean_node(node,
                                  preserve_logs=True,
@@ -292,10 +296,63 @@ class NodeOpsExecutor():
         )
 
 
+class FailureInjectorBackgroundThread():
+    def __init__(self, redpanda: RedpandaService, logger,
+                 lock: threading.Lock):
+        self.stop_ev = threading.Event()
+        self.redpanda = redpanda
+        self.thread = None
+        self.logger = logger
+        self.max_suspend_duration_seconds = 10
+        self.min_inter_failure_time = 30
+        self.max_inter_failure_time = 60
+        self.node_start_stop_mutexes = {}
+        self.lock = lock
+
+    def start(self):
+        self.logger.info(
+            f"Starting failure injector thread with: (max suspend duration {self.max_suspend_duration_seconds},"
+            "min inter failure time: {self.min_inter_failure_time}, max inter failure time: {self.max_inter_failure_time})"
+        )
+        self.thread = threading.Thread(target=lambda: self._worker(), args=())
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        self.logger.info(f"Stopping failure injector thread")
+        self.stop_ev.set()
+        self.thread.join()
+
+    def _worker(self):
+        with FailureInjector(self.redpanda) as f_injector:
+            while not self.stop_ev.is_set():
+
+                f_type = random.choice(FailureSpec.FAILURE_TYPES)
+                # failure injector uses only started nodes, this way
+                # we guarantee that failures will not interfere with
+                # nodes start checks
+
+                # use provided lock to prevent interfering with nodes being stopped/started
+                with self.lock:
+                    node = random.choice(self.redpanda.started_nodes())
+
+                    length = 0
+
+                    if f_type == FailureSpec.FAILURE_SUSPEND:
+                        length = random.randint(
+                            1, self.max_suspend_duration_seconds)
+
+                    f_injector.inject_failure(
+                        FailureSpec(node=node, type=f_type, length=length))
+
+                delay = random.randint(self.min_inter_failure_time,
+                                       self.max_inter_failure_time)
+                self.logger.info(
+                    f"waiting {delay} seconds before next failure")
+                time.sleep(delay)
+
+
 class RandomNodeOperationsTest(EndToEndTest):
-    max_suspend_duration_seconds = 10
-    min_inter_failure_time = 30
-    max_inter_failure_time = 60
 
     consumer_timeout = 180
     producer_timeout = 180
@@ -322,8 +379,12 @@ class RandomNodeOperationsTest(EndToEndTest):
     @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
-    def test_node_operations(self):
-
+    @matrix(enable_failures=[False, True])
+    def test_node_operations(
+        self,
+        enable_failures,
+    ):
+        lock = threading.Lock()
         extra_rp_conf = {
             "default_topic_replications": 3,
             "raft_learner_recovery_rate": 512 * (1024 * 1024),
@@ -355,7 +416,12 @@ class RandomNodeOperationsTest(EndToEndTest):
         self.active_node_idxs = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
 
-        executor = NodeOpsExecutor(self.redpanda, self.logger)
+        executor = NodeOpsExecutor(self.redpanda, self.logger, lock)
+        fi = None
+        if enable_failures:
+            fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
+                                                 lock)
+            fi.start()
         op_cnt = 10
         for i, op in enumerate(
                 generate_random_workload(
@@ -367,6 +433,8 @@ class RandomNodeOperationsTest(EndToEndTest):
 
         admin_fuzz.wait(20, 180)
         admin_fuzz.stop()
+        if enable_failures:
+            fi.stop()
         self.run_validation(min_records=self.min_producer_records(),
                             enable_idempotence=False,
                             producer_timeout_sec=self.producer_timeout,
