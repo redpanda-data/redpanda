@@ -139,6 +139,8 @@ private:
       cloud_storage::offset_range offsets,
       ss::lw_shared_ptr<const storage::offset_translator_state> ot_state);
 
+    bool may_read_from_cloud(kafka::offset);
+
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
