@@ -356,6 +356,16 @@ void members_manager::apply_initial_node_uuid_map(uuid_map_t id_by_uuid) {
     if (!id_by_uuid.empty()) {
         vlog(clusterlog.debug, "Initial node UUID map: {}", id_by_uuid);
     }
+    // Start the node ID assignment counter just past the highest node ID. This
+    // helps ensure removed seed servers are accounted for when auto-assigning
+    // node IDs, since seed servers don't call get_or_assign_node_id().
+    for (const auto& [uuid, id] : id_by_uuid) {
+        if (id == INT_MAX) {
+            _next_assigned_id = id;
+            break;
+        }
+        _next_assigned_id = std::max(_next_assigned_id, id + 1);
+    }
     _id_by_uuid = std::move(id_by_uuid);
 }
 
@@ -527,6 +537,9 @@ members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
                 return std::nullopt;
             }
             ++_next_assigned_id;
+        }
+        if (_next_assigned_id == INT_MAX) {
+            return std::nullopt;
         }
         _id_by_uuid.emplace(node_uuid, _next_assigned_id);
         vlog(

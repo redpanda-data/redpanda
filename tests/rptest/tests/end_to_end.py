@@ -83,7 +83,8 @@ class EndToEndTest(Test):
                        si_settings=None,
                        environment=None,
                        install_opts: Optional[InstallOptions] = None,
-                       new_bootstrap=False):
+                       new_bootstrap=False,
+                       max_num_seeds=3):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -105,7 +106,7 @@ class EndToEndTest(Test):
         if new_bootstrap:
             seeds = [
                 self.redpanda.nodes[i]
-                for i in range(0, min(len(self.redpanda.nodes), 3))
+                for i in range(0, min(len(self.redpanda.nodes), max_num_seeds))
             ]
             self.redpanda.set_seed_servers(seeds)
         version_to_install = None
