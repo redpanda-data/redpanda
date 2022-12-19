@@ -21,15 +21,6 @@
 
 namespace cloud_storage_clients {
 
-/// \brief Internal s3 client error code
-enum class s3_client_error_code : int {
-    invalid_uri,
-    invalid_uri_params,
-    not_enough_arguments,
-};
-
-std::error_code make_error_code(s3_client_error_code ec) noexcept;
-
 /// \brief AWS S3 error codes
 ///
 /// \note GCS uses these codes but adds it's own so implementation
