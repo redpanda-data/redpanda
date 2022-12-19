@@ -47,7 +47,7 @@ client_probe::client_probe(
 client_probe::client_probe(
   net::metrics_disabled disable,
   net::public_metrics_disabled public_disable,
-  storage_account storage_account_name,
+  cloud_roles::storage_account storage_account_name,
   endpoint_url endpoint)
   : http::client_probe()
   , _total_rpc_errors(0)

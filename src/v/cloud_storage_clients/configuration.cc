@@ -120,7 +120,7 @@ std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
 
 ss::future<abs_configuration> abs_configuration::make_configuration(
   const std::optional<cloud_roles::private_key_str>& shared_key,
-  const storage_account& storage_account_name,
+  const cloud_roles::storage_account& storage_account_name,
   const default_overrides& overrides,
   net::metrics_disabled disable_metrics,
   net::public_metrics_disabled disable_public_metrics) {

@@ -72,12 +72,12 @@ struct s3_configuration : common_configuration {
 };
 
 struct abs_configuration : common_configuration {
-    storage_account storage_account_name;
+    cloud_roles::storage_account storage_account_name;
     std::optional<cloud_roles::private_key_str> shared_key;
 
     static ss::future<abs_configuration> make_configuration(
       const std::optional<cloud_roles::private_key_str>& shared_key,
-      const storage_account& storage_account_name,
+      const cloud_roles::storage_account& storage_account_name,
       const default_overrides& overrides = {},
       net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
       net::public_metrics_disabled disable_public_metrics
