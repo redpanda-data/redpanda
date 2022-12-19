@@ -166,6 +166,62 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
       header.at(boost::beast::http::field::authorization), expected);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation) {
+    cloud_roles::private_key_str shared_key{
+      "fszSAFOYI+AH3Befu2gnvip9B9QKZA9i8+"
+      "vbwsGtgA29ouezYToMSW2eR0PtSw7ZMPh2cmpsGFnU+AStcy+jUg=="};
+    cloud_roles::storage_account storage_acc{"vladstorageaccount123"};
+    // Get Blob Request
+    std::string host = "vladstorageaccount123.blob.core.windows.net";
+    std::string target = "/vlad-container/one-blob?timeout=10";
+
+    auto tp = parse_time("20221220T110100Z");
+    cloud_roles::signature_abs sign(
+      storage_acc, shared_key, cloud_roles::time_source(tp));
+
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    sign.sign_header(header);
+
+    std::string expected
+      = "SharedKey "
+        "vladstorageaccount123:rDsCDHPhdsr7SMkt81ofyrnNNxL3VKFW7ydsDQeVPIM=";
+
+    BOOST_REQUIRE_EQUAL(
+      header.at(boost::beast::http::field::authorization), expected);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
+    cloud_roles::private_key_str shared_key{
+      "fszSAFOYI+AH3Befu2gnvip9B9QKZA9i8+"
+      "vbwsGtgA29ouezYToMSW2eR0PtSw7ZMPh2cmpsGFnU+AStcy+jUg=="};
+    cloud_roles::storage_account storage_acc{"vladstorageaccount123"};
+    std::string host = "vladstorageaccount123.blob.core.windows.net";
+    // List Containers Request
+    std::string target = "/?comp=list&timeout=20";
+
+    auto tp = parse_time("20221220T111700Z");
+    cloud_roles::signature_abs sign(
+      storage_acc, shared_key, cloud_roles::time_source(tp));
+
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    sign.sign_header(header);
+
+    std::string expected
+      = "SharedKey "
+        "vladstorageaccount123:hWp74AgakkrSYVzYBKSabfLP4NWVa410CNRm/dMxX2M=";
+
+    BOOST_REQUIRE_EQUAL(
+      header.at(boost::beast::http::field::authorization), expected);
+}
+
 /// Test is based on this example
 /// https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html
 SEASTAR_THREAD_TEST_CASE(test_gnutls) {
