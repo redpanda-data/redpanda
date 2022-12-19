@@ -97,9 +97,9 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 ss::future<> ntp_archiver::start() {
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
         ssx::spawn_with_gate(
-          _gate, [this] { return outer_sync_manifest_loop(); });
+          _gate, [this] { return sync_manifest_until_abort(); });
     } else {
-        ssx::spawn_with_gate(_gate, [this] { return outer_upload_loop(); });
+        ssx::spawn_with_gate(_gate, [this] { return upload_until_abort(); });
     }
 
     return ss::now();
@@ -111,7 +111,7 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
     }
 }
 
-ss::future<> ntp_archiver::outer_upload_loop() {
+ss::future<> ntp_archiver::upload_until_abort() {
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
@@ -140,7 +140,8 @@ ss::future<> ntp_archiver::outer_upload_loop() {
         vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
 
         co_await ss::with_scheduling_group(
-          _conf->upload_scheduling_group, [this] { return upload_loop(); })
+          _conf->upload_scheduling_group,
+          [this] { return upload_until_term_change(); })
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
@@ -158,7 +159,7 @@ ss::future<> ntp_archiver::outer_upload_loop() {
     }
 }
 
-ss::future<> ntp_archiver::outer_sync_manifest_loop() {
+ss::future<> ntp_archiver::sync_manifest_until_abort() {
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
@@ -189,7 +190,7 @@ ss::future<> ntp_archiver::outer_sync_manifest_loop() {
           _rtclog.debug, "sync manifest loop starting in term {}", _start_term);
 
         try {
-            co_await sync_manifest_loop()
+            co_await sync_manifest_until_term_change()
               .handle_exception_type(
                 [](const ss::abort_requested_exception&) {})
               .handle_exception_type([](const ss::sleep_aborted&) {})
@@ -282,7 +283,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
     }
 }
 
-ss::future<> ntp_archiver::upload_loop() {
+ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
     while (upload_loop_can_continue()) {
@@ -363,7 +364,7 @@ ss::future<> ntp_archiver::upload_loop() {
     }
 }
 
-ss::future<> ntp_archiver::sync_manifest_loop() {
+ss::future<> ntp_archiver::sync_manifest_until_term_change() {
     while (sync_manifest_loop_can_continue()) {
         cloud_storage::download_result result = co_await sync_manifest();
 

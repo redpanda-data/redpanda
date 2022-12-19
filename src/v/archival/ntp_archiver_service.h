@@ -260,18 +260,22 @@ private:
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();
 
-    /// Within a particular term, while leader, keep trying to upload data.
-    ss::future<> upload_loop();
+    /// While leader, within a particular term, keep trying to upload data
+    /// from local storage to remote storage until our term changes or
+    /// our abort source fires.
+    ss::future<> upload_until_term_change();
 
-    /// Run upload loop until term change, then start it again.  Stop when
+    /// Outer loop to keep invoking upload_until_term_change until our
     /// abort source fires.
-    ss::future<> outer_upload_loop();
+    ss::future<> upload_until_abort();
 
-    /// Launch the sync manifest loop fiber.
-    ss::future<> sync_manifest_loop();
+    /// Periodically try to download and ingest the remote manifest until
+    /// our term changes or abort source fires
+    ss::future<> sync_manifest_until_term_change();
 
-    /// Run sync_manifest_loop until shut down
-    ss::future<> outer_sync_manifest_loop();
+    /// Outer loop to keep invoking sync_manifest_until_term_change until our
+    /// abort source fires.
+    ss::future<> sync_manifest_until_abort();
 
     /// Attempt to upload topic manifest.  Does not throw on error.  Clears
     /// _topic_manifest_dirty on success.
