@@ -13,6 +13,46 @@
 #include "cloud_storage_clients/logger.h"
 #include "net/tls.h"
 
+namespace {
+
+ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+build_tls_credentials(
+  std::optional<cloud_storage_clients::ca_trust_file> trust_file,
+  ss::logger& log) {
+    ss::tls::credentials_builder cred_builder;
+    // NOTE: this is a pre-defined gnutls priority string that
+    // picks the ciphersuites with 128-bit ciphers which
+    // leads to up to 10x improvement in upload speed, compared
+    // to 256-bit ciphers
+    cred_builder.set_priority_string("PERFORMANCE");
+    if (trust_file.has_value()) {
+        auto file = trust_file.value();
+        vlog(log.info, "Use non-default trust file {}", file());
+        co_await cred_builder.set_x509_trust_file(
+          file().string(), ss::tls::x509_crt_format::PEM);
+    } else {
+        // Use GnuTLS defaults, might not work on all systems
+        auto ca_file = co_await net::find_ca_file();
+        if (ca_file) {
+            vlog(
+              log.info,
+              "Use automatically discovered trust file {}",
+              ca_file.value());
+            co_await cred_builder.set_x509_trust_file(
+              ca_file.value(), ss::tls::x509_crt_format::PEM);
+        } else {
+            vlog(
+              log.info,
+              "Trust file can't be detected automatically, using GnuTLS "
+              "default");
+            co_await cred_builder.set_system_trust();
+        }
+    }
+    co_return co_await cred_builder.build_reloadable_certificate_credentials();
+};
+
+} // namespace
+
 namespace cloud_storage_clients {
 
 // Close all connections that were used more than 5 seconds ago.
@@ -42,38 +82,9 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
-    ss::tls::credentials_builder cred_builder;
     if (overrides.disable_tls == false) {
-        // NOTE: this is a pre-defined gnutls priority string that
-        // picks the ciphersuites with 128-bit ciphers which
-        // leads to up to 10x improvement in upload speed, compared
-        // to 256-bit ciphers
-        cred_builder.set_priority_string("PERFORMANCE");
-        if (overrides.trust_file.has_value()) {
-            auto file = overrides.trust_file.value();
-            vlog(s3_log.info, "Use non-default trust file {}", file());
-            co_await cred_builder.set_x509_trust_file(
-              file().string(), ss::tls::x509_crt_format::PEM);
-        } else {
-            // Use GnuTLS defaults, might not work on all systems
-            auto ca_file = co_await net::find_ca_file();
-            if (ca_file) {
-                vlog(
-                  s3_log.info,
-                  "Use automatically discovered trust file {}",
-                  ca_file.value());
-                co_await cred_builder.set_x509_trust_file(
-                  ca_file.value(), ss::tls::x509_crt_format::PEM);
-            } else {
-                vlog(
-                  s3_log.info,
-                  "Trust file can't be detected automatically, using GnuTLS "
-                  "default");
-                co_await cred_builder.set_system_trust();
-            }
-        }
-        client_cfg.credentials
-          = co_await cred_builder.build_reloadable_certificate_credentials();
+        client_cfg.credentials = co_await build_tls_credentials(
+          overrides.trust_file, s3_log);
     }
 
     constexpr uint16_t default_port = 443;
