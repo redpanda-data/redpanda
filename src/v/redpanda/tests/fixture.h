@@ -107,8 +107,11 @@ public:
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
 
+        configs.start(ss::sstring("fixture_config")).get();
+
         // used by request context builder
         proto = std::make_unique<kafka::protocol>(
+          &configs,
           app.smp_service_groups.kafka_smp_sg(),
           app.metadata_cache,
           app.controller->get_topics_frontend(),
@@ -128,6 +131,8 @@ public:
           app.cp_partition_manager,
           app.data_policies,
           std::nullopt);
+
+        configs.stop().get();
     }
 
     // creates single node with default configuration
@@ -591,6 +596,7 @@ public:
     uint16_t proxy_port;
     uint16_t schema_reg_port;
     std::filesystem::path data_dir;
+    ss::sharded<net::server_configuration> configs;
     std::unique_ptr<kafka::protocol> proto;
     bool remove_on_shutdown;
     std::unique_ptr<::stop_signal> app_signal;

@@ -44,6 +44,7 @@
 namespace kafka {
 
 protocol::protocol(
+  ss::sharded<net::server_configuration>* cfg,
   ss::smp_service_group smp,
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
@@ -63,7 +64,8 @@ protocol::protocol(
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
-  : _smp_group(smp)
+  : net::server(cfg)
+  , _smp_group(smp)
   , _topics_frontend(tf)
   , _config_frontend(cf)
   , _feature_table(ft)

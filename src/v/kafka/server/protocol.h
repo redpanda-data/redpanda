@@ -32,9 +32,10 @@
 
 namespace kafka {
 
-class protocol final : public net::server::protocol {
+class protocol final : public net::server {
 public:
     protocol(
+      ss::sharded<net::server_configuration>*,
       ss::smp_service_group,
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::topics_frontend>&,
@@ -61,7 +62,7 @@ public:
     protocol(protocol&&) noexcept = default;
     protocol& operator=(protocol&&) noexcept = delete;
 
-    const char* name() const final { return "kafka rpc protocol"; }
+    std::string_view name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
     // until the end of the server (container/parent)
     ss::future<> apply(net::server::resources) final;
