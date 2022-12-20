@@ -71,13 +71,13 @@ ss::future<> rpc_server::apply(net::server::resources rs) {
 }
 
 ss::future<>
-send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
+rpc_server::send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
     buf.set_min_compression_bytes(reply_min_compression_bytes);
     buf.set_compression(rpc::compression_type::zstd);
     buf.set_correlation_id(ctx->get_header().correlation_id);
 
     auto view = co_await std::move(buf).as_scattered();
-    if (ctx->res.conn_gate().is_closed()) {
+    if (conn_gate().is_closed()) {
         // do not write if gate is closed
         rpclog.debug(
           "Skipping write of {} bytes, connection is closed", view.size());
@@ -99,7 +99,7 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
       });
 }
 
-ss::future<> send_reply_skip_payload(
+ss::future<> rpc_server::send_reply_skip_payload(
   ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
     co_await ctx->res.conn->input().skip(ctx->get_header().payload_size);
     co_await send_reply(std::move(ctx), std::move(buf));
@@ -110,7 +110,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
     rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
-    if (rs.conn_gate().is_closed()) {
+    if (conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
     }
 
@@ -119,7 +119,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     // background!
     ssx::background
       = ssx::spawn_with_gate_then(
-          rs.conn_gate(),
+          conn_gate(),
           [this, method_id, rs, ctx]() mutable {
               if (unlikely(
                     ctx->get_header().version
@@ -165,7 +165,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
               method* m = it->get()->method_from_id(method_id);
 
               return m->handle(ctx->res.conn->input(), *ctx)
-                .then_wrapped([ctx, m, l = ctx->res.hist().auto_measure(), rs](
+                .then_wrapped([this, ctx, m, l = ctx->res.hist().auto_measure(), rs](
                                 ss::future<netbuf> fut) mutable {
                     bool error = true;
                     netbuf reply_buf;

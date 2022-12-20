@@ -353,7 +353,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                      */
                     ssx::background
                       = ssx::spawn_with_gate_then(
-                          _rs.conn_gate(),
+                          _server.conn_gate(),
                           [this,
                            f = std::move(f),
                            sres = std::move(sres),

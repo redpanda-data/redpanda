@@ -110,7 +110,6 @@ public:
         server_probe& probe() { return _s->_probe; }
         ssx::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
-        ss::gate& conn_gate() { return _s->_conn_gate; }
         ss::abort_source& abort_source() { return _s->_as; }
         bool abort_requested() const { return _s->_as.abort_requested(); }
 
@@ -149,6 +148,8 @@ public:
 
     virtual std::string_view name() const = 0;
     virtual ss::future<> apply(resources) = 0;
+
+    ss::gate& conn_gate() { return _conn_gate; }
 
 private:
     struct listener {
