@@ -36,12 +36,14 @@ static constexpr uint32_t default_reader_factor = 1;
 // If no materialized segment limit is set, permit the per-shard partition count
 // limit, multiplied by this factor (i.e. each partition gets this many segments
 // on average).
-static constexpr uint32_t default_segment_factor = 2;
+static constexpr uint32_t default_segment_factor = 1;
 
 materialized_segments::materialized_segments()
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
       config::shard_local_cfg().topic_partitions_per_shard.bind())
+  , _log_segment_size(config::shard_local_cfg().log_segment_size.bind())
+  , _cache_size(config::shard_local_cfg().cloud_storage_cache_size())
   , _max_readers_per_shard(
       config::shard_local_cfg().cloud_storage_max_readers_per_shard.bind())
   , _max_segments_per_shard(
@@ -55,6 +57,8 @@ materialized_segments::materialized_segments()
       [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
+    _log_segment_size.watch(
+      [this]() { _segment_units.set_capacity(max_segments()); });
 }
 
 ss::future<> materialized_segments::stop() {
@@ -99,7 +103,7 @@ size_t materialized_segments::max_readers() const {
 
 size_t materialized_segments::max_segments() const {
     return static_cast<size_t>(_max_segments_per_shard().value_or(
-      _max_partitions_per_shard() * default_segment_factor));
+      _cache_size / _log_segment_size() * default_segment_factor));
 }
 
 size_t materialized_segments::current_readers() const {

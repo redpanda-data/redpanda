@@ -1195,7 +1195,8 @@ configuration::configuration()
       *this,
       "cloud_storage_max_materialized_segments_per_shard",
       "Maximum concurrent readers of remote data per CPU core.  If unset, "
-      "value of `topic_partitions_per_shard` multiplied by 2 is used.",
+      "value of `cloud_storage_cache_size` divided by the 'log_segment_size' "
+      "is used.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
   , superusers(
