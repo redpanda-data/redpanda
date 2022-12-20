@@ -117,19 +117,6 @@ public:
     private:
         server* _s;
     };
-    struct protocol {
-        protocol() noexcept = default;
-        protocol(protocol&&) noexcept = default;
-        protocol& operator=(protocol&&) noexcept = default;
-        protocol(const protocol&) = delete;
-        protocol& operator=(const protocol&) = delete;
-
-        virtual ~protocol() noexcept = default;
-        virtual const char* name() const = 0;
-        // the lifetime of all references here are guaranteed to live
-        // until the end of the server (container/parent)
-        virtual ss::future<> apply(server::resources) = 0;
-    };
 
     explicit server(server_configuration);
     explicit server(ss::sharded<server_configuration>* s);

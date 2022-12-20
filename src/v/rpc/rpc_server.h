@@ -11,7 +11,6 @@
 #include "config/configuration.h"
 #include "net/server.h"
 #include "rpc/service.h"
-#include "rpc/simple_protocol.h"
 #include "vassert.h"
 
 namespace rpc {
@@ -43,22 +42,24 @@ public:
                 s->setup_metrics();
             }
         }
-        _proto.add_services(std::move(services));
+        std::move(
+          services.begin(), services.end(), std::back_inserter(_services));
     }
 
-    std::string_view name() const final { return _proto.name(); }
-
-    ss::future<> apply(net::server::resources rs) final {
-        return _proto.apply(std::move(rs));
+    std::string_view name() const final {
+        return "vectorized internal rpc protocol";
     }
+
+    ss::future<> apply(net::server::resources rs) final;
 
     template<std::derived_from<service> T, typename... Args>
     void register_service(Args&&... args) {
-        _proto.register_service<T>(std::forward<Args>(args)...);
+        _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
 private:
-    simple_protocol _proto;
+    ss::future<> dispatch_method_once(header, net::server::resources);
+    std::vector<std::unique_ptr<service>> _services;
 };
 
 } // namespace rpc

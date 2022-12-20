@@ -29,7 +29,6 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
-#include "rpc/simple_protocol.h"
 #include "rpc/types.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"

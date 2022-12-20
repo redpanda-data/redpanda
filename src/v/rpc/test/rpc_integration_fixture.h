@@ -15,7 +15,6 @@
 #include "net/server.h"
 #include "rpc/rpc_server.h"
 #include "rpc/service.h"
-#include "rpc/simple_protocol.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
