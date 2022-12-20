@@ -108,7 +108,6 @@ public:
         ss::lw_shared_ptr<net::connection> conn;
 
         server_probe& probe() { return _s->_probe; }
-        ssx::semaphore& memory() { return _s->_memory; }
 
     private:
         server* _s;
@@ -146,6 +145,7 @@ public:
     virtual std::string_view name() const = 0;
     virtual ss::future<> apply(resources) = 0;
 
+    ssx::semaphore& memory() { return _memory; }
     ss::gate& conn_gate() { return _conn_gate; }
     hdr_hist& hist() { return _hist; }
     ss::abort_source& abort_source() { return _as; }

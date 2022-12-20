@@ -260,8 +260,8 @@ connection_context::reserve_request_units(api_key key, size_t size) {
           mem_estimate,
           handler ? (*handler)->name() : "<bad key>"));
     }
-    auto fut = ss::get_units(_rs.memory(), mem_estimate);
-    if (_rs.memory().waiters()) {
+    auto fut = ss::get_units(_server.memory(), mem_estimate);
+    if (_server.memory().waiters()) {
         _rs.probe().waiting_for_available_memory();
     }
     return fut;

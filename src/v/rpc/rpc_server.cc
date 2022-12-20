@@ -27,14 +27,15 @@ namespace rpc {
 static constexpr size_t reply_min_compression_bytes = 1024;
 
 struct server_context_impl final : streaming_context {
-    server_context_impl(net::server::resources s, header h)
-      : res(std::move(s))
+    server_context_impl(net::server& server, net::server::resources s, header h)
+      : server(server)
+      , res(std::move(s))
       , hdr(h) {
         res.probe().request_received();
     }
     ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
-        auto fut = get_units(res.memory(), ask);
-        if (res.memory().waiters()) {
+        auto fut = get_units(server.memory(), ask);
+        if (server.memory().waiters()) {
             res.probe().waiting_for_available_memory();
         }
         return fut;
@@ -45,6 +46,7 @@ struct server_context_impl final : streaming_context {
     void body_parse_exception(std::exception_ptr e) final {
         pr.set_exception(std::move(e));
     }
+    net::server& server;
     net::server::resources res;
     header hdr;
     ss::promise<> pr;
@@ -108,7 +110,7 @@ ss::future<> rpc_server::send_reply_skip_payload(
 ss::future<>
 rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
-    auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
+    auto ctx = ss::make_lw_shared<server_context_impl>(*this, rs, h);
     rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
     if (conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
