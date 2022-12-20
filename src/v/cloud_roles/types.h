@@ -94,9 +94,15 @@ struct aws_credentials {
     aws_region_name region;
 };
 
+struct abs_credentials {
+    storage_account storage_account;
+    private_key_str shared_key;
+};
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
-using credentials = std::variant<aws_credentials, gcp_credentials>;
+using credentials
+  = std::variant<aws_credentials, gcp_credentials, abs_credentials>;
 
 std::ostream& operator<<(std::ostream& os, const credentials& c);
 
