@@ -27,15 +27,20 @@ class OfflineLogViewer:
         kvstore_json = node.account.ssh_output(cmd, combine_stderr=False)
         return json.loads(kvstore_json)
 
-    def read_controller(self, node):
-        cmd = self._cmd("--type controller")
-        controller_json = node.account.ssh_output(cmd, combine_stderr=False)
+    def _json_cmd(self, node, suffix):
+        cmd = self._cmd(suffix=suffix)
+        json_out = node.account.ssh_output(cmd, combine_stderr=False)
         try:
-            return json.loads(controller_json)
+            return json.loads(json_out)
         except json.decoder.JSONDecodeError:
             # Log the bad output before re-raising
-            self._redpanda.logger.error(
-                f"Invalid JSON output: {controller_json}")
+            self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
             import time
             time.sleep(3600)
             raise
+
+    def read_controller(self, node):
+        return self._json_cmd(node, "--type controller")
+
+    def read_consumer_offsets(self, node):
+        return self._json_cmd(node, "--type consumer_offsets")
