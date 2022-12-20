@@ -82,10 +82,13 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 	}
 	command.Flags().StringVar(
 		&adminURL,
-		"admin-url",
+		config.FlagAdminHosts2,
 		"",
-		"The address to the broker's admin API. Defaults to the one in the config file",
+		"Comma-separated list of admin API addresses (<IP>:<port>)",
 	)
+	command.Flags().StringVar(&adminURL, "admin-url", "", "")
+	command.Flags().MarkDeprecated("admin-url", "use --"+config.FlagAdminHosts2)
+
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
