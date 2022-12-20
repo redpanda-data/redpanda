@@ -18,6 +18,8 @@
 #include "utils/named_type.h"
 #include "vassert.h"
 
+#include <fmt/chrono.h>
+
 #include <chrono>
 #include <string_view>
 
@@ -32,14 +34,11 @@ enum class s3_client_error_code : int {
 
 std::error_code make_error_code(s3_client_error_code ec) noexcept;
 
-/// Time source for the signature_v4.
+/// Time source for signature_v4 and signature_abs. Supports
+/// two formats: ISO8601 and RFC9110.
 /// Can be used to get and format current time or to
 /// format the pre-defined time for testing.
 class time_source {
-    static constexpr int formatted_date_len = 9; // format is 20201231\0
-    static constexpr int formatted_datetime_len
-      = 17; // format is 20201231T123100Z\0
-
 public:
     /// \brief Initialize time-source
     /// Defult time-source uses std::chrono::system_clock.
@@ -58,17 +57,23 @@ public:
     ~time_source() noexcept = default;
 
     /// Return formatted date in ISO8601 format
+    /// Example: 20201231
     ss::sstring format_date() const;
 
     /// Return formatted date in ISO8601 format
+    /// Example: 20201231T123100Z
     ss::sstring format_datetime() const;
+
+    /// Return formatted datetime according to RFC9110
+    /// Example: Tue, 15 Nov 2010 08:12:31 GMT
+    ss::sstring format_http_datetime() const;
 
 private:
     template<class Fn>
     explicit time_source(Fn&& fn, int);
 
     /// Format date-time according to format string
-    ss::sstring format(const char* fmt) const;
+    ss::sstring format(auto fmt) const;
 
     static timestamp default_source();
     ss::noncopyable_function<timestamp()> _gettime_fn;

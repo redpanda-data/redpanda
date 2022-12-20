@@ -22,8 +22,16 @@
 #include <boost/algorithm/string/compare.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <fmt/compile.h>
 
 #include <system_error>
+
+namespace {
+constexpr auto iso_8061_date_fmt = FMT_COMPILE("{:%Y%m%d}");
+constexpr auto iso_8061_datetime_fmt = FMT_COMPILE("{:%Y%m%dT%H%M%SZ}");
+constexpr auto rfc_9110_datetime_fmt = FMT_COMPILE(
+  "{:%a, %d %b %Y %H:%M:%S %Z}");
+} // namespace
 
 namespace cloud_roles {
 
@@ -60,20 +68,16 @@ time_source::time_source()
 time_source::time_source(timestamp instant)
   : time_source([instant]() { return instant; }, 0) {}
 
-ss::sstring time_source::format(const char* fmt) const {
-    std::array<char, formatted_datetime_len> out_str{};
-    auto point = _gettime_fn();
-    std::time_t time = std::chrono::system_clock::to_time_t(point);
-    std::tm* gm = std::gmtime(&time);
-    auto ret = std::strftime(out_str.data(), out_str.size(), fmt, gm);
-    vassert(ret > 0, "Invalid date format string");
-    return ss::sstring(out_str.data(), ret);
+ss::sstring time_source::format_date() const {
+    return format(iso_8061_date_fmt);
 }
 
-ss::sstring time_source::format_date() const { return format("%Y%m%d"); }
-
 ss::sstring time_source::format_datetime() const {
-    return format("%Y%m%dT%H%M%SZ");
+    return format(iso_8061_datetime_fmt);
+}
+
+ss::sstring time_source::format_http_datetime() const {
+    return format(rfc_9110_datetime_fmt);
 }
 
 timestamp time_source::default_source() {
@@ -132,6 +136,14 @@ inline void append_hex_utf8(ss::sstring& result, char ch) {
     result.append("%", 1);
     auto h = to_hex(b);
     result.append(h.data(), h.size());
+}
+
+ss::sstring time_source::format(auto fmt) const {
+    const auto point = _gettime_fn();
+    const std::time_t time = std::chrono::system_clock::to_time_t(point);
+    const std::tm gm = fmt::gmtime(time);
+
+    return fmt::format(fmt, gm);
 }
 
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
