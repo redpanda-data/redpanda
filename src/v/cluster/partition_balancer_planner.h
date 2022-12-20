@@ -34,6 +34,8 @@ struct planner_config {
     // Size of partitions that can be planned to move in one request
     size_t movement_disk_size_batch;
     std::chrono::seconds node_availability_timeout_sec;
+    // Fallocation step used to calculate upperbound for partition size
+    size_t segment_fallocation_step;
 };
 
 class partition_balancer_planner {

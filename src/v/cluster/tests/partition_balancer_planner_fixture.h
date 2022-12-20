@@ -91,7 +91,8 @@ struct partition_balancer_planner_fixture {
           .soft_max_disk_usage_ratio = 0.8,
           .hard_max_disk_usage_ratio = 0.95,
           .movement_disk_size_batch = reallocation_batch_size,
-          .node_availability_timeout_sec = std::chrono::minutes(1)},
+          .node_availability_timeout_sec = std::chrono::minutes(1),
+          .segment_fallocation_step = 16},
         workers.state.local(),
         workers.allocator.local()) {}
 

@@ -480,7 +480,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             config::shard_local_cfg()
               .partition_autobalancing_tick_interval_ms.bind(),
             config::shard_local_cfg()
-              .partition_autobalancing_movement_batch_size_bytes.bind());
+              .partition_autobalancing_movement_batch_size_bytes.bind(),
+            config::shard_local_cfg().segment_fallocation_step.bind());
       })
       .then([this] {
           return _partition_balancer.invoke_on(

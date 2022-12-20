@@ -215,10 +215,14 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
         least_disk_filled(max_disk_usage_ratio, rrs.node_disk_reports)));
 
     // Add constraint on partition max_disk_usage_ratio overfill
+    size_t upper_bound_for_partition_size = partition_size
+                                            + _config.segment_fallocation_step;
     allocation_constraints.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(
         disk_not_overflowed_by_partition(
-          max_disk_usage_ratio, partition_size, rrs.node_disk_reports)));
+          max_disk_usage_ratio,
+          upper_bound_for_partition_size,
+          rrs.node_disk_reports)));
 
     // Add constraint on unavailable nodes
     allocation_constraints.hard_constraints.push_back(
