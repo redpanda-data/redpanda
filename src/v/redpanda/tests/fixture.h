@@ -29,7 +29,7 @@
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
-#include "kafka/server/protocol.h"
+#include "kafka/server/server.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -110,7 +110,7 @@ public:
         configs.start(ss::sstring("fixture_config")).get();
 
         // used by request context builder
-        proto = std::make_unique<kafka::protocol>(
+        proto = std::make_unique<kafka::server>(
           &configs,
           app.smp_service_groups.kafka_smp_sg(),
           app.metadata_cache,
@@ -597,7 +597,7 @@ public:
     uint16_t schema_reg_port;
     std::filesystem::path data_dir;
     ss::sharded<net::server_configuration> configs;
-    std::unique_ptr<kafka::protocol> proto;
+    std::unique_ptr<kafka::server> proto;
     bool remove_on_shutdown;
     std::unique_ptr<::stop_signal> app_signal;
 };

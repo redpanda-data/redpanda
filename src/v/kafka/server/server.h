@@ -32,9 +32,9 @@
 
 namespace kafka {
 
-class protocol final : public net::server {
+class server final : public net::server {
 public:
-    protocol(
+    server(
       ss::sharded<net::server_configuration>*,
       ss::smp_service_group,
       ss::sharded<cluster::metadata_cache>&,
@@ -56,11 +56,11 @@ public:
       ss::sharded<v8_engine::data_policy_table>&,
       std::optional<qdc_monitor::config>) noexcept;
 
-    ~protocol() noexcept override = default;
-    protocol(const protocol&) = delete;
-    protocol& operator=(const protocol&) = delete;
-    protocol(protocol&&) noexcept = default;
-    protocol& operator=(protocol&&) noexcept = delete;
+    ~server() noexcept override = default;
+    server(const server&) = delete;
+    server& operator=(const server&) = delete;
+    server(server&&) noexcept = default;
+    server& operator=(server&&) noexcept = delete;
 
     std::string_view name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
