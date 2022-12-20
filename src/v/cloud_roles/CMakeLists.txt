@@ -1,6 +1,7 @@
 v_cc_library(
     NAME cloud_roles
     SRCS
+    apply_abs_credentials.cc
     apply_aws_credentials.cc
     apply_credentials.cc
     apply_gcp_credentials.cc
