@@ -542,13 +542,17 @@ class NodesDecommissioningTest(EndToEndTest):
         survivor_node = self._not_decommissioned_node(node_id)
 
         for i in range(1, 10):
-            self.logger.info(f"decommissioning node: {node_id}", )
+            self.logger.info(f"decommissioning node: {node_id}")
+            # set recovery rate to small value to prevent node
+            # from finishing decommission operation
+            self._set_recovery_rate(64)
             admin.decommission_broker(id=node_id)
             wait_until(lambda: self._partitions_moving(node=survivor_node),
                        timeout_sec=15,
                        backoff_sec=1)
             self.logger.info(f"recommissioning node: {node_id}", )
             admin.recommission_broker(id=node_id)
+            self._set_recovery_rate(1024 * 1024 * 1024)
 
         # finally decommission node
         self.logger.info(f"decommissioning node: {node_id}", )
