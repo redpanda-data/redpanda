@@ -603,6 +603,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                 auto term = term_opt.value();
                 auto tx_id_opt = stm->get_id_by_pid(pid);
                 if (!tx_id_opt) {
+                    vlog(
+                      txlog.trace,
+                      "can't find tx by pid:{} considering it aborted",
+                      pid);
                     return ss::make_ready_future<try_abort_reply>(
                       try_abort_reply::make_aborted());
                 }
@@ -642,21 +646,50 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     auto tx_opt = co_await stm->get_tx(tx_id);
     if (!tx_opt) {
         if (tx_opt.error() == tm_stm::op_status::not_found) {
+            vlog(
+              txlog.trace,
+              "can't find a tx by id:{} (pid:{} tx_seq:{}) considering it "
+              "aborted",
+              tx_id,
+              pid,
+              tx_seq);
             co_return try_abort_reply::make_aborted();
         }
         co_return try_abort_reply{tx_errc::unknown_server_error};
     }
     auto tx = tx_opt.value();
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
+        vlog(
+          txlog.trace,
+          "found tx:{} has pid:{} tx_seq:{} (expecting pid:{} tx_seq:{}) "
+          "considering it aborted",
+          tx_id,
+          tx.pid,
+          tx.tx_seq,
+          pid,
+          tx_seq);
         co_return try_abort_reply::make_aborted();
     }
 
     if (tx.status == tm_transaction::tx_status::prepared) {
+        vlog(
+          txlog.trace,
+          "tx id:{} pid:{} tx_seq:{} is prepared => considering it committed",
+          tx_id,
+          tx.pid,
+          tx.tx_seq);
         co_return try_abort_reply::make_committed();
     } else if (
       tx.status == tm_transaction::tx_status::aborting
       || tx.status == tm_transaction::tx_status::killed
       || tx.status == tm_transaction::tx_status::ready) {
+        vlog(
+          txlog.trace,
+          "tx id:{} pid:{} tx_seq:{} has status:{} => considering it aborted",
+          tx_id,
+          tx.pid,
+          tx.tx_seq,
+          tx.status);
         // when it's ready it means in-memory state was lost
         // so can't be comitted and it's save to aborted
         co_return try_abort_reply::make_aborted();
@@ -674,6 +707,12 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         });
         co_return try_abort_reply{tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
+        vlog(
+          txlog.trace,
+          "tx id:{} pid:{} tx_seq:{} is ongoing => forcing it to be aborted",
+          tx_id,
+          tx.pid,
+          tx.tx_seq);
         auto killed_tx = co_await stm->mark_tx_killed(expected_term, tx.id);
         if (!killed_tx.has_value()) {
             if (killed_tx.error() == tm_stm::op_status::not_leader) {
@@ -3147,6 +3186,14 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     }
 
     checked<tm_transaction, tx_errc> r(tx);
+
+    vlog(
+      txlog.trace,
+      "attempting to expire tx id:{} pid:{} tx_seq:{} status:{}",
+      tx.id,
+      tx.pid,
+      tx.tx_seq,
+      tx.status);
 
     if (tx.status == tm_transaction::tx_status::ready) {
         // already in a good state, we don't need to do anything
