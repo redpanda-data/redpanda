@@ -10,12 +10,11 @@
 
 #include "cloud_storage_clients/s3_client.h"
 
-#include "bytes/iobuf_istreambuf.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
+#include "cloud_storage_clients/util.h"
 #include "hashing/secure.h"
 #include "http/client.h"
-#include "net/connection.h"
 #include "net/types.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
@@ -310,37 +309,6 @@ request_creator::make_delete_objects_request(
 
 // client //
 
-static void log_buffer_with_rate_limiting(const char* msg, iobuf& buf) {
-    static constexpr int buffer_size = 0x100;
-    static constexpr auto rate_limit = std::chrono::seconds(1);
-    thread_local static ss::logger::rate_limit rate(rate_limit);
-    auto log_with_rate_limit = [](ss::logger::format_info fmt, auto... args) {
-        s3_log.log(ss::log_level::warn, rate, fmt, args...);
-    };
-    iobuf_istreambuf strbuf(buf);
-    std::istream stream(&strbuf);
-    std::array<char, buffer_size> str{};
-    auto sz = stream.readsome(str.data(), buffer_size);
-    auto sview = std::string_view(str.data(), sz);
-    vlog(log_with_rate_limit, "{}: {}", msg, sview);
-}
-
-/// Convert iobuf that contains xml data to boost::property_tree
-static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
-    namespace pt = boost::property_tree;
-    try {
-        iobuf_istreambuf strbuf(buf);
-        std::istream stream(&strbuf);
-        pt::ptree res;
-        pt::read_xml(stream, res);
-        return res;
-    } catch (...) {
-        log_buffer_with_rate_limiting("unexpected reply", buf);
-        vlog(s3_log.error, "!!parsing error {}", std::current_exception());
-        throw;
-    }
-}
-
 /// Parse timestamp in format that S3 uses
 static std::chrono::system_clock::time_point
 parse_timestamp(std::string_view sv) {
@@ -359,7 +327,7 @@ static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
               ss::sstring{frag.get(), frag.size()});
         }
         s3_client::list_bucket_result result;
-        auto root = iobuf_to_ptree(std::move(buf));
+        auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
         for (const auto& [tag, value] : root.get_child("ListBucketResult")) {
             if (tag == "Contents") {
                 s3_client::list_bucket_item item;
@@ -407,7 +375,7 @@ parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
 
     } else {
         try {
-            auto resp = iobuf_to_ptree(std::move(buf));
+            auto resp = util::iobuf_to_ptree(std::move(buf), s3_log);
             constexpr const char* empty = "";
             auto code = resp.get<ss::sstring>("Error.Code", empty);
             auto msg = resp.get<ss::sstring>("Error.Message", empty);
@@ -446,23 +414,6 @@ ss::future<ResultT> parse_head_error_response(
         vlog(s3_log.error, "!!error parse error {}", std::current_exception());
         throw;
     }
-}
-
-static ss::future<iobuf>
-drain_response_stream(http::client::response_stream_ref resp) {
-    return ss::do_with(
-      iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {
-          return ss::do_until(
-                   [resp] { return resp->is_done(); },
-                   [resp, &outbuf] {
-                       return resp->recv_some().then([&outbuf](iobuf&& chunk) {
-                           outbuf.append(std::move(chunk));
-                       });
-                   })
-            .then([&outbuf] {
-                return ss::make_ready_future<iobuf>(std::move(outbuf));
-            });
-      });
 }
 
 template<typename T>
@@ -514,47 +465,9 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               err.resource());
             outcome = error_outcome::fail;
         }
-    } catch (const std::system_error& cerr) {
-        // The system_error is type erased and not convenient for selective
-        // handling. The following errors should be retried:
-        // - connection refused, timed out or reset by peer
-        // - network temporary unavailable
-        // Shouldn't be retried
-        // - any filesystem error
-        // - broken-pipe
-        // - any other network error (no memory, bad socket, etc)
-        if (net::is_reconnect_error(cerr)) {
-            vlog(
-              s3_log.warn,
-              "System error susceptible for retry {}",
-              cerr.what());
-        } else {
-            vlog(s3_log.error, "System error {}", cerr);
-            outcome = error_outcome::fail;
-        }
-    } catch (const ss::timed_out_error& terr) {
-        // This should happen when the connection pool was disconnected
-        // from the S3 endpoint and subsequent connection attmpts failed.
-        vlog(s3_log.warn, "Connection timeout {}", terr.what());
-    } catch (const boost::system::system_error& err) {
-        if (err.code() != boost::beast::http::error::short_read) {
-            vlog(s3_log.warn, "Connection failed {}", err.what());
-            outcome = error_outcome::fail;
-        } else {
-            // This is a short read error that can be caused by the abrupt TLS
-            // shutdown. The content of the received buffer is discarded in this
-            // case and http client receives an empty buffer.
-            vlog(
-              s3_log.info,
-              "Server disconnected: '{}', retrying HTTP request",
-              err.what());
-        }
-    } catch (const ss::abort_requested_exception&) {
-        vlog(s3_log.debug, "Abort requested");
-        throw;
     } catch (...) {
-        vlog(s3_log.error, "Unexpected error {}", std::current_exception());
-        outcome = error_outcome::fail;
+        outcome = util::handle_client_transport_error(
+          std::current_exception(), s3_log);
     }
 
     co_return outcome;
@@ -625,7 +538,7 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
                           "S3 replied with error: {}",
                           ref->get_headers());
                     }
-                    return drain_response_stream(std::move(ref))
+                    return util::drain_response_stream(std::move(ref))
                       .then([result](iobuf&& res) {
                           return parse_rest_error_response<
                             http::client::response_stream_ref>(
@@ -738,18 +651,19 @@ ss::future<> s3_client::do_put_object(
 
           return ss::futurize_invoke(make_request)
             .then([](const http::client::response_stream_ref& ref) {
-                return drain_response_stream(ref).then([ref](iobuf&& res) {
-                    auto status = ref->get_headers().result();
-                    if (status != boost::beast::http::status::ok) {
-                        vlog(
-                          s3_log.warn,
-                          "S3 replied with error: {}",
-                          ref->get_headers());
-                        return parse_rest_error_response<>(
-                          status, std::move(res));
-                    }
-                    return ss::now();
-                });
+                return util::drain_response_stream(ref).then(
+                  [ref](iobuf&& res) {
+                      auto status = ref->get_headers().result();
+                      if (status != boost::beast::http::status::ok) {
+                          vlog(
+                            s3_log.warn,
+                            "S3 replied with error: {}",
+                            ref->get_headers());
+                          return parse_rest_error_response<>(
+                            status, std::move(res));
+                      }
+                      return ss::now();
+                  });
             })
             .handle_exception_type(
               [](const ss::abort_requested_exception&) { return ss::now(); })
@@ -872,7 +786,7 @@ ss::future<> s3_client::do_delete_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& ref) {
-          return drain_response_stream(ref).then([ref](iobuf&& res) {
+          return util::drain_response_stream(ref).then([ref](iobuf&& res) {
               auto status = ref->get_headers().result();
               if (
                 status != boost::beast::http::status::ok
@@ -890,7 +804,7 @@ ss::future<> s3_client::do_delete_object(
 }
 
 static auto iobuf_to_delete_objects_result(iobuf&& buf) {
-    auto root = iobuf_to_ptree(std::move(buf));
+    auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
     auto result = client::delete_objects_result{};
     try {
         for (auto const& [tag, value] : root.get_child("DeleteResult")) {
@@ -950,15 +864,16 @@ auto s3_client::do_delete_objects(
                    .finally([&] { return to_delete.close(); });
              })
       .then([](http::client::response_stream_ref const& response) {
-          return drain_response_stream(response).then([response](iobuf&& res) {
-              auto status = response->get_headers().result();
-              if (status != boost::beast::http::status::ok) {
-                  return parse_rest_error_response<delete_objects_result>(
-                    status, std::move(res));
-              }
-              return ss::make_ready_future<delete_objects_result>(
-                iobuf_to_delete_objects_result(std::move(res)));
-          });
+          return util::drain_response_stream(response).then(
+            [response](iobuf&& res) {
+                auto status = response->get_headers().result();
+                if (status != boost::beast::http::status::ok) {
+                    return parse_rest_error_response<delete_objects_result>(
+                      status, std::move(res));
+                }
+                return ss::make_ready_future<delete_objects_result>(
+                  iobuf_to_delete_objects_result(std::move(res)));
+            });
       });
 }
 
