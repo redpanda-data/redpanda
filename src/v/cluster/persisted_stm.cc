@@ -36,6 +36,7 @@ persisted_stm::persisted_stm(
   , _log(logger) {}
 
 ss::future<> persisted_stm::remove_persistent_state() {
+    _snapshot_size = 0;
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();
 }
@@ -76,6 +77,8 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
       meta_parser);
     snapshot.data = co_await read_iobuf_exactly(
       reader.input(), snapshot.header.snapshot_size);
+
+    _snapshot_size = co_await reader.get_snapshot_size();
     co_await reader.close();
     co_await _snapshot_mgr.remove_partial_snapshots();
 
@@ -126,7 +129,10 @@ ss::future<> persisted_stm::persist_snapshot(
 }
 
 ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
-    return persist_snapshot(_snapshot_mgr, std::move(snapshot));
+    return persist_snapshot(_snapshot_mgr, std::move(snapshot)).then([this] {
+        return _snapshot_mgr.get_snapshot_size().then(
+          [this](uint64_t size) { _snapshot_size = size; });
+    });
 }
 
 ss::future<> persisted_stm::do_make_snapshot() {
@@ -147,6 +153,8 @@ ss::future<> persisted_stm::make_snapshot() {
         return f.then([this] { return do_make_snapshot(); });
     });
 }
+
+uint64_t persisted_stm::get_snapshot_size() const { return _snapshot_size; }
 
 ss::future<>
 persisted_stm::ensure_snapshot_exists(model::offset target_offset) {

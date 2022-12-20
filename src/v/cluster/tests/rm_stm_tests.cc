@@ -24,6 +24,7 @@
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
+#include "utils/directory_walker.h"
 
 #include <seastar/util/defer.hh>
 
@@ -71,6 +72,35 @@ static rich_reader make_rreader(
         .producer_epoch = pid.epoch,
         .base_sequence = first_seq,
         .is_transactional = is_transactional})};
+}
+
+void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
+    stm.make_snapshot().get();
+    const auto work_dir = c->log_config().work_directory();
+    std::vector<ss::sstring> snapshot_files;
+    directory_walker::walk(
+      work_dir,
+      [&snapshot_files](ss::directory_entry ent) {
+          if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
+              return ss::now();
+          }
+
+          if (
+            ent.name.find("abort.idx.") != ss::sstring::npos
+            || ent.name.find("tx.snapshot") != ss::sstring::npos) {
+              snapshot_files.push_back(ent.name);
+          }
+          return ss::now();
+      })
+      .get0();
+
+    uint64_t snapshots_size = 0;
+    for (const auto& file : snapshot_files) {
+        auto file_path = std::filesystem::path(work_dir) / file.c_str();
+        snapshots_size += ss::file_size(file_path.string()).get();
+    }
+
+    BOOST_REQUIRE_EQUAL(stm.get_snapshot_size(), snapshots_size);
 }
 
 // tests:
@@ -159,6 +189,8 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
     }).get0();
+
+    check_snapshot_sizes(stm, _raft.get());
 }
 
 // tests:
@@ -248,6 +280,8 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
     }).get0();
+
+    check_snapshot_sizes(stm, _raft.get());
 }
 
 // tests:
@@ -344,6 +378,8 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     tests::cooperative_spin_wait_with_timeout(10s, [&stm, tx_offset]() {
         return tx_offset < stm.last_stable_offset();
     }).get0();
+
+    check_snapshot_sizes(stm, _raft.get());
 }
 
 // transactional writes of an unknown tx are rejected
@@ -456,6 +492,8 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(!(bool)offset_r);
+
+    check_snapshot_sizes(stm, _raft.get());
 }
 
 // transactional writes of an aborted tx are rejected
@@ -524,6 +562,8 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get0();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
+
+    check_snapshot_sizes(stm, _raft.get());
 }
 
 // Tests aborted transaction semantics with single and multi segment
@@ -763,4 +803,6 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
             BOOST_REQUIRE_EQUAL(txes[0].pid, pid2);
         }
     }
+
+    check_snapshot_sizes(stm, _raft.get());
 }

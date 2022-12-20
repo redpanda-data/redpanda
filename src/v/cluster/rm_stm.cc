@@ -2499,6 +2499,15 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       _log_state.aborted.end(),
       std::make_move_iterator(data.aborted.begin()),
       std::make_move_iterator(data.aborted.end()));
+    co_await ss::max_concurrent_for_each(
+      data.abort_indexes, 32, [this](const abort_index& idx) -> ss::future<> {
+          auto f_name = abort_idx_name(idx.first, idx.last);
+          return _abort_snapshot_mgr.get_snapshot_size(f_name).then(
+            [this, idx](uint64_t snapshot_size) {
+                _abort_snapshot_sizes.emplace(
+                  std::make_pair(idx.first, idx.last), snapshot_size);
+            });
+      });
     _log_state.abort_indexes.insert(
       _log_state.abort_indexes.end(),
       std::make_move_iterator(data.abort_indexes.begin()),
@@ -2667,7 +2676,9 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                   _ctx_log.debug,
                   "removing aborted transactions {} snapshot file",
                   f_name);
-                return _abort_snapshot_mgr.remove_snapshot(std::move(f_name));
+                _abort_snapshot_sizes.erase(
+                  std::make_pair(idx.first, idx.last));
+                return _abort_snapshot_mgr.remove_snapshot(f_name);
             });
       });
 
@@ -2762,6 +2773,14 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     });
 }
 
+uint64_t rm_stm::get_snapshot_size() const {
+    uint64_t abort_snapshots_size = 0;
+    for (const auto& snapshot_size : _abort_snapshot_sizes) {
+        abort_snapshots_size += snapshot_size.second;
+    }
+    return persisted_stm::get_snapshot_size() + abort_snapshots_size;
+}
+
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
     auto filename = abort_idx_name(snapshot.first, snapshot.last);
     vlog(_ctx_log.debug, "saving abort snapshot {} at {}", snapshot, filename);
@@ -2778,6 +2797,10 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
       std::move(snapshot_data), writer.output());
     co_await writer.close();
     co_await _abort_snapshot_mgr.finish_snapshot(writer);
+    uint64_t snapshot_disk_size
+      = co_await _abort_snapshot_mgr.get_snapshot_size(filename);
+    _abort_snapshot_sizes.emplace(
+      std::make_pair(snapshot.first, snapshot.last), snapshot_disk_size);
 }
 
 ss::future<std::optional<rm_stm::abort_snapshot>>
@@ -2828,6 +2851,7 @@ ss::future<> rm_stm::remove_persistent_state() {
 }
 
 ss::future<> rm_stm::do_remove_persistent_state() {
+    _abort_snapshot_sizes.clear();
     for (const auto& idx : _log_state.abort_indexes) {
         auto filename = abort_idx_name(idx.first, idx.last);
         co_await _abort_snapshot_mgr.remove_snapshot(filename);

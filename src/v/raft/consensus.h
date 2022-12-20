@@ -190,6 +190,7 @@ public:
     replicate(model::record_batch_reader&&, replicate_options);
     replicate_stages
     replicate_in_stages(model::record_batch_reader&&, replicate_options);
+    uint64_t get_snapshot_size() const { return _snapshot_size; }
 
     /**
      * Replication happens only when expected_term matches the current _term
@@ -654,6 +655,7 @@ private:
     recovery_memory_quota& _recovery_mem_quota;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
+    uint64_t _snapshot_size{0};
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;

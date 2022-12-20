@@ -1911,45 +1911,50 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
 }
 
 ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
-    return reader.read_metadata().then([this](iobuf buf) {
-        auto parser = iobuf_parser(std::move(buf));
-        auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
-        vassert(
-          metadata.last_included_index >= _last_snapshot_index,
-          "Tried to load stale snapshot. Loaded snapshot last "
-          "index {}, current snapshot last index {}",
-          metadata.last_included_index,
-          _last_snapshot_index);
+    return reader.read_metadata()
+      .then([this](iobuf buf) {
+          auto parser = iobuf_parser(std::move(buf));
+          auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
+          vassert(
+            metadata.last_included_index >= _last_snapshot_index,
+            "Tried to load stale snapshot. Loaded snapshot last "
+            "index {}, current snapshot last index {}",
+            metadata.last_included_index,
+            _last_snapshot_index);
 
-        _last_snapshot_index = metadata.last_included_index;
-        _last_snapshot_term = metadata.last_included_term;
+          _last_snapshot_index = metadata.last_included_index;
+          _last_snapshot_term = metadata.last_included_term;
 
-        // TODO: add applying snapshot content to state machine
-        _commit_index = std::max(_last_snapshot_index, _commit_index);
-        maybe_update_last_visible_index(_commit_index);
+          // TODO: add applying snapshot content to state machine
+          _commit_index = std::max(_last_snapshot_index, _commit_index);
+          maybe_update_last_visible_index(_commit_index);
 
-        update_follower_stats(metadata.latest_configuration);
-        return _configuration_manager
-          .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-          .then([this, delta = metadata.log_start_delta]() mutable {
-              _probe.configuration_update();
+          update_follower_stats(metadata.latest_configuration);
+          return _configuration_manager
+            .add(_last_snapshot_index, std::move(metadata.latest_configuration))
+            .then([this, delta = metadata.log_start_delta]() mutable {
+                _probe.configuration_update();
 
-              if (delta < offset_translator_delta(0)) {
-                  delta = offset_translator_delta(
-                    _configuration_manager.offset_delta(_last_snapshot_index));
-                  vlog(
-                    _ctxlog.warn,
-                    "received snapshot without delta field in metadata, "
-                    "falling back to delta obtained from configuration "
-                    "manager: {}",
-                    delta);
-              }
-              return _offset_translator.prefix_truncate_reset(
-                _last_snapshot_index, delta);
-          })
-          .then([this] { return truncate_to_latest_snapshot(); })
-          .then([this] { _log.set_collectible_offset(_last_snapshot_index); });
-    });
+                if (delta < offset_translator_delta(0)) {
+                    delta = offset_translator_delta(
+                      _configuration_manager.offset_delta(
+                        _last_snapshot_index));
+                    vlog(
+                      _ctxlog.warn,
+                      "received snapshot without delta field in metadata, "
+                      "falling back to delta obtained from configuration "
+                      "manager: {}",
+                      delta);
+                }
+                return _offset_translator.prefix_truncate_reset(
+                  _last_snapshot_index, delta);
+            })
+            .then([this] { return truncate_to_latest_snapshot(); })
+            .then(
+              [this] { _log.set_collectible_offset(_last_snapshot_index); });
+      })
+      .then([this] { return _snapshot_mgr.get_snapshot_size(); })
+      .then([this](uint64_t size) { _snapshot_size = size; });
 }
 
 ss::future<install_snapshot_reply>
@@ -2144,7 +2149,9 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
           // update consensus state
           _last_snapshot_index = last_included_index;
           _last_snapshot_term = term;
-      });
+          return _snapshot_mgr.get_snapshot_size();
+      })
+      .then([this](uint64_t size) { _snapshot_size = size; });
 }
 
 ss::future<std::error_code> consensus::replicate_configuration(
@@ -3101,6 +3108,7 @@ ss::future<> consensus::remove_persistent_state() {
     // snapshot
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();
+    _snapshot_size = 0;
 
     co_return;
 }

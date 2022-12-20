@@ -670,7 +670,7 @@ std::vector<ntp_report> collect_shard_local_reports(
                   .leader_id = p.second->get_leader_id(),
                   .revision_id = p.second->get_revision_id(),
                 },
-                .size_bytes = p.second->size_bytes(),
+                .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
               };
           });
     } else {

@@ -18,9 +18,12 @@
 #include "utils/directory_walker.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/seastar.hh>
 
+#include <cstdint>
+#include <filesystem>
 #include <regex>
 
 namespace storage {
@@ -44,6 +47,14 @@ snapshot_manager::open_snapshot(ss::sstring filename) {
                 snapshot_reader(file, std::move(input), path));
           });
     });
+}
+
+ss::future<uint64_t> snapshot_manager::get_snapshot_size(ss::sstring filename) {
+    auto path = snapshot_path(std::move(filename));
+    return ss::file_size(path.string())
+      .handle_exception([](const std::exception_ptr&) {
+          return ss::make_ready_future<uint64_t>(0);
+      });
 }
 
 ss::future<snapshot_writer>
