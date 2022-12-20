@@ -60,20 +60,17 @@ time_source::time_source()
 time_source::time_source(timestamp instant)
   : time_source([instant]() { return instant; }, 0) {}
 
-ss::sstring time_source::format(const char* fmt) const {
-    std::array<char, formatted_datetime_len> out_str{};
-    auto point = _gettime_fn();
-    std::time_t time = std::chrono::system_clock::to_time_t(point);
-    std::tm* gm = std::gmtime(&time);
-    auto ret = std::strftime(out_str.data(), out_str.size(), fmt, gm);
-    vassert(ret > 0, "Invalid date format string");
-    return ss::sstring(out_str.data(), ret);
+ss::sstring time_source::format_date() const {
+    return format<formatted_date_len>("%Y%m%d");
 }
 
-ss::sstring time_source::format_date() const { return format("%Y%m%d"); }
-
 ss::sstring time_source::format_datetime() const {
-    return format("%Y%m%dT%H%M%SZ");
+    return format<formatted_datetime_len>("%Y%m%dT%H%M%SZ");
+}
+
+ss::sstring time_source::format_http_datetime() const {
+    // TODO(vlad): Non english locales break this...
+    return format<http_formatted_datetime_len>("%a, %d %b %Y %H:%M:%S %Z");
 }
 
 timestamp time_source::default_source() {
