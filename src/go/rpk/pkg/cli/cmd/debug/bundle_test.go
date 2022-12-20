@@ -82,7 +82,7 @@ func TestWalkDirMissingRoot(t *testing.T) {
 	require.Contains(t, files[root].Error, "/etc/its_highly_unlikely_that_a_dir_named_like_this_exists_anywhere")
 }
 
-func TestProcessFilepath(t *testing.T) {
+func TestDetermineFilepath(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		filepath string
@@ -90,7 +90,7 @@ func TestProcessFilepath(t *testing.T) {
 		expErr   bool
 	}{
 		{"empty filepath", "", "-bundle.zip", false},
-		{"correct filepath", "/some/dir/customDebugName.zip", "/some/dir/customDebugName.zip", false},
+		{"correct filepath", "/tmp/customDebugName.zip", "/tmp/customDebugName.zip", false},
 		{"filepath with no extension", "/tmp/file", "/tmp/file.zip", false},
 		{"filepath is a directory", "/tmp", "", true},
 		{"unsupported extension", "customDebugName.tar.gz", "", true},
@@ -101,7 +101,7 @@ func TestProcessFilepath(t *testing.T) {
 			err := fs.Mkdir("/tmp", 0o755)
 			require.NoError(t, err)
 
-			filepath, err := processFilepath(fs, test.filepath)
+			filepath, err := determineFilepath(fs, test.filepath, false)
 			if test.expErr {
 				require.Error(t, err)
 				return

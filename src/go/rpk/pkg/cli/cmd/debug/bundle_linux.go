@@ -37,14 +37,62 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	osutil "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/syslog"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 )
+
+// determineFilepath will process the given path and sets:
+//   - File Name: If the path is empty, the filename will be <timestamp>-bundle.zip
+//   - File Extension: if no extension is provided we default to .zip
+//   - File Location: we check for write permissions in the pwd (for backcompat);
+//     if permission is denied we default to $HOME unless isFlag is true.
+func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {
+	// if it's empty, use ./<timestamp>-bundle.zip
+	if path == "" {
+		timestamp := time.Now().Unix()
+		path = fmt.Sprintf("%d-bundle.zip", timestamp)
+	} else if isDir, _ := afero.IsDir(fs, path); isDir {
+		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
+	}
+
+	// Check for file extension, if extension is empty, defaults to .zip
+	switch ext := filepath.Ext(path); ext {
+	case ".zip":
+		finalPath = path
+	case "":
+		finalPath = path + ".zip"
+	default:
+		return "", fmt.Errorf("extension %q not supported", ext)
+	}
+
+	// Now we check for write permissions:
+	err = unix.Access(filepath.Dir(finalPath), unix.W_OK)
+	if err != nil {
+		if !errors.Is(err, os.ErrPermission) {
+			return "", err
+		}
+		if isFlag {
+			// If the user sets the output flag, we fail if we don't have
+			// write permissions
+			return "", fmt.Errorf("unable to create bundle file in %q: %v", path, err)
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			out.Die("unable to create bundle file in %q due to permission issues and cannot use home directory: %v", path, err)
+		}
+		// We are here only if the user did not specify a flag so finalpath
+		// here is the <timestamp>-bundle.zip string
+		finalPath = filepath.Join(home, finalPath)
+	}
+	return finalPath, nil
+}
 
 func executeBundle(
 	ctx context.Context,
@@ -55,12 +103,12 @@ func executeBundle(
 	logsSince, logsUntil string,
 	logsLimitBytes int,
 	timeout time.Duration,
-	filepath string,
+	path string,
 ) error {
 	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
 	f, err := fs.OpenFile(
-		filepath,
+		path,
 		os.O_CREATE|os.O_WRONLY,
 		mode,
 	)
@@ -114,7 +162,7 @@ func executeBundle(
 		log.Info(errs.Error())
 	}
 
-	log.Infof("Debug bundle saved to '%s'", filepath)
+	log.Infof("Debug bundle saved to '%s'", path)
 	return nil
 }
 

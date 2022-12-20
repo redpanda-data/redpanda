@@ -11,7 +11,6 @@ package debug
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/docker/go-units"
@@ -25,7 +24,10 @@ import (
 )
 
 // Use the same date specs as journalctl (see `man journalctl`).
-const timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
+const (
+	timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
+	outputFlag   = "output"
+)
 
 func newBundleCommand(fs afero.Fs) *cobra.Command {
 	var (
@@ -58,8 +60,8 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
-			path, err := processFilepath(fs, outFile)
-			out.MaybeDie(err, "unable to parse file path %q: %v", outFile, err)
+			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
+			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -96,10 +98,10 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 
 	command.Flags().StringVarP(
 		&outFile,
-		"output",
+		outputFlag,
 		"o",
 		"",
-		"The file path where the debug file will be written (default to ./<timestamp>-bundle.zip)",
+		"The file path where the debug file will be written (default ./<timestamp>-bundle.zip)",
 	)
 	command.Flags().DurationVar(
 		&timeout,
@@ -146,28 +148,6 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 	)
 
 	return command
-}
-
-func processFilepath(fs afero.Fs, path string) (string, error) {
-	// if it's empty, use ./<timestamp>-bundle.zip
-	if path == "" {
-		timestamp := time.Now().Unix()
-		return fmt.Sprintf("%d-bundle.zip", timestamp), nil
-	}
-
-	if isDir, _ := afero.IsDir(fs, path); isDir {
-		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
-	}
-
-	// If it has a file extension, verify that it's supported. Default to Zip
-	switch ext := filepath.Ext(path); ext {
-	case ".zip":
-		return path, nil
-	case "":
-		return path + ".zip", nil
-	default:
-		return "", fmt.Errorf("extension %q not supported", ext)
-	}
 }
 
 const bundleHelpText = `'rpk debug bundle' collects environment data that can help debug and diagnose
