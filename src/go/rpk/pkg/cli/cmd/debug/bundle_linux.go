@@ -55,13 +55,12 @@ func executeBundle(
 	logsSince, logsUntil string,
 	logsLimitBytes int,
 	timeout time.Duration,
+	filepath string,
 ) error {
 	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
-	timestamp := time.Now().Unix()
-	filename := fmt.Sprintf("%d-bundle.zip", timestamp)
 	f, err := fs.OpenFile(
-		filename,
+		filepath,
 		os.O_CREATE|os.O_WRONLY,
 		mode,
 	)
@@ -115,7 +114,7 @@ func executeBundle(
 		log.Info(errs.Error())
 	}
 
-	log.Infof("Debug bundle saved to '%s'", filename)
+	log.Infof("Debug bundle saved to '%s'", filepath)
 	return nil
 }
 

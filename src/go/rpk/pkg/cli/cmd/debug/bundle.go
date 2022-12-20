@@ -11,6 +11,7 @@ package debug
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/docker/go-units"
@@ -29,6 +30,7 @@ const timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
 func newBundleCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
+		outFile    string
 
 		brokers   []string
 		user      string
@@ -56,6 +58,9 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
+			path, err := processFilepath(fs, outFile)
+			out.MaybeDie(err, "unable to parse file path %q: %v", outFile, err)
+
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -76,7 +81,7 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
+			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}
@@ -89,6 +94,13 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(&adminURL, "admin-url", "", "")
 	command.Flags().MarkDeprecated("admin-url", "use --"+config.FlagAdminHosts2)
 
+	command.Flags().StringVarP(
+		&outFile,
+		"output",
+		"o",
+		"",
+		"The file path where the debug file will be written (default to ./<timestamp>-bundle.zip)",
+	)
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -134,6 +146,28 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 	)
 
 	return command
+}
+
+func processFilepath(fs afero.Fs, path string) (string, error) {
+	// if it's empty, use ./<timestamp>-bundle.zip
+	if path == "" {
+		timestamp := time.Now().Unix()
+		return fmt.Sprintf("%d-bundle.zip", timestamp), nil
+	}
+
+	if isDir, _ := afero.IsDir(fs, path); isDir {
+		return "", fmt.Errorf("output file path is a directory, please specify the name of the file")
+	}
+
+	// If it has a file extension, verify that it's supported. Default to Zip
+	switch ext := filepath.Ext(path); ext {
+	case ".zip":
+		return path, nil
+	case "":
+		return path + ".zip", nil
+	default:
+		return "", fmt.Errorf("extension %q not supported", ext)
+	}
 }
 
 const bundleHelpText = `'rpk debug bundle' collects environment data that can help debug and diagnose

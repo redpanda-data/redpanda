@@ -16,6 +16,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,4 +80,38 @@ func TestWalkDirMissingRoot(t *testing.T) {
 	// The actual output differs from OS to OS, so to prevent a flaky test, just check that the file
 	// was added to the files map, and that it has an associated error related to the filename.
 	require.Contains(t, files[root].Error, "/etc/its_highly_unlikely_that_a_dir_named_like_this_exists_anywhere")
+}
+
+func TestProcessFilepath(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		filepath string
+		exp      string
+		expErr   bool
+	}{
+		{"empty filepath", "", "-bundle.zip", false},
+		{"correct filepath", "/some/dir/customDebugName.zip", "/some/dir/customDebugName.zip", false},
+		{"filepath with no extension", "/tmp/file", "/tmp/file.zip", false},
+		{"filepath is a directory", "/tmp", "", true},
+		{"unsupported extension", "customDebugName.tar.gz", "", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			// create /tmp folder for the test cases.
+			err := fs.Mkdir("/tmp", 0o755)
+			require.NoError(t, err)
+
+			filepath, err := processFilepath(fs, test.filepath)
+			if test.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if test.filepath != "" {
+				require.Equal(t, test.exp, filepath)
+				return
+			}
+			require.Contains(t, filepath, test.exp)
+		})
+	}
 }
