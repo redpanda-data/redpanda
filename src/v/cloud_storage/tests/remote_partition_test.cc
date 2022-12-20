@@ -21,6 +21,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -625,9 +626,22 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 /// Similar to prev function but scans the range of offsets instead of
 /// returning a single one
 static std::vector<model::record_batch_header> scan_remote_partition(
-  cloud_storage_fixture& imposter, model::offset base, model::offset max) {
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  size_t maybe_max_segments = 0,
+  size_t maybe_max_readers = 0) {
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+          maybe_max_readers);
+    }
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1149,7 +1163,12 @@ FIXTURE_TEST(
     auto base = segments[0].base_offset;
     auto max = segments[num_segments - 1].max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
-    auto headers_read = scan_remote_partition(*this, base, max);
+    auto headers_read = scan_remote_partition(
+      *this,
+      base,
+      max,
+      random_generators::get_int(5, 20),
+      random_generators::get_int(5, 20));
     model::offset expected_offset{0};
     for (const auto& header : headers_read) {
         BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
@@ -1165,9 +1184,20 @@ scan_remote_partition_incrementally(
   cloud_storage_fixture& imposter,
   model::offset base,
   model::offset max,
-  size_t maybe_max_bytes = 0) {
+  size_t maybe_max_bytes = 0,
+  size_t maybe_max_segments = 0,
+  size_t maybe_max_readers = 0) {
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+          maybe_max_readers);
+    }
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1231,7 +1261,13 @@ FIXTURE_TEST(
     auto base = segments[0].base_offset;
     auto max = segments[num_segments - 1].max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
-    auto headers_read = scan_remote_partition_incrementally(*this, base, max);
+    auto headers_read = scan_remote_partition_incrementally(
+      *this,
+      base,
+      max,
+      0,
+      random_generators::get_int(5, 20),
+      random_generators::get_int(5, 20));
     model::offset expected_offset{0};
     for (const auto& header : headers_read) {
         BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
@@ -1645,9 +1681,20 @@ scan_remote_partition_incrementally_with_reuploads(
   cloud_storage_fixture& imposter,
   model::offset base,
   model::offset max,
-  std::vector<in_memory_segment> segments) {
+  std::vector<in_memory_segment> segments,
+  size_t maybe_max_segments = 0,
+  size_t maybe_max_readers = 0) {
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+          maybe_max_readers);
+    }
     remote api(s3_connection_limit(10), conf, config_file);
     api.start().get();
     auto action = ss::defer([&api] { api.stop().get(); });
@@ -1810,7 +1857,12 @@ FIXTURE_TEST(
     auto max = segments[num_segments - 1].max_offset;
     vlog(test_log.debug, "full offset range: {}-{}", base, max);
     auto headers_read = scan_remote_partition_incrementally_with_reuploads(
-      *this, base, max, std::move(segments));
+      *this,
+      base,
+      max,
+      std::move(segments),
+      random_generators::get_int(5, 20),
+      random_generators::get_int(5, 20));
     model::offset expected_offset{0};
     for (const auto& header : headers_read) {
         BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
@@ -1885,7 +1937,7 @@ FIXTURE_TEST(
 
     for (size_t sz : client_batch_sizes) {
         auto headers_read = scan_remote_partition_incrementally(
-          *this, base, max, sz);
+          *this, base, max, sz, 5, 5);
 
         BOOST_REQUIRE_EQUAL(
           headers_read.size(),
@@ -1904,7 +1956,8 @@ FIXTURE_TEST(
     auto max = segments.back().max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
-    auto headers_read = scan_remote_partition_incrementally(*this, base, max);
+    auto headers_read = scan_remote_partition_incrementally(
+      *this, base, max, 0, 20, 20);
     model::offset expected_offset{0};
     size_t ix_header = 0;
     for (size_t ix_seg = 0; ix_seg < segment_layout.size(); ix_seg++) {
