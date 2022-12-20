@@ -56,6 +56,7 @@ func executeBundle(
 	logsLimitBytes int,
 	timeout time.Duration,
 ) error {
+	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
 	timestamp := time.Now().Unix()
 	filename := fmt.Sprintf("%d-bundle.zip", timestamp)
