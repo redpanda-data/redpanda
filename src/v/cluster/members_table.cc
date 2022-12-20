@@ -222,6 +222,11 @@ bool members_table::contains(model::node_id id) const {
            && _brokers.find(id)->second->get_membership_state()
                 != model::membership_state::removed;
 }
+bool members_table::contains_removed(model::node_id id) const {
+    return _brokers.contains(id)
+           && _brokers.find(id)->second->get_membership_state()
+                == model::membership_state::removed;
+}
 
 notification_id_type
 members_table::register_maintenance_state_change_notification(
