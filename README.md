@@ -11,7 +11,7 @@ Use all your favorite open source tooling - 10x faster.
 ## Getting started
 
 Official Kubernetes quick start documentation can be found at
-[https://vectorized.io/docs/](https://vectorized.io/docs/quick-start-kubernetes)
+[https://docs.redpanda.com/docs/](https://docs.redpanda.com/docs/platform/quickstart/kubernetes-qs-dev/)
 
 ### Requirements
 
