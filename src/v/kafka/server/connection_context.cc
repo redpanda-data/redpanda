@@ -236,7 +236,7 @@ ss::future<session_resources> connection_context::throttle_request(
                   .tracker = std::move(tracker),
                 };
                 if (track) {
-                    r.method_latency = _rs.hist().auto_measure();
+                    r.method_latency = _server.hist().auto_measure();
                 }
                 return r;
             });

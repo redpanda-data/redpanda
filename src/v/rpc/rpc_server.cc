@@ -165,7 +165,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
               method* m = it->get()->method_from_id(method_id);
 
               return m->handle(ctx->res.conn->input(), *ctx)
-                .then_wrapped([this, ctx, m, l = ctx->res.hist().auto_measure(), rs](
+                .then_wrapped([this, ctx, m, l = hist().auto_measure(), rs](
                                 ss::future<netbuf> fut) mutable {
                     bool error = true;
                     netbuf reply_buf;
