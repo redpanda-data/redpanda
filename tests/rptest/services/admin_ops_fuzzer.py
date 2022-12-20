@@ -396,6 +396,7 @@ class AdminOperationsFuzzer():
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
         self._stopping = Event()
         self.executed = 0
+        self.attempted = 0
         self.history = []
         self.error = None
 
@@ -463,6 +464,7 @@ class AdminOperationsFuzzer():
                     return False
 
             try:
+                self.attempted += 1
                 if self.execute_with_retries(op_type, op):
                     wait_until(validate_result,
                                timeout_sec=self.operation_timeout,
@@ -535,6 +537,35 @@ class AdminOperationsFuzzer():
         self.thread.join()
 
         assert self.error is None, f"Encountered an error in admin operations fuzzer: {self.error}"
+
+    def ensure_progress(self):
+        executed = self.executed
+        attempted = self.attempted
+
+        def check():
+            # Drop out immediately if the main loop errored out.
+            if self.error:
+                self.redpanda.logger.error(
+                    f"wait: terminating for error {self.error}")
+                raise self.error
+
+            # the attempted condition gurantees that we measure progress
+            # by use an operation which started after ensure_progress is
+            # invoked
+            if self.executed > executed and self.attempted > attempted:
+                return True
+            elif self._stopping.is_set():
+                # We cannot ever reach the count, error out
+                self.redpanda.logger.error(f"wait: terminating for stop")
+                raise RuntimeError(f"Stopped without observing progress")
+            return False
+
+        # we use 2*self.operation_timeout to give time (self.operation_timeout) for
+        # the operation started before ensure_progress is invoked to finish prior to
+        # measuring the real indicator (next self.operation_timeout)
+        wait_until(check,
+                   timeout_sec=2 * self.operation_timeout,
+                   backoff_sec=2)
 
     def wait(self, count, timeout):
         def check():
