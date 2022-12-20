@@ -11,6 +11,8 @@ import errno
 import json
 import os
 import re
+from typing import Tuple
+
 import requests
 
 from ducktape.utils.util import wait_until
@@ -349,7 +351,47 @@ class RedpandaInstaller:
         )
         return result
 
-    def install(self, nodes, version):
+    def latest_for_line(self, release_line: tuple[int, int]):
+        """
+        Returns the most recent version of redpanda from a release line, or HEAD if asking for a yet-to-be released version
+        the return type is a tuple (version, is_head), where is_head is True if the version is from dev tip
+        e.g: latest_for_line((22, 2)) -> ((22, 2, 7), False)
+        latest_for_line((23, 1)) -> (self._head_version, True) (as of 2022 dec (23, 1, 0))
+        """
+        # NOTE: _released_versions are in descending order.
+
+        self.start()
+        self._initialize_released_versions()
+
+        # if requesting current (or future) release line, return _head_version
+        if release_line >= self._head_version[0:2]:
+            self._redpanda.logger.info(
+                f"selecting HEAD={self._head_version} for {release_line=}")
+            return (self._head_version, True)
+
+        versions_in_line = [
+            v for v in self._released_versions if release_line == v[0:2]
+        ]
+        assert len(versions_in_line) > 0,\
+            f"could not find a line for {release_line=} in {self._released_versions=}"
+
+        # Only checks these many version before giving up. one missing version is fine in a transient state,
+        # but more would indicate a systemic issues in package download
+        for v in versions_in_line[0:2]:
+            # check actual availability
+            if self._avail_for_download(v):
+                self._redpanda.logger.info(
+                    f"selecting {v=} for {release_line=}")
+                return (v, False)
+            else:
+                self._redpanda.logger.warn(
+                    f"skipping {v=} for {release_line=} because it's not available for downloading"
+                )
+
+        assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
+
+
+    def install(self, nodes, version: typing.Union[str, tuple[int, int], tuple[int, int, int]]):
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
