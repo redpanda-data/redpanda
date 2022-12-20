@@ -170,6 +170,7 @@ create_topic(request_context& ctx, model::topic&& topic) {
           }
 
           return wait_for_topics(
+                   md_cache,
                    res,
                    ctx.controller_api(),
                    tout + model::timeout_clock::now())
