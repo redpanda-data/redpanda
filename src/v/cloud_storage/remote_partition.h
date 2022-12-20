@@ -122,6 +122,9 @@ public:
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);
 
+    enum class partition_state { running, stopping, stopped };
+    partition_state state() const { return _state; }
+
 private:
     friend struct materialized_segment_state;
 
@@ -185,6 +188,8 @@ private:
 
     segment_map_t _segments;
     partition_probe _probe;
+
+    partition_state _state{partition_state::running};
 };
 
 } // namespace cloud_storage

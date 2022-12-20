@@ -578,6 +578,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
 }
 
 ss::future<> remote_partition::stop() {
+    _state = partition_state::stopping;
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
     co_await _gate.close();
@@ -597,6 +598,7 @@ ss::future<> remote_partition::stop() {
     // stopping readers is fast, the queue is not usually long, and destroying
     // partitions is relatively infrequent.
     co_await materialized().flush_evicted();
+    _state = partition_state::stopped;
 }
 
 /// Return reader back to segment_state
