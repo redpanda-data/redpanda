@@ -32,13 +32,16 @@ enum class s3_client_error_code : int {
 
 std::error_code make_error_code(s3_client_error_code ec) noexcept;
 
-/// Time source for the signature_v4.
+/// Time source for signature_v4 and signature_abs. Supports
+/// two formats: ISO8601 and RFC9110.
 /// Can be used to get and format current time or to
 /// format the pre-defined time for testing.
 class time_source {
     static constexpr int formatted_date_len = 9; // format is 20201231\0
     static constexpr int formatted_datetime_len
       = 17; // format is 20201231T123100Z\0
+    static constexpr int http_formatted_datetime_len
+      = 30; // format is Tue, 15 Nov 2010 08:12:31 GMT
 
 public:
     /// \brief Initialize time-source
@@ -63,11 +66,15 @@ public:
     /// Return formatted date in ISO8601 format
     ss::sstring format_datetime() const;
 
+    /// Return formatted datetime according to RFC9110
+    ss::sstring format_http_datetime() const;
+
 private:
     template<class Fn>
     explicit time_source(Fn&& fn, int);
 
     /// Format date-time according to format string
+    template<int result_len>
     ss::sstring format(const char* fmt) const;
 
     static timestamp default_source();
@@ -126,6 +133,17 @@ private:
 template<class Fn>
 time_source::time_source(Fn&& fn, int)
   : _gettime_fn(std::forward<Fn>(fn)) {}
+
+template<int result_len>
+ss::sstring time_source::format(const char* fmt) const {
+    std::array<char, result_len> out_str{};
+    auto point = _gettime_fn();
+    std::time_t time = std::chrono::system_clock::to_time_t(point);
+    std::tm* gm = std::gmtime(&time);
+    auto ret = std::strftime(out_str.data(), out_str.size(), fmt, gm);
+    vassert(ret > 0, "Invalid date format string");
+    return ss::sstring(out_str.data(), ret);
+}
 
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash);
 
