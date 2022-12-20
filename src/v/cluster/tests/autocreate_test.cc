@@ -58,26 +58,6 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
     }
 }
 
-void wait_for_leaders(
-  cluster::partition_leaders_table& leader_table,
-  const cluster::topic_metadata md) {
-    std::vector<ss::future<>> f;
-    f.reserve(md.get_assignments().size());
-    for (const auto& p : md.get_assignments()) {
-        model::ntp ntp(
-          md.get_configuration().tp_ns.ns,
-          md.get_configuration().tp_ns.tp,
-          p.id);
-
-        f.push_back(leader_table
-                      .wait_for_leader(
-                        ntp, model::timeout_clock::now() + 5s, std::nullopt)
-                      .discard_result());
-    }
-
-    ss::when_all_succeed(f.begin(), f.end()).get();
-}
-
 void wait_for_metadata(
   cluster::metadata_cache& md_cache,
   const std::vector<cluster::topic_result>& results) {
@@ -117,7 +97,6 @@ FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
         auto md = app->metadata_cache.local().get_topic_metadata(r.tp_ns);
 
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(app->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
 }
@@ -158,8 +137,6 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(n_1).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(
-          app_0->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same
