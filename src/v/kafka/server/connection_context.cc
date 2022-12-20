@@ -192,7 +192,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
 }
 
 bool connection_context::is_finished_parsing() const {
-    return _rs.conn->input().eof() || _rs.abort_requested();
+    return _rs.conn->input().eof() || _server.abort_requested();
 }
 
 ss::future<session_resources> connection_context::throttle_request(
@@ -213,7 +213,7 @@ ss::future<session_resources> connection_context::throttle_request(
     auto tracker = std::make_unique<request_tracker>(_rs.probe());
     auto fut = ss::now();
     if (!delay.first_violation) {
-        fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
+        fut = ss::sleep_abortable(delay.duration, _server.abort_source());
     }
     auto track = track_latency(hdr.key);
     return fut
@@ -272,7 +272,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     return throttle_request(hdr, size).then([this, hdr = std::move(hdr), size](
                                               session_resources
                                                 sres_in) mutable {
-        if (_rs.abort_requested()) {
+        if (_server.abort_requested()) {
             // protect against shutdown behavior
             return ss::make_ready_future<>();
         }
@@ -284,7 +284,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
         return read_iobuf_exactly(_rs.conn->input(), remaining)
           .then([this, hdr = std::move(hdr), sres = std::move(sres)](
                   iobuf buf) mutable {
-              if (_rs.abort_requested()) {
+              if (_server.abort_requested()) {
                   // _server._cntrl etc might not be alive
                   return ss::now();
               }

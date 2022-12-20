@@ -52,7 +52,7 @@ struct server_context_impl final : streaming_context {
 
 ss::future<> rpc_server::apply(net::server::resources rs) {
     return ss::do_until(
-      [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
+      [this, rs] { return rs.conn->input().eof() || abort_requested(); },
       [this, rs]() mutable {
           return parse_header(rs.conn->input())
             .then([this, rs](std::optional<header> h) mutable {

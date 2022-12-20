@@ -109,8 +109,6 @@ public:
 
         server_probe& probe() { return _s->_probe; }
         ssx::semaphore& memory() { return _s->_memory; }
-        ss::abort_source& abort_source() { return _s->_as; }
-        bool abort_requested() const { return _s->_as.abort_requested(); }
 
     private:
         server* _s;
@@ -150,6 +148,8 @@ public:
 
     ss::gate& conn_gate() { return _conn_gate; }
     hdr_hist& hist() { return _hist; }
+    ss::abort_source& abort_source() { return _as; }
+    bool abort_requested() const { return _as.abort_requested(); }
 
 private:
     struct listener {

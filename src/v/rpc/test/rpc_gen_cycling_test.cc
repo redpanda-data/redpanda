@@ -739,7 +739,7 @@ public:
 
     ss::future<> apply(net::server::resources rs) final {
         return ss::do_until(
-          [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
+          [this, rs] { return rs.conn->input().eof() || abort_requested(); },
           [rs]() mutable {
               return ss::make_exception_future<>(
                 erroneous_protocol_exception());
