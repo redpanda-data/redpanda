@@ -7,6 +7,7 @@ v_cc_library(
     configuration.cc
     s3_client.cc
     s3_error.cc
+    util.cc
   DEPS
     Seastar::seastar
     v::bytes
