@@ -11,6 +11,7 @@ import errno
 import json
 import os
 import re
+import typing
 from typing import Tuple
 
 import requests
@@ -390,11 +391,16 @@ class RedpandaInstaller:
 
         assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
 
-
-    def install(self, nodes, version: typing.Union[str, tuple[int, int], tuple[int, int, int]]):
+    def install(self, nodes, version: typing.Union[str, tuple[int, int],
+                                                   tuple[int, int, int]]):
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
+
+        accepts either RedpandaInstaller.HEAD, a specific version as a 3-tuple, or a feature line as a 2-tuple.
+        the latter will be converted to the latest specific version available (or HEAD)
+
+        returns installed version, useful if a feature line was requested
 
         TODO: abstract 'version' into a more generic installation that doesn't
         necessarily correspond to a released version. E.g. a custom build
@@ -403,17 +409,32 @@ class RedpandaInstaller:
         if not self._started:
             self.start()
 
+        # version can be HEAD, a specific release, or a release_line. first two will go through, last one will be converted to a specific release
+        install_target = version
+        actual_version = version if version != RedpandaInstaller.HEAD else self._head_version
+        # requested a line, find the most recent release
+        if version != RedpandaInstaller.HEAD and len(version) == 2:
+            actual_version, is_head = self.latest_for_line(install_target)
+            # update install_target only if is not head. later code handles HEAD as a special case
+            install_target = actual_version if not is_head else RedpandaInstaller.HEAD
+
+        self._redpanda.logger.info(
+            f"got {version=} will install {actual_version=}")
+
         try:
             self._acquire_install_lock()
-            self._install_unlocked(nodes, version)
-            self._installed_version = version
+            self._install_unlocked(nodes, install_target)
+            self._installed_version = install_target
         finally:
             self._release_install_lock()
+
+        return actual_version, f"v{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
 
     def _install_unlocked(self, nodes, version):
         """
         Like above but expects the install lock to have been taken before
         calling.
+        version should be either a 3-tuple specific release, or RedpandaInstaller.HEAD
         """
         version_root = self.root_for_version(version)
 
