@@ -726,14 +726,16 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
 
 class erroneous_protocol_exception : public std::exception {};
 
-class erroneous_protocol final : public net::server::protocol {
+class erroneous_protocol_server final : public net::server {
 public:
+    using net::server::server;
+
     template<std::derived_from<rpc::service> T, typename... Args>
     void register_service(Args&&... args) {
         _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    const char* name() const final { return "redpanda erraneous proto"; };
+    std::string_view name() const final { return "redpanda erraneous proto"; };
 
     ss::future<> apply(net::server::resources rs) final {
         return ss::do_until(
@@ -749,7 +751,7 @@ private:
 };
 
 class erroneous_service_fixture
-  : public rpc_fixture_swappable_proto<erroneous_protocol> {
+  : public rpc_fixture_swappable_proto<erroneous_protocol_server> {
 public:
     erroneous_service_fixture()
       : rpc_fixture_swappable_proto(redpanda_rpc_port) {}

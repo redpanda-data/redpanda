@@ -11,7 +11,6 @@
 #include "config/configuration.h"
 #include "net/server.h"
 #include "rpc/service.h"
-#include "rpc/simple_protocol.h"
 #include "vassert.h"
 
 namespace rpc {
@@ -20,17 +19,13 @@ struct service;
 
 // Wrapper around net::server that serves the internal RPC protocol. It allows
 // new services to be registered while the server is running.
-class rpc_server {
+class rpc_server : public net::server {
 public:
     explicit rpc_server(net::server_configuration s)
-      : _server(std::move(s)) {
-        _server.set_protocol(std::make_unique<rpc::simple_protocol>());
-    }
+      : net::server(std::move(s)) {}
 
     explicit rpc_server(ss::sharded<net::server_configuration>* s)
-      : _server(s) {
-        _server.set_protocol(std::make_unique<rpc::simple_protocol>());
-    }
+      : net::server(s) {}
 
     rpc_server(rpc_server&&) noexcept = default;
     ~rpc_server() = default;
@@ -47,21 +42,24 @@ public:
                 s->setup_metrics();
             }
         }
-        auto* simple_proto = dynamic_cast<rpc::simple_protocol*>(
-          _server.get_protocol());
-        vassert(
-          simple_proto != nullptr,
-          "protocol must be of type rpc::simple_protocol");
-        simple_proto->add_services(std::move(services));
+        std::move(
+          services.begin(), services.end(), std::back_inserter(_services));
     }
 
-    void start() { _server.start(); }
-    void shutdown_input() { _server.shutdown_input(); }
-    ss::future<> wait_for_shutdown() { return _server.wait_for_shutdown(); }
-    ss::future<> stop() { return _server.stop(); }
+    std::string_view name() const final {
+        return "vectorized internal rpc protocol";
+    }
+
+    ss::future<> apply(net::server::resources rs) final;
+
+    template<std::derived_from<service> T, typename... Args>
+    void register_service(Args&&... args) {
+        _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+    }
 
 private:
-    net::server _server;
+    ss::future<> dispatch_method_once(header, net::server::resources);
+    std::vector<std::unique_ptr<service>> _services;
 };
 
 } // namespace rpc

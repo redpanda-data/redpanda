@@ -53,7 +53,7 @@ v_cc_library(
     server/group_manager.cc
     server/rm_group_frontend.cc
     server/connection_context.cc
-    server/protocol.cc
+    server/server.cc
     server/protocol_utils.cc
     server/quota_manager.cc
     server/fetch_session_cache.cc

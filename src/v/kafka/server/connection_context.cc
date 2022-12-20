@@ -16,11 +16,11 @@
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/server/handlers/handler_interface.h"
-#include "kafka/server/protocol.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "kafka/server/server.h"
 #include "net/exceptions.h"
 #include "security/exceptions.h"
 #include "units.h"
@@ -165,7 +165,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           0s);
         auto sres = session_resources{};
         auto resp = co_await kafka::process_request(
-                      std::move(ctx), _proto.smp_group(), sres)
+                      std::move(ctx), _server.smp_group(), sres)
                       .response;
         auto data = std::move(*resp).release();
         response.decode(std::move(data), version);
@@ -208,7 +208,7 @@ ss::future<session_resources> connection_context::throttle_request(
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
     // affect.
-    auto delay = _proto.quota_mgr().record_tp_and_throttle(
+    auto delay = _server.quota_mgr().record_tp_and_throttle(
       hdr.client_id, request_size);
     auto tracker = std::make_unique<request_tracker>(_rs.probe());
     auto fut = ss::now();
@@ -285,7 +285,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
           .then([this, hdr = std::move(hdr), sres = std::move(sres)](
                   iobuf buf) mutable {
               if (_rs.abort_requested()) {
-                  // _proto._cntrl etc might not be alive
+                  // _server._cntrl etc might not be alive
                   return ss::now();
               }
               auto self = shared_from_this();
@@ -315,7 +315,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               const sequence_id seq = _seq_idx;
               _seq_idx = _seq_idx + sequence_id(1);
               auto res = kafka::process_request(
-                std::move(rctx), _proto.smp_group(), *sres);
+                std::move(rctx), _server.smp_group(), *sres);
               /**
                * first stage processed in a foreground.
                */

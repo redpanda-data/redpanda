@@ -117,19 +117,6 @@ public:
     private:
         server* _s;
     };
-    struct protocol {
-        protocol() noexcept = default;
-        protocol(protocol&&) noexcept = default;
-        protocol& operator=(protocol&&) noexcept = default;
-        protocol(const protocol&) = delete;
-        protocol& operator=(const protocol&) = delete;
-
-        virtual ~protocol() noexcept = default;
-        virtual const char* name() const = 0;
-        // the lifetime of all references here are guaranteed to live
-        // until the end of the server (container/parent)
-        virtual ss::future<> apply(server::resources) = 0;
-    };
 
     explicit server(server_configuration);
     explicit server(ss::sharded<server_configuration>* s);
@@ -137,12 +124,7 @@ public:
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
-    ~server();
-
-    void set_protocol(std::unique_ptr<protocol> proto) {
-        _proto = std::move(proto);
-    }
-    protocol* get_protocol() { return _proto.get(); }
+    virtual ~server();
 
     void start();
 
@@ -165,6 +147,9 @@ public:
     const server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
 
+    virtual std::string_view name() const = 0;
+    virtual ss::future<> apply(resources) = 0;
+
 private:
     struct listener {
         ss::sstring name;
@@ -179,10 +164,10 @@ private:
     ss::future<> accept(listener&);
     ss::future<ss::stop_iteration>
       accept_finish(ss::sstring, ss::future<ss::accept_result>);
+    ss::future<> apply_proto(server::resources&&, conn_quota::units);
     void setup_metrics();
     void setup_public_metrics();
 
-    std::unique_ptr<protocol> _proto;
     ssx::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<net::connection> _connections;

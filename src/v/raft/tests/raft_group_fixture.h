@@ -28,7 +28,7 @@
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
-#include "rpc/simple_protocol.h"
+#include "rpc/rpc_server.h"
 #include "rpc/types.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -199,19 +199,16 @@ struct raft_node {
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
           .get0();
         server
-          .invoke_on_all([this](net::server& s) {
-              auto proto = std::make_unique<rpc::simple_protocol>();
-              proto
-                ->register_service<raft::service<test_raft_manager, raft_node>>(
-                  ss::default_scheduling_group(),
-                  ss::default_smp_service_group(),
-                  raft_manager,
-                  *this,
-                  heartbeat_interval);
-              s.set_protocol(std::move(proto));
+          .invoke_on_all([this](rpc::rpc_server& s) {
+              s.register_service<raft::service<test_raft_manager, raft_node>>(
+                ss::default_scheduling_group(),
+                ss::default_smp_service_group(),
+                raft_manager,
+                *this,
+                heartbeat_interval);
           })
           .get0();
-        server.invoke_on_all(&net::server::start).get0();
+        server.invoke_on_all(&rpc::rpc_server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
           config::mock_binding<std::chrono::milliseconds>(
             std::chrono::milliseconds(heartbeat_interval)),
@@ -351,7 +348,7 @@ struct raft_node {
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
-    ss::sharded<net::server> server;
+    ss::sharded<rpc::rpc_server> server;
     ss::sharded<test_raft_manager> raft_manager;
     leader_clb_t leader_callback;
     raft::recovery_memory_quota recovery_mem_quota;

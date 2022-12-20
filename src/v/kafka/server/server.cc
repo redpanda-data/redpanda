@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "protocol.h"
+#include "server.h"
 
 #include "cluster/topics_frontend.h"
 #include "config/broker_authn_endpoint.h"
@@ -43,7 +43,8 @@
 
 namespace kafka {
 
-protocol::protocol(
+server::server(
+  ss::sharded<net::server_configuration>* cfg,
   ss::smp_service_group smp,
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
@@ -63,7 +64,8 @@ protocol::protocol(
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
-  : _smp_group(smp)
+  : net::server(cfg)
+  , _smp_group(smp)
   , _topics_frontend(tf)
   , _config_frontend(cf)
   , _feature_table(ft)
@@ -94,7 +96,7 @@ protocol::protocol(
     _probe.setup_public_metrics();
 }
 
-coordinator_ntp_mapper& protocol::coordinator_mapper() {
+coordinator_ntp_mapper& server::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }
 
@@ -160,7 +162,7 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
       });
 }
 
-ss::future<> protocol::apply(net::server::resources rs) {
+ss::future<> server::apply(net::server::resources rs) {
     const bool authz_enabled
       = config::shard_local_cfg().kafka_enable_authorization().value_or(
         config::shard_local_cfg().enable_sasl());

@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/simple_protocol.h"
+#include "rpc/rpc_server.h"
 
 #include "rpc/logger.h"
 #include "rpc/types.h"
@@ -50,7 +50,7 @@ struct server_context_impl final : streaming_context {
     ss::promise<> pr;
 };
 
-ss::future<> simple_protocol::apply(net::server::resources rs) {
+ss::future<> rpc_server::apply(net::server::resources rs) {
     return ss::do_until(
       [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
       [this, rs]() mutable {
@@ -106,7 +106,7 @@ ss::future<> send_reply_skip_payload(
 }
 
 ss::future<>
-simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
+rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
     rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);

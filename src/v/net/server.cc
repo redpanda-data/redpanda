@@ -42,7 +42,6 @@ server::server(ss::sharded<server_configuration>* s)
 server::~server() = default;
 
 void server::start() {
-    vassert(_proto, "must have a registered protocol before starting");
     if (!cfg.disable_metrics) {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
@@ -92,7 +91,7 @@ void server::start() {
         } catch (...) {
             throw std::runtime_error(fmt::format(
               "{} - Error attempting to listen on {}: {}",
-              _proto->name(),
+              name(),
               endpoint,
               std::current_exception()));
         }
@@ -105,7 +104,7 @@ void server::start() {
 }
 
 static inline void print_exceptional_future(
-  server::protocol* proto,
+  std::string_view name,
   ss::future<> f,
   const char* ctx,
   ss::socket_address address) {
@@ -121,7 +120,7 @@ static inline void print_exceptional_future(
         vlog(
           rpc::rpclog.error,
           "{} - Error[{}] remote address: {} - {}",
-          proto->name(),
+          name,
           ctx,
           address,
           ex);
@@ -129,25 +128,25 @@ static inline void print_exceptional_future(
         vlog(
           rpc::rpclog.info,
           "{} - Disconnected {} ({}, {})",
-          proto->name(),
+          name,
           address,
           ctx,
           disconnected.value());
     }
 }
 
-static ss::future<> apply_proto(
-  server::protocol* proto, server::resources&& rs, conn_quota::units cq_units) {
+ss::future<>
+server::apply_proto(server::resources&& rs, conn_quota::units cq_units) {
     auto conn = rs.conn;
-    return proto->apply(std::move(rs))
+    return apply(std::move(rs))
       .then_wrapped(
-        [proto, conn, cq_units = std::move(cq_units)](ss::future<> f) {
+        [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
-              proto, std::move(f), "applying protocol", conn->addr);
+              name(), std::move(f), "applying protocol", conn->addr);
             return conn->shutdown().then_wrapped(
-              [proto, addr = conn->addr](ss::future<> f) {
+              [this, addr = conn->addr](ss::future<> f) {
                   print_exceptional_future(
-                    proto, std::move(f), "shutting down", addr);
+                    name(), std::move(f), "shutting down", addr);
               });
         })
       .finally([conn] {});
@@ -226,7 +225,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
     vlog(
       rpc::rpclog.trace,
       "{} - Incoming connection from {} on \"{}\"",
-      _proto->name(),
+      this->name(),
       ar.remote_address,
       name);
     if (_conn_gate.is_closed()) {
@@ -235,27 +234,25 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
     }
     ssx::spawn_with_gate(
       _conn_gate, [this, conn, cq_units = std::move(cq_units)]() mutable {
-          return apply_proto(
-            _proto.get(), resources(this, conn), std::move(cq_units));
+          return apply_proto(resources(this, conn), std::move(cq_units));
       });
     co_return ss::stop_iteration::no;
 }
 
 void server::shutdown_input() {
-    ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
       rpc::rpclog.info,
       "{} - Stopping {} listeners",
-      proto_name,
+      name(),
       _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
-    vlog(rpc::rpclog.debug, "{} - Service probes {}", proto_name, _probe);
+    vlog(rpc::rpclog.debug, "{} - Service probes {}", name(), _probe);
     vlog(
       rpc::rpclog.info,
       "{} - Shutting down {} connections",
-      proto_name,
+      name(),
       _connections.size());
     _as.request_abort();
     // close the connections and wait for all dispatches to finish
@@ -292,9 +289,6 @@ ss::future<> server::stop() {
 
 void server::setup_metrics() {
     namespace sm = ss::metrics;
-    if (!_proto) {
-        return;
-    }
     _metrics.add_group(
       prometheus_sanitize::metrics_name(cfg.name),
       {sm::make_total_bytes(
@@ -315,9 +309,6 @@ void server::setup_metrics() {
 
 void server::setup_public_metrics() {
     namespace sm = ss::metrics;
-    if (!_proto) {
-        return;
-    }
 
     std::string_view server_name(cfg.name);
 

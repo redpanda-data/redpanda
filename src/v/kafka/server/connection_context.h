@@ -10,8 +10,8 @@
  */
 #pragma once
 #include "config/property.h"
-#include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
+#include "kafka/server/server.h"
 #include "kafka/types.h"
 #include "net/server.h"
 #include "seastarx.h"
@@ -85,13 +85,13 @@ class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
 public:
     connection_context(
-      protocol& p,
+      server& s,
       net::server::resources&& r,
       std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
       std::optional<security::tls::mtls_state> mtls_state,
       config::binding<uint32_t> max_request_size) noexcept
-      : _proto(p)
+      : _server(s)
       , _rs(std::move(r))
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
@@ -107,7 +107,7 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
-    protocol& server() { return _proto; }
+    server& server() { return _server; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
@@ -137,7 +137,7 @@ public:
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet) {
-        bool authorized = _proto.authorizer().authorized(
+        bool authorized = _server.authorizer().authorized(
           name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {
@@ -147,7 +147,7 @@ public:
                       _authlog.debug,
                       "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
                       "resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       security::sasl_state_to_str(_sasl->state()),
                       operation,
                       principal,
@@ -157,7 +157,7 @@ public:
                       _authlog.info,
                       "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
                       "resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       security::sasl_state_to_str(_sasl->state()),
                       operation,
                       principal,
@@ -168,7 +168,7 @@ public:
                     vlog(
                       _authlog.debug,
                       "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       operation,
                       principal,
                       name);
@@ -176,7 +176,7 @@ public:
                     vlog(
                       _authlog.info,
                       "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       operation,
                       principal,
                       name);
@@ -292,7 +292,7 @@ private:
         uint16_t _client_port;
     };
 
-    protocol& _proto;
+    class server& _server;
     net::server::resources _rs;
     sequence_id _next_response;
     sequence_id _seq_idx;

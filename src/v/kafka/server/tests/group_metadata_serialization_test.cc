@@ -11,7 +11,7 @@
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/server/protocol.h"
+#include "kafka/server/server.h"
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
