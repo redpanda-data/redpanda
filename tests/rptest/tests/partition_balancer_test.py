@@ -202,6 +202,7 @@ class PartitionBalancerService(EndToEndTest):
             self.test = test
             self.f_injector = FailureInjector(test.redpanda)
             self.cur_failure = None
+            self.logger = test.logger
 
         def __enter__(self):
             return self
@@ -229,6 +230,9 @@ class PartitionBalancerService(EndToEndTest):
                         lambda: self.wait_for_node_to_be_ready(
                             self.test.redpanda.idx(self.cur_failure.node)), 30,
                         1)
+                    self.logger.info(
+                        f"made {self.cur_failure.node.account.hostname} available"
+                    )
                 self.cur_failure = None
 
         def make_unavailable(self,
@@ -236,6 +240,7 @@ class PartitionBalancerService(EndToEndTest):
                              failure_types=None,
                              wait_for_previous_node=False):
             self.make_available(wait_for_previous_node)
+            self.logger.info(f"making {node.account.hostname} unavailable")
 
             if failure_types == None:
                 failure_types = [
@@ -250,6 +255,7 @@ class PartitionBalancerService(EndToEndTest):
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
+            self.logger.info(f"made {node.account.hostname} unavailable")
 
 
 class PartitionBalancerTest(PartitionBalancerService):
