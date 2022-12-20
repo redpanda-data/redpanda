@@ -297,6 +297,17 @@ class RedpandaInstaller:
             raise
         self._released_versions.sort(reverse=True)
 
+    def _avail_for_download(self, version: tuple[int, int, int]):
+        """
+        validate that it is really downloadable: this avoids tests being upset by ongoing releases
+        which might exist in github but not yet fave all their artifacts
+        """
+        r = requests.head(self._version_package_url(version))
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+
+        return r.status_code == 200
+
     def highest_from_prior_feature_version(self, version):
         """
         Returns the highest version that is of a lower feature version than the
@@ -324,14 +335,11 @@ class RedpandaInstaller:
                 # Before selecting version, validate that it is really downloadable: this avoids
                 # tests being upset by ongoing releases which might exist in github but not yet
                 # have all their artifacts.
-                r = requests.head(self._version_package_url(v))
-                if r.status_code == 404 and skip_versions > 0:
+                if not self._avail_for_download(v) and skip_versions > 0:
                     self._redpanda.logger.warn(
                         f"Skipping version {v}, no download available")
                     skip_versions -= 1
                     continue
-                elif r.status_code != 200:
-                    r.raise_for_status()
 
                 result = v
                 break
