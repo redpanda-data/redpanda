@@ -124,6 +124,12 @@ class Reader:
     def peek(self, length):
         return self.stream.peek(length)
 
+    def read_uuid(self):
+        return ''.join([
+            f'{self.read_uint8():02x}' + ('-' if k in [3, 5, 7, 9] else '')
+            for k in range(16)
+        ])
+
     def peek_int8(self):
         # peek returns the whole memory buffer, slice is needed to conform to struct format string
         return struct.unpack('<b', self.stream.peek(1)[:1])[0]
@@ -133,3 +139,9 @@ class Reader:
 
     def remaining(self):
         return len(self.stream.raw.getbuffer()) - self.stream.tell()
+
+    def read_serde_map(self, k_reader, v_reader):
+        ret = {}
+        for _ in range(self.read_uint32()):
+            ret[k_reader(self)] = v_reader(self)
+        return ret
