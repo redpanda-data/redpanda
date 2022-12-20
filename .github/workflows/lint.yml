@@ -103,7 +103,7 @@ jobs:
 
     - name: Install shfmt
       env:
-        SHFMT_VER: 3.5.1
+        SHFMT_VER: 3.6.0
       run: |
         mkdir -v -p "$HOME/.local/bin"
         wget -O "$HOME/.local/bin/shfmt" "https://github.com/mvdan/sh/releases/download/v${SHFMT_VER}/shfmt_v${SHFMT_VER}_linux_amd64"
