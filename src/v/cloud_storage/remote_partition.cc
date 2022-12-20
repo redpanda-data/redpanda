@@ -578,6 +578,13 @@ ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
     co_await _gate.close();
+    // Remove materialized_segment_state from the list that contains it, to
+    // avoid it getting registered for eviction and stop.
+    for (auto& pair : _segments) {
+        vlog(
+          _ctxlog.debug, "unlinking segment {}", pair.second->base_rp_offset());
+        pair.second->unlink();
+    }
 
     for (auto& s : _segments) {
         vlog(
