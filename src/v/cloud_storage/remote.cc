@@ -728,6 +728,11 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
                 cfg.secret_key.value(),
                 std::nullopt,
                 cfg.region};
+          } else if constexpr (std::is_same_v<
+                                 cloud_storage_clients::abs_configuration,
+                                 cfg_type>) {
+              return cloud_roles::abs_credentials{
+                cfg.storage_account_name, cfg.shared_key};
           } else {
               static_assert(
                 cloud_storage_clients::always_false_v<cfg_type>,
