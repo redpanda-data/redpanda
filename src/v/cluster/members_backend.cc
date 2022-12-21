@@ -152,10 +152,10 @@ void members_backend::handle_single_update(
         _new_updates.signal();
         return;
     case update_t::decommissioned:
-        stop_node_addition_and_ondemand_rebalance(update.id);
         _decommission_command_revision.emplace(
           update.id, model::revision_id(update.offset));
         _updates.emplace_back(update);
+        stop_node_addition_and_ondemand_rebalance(update.id);
         _new_updates.signal();
         return;
     }
@@ -1102,11 +1102,45 @@ void members_backend::stop_node_decommissioning(model::node_id id) {
 
 void members_backend::stop_node_addition_and_ondemand_rebalance(
   model::node_id id) {
+    using update_t = members_manager::node_update_type;
     // remove all pending added updates for current node
     std::erase_if(_updates, [id](update_meta& meta) {
         return !meta.update
-               || (meta.update->id == id && meta.update->type == members_manager::node_update_type::added);
+               || (meta.update->id == id && meta.update->type == update_t::added);
     });
+
+    if (!_updates.empty()) {
+        auto& current = _updates.front();
+        if (!current.update || current.update->type == update_t::added) {
+            /**
+             * Clear current reallocations related with node addition or on
+             * demand rebalancing, scheduled reallocations may never finish as
+             * the target node may be the one that is decommissioned.
+             *
+             * Clearing reallocations will force recalculation of reallocations
+             * when the update will be processed again, after finishing
+             * decommission.
+             */
+
+            _updates.front().partition_reallocations.clear();
+        }
+    }
+    // sort updates to prioritize decommissions/recommissions over node
+    // additions, use stable sort to keep de/recommissions order
+    static auto is_de_or_recommission = [](const update_meta& meta) {
+        if (!meta.update.has_value()) {
+            return false;
+        }
+        return meta.update->type == update_t::decommissioned
+               || meta.update->type == update_t::recommissioned;
+    };
+
+    std::stable_sort(
+      _updates.begin(),
+      _updates.end(),
+      [](const update_meta& lhs, const update_meta& rhs) {
+          return is_de_or_recommission(lhs) && !is_de_or_recommission(rhs);
+      });
 }
 
 void members_backend::handle_reallocation_finished(model::node_id id) {
