@@ -5,3 +5,5 @@
 !tests/python
 !tests/go
 !tests/docker/ducktape-deps.sh
+!tools/offline_log_viewer
+!tools/consumer_offsets_recovery

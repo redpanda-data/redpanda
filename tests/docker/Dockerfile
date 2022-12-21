@@ -105,4 +105,8 @@ RUN /opt/ducktape-deps.sh install_arroyo
 
 RUN /opt/ducktape-deps.sh install_addr2line
 
+RUN mkdir -p /opt/scripts/consumer_offsets_recovery
+COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
+RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
+
 CMD service ssh start && tail -f /dev/null
