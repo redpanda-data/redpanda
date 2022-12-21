@@ -55,15 +55,17 @@ class NodeConfig:
 
 
 class Redpanda:
-    def __init__(self, binary, config):
+    def __init__(self, binary, cores, config):
         self.binary = binary
+        self.cores = cores
         self.config = config
         self.process = None
 
     async def run(self):
         log_path = pathlib.Path(os.path.dirname(self.config)) / "redpanda.log"
+        cores_args = f"-c {self.cores}" if self.cores else ""
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary} --redpanda-cfg {self.config} 2>&1 | tee -i {log_path}",
+            f"{self.binary} --redpanda-cfg {self.config} {cores_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -99,6 +101,8 @@ async def main():
                         help="path to redpanda executable",
                         default="redpanda")
     parser.add_argument("--nodes", type=int, help="number of nodes", default=3)
+    parser.add_argument("--cores", type=int, help="number of cores per node",
+                        default=None)
     parser.add_argument("-d",
                         "--directory",
                         type=pathlib.Path,
@@ -170,7 +174,7 @@ async def main():
         return config, conf_file
 
     configs = [prepare_node(i) for i in range(args.nodes)]
-    nodes = [Redpanda(args.executable, c[1]) for c in configs]
+    nodes = [Redpanda(args.executable, args.cores, c[1]) for c in configs]
 
     coros = [r.run() for r in nodes]
     coros.append(input_helper(configs))
