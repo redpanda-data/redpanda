@@ -65,7 +65,7 @@ public:
     std::string_view name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
     // until the end of the server (container/parent)
-    ss::future<> apply(net::server::resources) final;
+    ss::future<> apply(ss::lw_shared_ptr<net::connection>) final;
 
     ss::smp_service_group smp_group() const { return _smp_group; }
     cluster::topics_frontend& topics_frontend() {
@@ -137,7 +137,7 @@ public:
         return _fetch_metadata_cache;
     }
 
-    latency_probe& probe() { return _probe; }
+    latency_probe& latency_probe() { return _probe; }
 
 private:
     ss::smp_service_group _smp_group;
@@ -164,7 +164,7 @@ private:
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;
 
-    latency_probe _probe;
+    class latency_probe _probe;
 };
 
 } // namespace kafka

@@ -16,6 +16,7 @@
 namespace rpc {
 
 struct service;
+struct server_context_impl;
 
 // Wrapper around net::server that serves the internal RPC protocol. It allows
 // new services to be registered while the server is running.
@@ -50,7 +51,7 @@ public:
         return "vectorized internal rpc protocol";
     }
 
-    ss::future<> apply(net::server::resources rs) final;
+    ss::future<> apply(ss::lw_shared_ptr<net::connection>) final;
 
     template<std::derived_from<service> T, typename... Args>
     void register_service(Args&&... args) {
@@ -58,7 +59,11 @@ public:
     }
 
 private:
-    ss::future<> dispatch_method_once(header, net::server::resources);
+    ss::future<>
+      dispatch_method_once(header, ss::lw_shared_ptr<net::connection>);
+    ss::future<> send_reply(ss::lw_shared_ptr<server_context_impl>, netbuf);
+    ss::future<>
+      send_reply_skip_payload(ss::lw_shared_ptr<server_context_impl>, netbuf);
     std::vector<std::unique_ptr<service>> _services;
 };
 

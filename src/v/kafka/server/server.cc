@@ -162,11 +162,11 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
       });
 }
 
-ss::future<> server::apply(net::server::resources rs) {
+ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     const bool authz_enabled
       = config::shard_local_cfg().kafka_enable_authorization().value_or(
         config::shard_local_cfg().enable_sasl());
-    const auto authn_method = get_authn_method(*rs.conn);
+    const auto authn_method = get_authn_method(*conn);
 
     // Only initialise sasl state if sasl is enabled
     auto sasl = authn_method == config::broker_authn_method::sasl
@@ -178,12 +178,12 @@ ss::future<> server::apply(net::server::resources rs) {
     std::optional<security::tls::mtls_state> mtls_state;
     if (authn_method == config::broker_authn_method::mtls_identity) {
         mtls_state = co_await get_mtls_principal_state(
-          _mtls_principal_mapper, *rs.conn);
+          _mtls_principal_mapper, *conn);
     }
 
     auto ctx = ss::make_lw_shared<connection_context>(
       *this,
-      std::move(rs),
+      conn,
       std::move(sasl),
       authz_enabled,
       mtls_state,

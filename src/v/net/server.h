@@ -97,27 +97,6 @@ struct server_configuration {
 
 class server {
 public:
-    // always guaranteed non-null
-    class resources final {
-    public:
-        resources(server* s, ss::lw_shared_ptr<net::connection> c)
-          : conn(std::move(c))
-          , _s(s) {}
-
-        // NOLINTNEXTLINE
-        ss::lw_shared_ptr<net::connection> conn;
-
-        server_probe& probe() { return _s->_probe; }
-        ssx::semaphore& memory() { return _s->_memory; }
-        hdr_hist& hist() { return _s->_hist; }
-        ss::gate& conn_gate() { return _s->_conn_gate; }
-        ss::abort_source& abort_source() { return _s->_as; }
-        bool abort_requested() const { return _s->_as.abort_requested(); }
-
-    private:
-        server* _s;
-    };
-
     explicit server(server_configuration);
     explicit server(ss::sharded<server_configuration>* s);
     server(server&&) noexcept = default;
@@ -148,7 +127,14 @@ public:
     const hdr_hist& histogram() const { return _hist; }
 
     virtual std::string_view name() const = 0;
-    virtual ss::future<> apply(resources) = 0;
+    virtual ss::future<> apply(ss::lw_shared_ptr<net::connection>) = 0;
+
+    server_probe& probe() { return _probe; }
+    ssx::semaphore& memory() { return _memory; }
+    ss::gate& conn_gate() { return _conn_gate; }
+    hdr_hist& hist() { return _hist; }
+    ss::abort_source& abort_source() { return _as; }
+    bool abort_requested() const { return _as.abort_requested(); }
 
 private:
     struct listener {
@@ -160,11 +146,11 @@ private:
           , socket(std::move(socket)) {}
     };
 
-    friend resources;
     ss::future<> accept(listener&);
     ss::future<ss::stop_iteration>
       accept_finish(ss::sstring, ss::future<ss::accept_result>);
-    ss::future<> apply_proto(server::resources&&, conn_quota::units);
+    ss::future<>
+      apply_proto(ss::lw_shared_ptr<net::connection>, conn_quota::units);
     void setup_metrics();
     void setup_public_metrics();
 

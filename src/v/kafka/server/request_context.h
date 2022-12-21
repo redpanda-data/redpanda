@@ -86,7 +86,7 @@ public:
 
     request_reader& reader() { return _reader; }
 
-    latency_probe& probe() { return _conn->server().probe(); }
+    latency_probe& probe() { return _conn->server().latency_probe(); }
 
     const cluster::metadata_cache& metadata_cache() const {
         return _conn->server().metadata_cache();

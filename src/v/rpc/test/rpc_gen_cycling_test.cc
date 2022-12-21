@@ -737,10 +737,10 @@ public:
 
     std::string_view name() const final { return "redpanda erraneous proto"; };
 
-    ss::future<> apply(net::server::resources rs) final {
+    ss::future<> apply(ss::lw_shared_ptr<net::connection> conn) final {
         return ss::do_until(
-          [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
-          [rs]() mutable {
+          [this, conn] { return conn->input().eof() || abort_requested(); },
+          [] {
               return ss::make_exception_future<>(
                 erroneous_protocol_exception());
           });

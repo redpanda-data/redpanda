@@ -86,16 +86,16 @@ class connection_context final
 public:
     connection_context(
       server& s,
-      net::server::resources&& r,
+      ss::lw_shared_ptr<net::connection> conn,
       std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
       std::optional<security::tls::mtls_state> mtls_state,
       config::binding<uint32_t> max_request_size) noexcept
       : _server(s)
-      , _rs(std::move(r))
+      , conn(conn)
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
-      , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
+      , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
       , _mtls_state(std::move(mtls_state))
@@ -108,7 +108,7 @@ public:
     connection_context& operator=(connection_context&&) = delete;
 
     server& server() { return _server; }
-    const ss::sstring& listener() const { return _rs.conn->name(); }
+    const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
     template<typename T>
@@ -190,9 +190,7 @@ public:
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
-    uint16_t client_port() const {
-        return _rs.conn ? _rs.conn->addr.port() : 0;
-    }
+    uint16_t client_port() const { return conn ? conn->addr.port() : 0; }
 
 private:
     // Reserve units from memory from the memory semaphore in proportion
@@ -293,7 +291,7 @@ private:
     };
 
     class server& _server;
-    net::server::resources _rs;
+    ss::lw_shared_ptr<net::connection> conn;
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
