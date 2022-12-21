@@ -413,7 +413,7 @@ private:
               _reader->max_rp_offset(),
               _reader->is_eof(),
               _next_segment_base_offset);
-            _partition->materialized().evict_reader(std::move(_reader));
+            _partition->evict_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset",
@@ -619,6 +619,31 @@ void remote_partition::return_reader(
         // point. In this case it's possible that the remote_segment instance
         // which 'it' points to belongs to the new segment.
         it->second->return_reader(std::move(reader));
+    } else {
+        materialized().evict_reader(std::move(reader));
+    }
+}
+
+/// Return reader back to segment_state
+void remote_partition::evict_reader(
+  std::unique_ptr<remote_segment_batch_reader> reader) {
+    if (reader->is_eof()) {
+        auto offset = reader->base_rp_offset();
+        auto it = _segments.find(offset);
+        if (
+          it != _segments.end()
+          && reader->reads_from_segment(*it->second->segment)
+          && it->second->segment.use_count() == 2) {
+            // The segment is only used by the evicted reader.
+            // Normally, this can happen during batch processing, when
+            // the client scans the partition. In this case there is no
+            // contention and there is no point in keeping materialized
+            // segment around. The segment can still be cached in SI cache.
+            // The use count is 2 because we have a pointer inside the
+            // materialized_segment_state and inside the reader.
+            materialized().evict_reader(std::move(reader));
+            offload_segment(offset);
+        }
     } else {
         materialized().evict_reader(std::move(reader));
     }
