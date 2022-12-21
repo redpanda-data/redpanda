@@ -25,7 +25,16 @@ template<typename T, typename Clock = ss::lowres_clock>
 class expiring_promise {
 public:
     expiring_promise() = default;
-    expiring_promise(expiring_promise&&) = delete;
+    expiring_promise(expiring_promise&& other) noexcept
+      : _where_am_i{std::exchange(other._where_am_i, {})}
+      , _available{other._available}
+      , _promise{std::move(other._promise)}
+      , _timer{std::move(other._timer)}
+      , _sub{std::move(other._sub)} {
+        if (_where_am_i) {
+            *_where_am_i = this;
+        }
+    }
     expiring_promise& operator=(const expiring_promise&) = delete;
     expiring_promise& operator=(expiring_promise&&) = delete;
     expiring_promise(const expiring_promise&) = delete;
@@ -51,22 +60,23 @@ public:
                     return _promise.get_future();
                 }
             }
-            _timer.set_callback(
-              [this, ef = std::forward<ErrorFactory>(err_factory)] {
-                  using err_t = std::invoke_result_t<ErrorFactory>;
+            _where_am_i = std::make_unique<expiring_promise*>(this);
+            _timer.set_callback([&thiz = *_where_am_i,
+                                 ef = std::forward<ErrorFactory>(err_factory)] {
+                using err_t = std::invoke_result_t<ErrorFactory>;
 
-                  constexpr bool is_result = std::is_same_v<err_t, T>;
-                  constexpr bool is_std_error_code
-                    = std::is_convertible_v<err_t, std::error_code>;
+                constexpr bool is_result = std::is_same_v<err_t, T>;
+                constexpr bool is_std_error_code
+                  = std::is_convertible_v<err_t, std::error_code>;
 
-                  // if errors are encoded in values f.e. result<T> or errc
-                  if constexpr (is_result || is_std_error_code) {
-                      set_value(ef());
-                  } else {
-                      set_exception(ef());
-                  }
-                  unlink_abort_source();
-              });
+                // if errors are encoded in values f.e. result<T> or errc
+                if constexpr (is_result || is_std_error_code) {
+                    thiz->set_value(ef());
+                } else {
+                    thiz->set_exception(ef());
+                }
+                thiz->unlink_abort_source();
+            });
             _timer.arm(timeout);
         }
 
@@ -106,6 +116,11 @@ private:
         }
     }
 
+    // to ensure that _timer's callback lambda is able to reference _timer's
+    // container, i.e., "this", after the "expiring_promise" instance is
+    // std::move()'ed away, we need to keep track of this in a separate buffer
+    // not provided by "expiring_promise", hence the pointer to pointer.
+    std::unique_ptr<expiring_promise*> _where_am_i;
     bool _available{false};
     ss::promise<T> _promise;
     ss::timer<Clock> _timer;
