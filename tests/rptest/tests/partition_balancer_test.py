@@ -584,7 +584,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         with self.NodeStopper(self) as ns:
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-                ns.make_unavailable(node)
+                ns.make_unavailable(node, wait_for_previous_node=True)
                 try:
                     admin_fuzz.pause()
                     self.wait_until_ready(expected_unavailable_node=node)
