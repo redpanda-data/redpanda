@@ -27,9 +27,9 @@ namespace rpc {
 static constexpr size_t reply_min_compression_bytes = 1024;
 
 struct server_context_impl final : streaming_context {
-    server_context_impl(net::server& server, net::server::resources s, header h)
+    server_context_impl(net::server& server, ss::lw_shared_ptr<net::connection> conn, header h)
       : server(server)
-      , res(std::move(s))
+      , conn(conn)
       , hdr(h) {
         server.probe().request_received();
     }
@@ -47,27 +47,27 @@ struct server_context_impl final : streaming_context {
         pr.set_exception(std::move(e));
     }
     net::server& server;
-    net::server::resources res;
+    ss::lw_shared_ptr<net::connection> conn;
     header hdr;
     ss::promise<> pr;
 };
 
-ss::future<> rpc_server::apply(net::server::resources rs) {
+ss::future<> rpc_server::apply(ss::lw_shared_ptr<net::connection> conn) {
     return ss::do_until(
-      [this, rs] { return rs.conn->input().eof() || abort_requested(); },
-      [this, rs]() mutable {
-          return parse_header(rs.conn->input())
-            .then([this, rs](std::optional<header> h) mutable {
+      [this, conn] { return conn->input().eof() || abort_requested(); },
+      [this, conn]() mutable {
+          return parse_header(conn->input())
+            .then([this, conn](std::optional<header> h) mutable {
                 if (!h) {
                     rpclog.debug(
-                      "could not parse header from client: {}", rs.conn->addr);
+                      "could not parse header from client: {}", conn->addr);
                     probe().header_corrupted();
                     // Have to shutdown the connection as data in receiving
                     // buffer may be corrupted
-                    rs.conn->shutdown_input();
+                    conn->shutdown_input();
                     return ss::now();
                 }
-                return dispatch_method_once(h.value(), rs);
+                return dispatch_method_once(h.value(), conn);
             });
       });
 }
@@ -85,32 +85,32 @@ rpc_server::send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
           "Skipping write of {} bytes, connection is closed", view.size());
         co_return;
     }
-    co_await ctx->res.conn->write(std::move(view))
+    co_await ctx->conn->write(std::move(view))
       .handle_exception([ctx = std::move(ctx)](std::exception_ptr e) {
           auto disconnect = net::is_disconnect_exception(e);
           if (disconnect) {
               vlog(
                 rpclog.info,
                 "Disconnected {} ({})",
-                ctx->res.conn->addr,
+                ctx->conn->addr,
                 disconnect.value());
           } else {
               vlog(rpclog.warn, "Error dispatching method: {}", e);
           }
-          ctx->res.conn->shutdown_input();
+          ctx->conn->shutdown_input();
       });
 }
 
 ss::future<> rpc_server::send_reply_skip_payload(
   ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
-    co_await ctx->res.conn->input().skip(ctx->get_header().payload_size);
+    co_await ctx->conn->input().skip(ctx->get_header().payload_size);
     co_await send_reply(std::move(ctx), std::move(buf));
 }
 
 ss::future<>
-rpc_server::dispatch_method_once(header h, net::server::resources rs) {
+rpc_server::dispatch_method_once(header h, ss::lw_shared_ptr<net::connection> conn) {
     const auto method_id = h.meta;
-    auto ctx = ss::make_lw_shared<server_context_impl>(*this, rs, h);
+    auto ctx = ss::make_lw_shared<server_context_impl>(*this, conn, h);
     probe().add_bytes_received(size_of_rpc_header + h.payload_size);
     if (conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
@@ -122,7 +122,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     ssx::background
       = ssx::spawn_with_gate_then(
           conn_gate(),
-          [this, method_id, rs, ctx]() mutable {
+          [this, method_id, ctx]() mutable {
               if (unlikely(
                     ctx->get_header().version
                     > transport_version::max_supported)) {
@@ -132,7 +132,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
                     "> {} from {}",
                     ctx->get_header().version,
                     transport_version::max_supported,
-                    ctx->res.conn->addr);
+                    ctx->conn->addr);
                   netbuf reply_buf;
                   reply_buf.set_status(rpc::status::version_not_supported);
                   /*
@@ -155,7 +155,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
                     rpclog.debug,
                     "Received a request for an unknown method {} from {}",
                     method_id,
-                    ctx->res.conn->addr);
+                    ctx->conn->addr);
                   probe().method_not_found();
                   netbuf reply_buf;
                   reply_buf.set_version(ctx->get_header().version);
@@ -166,8 +166,8 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
 
               method* m = it->get()->method_from_id(method_id);
 
-              return m->handle(ctx->res.conn->input(), *ctx)
-                .then_wrapped([this, ctx, m, l = hist().auto_measure(), rs](
+              return m->handle(ctx->conn->input(), *ctx)
+                .then_wrapped([this, ctx, m, l = hist().auto_measure()](
                                 ss::future<netbuf> fut) mutable {
                     bool error = true;
                     netbuf reply_buf;

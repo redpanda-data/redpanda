@@ -97,16 +97,6 @@ struct server_configuration {
 
 class server {
 public:
-    // always guaranteed non-null
-    class resources final {
-    public:
-        resources(server*, ss::lw_shared_ptr<net::connection> c)
-          : conn(std::move(c)) {}
-
-        // NOLINTNEXTLINE
-        ss::lw_shared_ptr<net::connection> conn;
-    };
-
     explicit server(server_configuration);
     explicit server(ss::sharded<server_configuration>* s);
     server(server&&) noexcept = default;
@@ -137,7 +127,7 @@ public:
     const hdr_hist& histogram() const { return _hist; }
 
     virtual std::string_view name() const = 0;
-    virtual ss::future<> apply(resources) = 0;
+    virtual ss::future<> apply(ss::lw_shared_ptr<net::connection>) = 0;
 
     server_probe& probe() { return _probe; }
     ssx::semaphore& memory() { return _memory; }
@@ -156,11 +146,10 @@ private:
           , socket(std::move(socket)) {}
     };
 
-    friend resources;
     ss::future<> accept(listener&);
     ss::future<ss::stop_iteration>
       accept_finish(ss::sstring, ss::future<ss::accept_result>);
-    ss::future<> apply_proto(server::resources&&, conn_quota::units);
+    ss::future<> apply_proto(ss::lw_shared_ptr<net::connection>, conn_quota::units);
     void setup_metrics();
     void setup_public_metrics();
 

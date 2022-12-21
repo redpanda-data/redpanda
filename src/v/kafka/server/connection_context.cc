@@ -41,7 +41,7 @@ using namespace std::chrono_literals;
 namespace kafka {
 
 ss::future<> connection_context::process_one_request() {
-    return parse_size(_rs.conn->input())
+    return parse_size(conn->input())
       .then([this](std::optional<size_t> sz) mutable {
           if (!sz) {
               return ss::make_ready_future<>();
@@ -51,7 +51,7 @@ ss::future<> connection_context::process_one_request() {
                 klog.warn,
                 "request from {} is larger ({} bytes) than configured max "
                 "request size {}",
-                _rs.conn->addr,
+                conn->addr,
                 sz,
                 _max_request_size());
               return ss::make_exception_future<>(
@@ -77,10 +77,10 @@ ss::future<> connection_context::process_one_request() {
               return handle_auth_v0(*sz).handle_exception(
                 [this](std::exception_ptr e) {
                     vlog(klog.info, "Detected error processing request: {}", e);
-                    _rs.conn->shutdown_input();
+                    conn->shutdown_input();
                 });
           }
-          return parse_header(_rs.conn->input())
+          return parse_header(conn->input())
             .then([this,
                    s = sz.value()](std::optional<request_header> h) mutable {
                 _server.probe().add_bytes_received(s);
@@ -88,7 +88,7 @@ ss::future<> connection_context::process_one_request() {
                     vlog(
                       klog.debug,
                       "could not parse header from client: {}",
-                      _rs.conn->addr);
+                      conn->addr);
                     _server.probe().header_corrupted();
                     return ss::make_ready_future<>();
                 }
@@ -98,9 +98,9 @@ ss::future<> connection_context::process_one_request() {
                         vlog(
                           klog.warn,
                           "Error while processing request from {} - {}",
-                          _rs.conn->addr,
+                          conn->addr,
                           e.what());
-                        _rs.conn->shutdown_input();
+                        conn->shutdown_input();
                     })
                   .handle_exception_type([this](const std::bad_alloc&) {
                       // In general, dispatch_method_once does not throw,
@@ -111,7 +111,7 @@ ss::future<> connection_context::process_one_request() {
                         klog.error,
                         "Request from {} failed on memory exhaustion "
                         "(std::bad_alloc)",
-                        _rs.conn->addr);
+                        conn->addr);
                   });
             });
       });
@@ -146,7 +146,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
     const api_version version(0);
     iobuf request_buf;
     {
-        auto data = co_await read_iobuf_exactly(_rs.conn->input(), size);
+        auto data = co_await read_iobuf_exactly(conn->input(), size);
         sasl_authenticate_request request;
         request.data.auth_bytes = iobuf_to_bytes(data);
         response_writer writer(request_buf);
@@ -188,11 +188,11 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
     response_writer writer(data);
     writer.write(response.data.auth_bytes);
     auto msg = iobuf_as_scattered(std::move(data));
-    co_await _rs.conn->write(std::move(msg));
+    co_await conn->write(std::move(msg));
 }
 
 bool connection_context::is_finished_parsing() const {
-    return _rs.conn->input().eof() || _server.abort_requested();
+    return conn->input().eof() || _server.abort_requested();
 }
 
 ss::future<session_resources> connection_context::throttle_request(
@@ -281,7 +281,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
 
         auto remaining = size - request_header_size
                          - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
-        return read_iobuf_exactly(_rs.conn->input(), remaining)
+        return read_iobuf_exactly(conn->input(), remaining)
           .then([this, hdr = std::move(hdr), sres = std::move(sres)](
                   iobuf buf) mutable {
               if (_server.abort_requested()) {
@@ -387,7 +387,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                   vlog(
                                     klog.info,
                                     "Disconnected {} ({})",
-                                    self->_rs.conn->addr,
+                                    self->conn->addr,
                                     disconnected.value());
                               } else {
                                   vlog(
@@ -397,14 +397,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                               }
 
                               self->_server.probe().service_error();
-                              self->_rs.conn->shutdown_input();
+                              self->conn->shutdown_input();
                           });
                     return d;
                 })
                 .handle_exception([self](std::exception_ptr e) {
                     vlog(
                       klog.info, "Detected error dispatching request: {}", e);
-                    self->_rs.conn->shutdown_input();
+                    self->conn->shutdown_input();
                 });
           });
     });
@@ -444,7 +444,7 @@ ss::future<> connection_context::maybe_process_responses() {
 
         auto msg = response_as_scattered(std::move(resp_and_res.response));
         try {
-            return _rs.conn->write(std::move(msg))
+            return conn->write(std::move(msg))
               .then([] {
                   return ss::make_ready_future<ss::stop_iteration>(
                     ss::stop_iteration::no);

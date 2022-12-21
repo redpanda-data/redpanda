@@ -136,9 +136,8 @@ static inline void print_exceptional_future(
 }
 
 ss::future<>
-server::apply_proto(server::resources&& rs, conn_quota::units cq_units) {
-    auto conn = rs.conn;
-    return apply(std::move(rs))
+server::apply_proto(ss::lw_shared_ptr<net::connection> conn, conn_quota::units cq_units) {
+    return apply(conn)
       .then_wrapped(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
@@ -234,7 +233,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
     }
     ssx::spawn_with_gate(
       _conn_gate, [this, conn, cq_units = std::move(cq_units)]() mutable {
-          return apply_proto(resources(this, conn), std::move(cq_units));
+          return apply_proto(conn, std::move(cq_units));
       });
     co_return ss::stop_iteration::no;
 }

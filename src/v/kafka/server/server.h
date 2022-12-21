@@ -65,7 +65,7 @@ public:
     std::string_view name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
     // until the end of the server (container/parent)
-    ss::future<> apply(net::server::resources) final;
+    ss::future<> apply(ss::lw_shared_ptr<net::connection>) final;
 
     ss::smp_service_group smp_group() const { return _smp_group; }
     cluster::topics_frontend& topics_frontend() {

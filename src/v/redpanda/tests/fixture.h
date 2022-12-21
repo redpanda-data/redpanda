@@ -568,7 +568,7 @@ public:
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         auto conn = ss::make_lw_shared<kafka::connection_context>(
           *proto,
-          net::server::resources(nullptr, nullptr),
+          nullptr,
           std::move(sasl),
           false,
           std::nullopt,
