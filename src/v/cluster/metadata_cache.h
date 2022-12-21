@@ -114,6 +114,9 @@ public:
     /// Returns all brokers, returns copy as the content of broker can change
     ss::future<std::vector<node_metadata>> alive_nodes() const;
 
+    /// Return all brokers
+    std::vector<node_metadata> all_nodes() const;
+
     /// Returns all broker ids
     std::vector<model::node_id> node_ids() const;
 
