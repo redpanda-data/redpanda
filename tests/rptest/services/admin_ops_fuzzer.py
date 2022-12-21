@@ -456,7 +456,7 @@ class AdminOperationsFuzzer():
 
             def validate_result():
                 try:
-                    op.validate(self.operation_ctx)
+                    return op.validate(self.operation_ctx)
                 except Exception as e:
                     self.redpanda.logger.debug(
                         f"Error validating operation {op_type} - {e}")
@@ -464,7 +464,7 @@ class AdminOperationsFuzzer():
 
             try:
                 if self.execute_with_retries(op_type, op):
-                    wait_until(lambda: validate_result,
+                    wait_until(validate_result,
                                timeout_sec=self.operation_timeout,
                                backoff_sec=1)
                     self.executed += 1
@@ -551,5 +551,6 @@ class AdminOperationsFuzzer():
                 raise RuntimeError(
                     f"Stopped without reaching target ({self.executed}/{count})"
                 )
+            return False
 
         wait_until(check, timeout_sec=timeout, backoff_sec=2)
