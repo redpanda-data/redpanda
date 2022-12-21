@@ -106,7 +106,8 @@ private:
 
     /// List of segments and readers waiting to have their stop() method
     /// called before destruction
-    eviction_list_t _eviction_list;
+    eviction_list_t _eviction_pending;
+    eviction_list_t _eviction_in_flight;
 
     // We need to quickly look up readers by segment, to find any readers
     // for a segment that is targeted by a read.  Within those readers,

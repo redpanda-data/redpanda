@@ -164,7 +164,11 @@ const ss::abort_source* retry_chain_node::get_abort_source() const {
 }
 
 retry_chain_node::~retry_chain_node() {
-    vassert(_num_children == 0, "Fiber stopped before its dependencies");
+    vassert(
+      _num_children == 0,
+      "{} Fiber stopped before its dependencies, num children {}",
+      (*this)(),
+      _num_children);
     if (auto parent = get_parent(); parent != nullptr) {
         parent->rem_child();
     }
