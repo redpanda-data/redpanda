@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using sync_group_handler = two_phase_handler<sync_group_api, 0, 3>;
+using sync_group_handler = two_phase_handler<sync_group_api, 0, 4>;
 
 } // namespace kafka
