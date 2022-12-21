@@ -100,7 +100,8 @@ consensus::consensus(
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
   features::feature_table& ft,
-  std::optional<voter_priority> voter_priority_override)
+  std::optional<voter_priority> voter_priority_override,
+  keep_snapshotted_log should_keep_snapshotted_log)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -137,6 +138,7 @@ consensus::consensus(
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
   , _node_priority_override(voter_priority_override)
+  , _keep_snapshotted_log(should_keep_snapshotted_log)
   , _append_requests_buffer(*this, 256) {
     setup_metrics();
     setup_public_metrics();
@@ -2002,6 +2004,11 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
             metadata.last_included_index,
             _last_snapshot_index);
 
+          vlog(
+            _ctxlog.info,
+            "hydrating snapshot with last included index: {}",
+            metadata.last_included_index);
+
           _last_snapshot_index = metadata.last_included_index;
           _last_snapshot_term = metadata.last_included_term;
 
@@ -2034,9 +2041,21 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
                 return _offset_translator.prefix_truncate_reset(
                   _last_snapshot_index, delta);
             })
-            .then([this] { return truncate_to_latest_snapshot(); })
-            .then(
-              [this] { _log.set_collectible_offset(_last_snapshot_index); });
+            .then([this] {
+                if (
+                  _keep_snapshotted_log
+                  && _log.offsets().dirty_offset >= _last_snapshot_index) {
+                    // skip prefix truncating if we want to preserve the log
+                    // (e.g. for the controller partition), but only if there is
+                    // no gap between old end offset and new start offset,
+                    // otherwise we must still advance the log start offset by
+                    // prefix-truncating.
+                    return ss::now();
+                }
+                return truncate_to_latest_snapshot().then([this] {
+                    _log.set_collectible_offset(_last_snapshot_index);
+                });
+            });
       })
       .then([this] { return _snapshot_mgr.get_snapshot_size(); })
       .then([this](uint64_t size) { _snapshot_size = size; });
@@ -2177,6 +2196,12 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
                        [](const ss::broken_semaphore&) { return false; });
 
     if (!updated) {
+        co_return;
+    }
+
+    if (_keep_snapshotted_log) {
+        // Skip prefix truncating to preserve the log (we want this e.g. for the
+        // controller partition in case we need to turn off snapshots).
         co_return;
     }
 

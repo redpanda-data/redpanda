@@ -802,6 +802,9 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
 
 using with_learner_recovery_throttle
   = ss::bool_class<struct with_recovery_throttle_tag>;
+
+using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
+
 } // namespace raft
 
 namespace reflection {

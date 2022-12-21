@@ -99,7 +99,8 @@ public:
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
       features::feature_table&,
-      std::optional<voter_priority> = std::nullopt);
+      std::optional<voter_priority> = std::nullopt,
+      keep_snapshotted_log = keep_snapshotted_log::no);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -715,6 +716,7 @@ private:
     model::offset _visibility_upper_bound_index;
     voter_priority _target_priority = voter_priority::max();
     std::optional<voter_priority> _node_priority_override;
+    keep_snapshotted_log _keep_snapshotted_log;
 
     // used to track currently installed snapshot
     model::offset _received_snapshot_index;

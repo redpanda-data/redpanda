@@ -63,7 +63,8 @@ public:
       raft::group_id id,
       std::vector<model::broker> nodes,
       storage::log log,
-      with_learner_recovery_throttle enable_learner_recovery_throttle);
+      with_learner_recovery_throttle enable_learner_recovery_throttle,
+      keep_snapshotted_log = keep_snapshotted_log::no);
 
     ss::future<> shutdown(ss::lw_shared_ptr<raft::consensus>);
 
