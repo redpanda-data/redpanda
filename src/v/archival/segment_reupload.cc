@@ -44,7 +44,7 @@ void segment_collector::collect_segments() {
 
     if (_begin_inclusive >= _manifest.get_last_offset()) {
         vlog(
-          archival_log.warn,
+          archival_log.debug,
           "Start offset {} is ahead of manifest last offset {} for ntp {}",
           _begin_inclusive,
           _manifest.get_last_offset(),
