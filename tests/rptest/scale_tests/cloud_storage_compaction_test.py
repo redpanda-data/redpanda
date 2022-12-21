@@ -203,6 +203,7 @@ class CloudStorageCompactionTest(EndToEndTest):
 
         assert upload_sucess > 0
         assert download_sucess > 0
-        assert download_sucess < upload_sucess
+        assert download_sucess <= upload_sucess, \
+            f"Downloaded {download_sucess}, uploaded {upload_sucess}"
         assert upload_fails == 0
         assert download_fails == 0
