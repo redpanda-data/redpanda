@@ -248,6 +248,11 @@ void materialized_segments::trim_readers(size_t target_free) {
  * anything if no segments have an atime older than the TTL.  Ssee trim_readers
  * for how to trim the reader population back to a specific size
  *
+ * NOTE: This method must never be made async or yield while iterating over
+ * segments. If it does yield and remote_partition::stop runs, remote_partition
+ * can clear out the segments map, and a subsequent offload of that segment will
+ * cause a vassert failure.
+ *
  * @param target_free: if set, the trim will remove segments until the
  *        number of units available in segments_semaphore reaches the
  *        target, or until it runs out of candidates for eviction.  This
@@ -316,19 +321,8 @@ void materialized_segments::maybe_trim_segment(
         // this will delete and unlink the object from
         // _materialized collection
         if (st.parent) {
-            if (
-              st.parent->state()
-              == remote_partition::partition_state::running) {
-                to_offload.push_back(
-                  std::make_pair(st.parent.get(), st.base_rp_offset()));
-            } else {
-                vlog(
-                  cst_log.info,
-                  "Materialized segment {} offset {} not offloaded, partition "
-                  "is stopping",
-                  st.ntp(),
-                  st.base_rp_offset());
-            }
+            to_offload.push_back(
+              std::make_pair(st.parent.get(), st.base_rp_offset()));
         } else {
             // This cannot happen, because materialized_segment_state
             // is only instantiated by remote_partition and will

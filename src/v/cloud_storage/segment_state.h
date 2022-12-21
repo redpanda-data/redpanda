@@ -60,6 +60,11 @@ struct materialized_segment_state {
     /// List hook for the list of all materalized segments
     intrusive_list_hook _hook;
 
+    /// Removes object from list that it is part of. Used to isolate the object
+    /// before stopping it, so that the stop method is only called from one
+    /// place.
+    void unlink() { _hook.unlink(); }
+
     /// Record which partition this segment relates to.  This weak_ptr should
     /// never be broken, because our lifetime is shorter than our parent, but
     /// a weak_ptr is preferable to a reference (crash on bug) or a shared_ptr
