@@ -41,6 +41,62 @@
             ]
         },
         {
+            "path": "/v1/debug/self_test/start",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Start self test",
+                    "nickname": "self_test_start",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [],
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "schema": "json"
+                        },
+                        "503": {
+                            "description": "Test failed to start",
+                            "schema":{
+                                "type": "json"
+                            }
+                        }
+                    }
+
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/self_test/stop",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "stop self test",
+                    "nickname": "self_test_stop",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/self_test/status",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Query self test",
+                    "nickname": "self_test_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+
+            ]
+        },
+        {
             "path": "/v1/debug/peer_status/{id}",
             "operations": [
                 {
@@ -109,6 +165,81 @@
                 "since_last_status": {
                     "type": "long",
                     "description": "Milliseconds since last update from peer"
+                }
+            }
+        },
+        "self_test_result": {
+            "id": "self_test_result",
+            "description": "Result set from a single self_test run",
+            "properties": {
+                "p50": {
+                    "type": "long",
+                    "description": "50th percentile latencies"
+                },
+                "p90": {
+                    "type": "long",
+                    "description": "90th percentile latencies"
+                },
+                "p99": {
+                    "type": "long",
+                    "description": "99th percentile latencies"
+                },
+                "p999": {
+                    "type": "long",
+                    "description": "999th percentile latencies"
+                },
+                "max_latency": {
+                    "type": "long",
+                    "description": "Maximum recorded latency measurement"
+                },
+                "rps": {
+                    "type": "long",
+                    "description": "Number of requests per second"
+                },
+                "bps": {
+                    "type": "long",
+                    "description": "Bytes operated on per second"
+                },
+                "test_id": {
+                    "type": "string",
+                    "description": "Global test uuid identifier"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name of the test run"
+                },
+                "duration": {
+                    "type": "long",
+                    "description": "Length of time the test took to complete"
+                },
+                "warning": {
+                    "type": "string",
+                    "description": "Warning that arose during test execution"
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Stringified exception if any occurred during test execution"
+                }
+            }
+        },
+        "self_test_node_report": {
+            "id": "self_test_node_report",
+            "description": "Current state of self test on a given broker",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node_id of the broker reporting"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "One of either idle / running / unreachable"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "self_test_result"
+                    },
+                    "description": "Recordings of test runs from a single node"
                 }
             }
         }

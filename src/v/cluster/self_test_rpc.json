@@ -1,0 +1,24 @@
+{
+    "namespace": "cluster",
+    "service_name": "self_test_rpc",
+    "includes": [
+        "cluster/self_test_rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "start_test",
+            "input_type": "start_test_request",
+            "output_type": "get_status_response"
+        },
+        {
+            "name": "stop_test",
+            "input_type": "empty_request",
+            "output_type": "get_status_response"
+        },
+        {
+            "name": "get_status",
+            "input_type": "empty_request",
+            "output_type": "get_status_response"
+        }
+    ]
+}

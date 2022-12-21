@@ -32,6 +32,7 @@
 #include "cluster/partition_balancer_rpc_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
+#include "cluster/self_test_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -110,7 +111,8 @@ admin_server::admin_server(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<archival::scheduler_service>& archival_service,
   ss::sharded<rpc::connection_cache>& connection_cache,
-  ss::sharded<cluster::node_status_table>& node_status_table)
+  ss::sharded<cluster::node_status_table>& node_status_table,
+  ss::sharded<cluster::self_test_frontend>& self_test_frontend)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -122,7 +124,8 @@ admin_server::admin_server(
   , _connection_cache(connection_cache)
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _archival_service(archival_service)
-  , _node_status_table(node_status_table) {}
+  , _node_status_table(node_status_table)
+  , _self_test_frontend(self_test_frontend) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -184,6 +187,7 @@ void admin_server::configure_admin_routes() {
     register_hbadger_routes();
     register_transaction_routes();
     register_debug_routes();
+    register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
 }
@@ -2923,6 +2927,130 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::delete_partition,
       [this](std::unique_ptr<ss::httpd::request> req) {
           return delete_partition_handler(std::move(req));
+      });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        vlog(logger.debug, "Need to redirect self_test_start request");
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+    auto doc = parse_json_body(*req);
+    std::optional<cluster::diskcheck_opts> dto;
+    std::optional<cluster::netcheck_opts> nto;
+    if (!doc.HasMember("tests")) {
+        dto = cluster::diskcheck_opts::from_json(doc);
+        nto = cluster::netcheck_opts::from_json(doc);
+    } else {
+        for (const auto& name : doc["tests"].GetArray()) {
+            if (name == "disk") {
+                dto = cluster::diskcheck_opts::from_json(doc);
+            } else if (name == "network") {
+                nto = cluster::netcheck_opts::from_json(doc);
+            }
+        }
+    }
+    try {
+        auto tid = co_await _self_test_frontend.invoke_on(
+          cluster::self_test_frontend::shard,
+          [dto, nto](auto& self_test_frontend) {
+              return self_test_frontend.start_test(dto, nto);
+          });
+        vlog(logger.info, "Request to start self test succeeded: {}", tid);
+        co_return ss::json::json_return_type(tid);
+    } catch (const std::exception& ex) {
+        throw ss::httpd::base_exception(
+          fmt::format("Failed to start self test, reason: {}", ex),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::self_test_stop_handler(std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        vlog(logger.info, "Need to redirect self_test_stop request");
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+    auto r = co_await _self_test_frontend.invoke_on(
+      cluster::self_test_frontend::shard,
+      [](auto& self_test_frontend) { return self_test_frontend.stop_test(); });
+    if (!r.finished()) {
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Failed to stop one or more self_test jobs: {}",
+            r.active_participant_ids()),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+    vlog(logger.info, "Request to stop self test succeeded");
+    co_return ss::json::json_void();
+}
+
+static ss::httpd::debug_json::self_test_result
+self_test_result_to_json(const cluster::self_test_result& str) {
+    ss::httpd::debug_json::self_test_result r;
+    if (str.error) {
+        r.error = *str.error;
+        return r;
+    }
+    if (str.warning) {
+        r.warning = *str.warning;
+    }
+    r.p50 = str.p50;
+    r.p90 = str.p90;
+    r.p99 = str.p99;
+    r.p999 = str.p999;
+    r.max_latency = str.max;
+    r.rps = str.rps;
+    r.bps = str.bps;
+    r.test_id = ss::sstring(str.test_id);
+    r.name = str.name;
+    r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   str.duration)
+                   .count();
+    return r;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::self_test_get_results_handler(
+  std::unique_ptr<ss::httpd::request>) {
+    namespace dbg_ns = ss::httpd::debug_json;
+    std::vector<dbg_ns::self_test_node_report> reports;
+    auto status = co_await _self_test_frontend.invoke_on(
+      cluster::self_test_frontend::shard,
+      [](auto& self_test_frontend) { return self_test_frontend.status(); });
+    reports.reserve(status.results().size());
+    for (const auto& [id, participant] : status.results()) {
+        dbg_ns::self_test_node_report nr;
+        nr.node_id = id;
+        nr.status = cluster::self_test_status_as_string(participant.status());
+        if (participant.response) {
+            for (const auto& r : participant.response->results) {
+                nr.results.push(self_test_result_to_json(r));
+            }
+        }
+        reports.push_back(nr);
+    }
+    co_return ss::json::json_return_type(reports);
+}
+
+void admin_server::register_self_test_routes() {
+    register_route<superuser>(
+      ss::httpd::debug_json::self_test_start,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return self_test_start_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::self_test_stop,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return self_test_stop_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::self_test_status,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return self_test_get_results_handler(std::move(req));
       });
 }
 

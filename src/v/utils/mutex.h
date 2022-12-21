@@ -66,7 +66,9 @@ public:
 
     void broken() noexcept { _sem.broken(); }
 
-    bool ready() { return _sem.waiters() == 0 && _sem.available_units() == 1; }
+    bool ready() const noexcept {
+        return _sem.waiters() == 0 && _sem.available_units() == 1;
+    }
 
     size_t waiters() const noexcept { return _sem.waiters(); }
 

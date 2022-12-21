@@ -776,3 +776,12 @@ class Admin:
             raise
         if len(r.text) > 0:
             return r.json()["cluster_uuid"]
+
+    def self_test_start(self, options):
+        return self._request("POST", "debug/self_test/start", json=options)
+
+    def self_test_stop(self):
+        return self._request("POST", "debug/self_test/stop")
+
+    def self_test_status(self):
+        return self._request("GET", "debug/self_test/status").json()
