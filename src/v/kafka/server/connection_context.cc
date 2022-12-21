@@ -83,13 +83,13 @@ ss::future<> connection_context::process_one_request() {
           return parse_header(_rs.conn->input())
             .then([this,
                    s = sz.value()](std::optional<request_header> h) mutable {
-                _rs.probe().add_bytes_received(s);
+                _server.probe().add_bytes_received(s);
                 if (!h) {
                     vlog(
                       klog.debug,
                       "could not parse header from client: {}",
                       _rs.conn->addr);
-                    _rs.probe().header_corrupted();
+                    _server.probe().header_corrupted();
                     return ss::make_ready_future<>();
                 }
                 return dispatch_method_once(std::move(h.value()), s)
@@ -210,7 +210,7 @@ ss::future<session_resources> connection_context::throttle_request(
     // affect.
     auto delay = _server.quota_mgr().record_tp_and_throttle(
       hdr.client_id, request_size);
-    auto tracker = std::make_unique<request_tracker>(_rs.probe());
+    auto tracker = std::make_unique<request_tracker>(_server.probe());
     auto fut = ss::now();
     if (!delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _server.abort_source());
@@ -262,7 +262,7 @@ connection_context::reserve_request_units(api_key key, size_t size) {
     }
     auto fut = ss::get_units(_server.memory(), mem_estimate);
     if (_server.memory().waiters()) {
-        _rs.probe().waiting_for_available_memory();
+        _server.probe().waiting_for_available_memory();
     }
     return fut;
 }
@@ -343,8 +343,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                 e);
                           })
                           .finally([self, d = std::move(d)]() mutable {
-                              self->_rs.probe().service_error();
-                              self->_rs.probe().request_completed();
+                              self->_server.probe().service_error();
+                              self->_server.probe().request_completed();
                               return std::move(d);
                           });
                     }
@@ -396,7 +396,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     e);
                               }
 
-                              self->_rs.probe().service_error();
+                              self->_server.probe().service_error();
                               self->_rs.conn->shutdown_input();
                           });
                     return d;

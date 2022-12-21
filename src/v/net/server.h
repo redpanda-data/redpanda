@@ -100,17 +100,11 @@ public:
     // always guaranteed non-null
     class resources final {
     public:
-        resources(server* s, ss::lw_shared_ptr<net::connection> c)
-          : conn(std::move(c))
-          , _s(s) {}
+        resources(server*, ss::lw_shared_ptr<net::connection> c)
+          : conn(std::move(c)) {}
 
         // NOLINTNEXTLINE
         ss::lw_shared_ptr<net::connection> conn;
-
-        server_probe& probe() { return _s->_probe; }
-
-    private:
-        server* _s;
     };
 
     explicit server(server_configuration);
@@ -145,6 +139,7 @@ public:
     virtual std::string_view name() const = 0;
     virtual ss::future<> apply(resources) = 0;
 
+    server_probe& probe() { return _probe; }
     ssx::semaphore& memory() { return _memory; }
     ss::gate& conn_gate() { return _conn_gate; }
     hdr_hist& hist() { return _hist; }

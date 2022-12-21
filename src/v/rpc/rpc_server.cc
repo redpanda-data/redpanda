@@ -31,16 +31,16 @@ struct server_context_impl final : streaming_context {
       : server(server)
       , res(std::move(s))
       , hdr(h) {
-        res.probe().request_received();
+        server.probe().request_received();
     }
     ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(server.memory(), ask);
         if (server.memory().waiters()) {
-            res.probe().waiting_for_available_memory();
+            server.probe().waiting_for_available_memory();
         }
         return fut;
     }
-    ~server_context_impl() override { res.probe().request_completed(); }
+    ~server_context_impl() override { server.probe().request_completed(); }
     const header& get_header() const final { return hdr; }
     void signal_body_parse() final { pr.set_value(); }
     void body_parse_exception(std::exception_ptr e) final {
@@ -61,7 +61,7 @@ ss::future<> rpc_server::apply(net::server::resources rs) {
                 if (!h) {
                     rpclog.debug(
                       "could not parse header from client: {}", rs.conn->addr);
-                    rs.probe().header_corrupted();
+                    probe().header_corrupted();
                     // Have to shutdown the connection as data in receiving
                     // buffer may be corrupted
                     rs.conn->shutdown_input();
@@ -111,7 +111,7 @@ ss::future<>
 rpc_server::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(*this, rs, h);
-    rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);
+    probe().add_bytes_received(size_of_rpc_header + h.payload_size);
     if (conn_gate().is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
     }
@@ -156,7 +156,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
                     "Received a request for an unknown method {} from {}",
                     method_id,
                     ctx->res.conn->addr);
-                  rs.probe().method_not_found();
+                  probe().method_not_found();
                   netbuf reply_buf;
                   reply_buf.set_version(ctx->get_header().version);
                   reply_buf.set_status(rpc::status::method_not_found);
@@ -213,7 +213,7 @@ rpc_server::dispatch_method_once(header h, net::server::resources rs) {
                         rpclog.error(
                           "Service handler threw an exception: {}",
                           std::current_exception());
-                        rs.probe().service_error();
+                        probe().service_error();
                         reply_buf.set_status(rpc::status::server_error);
                     }
                     if (error) {

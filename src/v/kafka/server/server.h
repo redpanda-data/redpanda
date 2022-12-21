@@ -137,7 +137,7 @@ public:
         return _fetch_metadata_cache;
     }
 
-    latency_probe& probe() { return _probe; }
+    latency_probe& latency_probe() { return _probe; }
 
 private:
     ss::smp_service_group _smp_group;
@@ -164,7 +164,7 @@ private:
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;
 
-    latency_probe _probe;
+    class latency_probe _probe;
 };
 
 } // namespace kafka
