@@ -459,7 +459,7 @@ class AdminOperationsFuzzer():
                     return op.validate(self.operation_ctx)
                 except Exception as e:
                     self.redpanda.logger.debug(
-                        f"Error validating operation {op_type} - {e}")
+                        f"Error validating operation {op_type}", exc_info=True)
                     return False
 
             try:
@@ -474,7 +474,8 @@ class AdminOperationsFuzzer():
                         f"Skipped operation: {op_type}, current cluster state does not allow executing the operation"
                     )
             except Exception as e:
-                self.redpanda.logger.error(f"Operation: {op_type} error: {e}")
+                self.redpanda.logger.debug(f"Operation: {op_type}",
+                                           exc_info=True)
                 self.error = e
                 self._stopping.set()
 
@@ -498,8 +499,8 @@ class AdminOperationsFuzzer():
             except Exception as e:
                 error = e
                 self.redpanda.logger.info(
-                    f"Operation: {op_type} error: {error}, retries left: {self.retries-retry}/{self.retries}"
-                )
+                    f"Operation: {op_type}, retries left: {self.retries-retry}/{self.retries}",
+                    exc_info=True)
                 sleep(self.retries_interval)
         raise error
 
