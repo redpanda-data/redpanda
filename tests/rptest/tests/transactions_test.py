@@ -766,13 +766,14 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         consumer.close()
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 1, 5))
+        self.old_version, self.old_version_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         super(UpgradeWithMixedVeersionTransactionTest, self).setUp()
 
     def do_upgrade_with_tx(self, selector):
         topic_name = self.topics[0].name
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
@@ -791,10 +792,10 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         node_to_upgrade = selector()
 
         # Update node with tx manager
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Init dispatch by using old node. Transaction should work
         producer = ck.Producer({
@@ -811,10 +812,10 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
 
         self.check_consume(2)
 
-        self.installer.install(self.redpanda.nodes, (22, 1, 5))
+        self.installer.install(self.redpanda.nodes, self.old_version)
         self.redpanda.restart_nodes(node_to_upgrade)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         self.check_consume(2)
 

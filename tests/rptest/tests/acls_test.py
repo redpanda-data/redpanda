@@ -448,8 +448,8 @@ class AccessControlListTestUpgrade(AccessControlListTest):
     # from v22.1.x, and still have sasl enabled. See PR 5292.
     @cluster(num_nodes=3)
     def test_upgrade_sasl(self):
-
-        self.installer.install(self.redpanda.nodes, (22, 1, 3))
+        old_version, old_version_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         self.prepare_cluster(use_tls=True,
                              use_sasl=True,
                              enable_authz=None,
@@ -462,10 +462,10 @@ class AccessControlListTestUpgrade(AccessControlListTest):
             pass_w_super_user=True,
             err_msg='check_permissions failed before upgrade')
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" not in unique_versions
+        assert old_version_str not in unique_versions
 
         self.check_permissions(
             pass_w_base_user=False,

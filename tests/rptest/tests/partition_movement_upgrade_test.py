@@ -34,7 +34,8 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         self._stop_move = threading.Event()
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 1, 5))
+        self.old_version, self.old_version_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         super(PartitionMovementUpgradeTest, self).setUp()
 
     def _start_producer(self, topic_name):
@@ -127,27 +128,27 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         first_node = self.redpanda.nodes[0]
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Upgrade one node to the head version.
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Rollback the partial upgrade and ensure we go back to the original
         # state.
-        self.installer.install([first_node], (22, 1, 5))
+        self.installer.install([first_node], self.old_version)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Only once we upgrade the rest of the nodes do we converge on the new
         # version.
-        self.installer.install([first_node], RedpandaInstaller.HEAD)
+        self.installer.install([first_node], (22, 2))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" not in unique_versions, unique_versions
+        assert self.old_version_str not in unique_versions, unique_versions
 
         self.stop_moving_partitions()
         self.verify()

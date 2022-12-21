@@ -45,7 +45,8 @@ class Fix5355UpgradeTest(RedpandaTest):
     def setUp(self):
         # NOTE: `rpk redpanda admin brokers list` requires versions v22.1.x and
         # above.
-        self.installer.install(self.redpanda.nodes, (22, 1, 3))
+        self.oldversion, self.oldversion_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         super(Fix5355UpgradeTest, self).setUp()
 
     def fill_segment(self):
@@ -81,23 +82,23 @@ class Fix5355UpgradeTest(RedpandaTest):
         first_node = self.redpanda.nodes[0]
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.oldversion_str in unique_versions, unique_versions
 
         # Upgrade one node to the head version.
-        self.installer.install([first_node], RedpandaInstaller.HEAD)
+        self.installer.install([first_node], (22, 2))
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.oldversion_str in unique_versions, unique_versions
 
         self.fill_segment()
         self.check_snapshot_exist()
 
         # Rollback the partial upgrade and ensure we go back to the original
         # state.
-        self.installer.install([first_node], (22, 1, 3))
+        self.installer.install([first_node], self.oldversion)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.oldversion_str in unique_versions, unique_versions
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_upgrade(self):
@@ -105,13 +106,13 @@ class Fix5355UpgradeTest(RedpandaTest):
         the test checks than upgrade isn't broken
         """
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.oldversion_str in unique_versions, unique_versions
 
         self.fill_segment()
         self.check_snapshot_exist()
 
         # Upgrade one node to the head version.
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" not in unique_versions, unique_versions
+        assert self.oldversion_str not in unique_versions, unique_versions

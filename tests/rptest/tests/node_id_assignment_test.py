@@ -183,7 +183,7 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 2, 7))
+        self.installer.install(self.redpanda.nodes, (22, 2))
         super(NodeIdAssignmentUpgrade, self).setUp()
 
     @cluster(num_nodes=3)
@@ -192,7 +192,7 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         In restarting the cluster, even if we omit the node IDs from their
         configs after upgrading, they should still persist.
         """
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 3))
         check_node_ids_persist(self.redpanda)
 
     @cluster(num_nodes=3)
@@ -204,7 +204,7 @@ class NodeIdAssignmentUpgrade(RedpandaTest):
         original_node_ids = [
             self.redpanda.node_id(n) for n in self.redpanda.nodes
         ]
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 3))
         self.redpanda.restart_nodes(self.redpanda.nodes,
                                     auto_assign_node_id=True)
         wait_until(
