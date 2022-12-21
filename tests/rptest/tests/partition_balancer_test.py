@@ -545,7 +545,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.start_consumer(1)
         self.await_startup()
 
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda, min_replication=3)
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                           min_replication=3,
+                                           retries=0)
         admin_fuzz.start()
 
         def describe_topics(retries=5, retries_interval=5):
