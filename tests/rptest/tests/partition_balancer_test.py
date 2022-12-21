@@ -586,8 +586,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                     assert self.redpanda.idx(node) not in node2partition_count
                 finally:
                     admin_fuzz.unpause()
+                admin_fuzz.ensure_progress()
 
-            admin_fuzz.wait(count=10, timeout=240)
             admin_fuzz.stop()
 
             ns.make_available()
