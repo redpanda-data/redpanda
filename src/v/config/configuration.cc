@@ -1730,7 +1730,15 @@ configuration::configuration()
       "balancer, in milliseconds",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
-      {.min = 1ms, .max = bottomless_token_bucket::max_width}) {}
+      {.min = 1ms, .max = bottomless_token_bucket::max_width})
+  , node_isolation_heartbeat_timeout(
+      *this,
+      "node_isolation_heartbeat_timeout",
+      "How long after the last heartbeat request a node will wait before "
+      "considering itself to be isolated",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      3000,
+      {.min = 100, .max = 10000}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
