@@ -190,9 +190,7 @@ public:
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
-    uint16_t client_port() const {
-        return conn ? conn->addr.port() : 0;
-    }
+    uint16_t client_port() const { return conn ? conn->addr.port() : 0; }
 
 private:
     // Reserve units from memory from the memory semaphore in proportion

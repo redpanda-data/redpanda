@@ -27,7 +27,8 @@ namespace rpc {
 static constexpr size_t reply_min_compression_bytes = 1024;
 
 struct server_context_impl final : streaming_context {
-    server_context_impl(net::server& server, ss::lw_shared_ptr<net::connection> conn, header h)
+    server_context_impl(
+      net::server& server, ss::lw_shared_ptr<net::connection> conn, header h)
       : server(server)
       , conn(conn)
       , hdr(h) {
@@ -107,8 +108,8 @@ ss::future<> rpc_server::send_reply_skip_payload(
     co_await send_reply(std::move(ctx), std::move(buf));
 }
 
-ss::future<>
-rpc_server::dispatch_method_once(header h, ss::lw_shared_ptr<net::connection> conn) {
+ss::future<> rpc_server::dispatch_method_once(
+  header h, ss::lw_shared_ptr<net::connection> conn) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(*this, conn, h);
     probe().add_bytes_received(size_of_rpc_header + h.payload_size);

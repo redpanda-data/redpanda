@@ -59,7 +59,8 @@ public:
     }
 
 private:
-    ss::future<> dispatch_method_once(header, ss::lw_shared_ptr<net::connection>);
+    ss::future<>
+      dispatch_method_once(header, ss::lw_shared_ptr<net::connection>);
     ss::future<> send_reply(ss::lw_shared_ptr<server_context_impl>, netbuf);
     ss::future<>
       send_reply_skip_payload(ss::lw_shared_ptr<server_context_impl>, netbuf);

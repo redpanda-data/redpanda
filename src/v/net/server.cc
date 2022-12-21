@@ -135,8 +135,8 @@ static inline void print_exceptional_future(
     }
 }
 
-ss::future<>
-server::apply_proto(ss::lw_shared_ptr<net::connection> conn, conn_quota::units cq_units) {
+ss::future<> server::apply_proto(
+  ss::lw_shared_ptr<net::connection> conn, conn_quota::units cq_units) {
     return apply(conn)
       .then_wrapped(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
