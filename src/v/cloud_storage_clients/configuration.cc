@@ -61,6 +61,8 @@ namespace cloud_storage_clients {
 static constexpr ss::lowres_clock::duration default_max_idle_time
   = std::chrono::seconds(5);
 
+static constexpr uint16_t default_port = 443;
+
 ss::future<s3_configuration> s3_configuration::make_configuration(
   const std::optional<cloud_roles::public_key_str>& pkey,
   const std::optional<cloud_roles::private_key_str>& skey,
@@ -87,8 +89,6 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
           overrides.trust_file, s3_log);
     }
 
-    constexpr uint16_t default_port = 443;
-
     client_cfg.server_addr = net::unresolved_address(
       client_cfg.uri(),
       overrides.port ? *overrides.port : default_port,
@@ -96,7 +96,10 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.disable_metrics = disable_metrics;
     client_cfg.disable_public_metrics = disable_public_metrics;
     client_cfg._probe = ss::make_shared<client_probe>(
-      disable_metrics, disable_public_metrics, region(), endpoint_uri);
+      disable_metrics,
+      disable_public_metrics,
+      region,
+      endpoint_url{endpoint_uri});
     client_cfg.max_idle_time = overrides.max_idle_time
                                  ? *overrides.max_idle_time
                                  : default_max_idle_time;
@@ -107,6 +110,58 @@ std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
     o << "{access_key:"
       << c.access_key.value_or(cloud_roles::public_key_str{""})
       << ",region:" << c.region() << ",secret_key:****"
+      << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
+      << ",max_idle_time:"
+      << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
+           .count()
+      << "}";
+    return o;
+}
+
+ss::future<abs_configuration> abs_configuration::make_configuration(
+  const std::optional<cloud_roles::private_key_str>& shared_key,
+  const cloud_roles::storage_account& storage_account_name,
+  const default_overrides& overrides,
+  net::metrics_disabled disable_metrics,
+  net::public_metrics_disabled disable_public_metrics) {
+    abs_configuration client_cfg;
+
+    const auto endpoint_uri = [&]() -> ss::sstring {
+        if (overrides.endpoint) {
+            return overrides.endpoint.value();
+        }
+        return ssx::sformat("{}.blob.core.windows.net", storage_account_name());
+    }();
+
+    client_cfg.tls_sni_hostname = endpoint_uri;
+    client_cfg.storage_account_name = storage_account_name;
+    client_cfg.shared_key = shared_key;
+    client_cfg.uri = access_point_uri{endpoint_uri};
+    if (overrides.disable_tls == false) {
+        client_cfg.credentials = co_await build_tls_credentials(
+          overrides.trust_file, abs_log);
+    }
+
+    client_cfg.server_addr = net::unresolved_address(
+      client_cfg.uri(),
+      overrides.port ? *overrides.port : default_port,
+      ss::net::inet_address::family::INET);
+    client_cfg.disable_metrics = disable_metrics;
+    client_cfg.disable_public_metrics = disable_public_metrics;
+    client_cfg._probe = ss::make_shared<client_probe>(
+      disable_metrics,
+      disable_public_metrics,
+      storage_account_name,
+      endpoint_url{endpoint_uri});
+    client_cfg.max_idle_time = overrides.max_idle_time
+                                 ? *overrides.max_idle_time
+                                 : default_max_idle_time;
+    co_return client_cfg;
+}
+
+std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
+    o << "{storage_account_name: " << c.storage_account_name()
+      << "shared_key:****"
       << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
       << ",max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
