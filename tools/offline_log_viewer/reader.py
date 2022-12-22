@@ -143,5 +143,7 @@ class Reader:
     def read_serde_map(self, k_reader, v_reader):
         ret = {}
         for _ in range(self.read_uint32()):
-            ret[k_reader(self)] = v_reader(self)
+            key = k_reader(self)
+            val = v_reader(self)
+            ret[key] = val
         return ret
