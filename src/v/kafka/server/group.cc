@@ -119,6 +119,9 @@ group::group(
         add_member_no_join(member);
     }
 
+    // update when restoring from metadata value
+    update_subscriptions();
+
     if (_enable_group_metrics) {
         _probe.setup_public_metrics(_id);
     }
@@ -390,6 +393,7 @@ void group::advance_generation() {
         _protocol = select_protocol();
         set_state(group_state::completing_rebalance);
     }
+    update_subscriptions(); // call after protocol is set
     vlog(_ctxlog.trace, "Advanced generation with protocol {}", _protocol);
 }
 
@@ -3216,6 +3220,104 @@ std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
       md.metadata,
       md.committed_leader_epoch);
     return o;
+}
+
+bool group::subscribed(const model::topic& topic) const {
+    if (_subscriptions.has_value()) {
+        return _subscriptions.value().contains(topic);
+    }
+    // answer conservatively
+    return true;
+}
+
+/*
+ * Currently only supports Version 0 which is a prefix version for higher
+ * versions and contains all of the information that we need.
+ */
+absl::node_hash_set<model::topic>
+group::decode_consumer_subscriptions(iobuf data) {
+    constexpr auto max_topic_name_length = 32_KiB;
+
+    request_reader reader(std::move(data));
+
+    /* version intentionally ignored */
+    reader.read_int16();
+
+    const auto count = reader.read_int32();
+    if (count < 0) {
+        throw std::out_of_range(fmt::format(
+          "consumer metadata contains negative topic count {}", count));
+    }
+
+    // a simple heuristic to avoid large allocations
+    if (static_cast<size_t>(count) > reader.bytes_left()) {
+        throw std::out_of_range(fmt::format(
+          "consumer metadata topic count too large {} > {}",
+          count,
+          reader.bytes_left()));
+    }
+
+    absl::node_hash_set<model::topic> topics;
+    topics.reserve(count);
+
+    while (topics.size() != static_cast<size_t>(count)) {
+        const auto len = reader.read_int16();
+        if (len < 0) {
+            throw std::out_of_range(fmt::format(
+              "consumer metadata contains negative topic name length {}", len));
+        } else if (static_cast<size_t>(len) > max_topic_name_length) {
+            throw std::out_of_range(fmt::format(
+              "consumer metadata contains topic name that exceeds maximum size "
+              "{} > {}",
+              len,
+              max_topic_name_length));
+        }
+        auto name = reader.read_string_unchecked(len);
+        topics.insert(model::topic(std::move(name)));
+    }
+
+    // after the topic list is user data bytes, followed by extra bytes for
+    // versions > 0, neither of which are needed.
+
+    return topics;
+}
+
+void group::update_subscriptions() {
+    if (_protocol_type != "consumer") {
+        _subscriptions.reset();
+        return;
+    }
+
+    if (_members.empty()) {
+        _subscriptions.emplace();
+        return;
+    }
+
+    if (!_protocol.has_value()) {
+        _subscriptions.reset();
+        return;
+    }
+
+    absl::node_hash_set<model::topic> subs;
+    for (auto& member : _members) {
+        try {
+            auto data = bytes_to_iobuf(
+              member.second->get_protocol_metadata(_protocol.value()));
+            subs.merge(decode_consumer_subscriptions(std::move(data)));
+        } catch (const std::out_of_range& e) {
+            vlog(
+              klog.warn,
+              "Parsing consumer:{} data for group {} member {} failed: {}",
+              _protocol.value(),
+              _id,
+              member.first,
+              e);
+            _subscriptions.reset();
+            return;
+        }
+    }
+
+    _subscriptions = std::move(subs);
 }
 
 } // namespace kafka
