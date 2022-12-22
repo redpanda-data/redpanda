@@ -176,15 +176,20 @@ class ControllerConfigLimitTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1)
         for i in range(requests_amount):
-            out = self.client().alter_broker_config(
-                {
-                    "controller_log_accummulation_rps_capacity_topic_operations":
-                    i
-                },
-                incremental=True)
-            if "THROTTLING_QUOTA_EXCEEDED" in out:
-                quota_error_amount += 1
-            if "OK" in out:
+            try:
+                self.client().alter_broker_config(
+                    {
+                        "controller_log_accummulation_rps_capacity_topic_operations":
+                        i
+                    },
+                    incremental=True)
+            except RuntimeError as e:
+                if "THROTTLING_QUOTA_EXCEEDED" in str(e):
+                    quota_error_amount += 1
+                else:
+                    # unexpected error type
+                    raise
+            else:
                 success_amount += 1
             time.sleep(0.1)
         assert quota_error_amount > 0
