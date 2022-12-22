@@ -15,6 +15,21 @@ namespace cluster {
 
 namespace controller_snapshot_parts {
 
+template<typename Vec>
+ss::future<> write_vector_async(iobuf& out, Vec t) {
+    if (unlikely(t.size() > std::numeric_limits<serde::serde_size_t>::max())) {
+        throw serde::serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    serde::write(out, static_cast<serde::serde_size_t>(t.size()));
+    return ss::do_with(std::move(t), [&out](Vec& t) {
+        return ss::do_for_each(
+          t, [&out](auto& el) { serde::write(out, std::move(el)); });
+    });
+}
+
 template<typename Map>
 ss::future<> write_map_async(iobuf& out, Map t) {
     using serde::write;
@@ -35,6 +50,30 @@ template<typename T>
 concept Reservable = requires(T t) {
     t.reserve(0U);
 };
+
+template<typename Vec>
+ss::future<Vec>
+read_vector_async_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
+    using value_type = typename Vec::value_type;
+    const auto size = serde::read_nested<serde::serde_size_t>(
+      in, bytes_left_limit);
+    return ss::do_with(Vec{}, [size, &in, bytes_left_limit](Vec& t) {
+        if constexpr (Reservable<Vec>) {
+            t.reserve(size);
+        }
+        return ss::do_until(
+                 [size, &t] { return t.size() == size; },
+                 [&t, &in, bytes_left_limit] {
+                     t.push_back(
+                       serde::read_nested<value_type>(in, bytes_left_limit));
+                     return ss::now();
+                 })
+          .then([&t] {
+              t.shrink_to_fit();
+              return std::move(t);
+          });
+    });
+}
 
 template<typename Map>
 ss::future<Map>
@@ -101,6 +140,24 @@ topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
     }
 }
 
+ss::future<> security_t::serde_async_write(iobuf& out) {
+    co_await write_vector_async(out, std::move(user_credentials));
+    co_await write_vector_async(out, std::move(acls));
+}
+
+ss::future<>
+security_t::serde_async_read(iobuf_parser& in, serde::header const h) {
+    user_credentials
+      = co_await read_vector_async_nested<decltype(user_credentials)>(
+        in, h._bytes_left_limit);
+    acls = co_await read_vector_async_nested<decltype(acls)>(
+      in, h._bytes_left_limit);
+
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
 } // namespace controller_snapshot_parts
 
 ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
@@ -109,6 +166,7 @@ ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(members));
     co_await serde::write_async(out, std::move(config));
     co_await serde::write_async(out, std::move(topics));
+    co_await serde::write_async(out, std::move(security));
     co_await serde::write_async(out, std::move(metrics_reporter));
 }
 
@@ -123,6 +181,8 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
     config = co_await serde::read_async_nested<decltype(config)>(
       in, h._bytes_left_limit);
     topics = co_await serde::read_async_nested<decltype(topics)>(
+      in, h._bytes_left_limit);
+    security = co_await serde::read_async_nested<decltype(security)>(
       in, h._bytes_left_limit);
     metrics_reporter
       = co_await serde::read_async_nested<decltype(metrics_reporter)>(

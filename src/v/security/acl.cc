@@ -14,6 +14,8 @@
 #include "security/logger.h"
 #include "utils/to_string.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
+
 #include <absl/container/flat_hash_map.h>
 #include <fmt/format.h>
 
@@ -214,6 +216,31 @@ acl_store::acls(const acl_binding_filter& filter) const {
         }
     }
     return result;
+}
+
+ss::future<fragmented_vector<acl_binding>> acl_store::all_bindings() const {
+    fragmented_vector<acl_binding> result;
+    for (const auto& acl : _acls) {
+        for (const auto& entry : acl.second) {
+            result.push_back(acl_binding{acl.first, entry});
+            co_await ss::coroutine::maybe_yield();
+        }
+    }
+    co_return result;
+}
+
+ss::future<>
+acl_store::reset_bindings(const fragmented_vector<acl_binding>& bindings) {
+    // NOTE: not coroutinized because otherwise clang-14 crashes.
+    _acls.clear();
+    return ss::do_for_each(
+             bindings,
+             [this](const auto& binding) {
+                 _acls[binding.pattern()].insert(binding.entry());
+             })
+      .then([this] {
+          return ss::do_for_each(_acls, [](auto& kv) { kv.second.rehash(); });
+      });
 }
 
 std::ostream& operator<<(std::ostream& os, acl_operation op) {

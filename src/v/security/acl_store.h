@@ -132,6 +132,11 @@ public:
     std::vector<acl_binding> acls(const acl_binding_filter&) const;
     acl_matches find(resource_type, const ss::sstring&) const;
 
+    // NOTE: the following functions assume that acl_store doesn't change across
+    // yield points.
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
+
 private:
     /*
      * resource pattern ordering:
