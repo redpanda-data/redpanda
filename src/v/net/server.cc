@@ -104,7 +104,6 @@ void server::start() {
 
 static inline void print_exceptional_future(
   ss::logger& log,
-  std::string_view name,
   ss::future<> f,
   const char* ctx,
   ss::socket_address address) {
@@ -117,18 +116,11 @@ static inline void print_exceptional_future(
     auto disconnected = is_disconnect_exception(ex);
 
     if (!disconnected) {
-        vlog(
-          log.error,
-          "{} - Error[{}] remote address: {} - {}",
-          name,
-          ctx,
-          address,
-          ex);
+        vlog(log.error, "Error[{}] remote address: {} - {}", ctx, address, ex);
     } else {
         vlog(
           log.info,
-          "{} - Disconnected {} ({}, {})",
-          name,
+          "Disconnected {} ({}, {})",
           address,
           ctx,
           disconnected.value());
@@ -141,11 +133,11 @@ ss::future<> server::apply_proto(
       .then_wrapped(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
-              _log, name(), std::move(f), "applying protocol", conn->addr);
+              _log, std::move(f), "applying protocol", conn->addr);
             return conn->shutdown().then_wrapped(
               [this, addr = conn->addr](ss::future<> f) {
                   print_exceptional_future(
-                    _log, name(), std::move(f), "shutting down", addr);
+                    _log, std::move(f), "shutting down", addr);
               });
         })
       .finally([conn] {});
