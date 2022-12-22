@@ -77,6 +77,9 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
         // an out_of_range
         return "parse error";
     } catch (const invalid_request_error& e) {
+        if (std::strlen(e.what())) {
+            return fmt::format("invalid request: {}", e.what());
+        }
         return "invalid request";
     } catch (...) {
         // Global catch-all prevents stranded/non-handled exceptional futures.

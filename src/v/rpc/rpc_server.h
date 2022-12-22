@@ -23,10 +23,10 @@ struct server_context_impl;
 class rpc_server : public net::server {
 public:
     explicit rpc_server(net::server_configuration s)
-      : net::server(std::move(s)) {}
+      : net::server(std::move(s), rpclog) {}
 
     explicit rpc_server(ss::sharded<net::server_configuration>* s)
-      : net::server(s) {}
+      : net::server(s, rpclog) {}
 
     rpc_server(rpc_server&&) noexcept = default;
     ~rpc_server() = default;

@@ -97,7 +97,11 @@ public:
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        _server = std::make_unique<T>(std::move(scfg));
+        if constexpr (std::is_same_v<T, rpc::rpc_server>) {
+            _server = std::make_unique<T>(std::move(scfg));
+        } else {
+            _server = std::make_unique<T>(std::move(scfg), rpc::rpclog);
+        }
     }
 
     template<typename Service, typename... Args>
