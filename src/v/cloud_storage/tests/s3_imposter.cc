@@ -33,12 +33,14 @@ using namespace std::chrono_literals;
 
 inline ss::logger fixt_log("fixture"); // NOLINT
 
-static constexpr uint16_t httpd_port_number = 4430;
 static constexpr const char* httpd_host_name = "127.0.0.1";
+
+/// For http_imposter to run this binary with a unique port
+uint16_t unit_test_httpd_port_number() { return 4442; }
 
 cloud_storage_clients::s3_configuration
 s3_imposter_fixture::get_configuration() {
-    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
+    net::unresolved_address server_addr(httpd_host_name, httpd_port_number());
     cloud_storage_clients::s3_configuration conf;
     conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
     conf.access_key = cloud_roles::public_key_str("acess-key");
@@ -56,11 +58,15 @@ s3_imposter_fixture::get_configuration() {
 s3_imposter_fixture::s3_imposter_fixture() {
     _server = ss::make_shared<ss::httpd::http_server_control>();
     _server->start().get();
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number};
+    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number()};
     _server_addr = ss::socket_address(ip_addr);
 }
 
 s3_imposter_fixture::~s3_imposter_fixture() { _server->stop().get(); }
+
+uint16_t s3_imposter_fixture::httpd_port_number() {
+    return unit_test_httpd_port_number();
+}
 
 const std::vector<ss::httpd::request>&
 s3_imposter_fixture::get_requests() const {

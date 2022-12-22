@@ -19,8 +19,16 @@
 
 static ss::logger http_imposter_log("http_imposter"); // NOLINT
 
+/**
+ * Listening on TCP ports from a unit test is not a great practice, but we
+ * do it in some places.  To enable these unit tests to run in parallel,
+ * each unit test binary must declare its own function to pick a port that
+ * no other unit test uses.
+ */
+extern uint16_t unit_test_httpd_port_number();
+
 http_imposter_fixture::http_imposter_fixture()
-  : _server_addr{ss::ipv4_addr{httpd_host_name.data(), httpd_port_number}} {
+  : _server_addr{ss::ipv4_addr{httpd_host_name.data(), unit_test_httpd_port_number()}} {
     _id = fmt::format("{}", uuid_t::create());
     _server.start().get();
 }
@@ -32,6 +40,11 @@ http_imposter_fixture::http_imposter_fixture(net::unresolved_address address)
 }
 
 http_imposter_fixture::~http_imposter_fixture() { _server.stop().get(); }
+
+uint16_t http_imposter_fixture::httpd_port_number() {
+    return unit_test_httpd_port_number();
+
+}
 
 void http_imposter_fixture::start_request_masking(
   http_test_utils::response canned_response,

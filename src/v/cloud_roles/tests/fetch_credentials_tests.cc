@@ -20,6 +20,9 @@
 
 inline ss::logger test_log("test"); // NOLINT
 
+/// For http_imposter to run this binary with a unique port
+uint16_t unit_test_httpd_port_number() { return 4444; }
+
 /// Helps test the credential fetch operation by triggering abort after a single
 /// credential is fetched.
 struct one_shot_fetch {
@@ -80,7 +83,7 @@ FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -109,7 +112,7 @@ FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -145,7 +148,7 @@ FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -200,7 +203,7 @@ FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -245,7 +248,7 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -308,7 +311,7 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();
@@ -343,7 +346,7 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
     gate.close().get();

@@ -18,10 +18,12 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/http/httpd.hh>
 
+
 class http_imposter_fixture {
 public:
     static constexpr std::string_view httpd_host_name = "127.0.0.1";
-    static constexpr uint httpd_port_number = 4430;
+
+    uint16_t httpd_port_number();
 
 public:
     using request_predicate

@@ -17,6 +17,9 @@
 
 namespace bh = boost::beast::http;
 
+/// For http_imposter to run this binary with a unique port
+uint16_t unit_test_httpd_port_number() { return 4443; }
+
 FIXTURE_TEST(test_get, http_imposter_fixture) {
     when()
       .request("/foo")
@@ -32,7 +35,7 @@ FIXTURE_TEST(test_get, http_imposter_fixture) {
       bh::field::host, {httpd_host_name.data(), httpd_host_name.size()});
 
     auto client = http::client{
-      {.server_addr = {httpd_host_name.data(), httpd_port_number}}};
+      {.server_addr = {httpd_host_name.data(), httpd_port_number()}}};
 
     auto response = client.request(std::move(header)).get0();
     iobuf response_data;
@@ -58,7 +61,7 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
     listen();
 
     auto client = http::client{
-      {.server_addr = {httpd_host_name.data(), httpd_port_number}}};
+      {.server_addr = {httpd_host_name.data(), httpd_port_number()}}};
 
     http::client::request_header header;
     header.method(boost::beast::http::verb::post);
@@ -91,7 +94,7 @@ FIXTURE_TEST(test_forbidden, http_imposter_fixture) {
     listen();
 
     auto client = http::client{
-      {.server_addr = {httpd_host_name.data(), httpd_port_number}}};
+      {.server_addr = {httpd_host_name.data(), httpd_port_number()}}};
 
     {
         http::client::request_header header;

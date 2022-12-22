@@ -123,23 +123,17 @@ public:
     void verify_manifest_content(const ss::sstring& manifest_content);
 };
 
-class enable_cloud_storage_fixture {
-public:
-    enable_cloud_storage_fixture();
-    ~enable_cloud_storage_fixture();
-};
-
 /// Archiver fixture that contains S3 mock and full redpanda stack.
 class archiver_fixture
   : public http_imposter_fixture
-  , public enable_cloud_storage_fixture
   , public redpanda_thread_fixture
   , public segment_matcher<archiver_fixture> {
 public:
-    archiver_fixture()
-      : redpanda_thread_fixture(
-        redpanda_thread_fixture::init_cloud_storage_tag{}) {}
+    archiver_fixture();
+    ~archiver_fixture();
 
+    std::tuple<ss::lw_shared_ptr<archival::configuration>, cloud_storage::configuration>
+    get_configurations();
     std::unique_ptr<storage::disk_log_builder> get_started_log_builder(
       model::ntp ntp, model::revision_id rev = model::revision_id(0));
     /// Wait unill all information will be replicated and the local node

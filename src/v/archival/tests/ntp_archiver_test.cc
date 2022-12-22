@@ -915,7 +915,7 @@ static void test_partial_upload_impl(
       last_uploaded_offset,
       lso);
 
-    auto [aconf, cconf] = get_configurations();
+    auto [aconf, cconf] = test.get_configurations();
     cloud_storage::remote remote(
       cconf.connection_limit,
       cconf.client_config,
