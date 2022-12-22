@@ -68,8 +68,8 @@ struct archival_metadata_stm_base_fixture
         conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
           net::metrics_disabled::yes,
           net::public_metrics_disabled::yes,
-          "us-east-1",
-          ss::sstring(httpd_host_name));
+          cloud_roles::aws_region_name{"us-east-1"},
+          cloud_storage_clients::endpoint_url{httpd_host_name});
         return conf;
     }
 

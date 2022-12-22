@@ -17,19 +17,48 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+namespace {
+constexpr auto endpoint_label_key = "endpoint";
+constexpr auto region_label_key = "region";
+constexpr auto storage_account_label_key = "storage_account";
+} // namespace
+
 namespace cloud_storage_clients {
 
 client_probe::client_probe(
   net::metrics_disabled disable,
   net::public_metrics_disabled public_disable,
-  ss::sstring region,
-  ss::sstring endpoint)
+  cloud_roles::aws_region_name region,
+  endpoint_url endpoint)
   : http::client_probe()
   , _total_rpc_errors(0)
   , _total_slowdowns(0)
   , _total_nosuchkeys(0) {
-    setup_internal_metrics(disable, region, endpoint);
-    setup_public_metrics(public_disable, region, endpoint);
+    namespace sm = ss::metrics;
+
+    std::vector<raw_label> s3_labels = {
+      {endpoint_label_key, std::move(endpoint)()},
+      {region_label_key, std::move(region)()}};
+
+    setup_internal_metrics(disable, s3_labels);
+    setup_public_metrics(public_disable, s3_labels);
+}
+
+client_probe::client_probe(
+  net::metrics_disabled disable,
+  net::public_metrics_disabled public_disable,
+  cloud_roles::storage_account storage_account_name,
+  endpoint_url endpoint)
+  : http::client_probe()
+  , _total_rpc_errors(0)
+  , _total_slowdowns(0)
+  , _total_nosuchkeys(0) {
+    std::vector<raw_label> abs_labels = {
+      {endpoint_label_key, std::move(endpoint)()},
+      {storage_account_label_key, std::move(storage_account_name)()}};
+
+    setup_internal_metrics(disable, abs_labels);
+    setup_public_metrics(public_disable, abs_labels);
 }
 
 void client_probe::register_failure(s3_error_code err) {
@@ -42,22 +71,22 @@ void client_probe::register_failure(s3_error_code err) {
 }
 
 void client_probe::setup_internal_metrics(
-  net::metrics_disabled disable,
-  const ss::sstring& region,
-  const ss::sstring& endpoint) {
+  net::metrics_disabled disable, std::span<raw_label> raw_labels) {
     namespace sm = ss::metrics;
     if (disable) {
         return;
     }
 
-    auto endpoint_label = sm::label("endpoint");
-    auto region_label = sm::label("region");
-
-    const std::vector<sm::label_instance> labels = {
-      endpoint_label(endpoint), region_label(region)};
+    std::vector<sm::label_instance> labels;
+    labels.reserve(raw_labels.size());
+    std::transform(
+      raw_labels.begin(),
+      raw_labels.end(),
+      std::back_inserter(labels),
+      [](const raw_label& rl) { return sm::label(rl.key)(rl.value); });
 
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("s3:client"),
+      prometheus_sanitize::metrics_name("cloud_client"),
       {
         sm::make_counter(
           "total_uploads",
@@ -129,17 +158,22 @@ void client_probe::setup_internal_metrics(
 }
 
 void client_probe::setup_public_metrics(
-  net::public_metrics_disabled disable,
-  const ss::sstring& region,
-  const ss::sstring& endpoint) {
+  net::public_metrics_disabled disable, std::span<raw_label> raw_labels) {
     namespace sm = ss::metrics;
     if (disable) {
         return;
     }
 
-    const std::vector<sm::label_instance> labels = {
-      ssx::metrics::make_namespaced_label("endpoint")(endpoint),
-      ssx::metrics::make_namespaced_label("region")(region)};
+    std::vector<sm::label_instance> labels;
+    labels.reserve(raw_labels.size());
+    std::transform(
+      raw_labels.begin(),
+      raw_labels.end(),
+      std::back_inserter(labels),
+      [](const raw_label& rl) {
+          return sm::label(ssx::metrics::make_namespaced_label(rl.key))(
+            rl.value);
+      });
 
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_client"),
