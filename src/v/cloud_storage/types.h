@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage_clients/configuration.h"
+#include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -44,8 +45,7 @@ using remote_manifest_path
 using local_segment_path
   = named_type<std::filesystem::path, struct archival_local_segment_path_t>;
 /// Number of simultaneous connections to S3
-using connection_limit
-  = named_type<size_t, struct archival_connection_limit_t>;
+using connection_limit = named_type<size_t, struct archival_connection_limit_t>;
 
 /// Version of the segment name format
 enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
@@ -83,13 +83,13 @@ std::ostream& operator<<(std::ostream& o, const download_result& r);
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
 
 struct configuration {
-    /// S3 configuration
+    /// Client configuration
     cloud_storage_clients::client_configuration client_config;
-    /// Number of simultaneous S3 uploads
+    /// Number of simultaneous client uploads
     connection_limit connection_limit;
     /// Disable metrics in the remote
     remote_metrics_disabled metrics_disabled;
-    /// The bucket to use
+    /// The S3 bucket or ABS container to use
     cloud_storage_clients::bucket_name bucket_name;
 
     model::cloud_credentials_source cloud_credentials_source;
@@ -97,6 +97,10 @@ struct configuration {
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 
     static ss::future<configuration> get_config();
+    static ss::future<configuration> get_s3_config();
+    static ss::future<configuration> get_abs_config();
+    static const config::property<std::optional<ss::sstring>>&
+    get_bucket_config();
 };
 
 struct offset_range {

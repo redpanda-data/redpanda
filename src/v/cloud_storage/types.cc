@@ -11,8 +11,31 @@
 #include "cloud_storage/types.h"
 
 #include "cloud_storage/logger.h"
-#include "config/configuration.h"
 #include "vlog.h"
+
+namespace {
+cloud_storage_clients::default_overrides get_default_overrides() {
+    // Set default overrides
+    cloud_storage_clients::default_overrides overrides;
+    overrides.max_idle_time
+      = config::shard_local_cfg()
+          .cloud_storage_max_connection_idle_time_ms.value();
+    if (auto optep
+        = config::shard_local_cfg().cloud_storage_api_endpoint.value();
+        optep.has_value()) {
+        overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
+    }
+    overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
+    if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
+        cert.has_value()) {
+        overrides.trust_file = cloud_storage_clients::ca_trust_file(
+          std::filesystem::path(*cert));
+    }
+    overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
+
+    return overrides;
+}
+} // namespace
 
 namespace cloud_storage {
 
@@ -92,7 +115,15 @@ static ss::sstring get_value_or_throw(
 }
 
 ss::future<configuration> configuration::get_config() {
-    vlog(cst_log.debug, "Generating archival configuration");
+    if (config::shard_local_cfg().cloud_storage_azure_storage_account()) {
+        co_return co_await get_abs_config();
+    } else {
+        co_return co_await get_s3_config();
+    }
+}
+
+ss::future<configuration> configuration::get_s3_config() {
+    vlog(cst_log.debug, "Generating S3 cloud storage configuration");
 
     auto cloud_credentials_source
       = config::shard_local_cfg().cloud_storage_credentials_source.value();
@@ -123,30 +154,12 @@ ss::future<configuration> configuration::get_config() {
     auto disable_public_metrics = net::public_metrics_disabled(
       config::shard_local_cfg().disable_public_metrics());
 
-    // Set default overrides
-    cloud_storage_clients::default_overrides overrides;
-    overrides.max_idle_time
-      = config::shard_local_cfg()
-          .cloud_storage_max_connection_idle_time_ms.value();
-    if (auto optep
-        = config::shard_local_cfg().cloud_storage_api_endpoint.value();
-        optep.has_value()) {
-        overrides.endpoint = cloud_storage_clients::endpoint_url(*optep);
-    }
-    overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
-    if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
-        cert.has_value()) {
-        overrides.trust_file = cloud_storage_clients::ca_trust_file(
-          std::filesystem::path(*cert));
-    }
-    overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
-
     auto s3_conf
       = co_await cloud_storage_clients::s3_configuration::make_configuration(
         access_key,
         secret_key,
         region,
-        overrides,
+        get_default_overrides(),
         disable_metrics,
         disable_public_metrics);
 
@@ -161,8 +174,76 @@ ss::future<configuration> configuration::get_config() {
         "cloud_storage_bucket")),
       .cloud_credentials_source = cloud_credentials_source,
     };
-    vlog(cst_log.debug, "Cloud storage configuration generated: {}", cfg);
+
+    vlog(cst_log.debug, "S3 cloud storage configuration generated: {}", cfg);
     co_return cfg;
+}
+
+ss::future<configuration> configuration::get_abs_config() {
+    vlog(cst_log.debug, "Generating ABS cloud storage configuration");
+
+    const auto storage_account = cloud_roles::storage_account{
+      get_value_or_throw(
+        config::shard_local_cfg().cloud_storage_azure_storage_account,
+        "cloud_storage_azure_storage_account")};
+    const auto container = get_value_or_throw(
+      config::shard_local_cfg().cloud_storage_azure_container,
+      "cloud_storage_azure_container");
+    const auto shared_key = cloud_roles::private_key_str{get_value_or_throw(
+      config::shard_local_cfg().cloud_storage_azure_shared_key,
+      "cloud_storage_azure_shared_key")};
+
+    const auto cloud_credentials_source
+      = config::shard_local_cfg().cloud_storage_credentials_source.value();
+    if (
+      cloud_credentials_source
+      != model::cloud_credentials_source::config_file) {
+        vlog(
+          cst_log.error,
+          "Configuration property cloud_storage_credentials_source must be set "
+          "to 'config_file' as only Shared Key Authorization is supported for "
+          "now.");
+        throw std::runtime_error(
+          "configuration property cloud_storage_credentials_source is not "
+          "equal to 'config_file'");
+    }
+
+    auto disable_metrics = net::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
+    auto disable_public_metrics = net::public_metrics_disabled(
+      config::shard_local_cfg().disable_public_metrics());
+
+    auto abs_conf
+      = co_await cloud_storage_clients::abs_configuration::make_configuration(
+        shared_key,
+        storage_account,
+        get_default_overrides(),
+        disable_metrics,
+        disable_public_metrics);
+
+    configuration cfg{
+      .client_config = std::move(abs_conf),
+      .connection_limit = cloud_storage::connection_limit(
+        config::shard_local_cfg().cloud_storage_max_connections.value()),
+      .metrics_disabled = remote_metrics_disabled(
+        static_cast<bool>(disable_metrics)),
+      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
+        config::shard_local_cfg().cloud_storage_azure_container,
+        "cloud_storage_azure_container")),
+      .cloud_credentials_source = cloud_credentials_source,
+    };
+
+    vlog(cst_log.debug, "ABS cloud storage configuration generated: {}", cfg);
+    co_return cfg;
+}
+
+const config::property<std::optional<ss::sstring>>&
+configuration::get_bucket_config() {
+    if (config::shard_local_cfg().cloud_storage_azure_storage_account()) {
+        return config::shard_local_cfg().cloud_storage_azure_container;
+    } else {
+        return config::shard_local_cfg().cloud_storage_bucket;
+    }
 }
 
 } // namespace cloud_storage

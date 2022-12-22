@@ -94,7 +94,8 @@ concept storage_client_configuration
 template<storage_client_configuration... Ts>
 using client_configuration_variant = std::variant<Ts...>;
 
-using client_configuration = client_configuration_variant<s3_configuration>;
+using client_configuration
+  = client_configuration_variant<abs_configuration, s3_configuration>;
 
 template<typename>
 inline constexpr bool always_false_v = false;
