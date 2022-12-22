@@ -29,6 +29,7 @@
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
+#include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "utils/gate_guard.h"
 #include "vlog.h"
@@ -46,6 +47,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -391,6 +393,30 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     auto ntp_dir = lg.config().work_directory();
     ss::sstring topic_dir = lg.config().topic_directory().string();
     co_await lg.remove();
+    directory_walker walker;
+    co_await walker.walk(
+      ntp_dir, [&ntp_dir](const ss::directory_entry& de) -> ss::future<> {
+          // Concurrent truncations and compactions may conflict with each
+          // other, resulting in a mutual inability to use their staging files.
+          // If this has happened, clean up all staging files so we can fully
+          // remove the NTP directory.
+          //
+          // TODO: we should more consistently clean up the staging operations
+          // to clean up after themselves on failure.
+          if (boost::algorithm::ends_with(de.name, ".staging")) {
+              // It isn't necessarily problematic to get here since we can
+              // proceed with removal, but it points to a missing cleanup which
+              // can be problematic for users, as it needlessly consumes space.
+              // Log verbosely to make it easier to catch.
+              auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
+              vlog(
+                stlog.error,
+                "Leftover staging file found, removing: {}",
+                file_path);
+              return ss::remove_file(file_path);
+          }
+          return ss::make_ready_future<>();
+      });
     co_await remove_file(ntp_dir);
     // We always dispatch topic directory deletion to core 0 as requests may
     // come from different cores
