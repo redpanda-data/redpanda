@@ -464,7 +464,9 @@ ss::future<> cache::put(
         try {
             // recursive_delete_empty_directory may delete dir_path before
             // we open file, in this case we recreate dir_path and try again
-            co_await ss::recursive_touch_directory(dir_path.string());
+            if (!co_await ss::file_exists(dir_path.string())) {
+                co_await ss::recursive_touch_directory(dir_path.string());
+            }
 
             auto flags = ss::open_flags::wo | ss::open_flags::create
                          | ss::open_flags::exclusive;
