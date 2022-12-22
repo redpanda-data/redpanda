@@ -87,7 +87,7 @@ void tx_range_manifest::update(const rapidjson::Document& doc) {
     _ranges.shrink_to_fit();
 }
 
-ss::future<serialized_json_stream> tx_range_manifest::serialize() const {
+serialized_json_stream tx_range_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -99,7 +99,7 @@ ss::future<serialized_json_stream> tx_range_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return serialized_json_stream{
+    return {
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

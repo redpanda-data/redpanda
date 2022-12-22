@@ -309,7 +309,7 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-ss::future<serialized_json_stream> topic_manifest::serialize() const {
+serialized_json_stream topic_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -321,7 +321,7 @@ ss::future<serialized_json_stream> topic_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return serialized_json_stream{
+    return {
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
