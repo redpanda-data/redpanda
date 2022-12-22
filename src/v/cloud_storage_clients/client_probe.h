@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_roles/types.h"
+#include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/types.h"
 #include "http/probe.h"
@@ -67,6 +68,9 @@ public:
 
     /// Register S3 rpc error
     void register_failure(s3_error_code err);
+    /// Register ABS rpc error
+    void register_failure(abs_error_code err);
+    void register_retryable_failure();
 
 private:
     struct raw_label {
