@@ -111,6 +111,14 @@ tm_stm::tm_stm(
 
 ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
 
+std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
+    auto tx_opt = _cache.local().find_mem(tx_id);
+    if (tx_opt) {
+        return tx_opt;
+    }
+    return _cache.local().find_log(tx_id);
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_tx(kafka::transactional_id tx_id) {
     auto r = co_await sync(_sync_timeout);
@@ -604,12 +612,22 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
   model::term_id expected_term,
   kafka::transactional_id tx_id,
   std::vector<tm_transaction::tx_partition> partitions) {
-    auto tx_opt = _cache.local().find_mem(tx_id);
+    auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
+        vlog(txlog.warn, "An ongoing transaction tx:{} isn't found", tx_id);
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
     if (tx.status != tm_transaction::tx_status::ongoing) {
+        vlog(
+          txlog.warn,
+          "Expected an ongoing txn, found tx:{} tx:{} pid:{} tx_seq:{} etag:{} "
+          "status:{}",
+          tx.id,
+          tx.pid,
+          tx.tx_seq,
+          tx.etag,
+          tx.status);
         co_return tm_stm::op_status::unknown;
     }
     if (tx.etag != expected_term) {
@@ -657,12 +675,22 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
   kafka::transactional_id tx_id,
   kafka::group_id group_id,
   model::term_id etag) {
-    auto tx_opt = _cache.local().find_mem(tx_id);
+    auto tx_opt = find_tx(tx_id);
     if (!tx_opt) {
+        vlog(txlog.warn, "An ongoing transaction tx:{} isn't found", tx_id);
         co_return tm_stm::op_status::unknown;
     }
     auto tx = tx_opt.value();
     if (tx.status != tm_transaction::tx_status::ongoing) {
+        vlog(
+          txlog.warn,
+          "Expected an ongoing txn, found tx:{} tx:{} pid:{} tx_seq:{} etag:{} "
+          "status:{}",
+          tx.id,
+          tx.pid,
+          tx.tx_seq,
+          tx.etag,
+          tx.status);
         co_return tm_stm::op_status::unknown;
     }
     if (tx.etag != expected_term) {
