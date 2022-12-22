@@ -471,6 +471,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
     auto write_lock_holder = co_await s->write_lock();
+    auto compacted_file = data_segment_staging_name(s);
     if (segment_generation != s->get_generation_id()) {
         vlog(
           stlog.debug,
@@ -478,6 +479,10 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
+        const auto staging_file = compacted_file.c_str();
+        if (co_await ss::file_exists(staging_file)) {
+            co_await ss::remove_file(staging_file);
+        }
         co_return std::nullopt;
     }
 
@@ -487,7 +492,6 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
     co_await s->index().drop_all_data();
 
-    auto compacted_file = data_segment_staging_name(s);
     co_await do_swap_data_file_handles(compacted_file, s, cfg, pb);
 
     s->index().swap_index_state(std::move(idx));
