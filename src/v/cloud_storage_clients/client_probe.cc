@@ -70,6 +70,13 @@ void client_probe::register_failure(s3_error_code err) {
     _total_rpc_errors += 1;
 }
 
+void client_probe::register_failure(abs_error_code err) {
+    if (err == abs_error_code::blob_not_found) {
+        _total_nosuchkeys += 1;
+    }
+    _total_rpc_errors += 1;
+}
+
 void client_probe::setup_internal_metrics(
   net::metrics_disabled disable, std::span<raw_label> raw_labels) {
     namespace sm = ss::metrics;
