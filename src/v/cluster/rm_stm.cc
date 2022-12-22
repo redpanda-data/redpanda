@@ -502,7 +502,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     // tx is committed. since a client commits a transacitons
     // strictly after all records are written it means that it
     // won't be retrying old writes and we may reset the seq cache
-    _log_state.seq_table.erase(pid);
+    _log_state.erase_pid_from_seq_table(pid);
 
     co_return synced_term;
 }
@@ -1103,7 +1103,15 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
-    return raft::state_machine::stop();
+    return raft::state_machine::stop().then([this] {
+        for (const auto& entry : _log_state.seq_table) {
+            _log_state.unlink_lru_pid(entry.second);
+        }
+        vassert(
+          _log_state.lru_idempotent_pids.size() == 0,
+          "Unexpected entries in the lru pid list {}",
+          _log_state.lru_idempotent_pids.size());
+    });
 }
 
 ss::future<> rm_stm::start() {
@@ -1255,7 +1263,7 @@ void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
 }
 
 void rm_stm::reset_seq(model::batch_identity bid) {
-    _log_state.seq_table.erase(bid.pid);
+    _log_state.erase_pid_from_seq_table(bid.pid);
     auto& seq = _log_state.seq_table[bid.pid].entry;
     seq.seq = bid.last_seq;
     seq.last_offset = kafka::offset{-1};
@@ -1704,10 +1712,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         }
 
         if (!bid.is_transactional) {
-            if (seq_it->second._hook.is_linked()) {
-                _log_state.lru_idempotent_pids.erase(
-                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
-            }
+            _log_state.unlink_lru_pid(seq_it->second);
             _log_state.lru_idempotent_pids.push_back(seq_it->second);
         }
 
@@ -1899,7 +1904,8 @@ void rm_stm::compact_snapshot() {
           size > _seq_table_min_size
           && it->second.entry.last_write_timestamp <= cutoff_timestamp) {
             size--;
-            _log_state.seq_table.erase(it++);
+            _log_state.erase_pid_from_seq_table(it->first);
+            it++;
         } else {
             next_oldest_session = std::min(
               next_oldest_session,
@@ -2327,10 +2333,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
         }
 
         if (!bid.is_transactional) {
-            if (seq_it->second._hook.is_linked()) {
-                _log_state.lru_idempotent_pids.erase(
-                  _log_state.lru_idempotent_pids.iterator_to(seq_it->second));
-            }
+            _log_state.unlink_lru_pid(seq_it->second);
             _log_state.lru_idempotent_pids.push_back(seq_it->second);
             spawn_background_clean_for_pids(
               rm_stm::clear_type::idempotent_pids);
