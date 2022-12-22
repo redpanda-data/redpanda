@@ -584,9 +584,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         with self.NodeStopper(self) as ns:
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
-                ns.make_unavailable(node, wait_for_previous_node=True)
                 try:
                     admin_fuzz.pause()
+                    ns.make_unavailable(node, wait_for_previous_node=True)
                     self.wait_until_ready(expected_unavailable_node=node)
                     node2partition_count = get_node2partition_count()
                     assert self.redpanda.idx(node) not in node2partition_count
