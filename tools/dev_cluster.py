@@ -16,12 +16,12 @@
 #   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
 import asyncio
+import multiprocessing
 import pathlib
 import yaml
 import dataclasses
 import argparse
 import signal
-import sys
 import os
 import shutil
 
@@ -56,11 +56,12 @@ class NodeConfig:
 
 
 class Redpanda:
-    def __init__(self, binary, cores, config):
+    def __init__(self, binary, cores, config, extra_args):
         self.binary = binary
         self.cores = cores
         self.config = config
         self.process = None
+        self.extra_args = extra_args
 
     def stop(self):
         print(f"{self.process.pid}: dev_cluster stop requested")
@@ -68,9 +69,17 @@ class Redpanda:
 
     async def run(self):
         log_path = pathlib.Path(os.path.dirname(self.config)) / "redpanda.log"
-        cores_args = f"-c {self.cores}" if self.cores else ""
+
+        # If user did not override cores with extra args, apply it from our internal cores setting
+        if not {"-c", "--smp"} & set(self.extra_args):
+            cores_args = f"-c {self.cores}" if self.cores else ""
+        else:
+            cores_args = ""
+
+        extra_args = ' '.join(f"\"{a}\"" for a in self.extra_args)
+
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary} --redpanda-cfg {self.config} {cores_args} 2>&1 | tee -i {log_path}",
+            f"{self.binary} --redpanda-cfg {self.config} {cores_args} {extra_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -117,7 +126,13 @@ async def main():
                         type=str,
                         help="listening address",
                         default="0.0.0.0")
-    args = parser.parse_args()
+    args, extra_args = parser.parse_known_args()
+
+    if extra_args[0] == "--":
+        extra_args = extra_args[1:]
+    elif extra_args:
+        # Re-do with strict parse: this will surface unknown argument errors
+        args = parser.parse_args()
 
     seed_servers = [
         NetworkAddress(args.listen_address, args.base_rpc_port + i)
@@ -167,7 +182,13 @@ async def main():
         return config, conf_file
 
     configs = [prepare_node(i) for i in range(args.nodes)]
-    nodes = [Redpanda(args.executable, args.cores, c[1]) for c in configs]
+
+    cores = args.cores
+    if cores is None:
+        cores = max(multiprocessing.cpu_count() // args.nodes, 1)
+    nodes = [
+        Redpanda(args.executable, cores, c[1], extra_args) for c in configs
+    ]
 
     coros = [r.run() for r in nodes]
 
