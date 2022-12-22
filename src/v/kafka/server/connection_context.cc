@@ -47,18 +47,9 @@ ss::future<> connection_context::process_one_request() {
               return ss::make_ready_future<>();
           }
           if (sz > _max_request_size()) {
-              vlog(
-                klog.warn,
-                "request from {} is larger ({} bytes) than configured max "
-                "request size {}",
-                conn->addr,
-                sz,
-                _max_request_size());
               return ss::make_exception_future<>(
                 net::invalid_request_error(fmt::format(
-                  "request is larger ({} bytes) than configured max request "
-                  "size "
-                  "{}",
+                  "request size {} is larger than the configured max {}",
                   sz,
                   _max_request_size())));
           }
