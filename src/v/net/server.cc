@@ -12,9 +12,6 @@
 #include "config/configuration.h"
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "rpc/logger.h"
-#include "rpc/service.h"
-#include "seastar/core/coroutine.hh"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
 #include "ssx/semaphore.h"
@@ -22,6 +19,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
@@ -31,13 +29,14 @@
 
 namespace net {
 
-server::server(server_configuration c)
+server::server(server_configuration c, ss::logger& log)
   : cfg(std::move(c))
+  , _log(log)
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
   , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
-server::server(ss::sharded<server_configuration>* s)
-  : server(s->local()) {}
+server::server(ss::sharded<server_configuration>* s, ss::logger& log)
+  : server(s->local(), log) {}
 
 server::~server() = default;
 
@@ -104,6 +103,7 @@ void server::start() {
 }
 
 static inline void print_exceptional_future(
+  ss::logger& log,
   std::string_view name,
   ss::future<> f,
   const char* ctx,
@@ -118,7 +118,7 @@ static inline void print_exceptional_future(
 
     if (!disconnected) {
         vlog(
-          rpc::rpclog.error,
+          log.error,
           "{} - Error[{}] remote address: {} - {}",
           name,
           ctx,
@@ -126,7 +126,7 @@ static inline void print_exceptional_future(
           ex);
     } else {
         vlog(
-          rpc::rpclog.info,
+          log.info,
           "{} - Disconnected {} ({}, {})",
           name,
           address,
@@ -141,11 +141,11 @@ ss::future<> server::apply_proto(
       .then_wrapped(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
-              name(), std::move(f), "applying protocol", conn->addr);
+              _log, name(), std::move(f), "applying protocol", conn->addr);
             return conn->shutdown().then_wrapped(
               [this, addr = conn->addr](ss::future<> f) {
                   print_exceptional_future(
-                    name(), std::move(f), "shutting down", addr);
+                    _log, name(), std::move(f), "shutting down", addr);
               });
         })
       .finally([conn] {});
@@ -178,7 +178,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
             // Connection limit hit, drop this connection.
             _probe.connection_rejected();
             vlog(
-              rpc::rpclog.info,
+              _log.info,
               "Connection limit reached, rejecting {}",
               ar.remote_address.addr());
             co_return ss::stop_iteration::no;
@@ -205,7 +205,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
             co_await _connection_rates->maybe_wait(ar.remote_address.addr());
         } catch (const std::exception& e) {
             vlog(
-              rpc::rpclog.trace,
+              _log.trace,
               "Timeout while waiting free token for connection rate. "
               "addr:{}",
               ar.remote_address);
@@ -222,7 +222,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
       _probe,
       cfg.stream_recv_buf);
     vlog(
-      rpc::rpclog.trace,
+      _log.trace,
       "{} - Incoming connection from {} on \"{}\"",
       this->name(),
       ar.remote_address,
@@ -239,17 +239,13 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
 }
 
 void server::shutdown_input() {
-    vlog(
-      rpc::rpclog.info,
-      "{} - Stopping {} listeners",
-      name(),
-      _listeners.size());
+    vlog(_log.info, "{} - Stopping {} listeners", name(), _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
-    vlog(rpc::rpclog.debug, "{} - Service probes {}", name(), _probe);
+    vlog(_log.debug, "{} - Service probes {}", name(), _probe);
     vlog(
-      rpc::rpclog.info,
+      _log.info,
       "{} - Shutting down {} connections",
       name(),
       _connections.size());

@@ -64,7 +64,7 @@ server::server(
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
-  : net::server(cfg)
+  : net::server(cfg, klog)
   , _smp_group(smp)
   , _topics_frontend(tf)
   , _config_frontend(cf)

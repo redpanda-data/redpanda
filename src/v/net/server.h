@@ -97,8 +97,8 @@ struct server_configuration {
 
 class server {
 public:
-    explicit server(server_configuration);
-    explicit server(ss::sharded<server_configuration>* s);
+    explicit server(server_configuration, ss::logger&);
+    explicit server(ss::sharded<server_configuration>* s, ss::logger&);
     server(server&&) noexcept = default;
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
@@ -154,6 +154,7 @@ private:
     void setup_metrics();
     void setup_public_metrics();
 
+    ss::logger& _log;
     ssx::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<net::connection> _connections;
