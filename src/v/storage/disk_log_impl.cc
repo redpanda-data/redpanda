@@ -576,6 +576,21 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
               *gen_it);
             ret.executed_compaction = false;
             ret.size_after = ret.size_before;
+
+            // Clean up any staging files that will go unused.
+            // TODO: generalize this cleanup for other compaction abort paths.
+            std::vector<std::filesystem::path> rm;
+            rm.reserve(3);
+            rm.emplace_back(replacement->reader().filename().c_str());
+            rm.emplace_back(replacement->index().path().string());
+            rm.emplace_back(replacement->reader().path().to_compacted_index());
+            vlog(
+              gclog.debug, "Cleaning up files from aborted compaction: {}", rm);
+            for (const auto& f : rm) {
+                if (co_await ss::file_exists(ss::sstring(f))) {
+                    co_await ss::remove_file(ss::sstring(f));
+                }
+            }
             co_return ret;
         }
         if (unlikely(segment->is_closed())) {
