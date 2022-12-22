@@ -2,6 +2,7 @@
 v_cc_library(
   NAME cloud_storage_clients
   SRCS
+    abs_client.cc
     abs_error.cc
     client_pool.cc
     client_probe.cc
