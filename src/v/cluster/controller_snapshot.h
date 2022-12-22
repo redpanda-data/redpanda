@@ -14,6 +14,8 @@
 #include "cluster/config_manager.h"
 #include "cluster/types.h"
 #include "features/feature_table_snapshot.h"
+#include "security/scram_credential.h"
+#include "security/types.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
@@ -179,6 +181,18 @@ struct topics_t
     ss::future<> serde_async_read(iobuf_parser&, serde::header const);
 };
 
+struct security_t
+  : public serde::
+      envelope<security_t, serde::version<0>, serde::compat_version<0>> {
+    fragmented_vector<user_and_credential> user_credentials;
+    fragmented_vector<security::acl_binding> acls;
+
+    friend bool operator==(const security_t&, const security_t&) = default;
+
+    ss::future<> serde_async_write(iobuf&);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+};
+
 struct metrics_reporter_t
   : public serde::envelope<
       metrics_reporter_t,
@@ -204,6 +218,7 @@ struct controller_snapshot
     controller_snapshot_parts::members_t members;
     controller_snapshot_parts::config_t config;
     controller_snapshot_parts::topics_t topics;
+    controller_snapshot_parts::security_t security;
     controller_snapshot_parts::metrics_reporter_t metrics_reporter;
 
     friend bool
