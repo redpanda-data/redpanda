@@ -201,26 +201,32 @@ void offset_metadata_value::encode(
   response_writer& writer, const offset_metadata_value& v) {
     writer.write(v.version);
     writer.write(v.offset);
-    writer.write(v.leader_epoch);
+    if (v.version >= group_metadata_version{3}) {
+        writer.write(v.leader_epoch);
+    }
     writer.write(v.metadata);
     writer.write(v.commit_timestamp);
+    if (v.version == group_metadata_version{1}) {
+        writer.write(v.expiry_timestamp);
+    }
 }
 
 offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
     offset_metadata_value ret;
     auto version = read_metadata_version(reader);
     validate_version_range(
-      version, "offset_metadata_value", offset_metadata_value::version);
+      version, "offset_metadata_value", offset_metadata_value::latest_version);
 
+    ret.version = version;
     ret.offset = model::offset(reader.read_int64());
     if (version >= group_metadata_version{3}) {
         ret.leader_epoch = kafka::leader_epoch(reader.read_int32());
     }
     ret.metadata = reader.read_string();
     ret.commit_timestamp = model::timestamp(reader.read_int64());
-    // read and ignore expiry_timestamp only present in version 1
+    // read expiry_timestamp only present in version 1
     if (version == group_metadata_version{1}) {
-        reader.read_int64();
+        ret.expiry_timestamp = model::timestamp(reader.read_int64());
     }
 
     return ret;
@@ -418,11 +424,14 @@ std::ostream& operator<<(std::ostream& o, const offset_metadata_key& v) {
 std::ostream& operator<<(std::ostream& o, const offset_metadata_value& v) {
     fmt::print(
       o,
-      "{{offset: {}, leader_epoch: {}, metadata: {}, commit_timestap: {}}}",
+      "{{offset: {}, leader_epoch: {}, metadata: {}, commit_timestamp: {}, "
+      "expiry_timestamp: {}, version: {}}}",
       v.offset,
       v.leader_epoch,
       v.metadata,
-      v.commit_timestamp);
+      v.commit_timestamp,
+      v.expiry_timestamp,
+      v.version);
     return o;
 }
 } // namespace kafka
