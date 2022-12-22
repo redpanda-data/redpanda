@@ -259,7 +259,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
     auto mat = co_await find_recovery_material(manifest_key);
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
-        co_await mat.partition_manifest.serialize(ostr);
+        mat.partition_manifest.serialize(ostr);
         vlog(
           _ctxlog.debug,
           "Partition manifest used for recovery: {}",
