@@ -214,7 +214,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             raft::persistent_last_applied::yes,
             absl::flat_hash_set<model::record_batch_type>{
               model::record_batch_type::checkpoint,
-              model::record_batch_type::raft_configuration},
+              model::record_batch_type::raft_configuration,
+              model::record_batch_type::data_policy_management_cmd},
             std::ref(_tp_updates_dispatcher),
             std::ref(_security_manager),
             std::ref(_members_manager),
