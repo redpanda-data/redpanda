@@ -27,7 +27,7 @@ CURRENT_LOGICAL_VERSION = 8
 # The upgrade tests defined below rely on having a logical version lower than
 # CURRENT_LOGICAL_VERSION. For the sake of these tests, the exact version
 # shouldn't matter.
-OLD_VERSION = (22, 1, 4)
+OLD_VERSION = (22, 1)
 
 
 class FeaturesTestBase(RedpandaTest):
@@ -234,7 +234,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         assert initial_version < CURRENT_LOGICAL_VERSION, \
             f"downgraded logical version {initial_version}"
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (23, 1))
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
@@ -280,7 +280,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         assert initial_version < CURRENT_LOGICAL_VERSION, \
             f"downgraded logical version {initial_version}"
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         _ = wait_for_num_versions(self.redpanda, 2)
@@ -339,8 +339,7 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
             f"downgraded logical version {initial_version}"
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
-        self.installer.install([self.redpanda.nodes[0]],
-                               RedpandaInstaller.HEAD)
+        self.installer.install([self.redpanda.nodes[0]], (22, 3))
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         wait_until(lambda: CURRENT_LOGICAL_VERSION == self.admin.get_features(
         )['cluster_version'],
@@ -398,7 +397,7 @@ class FeaturesNodeJoinTest(RedpandaTest):
             )
 
         # Restart it with a sufficiently recent version and join should succeed
-        self.installer.install([old_node], RedpandaInstaller.HEAD)
+        self.installer.install([old_node], (22, 3))
         self.redpanda.restart_nodes([old_node])
 
         # Timeout long enough for join retries & health monitor tick (registered
