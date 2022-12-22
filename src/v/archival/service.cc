@@ -79,7 +79,8 @@ static cloud_storage::manifest_topic_configuration convert_topic_configuration(
 }
 
 static ss::sstring get_value_or_throw(
-  const config::property<std::optional<ss::sstring>>& prop, const char* name) {
+  const config::property<std::optional<ss::sstring>>& prop,
+  std::string_view name) {
     auto opt = prop.value();
     if (!opt) {
         vlog(
@@ -113,10 +114,12 @@ scheduler_service_impl::get_archival_service_config(
     auto time_limit_opt = time_limit ? std::make_optional(
                             segment_time_limit(*time_limit))
                                      : std::nullopt;
+
+    const auto& bucket_config
+      = cloud_storage::configuration::get_bucket_config();
     archival::configuration cfg{
-      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
-        config::shard_local_cfg().cloud_storage_bucket,
-        "cloud_storage_bucket")),
+      .bucket_name = cloud_storage_clients::bucket_name{get_value_or_throw(
+        bucket_config, bucket_config.name())},
       .reconciliation_interval
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .cloud_storage_initial_backoff
