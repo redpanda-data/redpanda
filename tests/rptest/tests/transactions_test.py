@@ -291,7 +291,7 @@ class TransactionsTest(RedpandaTest):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
+            'transaction.timeout.ms': 60000,
         })
 
         producer.init_transactions()
