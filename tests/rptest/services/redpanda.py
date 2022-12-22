@@ -393,7 +393,7 @@ class SISettings:
                 logger.info(msg)
                 raise Exception(msg)
             else:
-                logger.debug(
+                logger.info(
                     'No AWS credentials supplied, assuming minio defaults')
 
     @property
