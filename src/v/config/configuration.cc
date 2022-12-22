@@ -1160,6 +1160,30 @@ configuration::configuration()
       "Enable re-uploading data for compacted topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_azure_storage_account(
+      *this,
+      "cloud_storage_azure_storage_account",
+      "The name of the Azure storage account to use with Tiered Storage",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_storage_azure_container(
+      *this,
+      "cloud_storage_azure_container",
+      "The name of the Azure container to use with Tiered Storage. Note that "
+      "the container must belong to 'cloud_storage_azure_storage_account'",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , cloud_storage_azure_shared_key(
+      *this,
+      "cloud_storage_azure_shared_key",
+      "The shared key to be used for Azure Shared Key authentication with the "
+      "configured Azure storage account (see "
+      "'cloud_storage_azure_storage_account)'. Note that Redpanda expects this "
+      "string to be Base64 encoded.",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
