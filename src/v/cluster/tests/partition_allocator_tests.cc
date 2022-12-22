@@ -94,15 +94,15 @@ FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
     register_node(1, 2);
     register_node(2, 2);
     // available capacity
-    // 3 * 7000 * 2 - 3*2 = 41994
+    // 3 * 1000 * 2 - 3*2 = 5994
 
     auto req = make_allocation_request(max_capacity() / 3, 3);
 
     auto units = allocator.allocate(std::move(req)).value();
 
-    BOOST_REQUIRE_EQUAL(units->get_assignments().size(), 13998);
-    BOOST_REQUIRE_EQUAL(allocated_nodes_count(units->get_assignments()), 41994);
-    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 13998);
+    BOOST_REQUIRE_EQUAL(units->get_assignments().size(), 1998);
+    BOOST_REQUIRE_EQUAL(allocated_nodes_count(units->get_assignments()), 5994);
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 1998);
     validate_replica_set_diversity(units->get_assignments());
 
     // make sure there is no room left after
