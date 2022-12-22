@@ -103,8 +103,9 @@ partition::partition(
             stm_manager->add_stm(_archival_meta_stm);
 
             if (cloud_storage_cache.local_is_initialized()) {
-                auto bucket
-                  = config::shard_local_cfg().cloud_storage_bucket.value();
+                const auto& bucket_config
+                  = cloud_storage::configuration::get_bucket_config();
+                auto bucket = bucket_config.value();
                 if (
                   read_replica_bucket
                   && _raft->log_config().is_read_replica_mode_enabled()) {
@@ -118,8 +119,9 @@ partition::partition(
                     bucket = read_replica_bucket;
                 }
                 if (!bucket) {
-                    throw std::runtime_error{
-                      "configuration property cloud_storage_bucket is not set"};
+                    throw std::runtime_error{fmt::format(
+                      "configuration property {} is not set",
+                      bucket_config.name())};
                 }
                 _cloud_storage_partition
                   = ss::make_shared<cloud_storage::remote_partition>(

@@ -494,12 +494,15 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     if (assignable_config.is_recovery_enabled()) {
         // Before running the recovery we need to download topic_manifest.
 
-        auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        auto bucket = bucket_config.value();
         if (!bucket.has_value()) {
             vlog(
               clusterlog.error,
-              "Can't run topic recovery for the topic {}, bucket is not set",
-              assignable_config.cfg.tp_ns);
+              "Can't run topic recovery for the topic {}, {} is not set",
+              assignable_config.cfg.tp_ns,
+              bucket_config.name());
             co_return make_error_result(
               assignable_config.cfg.tp_ns, errc::topic_operation_error);
         }

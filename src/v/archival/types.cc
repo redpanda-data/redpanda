@@ -49,7 +49,8 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
 }
 
 static ss::sstring get_value_or_throw(
-  const config::property<std::optional<ss::sstring>>& prop, const char* name) {
+  const config::property<std::optional<ss::sstring>>& prop,
+  std::string_view name) {
     auto opt = prop.value();
     if (!opt) {
         vlog(
@@ -81,10 +82,12 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
     auto time_limit_opt = time_limit ? std::make_optional(
                             segment_time_limit(*time_limit))
                                      : std::nullopt;
+
+    const auto& bucket_config
+      = cloud_storage::configuration::get_bucket_config();
     archival::configuration cfg{
-      .bucket_name = cloud_storage_clients::bucket_name(get_value_or_throw(
-        config::shard_local_cfg().cloud_storage_bucket,
-        "cloud_storage_bucket")),
+      .bucket_name = cloud_storage_clients::bucket_name(
+        get_value_or_throw(bucket_config, bucket_config.name())),
       .cloud_storage_initial_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
       .segment_upload_timeout

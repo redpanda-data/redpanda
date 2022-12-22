@@ -1,5 +1,6 @@
 #include "cloud_storage_clients/client_pool.h"
 
+#include "cloud_storage_clients/abs_client.h"
 #include "cloud_storage_clients/s3_client.h"
 
 namespace cloud_storage_clients {
@@ -87,10 +88,12 @@ void client_pool::populate_client_pool() {
 
 client_pool::http_client_ptr client_pool::make_client() const {
     return std::visit(
-      [this](const auto& cfg) {
+      [this](const auto& cfg) -> http_client_ptr {
           using cfg_type = std::decay_t<decltype(cfg)>;
           if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
               return ss::make_shared<s3_client>(cfg, _as, _apply_credentials);
+          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
+              return ss::make_shared<abs_client>(cfg, _as, _apply_credentials);
           } else {
               static_assert(always_false_v<cfg_type>, "Unknown client type");
           }
