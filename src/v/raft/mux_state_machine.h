@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
 #include "raft/consensus.h"
@@ -29,6 +30,7 @@
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 
 #include <optional>
@@ -95,7 +97,11 @@ template<typename... T>
 requires(State<T>, ...) class mux_state_machine : public state_machine {
 public:
     explicit mux_state_machine(
-      ss::logger&, consensus*, persistent_last_applied, T&...);
+      ss::logger&,
+      consensus*,
+      persistent_last_applied,
+      absl::flat_hash_set<model::record_batch_type>,
+      T&...);
 
     mux_state_machine(mux_state_machine&&) = delete;
     mux_state_machine(const mux_state_machine&) = delete;
@@ -173,6 +179,7 @@ private:
     int64_t _pending = 0;
     const persistent_last_applied _persist_last_applied;
     ss::condition_variable _new_result;
+    absl::flat_hash_set<model::record_batch_type> _not_handled_batch_types;
     // we keep states in a tuple to automatically dispatch updates to correct
     // state
     std::tuple<T&...> _state;
@@ -183,10 +190,12 @@ requires(State<T>, ...) mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger,
   consensus* c,
   persistent_last_applied persist,
+  absl::flat_hash_set<model::record_batch_type> not_handled_batch_types,
   T&... state)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
   , _persist_last_applied(persist)
+  , _not_handled_batch_types(std::move(not_handled_batch_types))
   , _state(state...) {}
 
 template<typename... T>
@@ -312,9 +321,7 @@ requires(State<T>, ...) ss::future<> mux_state_machine<T...>::apply(
         // applicable state not found
         if (!state) {
             vassert(
-              b.header().type == model::record_batch_type::checkpoint
-                || b.header().type
-                     == model::record_batch_type::raft_configuration,
+              _not_handled_batch_types.contains(b.header().type),
               "State handler for batch of type: {} not found",
               b.header().type);
             return ss::now();
