@@ -104,8 +104,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
     #
     # This log entry may be logged by version up to v22.1.x
     unsupported_api_version_log_entry = re.compile(
-        "kafka rpc protocol - Error\[applying protocol\] .*Unsupported version \d+ for .*"
-    )
+        "Error\[applying protocol\] .*Unsupported version \d+ for .*")
 
     @cluster(num_nodes=6,
              log_allow_list=RESTART_LOG_ALLOW_LIST +

@@ -26,11 +26,11 @@ ALLOWED_LOGS = [
 
     # < 22.2 versions may log bare std::exception error
     # (https://github.com/redpanda-data/redpanda/issues/5886)
-    re.compile("rpc - .*std::exception"),
+    re.compile("(kafka|rpc) - .*std::exception"),
 
     #  <= 22.2 versions may log bare seastar::condition_variable_timed_out error
     re.compile(
-        "rpc - Service handler threw an exception: seastar::condition_variable_timed_out"
+        "(kafka|rpc) - Service handler threw an exception: seastar::condition_variable_timed_out"
     ),
 
     # < 22.2 versions may log a "cannot find consensus group" error message

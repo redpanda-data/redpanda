@@ -36,7 +36,7 @@ ELECTION_TIMEOUT = 10
 # Logs that may appear when a node is network-isolated
 ISOLATION_LOG_ALLOW_LIST = [
     # rpc - server.cc:91 - vectorized internal rpc protocol - Error[shutting down] remote address: 10.89.0.16:60960 - std::__1::system_error (error system:32, sendmsg: Broken pipe)
-    "rpc - .*Broken pipe",
+    "(kafka|rpc) - .*Broken pipe",
 ]
 
 
