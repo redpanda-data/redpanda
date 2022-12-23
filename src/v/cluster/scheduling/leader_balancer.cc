@@ -15,6 +15,7 @@
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
+#include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "model/namespace.h"
@@ -519,6 +520,34 @@ absl::flat_hash_set<raft::group_id> leader_balancer::muted_groups() const {
         res.insert(e.first);
     }
     return res;
+}
+
+leader_balancer_types::group_id_to_topic_revision_t
+leader_balancer::build_group_id_to_topic_rev() const {
+    leader_balancer_types::group_id_to_topic_revision_t group_id_to_topic_rev;
+
+    // for each ntp in the cluster
+    for (const auto& topic : _topics.topics_map()) {
+        if (!topic.second.is_topic_replicable()) {
+            continue;
+        }
+
+        for (const auto& partition : topic.second.get_assignments()) {
+            if (partition.replicas.empty()) {
+                vlog(
+                  clusterlog.warn,
+                  "Leadership encountered partition with no partition "
+                  "assignment: {}",
+                  model::ntp(topic.first.ns, topic.first.tp, partition.id));
+                continue;
+            }
+
+            group_id_to_topic_rev.try_emplace(
+              partition.group, topic.second.get_revision());
+        }
+    }
+
+    return group_id_to_topic_rev;
 }
 
 /*

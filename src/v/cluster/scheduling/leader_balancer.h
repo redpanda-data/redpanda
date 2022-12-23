@@ -13,6 +13,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
+#include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/types.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -92,6 +93,8 @@ private:
     using index_type = leader_balancer_strategy::index_type;
     using reassignment = leader_balancer_strategy::reassignment;
 
+    leader_balancer_types::group_id_to_topic_revision_t
+    build_group_id_to_topic_rev() const;
     index_type build_index();
     absl::flat_hash_set<raft::group_id> muted_groups() const;
     absl::flat_hash_set<model::node_id> muted_nodes() const;
