@@ -800,21 +800,6 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   [](const bool& b) { return b ? "true" : "false"; });
             }
 
-            // Data-policy property
-            ss::sstring property_name = "redpanda.datapolicy";
-            add_topic_config_if_requested(
-              resource,
-              result,
-              property_name,
-              v8_engine::data_policy("", ""),
-              property_name,
-              ctx.data_policy_table().get_data_policy(topic),
-              request.data.include_synonyms,
-              maybe_make_documentation(
-                request.data.include_documentation,
-                "Datapolicy property for v8_engine"),
-              &describe_as_string<v8_engine::data_policy>);
-
             break;
         }
 

@@ -105,8 +105,6 @@ v_cc_library(
     tx_helpers.cc
     security_manager.cc
     security_frontend.cc
-    data_policy_manager.cc
-    data_policy_frontend.cc
     cluster_discovery.cc
     controller_api.cc
     members_frontend.cc
@@ -159,7 +157,6 @@ v_cc_library(
     Roaring::roaring
     absl::flat_hash_map
     v::model
-    v::v8_engine
     v::cloud_storage
     v::archival
     v::features

@@ -93,10 +93,6 @@ class DescribeTopicsTest(RedpandaTest):
             ConfigProperty(config_type="STRING",
                            value="CreateTime",
                            doc_string="Default topic messages timestamp type"),
-            "redpanda.datapolicy":
-            ConfigProperty(config_type="STRING",
-                           value="function_name:  script_name:",
-                           doc_string="Datapolicy property for v8_engine"),
             "redpanda.remote.delete":
             ConfigProperty(
                 config_type="BOOLEAN",
@@ -164,26 +160,12 @@ class DescribeTopicsTest(RedpandaTest):
         #     2. Property documentation string
         #     3. An empty line
 
-        # First check redpanda.datapolicy in the property table because the value is a special case.
-        # The extra space is necessary so the datapolicy lines in the documentation section are not removed.
-        copro_lines = [
-            line for line in output if line.startswith('redpanda.datapolicy ')
-        ]
-        self.logger.debug(f"Copro lines {copro_lines}")
-        assert len(copro_lines) == 1
-        copro_match = re.match(r"^.*default_config$", copro_lines[0])
-        assert copro_match is not None
-
-        all_other_lines = [
-            line for line in output
-            if not line.startswith('redpanda.datapolicy ')
-        ]
         property_re = re.compile(
             r"^(?P<name>[a-z.]+?)\s+(?P<type>[a-z]+?)\s+(?P<value>\S+?)\s+(?P<src>[a-z_]+?)$"
         )
 
         last_pos = None
-        for i, line in enumerate(all_other_lines):
+        for i, line in enumerate(output):
             self.logger.debug(f"Property line {line}")
             prop_match = property_re.match(line)
 
@@ -207,12 +189,12 @@ class DescribeTopicsTest(RedpandaTest):
         # The first empty line is where the table ends and the doc section begins
         assert last_pos is not None, "Something went wrong with property match"
         self.logger.debug(
-            f"Table separator {last_pos} {len(all_other_lines[last_pos])}")
-        assert len(all_other_lines[last_pos]) == 0, "Expected empty line"
+            f"Table separator {last_pos} {len(output[last_pos])}")
+        assert len(output[last_pos]) == 0, "Expected empty line"
 
         # Make a list from the leftover lines
-        assert len(all_other_lines) > last_pos + 1, "Missing docs section"
-        doc_lines = all_other_lines[last_pos + 1:]
+        assert len(output) > last_pos + 1, "Missing docs section"
+        doc_lines = output[last_pos + 1:]
         assert len(doc_lines) % 3 == 0
 
         # The property name in the doc section has a colon

@@ -37,7 +37,6 @@ class members_frontend;
 class config_frontend;
 class config_manager;
 class members_backend;
-class data_policy_frontend;
 class tx_gateway;
 class rm_group_proxy;
 class non_replicable_topics_frontend;

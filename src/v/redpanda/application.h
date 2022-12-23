@@ -47,7 +47,6 @@
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "utils/stop_signal.h"
-#include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -123,8 +122,6 @@ public:
     ss::sharded<storage::api> storage;
     ss::sharded<storage::node_api> storage_node;
     ss::sharded<cluster::node::local_monitor> local_monitor;
-
-    ss::sharded<v8_engine::data_policy_table> data_policies;
 
     std::unique_ptr<cluster::controller> controller;
     std::unique_ptr<coproc::api> coprocessing;

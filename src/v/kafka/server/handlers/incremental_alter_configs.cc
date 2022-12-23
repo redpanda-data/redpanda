@@ -16,7 +16,6 @@
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_response.h"
 #include "kafka/server//handlers/configs/config_utils.h"
-#include "kafka/server/handlers/details/data_policy.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -216,8 +215,6 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
 
-    data_policy_parser dp_parser;
-
     for (auto& cfg : resource.configs) {
         // Validate int8_t is within range of config_resource_operation
         // before casting (otherwise casting is undefined behaviour)
@@ -329,9 +326,7 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                 // Skip unusupported Kafka config
                 continue;
             }
-            if (update_data_policy_parser(dp_parser, cfg.name, cfg.value, op)) {
-                continue;
-            }
+
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
@@ -339,36 +334,12 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
               error_code::invalid_config,
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
-        } catch (const v8_engine::data_policy_exeption& e) {
-            return make_error_alter_config_resource_response<
-              incremental_alter_configs_resource_response>(
-              resource,
-              error_code::invalid_config,
-              fmt::format(
-                "unable to parse property redpanda.data-policy.{} value {}, "
-                "error {}",
-                cfg.name,
-                cfg.value,
-                e.what()));
         }
         // Unsupported property, return error
         return make_error_alter_config_resource_response<resp_resource_t>(
           resource,
           error_code::invalid_config,
           fmt::format("invalid topic property: {}", cfg.name));
-    }
-    try {
-        update.custom_properties.data_policy.value = data_policy_from_parser(
-          dp_parser);
-        update.custom_properties.data_policy.op = dp_parser.op;
-    } catch (const v8_engine::data_policy_exeption& e) {
-        return make_error_alter_config_resource_response<
-          incremental_alter_configs_resource_response>(
-          resource,
-          error_code::invalid_config,
-          fmt::format(
-            "unable to parse property redpanda.data-policy, error {}",
-            e.what()));
     }
 
     return update;

@@ -14,7 +14,6 @@
 #include "cluster/bootstrap_backend.h"
 #include "cluster/config_manager.h"
 #include "cluster/controller_log_limiter.h"
-#include "cluster/data_policy_manager.h"
 #include "cluster/feature_backend.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
@@ -32,7 +31,6 @@ class controller_stm final
       topic_updates_dispatcher,
       security_manager,
       members_manager,
-      data_policy_manager,
       config_manager,
       feature_backend,
       bootstrap_backend> {

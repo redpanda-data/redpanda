@@ -78,7 +78,6 @@
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "utils/uuid.h"
-#include "v8_engine/data_policy_table.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -913,9 +912,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     construct_service(cp_partition_manager, std::ref(storage)).get();
 
     // controller
-
-    construct_service(data_policies).get();
-
     syschecks::systemd_message("Creating cluster::controller").get();
 
     construct_single_service(
@@ -927,7 +923,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       storage,
       local_monitor,
       std::ref(raft_group_manager),
-      data_policies,
       std::ref(feature_table),
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
@@ -1245,7 +1240,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
         std::ref(cp_partition_manager),
-        std::ref(data_policies),
         qdc_config)
       .get();
     kafka_cfg.stop().get();

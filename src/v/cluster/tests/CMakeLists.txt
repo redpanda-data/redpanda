@@ -40,7 +40,6 @@ set(srcs
     replicas_rebalancing_tests.cc
     create_partitions_test.cc
     id_allocator_stm_test.cc
-    data_policy_controller_test.cc
     health_monitor_test.cc
     topic_configuration_compat_test.cc
     local_monitor_test.cc
@@ -54,7 +53,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_${test_name}
   SOURCES ${cluster_test_src}
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine v::cluster
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster
   LABELS cluster
 )
 endforeach()
