@@ -71,25 +71,6 @@ class DescribeTopicsTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_describe_topics_with_documentation_and_types(self):
-        tp_spec = TopicSpec()
-
-        self.client().create_topic([tp_spec])
-
-        kcl = KCL(self.redpanda)
-
-        output = kcl.describe_topic(tp_spec.name,
-                                    with_docs=True,
-                                    with_types=True).splitlines()
-
-        assert len(output) >= 26
-
-        # First thirteen lines follow a format
-        property_lines = output[:13]
-        # Lines after that are for documentation
-        documentation_lines = output[13:]
-        self.logger.debug(f"Nyalia\n{property_lines}")
-        self.logger.debug(f"Lui\n{documentation_lines}")
-
         # All the config properties and their values reported by topic describe
         properties = {
             "cleanup.policy":
@@ -114,7 +95,7 @@ class DescribeTopicsTest(RedpandaTest):
                            doc_string="Default topic messages timestamp type"),
             "redpanda.datapolicy":
             ConfigProperty(config_type="STRING",
-                           value="function_name: script_name:",
+                           value="function_name:  script_name:",
                            doc_string="Datapolicy property for v8_engine"),
             "redpanda.remote.delete":
             ConfigProperty(
@@ -167,38 +148,88 @@ class DescribeTopicsTest(RedpandaTest):
             )
         }
 
-        for line in property_lines:
-            col = line.strip().lower().split()
-            self.logger.debug(col)
-            assert len(col) >= 4
-            name = col[0]
-            config_type = col[1]
-            value = col[2]
-            source_type = col[3]
+        tp_spec = TopicSpec()
+        self.client().create_topic([tp_spec])
+        kcl = KCL(self.redpanda)
+        output = kcl.describe_topic(tp_spec.name,
+                                    with_docs=True,
+                                    with_types=True).lower().splitlines()
 
-            # The above .split() also applies to the value for datapolicy
-            # so we need to re-concatenate the string
-            if name == "redpanda.datapolicy":
-                assert len(col) == 5
-                value = f'{col[2]} {col[3]}'
-                source_type = col[4]
+        # The output format from topic describe has the following structure
+        #
+        # - A table section with descriptions for the property name, type, value, and source
+        # - An empty line
+        # - Three lines for each property, called the documentation section:
+        #     1. Property name with a colon (e.g., cleanup.policy:)
+        #     2. Property documentation string
+        #     3. An empty line
 
-            assert name in properties.keys()
+        # First check redpanda.datapolicy in the property table because the value is a special case.
+        # The extra space is necessary so the datapolicy lines in the documentation section are not removed.
+        copro_lines = [
+            line for line in output if line.startswith('redpanda.datapolicy ')
+        ]
+        self.logger.debug(f"Copro lines {copro_lines}")
+        assert len(copro_lines) == 1
+        copro_match = re.match(r"^.*default_config$", copro_lines[0])
+        assert copro_match is not None
+
+        all_other_lines = [
+            line for line in output
+            if not line.startswith('redpanda.datapolicy ')
+        ]
+        property_re = re.compile(
+            r"^(?P<name>[a-z.]+?)\s+(?P<type>[a-z]+?)\s+(?P<value>\S+?)\s+(?P<src>[a-z_]+?)$"
+        )
+
+        last_pos = None
+        for i, line in enumerate(all_other_lines):
+            self.logger.debug(f"Property line {line}")
+            prop_match = property_re.match(line)
+
+            if prop_match is None:
+                last_pos = i
+                break
+
+            name = prop_match.group("name")
+            config_type = prop_match.group("type")
+            value = prop_match.group("value")
+            source_type = prop_match.group("src")
+            self.logger.debug(
+                f"name: {name}, type: {config_type}, value: {value}, src: {source_type}"
+            )
+            assert name in properties
             prop = properties[name]
             assert config_type == prop.config_type
             assert value == prop.value
             assert source_type == prop.source_type
 
-        # The output format follows:
-        # line 1 is empty
-        # line 2 is the property name
-        # line 3 is the property docstring
-        prop = None
-        for i in range(0, len(documentation_lines), 3):
-            # The property names have a colon at the end
-            prop_match = re.match(r"^(?P<name>[A-Za-z.]+?):$", line[1])
-            if prop_match is not None:
-                name = prop_match.group("name").lower()
-                assert name in properties.keys()
-                prop = properties[name]
-                assert line[2].lower() == prop.doc_string
+        # The first empty line is where the table ends and the doc section begins
+        assert last_pos is not None, "Something went wrong with property match"
+        self.logger.debug(
+            f"Table separator {last_pos} {len(all_other_lines[last_pos])}")
+        assert len(all_other_lines[last_pos]) == 0, "Expected empty line"
+
+        # Make a list from the leftover lines
+        assert len(all_other_lines) > last_pos + 1, "Missing docs section"
+        doc_lines = all_other_lines[last_pos + 1:]
+        assert len(doc_lines) % 3 == 0
+
+        # The property name in the doc section has a colon
+        name_re = re.compile(r"^(?P<name>[a-z.]+?):$")
+
+        # Finally, check the doc section
+        for i in range(0, len(doc_lines) // 3):
+            name_line = doc_lines[3 * i]
+            doc_string = doc_lines[3 * i + 1]
+            empty_line = doc_lines[3 * i + 2]
+            self.logger.debug(
+                f"Doc line {name_line}, {doc_string}, {empty_line}")
+
+            name_match = name_re.match(name_line)
+            assert name_match is not None
+            name = name_match.group("name")
+            assert name in properties
+            prop = properties[name]
+            assert doc_string == prop.doc_string
+            assert len(empty_line) == 0
