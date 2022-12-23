@@ -248,6 +248,11 @@ recovery_stm::read_range_for_recovery(
           [](size_t acc, const auto& batch) {
               return acc + batch.size_bytes();
           });
+        vlog(
+          _ctxlog.trace,
+          "Requesting throttle for {} bytes, available in throttle: {}",
+          size,
+          _ptr->_recovery_throttle->get().available());
         co_await _ptr->_recovery_throttle->get()
           .throttle(size, _ptr->_as)
           .handle_exception_type([this](const ss::broken_semaphore&) {
