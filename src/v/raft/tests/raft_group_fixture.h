@@ -56,7 +56,7 @@ inline ss::logger tstlog("raft_test");
 
 using namespace std::chrono_literals; // NOLINT
 
-inline static std::chrono::milliseconds heartbeat_interval = 40ms;
+inline static std::chrono::milliseconds heartbeat_interval = 20ms;
 inline static const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
 
@@ -413,7 +413,7 @@ struct raft_group {
           make_broker(node_id),
           _id,
           raft::group_configuration(_initial_brokers, model::revision_id(0)),
-          raft::timeout_jitter(heartbeat_interval * 10),
+          raft::timeout_jitter(heartbeat_interval * 5),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
@@ -434,7 +434,7 @@ struct raft_group {
           broker,
           _id,
           raft::group_configuration({}, model::revision_id(0)),
-          raft::timeout_jitter(heartbeat_interval * 10),
+          raft::timeout_jitter(heartbeat_interval * 5),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
