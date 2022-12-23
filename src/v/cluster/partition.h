@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
@@ -47,15 +48,22 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<cloud_storage::cache>&,
+      ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
 
+    ~partition();
+
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
     ss::future<> stop();
+
+    /// Part of constructor that we may sometimes need to do again
+    /// after a configuration change.
+    void maybe_construct_archiver();
 
     ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
@@ -126,6 +134,8 @@ public:
     }
 
     const model::ntp& ntp() const { return _raft->ntp(); }
+
+    storage::log log() const { return _raft->log(); }
 
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
@@ -272,6 +282,36 @@ public:
 
     consensus_ptr raft() const { return _raft; }
 
+    std::optional<std::reference_wrapper<archival::ntp_archiver>> archiver() {
+        if (_archiver) {
+            return *_archiver;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    /// Fixture testing hook, for tests that would like to stop the
+    /// usual archiver and start their own
+    ss::future<> stop_archiver();
+
+    uint64_t upload_backlog_size() const;
+
+    /**
+     * Partition 0 carries a copy of the topic configuration, updated by
+     * the controller, so that its archiver can make updates to the topic
+     * manifest in cloud storage
+     */
+    void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg);
+
+    std::optional<std::reference_wrapper<cluster::topic_configuration>>
+    get_topic_config() {
+        if (_topic_cfg) {
+            return std::ref(*_topic_cfg);
+        } else {
+            return std::nullopt;
+        }
+    }
+
 private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
@@ -286,11 +326,19 @@ private:
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
+    ss::lw_shared_ptr<const archival::configuration> _archival_conf;
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    std::unique_ptr<archival::ntp_archiver> _archiver;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{
       std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};
+
+    // Populated for partition 0 only, used by cloud storage uploads
+    // to generate topic manifests.
+    std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

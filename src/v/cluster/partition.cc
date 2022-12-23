@@ -9,6 +9,7 @@
 
 #include "cluster/partition.h"
 
+#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
@@ -34,6 +35,7 @@ partition::partition(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
   config::binding<uint64_t> max_concurrent_producer_ids,
@@ -45,7 +47,9 @@ partition::partition(
   , _tm_stm_cache(tm_stm_cache)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value()) {
+      config::shard_local_cfg().enable_idempotence.value())
+  , _archival_conf(archival_conf)
+  , _cloud_storage_api(cloud_storage_api) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -85,14 +89,15 @@ partition::partition(
             stm_manager->add_stm(_rm_stm);
         }
 
+        // Construct cloud_storage read path (remote_partition)
         if (
           config::shard_local_cfg().cloud_storage_enabled()
-          && cloud_storage_api.local_is_initialized()
+          && _cloud_storage_api.local_is_initialized()
           && _raft->ntp().ns == model::kafka_namespace) {
             _archival_meta_stm
               = ss::make_shared<cluster::archival_metadata_stm>(
                 _raft.get(),
-                cloud_storage_api.local(),
+                _cloud_storage_api.local(),
                 _feature_table.local(),
                 clusterlog);
             stm_manager->add_stm(_archival_meta_stm);
@@ -119,13 +124,18 @@ partition::partition(
                 _cloud_storage_partition
                   = ss::make_shared<cloud_storage::remote_partition>(
                     _archival_meta_stm->manifest(),
-                    cloud_storage_api.local(),
+                    _cloud_storage_api.local(),
                     cloud_storage_cache.local(),
                     cloud_storage_clients::bucket_name{*bucket});
             }
         }
+
+        // Construct cloud_storage write path (ntp_archiver)
+        maybe_construct_archiver();
     }
 }
+
+partition::~partition() {}
 
 ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
   const cloud_storage::offset_range& offsets) {
@@ -300,6 +310,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _cloud_storage_partition->start(); });
     }
 
+    if (_archiver) {
+        f = f.then([this] { return _archiver->start(); });
+    }
+
     return f;
 }
 
@@ -322,6 +336,10 @@ ss::future<> partition::stop() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->stop(); });
+    }
+
+    if (_archiver) {
+        f = f.then([this] { return _archiver->stop(); });
     }
 
     if (_archival_meta_stm) {
@@ -390,9 +408,69 @@ partition::timequery(storage::timequery_config cfg) {
     co_return result;
 }
 
+void partition::maybe_construct_archiver() {
+    if (
+      config::shard_local_cfg().cloud_storage_enabled()
+      && _cloud_storage_api.local_is_initialized()
+      && _raft->ntp().ns == model::kafka_namespace
+      && _raft->log().config().is_archival_enabled()) {
+        _archiver = std::make_unique<archival::ntp_archiver>(
+          log().config(), _archival_conf, _cloud_storage_api.local(), *this);
+    }
+}
 ss::future<> partition::update_configuration(topic_properties properties) {
-    co_await _raft->log().update_configuration(
-      properties.get_ntp_cfg_overrides());
+    auto& old_ntp_config = _raft->log().config();
+    auto new_ntp_config = properties.get_ntp_cfg_overrides();
+
+    // Before applying change, consider whether it changes cloud storage mode
+    bool cloud_storage_changed = false;
+    bool new_archival = new_ntp_config.shadow_indexing_mode
+                        && model::is_archival_enabled(
+                          new_ntp_config.shadow_indexing_mode.value());
+    if (
+      old_ntp_config.is_archival_enabled() != new_archival
+      || old_ntp_config.is_read_replica_mode_enabled()
+           != new_ntp_config.read_replica) {
+        cloud_storage_changed = true;
+    }
+
+    // Pass the configuration update into the storage layer
+    co_await _raft->log().update_configuration(new_ntp_config);
+
+    // If this partition's cloud storage mode changed, rebuild the archiver.
+    // This must happen after raft update, because it reads raft's ntp_config
+    // to decide whether to construct an archiver.
+    if (cloud_storage_changed) {
+        vlog(
+          clusterlog.debug,
+          "update_configuration[{}]: updating archiver for config {}",
+          new_ntp_config,
+          _raft->ntp());
+        if (_archiver) {
+            co_await _archiver->stop();
+            _archiver = nullptr;
+        }
+        maybe_construct_archiver();
+        if (_archiver) {
+            _archiver->notify_topic_config();
+            co_await _archiver->start();
+        }
+    } else {
+        vlog(
+          clusterlog.trace,
+          "update_configuration[{}]: no cloud storage change, archiver "
+          "exists={}",
+          _raft->ntp(),
+          bool(_archiver));
+
+        if (_archiver) {
+            // Assume that a partition config may also mean a topic
+            // configuration change.  This could be optimized by hooking
+            // in separate updates from the controller when our topic
+            // configuration changes.
+            _archiver->notify_topic_config();
+        }
+    }
 }
 
 std::optional<model::offset>
@@ -452,6 +530,33 @@ ss::future<> partition::remove_remote_persistent_state() {
     } else {
         vlog(
           clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());
+    }
+}
+
+ss::future<> partition::stop_archiver() {
+    if (_archiver) {
+        return _archiver->stop().then([this] {
+            // Drop it so that we don't end up double-stopping on shutdown
+            _archiver = nullptr;
+        });
+    } else {
+        return ss::now();
+    }
+}
+
+uint64_t partition::upload_backlog_size() const {
+    if (_archiver) {
+        return _archiver->estimate_backlog_size();
+    } else {
+        return 0;
+    }
+}
+
+void partition::set_topic_config(
+  std::unique_ptr<cluster::topic_configuration> cfg) {
+    _topic_cfg = std::move(cfg);
+    if (_archiver) {
+        _archiver->notify_topic_config();
     }
 }
 

@@ -15,6 +15,7 @@
 #include "archival/retention_calculator.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
@@ -46,50 +47,36 @@ namespace archival {
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
-  cluster::partition_manager& partition_manager,
-  const configuration& conf,
+  ss::lw_shared_ptr<const configuration> conf,
   cloud_storage::remote& remote,
-  ss::lw_shared_ptr<cluster::partition> part)
+  cluster::partition& parent)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
-  , _partition_manager(partition_manager)
   , _remote(remote)
-  , _partition(std::move(part))
-  , _policy(_ntp, conf.time_limit, conf.upload_io_priority)
-  , _bucket(conf.bucket_name)
+  , _parent(parent)
+  , _policy(_ntp, conf->time_limit, conf->upload_io_priority)
   , _gate()
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
-  , _cloud_storage_initial_backoff(conf.cloud_storage_initial_backoff)
-  , _segment_upload_timeout(conf.segment_upload_timeout)
-  , _metadata_sync_timeout(conf.manifest_upload_timeout)
-  , _upload_loop_initial_backoff(conf.upload_loop_initial_backoff)
-  , _upload_loop_max_backoff(conf.upload_loop_max_backoff)
+  , _conf(conf)
   , _sync_manifest_timeout(
       config::shard_local_cfg()
         .cloud_storage_readreplica_manifest_sync_timeout_ms.bind())
   , _max_segments_pending_deletion(
       config::shard_local_cfg()
         .cloud_storage_max_segments_pending_deletion_per_partition.bind())
-  , _upload_sg(conf.upload_scheduling_group)
-  , _io_priority(conf.upload_io_priority)
   , _housekeeping_interval(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _housekeeping_jitter(_housekeeping_interval(), 5ms)
   , _next_housekeeping(_housekeeping_jitter())
-  , _ntp_metrics_disabled(conf.ntp_metrics_disabled)
   , _segment_tags(cloud_storage::remote::make_segment_tags(_ntp, _rev))
   , _manifest_tags(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev)) {
-    vassert(
-      _partition && _partition->is_elected_leader(),
-      "must be the leader to launch ntp_archiver {}",
-      _ntp);
-    _start_term = _partition->term();
+    _start_term = _parent.term();
     // Override bucket for read-replica
-    if (_partition && _partition->is_read_replica_mode_enabled()) {
-        _bucket = _partition->get_read_replica_bucket();
+    if (_parent.is_read_replica_mode_enabled()) {
+        _bucket_override = _parent.get_read_replica_bucket();
     }
 
     vlog(
@@ -100,71 +87,61 @@ ntp_archiver::ntp_archiver(
 }
 
 const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
-    vassert(_partition, "Partition {} is not available", _ntp.path());
     vassert(
-      _partition->archival_meta_stm(),
+      _parent.archival_meta_stm(),
       "Archival STM is not available for {}",
       _ntp.path());
-    return _partition->archival_meta_stm()->manifest();
+    return _parent.archival_meta_stm()->manifest();
 }
 
-void ntp_archiver::run_sync_manifest_loop() {
-    vassert(
-      _upload_loop_state == loop_state::initial,
-      "attempt to start manifest sync loop for {} when upload loop has been "
-      "active",
-      _ntp);
-    vassert(
-      _sync_manifest_loop_state != loop_state::started,
-      "sync manifest loop for ntp {} already started",
-      _ntp);
-    _sync_manifest_loop_state = loop_state::started;
-
-    // NOTE: not using ssx::spawn_with_gate_then here because we want to log
-    // inside the gate (so that _rtclog is guaranteed to be alive).
-    ssx::spawn_with_gate(_gate, [this] {
-        return sync_manifest_loop()
-          .handle_exception_type([](const ss::abort_requested_exception&) {})
-          .handle_exception_type([](const ss::sleep_aborted&) {})
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([this](const ss::semaphore_timed_out& e) {
-              vlog(
-                _rtclog.warn,
-                "Semaphore timed out in sync manifest loop: {}. This may be "
-                "due to the system being overloaded. The loop will restart.",
-                e);
-          })
-          .handle_exception([this](std::exception_ptr e) {
-              vlog(_rtclog.error, "sync manifest loop error: {}", e);
-          })
-          .finally([this] {
-              vlog(_rtclog.debug, "sync manifest loop stopped");
-              _sync_manifest_loop_state = loop_state::stopped;
-          });
-    });
-}
-
-void ntp_archiver::run_upload_loop() {
-    vassert(
-      _sync_manifest_loop_state == loop_state::initial,
-      "attempt to start upload loop for {} when manifest sync loop has been "
-      "active",
-      _ntp);
-    vassert(
-      _upload_loop_state != loop_state::started,
-      "upload loop for ntp {} already started",
-      _ntp);
-    _upload_loop_state = loop_state::started;
-
-    if (!_probe) {
-        _probe.emplace(_ntp_metrics_disabled, _ntp);
+ss::future<> ntp_archiver::start() {
+    if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
+        ssx::spawn_with_gate(
+          _gate, [this] { return sync_manifest_until_abort(); });
+    } else {
+        ssx::spawn_with_gate(_gate, [this] { return upload_until_abort(); });
     }
 
-    // NOTE: not using ssx::spawn_with_gate_then here because we want to log
-    // inside the gate (so that _rtclog is guaranteed to be alive).
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::with_scheduling_group(
-                 _upload_sg, [this] { return upload_loop(); })
+    return ss::now();
+}
+
+void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
+    if (leader_id && *leader_id == _parent.raft()->self().id()) {
+        _leader_cond.signal();
+    }
+}
+
+ss::future<> ntp_archiver::upload_until_abort() {
+    if (!_probe) {
+        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+    }
+
+    while (!_as.abort_requested()) {
+        if (!_parent.is_elected_leader()) {
+            bool shutdown = false;
+            try {
+                vlog(_rtclog.debug, "upload loop waiting for leadership");
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                // stop() was called
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
+                vlog(_rtclog.trace, "upload loop shutting down");
+                break;
+            }
+
+            // We were signalled that we became leader: fall through and
+            // start the upload loop.
+        }
+
+        _start_term = _parent.term();
+        vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
+
+        co_await ss::with_scheduling_group(
+          _conf->upload_scheduling_group,
+          [this] { return upload_until_term_change(); })
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
@@ -172,40 +149,167 @@ void ntp_archiver::run_upload_loop() {
               vlog(
                 _rtclog.warn,
                 "Semaphore timed out in the upload loop: {}. This may be "
-                "due to the system being overloaded. The loop will restart.",
+                "due to the system being overloaded. The loop will "
+                "restart.",
                 e);
           })
           .handle_exception([this](std::exception_ptr e) {
               vlog(_rtclog.error, "upload loop error: {}", e);
-          })
-          .finally([this] {
-              vlog(_rtclog.debug, "upload loop stopped");
-              _upload_loop_state = loop_state::stopped;
-
-              _probe.reset();
           });
-    });
+    }
 }
 
-ss::future<> ntp_archiver::upload_loop() {
-    ss::lowres_clock::duration backoff = _upload_loop_initial_backoff;
+ss::future<> ntp_archiver::sync_manifest_until_abort() {
+    if (!_probe) {
+        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+    }
+
+    while (!_as.abort_requested()) {
+        if (!_parent.is_elected_leader()) {
+            bool shutdown = false;
+            try {
+                vlog(
+                  _rtclog.debug, "sync manifest loop waiting for leadership");
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
+                // stop() was called
+                vlog(_rtclog.trace, "sync manifest loop shutting down");
+                break;
+            }
+
+            // We were signalled that we became leader: fall through and
+            // start the upload loop.
+        }
+
+        _start_term = _parent.term();
+        vlog(
+          _rtclog.debug, "sync manifest loop starting in term {}", _start_term);
+
+        try {
+            co_await sync_manifest_until_term_change()
+              .handle_exception_type(
+                [](const ss::abort_requested_exception&) {})
+              .handle_exception_type([](const ss::sleep_aborted&) {})
+              .handle_exception_type([](const ss::gate_closed_exception&) {});
+        } catch (const ss::semaphore_timed_out& e) {
+            vlog(
+              _rtclog.warn,
+              "Semaphore timed out in the upload loop: {}. This may be "
+              "due to the system being overloaded. The loop will "
+              "restart.",
+              e);
+        } catch (...) {
+            vlog(
+              _rtclog.error, "upload loop error: {}", std::current_exception());
+        }
+    }
+}
+
+/// Helper for generating topic manifest to upload
+static cloud_storage::manifest_topic_configuration convert_topic_configuration(
+  const cluster::topic_configuration& cfg,
+  cluster::replication_factor replication_factor) {
+    cloud_storage::manifest_topic_configuration result {
+      .tp_ns = cfg.tp_ns,
+      .partition_count = cfg.partition_count,
+      .replication_factor = replication_factor,
+      .properties = {
+        .compression = cfg.properties.compression,
+        .cleanup_policy_bitflags = cfg.properties.cleanup_policy_bitflags,
+        .compaction_strategy = cfg.properties.compaction_strategy,
+        .timestamp_type = cfg.properties.timestamp_type,
+        .segment_size = cfg.properties.segment_size,
+        .retention_bytes = cfg.properties.retention_bytes,
+        .retention_duration = cfg.properties.retention_duration,
+      },
+    };
+    return result;
+}
+
+ss::future<> ntp_archiver::upload_topic_manifest() {
+    auto topic_cfg_opt = _parent.get_topic_config();
+    if (!topic_cfg_opt) {
+        // This is unexpected: by the time partition_manager instantiates
+        // partitions, they should have had their configs loaded by controller
+        // backend.
+        vlog(
+          _rtclog.error,
+          "No topic configuration available for {}",
+          _parent.ntp());
+        co_return;
+    }
+
+    auto& topic_cfg = *topic_cfg_opt;
+
+    vlog(
+      _rtclog.debug,
+      "Uploading topic manifest for {}, topic config {}",
+      _parent.ntp(),
+      topic_cfg);
+
+    auto replication_factor = cluster::replication_factor{
+      _parent.raft()->config().current_config().voters.size()};
+
+    try {
+        retry_chain_node fib(
+          _conf->manifest_upload_timeout,
+          _conf->cloud_storage_initial_backoff,
+          &_rtcnode);
+        retry_chain_logger ctxlog(archival_log, fib);
+        vlog(ctxlog.info, "Uploading topic manifest {}", _parent.ntp());
+        cloud_storage::topic_manifest tm(
+          convert_topic_configuration(topic_cfg, replication_factor), _rev);
+        auto key = tm.get_manifest_path();
+        vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
+        auto res = co_await _remote.upload_manifest(
+          _conf->bucket_name, tm, fib);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(ctxlog.warn, "Topic manifest upload failed: {}", key);
+        } else {
+            _topic_manifest_dirty = false;
+        }
+    } catch (const ss::gate_closed_exception& err) {
+    } catch (const ss::abort_requested_exception& err) {
+    } catch (...) {
+        vlog(
+          _rtclog.warn,
+          "Error writing topic manifest for {}: {}",
+          _parent.ntp(),
+          std::current_exception());
+    }
+}
+
+ss::future<> ntp_archiver::upload_until_term_change() {
+    ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
     while (upload_loop_can_continue()) {
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
         // lot of data next time we upload something.
         vassert(
-          _partition,
-          "Upload loop: partition is not set for {} archiver",
-          _ntp.path());
-        vassert(
-          _partition->archival_meta_stm(),
+          _parent.archival_meta_stm(),
           "Upload loop: archival metadata STM is not created for {} archiver",
           _ntp.path());
 
+        if (_parent.ntp().tp.partition == 0 && _topic_manifest_dirty) {
+            co_await upload_topic_manifest();
+        }
+
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
-        co_await _partition->archival_meta_stm()->sync(sync_timeout);
+        bool is_synced = co_await _parent.archival_meta_stm()->sync(
+          sync_timeout);
+        if (!is_synced) {
+            // This can happen on leadership changes, or on timeouts waiting
+            // for stm to catch up: in either case, we should re-check our
+            // loop condition: we will drop out if lost leadership, otherwise
+            // we will end up back here to try the sync again.
+            continue;
+        }
 
         auto [non_compacted_upload_result, compacted_upload_result]
           = co_await upload_next_candidates();
@@ -261,14 +365,14 @@ ss::future<> ntp_archiver::upload_loop() {
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
             co_await ss::sleep_abortable(
               backoff + _backoff_jitter.next_jitter_duration(), _as);
-            backoff = std::min(backoff * 2, _upload_loop_max_backoff);
+            backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff);
         } else {
-            backoff = _upload_loop_initial_backoff;
+            backoff = _conf->upload_loop_initial_backoff;
         }
     }
 }
 
-ss::future<> ntp_archiver::sync_manifest_loop() {
+ss::future<> ntp_archiver::sync_manifest_until_term_change() {
     while (sync_manifest_loop_can_continue()) {
         cloud_storage::download_result result = co_await sync_manifest();
 
@@ -366,8 +470,7 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         // The commands to update the manifest need to be batched together,
         // otherwise the read-replica will be able to see partial update. Also,
         // the batching is more efficient.
-        auto builder = _partition->archival_meta_stm()->batch_start(
-          deadline, _as);
+        auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
         builder.add_segments(std::move(mdiff));
         if (
           new_start_offset.has_value()
@@ -412,24 +515,22 @@ void ntp_archiver::update_probe() {
 
 bool ntp_archiver::upload_loop_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _parent.is_elected_leader() && _parent.term() == _start_term;
 }
 
 bool ntp_archiver::sync_manifest_loop_can_continue() const {
     // todo: think about it
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _parent.is_elected_leader() && _parent.term() == _start_term;
 }
 
 bool ntp_archiver::housekeeping_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _parent.is_elected_leader() && _parent.term() == _start_term;
 }
 
 ss::future<> ntp_archiver::stop() {
+    _leader_cond.broken();
     _as.request_abort();
     return _gate.close();
 }
@@ -449,28 +550,31 @@ ss::future<
 ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
     auto path = tmp.get_manifest_path();
     auto key = cloud_storage::remote_manifest_path(
       std::filesystem::path(std::move(path)));
     vlog(_rtclog.debug, "Downloading manifest");
-    auto result = co_await _remote.download_manifest(_bucket, key, tmp, fib);
+    auto result = co_await _remote.download_manifest(
+      get_bucket_name(), key, tmp, fib);
 
     // It's OK if the manifest is not found for a newly created topic. The
     // condition in if statement is not guaranteed to cover all cases for new
     // topics, so false positives may happen for this warn.
     if (
       result == cloud_storage::download_result::notfound
-      && _partition->high_watermark() != model::offset(0)
-      && _partition->term() != model::term_id(1)) {
+      && _parent.high_watermark() != model::offset(0)
+      && _parent.term() != model::term_id(1)) {
         vlog(
           _rtclog.warn,
           "Manifest for {} not found in S3, partition high_watermark: {}, "
           "partition term: {}",
           _ntp,
-          _partition->high_watermark(),
-          _partition->term());
+          _parent.high_watermark(),
+          _parent.term());
     }
 
     co_return std::make_pair(tmp, result);
@@ -479,14 +583,16 @@ ntp_archiver::download_manifest() {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest() {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(
       ctxlog.debug,
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest(), fib, _manifest_tags);
+      get_bucket_name(), manifest(), fib, _manifest_tags);
 }
 
 remote_segment_path
@@ -512,7 +618,9 @@ ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_segment(upload_candidate candidate) {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->segment_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = segment_path_for_candidate(candidate);
@@ -534,11 +642,11 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
             candidate.sources,
             candidate.file_offset,
             candidate.final_file_offset,
-            _io_priority));
+            _conf->upload_io_priority));
     };
 
     co_return co_await _remote.upload_segment(
-      _bucket,
+      get_bucket_name(),
       path,
       candidate.content_length,
       reset_func,
@@ -549,15 +657,15 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
 
 bool ntp_archiver::archiver_lost_leadership(
   cloud_storage::lazy_abort_source& las) {
-    auto original_term = _partition->term();
-    auto lost_leadership = !_partition->is_elected_leader()
-                           || _partition->term() != original_term;
+    auto original_term = _parent.term();
+    auto lost_leadership = !_parent.is_elected_leader()
+                           || _parent.term() != original_term;
     if (unlikely(lost_leadership)) {
         std::string reason{las.abort_reason()};
         las.abort_reason(fmt::format(
           fmt::runtime(reason),
-          _partition->is_elected_leader(),
-          _partition->term(),
+          _parent.is_elected_leader(),
+          _parent.term(),
           original_term));
     }
     return lost_leadership;
@@ -567,13 +675,15 @@ ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_tx(upload_candidate candidate) {
     gate_guard guard{_gate};
     retry_chain_node fib(
-      _segment_upload_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->segment_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     vlog(
       ctxlog.debug, "Uploading segment's tx range {}", candidate.exposed_name);
 
-    auto tx_range = co_await _partition->aborted_transactions(
+    auto tx_range = co_await _parent.aborted_transactions(
       candidate.starting_offset, candidate.final_offset);
 
     if (tx_range.empty()) {
@@ -588,7 +698,7 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
     cloud_storage::tx_range_manifest manifest(path, tx_range);
 
     co_return co_await _remote.upload_manifest(
-      _bucket, manifest, fib, _tx_tags);
+      get_bucket_name(), manifest, fib, _tx_tags);
 }
 
 // The function turns an array of futures that return an error code into a
@@ -618,11 +728,8 @@ ss::future<ntp_archiver::scheduled_upload>
 ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto start_upload_offset = upload_ctx.start_offset;
     auto last_stable_offset = upload_ctx.last_offset;
-    std::optional<storage::log> log = _partition_manager.log(_ntp);
-    if (!log) {
-        vlog(_rtclog.warn, "couldn't find log in log manager");
-        co_return scheduled_upload{.stop = ss::stop_iteration::yes};
-    }
+
+    auto log = _parent.log();
 
     upload_candidate_with_locks upload_with_locks;
     switch (upload_ctx.upload_kind) {
@@ -630,14 +737,14 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         upload_with_locks = co_await _policy.get_next_candidate(
           start_upload_offset,
           last_stable_offset,
-          *log,
-          *_partition->get_offset_translator_state(),
-          _segment_upload_timeout);
+          log,
+          *_parent.get_offset_translator_state(),
+          _conf->segment_upload_timeout);
         break;
     case segment_upload_kind::compacted:
         const auto& m = manifest();
         upload_with_locks = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, *log, m, _segment_upload_timeout);
+          start_upload_offset, log, m, _conf->segment_upload_timeout);
         break;
     }
 
@@ -667,7 +774,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     start_upload_offset = offset + model::offset(1);
-    auto ot_state = _partition->get_offset_translator_state();
+    auto ot_state = _parent.get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
     auto delta_offset_end = upload.final_offset
                             - model::offset_cast(
@@ -731,7 +838,7 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
 
     if (
       config::shard_local_cfg().cloud_storage_enable_compacted_topic_reupload()
-      && _partition->get_ntp_config().is_compacted()) {
+      && _parent.get_ntp_config().is_compacted()) {
         params.emplace_back(
           segment_upload_kind::compacted,
           compacted_segments_upload_start,
@@ -877,13 +984,12 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
 
     if (total.num_succeeded != 0) {
         vassert(
-          _partition, "Partition is not set for {} archiver", _ntp.path());
-        vassert(
-          _partition->archival_meta_stm(),
+          _parent.archival_meta_stm(),
           "Archival metadata STM is not created for {} archiver",
           _ntp.path());
-        auto deadline = ss::lowres_clock::now() + _metadata_sync_timeout;
-        auto error = co_await _partition->archival_meta_stm()->add_segments(
+        auto deadline = ss::lowres_clock::now()
+                        + _conf->manifest_upload_timeout;
+        auto error = co_await _parent.archival_meta_stm()->add_segments(
           mdiff, deadline, _as);
         if (
           error != cluster::errc::success
@@ -962,7 +1068,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   std::optional<model::offset> lso_override) {
     vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
     auto last_stable_offset = lso_override ? *lso_override
-                                           : _partition->last_stable_offset();
+                                           : _parent.last_stable_offset();
     ss::gate::holder holder(_gate);
     try {
         auto units = co_await ss::get_units(_mutex, 1);
@@ -979,11 +1085,8 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
 uint64_t ntp_archiver::estimate_backlog_size() {
     auto last_offset = manifest().size() ? manifest().get_last_offset()
                                          : model::offset(0);
-    auto opt_log = _partition_manager.log(_ntp);
-    if (!opt_log) {
-        return 0U;
-    }
-    auto log = dynamic_cast<storage::disk_log_impl*>(opt_log->get_impl());
+    auto log_generic = _parent.log();
+    auto log = dynamic_cast<storage::disk_log_impl*>(log_generic.get_impl());
     uint64_t total_size = std::accumulate(
       std::begin(log->segments()),
       std::end(log->segments()),
@@ -1002,7 +1105,8 @@ uint64_t ntp_archiver::estimate_backlog_size() {
 }
 
 ss::future<std::optional<cloud_storage::partition_manifest>>
-ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
+ntp_archiver::maybe_truncate_manifest() {
+    retry_chain_node rtc;
     ss::gate::holder gh(_gate);
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     vlog(ctxlog.info, "archival metadata cleanup started");
@@ -1010,11 +1114,14 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     const auto& m = manifest();
     for (const auto& [key, meta] : m) {
         retry_chain_node fib(
-          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
+          _conf->manifest_upload_timeout,
+          _conf->upload_loop_initial_backoff,
+          &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
           meta.base_offset, meta.segment_term);
         auto spath = m.generate_segment_path(meta);
-        auto result = co_await _remote.segment_exists(_bucket, spath, fib);
+        auto result = co_await _remote.segment_exists(
+          get_bucket_name(), spath, fib);
         if (result == cloud_storage::download_result::notfound) {
             vlog(
               ctxlog.info,
@@ -1029,17 +1136,19 @@ ntp_archiver::maybe_truncate_manifest(retry_chain_node& rtc) {
     std::optional<cloud_storage::partition_manifest> result;
     if (
       adjusted_start_offset != model::offset::min()
-      && _partition->archival_meta_stm()) {
+      && _parent.archival_meta_stm()) {
         vlog(
           ctxlog.info,
           "archival metadata cleanup, some segments will be removed from the "
           "manifest, start offset before cleanup: {}",
           manifest().get_start_offset());
         retry_chain_node rc_node(
-          _metadata_sync_timeout, _upload_loop_initial_backoff, &rtc);
-        auto error = co_await _partition->archival_meta_stm()->truncate(
+          _conf->manifest_upload_timeout,
+          _conf->upload_loop_initial_backoff,
+          &rtc);
+        auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
-          ss::lowres_clock::now() + _metadata_sync_timeout,
+          ss::lowres_clock::now() + _conf->manifest_upload_timeout,
           _as);
         if (error != cluster::errc::success) {
             vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
@@ -1120,7 +1229,7 @@ ss::future<> ntp_archiver::apply_retention() {
     }
 
     auto retention_calculator = retention_calculator::factory(
-      manifest(), _partition->get_ntp_config());
+      manifest(), _parent.get_ntp_config());
     if (!retention_calculator) {
         co_return;
     }
@@ -1136,7 +1245,7 @@ ss::future<> ntp_archiver::apply_retention() {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _partition->archival_meta_stm()->truncate(
+        auto error = co_await _parent.archival_meta_stm()->truncate(
           *next_start_offset, deadline, _as);
         if (error != cluster::errc::success) {
             vlog(
@@ -1162,7 +1271,7 @@ ss::future<> ntp_archiver::garbage_collect() {
     }
 
     const auto to_remove
-      = _partition->archival_meta_stm()->get_segments_to_cleanup();
+      = _parent.archival_meta_stm()->get_segments_to_cleanup();
 
     size_t successful_deletes{0};
     co_await ss::max_concurrent_for_each(
@@ -1206,7 +1315,7 @@ ss::future<> ntp_archiver::garbage_collect() {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _partition->archival_meta_stm()->cleanup_metadata(
+        auto error = co_await _parent.archival_meta_stm()->cleanup_metadata(
           deadline, _as);
 
         if (error != cluster::errc::success) {
@@ -1232,21 +1341,32 @@ ntp_archiver::delete_segment(const remote_segment_path& path) {
     _as.check();
 
     retry_chain_node fib(
-      _metadata_sync_timeout, _cloud_storage_initial_backoff, &_rtcnode);
+      _conf->manifest_upload_timeout,
+      _conf->cloud_storage_initial_backoff,
+      &_rtcnode);
 
     auto res = co_await _remote.delete_object(
-      _bucket, cloud_storage_clients::object_key{path}, fib);
+      get_bucket_name(), cloud_storage_clients::object_key{path}, fib);
 
     if (res == cloud_storage::upload_result::success) {
         auto tx_range_manifest_path
           = cloud_storage::tx_range_manifest(path).get_manifest_path();
         co_await _remote.delete_object(
-          _bucket,
+          _conf->bucket_name,
           cloud_storage_clients::object_key{tx_range_manifest_path},
           fib);
     }
 
     co_return res;
+}
+
+const cloud_storage_clients::bucket_name&
+ntp_archiver::get_bucket_name() const {
+    if (_bucket_override) {
+        return *_bucket_override;
+    } else {
+        return _conf->bucket_name;
+    }
 }
 
 } // namespace archival

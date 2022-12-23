@@ -37,8 +37,7 @@ class MultiRestartTest(EndToEndTest):
         # on debug builds.
         partition_count = 10 if self.debug_mode else 60
 
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
-                                 cloud_storage_max_connections=5,
+        si_settings = SISettings(cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 

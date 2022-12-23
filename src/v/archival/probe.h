@@ -77,25 +77,4 @@ private:
       ssx::metrics::public_metrics_handle};
 };
 
-/// Service level probe
-class service_probe {
-public:
-    explicit service_probe(service_metrics_disabled disabled);
-
-    /// Count new ntp archiving event
-    void start_archiving_ntp() { _cnt_start_archiving_ntp++; }
-
-    /// Count the removal (from the archival subsystem on this shard)
-    /// of the ntp event
-    void stop_archiving_ntp() { _cnt_stop_archiving_ntp++; }
-
-private:
-    /// Start archiving npt event counter
-    uint64_t _cnt_start_archiving_ntp = 0;
-    /// Stop archiving npt event counter
-    uint64_t _cnt_stop_archiving_ntp = 0;
-
-    ss::metrics::metric_groups _metrics;
-};
-
 } // namespace archival

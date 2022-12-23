@@ -11,7 +11,6 @@
 #pragma once
 
 #include "archival/ntp_archiver_service.h"
-#include "archival/service.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
@@ -152,12 +151,6 @@ public:
     void wait_for_lso(const model::ntp&);
     /// Provides access point for segment_matcher CRTP template
     storage::api& get_local_storage_api();
-    /// Get archival scheduler service
-    archival::internal::scheduler_service_impl& get_scheduler_service() {
-        auto p = reinterpret_cast<archival::internal::scheduler_service_impl*>(
-          &app.archival_scheduler.local());
-        return *p;
-    }
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
     void init_storage_api_local(
@@ -183,15 +176,6 @@ public:
       const storage::ntp_config& cfg,
       cloud_storage::partition_manifest manifest);
 
-    /// Stops the scheduler service before listening to incoming HTTP calls.
-    /// Intended to be used in tests which create their own archiver, where
-    /// stopping the scheduler first is necessary so that the built in archiver
-    /// does not interfere with the archiver in test.
-    void stop_archiver_scheduler_and_listen() {
-        get_scheduler_service().stop().get();
-        listen();
-    }
-
 private:
     void initialize_shard(
       storage::api& api,
@@ -202,7 +186,9 @@ private:
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
 
-std::tuple<archival::configuration, cloud_storage::configuration>
+std::tuple<
+  ss::lw_shared_ptr<archival::configuration>,
+  cloud_storage::configuration>
 get_configurations();
 
 cloud_storage::partition_manifest load_manifest(std::string_view v);

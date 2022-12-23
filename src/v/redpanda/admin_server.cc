@@ -11,7 +11,7 @@
 
 #include "redpanda/admin_server.h"
 
-#include "archival/service.h"
+#include "archival/ntp_archiver_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
@@ -109,7 +109,6 @@ admin_server::admin_server(
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
-  ss::sharded<archival::scheduler_service>& archival_service,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend)
@@ -123,7 +122,6 @@ admin_server::admin_server(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
-  , _archival_service(archival_service)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend) {}
 
@@ -3310,9 +3308,17 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         vlog(logger.info, "Need to redirect bucket syncup request");
         throw co_await redirect_to_leader(*request, ntp);
     } else {
-        auto result = co_await _archival_service.map_reduce(
-          manifest_reducer(), [ntp](archival::scheduler_service& service) {
-              return service.maybe_truncate_manifest(ntp);
+        auto result = co_await _partition_manager.map_reduce(
+          manifest_reducer(), [ntp](cluster::partition_manager& p) {
+              auto partition = p.get(ntp);
+              if (partition) {
+                  auto archiver = partition->archiver();
+                  if (archiver) {
+                      return archiver.value().get().maybe_truncate_manifest();
+                  }
+              }
+              return ss::make_ready_future<
+                std::optional<cloud_storage::partition_manifest>>(std::nullopt);
           });
         vlog(logger.info, "Requested bucket syncup completed");
         if (result) {

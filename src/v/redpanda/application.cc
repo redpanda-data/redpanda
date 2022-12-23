@@ -10,7 +10,6 @@
 #include "redpanda/application.h"
 
 #include "archival/ntp_archiver_service.h"
-#include "archival/service.h"
 #include "archival/upload_controller.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
@@ -639,7 +638,6 @@ void application::configure_admin_server() {
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(archival_scheduler),
       std::ref(_connection_cache),
       std::ref(node_status_table),
       std::ref(self_test_frontend))
@@ -892,6 +890,18 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(partition_recovery_manager),
       std::ref(cloud_storage_api),
       std::ref(shadow_index_cache),
+      ss::sharded_parameter(
+        [sg = _scheduling_groups.archival_upload(),
+         p = archival_priority(),
+         enabled = archival_storage_enabled()]()
+          -> ss::lw_shared_ptr<archival::configuration> {
+            if (enabled) {
+                return ss::make_lw_shared<archival::configuration>(
+                  archival::get_archival_service_config(sg, p));
+            } else {
+                return nullptr;
+            }
+        }),
       std::ref(feature_table),
       std::ref(tm_stm_cache),
       ss::sharded_parameter([] {
@@ -988,31 +998,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             [](cloud_storage::cache& cache) { return cache.start(); })
           .get();
 
-        syschecks::systemd_message("Starting archival scheduler").get();
-        ss::sharded<archival::configuration> arch_configs;
-        arch_configs.start().get();
-        arch_configs
-          .invoke_on_all([this](archival::configuration& c) {
-              return archival::scheduler_service::get_archival_service_config(
-                       _scheduling_groups.archival_upload(),
-                       archival_priority())
-                .then(
-                  [&c](archival::configuration cfg) { c = std::move(cfg); });
-          })
-          .get();
-        construct_service(
-          archival_scheduler,
-          std::ref(cloud_storage_api),
-          std::ref(partition_manager),
-          std::ref(controller->get_topics_state()),
-          std::ref(arch_configs),
-          std::ref(feature_table))
-          .get();
-        arch_configs.stop().get();
-
         construct_service(
           _archival_upload_controller,
-          std::ref(archival_scheduler),
+          std::ref(partition_manager),
           make_upload_controller_config(_scheduling_groups.archival_upload()))
           .get();
     }
@@ -1724,13 +1712,6 @@ void application::start_runtime_services(
         &cluster::members_manager::join_cluster)
       .get();
 
-    if (archival_storage_enabled()) {
-        syschecks::systemd_message("Starting archival storage").get();
-        archival_scheduler
-          .invoke_on_all(
-            [](archival::scheduler_service& svc) { return svc.start(); })
-          .get();
-    }
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     if (!config::node().admin().empty()) {

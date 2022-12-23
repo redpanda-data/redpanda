@@ -219,11 +219,6 @@ public:
         aconf.segment_upload_timeout = 1s;
         aconf.manifest_upload_timeout = 1s;
         aconf.time_limit = std::nullopt;
-        // Set the archiver reconciliation interval to be longer than the
-        // duration of any sensible unit test. Unit tests request reconciliation
-        // manually by calling into the scheduler service.
-        // TODO: Remove in PR#7547
-        aconf.reconciliation_interval = 1h;
         return aconf;
     }
 
@@ -316,10 +311,6 @@ public:
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                       archival_cfg->cloud_storage_initial_backoff));
-                config.get("cloud_storage_reconciliation_interval_ms")
-                  .set_value(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                      archival_cfg->reconciliation_interval));
                 config.get("cloud_storage_manifest_upload_timeout_ms")
                   .set_value(
                     std::chrono::duration_cast<std::chrono::milliseconds>(

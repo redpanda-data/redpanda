@@ -947,8 +947,7 @@ class TopicRecoveryTest(RedpandaTest):
                  test_context: TestContext,
                  num_brokers: Optional[int] = None,
                  extra_rp_conf=dict()):
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=50,
-                                 cloud_storage_max_connections=5,
+        si_settings = SISettings(cloud_storage_max_connections=5,
                                  cloud_storage_segment_max_upload_interval_sec=
                                  CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC,
                                  log_segment_size=default_log_segment_size)

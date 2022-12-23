@@ -88,8 +88,6 @@ public:
     smp_groups smp_service_groups;
 
     // Sorted list of services (public members)
-    ss::sharded<archival::scheduler_service> archival_scheduler;
-
     ss::sharded<cloud_storage::cache> shadow_index_cache;
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;

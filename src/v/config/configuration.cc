@@ -1017,11 +1017,7 @@ configuration::configuration()
        model::cloud_credentials_source::sts,
        model::cloud_credentials_source::gcp_instance_metadata})
   , cloud_storage_reconciliation_ms(
-      *this,
-      "cloud_storage_reconciliation_interval_ms",
-      "Interval at which the archival service runs reconciliation (ms)",
-      {.visibility = visibility::tunable},
-      1s)
+      *this, "cloud_storage_reconciliation_interval_ms")
   , cloud_storage_upload_loop_initial_backoff_ms(
       *this,
       "cloud_storage_upload_loop_initial_backoff_ms",

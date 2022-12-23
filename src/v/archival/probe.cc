@@ -122,28 +122,4 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
          .aggregate(aggregate_labels)});
 }
 
-service_probe::service_probe(service_metrics_disabled disabled) {
-    if (disabled) {
-        return;
-    }
-    namespace sm = ss::metrics;
-
-    _metrics.add_group(
-      prometheus_sanitize::metrics_name("archival_service"),
-      {
-        sm::make_counter(
-          "start_archiving_ntp",
-          [this] { return _cnt_start_archiving_ntp; },
-          sm::description("Start archiving ntp event counter")),
-        sm::make_counter(
-          "stop_archiving_ntp",
-          [this] { return _cnt_stop_archiving_ntp; },
-          sm::description("Stop archiving ntp event counter")),
-        sm::make_gauge(
-          "num_archived_ntp",
-          [this] { return _cnt_start_archiving_ntp - _cnt_stop_archiving_ntp; },
-          sm::description("Current number of ntp that archiver manages")),
-      });
-}
-
 } // namespace archival

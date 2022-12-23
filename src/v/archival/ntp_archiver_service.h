@@ -60,12 +60,6 @@ public:
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
 
-    enum class loop_state {
-        initial,
-        started,
-        stopped,
-    };
-
     /// Create new instance
     ///
     /// \param ntp is an ntp that archiver is responsible for
@@ -74,38 +68,19 @@ public:
     /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
-      cluster::partition_manager&,
-      const configuration& conf,
+      ss::lw_shared_ptr<const configuration> conf,
       cloud_storage::remote& remote,
-      ss::lw_shared_ptr<cluster::partition> part);
+      cluster::partition& parent);
 
-    /// Start the fiber that will upload the partition data to the cloud
-    /// storage. Can be started only once.
-    void run_upload_loop();
-
-    void run_sync_manifest_loop();
+    /// Spawn background fibers, which depending on the mode (read replica or
+    /// not) will either do uploads, or periodically read back the manifest.
+    ss::future<> start();
 
     /// Stop archiver.
     ///
     /// \return future that will become ready when all async operation will be
     /// completed
     ss::future<> stop();
-
-    bool upload_loop_stopped() const {
-        return _upload_loop_state == loop_state::stopped;
-    }
-
-    bool sync_manifest_loop_stopped() const {
-        return _sync_manifest_loop_state == loop_state::stopped;
-    }
-
-    /// Query if either of the manifest sync loop or upload loop has stopped
-    /// These are mutually exclusive loops, and if any one has transitioned to a
-    /// stopped state then the archiver is stopped.
-    bool is_loop_stopped() const {
-        return _sync_manifest_loop_state == loop_state::stopped
-               || _upload_loop_state == loop_state::stopped;
-    }
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -155,7 +130,7 @@ public:
 
     /// \brief Probe remote storage and truncate the manifest if needed
     ss::future<std::optional<cloud_storage::partition_manifest>>
-    maybe_truncate_manifest(retry_chain_node& rtc);
+    maybe_truncate_manifest();
 
     /// \brief Perform housekeeping operations.
     ss::future<> housekeeping();
@@ -171,6 +146,22 @@ public:
     ss::future<> garbage_collect();
 
     virtual ~ntp_archiver() = default;
+
+    /**
+     * Partition 0 carries a copy of the topic configuration, updated by
+     * the controller, so that its archiver can make updates to the topic
+     * manifest in cloud storage.
+     *
+     * When that changes, we are notified, so that we may re-upload the
+     * manifest if needed.
+     */
+    void notify_topic_config() { _topic_manifest_dirty = true; }
+
+    /**
+     * If the group has a leader (non-null argument), and it is ourselves,
+     * then signal _leader_cond to prompt the upload loop to stop waiting.
+     */
+    void notify_leadership(std::optional<model::node_id>);
 
 private:
     /// Information about started upload
@@ -199,10 +190,11 @@ private:
     };
 
     using allow_reuploads_t = ss::bool_class<struct allow_reupload_tag>;
-    /// An upload context represents a range of offsets to be uploaded. It will
-    /// search for segments within this range and upload them, it also carries
-    /// some context information like whether re-uploads are allowed, what is
-    /// the maximum number of in-flight uploads that can be processed etc.
+    /// An upload context represents a range of offsets to be uploaded. It
+    /// will search for segments within this range and upload them, it also
+    /// carries some context information like whether re-uploads are
+    /// allowed, what is the maximum number of in-flight uploads that can be
+    /// processed etc.
     struct upload_context {
         /// The kind of segment being uploaded
         segment_upload_kind upload_kind;
@@ -210,8 +202,8 @@ private:
         model::offset start_offset;
         /// Uploads will stop at this offset
         model::offset last_offset;
-        /// Controls checks for reuploads, compacted segments have this check
-        /// disabled
+        /// Controls checks for reuploads, compacted segments have this
+        /// check disabled
         allow_reuploads_t allow_reuploads;
         /// Collection of uploads scheduled so far
         std::vector<scheduled_upload> uploads{};
@@ -246,8 +238,9 @@ private:
       std::vector<ntp_archiver::scheduled_upload> scheduled);
 
     /// Waits for scheduled segment uploads. The uploaded segments could be
-    /// compacted or non-compacted, the actions taken are similar in both cases
-    /// with the major difference being the probe updates done after the upload.
+    /// compacted or non-compacted, the actions taken are similar in both
+    /// cases with the major difference being the probe updates done after
+    /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
       std::vector<scheduled_upload> scheduled,
       segment_upload_kind segment_kind);
@@ -267,11 +260,26 @@ private:
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest();
 
-    /// Launch the upload loop fiber.
-    ss::future<> upload_loop();
+    /// While leader, within a particular term, keep trying to upload data
+    /// from local storage to remote storage until our term changes or
+    /// our abort source fires.
+    ss::future<> upload_until_term_change();
 
-    /// Launch the sync manifest loop fiber.
-    ss::future<> sync_manifest_loop();
+    /// Outer loop to keep invoking upload_until_term_change until our
+    /// abort source fires.
+    ss::future<> upload_until_abort();
+
+    /// Periodically try to download and ingest the remote manifest until
+    /// our term changes or abort source fires
+    ss::future<> sync_manifest_until_term_change();
+
+    /// Outer loop to keep invoking sync_manifest_until_term_change until our
+    /// abort source fires.
+    ss::future<> sync_manifest_until_abort();
+
+    /// Attempt to upload topic manifest.  Does not throw on error.  Clears
+    /// _topic_manifest_dirty on success.
+    ss::future<> upload_topic_manifest();
 
     /// Delete a segment and its transaction metadata from S3.
     /// The transaction metadata is only deleted if the segment
@@ -295,41 +303,40 @@ private:
     /// Method to use with lazy_abort_source
     bool archiver_lost_leadership(cloud_storage::lazy_abort_source& las);
 
+    const cloud_storage_clients::bucket_name& get_bucket_name() const;
+
     model::ntp _ntp;
     model::initial_revision_id _rev;
-    cluster::partition_manager& _partition_manager;
     cloud_storage::remote& _remote;
-    ss::lw_shared_ptr<cluster::partition> _partition;
+    cluster::partition& _parent;
     model::term_id _start_term;
     archival_policy _policy;
-    cloud_storage_clients::bucket_name _bucket;
+    std::optional<cloud_storage_clients::bucket_name> _bucket_override;
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
-    ss::lowres_clock::duration _cloud_storage_initial_backoff;
-    ss::lowres_clock::duration _segment_upload_timeout;
-    ss::lowres_clock::duration _metadata_sync_timeout;
     ssx::semaphore _mutex{1, "archive/ntp"};
-    ss::lowres_clock::duration _upload_loop_initial_backoff;
-    ss::lowres_clock::duration _upload_loop_max_backoff;
+    ss::lw_shared_ptr<const configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     config::binding<size_t> _max_segments_pending_deletion;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
-    ss::scheduling_group _upload_sg;
-    ss::io_priority_class _io_priority;
 
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
     ss::lowres_clock::time_point _next_housekeeping;
 
-    per_ntp_metrics_disabled _ntp_metrics_disabled;
-    std::optional<ntp_level_probe> _probe{std::nullopt};
+    // 'dirty' in the sense that we need to do another update to S3 to ensure
+    // the object matches our local topic configuration.
+    bool _topic_manifest_dirty{false};
 
-    loop_state _upload_loop_state{loop_state::initial};
-    loop_state _sync_manifest_loop_state{loop_state::initial};
+    // While waiting for leadership, wait on this condition variable. It will
+    // be triggered by notify_leadership.
+    ss::condition_variable _leader_cond;
+
+    std::optional<ntp_level_probe> _probe{std::nullopt};
 
     const cloud_storage_clients::object_tag_formatter _segment_tags;
     const cloud_storage_clients::object_tag_formatter _manifest_tags;

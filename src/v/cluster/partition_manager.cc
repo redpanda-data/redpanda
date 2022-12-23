@@ -9,6 +9,8 @@
 
 #include "cluster/partition_manager.h"
 
+#include "archival/ntp_archiver_service.h"
+#include "archival/types.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_recovery_manager.h"
@@ -52,6 +54,7 @@ partition_manager::partition_manager(
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
+  ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
   config::binding<uint64_t> max_concurrent_producer_ids)
@@ -61,9 +64,32 @@ partition_manager::partition_manager(
   , _partition_recovery_mgr(recovery_mgr)
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
+  , _archival_conf(std::move(archival_conf))
   , _feature_table(feature_table)
   , _tm_stm_cache(tm_stm_cache)
-  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {}
+  , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+    _leader_notify_handle
+      = _raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id term [[maybe_unused]],
+          std::optional<model::node_id> leader_id) {
+            auto p = partition_for(group);
+            if (p) {
+                auto a = p->archiver();
+                if (a) {
+                    a.value().get().notify_leadership(leader_id);
+                }
+            }
+        });
+}
+
+partition_manager::~partition_manager() {
+    if (_leader_notify_handle) {
+        _raft_manager.local().unregister_leadership_notification(
+          *_leader_notify_handle);
+    }
+}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -158,6 +184,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _tx_gateway_frontend,
       _cloud_storage_api,
       _cloud_storage_cache,
+      _archival_conf,
       _feature_table,
       _tm_stm_cache,
       _max_concurrent_producer_ids,
@@ -202,6 +229,10 @@ partition_manager::maybe_download_log(
 }
 
 ss::future<> partition_manager::stop_partitions() {
+    _raft_manager.local().unregister_leadership_notification(
+      *_leader_notify_handle);
+    _leader_notify_handle.reset();
+
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
@@ -281,6 +312,14 @@ ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     _raft_table.erase(partition->group());
 
     return do_shutdown(partition);
+}
+
+uint64_t partition_manager::upload_backlog_size() const {
+    uint64_t size = 0;
+    for (const auto& [_, partition] : _ntp_table) {
+        size += partition->upload_backlog_size();
+    }
+    return size;
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
