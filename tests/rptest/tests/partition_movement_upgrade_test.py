@@ -34,8 +34,10 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         self._stop_move = threading.Event()
 
     def setUp(self):
-        self.old_version, self.old_version_str = self.installer.install(
-            self.redpanda.nodes, (22, 1))
+        self.old_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+        _, self.old_version_str = self.installer.install(
+            self.redpanda.nodes, self.old_version)
         super(PartitionMovementUpgradeTest, self).setUp()
 
     def _start_producer(self, topic_name):
@@ -131,7 +133,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         assert self.old_version_str in unique_versions, unique_versions
 
         # Upgrade one node to the head version.
-        self.installer.install(self.redpanda.nodes, (22, 2))
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
         assert self.old_version_str in unique_versions, unique_versions
@@ -145,7 +147,7 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
         # Only once we upgrade the rest of the nodes do we converge on the new
         # version.
-        self.installer.install([first_node], (22, 2))
+        self.installer.install([first_node], RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
         assert self.old_version_str not in unique_versions, unique_versions
