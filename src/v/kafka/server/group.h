@@ -258,6 +258,11 @@ public:
         return _pending_members.find(member) != _pending_members.end();
     }
 
+    bool subscribed(const model::topic&) const;
+
+    static absl::node_hash_set<model::topic>
+      decode_consumer_subscriptions(iobuf);
+
     /// Reschedule all members' heartbeat expiration
     void reschedule_all_member_heartbeats() {
         for (auto& e : _members) {
@@ -819,6 +824,9 @@ private:
         return _feature_table.local().is_active(
           features::feature::transaction_ga);
     }
+
+    void update_subscriptions();
+    std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 
     kafka::group_id _id;
     group_state _state;
