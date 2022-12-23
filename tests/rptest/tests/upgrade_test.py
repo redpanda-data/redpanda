@@ -123,10 +123,10 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
     "raft - .*raft group does not exists on target broker",
     # e.g. rpc - Service handler thrown an exception - seastar::gate_closed_exception (gate closed)
-    "rpc - .*gate_closed_exception.*",
+    "(kafka|rpc) - .*gate_closed_exception.*",
     # Tests on mixed versions will start out with an unclean restart before
     # starting a workload.
-    "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)",
+    "(raft|kafka|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)",
 ]
 
 
