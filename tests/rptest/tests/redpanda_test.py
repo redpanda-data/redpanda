@@ -81,7 +81,19 @@ class RedpandaTest(Test):
         the much slower debug builds of redpanda, which generally cannot
         keep up with significant quantities of data or partition counts.
         """
-        return os.environ.get('BUILD_TYPE', None) == 'debug'
+        build_type = os.environ.get('BUILD_TYPE', None)
+        if build_type is not None:
+            return build_type == 'debug'
+        else:
+            # Work around https://github.com/redpanda-data/devprod/issues/523
+            job_key = os.environ.get("BUILDKITE_STEP_KEY", None)
+            self.logger.warn(
+                f"BUILD_TYPE variable not set!  Trying buildkite step key '{job_key}'..."
+            )
+            if job_key is None:
+                return False
+            else:
+                return 'debug' in job_key
 
     @property
     def ci_mode(self):
