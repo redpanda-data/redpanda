@@ -94,7 +94,7 @@ std::string_view to_string_view(feature_state::state s) {
 // bumps, this is _not_ the intended usage, as stable branches are
 // meant to be safely downgradable within the branch, and new features
 // imply that new data formats may be written.
-static constexpr cluster_version latest_version = cluster_version{8};
+static constexpr cluster_version latest_version = cluster_version{9};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
