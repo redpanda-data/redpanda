@@ -82,28 +82,32 @@ class BacktraceCapture(threading.Thread):
 
         blocks = []
 
-        accumulator = None
-        while True:
-            line = self.process.stderr.readline()
-            if line:
-                sys.stderr.write(line)
-                if accumulator is not None and self.BACKTRACE_BODY.search(
-                        line):
-                    # Mid-backtrace
-                    accumulator.append(line)
-                elif accumulator is not None:
-                    # End of backtrace
-                    if accumulator:
-                        blocks.append(accumulator)
-                    accumulator = None
-
-                # A start of backtrace line, which may also have been an end of backtrace line above
-                if accumulator is None and self.BACKTRACE_START.search(line):
-                    accumulator = []
-                    if self.BACKTRACE_BODY.search(line):
+        with open(f"/tmp/{os.path.basename(self.binary)}.log",
+                  'w') as per_test_log:
+            accumulator = None
+            while True:
+                line = self.process.stdout.readline()
+                if line:
+                    sys.stderr.write(line)
+                    per_test_log.write(line)
+                    if accumulator is not None and self.BACKTRACE_BODY.search(
+                            line):
+                        # Mid-backtrace
                         accumulator.append(line)
-            else:
-                break
+                    elif accumulator is not None:
+                        # End of backtrace
+                        if accumulator:
+                            blocks.append(accumulator)
+                        accumulator = None
+
+                    # A start of backtrace line, which may also have been an end of backtrace line above
+                    if accumulator is None and self.BACKTRACE_START.search(
+                            line):
+                        accumulator = []
+                        if self.BACKTRACE_BODY.search(line):
+                            accumulator.append(line)
+                else:
+                    break
 
         if accumulator:
             blocks.append(accumulator)
@@ -301,7 +305,8 @@ class TestRunner():
         p = subprocess.Popen(cmd,
                              env=env,
                              shell=True,
-                             stderr=subprocess.PIPE,
+                             stderr=subprocess.STDOUT,
+                             stdout=subprocess.PIPE,
                              encoding='utf-8')
 
         def on_signal(signal, _frame):
