@@ -13,6 +13,7 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
 from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
 
 ERASE_ERROR_MSG = "Inconsistency detected between KVStore last_applied"
 ERASE_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [ERASE_ERROR_MSG]
@@ -42,8 +43,8 @@ class ControllerEraseTest(RedpandaTest):
         admin = Admin(self.redpanda)
 
         # Do a bunch of metadata operations to put something in the controller log
-        segment_count = 4
-        for i in range(0, segment_count):
+        transfers_leadership_count = 4
+        for i in range(0, transfers_leadership_count):
             for j in range(0, 4):
                 spec = TopicSpec(partition_count=1, replication_factor=3)
                 self.client().create_topic(spec)
@@ -57,6 +58,23 @@ class ControllerEraseTest(RedpandaTest):
         # Stop the node we will intentionally damage
         victim_node = self.redpanda.nodes[1]
         bystander_node = self.redpanda.nodes[0]
+
+        def wait_all_segments():
+            storage = self.redpanda.node_storage(victim_node)
+            segments = storage.ns['redpanda'].topics['controller'].partitions[
+                "0_0"].segments.keys()
+            # We expect that segments count for controller should be transfers_leadership_count + 1.
+            # Becasue each transfer creats one segment + initial leadership after restart creates first segment
+            return len(segments) == transfers_leadership_count + 1
+
+        wait_until(
+            wait_all_segments,
+            timeout_sec=40,
+            backoff_sec=1,
+            err_msg=
+            f"Victim node({victim_node}) does not contain expected segments count({transfers_leadership_count + 1}) for controller log"
+        )
+
         self.redpanda.stop_node(victim_node)
 
         # Erase controller log on the victim node
@@ -66,7 +84,7 @@ class ControllerEraseTest(RedpandaTest):
             storage = self.redpanda.node_storage(victim_node)
             segments = storage.ns['redpanda'].topics['controller'].partitions[
                 "0_0"].segments.keys()
-            assert len(segments) == segment_count
+            assert len(segments) == transfers_leadership_count + 1
             segments = sorted(list(segments))
             victim_path = f"{controller_path}/{segments[-1]}.log"
         else:
