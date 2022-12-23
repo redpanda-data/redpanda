@@ -11,6 +11,7 @@ package debug
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/docker/go-units"
@@ -83,7 +84,15 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
+			// to execute the appropriate bundle we look for
+			// kubernetes_service_* env variables as an indicator that we are
+			// in a k8s environment
+			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
+			if len(host) == 0 || len(port) == 0 {
+				err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
+			} else {
+				err = executeK8SBundle(cmd.Context(), fs, cfg, cl, admin, timeout, path)
+			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}
