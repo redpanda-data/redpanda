@@ -128,7 +128,7 @@ async def main():
                         default="0.0.0.0")
     args, extra_args = parser.parse_known_args()
 
-    if extra_args[0] == "--":
+    if extra_args and extra_args[0] == "--":
         extra_args = extra_args[1:]
     elif extra_args:
         # Re-do with strict parse: this will surface unknown argument errors
