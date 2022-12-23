@@ -1203,7 +1203,7 @@ ntp_archiver::maybe_truncate_manifest() {
         retry_chain_node fib(
           _conf->manifest_upload_timeout,
           _conf->upload_loop_initial_backoff,
-          &rtc);
+          &_rtcnode);
         auto sname = cloud_storage::generate_local_segment_name(
           meta.base_offset, meta.segment_term);
         auto spath = m.generate_segment_path(meta);
@@ -1232,7 +1232,7 @@ ntp_archiver::maybe_truncate_manifest() {
         retry_chain_node rc_node(
           _conf->manifest_upload_timeout,
           _conf->upload_loop_initial_backoff,
-          &rtc);
+          &_rtcnode);
         auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
           ss::lowres_clock::now() + _conf->manifest_upload_timeout,
