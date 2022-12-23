@@ -28,6 +28,8 @@
  */
 namespace net {
 
+bool is_reconnect_error(const std::system_error& e);
+
 class connection : public boost::intrusive::list_base_hook<> {
 public:
     connection(

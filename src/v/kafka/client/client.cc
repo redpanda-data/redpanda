@@ -196,9 +196,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
     } catch (const std::system_error& ex) {
-        if (
-          ex.code() == std::errc::broken_pipe
-          || ex.code() == std::errc::timed_out) {
+        if (net::is_reconnect_error(ex)) {
             vlog(kclog.debug, "system_error: {}", ex);
             return _wait_or_start_update_metadata();
         } else {
