@@ -56,6 +56,7 @@ partition::partition(
       config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(archival_conf)
   , _cloud_storage_api(cloud_storage_api)
+  , _cloud_storage_cache(cloud_storage_cache)
   , _upload_housekeeping(upload_hks) {
     auto stm_manager = _raft->log().stm_manager();
 
@@ -96,7 +97,10 @@ partition::partition(
             stm_manager->add_stm(_rm_stm);
         }
 
-        // Construct cloud_storage read path (remote_partition)
+        // Construct tiered storage state machine if the feature is enabled
+        // globally, irrespective of this topic's enablement of tiered storage.
+        // This is because starting/stopping STMs dynamically is harder than
+        // starting/stopping the archiver and remote_partition objects.
         if (
           config::shard_local_cfg().cloud_storage_enabled()
           && _cloud_storage_api.local_is_initialized()
@@ -109,36 +113,10 @@ partition::partition(
                 clusterlog,
                 _partition_mem_tracker);
             stm_manager->add_stm(_archival_meta_stm);
-
-            if (cloud_storage_cache.local_is_initialized()) {
-                const auto& bucket_config
-                  = cloud_storage::configuration::get_bucket_config();
-                auto bucket = bucket_config.value();
-                if (
-                  read_replica_bucket
-                  && _raft->log_config().is_read_replica_mode_enabled()) {
-                    vlog(
-                      clusterlog.info,
-                      "{} Remote topic bucket is {}",
-                      _raft->ntp(),
-                      read_replica_bucket);
-                    // Override the bucket for read replicas
-                    _read_replica_bucket = read_replica_bucket;
-                    bucket = read_replica_bucket;
-                }
-                if (!bucket) {
-                    throw std::runtime_error{fmt::format(
-                      "configuration property {} is not set",
-                      bucket_config.name())};
-                }
-                _cloud_storage_partition
-                  = ss::make_shared<cloud_storage::remote_partition>(
-                    _archival_meta_stm->manifest(),
-                    _cloud_storage_api.local(),
-                    cloud_storage_cache.local(),
-                    cloud_storage_clients::bucket_name{*bucket});
-            }
         }
+
+        // Construct cloud_storage read path (remote_partition)
+        maybe_construct_remote_partition(read_replica_bucket);
 
         // Construct cloud_storage write path (ntp_archiver)
         maybe_construct_archiver();
@@ -485,7 +463,7 @@ partition::local_timequery(storage::timequery_config cfg) {
 void partition::maybe_construct_archiver() {
     if (
       config::shard_local_cfg().cloud_storage_enabled()
-      && _cloud_storage_api.local_is_initialized()
+      && _cloud_storage_api.local_is_initialized() && _archival_meta_stm
       && _raft->ntp().ns == model::kafka_namespace
       && _raft->log().config().is_archival_enabled()) {
         _archiver = std::make_unique<archival::ntp_archiver>(
@@ -510,6 +488,48 @@ uint64_t partition::non_log_disk_size_bytes() const {
         non_log_disk_size += _id_allocator_stm->get_snapshot_size();
     }
     return non_log_disk_size;
+}
+
+void partition::maybe_construct_remote_partition(
+  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket) {
+    if (!_cloud_storage_cache.local_is_initialized() || !_archival_meta_stm) {
+        // Never enable read path if cache is unavailable. This check is needed
+        // because cloud_storage_enabled might have been set after initial
+        // startup, such that it is true but the cache is not present.
+        return;
+    }
+
+    if (
+      config::shard_local_cfg().cloud_storage_enabled()
+      && _cloud_storage_api.local_is_initialized()
+      && _raft->ntp().ns == model::kafka_namespace) {
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        auto bucket = bucket_config.value();
+
+        if (
+          read_replica_bucket
+          && _raft->log_config().is_read_replica_mode_enabled()) {
+            vlog(
+              clusterlog.info,
+              "{} Remote topic bucket is {}",
+              _raft->ntp(),
+              read_replica_bucket);
+            bucket = read_replica_bucket;
+            _read_replica_bucket = read_replica_bucket;
+        }
+
+        if (!bucket) {
+            throw std::runtime_error{fmt::format(
+              "configuration property {} is not set", bucket_config.name())};
+        }
+        _cloud_storage_partition
+          = ss::make_shared<cloud_storage::remote_partition>(
+            _archival_meta_stm->manifest(),
+            _cloud_storage_api.local(),
+            _cloud_storage_cache.local(),
+            cloud_storage_clients::bucket_name{*bucket});
+    }
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
@@ -559,6 +579,18 @@ ss::future<> partition::update_configuration(topic_properties properties) {
             _archiver->notify_topic_config();
             co_await _archiver->start();
         }
+
+        if (_cloud_storage_partition) {
+            co_await _cloud_storage_partition->stop();
+            _cloud_storage_partition = nullptr;
+        }
+
+        std::optional<cloud_storage_clients::bucket_name> rr_bucket;
+        if (properties.read_replica_bucket.has_value()) {
+            rr_bucket = cloud_storage_clients::bucket_name{
+              properties.read_replica_bucket.value()};
+        }
+        maybe_construct_remote_partition(rr_bucket);
     } else {
         vlog(
           clusterlog.trace,
