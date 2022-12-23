@@ -109,24 +109,46 @@ class KCL:
         cmd.append(topic)
         return self._cmd(cmd)
 
-    def alter_broker_config(self, values, incremental, broker=None):
+    def _alter_config(self, values, incremental, entity_type, entity):
         """
-        :param broker: node id.  Not supported in redpanda but used for testing error handling.
+        :param broker: node id.
         :param values: dict of property name to new value
         :param incremental: if true, use incremental kafka APIs
-        :return:
+        :param entity_type: one of 'broker', 'topic'
+        :param entity: string-izable entity, or None to omit
         """
-        cmd = ["admin", "configs", "alter", "-tb"]
+        cmd = ["admin", "configs", "alter"]
+
+        if entity_type == "broker":
+            cmd.append("-tb")
+        elif entity_type == "topic":
+            cmd.append("-tt")
+        else:
+            raise NotImplementedError(entity_type)
+
         if incremental:
             cmd.append("-i")
+        else:
+            # By default, non-incremental AlterConfig will prompt on stdin (and hang)
+            cmd.append("--no-confirm")
         for k, v in values.items():
             cmd.extend(["-k", f"s:{k}={v}" if incremental else f"{k}={v}"])
 
-        if broker:
+        if entity:
             # cmd needs to be string, so handle things like broker=1
-            cmd.append(str(broker))
+            cmd.append(str(entity))
 
-        return self._cmd(cmd, attempts=1)
+        r = self._cmd(cmd, attempts=1)
+        if 'OK' not in r:
+            raise RuntimeError(r)
+        else:
+            return r
+
+    def alter_broker_config(self, values, incremental, broker=None):
+        return self._alter_config(values, incremental, "broker", broker)
+
+    def alter_topic_config(self, values, incremental, topic):
+        return self._alter_config(values, incremental, "topic", topic)
 
     def delete_broker_config(self, keys, incremental):
         """

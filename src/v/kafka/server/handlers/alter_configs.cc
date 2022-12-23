@@ -190,6 +190,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.remote_delete,
                   cfg.value,
                   storage::ntp_config::default_remote_delete);
+                continue;
             }
             if (cfg.name == topic_property_remote_write) {
                 auto set_value = update.properties.shadow_indexing.value
