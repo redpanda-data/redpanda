@@ -192,10 +192,16 @@ class TestRunner():
         else:
             args = list(map(str, args))
 
+        # If in CI, run with trace because we need the evidence if something
+        # fails.  Locally, use INFO to improve runtime: the developer can
+        # selectively re-run failing tests with more logging if needed.
+        log_level = 'trace' if self.ci else 'info'
+
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
-                "--default-log-level=trace", "--logger-log-level='io=debug'",
+                f"--default-log-level={log_level}",
+                "--logger-log-level='io=debug'",
                 "--logger-log-level='exception=debug'"
             ] + COMMON_TEST_ARGS
             if "--" in args:
@@ -213,6 +219,10 @@ class TestRunner():
     def _gen_testdir(self):
         return tempfile.mkdtemp(suffix=self._gen_alphanum(),
                                 prefix="%s/test." % self.root)
+
+    @property
+    def ci(self):
+        return 'CI' in os.environ
 
     def run(self):
         # Execute the requested number of times, terminate on the first failure.
@@ -234,7 +244,7 @@ class TestRunner():
         env = os.environ.copy()
         env["TEST_DIR"] = test_dir
         env["BOOST_TEST_LOG_LEVEL"] = "test_suite"
-        if "CI" in env:
+        if self.ci:
             env["BOOST_TEST_COLOR_OUTPUT"] = "0"
         env["BOOST_TEST_CATCH_SYSTEM_ERRORS"] = "no"
         env["BOOST_TEST_REPORT_LEVEL"] = "no"
