@@ -48,6 +48,8 @@ public:
         return _throttler.throttle(size, as);
     }
 
+    size_t available() { return _throttler.available(); }
+
     void shutdown() { _throttler.shutdown(); }
 
 private:
