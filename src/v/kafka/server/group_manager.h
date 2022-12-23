@@ -234,6 +234,12 @@ private:
       ss::lw_shared_ptr<attached_partition>,
       group_recovery_consumer_state);
 
+    ss::future<> do_recover_group(
+      model::term_id,
+      ss::lw_shared_ptr<attached_partition>,
+      group_id,
+      group_stm);
+
     ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
 
     ss::future<> inject_noop(
