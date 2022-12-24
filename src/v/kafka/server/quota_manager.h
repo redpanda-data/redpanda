@@ -63,9 +63,12 @@ public:
         config::shard_local_cfg().default_num_windows.bind())
       , _default_window_width(
           config::shard_local_cfg().default_window_sec.bind())
-      , _target_tp_rate(config::shard_local_cfg().target_quota_byte_rate.bind())
+      , _default_target_tp_rate(
+          config::shard_local_cfg().target_quota_byte_rate.bind())
       , _target_partition_mutation_quota(
           config::shard_local_cfg().kafka_admin_topic_api_rate.bind())
+      , _target_tp_rate_per_client_group(
+          config::shard_local_cfg().kafka_client_group_byte_rate_quota.bind())
       , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
       , _max_delay(
           config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
@@ -130,12 +133,19 @@ private:
     underlying_t::iterator maybe_add_and_retrieve_quota(
       const std::optional<std::string_view>&, const clock::time_point&);
 
+    std::optional<std::string_view>
+    get_client_quota(const std::optional<std::string_view>& client_id);
+    int64_t
+    get_client_target_tp_rate(const std::optional<std::string_view>& quota_id);
+
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
 
-    config::binding<uint32_t> _target_tp_rate;
+    config::binding<uint32_t> _default_target_tp_rate;
     config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
+    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
+      _target_tp_rate_per_client_group;
 
     underlying_t _quotas;
 

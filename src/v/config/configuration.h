@@ -12,6 +12,7 @@
 #pragma once
 #include "config/bounded_property.h"
 #include "config/broker_endpoint.h"
+#include "config/client_group_byte_rate_quota.h"
 #include "config/config_store.h"
 #include "config/convert.h"
 #include "config/data_directory_path.h"
@@ -195,6 +196,8 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>> kafka_connections_max;
     property<std::optional<uint32_t>> kafka_connections_max_per_ip;
     property<std::vector<ss::sstring>> kafka_connections_max_overrides;
+    one_or_many_map_property<client_group_quota>
+      kafka_client_group_byte_rate_quota;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
     bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;

@@ -20,6 +20,8 @@
 #include <boost/lexical_cast.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include <unordered_map>
+
 namespace YAML {
 
 template<>
@@ -281,6 +283,42 @@ struct convert<model::partition_autobalancing_mode> {
             return false;
         }
 
+        return true;
+    }
+};
+
+template<typename T>
+concept has_hashable_key_type = requires(T x) {
+    x.key_name();
+    {
+        std::hash<typename T::key_type>{}(x.key())
+        } -> std::convertible_to<std::size_t>;
+};
+
+template<has_hashable_key_type T>
+struct convert<std::unordered_map<typename T::key_type, T>> {
+    using type = std::unordered_map<typename T::key_type, T>;
+    static Node encode(const type& rhs) {
+        Node node;
+        for (const auto& group : rhs) {
+            node.push_back(convert<T>::encode(group.second));
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        rhs = std::unordered_map<typename T::key_type, T>{};
+        if (node.IsSequence()) {
+            for (auto elem : node) {
+                if (!elem[T::key_name()]) {
+                    return false;
+                }
+                auto elem_val = elem.as<T>();
+                rhs.emplace(elem_val.key(), elem_val);
+            }
+        } else {
+            auto elem_val = node.as<T>();
+            rhs.emplace(elem_val.key(), elem_val);
+        }
         return true;
     }
 };

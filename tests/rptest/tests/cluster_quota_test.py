@@ -8,9 +8,13 @@
 # by the Apache License, Version 2.0
 import json
 import time
-
+import random
+import string
+from kafka import KafkaProducer
 from ducktape.utils.util import wait_until
 
+from rptest.clients.rpk import RpkTool
+from rptest.services.redpanda import ResourceSettings
 from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic, \
     KclCreatePartitionsRequestTopic
 from rptest.tests.redpanda_test import RedpandaTest
@@ -18,9 +22,9 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 
 
-class ClusterQuotaTest(RedpandaTest):
+class ClusterQuotaPartitionMutationTest(RedpandaTest):
     """
-    Ducktape tests for all things quota related
+    Ducktape tests for partition mutation quota
     """
     def __init__(self, *args, **kwargs):
         additional_options = {'kafka_admin_topic_api_rate': 1}
@@ -100,3 +104,128 @@ class ClusterQuotaTest(RedpandaTest):
         assert foo_response[0]['ErrorCode'] == 0  # success
         assert baz_response[0]['ErrorCode'] == 89  # throttling_quota_exceeded
         assert response['ThrottleMillis'] > 0
+
+
+class ClusterRateQuotaTest(RedpandaTest):
+    """
+    Ducktape tests for rate quota
+    """
+    topics = (TopicSpec(), )
+
+    def __init__(self, *args, **kwargs):
+        self.max_throttle_time = 10
+        super().__init__(*args,
+                         num_brokers=3,
+                         extra_rp_conf={
+                             "max_kafka_throttle_delay_ms":
+                             self.max_throttle_time
+                         },
+                         resource_settings=ResourceSettings(num_cpus=1),
+                         **kwargs)
+        self.rpk = RpkTool(self.redpanda)
+
+    def init_test_data(self):
+        wait_until(lambda: len(list(self.rpk.describe_topic(self.topic))) != 0,
+                   10)
+        wait_until(lambda: next(self.rpk.describe_topic(self.topic)).leader,
+                   10)
+        self.leader_node = self.redpanda.broker_address(
+            self.redpanda.get_node(
+                next(self.rpk.describe_topic(self.topic)).leader))
+        self.message_size = 1024
+        self.msg = "".join(
+            random.choice(string.ascii_lowercase)
+            for _ in range(self.message_size))
+
+    def produce(self, producer, amount):
+        response_futures = [
+            producer.send(self.topic, self.msg) for _ in range(amount)
+        ]
+        for f in response_futures:
+            f.get(1)
+
+    @cluster(num_nodes=3)
+    def test_client_group_rate_throttle_mechanism(self):
+        """
+        Ensure group rate throttle works
+        """
+        self.init_test_data()
+
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_byte_rate_quota": [
+                {
+                    "group_name": "group_1",
+                    "clients_prefix": "producer_group_alone_producer",
+                    "quota": 10240
+                },
+                {
+                    "group_name": "group_2",
+                    "clients_prefix": "producer_group_multiple",
+                    "quota": 10240
+                },
+            ]
+        })
+
+        producer = KafkaProducer(acks="all",
+                                 bootstrap_servers=self.leader_node,
+                                 value_serializer=str.encode,
+                                 retries=1,
+                                 client_id="producer_group_alone_producer")
+
+        # Produce under the limit
+        self.produce(producer, 10)
+        assert producer.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"] == 0
+
+        # Produce more than limit
+        self.produce(producer, 100)
+        producer_throttle_time_max = producer.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"]
+        assert producer_throttle_time_max > 0 and producer_throttle_time_max <= self.max_throttle_time
+
+        producer_1 = KafkaProducer(acks="all",
+                                   bootstrap_servers=self.leader_node,
+                                   value_serializer=str.encode,
+                                   retries=1,
+                                   client_id="producer_group_multiple_1")
+
+        producer_2 = KafkaProducer(acks="all",
+                                   bootstrap_servers=self.leader_node,
+                                   value_serializer=str.encode,
+                                   client_id="producer_group_multiple_2")
+
+        # Produce under the limit
+        self.produce(producer_1, 10)
+        assert producer_1.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"] == 0
+
+        # Produce more than the limit
+        self.produce(producer_1, 100)
+
+        # Produce under the limit for client, but more than limit for group
+        self.produce(producer_2, 10)
+        producer_1_throttle_time_max = producer_1.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"]
+        assert producer_1_throttle_time_max > 0 and producer_1_throttle_time_max <= self.max_throttle_time
+        producer_2_throttle_time_max = producer_2.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"]
+        assert producer_2_throttle_time_max > 0 and producer_2_throttle_time_max <= self.max_throttle_time
+
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_byte_rate_quota": {
+                "group_name": "change_config_group",
+                "clients_prefix": "new_producer_group",
+                "quota": 1024
+            }
+        })
+
+        producer = KafkaProducer(acks="all",
+                                 bootstrap_servers=self.leader_node,
+                                 value_serializer=str.encode,
+                                 client_id="new_producer_group_producer")
+
+        self.produce(producer, 100)
+
+        producer_throttle_time_max = producer.metrics(
+        )["producer-metrics"]["produce-throttle-time-max"]
+        assert producer_throttle_time_max > 0 and producer_throttle_time_max <= self.max_throttle_time

@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <type_traits>
+#include <unordered_map>
 
 namespace json {
 
@@ -87,6 +88,17 @@ void rjson_serialize(
     w.StartArray();
     for (const auto& e : v) {
         rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
+template<typename T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const std::unordered_map<typename T::key_type, T>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e.second);
     }
     w.EndArray();
 }
