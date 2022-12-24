@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using join_group_handler = two_phase_handler<join_group_api, 0, 5>;
+using join_group_handler = two_phase_handler<join_group_api, 0, 6>;
 
 } // namespace kafka

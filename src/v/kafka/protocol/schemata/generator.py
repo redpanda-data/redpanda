@@ -1428,11 +1428,38 @@ void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) 
 {%- endif %}
 {%- else %}
 {%- if op_type == "request" %}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        writer.write_tags(std::move(unknown_tags));
+    }
+}
+void {{ struct.name }}::decode(request_reader& reader, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        unknown_tags = reader.read_tags();
+    }
+}
+{%- else %}
 void {{ struct.name }}::encode(response_writer&, api_version) {}
 void {{ struct.name }}::decode(request_reader&, api_version) {}
+{%- endif %}
 {%- else %}
-void {{ struct.name }}::encode(response_writer&, api_version&) {}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        write.write_tags(std::move(unknown_tags));
+    }
+}
+void {{ struct.name }}::decode(iobuf buf, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        request_reader reader(std::move(buf));
+        unknown_tags = reader.read_tags();
+    }
+}
+{%- else %}
+void {{ struct.name }}::encode(response_writer&, api_version) {}
 void {{ struct.name }}::decode(iobuf, api_version) {}
+{%- endif %}
 {%- endif %}
 {%- endif %}
 

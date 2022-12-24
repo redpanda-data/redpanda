@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using describe_groups_handler = single_stage_handler<describe_groups_api, 0, 4>;
+using describe_groups_handler = single_stage_handler<describe_groups_api, 0, 5>;
 
 }

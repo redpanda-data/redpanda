@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using alter_configs_handler = single_stage_handler<alter_configs_api, 0, 1>;
+using alter_configs_handler = single_stage_handler<alter_configs_api, 0, 2>;
 
 }
