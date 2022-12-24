@@ -21,6 +21,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService
+from ducktape.mark import ok_to_fail
 
 
 class NodesDecommissioningTest(EndToEndTest):
@@ -525,6 +526,8 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
+    # https://github.com/redpanda-data/redpanda/issues/7874
+    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_flipping_decommission_recommission(self):
 
