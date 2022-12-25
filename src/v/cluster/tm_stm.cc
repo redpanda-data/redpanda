@@ -621,7 +621,7 @@ ss::future<tm_stm::op_status> tm_stm::add_partitions(
     if (tx.status != tm_transaction::tx_status::ongoing) {
         vlog(
           txlog.warn,
-          "Expected an ongoing txn, found tx:{} tx:{} pid:{} tx_seq:{} etag:{} "
+          "Expected an ongoing txn, found tx:{} pid:{} tx_seq:{} etag:{} "
           "status:{}",
           tx.id,
           tx.pid,
@@ -684,7 +684,7 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     if (tx.status != tm_transaction::tx_status::ongoing) {
         vlog(
           txlog.warn,
-          "Expected an ongoing txn, found tx:{} tx:{} pid:{} tx_seq:{} etag:{} "
+          "Expected an ongoing txn, found tx:{} pid:{} tx_seq:{} etag:{} "
           "status:{}",
           tx.id,
           tx.pid,
