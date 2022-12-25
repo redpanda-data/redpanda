@@ -162,91 +162,130 @@ func TestParseConsumeTimestamp(t *testing.T) {
 	// 1648021901749
 	// 2022-03-23 07:51:41.749796309 +0000 UTC
 	for i, test := range []struct {
-		in string
-
-		length int
-		at     time.Time
-		end    bool
-		expErr bool
+		in               string
+		bothDuration     bool
+		length           int
+		startAt          time.Time
+		endAt            time.Time
+		end              bool
+		expErrFirstHalf  bool
+		expErrSecondHalf bool
 	}{
-		{
-			in:     "",
-			expErr: true,
+		{ // 0
+			in:              "",
+			expErrFirstHalf: true,
 		},
 
-		{
-			in:     "1648021901749:asdf",
-			length: 13,
-			at:     time.Unix(0, 1648021901749*1e6),
+		{ // 1. 13 digits:13 digits
+			in:      "1648021901749:1748021901749",
+			length:  13,
+			startAt: time.Unix(0, 1648021901749*1e6).UTC(),
+			endAt:   time.Unix(0, 1748021901749*1e6).UTC(),
 		},
 
-		{
-			in:     "1648021901:asdf",
-			length: 10,
-			at:     time.Unix(1648021901, 0),
+		{ // 2. 10 digits:10 digits
+			in:      "1648021901:1748021901",
+			length:  10,
+			startAt: time.Unix(1648021901, 0).UTC(),
+			endAt:   time.Unix(1748021901, 0).UTC(),
 		},
 
-		{
-			in:     "2022-03-24:asdf",
-			length: 10,
-			at:     time.Unix(1648080000, 0),
+		{ // 3. date:date
+			in:      "2022-03-24:2022-03-25",
+			length:  10,
+			startAt: time.Unix(1648080000, 0).UTC(),
+			endAt:   time.Unix(1648080000, 0).Add(24 * time.Hour).UTC(),
 		},
 
-		{ // full millis
-			in:     "2022-03-23T07:51:41.749Z:",
-			length: 24,
-			at:     time.Unix(0, 1648021901749*1e6),
+		{ // 4. full millis:full millis
+			in:      "2022-03-23T07:51:41.749Z:2022-03-23T07:52:41.749Z",
+			length:  24,
+			startAt: time.Unix(0, 1648021901749*1e6).UTC(),
+			endAt:   time.Unix(0, 1648021901749*1e6).Add(1 * time.Minute).UTC(),
 		},
 
-		{ // no milli
-			in:     "2022-03-23T07:51:41Z",
-			length: 20,
-			at:     time.Unix(0, 1648021901000*1e6),
+		{ // 5. no milli:no milli
+			in:      "2022-03-23T07:51:41Z:2022-03-23T07:52:41Z",
+			length:  20,
+			startAt: time.Unix(0, 1648021901000*1e6).UTC(),
+			endAt:   time.Unix(0, 1648021901000*1e6).Add(1 * time.Minute).UTC(),
 		},
 
-		{ // one decimal
-			in:     "2022-03-23T07:51:41.7Z:asdf",
-			length: 22,
-			at:     time.Unix(0, 1648021901700*1e6),
+		{ // 6. one decimal:one decimal
+			in:      "2022-03-23T07:51:41.7Z:2022-03-23T07:52:41.7Z",
+			length:  22,
+			startAt: time.Unix(0, 1648021901700*1e6),
+			endAt:   time.Unix(0, 1648021901700*1e6).Add(1 * time.Minute).UTC(),
 		},
 
-		{ // just decimal
-			in:     "2022-03-23T07:51:41.Z",
-			length: 21,
-			at:     time.Unix(0, 1648021901000*1e6),
+		{ // 7. just decimal
+			in:      "2022-03-23T07:51:41.Z",
+			length:  21,
+			startAt: time.Unix(0, 1648021901000*1e6),
 		},
 
-		{ // err
-			in:     "-03-23T07:51:41.Z",
-			expErr: true,
+		{ // 8. just decimal:duration
+			in:      "2022-03-23T07:51:41.Z:1h",
+			length:  21,
+			startAt: time.Unix(0, 1648021901000*1e6).UTC(),
+			endAt:   time.Unix(0, 1648021901000*1e6).Add(1 * time.Hour).UTC(),
 		},
 
-		{
+		{ // 9. duration:duration
+			in:           "-48h:-24h",
+			bothDuration: true,
+			length:       4,
+			startAt:      time.Now().Add(-48 * time.Hour).UTC(),
+			endAt:        time.Now().Add(-24 * time.Hour).UTC(),
+		},
+
+		{ // 10 error
+			in:              "-03-23T07:51:41.Z",
+			expErrFirstHalf: true,
+		},
+
+		{ // 11
 			in:     "end",
 			length: 3,
 			end:    true,
 		},
 
-		{
-			in:     "3h:",
-			length: 2,
-			at:     time.Now().Add(3 * time.Hour),
+		{ // 12
+			in:      "3h:",
+			length:  2,
+			startAt: time.Now().Add(3 * time.Hour).UTC(),
 		},
 
-		{
-			in:     "-3m",
-			length: 3,
-			at:     time.Now().Add(-3 * time.Minute),
+		{ // 13
+			in:      "-3m",
+			length:  3,
+			startAt: time.Now().Add(-3 * time.Minute).UTC(),
+		},
+		{ // 14 error
+			in:               "1648021901749:asdf",
+			length:           13,
+			startAt:          time.Unix(0, 1648021901749*1e6),
+			expErrSecondHalf: true,
 		},
 	} {
-		test.at = test.at.UTC()
-		l, at, end, err := parseConsumeTimestamp(test.in)
+		var (
+			l             int
+			offset        string
+			startAt       time.Time
+			endAt         time.Time
+			end           bool
+			fromTimestamp bool
+			err           error
+			gotErr        bool
+		)
+		test.startAt = test.startAt.UTC()
+		l, startAt, end, fromTimestamp, err = parseConsumeTimestamp(test.in, time.Now())
 
-		gotErr := err != nil
-		if gotErr != test.expErr {
-			t.Errorf("#%d: got err? %v (%v), exp err? %v", i, gotErr, err, test.expErr)
+		gotErr = err != nil
+		if gotErr != test.expErrFirstHalf {
+			t.Errorf("#%d: got err? %v (%v), exp err? %v", i, gotErr, err, test.expErrFirstHalf)
 		}
-		if gotErr || test.expErr {
+		if gotErr || test.expErrFirstHalf {
 			continue
 		}
 
@@ -256,13 +295,43 @@ func TestParseConsumeTimestamp(t *testing.T) {
 
 		// For timestamps, we use a 1min bounds because we could have
 		// relative durations from now.
-		if at.Before(test.at) && test.at.Sub(at) > time.Minute ||
-			test.at.Before(at) && at.Sub(test.at) > time.Minute {
-			t.Errorf("#%d: got at %v not within 1min of %v", i, at, test.at)
+		if startAt.Before(test.startAt) && test.startAt.Sub(startAt) > time.Minute ||
+			test.startAt.Before(startAt) && startAt.Sub(test.startAt) > time.Minute {
+			t.Errorf("#%d: got at %v not within 1min of %v", i, startAt, test.startAt)
 		}
 
 		if end != test.end {
 			t.Errorf("#%d: got end %v != exp end %v", i, end, test.end)
+		}
+
+		offset = test.in[l:]
+		if offset == "" || offset == ":" { // requesting from a time onward; e.g., @1m:
+			continue
+		}
+
+		if fromTimestamp {
+			_, endAt, _, _, err = parseConsumeTimestamp(offset[1:], startAt)
+		} else {
+			_, endAt, _, _, err = parseConsumeTimestamp(offset[1:], time.Now())
+		}
+
+		gotErr = err != nil
+		if gotErr != test.expErrSecondHalf {
+			t.Errorf("#%d: got err? %v (%v), exp err? %v", i, gotErr, err, test.expErrSecondHalf)
+		}
+		if gotErr || test.expErrSecondHalf {
+			continue
+		}
+
+		if test.bothDuration {
+			if startAt.Sub(test.startAt) > time.Second {
+				t.Errorf("#%d: got startAt %s != exp startAt %s\n", i, startAt, test.startAt)
+			}
+			if endAt.Sub(test.endAt) > time.Second {
+				t.Errorf("#%d: got endAt %s != exp endAt %s\n", i, endAt, test.endAt)
+			}
+		} else if !endAt.Equal(test.endAt) {
+			t.Errorf("#%d: got endAt %s != exp endAt %s\n", i, endAt, test.endAt)
 		}
 	}
 }
