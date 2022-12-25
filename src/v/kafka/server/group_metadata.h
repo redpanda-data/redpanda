@@ -137,11 +137,15 @@ struct offset_metadata_key {
  * The value type for offset commit records, consistent with Kafka format
  */
 struct offset_metadata_value {
-    static constexpr group_metadata_version version{3};
+    static constexpr group_metadata_version latest_version{3};
+    group_metadata_version version = latest_version;
     model::offset offset;
+    // present only in version >= 3
     kafka::leader_epoch leader_epoch = invalid_leader_epoch;
     ss::sstring metadata;
     model::timestamp commit_timestamp;
+    // present only in version 1
+    model::timestamp expiry_timestamp{-1};
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_metadata_value&);
