@@ -87,7 +87,13 @@ group::group(
   group_metadata_serializer serializer,
   enable_group_metrics group_metrics)
   : _id(std::move(id))
+  , _state(md.members.empty() ? group_state::empty : group_state::stable)
+  , _state_timestamp(md.state_timestamp)
+  , _generation(md.generation)
   , _num_members_joining(0)
+  , _protocol_type(md.protocol_type)
+  , _protocol(md.protocol)
+  , _leader(md.leader)
   , _new_member_added(false)
   , _conf(conf)
   , _partition(std::move(partition))
@@ -100,12 +106,6 @@ group::group(
                          .abort_timed_out_transactions_interval_ms.value())
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table) {
-    _state = md.members.empty() ? group_state::empty : group_state::stable;
-    _generation = md.generation;
-    _protocol_type = md.protocol_type;
-    _protocol = md.protocol;
-    _leader = md.leader;
-    _state_timestamp = md.state_timestamp;
     for (auto& m : md.members) {
         auto member = ss::make_lw_shared<group_member>(
           std::move(m),

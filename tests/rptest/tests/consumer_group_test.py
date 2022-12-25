@@ -18,6 +18,9 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
+from kafka import KafkaConsumer
+
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -411,3 +414,45 @@ class ConsumerGroupTest(RedpandaTest):
             c.free()
         self.producer.wait()
         self.producer.free()
+
+    @skip_debug_mode
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_large_group_count(self):
+        self.create_topic(20)
+        rounds = 10
+        groups_in_round = 100
+
+        import asyncio
+        ev_loop = asyncio.new_event_loop()
+
+        def poll_once(i):
+            consumer = KafkaConsumer(group_id=f"g-{i}",
+                                     bootstrap_servers=self.redpanda.brokers(),
+                                     enable_auto_commit=True)
+            consumer.subscribe([self.topic_spec.name])
+            consumer.poll(1)
+            consumer.close(autocommit=True)
+
+        async def create_groups(r):
+            await asyncio.gather(*[
+                asyncio.to_thread(poll_once, i + r * groups_in_round)
+                for i in range(groups_in_round)
+            ])
+
+        for r in range(rounds):
+            ev_loop.run_until_complete(create_groups(r))
+
+        ev_loop.stop()
+        ev_loop.close()
+
+        rpk = RpkTool(self.redpanda)
+        list = rpk.group_list()
+
+        assert len(list) == groups_in_round * rounds
+
+        # restart redpanda and check recovery
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        list = rpk.group_list()
+
+        assert len(list) == groups_in_round * rounds
