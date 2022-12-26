@@ -50,7 +50,7 @@ class PartitionBalancerService(EndToEndTest):
                 "partition_autobalancing_mode": "continuous",
                 "partition_autobalancing_node_availability_timeout_sec": 10,
                 "partition_autobalancing_tick_interval_ms": 5000,
-                "raft_learner_recovery_rate": 1_000_000,
+                "raft_learner_recovery_rate": 100_000_000,
             },
             **kwargs,
         )
@@ -744,7 +744,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             rpk.cluster_maintenance_disable(node)
             # use raw admin interface to avoid waiting for the killed node
             admin.patch_cluster_config(
-                {"raft_learner_recovery_rate": 1_000_000})
+                {"raft_learner_recovery_rate": 100_000_000})
 
             if kill_same_node:
                 self.wait_until_ready()
@@ -837,7 +837,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.logger.info("bringing back recovery speed")
             # use raw admin interface to avoid waiting for the killed node
             admin.patch_cluster_config(
-                {"raft_learner_recovery_rate": 1_000_000})
+                {"raft_learner_recovery_rate": 100_000_000})
 
         # Check that the node has been successfully decommissioned.
         # We have to bring back failed node because otherwise decommission won't finish.
