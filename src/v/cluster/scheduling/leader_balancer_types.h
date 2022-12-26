@@ -51,4 +51,23 @@ struct shard_load {
     size_t leaders{0};
 };
 
+class index {
+public:
+    virtual ~index() = default;
+    virtual void update_index(const reassignment&) = 0;
+};
+
+class soft_constraint {
+    virtual double evaluate_internal(const reassignment&) = 0;
+
+public:
+    virtual ~soft_constraint() = default;
+    double evaluate(const reassignment& r) {
+        auto ret = evaluate_internal(r);
+        return ret;
+    }
+
+    virtual std::optional<reassignment> recommended_reassignment() = 0;
+};
+
 } // namespace cluster::leader_balancer_types
