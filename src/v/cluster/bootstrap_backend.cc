@@ -179,8 +179,8 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
         // If we didn't already save a snapshot, create it so that subsequent
         // startups see their feature table version immediately, without
         // waiting to replay the bootstrap message.
-        if (!_feature_backend.local().has_snapshot()) {
-            co_await _feature_backend.local().save_snapshot();
+        if (!_feature_backend.local().has_local_snapshot()) {
+            co_await _feature_backend.local().save_local_snapshot();
         }
     }
 

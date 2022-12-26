@@ -11,7 +11,9 @@
 
 #include "feature_backend.h"
 
+#include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
+#include "config/node_config.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
 #include "seastar/core/coroutine.hh"
@@ -70,7 +72,7 @@ feature_backend::apply_update(model::record_batch b) {
     // as a feature has gone live, we can expect that on subsequent startup
     // it will be live from early in startup (as soon as storage subsystem
     // loads and snapshot can be loaded)
-    co_await save_snapshot();
+    co_await save_local_snapshot();
 
     co_return errc::success;
 }
@@ -88,16 +90,39 @@ feature_backend::apply_feature_update_command(feature_update_cmd update) {
     }
 }
 
-ss::future<> feature_backend::fill_snapshot(controller_snapshot&) const {
+ss::future<> feature_backend::fill_snapshot(controller_snapshot& snap) const {
+    snap.features.snap = features::feature_table_snapshot::from(
+      _feature_table.local());
     return ss::now();
 }
 
-ss::future<>
-feature_backend::apply_snapshot(model::offset, const controller_snapshot&) {
-    return ss::now();
+ss::future<> feature_backend::apply_snapshot(
+  model::offset, const controller_snapshot& controller_snap) {
+    const auto& snap = controller_snap.features.snap;
+
+    auto our_applied_offset = _feature_table.local().get_applied_offset();
+    if (our_applied_offset >= snap.applied_offset) {
+        vlog(
+          clusterlog.debug,
+          "skipping applying features state from controller snapshot (applied "
+          "offset: {}) as our feature table is already at applied offset {}",
+          snap.applied_offset,
+          our_applied_offset);
+        co_return;
+    }
+
+    co_await _feature_table.invoke_on_all(
+      [snap](features::feature_table& ft) { snap.apply(ft); });
+
+    // If we didn't already save a snapshot, create it so that subsequent
+    // startups see their feature table version immediately, without
+    // waiting to apply the controller snapshot.
+    if (!has_local_snapshot()) {
+        co_await save_local_snapshot();
+    }
 }
 
-bool feature_backend::has_snapshot() {
+bool feature_backend::has_local_snapshot() {
     return _storage.local()
       .kvs()
       .get(
@@ -106,7 +131,7 @@ bool feature_backend::has_snapshot() {
       .has_value();
 }
 
-ss::future<> feature_backend::save_snapshot() {
+ss::future<> feature_backend::save_local_snapshot() {
     // kvstore is shard-local: must be on a consistent shard every
     // time for snapshot storage to work.
     vassert(ss::this_shard_id() == ss::shard_id{0}, "wrong shard");

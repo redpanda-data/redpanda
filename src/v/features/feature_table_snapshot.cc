@@ -36,6 +36,11 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
 }
 
 void feature_table_snapshot::apply(feature_table& ft) const {
+    vlog(
+      featureslog.debug,
+      "applying snapshot with applied offset {}",
+      applied_offset);
+
     ft.set_active_version(version);
     ft._license = license;
     for (auto& cur_state : ft._feature_state) {
