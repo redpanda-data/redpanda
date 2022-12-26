@@ -41,8 +41,11 @@ public:
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
-    bool has_snapshot();
-    ss::future<> save_snapshot();
+    /// this functions deal with the snapshot stored in local kvstore (in
+    /// contrast to fill/apply_snapshot which deal with the feature table data
+    /// in the replicated controller snapshot).
+    bool has_local_snapshot();
+    ss::future<> save_local_snapshot();
 
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::feature_update;

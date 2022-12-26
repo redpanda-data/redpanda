@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "features/feature_table_snapshot.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 
@@ -29,6 +30,16 @@ struct bootstrap_t
     auto serde_fields() { return std::tie(cluster_uuid); }
 };
 
+struct features_t
+  : public serde::
+      envelope<features_t, serde::version<0>, serde::compat_version<0>> {
+    features::feature_table_snapshot snap;
+
+    friend bool operator==(const features_t&, const features_t&) = default;
+
+    auto serde_fields() { return std::tie(snap); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
@@ -37,6 +48,7 @@ struct controller_snapshot
       serde::version<0>,
       serde::compat_version<0>> {
     controller_snapshot_parts::bootstrap_t bootstrap;
+    controller_snapshot_parts::features_t features;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)
