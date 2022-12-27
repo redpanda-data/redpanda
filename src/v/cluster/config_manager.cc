@@ -13,6 +13,7 @@
 
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
@@ -904,13 +905,49 @@ config_manager::status_map config_manager::get_projected_status() const {
     return r;
 }
 
-ss::future<> config_manager::fill_snapshot(controller_snapshot&) const {
+ss::future<> config_manager::fill_snapshot(controller_snapshot& snap) const {
+    snap.config.version = _seen_version;
+
+    snap.config.values.insert(_raw_values.begin(), _raw_values.end());
+
+    auto& nodes_status = snap.config.nodes_status;
+    for (const auto& kv : status) {
+        nodes_status.push_back(kv.second);
+    }
+
     return ss::now();
 }
 
 ss::future<>
-config_manager::apply_snapshot(model::offset, const controller_snapshot&) {
-    return ss::now();
+config_manager::apply_snapshot(model::offset, const controller_snapshot& snap) {
+    status.clear();
+    for (const auto& st : snap.config.nodes_status) {
+        status.emplace(st.node, st);
+    }
+
+    // craft a delta that, when applied, will be equivalent to the set of values
+    // in the snapshot.
+    const auto& values = snap.config.values;
+    cluster_config_delta_cmd_data delta;
+    delta.upsert.reserve(values.size());
+    for (const auto& [key, val] : values) {
+        delta.upsert.emplace_back(key, val);
+    }
+    for (const auto& [key, val] : _raw_values) {
+        if (!values.contains(key)) {
+            delta.remove.push_back(key);
+        }
+    }
+
+    auto ec = co_await apply_delta(
+      cluster_config_delta_cmd{snap.config.version, std::move(delta)});
+    if (ec) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Failed to apply config_manager part of controller snapshot: {} ({})",
+          ec.message(),
+          ec));
+    }
 }
 
 } // namespace cluster
