@@ -106,6 +106,29 @@ void append_test(StoreT& store, int test_scale) {
 }
 
 template<class StoreT>
+void append_tx_test(StoreT& store, int test_scale) {
+    std::vector<int64_t> head;
+    int64_t tail;
+    int64_t value = 0;
+    for (int64_t i = 0; i < test_scale - 1; i++) {
+        value += random_generators::get_int(1, 100);
+        head.push_back(value);
+    }
+    tail = value + random_generators::get_int(1, 100);
+    for (auto x : head) {
+        store.append(x);
+    }
+    perf_tests::start_measuring_time();
+    auto tx = store.append_tx(tail);
+    if (tx) {
+        tx->commit();
+    } else {
+        assert(false);
+    }
+    perf_tests::stop_measuring_time();
+}
+
+template<class StoreT>
 void find_test(StoreT& store) {
     perf_tests::start_measuring_time();
     auto it = store.find(*store.last_value());
@@ -126,9 +149,25 @@ PERF_TEST(cstore_bench, xor_frame_append) {
     append_test(frame, 4096);
 }
 
+PERF_TEST(cstore_bench, xor_frame_append_tx) {
+    delta_xor_frame frame(initial_xor);
+    append_tx_test(frame, 4096);
+}
+
 PERF_TEST(cstore_bench, xor_column_append) {
     delta_xor_column column(initial_xor);
     append_test(column, 4096);
+}
+
+PERF_TEST(cstore_bench, xor_column_append_tx) {
+    delta_xor_column column(initial_xor);
+    append_tx_test(column, 4096);
+}
+
+PERF_TEST(cstore_bench, xor_column_append_tx2) {
+    // trigger code path that commits by splicing the list
+    delta_xor_column column(initial_xor);
+    append_tx_test(column, 4097);
 }
 
 PERF_TEST(cstore_bench, xor_frame_find_4K) { find_test(xor_frame_4K); }
@@ -146,9 +185,25 @@ PERF_TEST(cstore_bench, delta_frame_append) {
     append_test(frame, 4096);
 }
 
+PERF_TEST(cstore_bench, delta_frame_append_tx) {
+    delta_delta_frame frame(initial_delta);
+    append_tx_test(frame, 4096);
+}
+
 PERF_TEST(cstore_bench, delta_column_append) {
     delta_delta_column column(initial_delta);
     append_test(column, 4096);
+}
+
+PERF_TEST(cstore_bench, delta_column_append_tx) {
+    delta_delta_column column(initial_delta);
+    append_tx_test(column, 4096);
+}
+
+PERF_TEST(cstore_bench, delta_column_append_tx2) {
+    // trigger code path that commits by splicing the list
+    delta_delta_column column(initial_delta);
+    append_tx_test(column, 4097);
 }
 
 PERF_TEST(cstore_bench, delta_frame_find_4K) { find_test(delta_frame_4K); }
