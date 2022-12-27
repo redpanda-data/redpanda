@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <iterator>
+#include <variant>
 
 namespace cloud_storage {
 
@@ -116,6 +117,45 @@ public:
             }
             _tail->add(_head);
         }
+    }
+
+    struct frame_tx_t {
+        typename encoder_t::tx_state inner;
+        segment_meta_column_frame<value_t, delta_t>& self;
+
+        frame_tx_t(
+          typename encoder_t::tx_state&& s,
+          segment_meta_column_frame<value_t, delta_t>& self)
+          : inner(std::move(s))
+          , self(self) {}
+
+        void add(const std::array<value_t, buffer_depth>& row) {
+            inner.add(row);
+        }
+        void commit() noexcept { self._tail->tx_commit(std::move(inner)); }
+    };
+
+    // Transactional append operation
+    //
+    // The method returns an optional with the state of the
+    // transaction. If the append operation doesn't require
+    // memory allocation the optional is null. Otherwise it
+    // will contain a transaction which need to be commited.
+    // The actual append operation can allocate memory and
+    // can throw but 'commit' method of the transaction
+    // doesn't allocate and doesn't throw.
+    std::optional<frame_tx_t> append_tx(value_t value) {
+        std::optional<frame_tx_t> tx;
+        auto ix = index_mask & _size++;
+        _head.at(ix) = value;
+        if ((_size & index_mask) == 0) {
+            if (!_tail.has_value()) {
+                _tail.emplace(_head.at(0), _delta_alg);
+            }
+            tx.emplace(_tail->tx_start(), *this);
+            tx->add(_head);
+        }
+        return tx;
     }
 
     const_iterator at(size_t index) const {
@@ -333,6 +373,67 @@ public:
             _frames.emplace_back(_delta_alg);
         }
         _frames.back().append(value);
+    }
+
+    struct column_tx_t {
+        using frame_tx_t = typename frame_t::frame_tx_t;
+        using frame_list_t = std::list<frame_t>;
+        std::variant<frame_tx_t, frame_list_t> inner;
+        segment_meta_column_impl<value_t, delta_alg, Derived>& self;
+
+        column_tx_t(
+          frame_tx_t inner,
+          segment_meta_column_impl<value_t, delta_alg, Derived>& self)
+          : inner(std::move(inner))
+          , self(self) {}
+
+        column_tx_t(
+          frame_t frame,
+          segment_meta_column_impl<value_t, delta_alg, Derived>& self)
+          : inner(std::list<frame_t>())
+          , self(self) {
+            std::get<frame_list_t>(inner).push_back(std::move(frame));
+        }
+
+        void commit() noexcept {
+            if (std::holds_alternative<frame_tx_t>(inner)) {
+                std::get<frame_tx_t>(inner).commit();
+            } else {
+                self._frames.splice(
+                  self._frames.end(), std::get<frame_list_t>(inner));
+            }
+        }
+    };
+
+    // Transactional append operation
+    //
+    // The method returns an optional with the state of the
+    // transaction. If the append operation doesn't require
+    // memory allocation the optional is null. Otherwise it
+    // will contain a transaction which need to be commited.
+    // The actual append operation can allocate memory and
+    // can throw but 'commit' method of the transaction
+    // doesn't allocate and doesn't throw.
+    //
+    // Transaction can be aborted by destroying the tx object.
+    // Only one transaction can be active at a time. The caller
+    // of the method is supposed to check the returned value
+    // and to call 'commit' if it's not 'nullopt'.
+    std::optional<column_tx_t> append_tx(value_t value) {
+        std::optional<column_tx_t> tx;
+        if (_frames.empty() || _frames.back().size() == max_frame_size) {
+            frame_t tmp(_delta_alg);
+            tmp.append(value);
+            tx.emplace(std::move(tmp), *this);
+            return tx;
+        }
+        auto inner = _frames.back().append_tx(value);
+        if (!inner.has_value()) {
+            // transactional op is already committed
+            return tx;
+        }
+        tx.emplace(std::move(*inner), *this);
+        return tx;
     }
 
     const_iterator at(size_t index) const {
