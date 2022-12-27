@@ -205,6 +205,20 @@ public:
       , _cnt(cnt)
       , _delta(delta) {}
 
+    // This c-tor creates shallow copy of the encoder.
+    //
+    // The underlying iobuf is shared which makes the operation
+    // relatively lightweiht. The signature is different from
+    // copy c-tor on purpose. The 'other' object is modified
+    // and not just copied. If the c-tor throws the 'other' is
+    // not affected.
+    explicit deltafor_encoder(deltafor_encoder* other)
+      : _initial(other->_initial)
+      , _last(other->_last)
+      , _data(other->_data.share(0, other->_data.size_bytes()))
+      , _cnt(other->_cnt)
+      , _delta(other->_delta) {}
+
     using row_t = std::array<TVal, row_width>;
 
     /// Encode single row
@@ -215,6 +229,32 @@ public:
         _data.append(&nbits, 1);
         pack(buf, nbits);
         _cnt++;
+    }
+
+    // State of the transaction
+    // The state can be used to append multiple rows
+    // and then commit or rollback.
+    struct tx_state {
+        using self_t = deltafor_encoder<TVal, DeltaStep>;
+        self_t uncommitted;
+
+        void add(const row_t& row) { uncommitted.add(row); }
+    };
+
+    // Create tx-state object and start transaction
+    //
+    // Only one transaction at a time is supported but this
+    // is not enforced. Abandoning tx_state object is ok (this
+    // is equivalent for aborting the transaction).
+    tx_state tx_start() { return tx_state{deltafor_encoder{this}}; }
+
+    // Commit changes done to tx_state.
+    // This peration does not throw.
+    void tx_commit(tx_state tx) noexcept {
+        _last = tx.uncommitted._last;
+        _data = std::move(tx.uncommitted._data);
+        _cnt = tx.uncommitted._cnt;
+        _delta = tx.uncommitted._delta;
     }
 
     /// Copy the underlying iobuf
