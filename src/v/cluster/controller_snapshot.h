@@ -11,11 +11,14 @@
 
 #pragma once
 
+#include "cluster/config_manager.h"
 #include "cluster/types.h"
 #include "features/feature_table_snapshot.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "utils/fragmented_vector.h"
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
@@ -94,6 +97,18 @@ struct members_t
     }
 };
 
+struct config_t
+  : public serde::
+      envelope<config_t, serde::version<0>, serde::compat_version<0>> {
+    config_version version;
+    absl::btree_map<ss::sstring, ss::sstring> values;
+    fragmented_vector<config_status> nodes_status;
+
+    friend bool operator==(const config_t&, const config_t&) = default;
+
+    auto serde_fields() { return std::tie(version, values, nodes_status); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
@@ -104,6 +119,7 @@ struct controller_snapshot
     controller_snapshot_parts::bootstrap_t bootstrap;
     controller_snapshot_parts::features_t features;
     controller_snapshot_parts::members_t members;
+    controller_snapshot_parts::config_t config;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)
