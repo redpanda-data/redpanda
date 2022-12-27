@@ -517,7 +517,7 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     const auto check_missing = [&] {
         auto f = t.send_typed<echo::echo_req, echo::echo_resp>(
           echo::echo_req{.str = "testing..."},
-          1234,
+          {"missing_method_test::missing", 1234},
           rpc::client_opts(rpc::no_timeout));
         return f.then([&](auto ret) {
             BOOST_REQUIRE(ret.has_error());
@@ -580,7 +580,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(echo::echo_service::echo_method_id);
+    nb.set_service_method(echo::echo_service::echo_method);
     reflection::adl<echo::echo_req>{}.to(
       nb.buffer(), echo::echo_req{.str = "testing..."});
     // will fail all the futures as server close the connection
@@ -622,7 +622,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(echo::echo_service::echo_method_id);
+    nb.set_service_method(echo::echo_service::echo_method);
     auto bytes = random_generators::get_bytes();
     nb.buffer().append(bytes.c_str(), bytes.size());
 
@@ -668,7 +668,7 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
           echo::echo_req_adl_serde,
           echo::echo_resp_adl_serde>(
           echo::echo_req_adl_serde{.str = "testing..."},
-          echo::echo_service::echo_adl_serde_method_id,
+          echo::echo_service::echo_adl_serde_method,
           rpc::client_opts(rpc::no_timeout),
           rpc::transport_version::unsupported);
         return f.then([&](auto ret) {
@@ -1048,8 +1048,8 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     BOOST_REQUIRE(!f.get().has_error());
 
     /// Make a request serde::version<2> emmulating echo_req_serde_only
-    const auto echo_serde_only_method_id = echo::echo_service_base<
-      rpc::default_message_codec>::echo_serde_only_method_id;
+    const auto echo_serde_only_method
+      = echo::echo_service::echo_serde_only_method;
 
     /// Since the server is old, it will send responses in the v1 format, the
     /// client must expect this thats why the response type of `send_typed<>` is
@@ -1058,7 +1058,7 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     auto response_f
       = t.send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
         std::move(r),
-        echo_serde_only_method_id,
+        echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
     auto response = response_f.get();
     BOOST_REQUIRE(!response.has_error());
@@ -1077,13 +1077,13 @@ FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
     auto old_client = echo::echo_client_protocol(t);
 
     /// Make a request with an version of the rpc, with the newer service
-    const auto echo_serde_only_method_id = echo_v2::echo_service_base<
-      rpc::default_message_codec>::echo_serde_only_method_id;
+    const auto echo_serde_only_method = echo_v2::echo_service_base<
+      rpc::default_message_codec>::echo_serde_only_method;
 
     auto f
       = t.send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
         echo::echo_req_serde_only{.str = "Hi_there"},
-        echo_serde_only_method_id,
+        echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
     auto normal_response = f.get();
     BOOST_REQUIRE(!normal_response.has_error());

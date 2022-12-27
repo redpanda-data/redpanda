@@ -204,6 +204,24 @@ private:
     std::vector<ssx::semaphore_units> _reservations;
 };
 
+/**
+ * @brief Bundles the method_id and assoicated method name.
+ */
+struct method_info {
+    /**
+     * The name of this method, which should be used only for logging and other
+     * diagnosis, and should not be assumed unique or unchanged across commits.
+     * The pointer-to string must have indefinite lifetime (e.g., a string
+     * literal is probably the way to go).
+     */
+    const char* name;
+
+    /**
+     * @brief The unique 32-bit integer representing this rpc.
+     */
+    uint32_t id;
+};
+
 class netbuf {
 public:
     /// \brief used to send the bytes down the wire
@@ -213,12 +231,19 @@ public:
     void set_status(rpc::status);
     void set_correlation_id(uint32_t);
     void set_compression(rpc::compression_type c);
-    void set_service_method_id(uint32_t);
+    void set_service_method(method_info);
     void set_min_compression_bytes(size_t);
     void set_version(transport_version v) { _hdr.version = v; }
     iobuf& buffer();
 
+    /**
+     * @brief Return the service method name, to be used only for diagnosis and
+     * logging.
+     */
+    const char* name() const { return _name; }
+
 private:
+    const char* _name = nullptr;
     size_t _min_compression_bytes{1024};
     header _hdr;
     iobuf _out;
@@ -236,7 +261,10 @@ inline void netbuf::set_status(rpc::status st) {
     _hdr.meta = std::underlying_type_t<rpc::status>(st);
 }
 inline void netbuf::set_correlation_id(uint32_t x) { _hdr.correlation_id = x; }
-inline void netbuf::set_service_method_id(uint32_t x) { _hdr.meta = x; }
+inline void netbuf::set_service_method(method_info info) {
+    _name = info.name;
+    _hdr.meta = info.id;
+}
 inline void netbuf::set_min_compression_bytes(size_t min) {
     _min_compression_bytes = min;
 }
