@@ -96,6 +96,10 @@ server::routes_t get_proxy_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::rest_json::post_consumer_offsets,
       wrap(gate, es, post_consumer_offsets)});
 
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::rest_json::http_rest_status_ready,
+      wrap(gate, es, status_ready)});
+
     return routes;
 }
 
