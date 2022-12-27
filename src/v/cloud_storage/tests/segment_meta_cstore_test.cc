@@ -69,6 +69,42 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_delta) {
 }
 
 template<class column_t>
+void append_tx_test_case(const int64_t num_elements, column_t& column) {
+    size_t total_size = 0;
+    int64_t ix = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        ix += random_generators::get_int(1, 100);
+        auto tx = column.append_tx(ix);
+        if (tx) {
+            tx->commit();
+        }
+        total_size++;
+        BOOST_REQUIRE_EQUAL(ix, column.last_value());
+    }
+    BOOST_REQUIRE_EQUAL(total_size, column.size());
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_tx_xor) {
+    delta_xor_frame frame(initial_xor);
+    append_tx_test_case(100000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_tx_delta) {
+    delta_delta_frame frame(initial_delta);
+    append_tx_test_case(100000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_tx_xor) {
+    delta_xor_column col(initial_xor);
+    append_tx_test_case(100000, col);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_tx_delta) {
+    delta_delta_column col(initial_delta);
+    append_tx_test_case(100000, col);
+}
+
+template<class column_t>
 void iter_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
     std::vector<int64_t> expected;
