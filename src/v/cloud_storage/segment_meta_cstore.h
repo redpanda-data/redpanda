@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <variant>
 
 namespace cloud_storage {
@@ -168,6 +169,13 @@ public:
     }
 
     size_t size() const { return _size; }
+
+    size_t mem_use() const {
+        if (!_tail.has_value()) {
+            return sizeof(*this);
+        }
+        return sizeof(*this) + _tail.value().mem_use();
+    }
 
     const_iterator begin() const {
         if (_tail.has_value()) {
@@ -449,6 +457,14 @@ public:
             return 0;
         }
         return max_frame_size * (_frames.size() - 1) + _frames.back().size();
+    }
+
+    size_t mem_use() const {
+        size_t total = 0;
+        for (const auto& p : _frames) {
+            total += p.mem_use();
+        }
+        return sizeof(*this) + total;
     }
 
     const_iterator begin() const { return const_iterator(_frames); }
