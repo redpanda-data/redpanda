@@ -80,6 +80,15 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
+  BINARY_NAME leader_balancer_constraints_test
+  SOURCES leader_balancer_constraints_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::cluster
+  LABELS cluster
+)
+
+rp_test(
   BENCHMARK_TEST
   BINARY_NAME leader_balancer_bench
   SOURCES leader_balancer_bench.cc
