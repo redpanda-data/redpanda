@@ -2006,8 +2006,13 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
           _last_snapshot_term = metadata.last_included_term;
 
           // TODO: add applying snapshot content to state machine
+          auto prev_commit_index = _commit_index;
           _commit_index = std::max(_last_snapshot_index, _commit_index);
           maybe_update_last_visible_index(_commit_index);
+          if (prev_commit_index != _commit_index) {
+              _commit_index_updated.broadcast();
+              _event_manager.notify_commit_index();
+          }
 
           update_follower_stats(metadata.latest_configuration);
           return _configuration_manager
