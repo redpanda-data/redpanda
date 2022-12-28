@@ -10,7 +10,10 @@
  */
 #pragma once
 
+#include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_types.h"
+#include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
@@ -99,6 +102,122 @@ private:
 };
 
 /*
+ * Evaluates how evenly distributed leadership for a topic is on a
+ * given cluster. Providing a way to evaluate a given reassignment of
+ * leadership and a recommendation of reassignments to improve error.
+ */
+class even_topic_distributon_constraint final
+  : public soft_constraint
+  , public index {
+    // Avoid rounding errors when determining if a move improves balance by
+    // adding a small amount of jitter. Effectively a move needs to improve by
+    // more than this value.
+    static constexpr double error_jitter = 0.000001;
+
+    struct group_info {
+        raft::group_id group_id;
+        model::broker_shard leader;
+        std::vector<model::broker_shard> replicas;
+
+        group_info(
+          const raft::group_id& gid,
+          const model::broker_shard& bs,
+          std::vector<model::broker_shard> r)
+          : group_id(gid)
+          , leader(bs)
+          , replicas(std::move(r)) {}
+    };
+
+    using topic_id_t = model::revision_id::type;
+
+    template<typename ValueType>
+    using topic_map = absl::flat_hash_map<topic_id_t, ValueType>;
+
+public:
+    even_topic_distributon_constraint(
+      group_id_to_topic_revision_t group_to_topic_rev,
+      shard_index si,
+      const muted_index& mi);
+
+    even_topic_distributon_constraint(
+      even_topic_distributon_constraint&&) noexcept = default;
+    even_topic_distributon_constraint&
+    operator=(even_topic_distributon_constraint&&) noexcept = default;
+
+    even_topic_distributon_constraint(const even_topic_distributon_constraint&)
+      = delete;
+    even_topic_distributon_constraint&
+    operator=(const even_topic_distributon_constraint&)
+      = delete;
+
+    ~even_topic_distributon_constraint() override = default;
+
+    double error() const { return _error; }
+
+    void update_index(const reassignment& r) override;
+
+    /*
+     * Uses a greedy algorithm to generate a recommended reassignment
+     * that will reduce error for this constraint.
+     *
+     * The gist is that it searches topics in order of how skewed they are.
+     * Then for each topic it finds a partiton on the node with the most
+     * leadership and tries to move it to one of its replica nodes. If this
+     * reassignment reduces error its returned.
+     *
+     * If no reassignment can reduce error for this constraint std::nullopt is
+     * returned.
+     */
+    std::optional<reassignment> recommended_reassignment() override;
+
+private:
+    shard_index _si;
+    std::reference_wrapper<const muted_index> _mi;
+    group_id_to_topic_revision_t _group_to_topic_rev;
+    double _error{0};
+
+    topic_map<absl::flat_hash_map<model::node_id, std::vector<group_info>>>
+      _topic_node_index;
+    topic_map<size_t> _topic_partition_index;
+    topic_map<absl::flat_hash_set<model::node_id>> _topic_replica_index;
+    topic_map<double> _topic_skew;
+    topic_map<double> _topic_opt_leaders;
+
+    const shard_index& si() const { return _si; }
+    const muted_index& mi() const { return _mi.get(); }
+    const group_id_to_topic_revision_t& group_to_topic_id() const {
+        return _group_to_topic_rev;
+    }
+
+    void calc_topic_skew();
+    void rebuild_indexes();
+
+    /*
+     * Compute new error for the given reassignment.
+     */
+    double adjusted_error(
+      double current_error,
+      const topic_id_t& topic_id,
+      const model::broker_shard& from,
+      const model::broker_shard& to) const;
+
+    void calculate_error() {
+        _error = std::accumulate(
+          _topic_skew.cbegin(),
+          _topic_skew.cend(),
+          double{0},
+          [](auto acc, const auto& t_s) { return acc + t_s.second; });
+    }
+
+    double evaluate_internal(const reassignment& r) override {
+        double current_error = error();
+        const auto& topic_id = group_to_topic_id().at(r.group);
+        return current_error
+               - adjusted_error(current_error, topic_id, r.from, r.to);
+    }
+};
+
+/*
  * Greedy shard balancer strategy is to move leaders from the most loaded core
  * to the least loaded core. The strategy treats all cores equally, ignoring
  * node-level balancing.
@@ -119,7 +238,6 @@ public:
       , _mi(mi)
       , _num_cores(num_cores())
       , _num_groups(num_groups()) {
-        rebuild_load_index();
         calculate_error();
     }
 
@@ -165,8 +283,6 @@ private:
     std::reference_wrapper<const muted_index> _mi;
     size_t _num_cores;
     size_t _num_groups;
-    std::vector<index_type::const_iterator> _load;
-    absl::flat_hash_map<model::broker_shard, size_t> _load_map;
     double _error{0};
 
     const shard_index& si() const { return _si; }
@@ -198,12 +314,16 @@ private:
 
     size_t num_groups() const;
     size_t num_cores() const;
+
+    using load_t = std::vector<index_type::const_iterator>;
+    using load_map_t = absl::flat_hash_map<model::broker_shard, size_t>;
+
     /*
      * build the load index, which is a vector of iterators to each element in
      * the core index, where the iterators in the load index are sorted by the
      * number of groups having their leader on a given core.
      */
-    void rebuild_load_index();
+    std::pair<load_t, load_map_t> build_load_indexes() const;
 };
 
 } // namespace cluster::leader_balancer_types
