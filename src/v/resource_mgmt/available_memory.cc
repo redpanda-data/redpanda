@@ -11,6 +11,7 @@
 
 #include "resource_mgmt/available_memory.h"
 
+#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
 
@@ -60,8 +61,8 @@ void available_memory::update_low_water_mark() {
 }
 
 void available_memory::register_metrics() {
-    if (_metrics) {
-        // already initialized
+    if (_metrics || config::shard_local_cfg().disable_public_metrics()) {
+        // already initialized or disabled
         return;
     }
 
