@@ -199,6 +199,8 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> kafka_connections_max_overrides;
     one_or_many_map_property<client_group_quota>
       kafka_client_group_byte_rate_quota;
+    one_or_many_map_property<client_group_quota>
+      kafka_client_group_fetch_byte_rate_quota;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
     bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;

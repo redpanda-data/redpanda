@@ -75,13 +75,14 @@ quota_manager::maybe_add_and_retrieve_quota(
 
 // If client is part of some group then client qota is group
 // else client quota is client_id
-std::optional<std::string_view> quota_manager::get_client_quota(
-  const std::optional<std::string_view>& client_id) {
+static std::optional<std::string_view> get_client_quota(
+  const std::optional<std::string_view>& client_id,
+  const std::unordered_map<ss::sstring, config::client_group_quota>&
+    group_quota) {
     if (!client_id) {
         return std::nullopt;
     }
-    for (const auto& group_and_limit :
-         _target_produce_tp_rate_per_client_group()) {
+    for (const auto& group_and_limit : group_quota) {
         if (client_id->starts_with(
               std::string_view(group_and_limit.second.clients_prefix))) {
             return group_and_limit.first;
@@ -101,6 +102,19 @@ int64_t quota_manager::get_client_target_produce_tp_rate(
         return group_tp_rate->second.quota;
     }
     return _default_target_produce_tp_rate();
+}
+
+std::optional<int64_t> quota_manager::get_client_target_fetch_tp_rate(
+  const std::optional<std::string_view>& quota_id) {
+    if (!quota_id) {
+        return _default_target_fetch_tp_rate();
+    }
+    auto group_tp_rate = _target_fetch_tp_rate_per_client_group().find(
+      ss::sstring(quota_id.value()));
+    if (group_tp_rate != _target_fetch_tp_rate_per_client_group().end()) {
+        return group_tp_rate->second.quota;
+    }
+    return _default_target_fetch_tp_rate();
 }
 
 ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
@@ -127,7 +141,7 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
       ss::this_shard_id() == quota_manager_shard,
       "This method can only be executed from quota manager home shard");
 
-    auto quota_id = get_client_quota(client_id);
+    auto quota_id = get_client_quota(client_id, {});
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
     const auto units = it->second.pm_rate->record_and_measure(mutations, now);
     auto delay_ms = 0ms;
@@ -202,7 +216,8 @@ throttle_delay quota_manager::record_produce_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
-    auto quota_id = get_client_quota(client_id);
+    auto quota_id = get_client_quota(
+      client_id, _target_produce_tp_rate_per_client_group());
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
 
     it->second.tp_produce_rate.record(bytes, now);
@@ -221,20 +236,25 @@ void quota_manager::record_fetch_tp(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
-    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    auto quota_id = get_client_quota(
+      client_id, _target_fetch_tp_rate_per_client_group());
+    auto it = maybe_add_and_retrieve_quota(quota_id, now);
     it->second.tp_fetch_rate.record(bytes, now);
 }
 
 throttle_delay quota_manager::throttle_fetch_tp(
   std::optional<std::string_view> client_id, clock::time_point now) {
-    if (!_target_fetch_tp_rate()) {
+    auto quota_id = get_client_quota(
+      client_id, _target_fetch_tp_rate_per_client_group());
+    auto target_tp_rate = get_client_target_fetch_tp_rate(quota_id);
+
+    if (!target_tp_rate) {
         return {};
     }
-    auto it = maybe_add_and_retrieve_quota(client_id, now);
+    auto it = maybe_add_and_retrieve_quota(quota_id, now);
     it->second.tp_fetch_rate.maybe_advance_current(now);
     auto delay_ms = throttle(
-      client_id, *_target_fetch_tp_rate(), now, it->second.tp_fetch_rate);
-
+      quota_id, *target_tp_rate, now, it->second.tp_fetch_rate);
     throttle_delay res{};
     res.first_violation = false;
     res.duration = delay_ms;

@@ -65,12 +65,15 @@ public:
           config::shard_local_cfg().default_window_sec.bind())
       , _default_target_produce_tp_rate(
           config::shard_local_cfg().target_quota_byte_rate.bind())
-      , _target_fetch_tp_rate(
+      , _default_target_fetch_tp_rate(
           config::shard_local_cfg().target_fetch_quota_byte_rate.bind())
       , _target_partition_mutation_quota(
           config::shard_local_cfg().kafka_admin_topic_api_rate.bind())
       , _target_produce_tp_rate_per_client_group(
           config::shard_local_cfg().kafka_client_group_byte_rate_quota.bind())
+      , _target_fetch_tp_rate_per_client_group(
+          config::shard_local_cfg()
+            .kafka_client_group_fetch_byte_rate_quota.bind())
       , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
       , _max_delay(
           config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
@@ -152,10 +155,9 @@ private:
 
     underlying_t::iterator maybe_add_and_retrieve_quota(
       const std::optional<std::string_view>&, const clock::time_point&);
-
-    std::optional<std::string_view>
-    get_client_quota(const std::optional<std::string_view>& client_id);
     int64_t get_client_target_produce_tp_rate(
+      const std::optional<std::string_view>& quota_id);
+    std::optional<int64_t> get_client_target_fetch_tp_rate(
       const std::optional<std::string_view>& quota_id);
 
 private:
@@ -163,10 +165,12 @@ private:
     config::binding<std::chrono::milliseconds> _default_window_width;
 
     config::binding<uint32_t> _default_target_produce_tp_rate;
-    config::binding<std::optional<uint32_t>> _target_fetch_tp_rate;
+    config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
     config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
       _target_produce_tp_rate_per_client_group;
+    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
+      _target_fetch_tp_rate_per_client_group;
 
     underlying_t _quotas;
 
