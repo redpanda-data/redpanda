@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import datetime
 import json
 import time
 import random
@@ -118,10 +119,10 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.target_group_quota_byte_rate = 10240
         self.message_size = 1024
         self.break_default_quota_message_amount = int(
-            self.target_default_quota_byte_rate / self.message_size * 10)
+            self.target_default_quota_byte_rate / self.message_size) * 11
         self.break_group_quota_message_amount = int(
-            self.target_group_quota_byte_rate / self.message_size * 10)
-        # Fetch 10 messages per one request
+            self.target_group_quota_byte_rate / self.message_size) * 11
+        # Fetch 10 messages per one request (msg_size + headers)
         self.max_partition_fetch_bytes = self.message_size * 11
         additional_options = {
             "max_kafka_throttle_delay_ms": self.max_throttle_time,
@@ -144,7 +145,6 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.leader_node = self.redpanda.broker_address(
             self.redpanda.get_node(
                 next(self.rpk.describe_topic(self.topic)).leader))
-        self.message_size = 1024
         self.msg = "".join(
             random.choice(string.ascii_lowercase)
             for _ in range(self.message_size))
@@ -176,12 +176,17 @@ class ClusterRateQuotaTest(RedpandaTest):
         for f in response_futures:
             f.get(1)
 
-    def fetch(self, consumer, messages_amount):
+    def fetch(self, consumer, messages_amount, timeout_sec=300):
+        deadline = datetime.datetime.now() + datetime.timedelta(
+            seconds=timeout_sec)
         cur_messages_amount = 0
         while cur_messages_amount < messages_amount:
             poll_result = consumer.poll(timeout_ms=1000)
             cur_messages_amount += sum(
                 map(lambda tr: len(tr), poll_result.values()))
+            now = datetime.datetime.now()
+            if now > deadline:
+                raise TimeoutError()
 
     @cluster(num_nodes=3)
     def test_client_group_produce_rate_throttle_mechanism(self):
@@ -259,6 +264,97 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.check_producer_throttled(producer)
 
     @cluster(num_nodes=3)
+    def test_client_group_consume_rate_throttle_mechanism(self):
+        """
+        Ensure group rate throttle works for consumers
+        """
+        self.init_test_data()
+
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_fetch_byte_rate_quota": [
+                {
+                    "group_name": "group_1",
+                    "clients_prefix": "consumer_alone",
+                    "quota": self.target_group_quota_byte_rate
+                },
+                {
+                    "group_name": "group_2",
+                    "clients_prefix": "consumer_multiple",
+                    "quota": self.target_group_quota_byte_rate
+                },
+            ]
+        })
+
+        producer = KafkaProducer(acks="all",
+                                 bootstrap_servers=self.leader_node,
+                                 value_serializer=str.encode,
+                                 retries=1)
+        self.produce(producer, self.break_group_quota_message_amount * 2)
+
+        consumer = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.leader_node,
+            client_id="consumer_alone",
+            consumer_timeout_ms=1000,
+            max_partition_fetch_bytes=self.max_partition_fetch_bytes,
+            auto_offset_reset='earliest',
+            enable_auto_commit=False)
+
+        # Fetch more the limit
+        self.fetch(consumer, self.break_group_quota_message_amount)
+        self.check_consumer_throttled(consumer)
+
+        consumer_1 = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.leader_node,
+            client_id="consumer_multiple_1",
+            consumer_timeout_ms=1000,
+            max_partition_fetch_bytes=self.max_partition_fetch_bytes,
+            auto_offset_reset='earliest',
+            enable_auto_commit=False)
+
+        consumer_2 = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.leader_node,
+            client_id="consumer_multiple_2",
+            consumer_timeout_ms=1000,
+            max_partition_fetch_bytes=self.max_partition_fetch_bytes,
+            auto_offset_reset='earliest',
+            enable_auto_commit=False)
+
+        # Consume under the limit
+        self.fetch(consumer_2, 10)
+        self.check_consumer_not_throttled(consumer_2)
+
+        # Consume more than the limit by other consumer
+        self.fetch(consumer_1, self.break_group_quota_message_amount)
+        self.check_consumer_throttled(consumer_1)
+
+        # Consume under the limit for client, but more than limit for group
+        self.fetch(consumer_2, 10)
+        self.check_consumer_throttled(consumer_2)
+
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_fetch_byte_rate_quota": {
+                "group_name": "change_config",
+                "clients_prefix": "new_consumer",
+                "quota": self.target_group_quota_byte_rate
+            }
+        })
+
+        consumer = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.leader_node,
+            client_id="new_consumer",
+            consumer_timeout_ms=1000,
+            max_partition_fetch_bytes=self.max_partition_fetch_bytes,
+            auto_offset_reset='earliest',
+            enable_auto_commit=False)
+
+        self.fetch(consumer, self.break_group_quota_message_amount)
+        self.check_consumer_throttled(consumer)
+
+    @cluster(num_nodes=3)
     def test_client_response_throttle_mechanism(self):
         """
         Ensure response size rate throttle works
@@ -312,7 +408,7 @@ class ClusterRateQuotaTest(RedpandaTest):
             auto_offset_reset='earliest',
             enable_auto_commit=False)
 
-        self.produce(producer, self.break_default_quota_message_amount * 2)
+        self.produce(producer, self.break_default_quota_message_amount)
 
         # Consume more than the quota limit, next request must be throttled
         consumer.poll(timeout_ms=1000,
@@ -326,6 +422,18 @@ class ClusterRateQuotaTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_client_response_and_produce_throttle_mechanism(self):
         self.init_test_data()
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_byte_rate_quota": {
+                "group_name": "producer_throttle_group",
+                "clients_prefix": "throttle_producer_only",
+                "quota": self.target_group_quota_byte_rate
+            },
+            "kafka_client_group_fetch_byte_rate_quota": {
+                "group_name": "producer_throttle_group",
+                "clients_prefix": "throttle_producer_only",
+                "quota": self.target_group_quota_byte_rate
+            }
+        })
         # Producer and Consumer same client_id
         producer = KafkaProducer(acks="all",
                                  bootstrap_servers=self.leader_node,
@@ -343,13 +451,25 @@ class ClusterRateQuotaTest(RedpandaTest):
             enable_auto_commit=False)
 
         # Produce more than limit
-        self.produce(producer, self.break_default_quota_message_amount)
+        self.produce(producer, self.break_group_quota_message_amount)
         self.check_producer_throttled(producer)
 
         # Fetch must not be throttled
         self.fetch(consumer, 10)
         self.check_consumer_not_throttled(consumer)
 
+        self.redpanda.set_cluster_config({
+            "kafka_client_group_byte_rate_quota": {
+                "group_name": "consumer_throttle_group",
+                "clients_prefix": "throttle_consumer_only",
+                "quota": self.target_group_quota_byte_rate
+            },
+            "kafka_client_group_fetch_byte_rate_quota": {
+                "group_name": "consumer_throttle_group",
+                "clients_prefix": "throttle_consumer_only",
+                "quota": self.target_group_quota_byte_rate
+            }
+        })
         # Producer and Consumer same client_id
         producer = KafkaProducer(acks="all",
                                  bootstrap_servers=self.leader_node,
@@ -367,9 +487,9 @@ class ClusterRateQuotaTest(RedpandaTest):
             enable_auto_commit=False)
 
         # Fetch more than limit
-        self.fetch(consumer, self.break_default_quota_message_amount)
+        self.fetch(consumer, self.break_group_quota_message_amount)
         self.check_consumer_throttled(consumer)
 
         # Produce must not be throttled
-        self.produce(producer, 100)
+        self.produce(producer, 10)
         self.check_producer_not_throttled(producer)
