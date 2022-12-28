@@ -272,6 +272,8 @@ public:
     /// Get last value used to create the encoder
     TVal get_last_value() const noexcept { return _last; }
 
+    size_t mem_use() const { return _data.size_bytes(); }
+
 private:
     template<typename T>
     void _pack_as(const row_t& input) {
