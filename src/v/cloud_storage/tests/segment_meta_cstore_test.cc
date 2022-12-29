@@ -118,8 +118,9 @@ void iter_test_case(const int64_t num_elements, column_t& column) {
     BOOST_REQUIRE_EQUAL(total_size, column.size());
 
     int i = 0;
-    for (auto actual : column) {
-        BOOST_REQUIRE_EQUAL(actual, expected[i++]);
+    for (auto it = column.begin(); it != column.end(); ++it) {
+        BOOST_REQUIRE_EQUAL(it.index(), i);
+        BOOST_REQUIRE_EQUAL(*it, expected[i++]);
     }
 }
 
@@ -380,6 +381,7 @@ void at_test_case(const int64_t num_elements, column_t& column) {
         BOOST_REQUIRE(it != column.end());
         auto actual = *it;
         BOOST_REQUIRE_EQUAL(actual, expected);
+        BOOST_REQUIRE_EQUAL(it.index(), index);
     }
 }
 

@@ -300,6 +300,7 @@ private:
     }
 
     void increment() {
+        ++_ix_column;
         ++_inner_it;
         if (_inner_it == _inner_end) {
             ++_outer_it;
@@ -333,15 +334,22 @@ public:
     /// Create iterator that points to the middle of the column
     template<class iterator_t>
     explicit segment_meta_column_const_iterator(
-      iterator_t begin, iterator_t end, size_t intra_frame_ix)
+      iterator_t begin,
+      iterator_t end,
+      uint32_t intra_frame_ix,
+      uint32_t column_ix)
       : _snapshot(make_snapshot_at(begin, end, intra_frame_ix))
       , _outer_it(_snapshot.begin())
       , _inner_it(
-          _snapshot.empty() ? frame_iter_t{} : std::move(_snapshot.front())) {}
+          _snapshot.empty() ? frame_iter_t{} : std::move(_snapshot.front()))
+      , _ix_column(column_ix) {}
 
     /// Create iterator that points to the end of any column
     segment_meta_column_const_iterator()
       : _outer_it(_snapshot.end()) {}
+
+    // Current index
+    uint32_t index() const { return _ix_column; }
 
 private:
     iter_list_t _snapshot;
@@ -351,6 +359,8 @@ private:
     // every 'begin' iterator we store in the '_snapshot'
     // because all 'end' iterators are equal.
     frame_iter_t _inner_end{};
+    // Current position inside the column
+    uint32_t _ix_column{0};
 };
 
 /// Column that represents a signle field
@@ -367,9 +377,9 @@ template<class value_t, class delta_alg, class Derived>
 class segment_meta_column_impl {
     using frame_t = segment_meta_column_frame<value_t, delta_alg>;
     using decoder_t = deltafor_decoder<value_t, delta_alg>;
-    static constexpr size_t max_frame_size = 0x1000;
 
 public:
+    static constexpr size_t max_frame_size = 0x1000;
     using const_iterator
       = segment_meta_column_const_iterator<value_t, delta_alg>;
 
@@ -449,7 +459,8 @@ public:
         auto ix_inner = index % max_frame_size;
         auto it = _frames.begin();
         std::advance(it, ix_outer);
-        return const_iterator(it, _frames.end(), ix_inner);
+        auto ix_total = ix_outer * max_frame_size + ix_inner;
+        return const_iterator(it, _frames.end(), ix_inner, ix_total);
     }
 
     size_t size() const {
@@ -589,6 +600,7 @@ public:
     const_iterator pred_search(value_t value) const {
         PredT pred;
         auto it = this->_frames.begin();
+        size_t index = 0;
         for (; it != this->_frames.end(); ++it) {
             // The code is only used with equal/greater/greater_equal predicates
             // to implement find/lower_bound/upper_bound. Because of that we can
@@ -596,9 +608,10 @@ public:
             if (it->last_value().has_value() && *it->last_value() >= value) {
                 break;
             }
+            index += base_t::max_frame_size;
         }
         if (it != this->_frames.end()) {
-            auto start = const_iterator(it, this->_frames.end(), 0);
+            auto start = const_iterator(it, this->_frames.end(), 0, index);
             for (; start != this->end(); ++start) {
                 if (pred(*start, value)) {
                     return start;
