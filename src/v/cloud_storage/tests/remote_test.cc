@@ -62,6 +62,19 @@ static constexpr std::string_view manifest_payload = R"json({
     }
 })json";
 
+static constexpr std::string_view list_response = R"XML(
+<ListBucketResult>
+   <IsTruncated>false</IsTruncated>
+   <Contents>
+      <Key>a</Key>
+   </Contents>
+  <Contents>
+      <Key>b</Key>
+   </Contents>
+   <NextContinuationToken>n</NextContinuationToken>
+</ListBucketResult>
+)XML";
+
 static cloud_storage::lazy_abort_source always_continue{
   "no-op", [](auto&) { return false; }};
 
@@ -409,4 +422,85 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
             bucket, path, upload_size, reset_stream, fib, always_continue)
           .get();
     BOOST_REQUIRE_EQUAL(upl_res, upload_result::success);
+}
+
+FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
+    set_expectations_and_listen(
+      {{.url = "/?list-type=2",
+        .body = ss::sstring{list_response.data(), list_response.size()}}});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(100ms, 20ms);
+    auto result = r.list_objects(bucket, fib).get0();
+    BOOST_REQUIRE(result.has_value());
+
+    auto items = result.value();
+    BOOST_REQUIRE_EQUAL(items.size(), 2);
+}
+
+FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
+    set_expectations_and_listen(
+      {{.url = "/?list-type=2&prefix=x",
+        .body = ss::sstring{list_response.data(), list_response.size()}}});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(100ms, 20ms);
+    auto result = r.list_objects(
+                     bucket, fib, cloud_storage_clients::object_key{"x"})
+                    .get0();
+    BOOST_REQUIRE(result.has_value());
+    auto items = result.value();
+    BOOST_REQUIRE_EQUAL(items.size(), 2);
+    BOOST_REQUIRE_EQUAL(items[0].key, "a");
+    BOOST_REQUIRE_EQUAL(items[1].key, "b");
+    auto request = get_requests()[0];
+    BOOST_REQUIRE_EQUAL(request._method, "GET");
+    BOOST_REQUIRE_EQUAL(request.get_query_param("list-type"), "2");
+    BOOST_REQUIRE_EQUAL(request.get_query_param("prefix"), "x");
+    BOOST_REQUIRE_EQUAL(request.get_header("prefix"), "x");
+}
+
+FIXTURE_TEST(test_put_string, s3_imposter_fixture) {
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(100ms, 20ms);
+
+    cloud_storage_clients::object_key path{"p"};
+    auto result = r.upload_object(bucket, path, "p", fib).get0();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+
+    auto request = get_requests()[0];
+    BOOST_REQUIRE(request._method == "PUT");
+    BOOST_REQUIRE(request.content == "p");
+}
+
+FIXTURE_TEST(test_delete_objects, s3_imposter_fixture) {
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(100ms, 20ms);
+
+    cloud_storage_clients::object_key path{"p"};
+    std::vector<cloud_storage_clients::object_key> to_delete{
+      cloud_storage_clients::object_key{"a"},
+      cloud_storage_clients::object_key{"b"}};
+    auto result = r.delete_objects(bucket, to_delete, fib).get0();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    auto request = get_requests()[0];
+    BOOST_REQUIRE_EQUAL(request._method, "POST");
+    BOOST_REQUIRE_EQUAL(request._url, "/?delete");
+    BOOST_REQUIRE(request.query_parameters.contains("delete"));
 }

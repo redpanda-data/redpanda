@@ -258,6 +258,45 @@ public:
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
+    /// \brief Delete multiple objects from S3
+    ///
+    /// Deletes multiple objects from S3, utilizing the S3 client delete_objects
+    /// API.
+    /// \param bucket The bucket to delete from
+    /// \param keys A vector of keys which will be deleted
+    ss::future<upload_result> delete_objects(
+      const cloud_storage_clients::bucket_name& bucket,
+      std::vector<cloud_storage_clients::object_key> keys,
+      retry_chain_node& parent);
+
+    using list_bucket_items
+      = std::vector<cloud_storage_clients::client::list_bucket_item>;
+    using list_result
+      = result<list_bucket_items, cloud_storage_clients::error_outcome>;
+
+    /// \brief Lists objects in a bucket
+    ///
+    /// \param name The bucket to delete from
+    /// \param parent The retry chain node to manage timeouts
+    /// \param prefix Optional prefix to restrict listing of objects
+    ss::future<list_result> list_objects(
+      const cloud_storage_clients::bucket_name& name,
+      retry_chain_node& parent,
+      std::optional<cloud_storage_clients::object_key> prefix = std::nullopt);
+
+    /// \brief Upload small objects to bucket. Suitable for uploading simple
+    /// strings, does not check for leadership before upload like the segment
+    /// upload function.
+    ///
+    /// \param bucket The bucket to upload to
+    /// \param object_path The path to upload to
+    /// \param payload The data to place in the bucket
+    ss::future<upload_result> upload_object(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& object_path,
+      ss::sstring payload,
+      retry_chain_node& parent);
+
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
