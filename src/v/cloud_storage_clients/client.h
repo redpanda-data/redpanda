@@ -129,6 +129,7 @@ public:
     struct list_bucket_result {
         bool is_truncated;
         ss::sstring prefix;
+        ss::sstring next_continuation_token;
         std::vector<list_bucket_item> contents;
     };
 
@@ -145,6 +146,7 @@ public:
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
+      std::optional<ss::sstring> continuation_token = std::nullopt,
       const ss::lowres_clock::duration& timeout = http::default_connect_timeout)
       = 0;
 

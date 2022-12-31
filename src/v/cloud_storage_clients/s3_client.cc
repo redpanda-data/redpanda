@@ -45,6 +45,8 @@ struct aws_header_names {
     static constexpr boost::beast::string_view prefix = "prefix";
     static constexpr boost::beast::string_view start_after = "start-after";
     static constexpr boost::beast::string_view max_keys = "max-keys";
+    static constexpr boost::beast::string_view continuation_token
+      = "continuation-token";
     static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
     static constexpr boost::beast::string_view x_amz_request_id
       = "x-amz-request-id";
@@ -155,7 +157,8 @@ request_creator::make_list_objects_v2_request(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
-  std::optional<size_t> max_keys) {
+  std::optional<size_t> max_keys,
+  std::optional<ss::sstring> continuation_token) {
     // GET /?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
     // Host: example-bucket.s3.<Region>.amazonaws.com
     // x-amz-date: 20160501T000433Z
@@ -163,6 +166,9 @@ request_creator::make_list_objects_v2_request(
     http::client::request_header header{};
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/?list-type=2");
+    if (prefix.has_value()) {
+        target = fmt::format("/?list-type=2&prefix={}", (*prefix)().string());
+    }
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(
@@ -177,7 +183,12 @@ request_creator::make_list_objects_v2_request(
         header.insert(aws_header_names::start_after, (*start_after)().string());
     }
     if (max_keys) {
-        header.insert(aws_header_names::start_after, std::to_string(*max_keys));
+        header.insert(aws_header_names::max_keys, std::to_string(*max_keys));
+    }
+    if (continuation_token) {
+        header.insert(
+          aws_header_names::continuation_token,
+          {continuation_token->data(), continuation_token->size()});
     }
 
     auto ec = _apply_credentials->add_auth(header);
@@ -349,6 +360,9 @@ static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
                 result.is_truncated = value.get_value<bool>();
             } else if (tag == "Prefix") {
                 result.prefix = value.get_value<ss::sstring>("");
+            } else if (tag == "NextContinuationToken") {
+                result.next_continuation_token = value.get_value<ss::sstring>(
+                  "");
             }
         }
         return result;
@@ -685,11 +699,14 @@ s3_client::list_objects(
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
+  std::optional<ss::sstring> continuation_token,
   const ss::lowres_clock::duration& timeout) {
-    return send_request(
-      do_list_objects_v2(name, prefix, start_after, max_keys, timeout),
+    const object_key dummy{""};
+    co_return co_await send_request(
+      do_list_objects_v2(
+        name, prefix, start_after, max_keys, continuation_token, timeout),
       name,
-      object_key{""});
+      dummy);
 }
 
 ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
@@ -697,9 +714,14 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
+  std::optional<ss::sstring> continuation_token,
   const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_list_objects_v2_request(
-      name, std::move(prefix), std::move(start_after), max_keys);
+      name,
+      std::move(prefix),
+      std::move(start_after),
+      max_keys,
+      continuation_token);
     if (!header) {
         return ss::make_exception_future<list_bucket_result>(
           std::system_error(header.error()));
@@ -882,7 +904,8 @@ auto s3_client::delete_objects(
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout)
   -> ss::future<result<delete_objects_result, error_outcome>> {
+    object_key dummy{""};
     return send_request(
-      do_delete_objects(bucket, keys, timeout), bucket, object_key{""});
+      do_delete_objects(bucket, keys, timeout), bucket, dummy);
 }
 } // namespace cloud_storage_clients
