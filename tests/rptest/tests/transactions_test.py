@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
+from time import sleep
 
 import uuid
 
@@ -194,7 +195,7 @@ class TransactionsTest(RedpandaTest):
             assert False, "send_offsetes should fail"
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
+            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
 
         try:
             # if abort fails an app should recreate a producer otherwise
@@ -202,7 +203,7 @@ class TransactionsTest(RedpandaTest):
             producer.abort_transaction()
         except ck.cimpl.KafkaException as e:
             kafka_error = e.args[0]
-            assert kafka_error.code() == ck.cimpl.KafkaError.INVALID_TXN_STATE
+            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
 
     @cluster(num_nodes=3)
     def change_static_member_test(self):
@@ -259,12 +260,38 @@ class TransactionsTest(RedpandaTest):
         producer.abort_transaction()
 
     @cluster(num_nodes=3)
+    def expired_tx_test(self):
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 5000,
+        })
+
+        producer.init_transactions()
+        producer.begin_transaction()
+
+        for i in range(0, 10):
+            producer.produce(self.input_t.name,
+                             str(i),
+                             str(i),
+                             partition=0,
+                             on_delivery=self.on_delivery)
+        producer.flush()
+        sleep(10)
+        try:
+            producer.commit_transaction()
+            assert False, "tx is expected to be expired"
+        except ck.cimpl.KafkaException as e:
+            kafka_error = e.args[0]
+            assert kafka_error.code() == ck.cimpl.KafkaError._FENCED
+
+    @cluster(num_nodes=3)
     def graceful_leadership_transfer_test(self):
 
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
+            'transaction.timeout.ms': 60000,
         })
 
         producer.init_transactions()

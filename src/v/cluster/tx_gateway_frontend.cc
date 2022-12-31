@@ -1706,6 +1706,19 @@ tx_gateway_frontend::do_end_txn(
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
+        if (tx.status == tm_transaction::tx_status::killed) {
+            vlog(
+              txlog.warn,
+              "can't commit an expired tx:{} pid:{} etag:{} tx_seq:{} in "
+              "term:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              term);
+            outcome->set_value(tx_errc::fenced);
+            co_return tx_errc::fenced;
+        }
         bool is_status_ok = false;
         if (is_fetch_tx_supported()) {
             is_status_ok = tx.status == tm_transaction::tx_status::ongoing
@@ -1746,6 +1759,19 @@ tx_gateway_frontend::do_end_txn(
             co_return tx_errc::unknown_server_error;
         }
     } else {
+        if (tx.status == tm_transaction::tx_status::killed) {
+            vlog(
+              txlog.warn,
+              "can't abort an expired tx:{} pid:{} etag:{} tx_seq:{} in "
+              "term:{}",
+              tx.id,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              term);
+            outcome->set_value(tx_errc::fenced);
+            co_return tx_errc::fenced;
+        }
         try {
             r = co_await do_abort_tm_tx(term, stm, tx, timeout);
         } catch (...) {
@@ -1887,17 +1913,11 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
 
     if (!is_fetch_tx_supported()) {
-        if (
-          tx.status != tm_transaction::tx_status::ongoing
-          && tx.status != tm_transaction::tx_status::killed) {
+        if (tx.status != tm_transaction::tx_status::ongoing) {
             co_return tx_errc::invalid_txn_state;
         }
-    } else if (
-      tx.status == tm_transaction::tx_status::aborting
-      || tx.status == tm_transaction::tx_status::killed) {
-        if (tx.etag == expected_term) {
-            // a retried abort
-        } else {
+    } else if (tx.status == tm_transaction::tx_status::aborting) {
+        if (tx.etag != expected_term) {
             vlog(
               txlog.trace,
               "abort encountered old aborted tx:{} etag:{} pid:{} tx_seq:{} "
@@ -1927,9 +1947,7 @@ tx_gateway_frontend::do_abort_tm_tx(
                       tx.pid);
                     co_return tx_errc::unknown_server_error;
                 }
-                if (
-                  old_tx.status == tm_transaction::tx_status::aborting
-                  || tx.status == tm_transaction::tx_status::killed) {
+                if (old_tx.status == tm_transaction::tx_status::aborting) {
                     if (old_tx.tx_seq != tx.tx_seq) {
                         vlog(
                           txlog.warn,
@@ -1960,7 +1978,7 @@ tx_gateway_frontend::do_abort_tm_tx(
                 } else {
                     vlog(
                       txlog.warn,
-                      "fetched status:{} isn't aborting, killed nor ongoing",
+                      "fetched status:{} isn't aborting nor ongoing",
                       old_tx.status);
                     co_return tx_errc::unknown_server_error;
                 }
@@ -2104,8 +2122,7 @@ tx_gateway_frontend::do_abort_tm_tx(
 
     if (
       tx.status != tm_transaction::tx_status::ongoing
-      && tx.status != tm_transaction::tx_status::aborting
-      && tx.status != tm_transaction::tx_status::killed) {
+      && tx.status != tm_transaction::tx_status::aborting) {
         vlog(
           txlog.warn,
           "abort encontered a tx with unexpected status:{} (tx:{} etag:{} "
@@ -2932,7 +2949,15 @@ tx_gateway_frontend::get_ongoing_tx(
         // from the client perspective it will look like a tx wasn't
         // failed at all but in fact the second part of the tx will
         // start a new transactions
-        co_return tx_errc::invalid_txn_state;
+        vlog(
+          txlog.warn,
+          "can't modify an expired tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
+          tx.id,
+          tx.pid,
+          tx.etag,
+          tx.tx_seq,
+          expected_term);
+        co_return tx_errc::fenced;
     } else {
         // A previous transaction has failed after its status has been
         // decided, rolling it forward.
