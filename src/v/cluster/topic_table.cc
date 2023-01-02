@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
@@ -20,6 +21,7 @@
 #include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
 #include <optional>
@@ -789,6 +791,456 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
        }});
     notify_waiters();
     co_return make_error_code(errc::success);
+}
+
+ss::future<>
+topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
+    auto& snap = controller_snap.topics;
+    for (const auto& [ns_tp, md_item] : _topics) {
+        absl::node_hash_map<
+          model::partition_id,
+          controller_snapshot_parts::topics_t::partition_t>
+          partitions;
+        absl::node_hash_map<
+          model::partition_id,
+          controller_snapshot_parts::topics_t::update_t>
+          updates;
+
+        for (const auto& p_as : md_item.get_assignments()) {
+            std::vector<model::broker_shard> replicas;
+            model::ntp ntp(ns_tp.ns, ns_tp.tp, p_as.id);
+            if (auto upd_it = _updates_in_progress.find(ntp);
+                upd_it != _updates_in_progress.end()) {
+                const auto& upd = upd_it->second;
+                updates.emplace(
+                  p_as.id,
+                  controller_snapshot_parts::topics_t::update_t{
+                    .target_assignment = upd.get_target_replicas(),
+                    .state = upd.get_state(),
+                    .revision = upd.get_update_revision(),
+                    .last_cmd_revision = upd.get_last_cmd_revision()});
+
+                replicas = upd.get_previous_replicas();
+            } else {
+                replicas = p_as.replicas;
+            }
+
+            auto p_it = md_item.partitions.find(p_as.id);
+            vassert(
+              p_it != md_item.partitions.end(),
+              "ntp {} must be present in the partition map",
+              ntp);
+
+            partitions.emplace(
+              p_as.id,
+              controller_snapshot_parts::topics_t::partition_t{
+                .group = p_as.group,
+                .replicas = std::move(replicas),
+                .replicas_revisions = p_it->second.replicas_revisions,
+                .last_update_finished_revision
+                = p_it->second.last_update_finished_revision});
+
+            co_await ss::coroutine::maybe_yield();
+        }
+
+        snap.topics.emplace(
+          ns_tp,
+          controller_snapshot_parts::topics_t::topic_t{
+            .metadata = md_item.metadata.get_fields(),
+            .partitions = std::move(partitions),
+            .updates = std::move(updates),
+          });
+    }
+}
+
+// helper class to hold context needed for adding/deleting ntps when applying a
+// controller snapshot
+class topic_table::snapshot_applier {
+    updates_t& _updates_in_progress;
+    fragmented_vector<delta>& _pending_deltas;
+    topic_table_probe& _probe;
+
+public:
+    explicit snapshot_applier(topic_table& parent)
+      : _updates_in_progress(parent._updates_in_progress)
+      , _pending_deltas(parent._pending_deltas)
+      , _probe(parent._probe) {}
+
+    void delete_ntp(
+      const model::topic_namespace& ns_tp,
+      bool is_replicable,
+      const partition_assignment& p_as,
+      model::revision_id cmd_rev) {
+        auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_as.id);
+        vlog(
+          clusterlog.trace, "deleting ntp {} not in controller snapshot", ntp);
+        _updates_in_progress.erase(ntp);
+        auto op = is_replicable ? delta::op_type::del
+                                : delta::op_type::del_non_replicable;
+        _pending_deltas.emplace_back(
+          std::move(ntp), std::move(p_as), model::offset{cmd_rev}, op);
+        // partition_assignment object is supposed to be removed from the
+        // assignments set by the caller
+    }
+
+    ss::future<> delete_topic(
+      const model::topic_namespace& ns_tp,
+      const topic_metadata_item& old_md_item,
+      model::revision_id cmd_rev) {
+        vlog(
+          clusterlog.trace,
+          "deleting topic {} not in controller snapshot",
+          ns_tp);
+        for (const auto& p_as : old_md_item.get_assignments()) {
+            delete_ntp(ns_tp, old_md_item.is_topic_replicable(), p_as, cmd_rev);
+            co_await ss::coroutine::maybe_yield();
+        }
+        _probe.handle_topic_deletion(ns_tp);
+        // topic_metadata_item object is supposed to be removed from _topics by
+        // the caller
+    }
+
+    void add_ntp(
+      const model::ntp& ntp,
+      const controller_snapshot_parts::topics_t::topic_t& topic,
+      const controller_snapshot_parts::topics_t::partition_t& partition,
+      topic_metadata_item& md_item,
+      bool must_update_properties) {
+        vlog(clusterlog.trace, "adding ntp {} from controller snapshot", ntp);
+        size_t pending_deltas_start_idx = _pending_deltas.size();
+
+        const model::partition_id p_id = ntp.tp.partition;
+
+        // For a non-replicable topic we (in accordance to the apply() logic):
+        // * don't generate deltas except add_non_replicable
+        // * don't add the corresponding partition_meta map entries
+        // * do add corresponding in_progress_update map entries
+        const bool prev_is_replicable = md_item.is_topic_replicable();
+        const bool is_replicable = !topic.metadata.source_topic.has_value();
+
+        // 1. reconcile the _topics state (the md_item object) and generate
+        // related deltas
+
+        std::optional<partition_assignment> prev_assignment;
+        model::revision_id prev_update_finished_revision;
+        if (auto as_it = md_item.get_assignments().find(p_id);
+            as_it != md_item.get_assignments().end()) {
+            prev_assignment = std::move(*as_it);
+            md_item.get_assignments().erase(as_it);
+
+            if (prev_is_replicable) {
+                auto p_it = md_item.partitions.find(p_id);
+                vassert(
+                  p_it != md_item.partitions.end(),
+                  "ntp {} must be present in the partition map",
+                  ntp);
+                prev_update_finished_revision
+                  = p_it->second.last_update_finished_revision;
+            }
+        }
+
+        vlog(
+          clusterlog.trace,
+          "{}: prev_update_finished_revision: {}, new: "
+          "last_update_finished_revision: {}",
+          ntp,
+          prev_update_finished_revision,
+          partition.last_update_finished_revision);
+
+        // TODO: assert that group and possibly replicas match with
+        // prev_assignment
+
+        // NOTE: Replicas in the snapshot don't take effects of in-progress
+        // update into account, but replicas in _topics do. So if there is
+        // info in the snapshot about an in-progress update, we'll have to
+        // update replicas later in this function.
+        partition_assignment& cur_assignment
+          = *md_item.get_assignments()
+               .emplace(partition.group, p_id, partition.replicas)
+               .first;
+        if (is_replicable) {
+            md_item.partitions[p_id] = partition_meta{
+              .replicas_revisions = partition.replicas_revisions,
+              .last_update_finished_revision
+              = partition.last_update_finished_revision,
+            };
+        } else {
+            md_item.partitions.clear();
+        }
+
+        // Determine if the previous state was in the same "update epoch" as
+        // the state in the snapshot. If not, we have to generate a "reset
+        // delta" that will cause controller_backend to perform needed
+        // partition add/delete operations to bring the replica set in sync
+        // with the snapshot.
+        if (!prev_assignment) {
+            // new partition
+            auto op = is_replicable ? delta::op_type::add
+                                    : delta::op_type::add_non_replicable;
+            _pending_deltas.emplace_back(
+              ntp,
+              cur_assignment,
+              model::offset{partition.last_update_finished_revision},
+              op,
+              std::nullopt,
+              partition.replicas_revisions);
+        } else if (is_replicable) {
+            if (
+              prev_update_finished_revision
+              != partition.last_update_finished_revision) {
+                // the partition in the snapshot is the same as we have, but
+                // after some updates were initiated and finished.
+                _pending_deltas.emplace_back(
+                  ntp,
+                  cur_assignment,
+                  model::offset{partition.last_update_finished_revision},
+                  delta::op_type::reset,
+                  prev_assignment->replicas,
+                  partition.replicas_revisions);
+            }
+
+            if (must_update_properties) {
+                _pending_deltas.emplace_back(
+                  ntp,
+                  cur_assignment,
+                  model::offset{partition.last_update_finished_revision},
+                  delta::op_type::update_properties);
+            }
+        }
+
+        // 2. reconcile the _updates_in_progress state and generate
+        // deltas related to the update
+
+        // If we are in the same "update epoch", use
+        // prev_update_last_cmd_revision to determine if we need to add
+        // additional controller deltas to finish the previous update. If we
+        // are not in the same epoch, don't bother finishing the previous
+        // update, it will be interrupted by the reset delta.
+        model::revision_id prev_update_last_cmd_revision;
+        if (auto prev_update_it = _updates_in_progress.find(ntp);
+            prev_update_it != _updates_in_progress.end()) {
+            prev_update_last_cmd_revision
+              = prev_update_it->second.get_last_cmd_revision();
+            _updates_in_progress.erase(prev_update_it);
+        }
+
+        if (auto update_it = topic.updates.find(p_id);
+            update_it != topic.updates.end()) {
+            const auto& update = update_it->second;
+
+            if (update.state == reconfiguration_state::in_progress) {
+                cur_assignment.replicas = update_it->second.target_assignment;
+            }
+
+            in_progress_update inp_update{
+              partition.replicas,
+              update.target_assignment,
+              update.state,
+              update.revision,
+              _probe,
+            };
+            inp_update.set_state(update.state, update.last_cmd_revision);
+            vlog(
+              clusterlog.trace,
+              "{}: prev_update_last_cmd_revision: {}, new: state: {} "
+              "update_rev: {} last_cmd_rev: {}",
+              ntp,
+              prev_update_last_cmd_revision,
+              inp_update.get_state(),
+              inp_update.get_update_revision(),
+              inp_update.get_last_cmd_revision());
+            _updates_in_progress.emplace(ntp, std::move(inp_update));
+
+            if (
+              is_replicable
+              && prev_update_last_cmd_revision != update.last_cmd_revision) {
+                if (
+                  prev_update_finished_revision
+                    != partition.last_update_finished_revision
+                  || prev_update_last_cmd_revision == model::revision_id{}) {
+                    // This is the new update for us, add the initial update
+                    // delta. Do it even if the last op in the snapshot is
+                    // cancellation because if later the "cancel revert" event
+                    // happens, controller_backend has to execute the update
+                    // delta to make progress.
+                    _pending_deltas.emplace_back(
+                      ntp,
+                      partition_assignment(
+                        partition.group,
+                        p_id,
+                        update_it->second.target_assignment),
+                      model::offset{update.revision},
+                      delta::op_type::update,
+                      partition.replicas,
+                      update_replicas_revisions(
+                        partition.replicas_revisions,
+                        update.target_assignment,
+                        update.revision));
+                }
+
+                auto add_cancel_delta = [&](topic_table_delta::op_type op) {
+                    _pending_deltas.emplace_back(
+                      ntp,
+                      cur_assignment,
+                      model::offset{update.last_cmd_revision},
+                      op,
+                      update.target_assignment,
+                      partition.replicas_revisions);
+                };
+
+                switch (update.state) {
+                case reconfiguration_state::in_progress:
+                    break;
+                case reconfiguration_state::cancelled:
+                    add_cancel_delta(topic_table_delta::op_type::cancel_update);
+                    break;
+                case reconfiguration_state::force_cancelled:
+                    add_cancel_delta(
+                      topic_table_delta::op_type::force_abort_update);
+                    break;
+                }
+            }
+        }
+
+        for (size_t i = pending_deltas_start_idx; i < _pending_deltas.size();
+             ++i) {
+            vlog(
+              clusterlog.trace,
+              "applying controller snapshot: produced delta {}",
+              _pending_deltas[i]);
+        }
+    }
+
+    ss::future<topic_metadata_item> create_topic(
+      const model::topic_namespace& ns_tp,
+      const controller_snapshot_parts::topics_t::topic_t& topic) {
+        topic_metadata_item ret{topic_metadata{topic.metadata, {}}};
+        for (const auto& [p_id, partition] : topic.partitions) {
+            auto ntp = model::ntp(ns_tp.ns, ns_tp.tp, p_id);
+            add_ntp(ntp, topic, partition, ret, false);
+            co_await ss::coroutine::maybe_yield();
+        }
+        _probe.handle_topic_creation(ns_tp);
+        co_return ret;
+    };
+};
+
+ss::future<> topic_table::apply_snapshot(
+  model::offset snap_offset, const controller_snapshot& controller_snap) {
+    model::revision_id snap_revision{snap_offset};
+    if (snap_revision <= _last_applied_revision_id) {
+        co_return;
+    }
+
+    // 1. reconcile the _topics and _updates_in_progress state and generate
+    // corresponding deltas.
+
+    const auto& snap = controller_snap.topics;
+    snapshot_applier applier(*this);
+
+    // Go over the old topics set, delete those that are not present in
+    // the snapshot and reconcile those that are.
+    for (auto old_it = _topics.begin(); old_it != _topics.end();) {
+        const auto& ns_tp = old_it->first;
+        auto& md_item = old_it->second;
+
+        if (auto new_it = snap.topics.find(ns_tp);
+            new_it != snap.topics.end()) {
+            const auto& topic_snapshot = new_it->second;
+            if (
+              topic_snapshot.metadata.revision
+              != md_item.metadata.get_revision()) {
+                // The topic was re-created, delete and add it anew.
+                co_await applier.delete_topic(
+                  ns_tp, md_item, topic_snapshot.metadata.revision);
+                md_item = co_await applier.create_topic(ns_tp, topic_snapshot);
+            } else {
+                // The topic was present in the previous set, now we need to
+                // reconcile individual partitions.
+
+                // 1. update configuration in the topic table
+
+                const bool must_update_properties
+                  = md_item.get_configuration().properties
+                    != topic_snapshot.metadata.configuration.properties;
+
+                md_item.metadata.get_fields() = topic_snapshot.metadata;
+
+                // 2. For each partition in the new set, reconcile assignments
+                // and add corresponding deltas
+                for (const auto& [p_id, partition] :
+                     topic_snapshot.partitions) {
+                    model::ntp ntp(ns_tp.ns, ns_tp.tp, p_id);
+                    applier.add_ntp(
+                      ntp,
+                      topic_snapshot,
+                      partition,
+                      md_item,
+                      must_update_properties);
+                    co_await ss::coroutine::maybe_yield();
+                }
+
+                // 3. For each partition not present in the new set (not
+                // possible with current controller commands, but do it anyway
+                // for completeness), generate del delta.
+                for (auto as_it = md_item.get_assignments().begin();
+                     as_it != md_item.get_assignments().end();) {
+                    auto as_it_copy = as_it++;
+                    if (!topic_snapshot.partitions.contains(as_it_copy->id)) {
+                        applier.delete_ntp(
+                          ns_tp,
+                          md_item.is_topic_replicable(),
+                          *as_it_copy,
+                          snap_revision);
+                        md_item.get_assignments().erase(as_it_copy);
+                    }
+                    co_await ss::coroutine::maybe_yield();
+                }
+            }
+
+            ++old_it;
+        } else {
+            // For topics that are not present in the new set, simply
+            // remove them and generate del deltas.
+            co_await applier.delete_topic(ns_tp, md_item, snap_revision);
+            auto to_delete = old_it++;
+            _topics.erase(to_delete);
+        }
+    }
+
+    // Next, go over the new topics set and add state for new topics.
+    for (const auto& [ns_tp, topic] : snap.topics) {
+        if (!_topics.contains(ns_tp)) {
+            _topics.emplace(ns_tp, co_await applier.create_topic(ns_tp, topic));
+        }
+    }
+
+    // 2. re-calculate derived state
+
+    _topics_hierarchy.clear();
+    for (const auto& [ns_tp, md_item] : _topics) {
+        if (!md_item.metadata.is_topic_replicable()) {
+            // NOTE: here we assume that source and derivative topics are in the
+            // same namespace.
+            model::topic_namespace_view src_ns_tp(
+              ns_tp.ns, md_item.metadata.get_source_topic());
+            _topics_hierarchy[src_ns_tp].insert(ns_tp);
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    _partition_count = 0;
+    for (const auto& [ns_tp, md_item] : _topics) {
+        if (md_item.metadata.is_topic_replicable()) {
+            _partition_count += md_item.metadata.get_assignments().size();
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    // 3. notify delta waiters
+    notify_waiters();
+
+    _last_applied_revision_id = snap_revision;
 }
 
 void topic_table::notify_waiters() {

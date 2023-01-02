@@ -109,6 +109,75 @@ struct config_t
     auto serde_fields() { return std::tie(version, values, nodes_status); }
 };
 
+struct topics_t
+  : public serde::
+      envelope<topics_t, serde::version<0>, serde::compat_version<0>> {
+    // NOTE: layout here is a bit different than in the topic table because it
+    // allows more compact storage and more convenient generation of controller
+    // backend deltas when applying the snapshot.
+    struct partition_t
+      : public serde::
+          envelope<partition_t, serde::version<0>, serde::compat_version<0>> {
+        raft::group_id group;
+        /// NOTE: in contrast to topic_table does NOT reflect the result of
+        /// current in-progress update.
+        std::vector<model::broker_shard> replicas;
+        /// Also does not reflect the current in-progress update.
+        replicas_revision_map replicas_revisions;
+        model::revision_id last_update_finished_revision;
+
+        friend bool operator==(const partition_t&, const partition_t&)
+          = default;
+
+        auto serde_fields() {
+            return std::tie(
+              group,
+              replicas,
+              replicas_revisions,
+              last_update_finished_revision);
+        }
+    };
+
+    struct update_t
+      : public serde::
+          envelope<update_t, serde::version<0>, serde::compat_version<0>> {
+        /// NOTE: In the event of cancellation this remains the original target.
+        std::vector<model::broker_shard> target_assignment;
+        reconfiguration_state state;
+        /// Revision of the command initiating this update
+        model::revision_id revision;
+        /// Revision of the last command in this update (cancellation etc.)
+        model::revision_id last_cmd_revision;
+
+        friend bool operator==(const update_t&, const update_t&) = default;
+
+        auto serde_fields() {
+            return std::tie(
+              target_assignment, state, revision, last_cmd_revision);
+        }
+    };
+
+    struct topic_t
+      : public serde::
+          envelope<topic_t, serde::version<0>, serde::compat_version<0>> {
+        topic_metadata_fields metadata;
+        absl::node_hash_map<model::partition_id, partition_t> partitions;
+        absl::node_hash_map<model::partition_id, update_t> updates;
+
+        friend bool operator==(const topic_t&, const topic_t&) = default;
+
+        ss::future<> serde_async_write(iobuf&);
+        ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+    };
+
+    absl::node_hash_map<model::topic_namespace, topic_t> topics;
+
+    friend bool operator==(const topics_t&, const topics_t&) = default;
+
+    ss::future<> serde_async_write(iobuf&);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
+};
+
 struct metrics_reporter_t
   : public serde::envelope<
       metrics_reporter_t,
@@ -133,6 +202,7 @@ struct controller_snapshot
     controller_snapshot_parts::features_t features;
     controller_snapshot_parts::members_t members;
     controller_snapshot_parts::config_t config;
+    controller_snapshot_parts::topics_t topics;
     controller_snapshot_parts::metrics_reporter_t metrics_reporter;
 
     friend bool

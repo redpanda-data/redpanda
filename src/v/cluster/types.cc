@@ -632,15 +632,22 @@ cluster::assignments_set to_assignments_map(
 }
 } // namespace
 
+topic_metadata_fields::topic_metadata_fields(
+  topic_configuration cfg,
+  std::optional<model::topic> st,
+  model::revision_id rid,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
+  : configuration(std::move(cfg))
+  , source_topic(std::move(st))
+  , revision(rid)
+  , remote_revision(remote_revision_id) {}
+
 topic_metadata::topic_metadata(
   topic_configuration_assignment c,
   model::revision_id rid,
   std::optional<model::initial_revision_id> remote_revision_id) noexcept
-  : _configuration(std::move(c.cfg))
-  , _assignments(to_assignments_map(std::move(c.assignments)))
-  , _source_topic(std::nullopt)
-  , _revision(rid)
-  , _remote_revision(remote_revision_id) {}
+  : _fields(std::move(c.cfg), std::nullopt, rid, remote_revision_id)
+  , _assignments(to_assignments_map(std::move(c.assignments))) {}
 
 topic_metadata::topic_metadata(
   topic_configuration cfg,
@@ -648,37 +655,39 @@ topic_metadata::topic_metadata(
   model::revision_id rid,
   model::topic st,
   std::optional<model::initial_revision_id> remote_revision_id) noexcept
-  : _configuration(std::move(cfg))
-  , _assignments(std::move(assignments))
-  , _source_topic(st)
-  , _revision(rid)
-  , _remote_revision(remote_revision_id) {}
+  : _fields(std::move(cfg), std::move(st), rid, remote_revision_id)
+  , _assignments(std::move(assignments)) {}
+
+topic_metadata::topic_metadata(
+  topic_metadata_fields fields, assignments_set assignments) noexcept
+  : _fields(std::move(fields))
+  , _assignments(std::move(assignments)) {}
 
 bool topic_metadata::is_topic_replicable() const {
-    return _source_topic.has_value() == false;
+    return _fields.source_topic.has_value() == false;
 }
 
 model::revision_id topic_metadata::get_revision() const {
     vassert(
       is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return _revision;
+    return _fields.revision;
 }
 
 std::optional<model::initial_revision_id>
 topic_metadata::get_remote_revision() const {
     vassert(
       is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return _remote_revision;
+    return _fields.remote_revision;
 }
 
 const model::topic& topic_metadata::get_source_topic() const {
     vassert(
       !is_topic_replicable(), "Query for source_topic on a replicable topic");
-    return _source_topic.value();
+    return _fields.source_topic.value();
 }
 
 const topic_configuration& topic_metadata::get_configuration() const {
-    return _configuration;
+    return _fields.configuration;
 }
 
 const assignments_set& topic_metadata::get_assignments() const {
@@ -686,7 +695,7 @@ const assignments_set& topic_metadata::get_assignments() const {
 }
 
 topic_configuration& topic_metadata::get_configuration() {
-    return _configuration;
+    return _fields.configuration;
 }
 
 assignments_set& topic_metadata::get_assignments() { return _assignments; }

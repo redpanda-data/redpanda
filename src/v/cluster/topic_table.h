@@ -282,6 +282,11 @@ public:
     ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
     ss::future<std::error_code>
       apply(revert_cancel_partition_move_cmd, model::offset);
+
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<>
+    apply_snapshot(model::offset snapshot_offset, const controller_snapshot&);
+
     ss::future<> stop();
 
     /// Delta API
@@ -432,6 +437,7 @@ public:
         return _last_applied_revision_id;
     }
 
+    // does not include non-replicable partitions
     size_t partition_count() const { return _partition_count; }
 
     /**
@@ -462,6 +468,8 @@ private:
       topic_metadata_item& metadata,
       partition_assignment& current_assignment,
       model::offset o);
+
+    class snapshot_applier;
 
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
