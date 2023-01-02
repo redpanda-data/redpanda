@@ -300,6 +300,7 @@ class FailureInjectorBackgroundThread():
         self.max_inter_failure_time = 60
         self.node_start_stop_mutexes = {}
         self.lock = lock
+        self.error = None
 
     def start(self):
         self.logger.info(
@@ -314,6 +315,7 @@ class FailureInjectorBackgroundThread():
         self.logger.info(f"Stopping failure injector thread")
         self.stop_ev.set()
         self.thread.join()
+        assert self.error is None, f"failure injector error, most likely node failed to stop: {self.error}"
 
     def _worker(self):
         with FailureInjector(self.redpanda) as f_injector:
@@ -326,16 +328,20 @@ class FailureInjectorBackgroundThread():
 
                 # use provided lock to prevent interfering with nodes being stopped/started
                 with self.lock:
-                    node = random.choice(self.redpanda.started_nodes())
+                    try:
+                        node = random.choice(self.redpanda.started_nodes())
 
-                    length = 0
+                        length = 0
 
-                    if f_type == FailureSpec.FAILURE_SUSPEND:
-                        length = random.randint(
-                            1, self.max_suspend_duration_seconds)
+                        if f_type == FailureSpec.FAILURE_SUSPEND:
+                            length = random.randint(
+                                1, self.max_suspend_duration_seconds)
 
-                    f_injector.inject_failure(
-                        FailureSpec(node=node, type=f_type, length=length))
+                        f_injector.inject_failure(
+                            FailureSpec(node=node, type=f_type, length=length))
+                    except Exception as e:
+                        self.logger.warn(f"error injecting failure - {e}")
+                        self.error = e
 
                 delay = random.randint(self.min_inter_failure_time,
                                        self.max_inter_failure_time)
