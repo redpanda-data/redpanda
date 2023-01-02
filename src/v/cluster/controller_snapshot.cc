@@ -13,11 +13,99 @@
 
 namespace cluster {
 
+namespace controller_snapshot_parts {
+
+template<typename Map>
+ss::future<> write_map_async(iobuf& out, Map t) {
+    using serde::write;
+    if (unlikely(t.size() > std::numeric_limits<serde::serde_size_t>::max())) {
+        throw serde::serde_exception(fmt_with_ctx(
+          ssx::sformat, "serde: map size {} exceeds serde_size_t", t.size()));
+    }
+    write(out, static_cast<serde::serde_size_t>(t.size()));
+    return ss::do_with(std::move(t), [&out](Map& t) {
+        return ss::do_for_each(t, [&out](auto& el) {
+            write(out, el.first);
+            write(out, std::move(el.second));
+        });
+    });
+}
+
+template<typename T>
+concept Reservable = requires(T t) {
+    t.reserve(0U);
+};
+
+template<typename Map>
+ss::future<Map>
+read_map_async_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
+    using key_type = typename Map::key_type;
+    using mapped_type = typename Map::mapped_type;
+    const auto size = serde::read_nested<serde::serde_size_t>(
+      in, bytes_left_limit);
+    return ss::do_with(Map{}, [size, &in, bytes_left_limit](Map& t) {
+        if constexpr (Reservable<Map>) {
+            t.reserve(size);
+        }
+        return ss::do_until(
+                 [size, &t] { return t.size() == size; },
+                 [&t, &in, bytes_left_limit] {
+                     return serde::read_async_nested<key_type>(
+                              in, bytes_left_limit)
+                       .then([&t, &in, bytes_left_limit](auto key) {
+                           return serde::read_async_nested<mapped_type>(
+                                    in, bytes_left_limit)
+                             .then(
+                               [&t, key = std::move(key)](auto val) mutable {
+                                   t.emplace(std::move(key), std::move(val));
+                               });
+                       });
+                 })
+          .then([&t] { return std::move(t); });
+    });
+}
+
+ss::future<> topics_t::topic_t::serde_async_write(iobuf& out) {
+    serde::write(out, metadata);
+    co_await write_map_async(out, std::move(partitions));
+    co_await write_map_async(out, std::move(updates));
+}
+
+ss::future<>
+topics_t::topic_t::serde_async_read(iobuf_parser& in, serde::header const h) {
+    metadata = serde::read_nested<decltype(metadata)>(in, h._bytes_left_limit);
+    partitions = co_await read_map_async_nested<decltype(partitions)>(
+      in, h._bytes_left_limit);
+    updates = co_await read_map_async_nested<decltype(updates)>(
+      in, h._bytes_left_limit);
+
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
+ss::future<> topics_t::serde_async_write(iobuf& out) {
+    co_await write_map_async(out, std::move(topics));
+}
+
+ss::future<>
+topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
+    topics = co_await read_map_async_nested<decltype(topics)>(
+      in, h._bytes_left_limit);
+
+    if (in.bytes_left() > h._bytes_left_limit) {
+        in.skip(in.bytes_left() - h._bytes_left_limit);
+    }
+}
+
+} // namespace controller_snapshot_parts
+
 ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(bootstrap));
     co_await serde::write_async(out, std::move(features));
     co_await serde::write_async(out, std::move(members));
     co_await serde::write_async(out, std::move(config));
+    co_await serde::write_async(out, std::move(topics));
     co_await serde::write_async(out, std::move(metrics_reporter));
 }
 
@@ -30,6 +118,8 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
     members = co_await serde::read_async_nested<decltype(members)>(
       in, h._bytes_left_limit);
     config = co_await serde::read_async_nested<decltype(config)>(
+      in, h._bytes_left_limit);
+    topics = co_await serde::read_async_nested<decltype(topics)>(
       in, h._bytes_left_limit);
     metrics_reporter
       = co_await serde::read_async_nested<decltype(metrics_reporter)>(

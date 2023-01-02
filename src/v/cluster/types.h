@@ -1904,7 +1904,7 @@ struct topic_table_delta {
       cluster::partition_assignment,
       model::offset,
       op_type,
-      std::optional<std::vector<model::broker_shard>> = std::nullopt,
+      std::optional<std::vector<model::broker_shard>> previous = std::nullopt,
       std::optional<replicas_revision_map> = std::nullopt);
 
     model::ntp ntp;
@@ -2875,6 +2875,34 @@ struct partition_assignment_cmp {
 using assignments_set
   = absl::btree_set<partition_assignment, partition_assignment_cmp>;
 
+struct topic_metadata_fields
+  : serde::envelope<
+      topic_metadata_fields,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    topic_configuration configuration;
+    std::optional<model::topic> source_topic;
+    model::revision_id revision;
+    std::optional<model::initial_revision_id> remote_revision;
+
+    topic_metadata_fields(
+      topic_configuration cfg,
+      std::optional<model::topic> st,
+      model::revision_id rid,
+      std::optional<model::initial_revision_id> remote_revision_id) noexcept;
+
+    // for serde
+    topic_metadata_fields() noexcept = default;
+
+    friend bool
+    operator==(const topic_metadata_fields&, const topic_metadata_fields&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(configuration, source_topic, revision, remote_revision);
+    }
+};
+
 class topic_metadata {
 public:
     topic_metadata(
@@ -2889,10 +2917,15 @@ public:
       model::topic,
       std::optional<model::initial_revision_id> = std::nullopt) noexcept;
 
+    topic_metadata(topic_metadata_fields, assignments_set) noexcept;
+
     bool is_topic_replicable() const;
     model::revision_id get_revision() const;
     std::optional<model::initial_revision_id> get_remote_revision() const;
     const model::topic& get_source_topic() const;
+
+    const topic_metadata_fields& get_fields() const { return _fields; }
+    topic_metadata_fields& get_fields() { return _fields; }
 
     const topic_configuration& get_configuration() const;
     topic_configuration& get_configuration();
@@ -2903,11 +2936,8 @@ public:
     replication_factor get_replication_factor() const;
 
 private:
-    topic_configuration _configuration;
+    topic_metadata_fields _fields;
     assignments_set _assignments;
-    std::optional<model::topic> _source_topic;
-    model::revision_id _revision;
-    std::optional<model::initial_revision_id> _remote_revision;
 };
 
 struct move_cancellation_result
