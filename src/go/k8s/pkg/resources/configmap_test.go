@@ -17,7 +17,9 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -98,6 +100,7 @@ func TestEnsureConfigMap(t *testing.T) {
 				"cluster.local",
 				types.NamespacedName{Name: "test", Namespace: "test"},
 				types.NamespacedName{Name: "test", Namespace: "test"},
+				TestBrokerTLSConfigProvider{},
 				ctrl.Log.WithName("test"))
 			require.NoError(t, cfgRes.Ensure(context.TODO()))
 
@@ -171,6 +174,7 @@ func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
 				"cluster.local",
 				types.NamespacedName{Name: "test", Namespace: "test"},
 				types.NamespacedName{Name: "test", Namespace: "test"},
+				TestBrokerTLSConfigProvider{},
 				ctrl.Log.WithName("test"))
 			require.NoError(t, cfgRes.Ensure(context.TODO()))
 
@@ -267,7 +271,7 @@ func TestConfigMapResource_prepareSeedServerList(t *testing.T) {
 					Replicas: func() *int32 { i := tt.replicas; return &i }(),
 				},
 			}
-			r := resources.NewConfigMap(nil, p, nil, tt.clusterFQDN, types.NamespacedName{Namespace: "namespace", Name: "internal"}, types.NamespacedName{Namespace: "namespace", Name: "external"}, logger)
+			r := resources.NewConfigMap(nil, p, nil, tt.clusterFQDN, types.NamespacedName{Namespace: "namespace", Name: "internal"}, types.NamespacedName{Namespace: "namespace", Name: "external"}, TestBrokerTLSConfigProvider{}, logger)
 			cr := &config.RedpandaNodeConfig{}
 			if err := r.PrepareSeedServerList(cr); (err != nil) != tt.wantErr {
 				t.Errorf("ConfigMapResource.prepareSeedServerList() error = %v, wantErr %v", err, tt.wantErr)
@@ -287,5 +291,64 @@ func TestConfigMapResource_prepareSeedServerList(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConfigmap_BrokerTLSClients(t *testing.T) {
+	panda := pandaCluster().DeepCopy()
+	panda.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{
+		Enabled:           true,
+		RequireClientAuth: true,
+	}
+	panda.Spec.Configuration.SchemaRegistry = &redpandav1alpha1.SchemaRegistryAPI{
+		Port: 8081,
+	}
+	panda.Spec.Configuration.PandaproxyAPI = []redpandav1alpha1.PandaproxyAPI{
+		{Port: 8082},
+	}
+	c := fake.NewClientBuilder().Build()
+	secret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "archival",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"archival": []byte("XXX"),
+		},
+	}
+	require.NoError(t, c.Create(context.TODO(), &secret))
+	cfgRes := resources.NewConfigMap(
+		c,
+		panda,
+		scheme.Scheme,
+		"cluster.local",
+		types.NamespacedName{Name: "test", Namespace: "test"},
+		types.NamespacedName{Name: "test", Namespace: "test"},
+		TestBrokerTLSConfigProvider{},
+		ctrl.Log.WithName("test"))
+	require.NoError(t, cfgRes.Ensure(context.TODO()))
+
+	actual := &v1.ConfigMap{}
+	err := c.Get(context.Background(), cfgRes.Key(), actual)
+	require.NoError(t, err)
+	data := actual.Data["redpanda.yaml"]
+	cfg := &config.Config{}
+	require.NoError(t, yaml.Unmarshal([]byte(data), cfg))
+	require.Equal(t, "/etc/tls/certs/ca/tls.key", cfg.PandaproxyClient.BrokerTLS.KeyFile)
+	require.Equal(t, "/etc/tls/certs/ca/tls.crt", cfg.PandaproxyClient.BrokerTLS.CertFile)
+	require.Equal(t, "/etc/tls/certs/ca.crt", cfg.PandaproxyClient.BrokerTLS.TruststoreFile)
+	require.Equal(t, "/etc/tls/certs/ca/tls.key", cfg.SchemaRegistryClient.BrokerTLS.KeyFile)
+	require.Equal(t, "/etc/tls/certs/ca/tls.crt", cfg.SchemaRegistryClient.BrokerTLS.CertFile)
+	require.Equal(t, "/etc/tls/certs/ca.crt", cfg.SchemaRegistryClient.BrokerTLS.TruststoreFile)
+}
+
+type TestBrokerTLSConfigProvider struct{}
+
+func (TestBrokerTLSConfigProvider) KafkaClientBrokerTLS(mountPoints *resourcetypes.TLSMountPoints) *config.ServerTLS {
+	return &config.ServerTLS{
+		KeyFile:        "/etc/tls/certs/ca/tls.key",
+		CertFile:       "/etc/tls/certs/ca/tls.crt",
+		TruststoreFile: "/etc/tls/certs/ca.crt",
+		Enabled:        true,
 	}
 }

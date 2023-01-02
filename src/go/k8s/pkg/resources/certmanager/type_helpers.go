@@ -17,10 +17,12 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,14 +31,18 @@ import (
 )
 
 const (
-	redpandaCertVolName       = "tlscert"
-	redpandaCAVolName         = "tlsca"
-	adminAPICertVolName       = "tlsadmincert"
-	adminAPICAVolName         = "tlsadminca"
-	pandaProxyCertVolName     = "tlspandaproxycert"
-	pandaProxyCAVolName       = "tlspandaproxyca"
-	schemaRegistryCertVolName = "tlsschemaregistrycert"
-	schemaRegistryCAVolName   = "tlsschemaregistryca"
+	redpandaCertVolName = "tlscert"
+	// originally this volume contained only client CA but for pandaproxy and
+	// schema registry we need to also include the certs. Now the name of the
+	// volume does not align with its contents but changing this would mean we
+	// force restart of redpanda when updating to this version
+	redpandaClientVolName         = "tlsca"
+	adminAPICertVolName           = "tlsadmincert"
+	adminAPIClientCAVolName       = "tlsadminca"
+	pandaProxyCertVolName         = "tlspandaproxycert"
+	pandaProxyClientCAVolName     = "tlspandaproxyca"
+	schemaRegistryCertVolName     = "tlsschemaregistrycert"
+	schemaRegistryClientCAVolName = "tlsschemaregistryca"
 )
 
 // Helper functions and types for Listeners
@@ -132,6 +138,8 @@ type apiCertificates struct {
 	clientCertificates []resources.Resource
 	rootResources      []resources.Resource
 	tlsEnabled         bool
+	// true if api is using our own generated self-signed issuer
+	selfSignedNodeCertificate bool
 
 	// CR allows to specify node certificate, if not provided this will be nil
 	externalNodeCertificate *corev1.ObjectReference
@@ -173,6 +181,7 @@ type ClusterCertificates struct {
 
 // NewClusterCertificates creates new cluster tls certificates resources
 func NewClusterCertificates(
+	ctx context.Context,
 	cluster *redpandav1alpha1.Cluster,
 	keystoreSecret types.NamespacedName,
 	k8sClient client.Client,
@@ -180,7 +189,7 @@ func NewClusterCertificates(
 	clusterFQDN string,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
-) *ClusterCertificates {
+) (*ClusterCertificates, error) {
 	cc := &ClusterCertificates{
 		pandaCluster: cluster,
 		client:       k8sClient,
@@ -194,38 +203,52 @@ func NewClusterCertificates(
 		adminAPI:          tlsDisabledAPICertificates(),
 		pandaProxyAPI:     tlsDisabledAPICertificates(),
 	}
+	var err error
 	if kafkaListeners := kafkaAPIListeners(cluster); len(kafkaListeners) > 0 {
-		cc.kafkaAPI = cc.prepareAPI(kafkaAPI, RedpandaNodeCert, []string{OperatorClientCert, UserClientCert, AdminClientCert}, kafkaListeners, &keystoreSecret)
+		cc.kafkaAPI, err = cc.prepareAPI(ctx, kafkaAPI, RedpandaNodeCert, []string{OperatorClientCert, UserClientCert, AdminClientCert}, kafkaListeners, &keystoreSecret)
+		if err != nil {
+			return nil, fmt.Errorf("kafka api certificates %w", err)
+		}
 	}
 
 	if adminListeners := adminAPIListeners(cluster); len(adminListeners) > 0 {
-		cc.adminAPI = cc.prepareAPI(adminAPI, adminAPINodeCert, []string{adminAPIClientCert}, adminListeners, &keystoreSecret)
+		cc.adminAPI, err = cc.prepareAPI(ctx, adminAPI, adminAPINodeCert, []string{adminAPIClientCert}, adminListeners, &keystoreSecret)
+		if err != nil {
+			return nil, fmt.Errorf("kafka api certificates %w", err)
+		}
 	}
 
 	if pandaProxyListeners := pandaProxyAPIListeners(cluster); len(pandaProxyListeners) > 0 {
-		cc.pandaProxyAPI = cc.prepareAPI(pandaproxyAPI, pandaproxyAPINodeCert, []string{pandaproxyAPIClientCert}, pandaProxyListeners, &keystoreSecret)
+		cc.pandaProxyAPI, err = cc.prepareAPI(ctx, pandaproxyAPI, pandaproxyAPINodeCert, []string{pandaproxyAPIClientCert}, pandaProxyListeners, &keystoreSecret)
+		if err != nil {
+			return nil, fmt.Errorf("kafka api certificates %w", err)
+		}
 	}
 
 	if schemaRegistryListeners := schemaRegistryAPIListeners(cluster); len(schemaRegistryListeners) > 0 {
-		cc.schemaRegistryAPI = cc.prepareAPI(schemaRegistryAPI, schemaRegistryAPINodeCert, []string{schemaRegistryAPIClientCert}, schemaRegistryListeners, &keystoreSecret)
+		cc.schemaRegistryAPI, err = cc.prepareAPI(ctx, schemaRegistryAPI, schemaRegistryAPINodeCert, []string{schemaRegistryAPIClientCert}, schemaRegistryListeners, &keystoreSecret)
+		if err != nil {
+			return nil, fmt.Errorf("kafka api certificates %w", err)
+		}
 	}
 
-	return cc
+	return cc, nil
 }
 
 func (cc *ClusterCertificates) prepareAPI(
+	ctx context.Context,
 	rootCertSuffix string,
 	nodeCertSuffix string,
 	clientCerts []string,
 	listeners []APIListener,
 	keystoreSecret *types.NamespacedName,
-) *apiCertificates {
+) (*apiCertificates, error) {
 	tlsListeners := getTLSListeners(listeners)
 	externalTLSListener := getExternalTLSListener(listeners)
 	internalTLSListener := getInternalTLSListener(listeners)
 
 	if len(tlsListeners) == 0 {
-		return tlsDisabledAPICertificates()
+		return tlsDisabledAPICertificates(), nil
 	}
 	result := tlsEnabledAPICertificates(cc.pandaCluster.Namespace)
 
@@ -245,6 +268,15 @@ func (cc *ClusterCertificates) prepareAPI(
 	// every time both listeners share the same set of certificates
 	nodeSecretRef := tlsListeners[0].GetTLS().NodeSecretRef
 	result.externalNodeCertificate = nodeSecretRef
+	isSelfSigned, err := isSelfSigned(ctx,
+		nodeSecretRef,
+		tlsListeners[0].GetTLS().IssuerRef,
+		cc.pandaCluster.Namespace,
+		cc.client)
+	if err != nil {
+		return nil, fmt.Errorf("selfsigned check %w", err)
+	}
+	result.selfSignedNodeCertificate = isSelfSigned
 	if nodeSecretRef == nil || nodeSecretRef.Name == "" {
 		certName := NewCertName(cc.pandaCluster.Name, nodeCertSuffix)
 		certsKey := types.NamespacedName{Name: string(certName), Namespace: cc.pandaCluster.Namespace}
@@ -288,7 +320,43 @@ func (cc *ClusterCertificates) prepareAPI(
 		}
 	}
 
-	return result
+	return result, nil
+}
+
+// returns true if node certificate will be selfSigned
+func isSelfSigned(ctx context.Context, nodeSecretRef *corev1.ObjectReference, externalIssuerRef *cmmetav1.ObjectReference, clusterNamespace string, k8sClient client.Client) (bool, error) {
+	if nodeSecretRef != nil {
+		var secret corev1.Secret
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: nodeSecretRef.Name, Namespace: nodeSecretRef.Namespace}, &secret)
+		if err != nil {
+			return false, err
+		}
+		_, ok := secret.Data[cmmetav1.TLSCAKey]
+		return ok, nil // if the ca key exists, it means it's self-signed
+	}
+	if externalIssuerRef != nil {
+		var issuerSpec cmapiv1.IssuerSpec
+		switch externalIssuerRef.Kind {
+		case "Issuer":
+			var issuer cmapiv1.Issuer
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: externalIssuerRef.Name, Namespace: clusterNamespace}, &issuer)
+			if err != nil {
+				return false, err
+			}
+			issuerSpec = issuer.Spec
+		case "ClusterIssuer":
+			var issuer cmapiv1.ClusterIssuer
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: externalIssuerRef.Name, Namespace: clusterNamespace}, &issuer)
+			if err != nil {
+				return false, err
+			}
+			issuerSpec = issuer.Spec
+		default:
+			return false, fmt.Errorf("unknown issuer kind %s", externalIssuerRef.Kind) //nolint:goerr113 // no need for err type
+		}
+		return issuerSpec.SelfSigned != nil, nil
+	}
+	return true, nil // by default our own issuer is self-signed
 }
 
 func prepareRoot(
@@ -459,19 +527,21 @@ func (cc *ClusterCertificates) Volumes() (
 	var mounts []corev1.VolumeMount
 	mountPoints := resourcetypes.GetTLSMountPoints()
 
-	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaCAVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir)
+	// kafka client certs are needed for pandaproxy and schema registry if enabled
+	shouldIncludeKafkaClientCerts := len(cc.kafkaAPI.clientCertificates) > 0
+	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaClientVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir, cc.kafkaAPI.selfSignedNodeCertificate, shouldIncludeKafkaClientCerts)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.adminAPI.nodeCertificateName(), cc.adminAPI.clientCertificates, adminAPICertVolName, adminAPICAVolName, mountPoints.AdminAPI.NodeCertMountDir, mountPoints.AdminAPI.ClientCAMountDir)
+	vol, mount = secretVolumesForTLS(cc.adminAPI.nodeCertificateName(), cc.adminAPI.clientCertificates, adminAPICertVolName, adminAPIClientCAVolName, mountPoints.AdminAPI.NodeCertMountDir, mountPoints.AdminAPI.ClientCAMountDir, false, false)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.pandaProxyAPI.nodeCertificateName(), cc.pandaProxyAPI.clientCertificates, pandaProxyCertVolName, pandaProxyCAVolName, mountPoints.PandaProxyAPI.NodeCertMountDir, mountPoints.PandaProxyAPI.ClientCAMountDir)
+	vol, mount = secretVolumesForTLS(cc.pandaProxyAPI.nodeCertificateName(), cc.pandaProxyAPI.clientCertificates, pandaProxyCertVolName, pandaProxyClientCAVolName, mountPoints.PandaProxyAPI.NodeCertMountDir, mountPoints.PandaProxyAPI.ClientCAMountDir, false, false)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.schemaRegistryAPI.nodeCertificateName(), cc.schemaRegistryAPI.clientCertificates, schemaRegistryCertVolName, schemaRegistryCAVolName, mountPoints.SchemaRegistryAPI.NodeCertMountDir, mountPoints.SchemaRegistryAPI.ClientCAMountDir)
+	vol, mount = secretVolumesForTLS(cc.schemaRegistryAPI.nodeCertificateName(), cc.schemaRegistryAPI.clientCertificates, schemaRegistryCertVolName, schemaRegistryClientCAVolName, mountPoints.SchemaRegistryAPI.NodeCertMountDir, mountPoints.SchemaRegistryAPI.ClientCAMountDir, false, false)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
@@ -481,7 +551,8 @@ func (cc *ClusterCertificates) Volumes() (
 func secretVolumesForTLS(
 	nodeCertificate *types.NamespacedName,
 	clientCertificates []resources.Resource,
-	volumeName, caVolumeName, mountDir, caMountDir string,
+	volumeName, clientVolumeName, mountDir, caMountDir string,
+	shouldIncludeNodeCa, shouldIncludeClientCert bool,
 ) ([]corev1.Volume, []corev1.VolumeMount) {
 	var vols []corev1.Volume
 	var mounts []corev1.VolumeMount
@@ -490,7 +561,7 @@ func secretVolumesForTLS(
 	}
 
 	// mount node certificate's private key
-	vols = append(vols, corev1.Volume{
+	nodeVolume := corev1.Volume{
 		Name: volumeName,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
@@ -507,7 +578,16 @@ func secretVolumesForTLS(
 				},
 			},
 		},
-	})
+	}
+
+	if shouldIncludeNodeCa {
+		nodeVolume.VolumeSource.Secret.Items = append(nodeVolume.VolumeSource.Secret.Items, corev1.KeyToPath{
+			Key:  cmmetav1.TLSCAKey,
+			Path: cmmetav1.TLSCAKey,
+		})
+	}
+
+	vols = append(vols, nodeVolume)
 	mounts = append(mounts, corev1.VolumeMount{
 		Name:      volumeName,
 		MountPath: mountDir,
@@ -516,8 +596,8 @@ func secretVolumesForTLS(
 	// if mutual TLS is enabled, mount also client cerificate CA to be able to
 	// verify client certificates
 	if len(clientCertificates) > 0 {
-		vols = append(vols, corev1.Volume{
-			Name: caVolumeName,
+		clientCertVolume := corev1.Volume{
+			Name: clientVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: clientCertificates[0].Key().Name,
@@ -529,9 +609,19 @@ func secretVolumesForTLS(
 					},
 				},
 			},
-		})
+		}
+		if shouldIncludeClientCert {
+			clientCertVolume.VolumeSource.Secret.Items = append(clientCertVolume.VolumeSource.Secret.Items, corev1.KeyToPath{
+				Key:  corev1.TLSPrivateKeyKey,
+				Path: corev1.TLSPrivateKeyKey,
+			}, corev1.KeyToPath{
+				Key:  corev1.TLSCertKey,
+				Path: corev1.TLSCertKey,
+			})
+		}
+		vols = append(vols, clientCertVolume)
 		mounts = append(mounts, corev1.VolumeMount{
-			Name:      caVolumeName,
+			Name:      clientVolumeName,
 			MountPath: caMountDir,
 		})
 	}
@@ -575,4 +665,23 @@ func (cc *ClusterCertificates) GetTLSConfig(
 	}
 
 	return &tlsConfig, nil
+}
+
+// KafkaClientBrokerTLS returns configuration to connect to kafka api with tls
+func (cc *ClusterCertificates) KafkaClientBrokerTLS(mountPoints *resourcetypes.TLSMountPoints) *config.ServerTLS {
+	if !cc.kafkaAPI.tlsEnabled {
+		return nil
+	}
+	result := config.ServerTLS{
+		Enabled: true,
+	}
+	if len(cc.kafkaAPI.clientCertificates) > 0 {
+		result.KeyFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, corev1.TLSPrivateKeyKey)
+		result.CertFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, corev1.TLSCertKey)
+	}
+	if cc.kafkaAPI.selfSignedNodeCertificate {
+		// we need to also include the node ca since the node cert is self-signed
+		result.TruststoreFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, cmmetav1.TLSCAKey)
+	}
+	return &result
 }

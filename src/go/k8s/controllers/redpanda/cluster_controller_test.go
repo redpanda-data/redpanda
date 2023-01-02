@@ -338,6 +338,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 										Key:  "tls.crt",
 										Path: "tls.crt",
 									},
+									{
+										Key:  "ca.crt",
+										Path: "ca.crt",
+									},
 								},
 								DefaultMode: &defaultMode,
 							},
@@ -352,6 +356,14 @@ var _ = Describe("RedPandaCluster controller", func() {
 									{
 										Key:  "ca.crt",
 										Path: "ca.crt",
+									},
+									{
+										Key:  "tls.key",
+										Path: "tls.key",
+									},
+									{
+										Key:  "tls.crt",
+										Path: "tls.crt",
 									},
 								},
 								DefaultMode: &defaultMode,
