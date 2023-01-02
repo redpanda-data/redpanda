@@ -78,12 +78,6 @@ namespace cluster {
 class topic_table {
 public:
     enum class topic_state { exists, not_exists, indeterminate };
-    /**
-     * Replicas revision map is used to track revision of brokers in a replica
-     * set. When a node is added into replica set its gets the revision assigned
-     */
-    using replicas_revision_map
-      = absl::flat_hash_map<model::node_id, model::revision_id>;
 
     class in_progress_update {
     public:

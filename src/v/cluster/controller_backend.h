@@ -280,18 +280,18 @@ private:
     ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
       uint64_t current_retry,
-      topic_table_delta::op_type operation_type,
-      model::ntp ntp,
+      topic_table_delta::op_type,
+      model::ntp,
       const partition_assignment& requested_assignment,
       const std::vector<model::broker_shard>& previous_replica_set,
-      const topic_table_delta::revision_map_t& revisions_map,
-      model::revision_id rev);
+      const replicas_revision_map&,
+      model::revision_id);
 
     ss::future<std::error_code> execute_reconfiguration(
       topic_table_delta::op_type,
       const model::ntp&,
       const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
+      const replicas_revision_map&,
       const std::vector<model::broker_shard>&,
       model::revision_id);
 
@@ -328,19 +328,19 @@ private:
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
+      const replicas_revision_map&,
       model::revision_id);
     ss::future<std::error_code> cancel_replica_set_update(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
+      const replicas_revision_map&,
       const std::vector<model::broker_shard>&,
       model::revision_id);
 
     ss::future<std::error_code> force_abort_replica_set_update(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
+      const replicas_revision_map&,
       const std::vector<model::broker_shard>&,
       model::revision_id);
 
