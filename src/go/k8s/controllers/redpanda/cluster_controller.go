@@ -551,7 +551,7 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1
 		return -1, fmt.Errorf("creating pki: %w", err)
 	}
 
-	ordinal, err := strconv.ParseInt(pod.Name[len(rp.Name)+1:], 10, 0)
+	ordinal, err := strconv.ParseInt(getPodOrdinal(pod.Name, rp.Name), 10, 0)
 	if err != nil {
 		return -1, fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", rp.Name, pod.Name, err)
 	}
@@ -565,6 +565,16 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1
 		return -1, fmt.Errorf("unable to fetch /v1/node_config from %s: %w", pod.Name, err)
 	}
 	return int32(cfg.NodeID), nil
+}
+
+func getPodOrdinal(podName string, clusterName string) string {
+	// Pod name needs to have at least 2 more characters
+	if len(podName) < len(clusterName)+2 {
+		return ""
+	}
+
+	// The +1 is for the separator between stateful set name and pod ordinal
+	return podName[len(clusterName)+1:]
 }
 
 func (r *ClusterReconciler) reportStatus(
