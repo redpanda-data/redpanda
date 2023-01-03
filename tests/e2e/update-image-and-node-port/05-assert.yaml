@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: update-image-cluster-and-node-port
 status:
   readyReplicas: 3
 
@@ -10,25 +10,21 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-0
+  name: update-image-cluster-and-node-port-0
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /scripts
       name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
     - mountPath: /etc/redpanda/.bootstrap.yaml
       name: configmap-dir
       subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:
@@ -39,25 +35,21 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-1
+  name: update-image-cluster-and-node-port-1
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /scripts
       name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
     - mountPath: /etc/redpanda/.bootstrap.yaml
       name: configmap-dir
       subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:
@@ -68,25 +60,21 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-2
+  name: update-image-cluster-and-node-port-2
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /scripts
       name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
     - mountPath: /etc/redpanda/.bootstrap.yaml
       name: configmap-dir
       subPath: .bootstrap.yaml
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
 status:
@@ -106,13 +94,13 @@ collectors:
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: update-image-cluster-and-node-port
 status:
-  version: "v22.2.8"
+  version: "dev"
   readyReplicas: 3
   replicas: 3
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
+    - type: ClusterConfigured
+      status: "True"
