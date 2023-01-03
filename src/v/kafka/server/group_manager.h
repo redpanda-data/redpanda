@@ -41,6 +41,8 @@
 #include <absl/container/node_hash_map.h>
 #include <cluster/partition_manager.h>
 
+#include <span>
+
 namespace kafka {
 
 /*
@@ -219,7 +221,7 @@ private:
       ss::lw_shared_ptr<cluster::partition>,
       std::optional<model::node_id>);
 
-    void handle_topic_delta(const std::vector<cluster::topic_table_delta>&);
+    void handle_topic_delta(std::span<const cluster::topic_table_delta>);
 
     ss::future<> cleanup_removed_topic_partitions(
       const std::vector<model::topic_partition>&);
