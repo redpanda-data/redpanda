@@ -811,3 +811,6 @@ class Admin:
         service_param = f"service={rp_service if rp_service is not None else ''}"
         return self._request("PUT",
                              f"redpanda-services/restart?{service_param}")
+
+    def is_node_isolated(self, node):
+        return self._request("GET", "debug/is_node_isolated", node=node).json()
