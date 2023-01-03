@@ -35,63 +35,6 @@
 #include <string_view>
 
 namespace kafka {
-template<typename T>
-void parse_and_set_optional(
-  cluster::property_update<std::optional<T>>& property_update,
-  const std::optional<ss::sstring>& value) {
-    if (!value) {
-        property_update.value = std::nullopt;
-    }
-
-    property_update.value = boost::lexical_cast<T>(*value);
-}
-
-void parse_and_set_bool(
-  cluster::property_update<bool>& property_update,
-  const std::optional<ss::sstring>& value,
-  bool default_value) {
-    if (!value) {
-        property_update.value = default_value;
-    } else {
-        try {
-            property_update.value = string_switch<bool>(*(value))
-                                      .match("true", true)
-                                      .match("false", false);
-        } catch (...) {
-            // Our callers expect this exception type on malformed values
-            throw boost::bad_lexical_cast();
-        }
-    }
-}
-
-template<typename T>
-void parse_and_set_tristate(
-  cluster::property_update<tristate<T>>& property_update,
-  const std::optional<ss::sstring>& value) {
-    if (!value) {
-        property_update.value = tristate<T>(std::nullopt);
-    }
-
-    auto parsed = boost::lexical_cast<int64_t>(*value);
-    if (parsed <= 0) {
-        property_update.value = tristate<T>{};
-    } else {
-        property_update.value = tristate<T>(std::make_optional<T>(parsed));
-    }
-}
-
-static void parse_and_set_topic_replication_factor(
-  cluster::property_update<std::optional<cluster::replication_factor>>&
-    property,
-  const std::optional<ss::sstring>& value) {
-    if (!value) {
-        property.value = std::nullopt;
-    } else {
-        property.op = cluster::incremental_update_operation::set;
-        property.value = cluster::parsing_replication_factor(*value);
-    }
-}
-
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>&
     property_update,
@@ -147,38 +90,51 @@ create_topic_properties_update(alter_configs_resource& resource) {
         try {
             if (cfg.name == topic_property_cleanup_policy) {
                 parse_and_set_optional(
-                  update.properties.cleanup_policy_bitflags, cfg.value);
+                  update.properties.cleanup_policy_bitflags,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_compaction_strategy) {
                 parse_and_set_optional(
-                  update.properties.compaction_strategy, cfg.value);
+                  update.properties.compaction_strategy,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_compression) {
                 parse_and_set_optional(
-                  update.properties.compression, cfg.value);
+                  update.properties.compression,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_segment_size) {
                 parse_and_set_optional(
-                  update.properties.segment_size, cfg.value);
+                  update.properties.segment_size,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_timestamp_type) {
                 parse_and_set_optional(
-                  update.properties.timestamp_type, cfg.value);
+                  update.properties.timestamp_type,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_retention_bytes) {
                 parse_and_set_tristate(
-                  update.properties.retention_bytes, cfg.value);
+                  update.properties.retention_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_remote_delete) {
                 parse_and_set_bool(
                   update.properties.remote_delete,
                   cfg.value,
+                  kafka::config_resource_operation::set,
                   storage::ntp_config::default_remote_delete);
                 continue;
             }
@@ -204,27 +160,37 @@ create_topic_properties_update(alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_retention_duration) {
                 parse_and_set_tristate(
-                  update.properties.retention_duration, cfg.value);
+                  update.properties.retention_duration,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_max_message_bytes) {
                 parse_and_set_optional(
-                  update.properties.batch_max_bytes, cfg.value);
+                  update.properties.batch_max_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_retention_local_target_ms) {
                 parse_and_set_tristate(
-                  update.properties.retention_local_target_ms, cfg.value);
+                  update.properties.retention_local_target_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_retention_local_target_bytes) {
                 parse_and_set_tristate(
-                  update.properties.retention_local_target_bytes, cfg.value);
+                  update.properties.retention_local_target_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_replication_factor) {
                 parse_and_set_topic_replication_factor(
-                  update.custom_properties.replication_factor, cfg.value);
+                  update.custom_properties.replication_factor,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (

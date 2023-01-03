@@ -41,77 +41,6 @@ using resp_resource_t = incremental_alter_configs_resource_response;
  * We pass returned value as a paramter to allow template to be automatically
  * resolved.
  */
-template<typename T>
-void parse_and_set_optional(
-  cluster::property_update<std::optional<T>>& property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
-    // remove property value
-    if (op == config_resource_operation::remove) {
-        property.op = cluster::incremental_update_operation::remove;
-        return;
-    }
-    // set property value
-    if (op == config_resource_operation::set) {
-        property.value = boost::lexical_cast<T>(*value);
-        property.op = cluster::incremental_update_operation::set;
-        return;
-    }
-}
-
-void parse_and_set_bool(
-  cluster::property_update<bool>& property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op,
-  bool default_value) {
-    // A remove on a concrete (non-nullable) property is a reset to default,
-    // as is an assignment to nullopt.
-    if (
-      op == config_resource_operation::remove
-      || (op == config_resource_operation::set && !value)) {
-        property.op = cluster::incremental_update_operation::set;
-        property.value = default_value;
-        return;
-    }
-
-    if (op == config_resource_operation::set && value) {
-        try {
-            property.value = string_switch<bool>(*value)
-                               .match("true", true)
-                               .match("false", false);
-        } catch (std::runtime_error) {
-            // Our callers expect this exception type on malformed values
-            throw boost::bad_lexical_cast();
-        }
-        property.op = cluster::incremental_update_operation::set;
-        return;
-    }
-}
-
-template<typename T>
-void parse_and_set_tristate(
-  cluster::property_update<tristate<T>>& property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
-    // remove property value
-    if (op == config_resource_operation::remove) {
-        property.op = cluster::incremental_update_operation::remove;
-        return;
-    }
-    // set property value
-    if (op == config_resource_operation::set) {
-        auto parsed = boost::lexical_cast<int64_t>(*value);
-        if (parsed <= 0) {
-            property.value = tristate<T>{};
-        } else {
-            property.value = tristate<T>(std::make_optional<T>(parsed));
-        }
-
-        property.op = cluster::incremental_update_operation::set;
-        return;
-    }
-}
-
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>& simode,
   const std::optional<ss::sstring>& value,
@@ -137,23 +66,6 @@ static void parse_and_set_shadow_indexing_mode(
         break;
     }
 }
-
-static void parse_and_set_topic_replication_factor(
-  cluster::property_update<std::optional<cluster::replication_factor>>&
-    property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
-    // set property value
-    if (op == config_resource_operation::set) {
-        property.value = std::nullopt;
-        if (value) {
-            property.value = cluster::parsing_replication_factor(*value);
-        }
-        property.op = cluster::incremental_update_operation::set;
-    }
-    return;
-}
-
 /**
  * valides the optional config
  */
