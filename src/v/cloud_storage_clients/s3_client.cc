@@ -279,6 +279,12 @@ request_creator::make_delete_objects_request(
 
         auto out = std::ostringstream{};
         boost::property_tree::write_xml(out, delete_tree);
+        if (!out.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "failed to create delete request, state: {}",
+              out.rdstate()));
+        }
         return out.str();
     }();
 
