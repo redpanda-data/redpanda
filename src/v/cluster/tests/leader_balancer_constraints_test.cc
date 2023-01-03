@@ -429,3 +429,111 @@ BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
     BOOST_REQUIRE(!even_topic_con.recommended_reassignment());
     BOOST_REQUIRE(even_shard_con.recommended_reassignment().has_value());
 }
+
+#include "cluster/scheduling/leader_balancer_random.h"
+
+BOOST_AUTO_TEST_CASE(random_reassignments_generation) {
+    // Creates a shard index with 3 nodes and 1 topic with 3 partitions.
+    // Ensures that random_reassignments generates all possible reassignments.
+    auto [shard_index, mi] = from_spec(
+      {
+        {{0}, {1, 2}},
+        {{1}, {0, 2}},
+        {{2}, {0, 1}},
+      },
+      {});
+
+    std::vector<lbt::reassignment> all_reassignments;
+
+    for (const auto& [bs, leaders] : shard_index.shards()) {
+        for (const auto& [group, replicas] : leaders) {
+            for (const auto& replica : replicas) {
+                if (replica != bs) {
+                    all_reassignments.emplace_back(group, bs, replica);
+                }
+            }
+        }
+    }
+
+    lbt::random_reassignments rr(shard_index.shards());
+
+    for (;;) {
+        auto current_reassignment_opt = rr.generate_reassignment();
+
+        if (!current_reassignment_opt) {
+            break;
+        }
+
+        auto it = std::find_if(
+          all_reassignments.begin(),
+          all_reassignments.end(),
+          [&](const auto& r) {
+              return current_reassignment_opt->group == r.group
+                     && current_reassignment_opt->from == r.from
+                     && current_reassignment_opt->to == r.to;
+          });
+
+        BOOST_REQUIRE(it != all_reassignments.end());
+
+        all_reassignments.erase(it);
+    }
+
+    BOOST_REQUIRE(all_reassignments.size() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(topic_skew_error) {
+    // This test replicates a cluster state we encountered during
+    // OMB testing. It ensures that the random hill climbing strategy
+    // can properly balance this state. The minimum number of reassignments
+    // needed to balance is 2.
+    auto g_id_to_t_id = group_to_topic_from_spec({
+      {0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+      {1, {10, 11, 12, 13, 14}},
+    });
+
+    auto [shard_index, muted_index] = from_spec(
+      {
+        {{0, 2, 10, 11, 12}, {13, 14, 1, 3, 4, 5, 6, 7, 8, 9}},
+        {{1, 6, 8, 13, 14}, {10, 11, 12, 0, 2, 3, 4, 5, 7, 9}},
+        {{3, 4, 5, 7, 9}, {10, 11, 12, 13, 14, 0, 1, 2, 6, 8}},
+      },
+      {});
+
+    auto even_shard_con = lbt::even_shard_load_constraint(
+      shard_index, muted_index);
+    auto even_topic_con = lbt::even_topic_distributon_constraint(
+      g_id_to_t_id, shard_index, muted_index);
+
+    BOOST_REQUIRE(even_shard_con.error() == 0);
+    BOOST_REQUIRE(even_topic_con.error() > 0);
+
+    auto rhc = lbt::random_hill_climbing_strategy(
+      shard_index.shards(), g_id_to_t_id, lbt::muted_index{{}, {}});
+
+    absl::flat_hash_set<raft::group_id> muted_groups{};
+
+    auto pre_topic_error = even_topic_con.error();
+    auto pre_shard_error = even_shard_con.error();
+    auto current_error = rhc.error();
+
+    for (;;) {
+        auto movement_opt = rhc.find_movement(muted_groups);
+        if (!movement_opt) {
+            break;
+        }
+        rhc.apply_movement(*movement_opt);
+        even_shard_con.update_index(*movement_opt);
+        even_topic_con.update_index(*movement_opt);
+        muted_groups.insert(movement_opt->group);
+
+        auto new_error = rhc.error();
+        BOOST_REQUIRE(new_error <= current_error);
+        current_error = new_error;
+    }
+
+    auto post_topic_error = even_topic_con.error();
+    auto post_shard_error = even_shard_con.error();
+
+    BOOST_REQUIRE(post_topic_error <= pre_topic_error);
+    BOOST_REQUIRE(post_shard_error <= pre_shard_error);
+}
