@@ -239,6 +239,10 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                 continue;
             }
 
+        } catch (const validation_error& e) {
+            return make_error_alter_config_resource_response<
+              incremental_alter_configs_resource_response>(
+              resource, error_code::invalid_config, e.what());
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(

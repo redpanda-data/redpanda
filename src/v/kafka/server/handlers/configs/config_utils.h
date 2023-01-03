@@ -199,14 +199,33 @@ ss::future<std::vector<R>> unsupported_broker_configuration(
     return ss::make_ready_future<std::vector<R>>(std::move(responses));
 }
 
+class validation_error final : std::exception {
+public:
+    explicit validation_error(ss::sstring what)
+      : _what(std::move(what)) {}
+
+    const char* what() const noexcept final { return _what.c_str(); }
+
+private:
+    ss::sstring _what;
+};
+
 template<typename T>
-requires requires(const T& value, const ss::sstring& str) {
+struct noop_validator {
+    std::optional<ss::sstring> operator()(const T&) { return std::nullopt; }
+};
+
+
+template<typename T, typename Validator = noop_validator<T>>
+requires requires(const T& value, const ss::sstring& str, Validator validator) {
     { boost::lexical_cast<T>(str) } -> std::convertible_to<T>;
+    { validator(value) } -> std::convertible_to<std::optional<ss::sstring>>;
 }
 void parse_and_set_optional(
   cluster::property_update<std::optional<T>>& property,
   const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
+  config_resource_operation op,
+  Validator validator = noop_validator<T>{}) {
     // remove property value
     if (op == config_resource_operation::remove) {
         property.op = cluster::incremental_update_operation::remove;
@@ -214,7 +233,12 @@ void parse_and_set_optional(
     }
     // set property value if preset, otherwise do nothing
     if (op == config_resource_operation::set && value) {
-        property.value = boost::lexical_cast<T>(*value);
+        auto v = boost::lexical_cast<T>(*value);
+        auto v_error = validator(v);
+        if (v_error) {
+            throw validation_error(*v_error);
+        }
+        property.value = std::move(v);
         property.op = cluster::incremental_update_operation::set;
         return;
     }
