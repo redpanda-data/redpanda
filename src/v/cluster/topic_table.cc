@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/ntp_config.h"
+#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -89,8 +90,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
 }
 
 ss::future<> topic_table::stop() {
-    for (auto& w : _waiters) {
-        w->promise.set_exception(ss::abort_requested_exception());
+    if (_waiter) {
+        _waiter->promise.set_exception(ss::abort_requested_exception());
     }
     return ss::now();
 }
@@ -670,23 +671,17 @@ void topic_table::notify_waiters() {
                                         - _pending_deltas.begin();
 
     /// Consume all pending deltas
-    if (!_waiters.empty()) {
-        std::vector<std::unique_ptr<waiter>> active_waiters;
-        active_waiters.swap(_waiters);
-        for (auto& w :
-             std::span{active_waiters.begin(), active_waiters.size() - 1}) {
-            w->promise.set_value(_pending_deltas);
-        }
-
-        active_waiters[active_waiters.size() - 1]->promise.set_value(
-          std::move(_pending_deltas));
-        std::exchange(_pending_deltas, {});
+    if (_waiter) {
+        _waiter->promise.set_value(std::exchange(_pending_deltas, {}));
+        _waiter.reset();
         _last_consumed_by_notifier_offset = 0;
     }
 }
 
 ss::future<std::vector<topic_table::delta>>
 topic_table::wait_for_changes(ss::abort_source& as) {
+    vassert(!_waiter, "multiple waiters on topic_table changes");
+
     using ret_t = std::vector<topic_table::delta>;
     if (!_pending_deltas.empty()) {
         ret_t ret;
@@ -702,13 +697,11 @@ topic_table::wait_for_changes(ss::abort_source& as) {
     auto opt_sub = as.subscribe(
       [this, &pr = w->promise, id = w->id]() noexcept {
           pr.set_exception(ss::abort_requested_exception{});
-          auto it = std::find_if(
-            _waiters.begin(),
-            _waiters.end(),
-            [id](std::unique_ptr<waiter>& ptr) { return ptr->id == id; });
-          if (it != _waiters.end()) {
-              _waiters.erase(it);
+          if (!_waiter || _waiter->id != id) {
+              return;
           }
+
+          _waiter.reset();
       });
 
     if (unlikely(!opt_sub)) {
@@ -719,7 +712,7 @@ topic_table::wait_for_changes(ss::abort_source& as) {
     }
 
     auto f = w->promise.get_future();
-    _waiters.push_back(std::move(w));
+    _waiter = std::move(w);
     return f;
 }
 

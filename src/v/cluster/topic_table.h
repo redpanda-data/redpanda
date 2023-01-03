@@ -23,6 +23,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <memory>
 #include <span>
 
 namespace cluster {
@@ -227,12 +228,8 @@ public:
     ss::future<> stop();
 
     /// Delta API
-    /// NOTE: This API should only be consumed by a single entity, unless
-    /// careful consideration is taken. This is because once notifications are
-    /// fired, all events are consumed, and if both waiters aren't enqueued in
-    /// the \ref _waiters collection by the time the notify occurs, only one
-    /// waiter will recieve the updates, leaving the second one to observe
-    /// skipped events upon recieving its subsequent notification.
+    /// NOTE: This API should only be used by the controller_backend and
+    /// will throw an exception if there is more than one waiter.
     ss::future<std::vector<delta>> wait_for_changes(ss::abort_source&);
 
     bool has_pending_changes() const { return !_pending_deltas.empty(); }
@@ -407,7 +404,7 @@ private:
     model::revision_id _last_applied_revision_id;
 
     std::vector<delta> _pending_deltas;
-    std::vector<std::unique_ptr<waiter>> _waiters;
+    std::unique_ptr<waiter> _waiter;
     cluster::notification_id_type _notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
