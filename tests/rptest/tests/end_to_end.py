@@ -28,11 +28,12 @@ from rptest.services.redpanda import RedpandaService
 from rptest.services.redpanda_installer import InstallOptions
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
+from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.archival.s3_client import S3Client
 from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk import RpkException
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -135,8 +136,18 @@ class EndToEndTest(Test):
                                              RedpandaInstaller.HEAD)
             self.redpanda.restart_nodes(nodes_to_upgrade)
 
+        self._admin_client = Admin(self.redpanda)
         self._client = DefaultClient(self.redpanda)
         self._rpk_client = RpkTool(self.redpanda)
+
+    def await_controller(self, check=lambda node_id: True, hosts=None):
+        admin = self.admin_client()
+        return admin.await_stable_leader("controller",
+                                         partition=0,
+                                         namespace="redpanda",
+                                         timeout_s=30,
+                                         check=check,
+                                         hosts=hosts)
 
     def rpk_client(self):
         assert self._rpk_client is not None
@@ -145,6 +156,14 @@ class EndToEndTest(Test):
     def client(self):
         assert self._client is not None
         return self._client
+
+    def rpk_client(self):
+        assert self._rpk_client is not None
+        return self._rpk_client
+
+    def admin_client(self):
+        assert self._admin_client is not None
+        return self._admin_client
 
     @property
     def debug_mode(self):
