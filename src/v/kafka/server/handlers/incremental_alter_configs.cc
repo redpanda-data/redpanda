@@ -164,7 +164,10 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_segment_size) {
                 parse_and_set_optional(
-                  update.properties.segment_size, cfg.value, op);
+                  update.properties.segment_size,
+                  cfg.value,
+                  op,
+                  segment_size_validator{});
                 continue;
             }
             if (cfg.name == topic_property_timestamp_type) {

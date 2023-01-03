@@ -113,7 +113,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
                 parse_and_set_optional(
                   update.properties.segment_size,
                   cfg.value,
-                  kafka::config_resource_operation::set);
+                  kafka::config_resource_operation::set,
+                  segment_size_validator{});
                 continue;
             }
             if (cfg.name == topic_property_timestamp_type) {

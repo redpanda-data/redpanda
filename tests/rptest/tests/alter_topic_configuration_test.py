@@ -76,13 +76,13 @@ class AlterTopicConfiguration(RedpandaTest):
         kafka_tools = KafkaCliTools(self.redpanda)
         self.client().alter_topic_configs(
             topic, {
-                TopicSpec.PROPERTY_SEGMENT_SIZE: 1024,
+                TopicSpec.PROPERTY_SEGMENT_SIZE: 1024 * 1024,
                 TopicSpec.PROPERTY_RETENTION_TIME: 360000,
                 TopicSpec.PROPERTY_TIMESTAMP_TYPE: "LogAppendTime"
             })
         spec = kafka_tools.describe_topic(topic)
 
-        assert spec.segment_bytes == 1024
+        assert spec.segment_bytes == 1024 * 1024
         assert spec.retention_ms == 360000
         assert spec.message_timestamp_type == "LogAppendTime"
 

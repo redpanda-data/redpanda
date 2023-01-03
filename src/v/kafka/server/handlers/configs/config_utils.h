@@ -215,6 +215,25 @@ struct noop_validator {
     std::optional<ss::sstring> operator()(const T&) { return std::nullopt; }
 };
 
+struct segment_size_validator {
+    std::optional<ss::sstring> operator()(const size_t& value) {
+        // use reasonable defaults even if they are not set in configuration
+        size_t min
+          = config::shard_local_cfg().log_segment_size_min.value().value_or(1);
+        size_t max
+          = config::shard_local_cfg().log_segment_size_max.value().value_or(
+            std::numeric_limits<size_t>::max());
+
+        if (value < min || value > max) {
+            return fmt::format(
+              "segment size {} is outside of allowed range [{}, {}]",
+              value,
+              min,
+              max);
+        }
+        return std::nullopt;
+    }
+};
 
 template<typename T, typename Validator = noop_validator<T>>
 requires requires(const T& value, const ss::sstring& str, Validator validator) {
