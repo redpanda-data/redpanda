@@ -81,6 +81,7 @@
 #include "version.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
@@ -326,6 +327,9 @@ int application::run(int ac, char** av) {
                 wire_up_and_start(app_signal);
                 app_signal.wait().get();
                 vlog(_log.info, "Stopping...");
+            } catch (const ss::abort_requested_exception&) {
+                vlog(_log.info, "Redpanda startup aborted");
+                return 0;
             } catch (...) {
                 vlog(
                   _log.error,
