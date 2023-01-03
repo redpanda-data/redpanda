@@ -357,13 +357,14 @@ ss::future<> partition::stop() {
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
     std::optional<storage::timequery_result> result;
+    bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
     if (
-      _cloud_storage_partition && _raft->log().start_timestamp() >= cfg.time
-      && _cloud_storage_partition->is_data_available()) {
+      _cloud_storage_partition && _cloud_storage_partition->is_data_available()
+      && (is_read_replica || _raft->log().start_timestamp() >= cfg.time)) {
         // We have data in the remote partition, and all the data in the raft
-        // log is ahead of the query timestamp, so proceed to query the
-        // remote partition to try and find the earliest data that has timestamp
-        // >= the query time.
+        // log is ahead of the query timestamp or the topic is a read replica,
+        // so proceed to query the remote partition to try and find the earliest
+        // data that has timestamp >= the query time.
         vlog(
           clusterlog.debug,
           "timequery (cloud) {} t={} max_offset(k)={}",

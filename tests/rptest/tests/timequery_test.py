@@ -17,7 +17,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.util import (segments_count, wait_for_segments_removal)
+from rptest.util import (wait_until, segments_count, wait_for_segments_removal)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
@@ -295,3 +295,105 @@ class TimeQueryKafkaTest(Test, BaseTimeQuery):
         self._test_timequery(cluster=self.kafka,
                              cloud_storage=False,
                              batch_cache=True)
+
+
+class TestReadReplicaTimeQuery(RedpandaTest):
+    """Test time queries with read-replica topic."""
+
+    log_segment_size = 1024 * 1024
+    topic_name = "panda-topic"
+
+    def __init__(self, test_context):
+        super(TestReadReplicaTimeQuery, self).__init__(
+            test_context=test_context,
+            si_settings=SISettings(
+                log_segment_size=TestReadReplicaTimeQuery.log_segment_size,
+                cloud_storage_segment_max_upload_interval_sec=5))
+
+        self.rr_settings = SISettings(
+            bypass_bucket_creation=True,
+            cloud_storage_readreplica_manifest_sync_timeout_ms=500)
+
+        self.rr_cluster = None
+
+    def start_read_replica_cluster(self, num_brokers) -> None:
+        self.rr_cluster = RedpandaService(self.test_context,
+                                          num_brokers=num_brokers,
+                                          si_settings=self.rr_settings)
+        self.rr_cluster.start(start_si=False)
+
+    def create_read_replica_topic(self) -> None:
+        try:
+            rpk_rr_cluster = RpkTool(self.rr_cluster)
+            conf = {
+                'redpanda.remote.readreplica':
+                self.si_settings.cloud_storage_bucket,
+            }
+            rpk_rr_cluster.create_topic(self.topic_name, config=conf)
+        except:
+            self.logger.warn(f"Failed to create a read-replica topic")
+            return False
+        return True
+
+    def setup_clusters(self,
+                       base_ts,
+                       num_messages=0,
+                       partition_count=1) -> None:
+
+        spec = TopicSpec(name=self.topic_name,
+                         partition_count=partition_count,
+                         redpanda_remote_write=True,
+                         replication_factor=3)
+
+        DefaultClient(self.redpanda).create_topic(spec)
+
+        producer = KgoVerifierProducer(context=self.test_context,
+                                       redpanda=self.redpanda,
+                                       topic=self.topic_name,
+                                       msg_size=1024,
+                                       msg_count=num_messages,
+                                       batch_max_bytes=10240,
+                                       fake_timestamp_ms=base_ts)
+
+        producer.start()
+        producer.wait()
+
+        self.start_read_replica_cluster(num_brokers=3)
+
+        # wait until the read replica topic creation succeeds
+        wait_until(self.create_read_replica_topic,
+                   timeout_sec=300,
+                   backoff_sec=5,
+                   err_msg="Read replica topic is not created")
+
+    def query_timestamp(self, ts, kcat_src, kcat_rr):
+        self.logger.info(f"Querying ts={ts}")
+        offset_src = kcat_src.query_offset(self.topic_name, 0, ts)
+        offset_rr = kcat_rr.query_offset(self.topic_name, 0, ts)
+        self.logger.info(
+            f"Time query {ts} expected offset {offset_src}, read-replica {offset_rr}"
+        )
+        assert offset_src == offset_rr, f"Expected offset {offset_src}, got {offset_rr}"
+
+    @ducktape_cluster(num_nodes=7)
+    def test_timequery(self):
+        base_ts = 1664453149000
+        num_messages = 1000
+        self.setup_clusters(base_ts, num_messages, 3)
+
+        def read_replica_ready():
+            orig = RpkTool(self.redpanda).describe_topic(self.topic_name)
+            repl = RpkTool(self.rr_cluster).describe_topic(self.topic_name)
+            for o, r in zip(orig, repl):
+                if o.high_watermark > r.high_watermark:
+                    return False
+            return True
+
+        wait_until(read_replica_ready,
+                   timeout_sec=200,
+                   backoff_sec=3,
+                   err_msg="Read replica is not ready")
+        kcat1 = KafkaCat(self.redpanda)
+        kcat2 = KafkaCat(self.rr_cluster)
+        for ix in range(0, num_messages, 20):
+            self.query_timestamp(base_ts + ix, kcat1, kcat2)
