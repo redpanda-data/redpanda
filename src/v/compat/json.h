@@ -442,6 +442,12 @@ inline void rjson_serialize(
     std::stringstream ss;
     vassert(host.address(), "Unset optional address unexpected.");
     ss << host.address().value();
+    if (!ss.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "failed to serialize acl_host, state: {}",
+          ss.rdstate()));
+    }
     w.Key("address");
     rjson_serialize(w, ss.str());
     w.EndObject();
