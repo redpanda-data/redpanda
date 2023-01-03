@@ -5,3 +5,4 @@
 !tests/python
 !tests/go
 !tools/offline_log_viewer
+!tools/consumer_offsets_recovery
