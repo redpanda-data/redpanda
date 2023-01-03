@@ -1376,7 +1376,8 @@ class RedpandaService(Service):
     def set_cluster_config(self,
                            values: dict,
                            expect_restart: bool = False,
-                           admin_client: Admin = None):
+                           admin_client: Admin = None,
+                           timeout: int = 10):
         """
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
@@ -1403,7 +1404,7 @@ class RedpandaService(Service):
         # early in the cluster's lifetime
         config_status = wait_until_result(
             is_ready,
-            timeout_sec=10,
+            timeout_sec=timeout,
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {new_version}"
         )

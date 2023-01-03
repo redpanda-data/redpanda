@@ -21,7 +21,6 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService
-from ducktape.mark import ok_to_fail
 
 
 class NodesDecommissioningTest(EndToEndTest):
@@ -526,8 +525,6 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
-    # https://github.com/redpanda-data/redpanda/issues/7874
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_flipping_decommission_recommission(self):
 
@@ -548,22 +545,28 @@ class NodesDecommissioningTest(EndToEndTest):
             self.logger.info(f"decommissioning node: {node_id}")
             # set recovery rate to small value to prevent node
             # from finishing decommission operation
-            self._set_recovery_rate(64)
+            self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 1},
+                                             timeout=30)
             admin.decommission_broker(id=node_id)
-            wait_until(lambda: self._partitions_moving(node=survivor_node),
-                       timeout_sec=15,
+            wait_until(lambda: self._partitions_moving(node=survivor_node) or
+                       self._node_removed(node_id, survivor_node),
+                       timeout_sec=60,
                        backoff_sec=1)
+            if self._node_removed(node_id, survivor_node):
+                break
             self.logger.info(f"recommissioning node: {node_id}", )
             admin.recommission_broker(id=node_id)
-            self._set_recovery_rate(1024 * 1024 * 1024)
+            self.redpanda.set_cluster_config(
+                {"raft_learner_recovery_rate": 1024 * 1024 * 1024}, timeout=30)
 
-        # finally decommission node
-        self.logger.info(f"decommissioning node: {node_id}", )
-        admin.decommission_broker(id=node_id)
+        if not self._node_removed(node_id, survivor_node):
+            # finally decommission node
+            self.logger.info(f"decommissioning node: {node_id}", )
+            admin.decommission_broker(id=node_id)
 
-        wait_until(lambda: self._node_removed(node_id, survivor_node),
-                   timeout_sec=120,
-                   backoff_sec=2)
+            wait_until(lambda: self._node_removed(node_id, survivor_node),
+                       timeout_sec=120,
+                       backoff_sec=2)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
