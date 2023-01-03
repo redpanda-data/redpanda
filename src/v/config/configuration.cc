@@ -44,7 +44,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "16777216",
        .visibility = visibility::tunable},
-      std::nullopt)
+      1_MiB)
   , log_segment_size_max(
       *this,
       "log_segment_size_max",
