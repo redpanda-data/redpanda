@@ -24,7 +24,9 @@ metadata:
 spec:
   image: "vectorized/redpanda"
   version: "v22.1.10"
-  replicas: 2
+  replicas: 3
+  restartConfig:
+    underReplicatedPartitionThreshold: 0.00
   resources:
     requests:
       cpu: 100m

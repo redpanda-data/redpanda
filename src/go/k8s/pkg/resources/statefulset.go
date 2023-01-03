@@ -194,7 +194,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	return r.handleScaling(ctx)
 }
 
-// GetCentralizedConfigurationHashFromCluster retrieves the current centralized configuratino hash from the statefulset
+// GetCentralizedConfigurationHashFromCluster retrieves the current centralized configuration hash from the statefulset
 func (r *StatefulSetResource) GetCentralizedConfigurationHashFromCluster(
 	ctx context.Context,
 ) (string, error) {

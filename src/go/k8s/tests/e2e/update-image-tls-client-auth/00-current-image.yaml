@@ -5,7 +5,7 @@ metadata:
 spec:
   image: "vectorized/redpanda"
   version: "v22.1.10"
-  replicas: 2
+  replicas: 3
   resources:
     requests:
       cpu: 100m
