@@ -40,6 +40,11 @@ RACE_BETWEEN_DELETION_AND_ADDING_PARTITION = [
     "cluster - .*std::__1::__fs::filesystem::filesystem_error \(error system:2, filesystem error: mkdir failed: No such file or directory"
 ]
 
+STARTUP_SEQUENCE_ABORTED = [
+    # Example: main - application.cc:335 - Failure during startup: seastar::abort_requested_exception (abort requested)
+    "Failure during startup: seastar::abort_requested_exception \(abort requested\)"
+]
+
 
 class PartitionBalancerService(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
@@ -755,7 +760,8 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED)
     @matrix(kill_same_node=[True, False], decommission_first=[True, False])
     def test_decommission(self, kill_same_node, decommission_first):
         """
