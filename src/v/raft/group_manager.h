@@ -86,6 +86,9 @@ private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
 
+    raft::group_configuration create_initial_configuration(
+      std::vector<model::broker>, model::revision_id) const;
+
     model::node_id _self;
     ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;

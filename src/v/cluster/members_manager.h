@@ -18,12 +18,17 @@
 #include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
+#include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "random/simple_time_jitter.h"
 #include "rpc/fwd.h"
+#include "serde/envelope.h"
 #include "storage/fwd.h"
+
+#include <vector>
 
 namespace features {
 class feature_table;
@@ -38,14 +43,17 @@ namespace cluster {
 // Node state updates
 // ==================
 // This class receives updates from members_frontend by way of a Raft record
-// batch being committed. In addition to various controller command batch
-// types, it reacts to Raft configuration batch types, e.g. when a new node is
-// added to the controller Raft group.
+// batch being committed. It reacts to node operations commands like
+// adding/updating/removing nodes.
 //
 // All the updates are propagated to core-local cluster::members_table
 // instances. There is only one instance of members_manager running on
 // core-0. The members_manager is also responsible for validation of node
 // configuration invariants.
+//
+// Members manager stores a snapshot of cluster state in KV store to be able to
+// access it immediately after it starts, this way it can initialize connections
+// and send hello requests to other cluster members.
 //
 // Node joining and node ID assignment
 // ===================================
@@ -96,6 +104,9 @@ public:
         // (e.g. it's been fully decommissioned, indicating it can no longer be
         // recommissioned).
         reallocation_finished,
+
+        // node has been removed from the cluster
+        removed,
     };
 
     // Node update information to be processed by the members_backend.
@@ -103,7 +114,8 @@ public:
         model::node_id id;
         node_update_type type;
         model::offset offset;
-
+        friend bool operator==(const node_update&, const node_update&)
+          = default;
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 
@@ -120,8 +132,13 @@ public:
       ss::sharded<drain_manager>&,
       ss::sharded<ss::abort_source>&);
 
-    // Initializes connections to all known members.
-    ss::future<> start();
+    /**
+     * Initializes connections to brokers. If provided a non-empty list, it's
+     * expected that this is the first time the cluster is started, and the
+     * given brokers are used to initialize the connections. Otherwise, the
+     * brokers are determined from existing state (e.g. the KV-store or Raft)
+     */
+    ss::future<> start(std::vector<model::broker>);
 
     // Sends a join RPC if we aren't already a member, else sends a node
     // configuration update if our local state differs from that stored in the
@@ -159,11 +176,7 @@ public:
       handle_configuration_update_request(configuration_update_request);
 
     // Whether the given batch applies to this raft::mux_state_machine.
-    bool is_batch_applicable(const model::record_batch& b) {
-        return b.header().type == model::record_batch_type::node_management_cmd
-               || b.header().type
-                    == model::record_batch_type::raft_configuration;
-    }
+    bool is_batch_applicable(const model::record_batch& b) const;
 
     // This API is backed by the seastar::queue. It can not be called
     // concurrently from multiple fibers.
@@ -173,9 +186,9 @@ public:
     // guarantee that the UUID has already been registered before calling.
     model::node_id get_node_id(const model::node_uuid&);
 
-    // Initialize `_id_by_uuid`. Should be called once only when bootstrapping a
-    // cluster.
-    void apply_initial_node_uuid_map(uuid_map_t);
+    // Initialize `_id_by_uuid` and brokers list. Should be called once only
+    // when bootstrapping a cluster.
+    ss::future<> set_initial_state(std::vector<model::broker>, uuid_map_t);
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
@@ -220,12 +233,12 @@ private:
       handle_raft0_cfg_update(raft::group_configuration, model::offset);
     changed_nodes
     calculate_changed_nodes(const raft::group_configuration&) const;
-    ss::future<> update_connections(changed_nodes);
 
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);
     ss::future<result<configuration_update_reply>>
-      do_dispatch_configuration_update(model::broker, model::broker);
+      do_dispatch_configuration_update(
+        model::node_id, net::unresolved_address, model::broker);
 
     template<typename Cmd>
     ss::future<std::error_code> dispatch_updates_to_cores(model::offset, Cmd);
@@ -238,6 +251,32 @@ private:
       do_apply_update_node(update_node_cfg_cmd, model::offset);
     ss::future<std::error_code>
       do_apply_remove_node(remove_node_cmd, model::offset);
+
+    ss::future<std::error_code> add_node(model::broker);
+    ss::future<std::error_code> update_node(model::broker);
+
+    bool command_based_membership_active() const {
+        return _feature_table.local().is_active(
+          features::feature::membership_change_controller_cmds);
+    }
+
+    struct members_snapshot
+      : serde::envelope<
+          members_snapshot,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        std::vector<model::broker> members;
+        model::offset update_offset;
+        auto serde_fields() { return std::tie(members, update_offset); }
+    };
+    /**
+     * In order to be able to determine the current cluster configuration before
+     * raft-0 log is replied or controller snapshot is applied we store
+     * configuration in kv-store. Members are persisted every time the cluster
+     * configuration changes.
+     */
+    ss::future<> persist_members_in_kvstore(model::offset);
+    members_snapshot read_members_from_kvstore();
 
     const std::vector<config::seed_server> _seed_servers;
     const model::broker _self;
@@ -268,6 +307,8 @@ private:
 
     ss::sharded<ss::abort_source>& _as;
 
+    absl::flat_hash_set<model::node_id> _connections_to_remove;
+
     const config::tls_config _rpc_tls_config;
 
     // Gate with which to guard new work (e.g. if stop() has been called).
@@ -287,6 +328,13 @@ private:
     // The last config update controller log offset for which we successfully
     // updated our broker connections.
     model::offset _last_connection_update_offset;
+    // Offset of first node operation command in controller log. This
+    // information is used to prevent members manager fro applying controller
+    // raft0 configuration after the node command was applied, we can not rely
+    // on a feature being enabled as even when feature is active it may still be
+    // required to apply raft-0 configuration as they contain cluster membership
+    // state changes.
+    model::offset _first_node_operation_command_offset = model::offset::max();
 };
 
 std::ostream&

@@ -150,8 +150,8 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
     }
 
     // Apply initial node UUID to ID map
-    _members_manager.local().apply_initial_node_uuid_map(
-      cmd.value.node_ids_by_uuid);
+    co_await _members_manager.local().set_initial_state(
+      cmd.value.initial_nodes, cmd.value.node_ids_by_uuid);
 
     // Apply cluster version to feature table: this activates features without
     // waiting for feature_manager to come up.

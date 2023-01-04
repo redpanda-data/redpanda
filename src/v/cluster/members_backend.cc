@@ -11,6 +11,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -46,6 +47,7 @@ members_backend::members_backend(
   ss::sharded<controller_api>& api,
   ss::sharded<members_manager>& members_manager,
   ss::sharded<members_frontend>& members_frontend,
+  ss::sharded<features::feature_table>& features,
   consensus_ptr raft0,
   ss::sharded<ss::abort_source>& as)
   : _topics_frontend(topics_frontend)
@@ -55,6 +57,7 @@ members_backend::members_backend(
   , _api(api)
   , _members_manager(members_manager)
   , _members_frontend(members_frontend)
+  , _features(features)
   , _raft0(raft0)
   , _as(as)
   , _retry_timeout(config::shard_local_cfg().members_backend_retry_ms())
@@ -90,7 +93,10 @@ void members_backend::setup_metrics() {
       });
 }
 
-void members_backend::start() { start_reconciliation_loop(); }
+void members_backend::start() {
+    start_reconciliation_loop();
+    ssx::spawn_with_gate(_bg, [this] { return reconcile_raft0_updates(); });
+}
 
 ss::future<> members_backend::handle_updates() {
     /**
@@ -130,7 +136,7 @@ ss::future<std::error_code> members_backend::request_rebalance() {
         co_return errc::update_in_progress;
     }
     _updates.emplace_back();
-    _new_updates.signal();
+    _new_updates.broadcast();
     co_return errc::success;
 }
 
@@ -152,14 +158,24 @@ void members_backend::handle_single_update(
     case update_t::added:
         stop_node_decommissioning(update.id);
         _updates.emplace_back(update);
-        _new_updates.signal();
+        _raft0_updates.push_back(update);
+        _new_updates.broadcast();
         return;
     case update_t::decommissioned:
         _updates.emplace_back(update);
         stop_node_addition_and_ondemand_rebalance(update.id);
-        _new_updates.signal();
+        _new_updates.broadcast();
+        return;
+    case update_t::removed:
+        // remove all pending updates for this node
+        std::erase_if(_updates, [id = update.id](update_meta& meta) {
+            return meta.update->id == id;
+        });
+        _raft0_updates.push_back(update);
+        _new_updates.broadcast();
         return;
     }
+
     __builtin_unreachable();
 }
 
@@ -233,6 +249,7 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
         co_await calculate_reallocations_after_recommissioned(meta);
         co_return;
     case members_manager::node_update_type::reallocation_finished:
+    case members_manager::node_update_type::removed:
         co_return;
     }
 }
@@ -835,9 +852,7 @@ ss::future<std::error_code> members_backend::reconcile() {
               "[update: {}] decommissioning finished, removing node from "
               "cluster",
               meta.update);
-            co_await _raft0
-              ->remove_member(meta.update->id, model::revision_id{0})
-              .discard_result();
+            co_await do_remove_node(meta.update->id, meta.update->offset);
         } else {
             // Decommissioning still in progress
             vlog(
@@ -868,6 +883,15 @@ ss::future<std::error_code> members_backend::reconcile() {
       });
 
     co_return errc::update_in_progress;
+}
+
+ss::future<std::error_code> members_backend::do_remove_node(
+  model::node_id id, model::offset update_offset) {
+    if (_features.local().is_active(
+          features::feature::membership_change_controller_cmds)) {
+        return _members_frontend.local().remove_node(id);
+    }
+    return _raft0->remove_member(id, model::revision_id(update_offset));
 }
 
 bool members_backend::should_stop_rebalancing_update(
@@ -1179,6 +1203,84 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
                || meta.update->type
                     == members_manager::node_update_type::recommissioned);
     });
+}
+
+ss::future<> members_backend::reconcile_raft0_updates() {
+    while (!_as.local().abort_requested()) {
+        co_await _new_updates.wait([this] { return !_raft0_updates.empty(); });
+
+        // check the _raft0_updates as the predicate may not longer hold
+        if (_raft0_updates.empty()) {
+            continue;
+        }
+
+        auto update = _raft0_updates.front();
+        vlog(clusterlog.trace, "processing raft 0 update: {}", update);
+        auto err = co_await update_raft0_configuration(update);
+        if (err) {
+            vlog(
+              clusterlog.trace,
+              "raft 0 update {} returned an error - {}",
+              update,
+              err.message());
+            co_await ss::sleep_abortable(200ms, _as.local());
+            continue;
+        }
+
+        _raft0_updates.pop_front();
+    }
+}
+
+ss::future<std::error_code> members_backend::update_raft0_configuration(
+  const members_manager::node_update& update) {
+    model::revision_id revision(update.offset);
+    auto cfg = _raft0->config();
+    if (cfg.revision_id() > model::revision_id(update.offset)) {
+        co_return errc::success;
+    }
+    if (update.type == update_t::added) {
+        if (cfg.contains(raft::vnode(update.id, raft0_revision))) {
+            vlog(
+              clusterlog.debug,
+              "node {} is already part of raft0 configuration",
+              update.id);
+            co_return errc::success;
+        }
+        co_return co_await add_to_raft0(update.id, revision);
+    } else if (update.type == update_t::removed) {
+        if (!cfg.contains(raft::vnode(update.id, raft0_revision))) {
+            vlog(
+              clusterlog.debug,
+              "node {} is already removed from raft0 configuration",
+              update.id);
+            co_return errc::success;
+        }
+
+        co_return co_await remove_from_raft0(update.id, revision);
+    }
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+members_backend::add_to_raft0(model::node_id id, model::revision_id revision) {
+    if (!_raft0->is_leader()) {
+        co_return errc::not_leader;
+    }
+
+    vlog(clusterlog.info, "adding node {} to raft0 configuration", id);
+    co_return co_await _raft0->add_group_member(
+      raft::vnode(id, raft0_revision), revision);
+}
+
+ss::future<std::error_code> members_backend::remove_from_raft0(
+  model::node_id id, model::revision_id revision) {
+    if (!_raft0->is_leader()) {
+        co_return errc::not_leader;
+    }
+    vlog(clusterlog.info, "removing node {} from raft0 configuration", id);
+    co_return co_await _raft0->remove_member(
+      raft::vnode(id, raft0_revision), revision);
 }
 
 std::ostream&

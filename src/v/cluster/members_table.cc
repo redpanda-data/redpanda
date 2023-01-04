@@ -13,6 +13,7 @@
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <algorithm>
@@ -80,6 +81,18 @@ std::error_code members_table::apply(model::offset o, add_node_cmd cmd) {
 
     notify_members_updated();
     return errc::success;
+}
+
+void members_table::set_initial_brokers(std::vector<model::broker> brokers) {
+    vassert(!_nodes.empty(), "can not initialize not empty members table");
+    vlog(clusterlog.info, "setting initial nodes {}", brokers);
+    for (auto& b : brokers) {
+        const auto id = b.id();
+        _nodes.emplace(id, node_metadata{.broker = std::move(b)});
+        _waiters.notify(id);
+    }
+
+    notify_members_updated();
 }
 
 std::error_code members_table::apply(model::offset o, update_node_cfg_cmd cmd) {

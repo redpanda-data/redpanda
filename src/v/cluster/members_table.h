@@ -53,6 +53,8 @@ public:
     std::error_code apply(model::offset, update_node_cfg_cmd);
     std::error_code apply(model::offset, remove_node_cmd);
 
+    void set_initial_brokers(std::vector<model::broker>);
+
     model::revision_id version() const { return _version; }
 
     ss::future<> await_membership(model::node_id id, ss::abort_source& as) {
