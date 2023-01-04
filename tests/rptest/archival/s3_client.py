@@ -1,11 +1,12 @@
 import boto3
+import re
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from time import sleep
 from functools import wraps
 import time
 import datetime
-from typing import Iterator, NamedTuple, Union
+from typing import Iterator, NamedTuple, Union, Optional
 
 
 class SlowDown(Exception):
@@ -289,7 +290,24 @@ class S3Client:
             else:
                 raise
 
-    def list_objects(self, bucket) -> Iterator[S3ObjectMetadata]:
+    def _key_to_topic(self, key: str):
+        # Segment objects: <hash>/<ns>/<topic>/<partition>_<revision>/...
+        # Manifest objects: <hash>/meta/<ns>/<topic>/<partition>_<revision>/...
+        # Topic manifest objects: <hash>/meta/<ns>/<topic>/topic_manifest.json
+        m = re.search(".+/(.+)/(.+)/(\d+_\d+/|topic_manifest.json)", key)
+        if m is None:
+            return None
+        else:
+            return m.group(2)
+
+    def list_objects(
+            self,
+            bucket,
+            topic: Optional[str] = None) -> Iterator[S3ObjectMetadata]:
+        """
+        :param bucket: S3 bucket name
+        :param topic: Optional, if set then only return objects belonging to this topic
+        """
         token = None
         truncated = True
         while truncated:
@@ -298,6 +316,13 @@ class S3Client:
             truncated = bool(res['IsTruncated'])
             if 'Contents' in res:
                 for item in res['Contents']:
+
+                    # Apply optional topic filtering
+                    if topic is not None and self._key_to_topic(
+                            item['Key']) != topic:
+                        self.logger.debug(f"Skip {item['Key']} for {topic}")
+                        continue
+
                     yield S3ObjectMetadata(Bucket=bucket,
                                            Key=item['Key'],
                                            ETag=item['ETag'][1:-1],
