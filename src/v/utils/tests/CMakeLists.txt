@@ -44,7 +44,17 @@ rp_test(
     human_test.cc
     fragmented_vector_test.cc
     tracking_allocator_tests.cc
+    approximate_histogram_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
+  LABELS utils
+)
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME approximate_histogram_bench
+  SOURCES approximate_histogram_bench.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Seastar::seastar_perf_testing v::utils
   LABELS utils
 )
