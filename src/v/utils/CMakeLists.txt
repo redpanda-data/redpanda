@@ -13,6 +13,7 @@ v_cc_library(
     directory_walker.cc
     uuid.cc
     request_auth.cc
+    bottomless_token_bucket.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
