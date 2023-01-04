@@ -91,29 +91,18 @@ class AdminApiAuthTest(RedpandaTest):
         default scram_sha256)
         """
 
-        import requests
-        rpath = requests.urllib3.util.retry.__file__
-        self.logger.info(f"rpath = '{rpath}'")
+        charles = SaslCredentials("charles", "highEntropyHipster",
+                                  "SCRAM-SHA-512")
+        create_user_and_wait(self.redpanda, self.superuser_admin, charles)
+        self.redpanda.set_cluster_config({
+            'superusers':
+            [charles.username, self.redpanda.SUPERUSER_CREDENTIALS.username]
+        })
 
-        try:
-            charles = SaslCredentials("charles", "highEntropyHipster",
-                                      "SCRAM-SHA-512")
-            create_user_and_wait(self.redpanda, self.superuser_admin, charles)
-            self.redpanda.set_cluster_config({
-                'superusers': [
-                    charles.username,
-                    self.redpanda.SUPERUSER_CREDENTIALS.username
-                ]
-            })
-
-            charles_admin = Admin(self.redpanda,
-                                  auth=(charles.username, charles.password))
-            # Hit an endpoint requiring superuser
-            charles_admin.get_cluster_config()
-        except:
-            import time
-            self.logger.exception("I need an adult")
-            time.sleep(3600)
+        charles_admin = Admin(self.redpanda,
+                              auth=(charles.username, charles.password))
+        # Hit an endpoint requiring superuser
+        charles_admin.get_cluster_config()
 
 
 class AdminApiAuthEnablementTest(RedpandaTest):
