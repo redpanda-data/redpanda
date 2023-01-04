@@ -3217,8 +3217,7 @@ bool consensus::should_reconnect_follower(vnode id) {
 }
 
 voter_priority consensus::next_target_priority() {
-    auto node_count = std::max<size_t>(
-      _configuration_manager.get_latest().brokers().size(), 1);
+    auto node_count = std::max<size_t>(_fstats.size() + 1, 1);
 
     return voter_priority(std::max<voter_priority::type>(
       (_target_priority / node_count) * (node_count - 1), min_voter_priority));
@@ -3235,14 +3234,11 @@ voter_priority consensus::get_node_priority(vnode rni) const {
     }
 
     auto& latest_cfg = _configuration_manager.get_latest();
-    auto& brokers = latest_cfg.brokers();
+    auto nodes = latest_cfg.all_nodes();
 
-    auto it = std::find_if(
-      brokers.cbegin(), brokers.cend(), [rni](const model::broker& b) {
-          return b.id() == rni.id();
-      });
+    auto it = std::find(nodes.begin(), nodes.end(), rni);
 
-    if (it == brokers.cend()) {
+    if (it == nodes.end()) {
         /**
          * If node is not present in current configuration i.e. was added to the
          * cluster, return max, this way for joining node we will use
@@ -3251,14 +3247,14 @@ voter_priority consensus::get_node_priority(vnode rni) const {
         return voter_priority::max();
     }
 
-    auto idx = std::distance(brokers.cbegin(), it);
+    auto idx = std::distance(nodes.begin(), it);
 
     /**
      * Voter priority is inversly proportion to node position in brokers
      * vector.
      */
     return voter_priority(
-      (brokers.size() - idx) * (voter_priority::max() / brokers.size()));
+      (nodes.size() - idx) * (voter_priority::max() / nodes.size()));
 }
 
 model::offset consensus::get_latest_configuration_offset() const {
