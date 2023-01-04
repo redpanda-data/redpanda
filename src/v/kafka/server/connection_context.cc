@@ -199,9 +199,9 @@ ss::future<session_resources> connection_context::throttle_request(
     // size of the current request and return any computed delay
     // to apply for quota throttling.
     //
-    // note that when throttling is first applied the request is
-    // allowed to pass through and subsequent requests and
-    // delayed. this is a similar strategy used by kafka: the
+    // note that when throttling is first determined, the request is
+    // allowed to pass through, and only subsequent requests are
+    // delayed. this is a similar strategy used by kafka 2.0: the
     // response is important because it allows clients to
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
@@ -218,8 +218,7 @@ ss::future<session_resources> connection_context::throttle_request(
       .client_id = ss::sstring{hdr.client_id.value_or("")}};
     auto tracker = std::make_unique<request_tracker>(_server.probe());
     auto fut = ss::now();
-    if (
-      delay.duration > std::chrono::milliseconds(0) && !delay.first_violation) {
+    if (delay.enforce && delay.duration > ss::lowres_clock::duration::zero()) {
         fut = ss::sleep_abortable(delay.duration, _server.abort_source());
     }
     auto track = track_latency(hdr.key);
