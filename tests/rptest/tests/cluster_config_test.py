@@ -24,7 +24,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_http_error
+from rptest.util import expect_http_error, expect_exception
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
@@ -1105,23 +1105,27 @@ class ClusterConfigTest(RedpandaTest):
                 assert 'OK' in out
 
         # Set a nonexistent property
-        out = self.client().alter_broker_config({"does_not_exist": "avalue"},
-                                                incremental)
-        assert 'INVALID_CONFIG' in out
+        with expect_exception(RuntimeError,
+                              lambda e: 'INVALID_CONFIG' in str(e)):
+            self.client().alter_broker_config({"does_not_exist": "avalue"},
+                                              incremental)
 
         # Set a malformed property
-        out = self.client().alter_broker_config(
-            {"log_message_timestamp_type": "BadValue"}, incremental)
-        assert 'INVALID_CONFIG' in out
+        with expect_exception(RuntimeError,
+                              lambda e: 'INVALID_CONFIG' in str(e)):
+            self.client().alter_broker_config(
+                {"log_message_timestamp_type": "BadValue"}, incremental)
 
         # Set a property on a named broker: should fail because this
         # interface is only for cluster-wide properties
-        out = self.client().alter_broker_config(
-            {"log_message_timestamp_type": "CreateTime"},
-            incremental,
-            broker=1)
-        assert 'INVALID_CONFIG' in out
-        assert "Setting broker properties on named brokers is unsupported" in out
+        with expect_exception(
+                RuntimeError, lambda e: 'INVALID_CONFIG' in str(e) and
+                "Setting broker properties on named brokers is unsupported" in
+                str(e)):
+            self.client().alter_broker_config(
+                {"log_message_timestamp_type": "CreateTime"},
+                incremental,
+                broker=1)
 
     @cluster(num_nodes=3)
     def test_alter_configs(self):
@@ -1130,11 +1134,13 @@ class ClusterConfigTest(RedpandaTest):
         are correctly handled with an 'unsupported' response.
         """
 
-        out = self.client().alter_broker_config(
-            {"log_message_timestamp_type": "CreateTime"}, incremental=False)
-        self.logger.info("AlterConfigs output: {out}")
-        assert 'INVALID_CONFIG' in out
-        assert "changing broker properties isn't supported via this API" in out
+        with expect_exception(
+                RuntimeError, lambda e: 'INVALID_CONFIG' in str(e) and
+                "changing broker properties isn't supported via this API" in
+                str(e)):
+            self.client().alter_broker_config(
+                {"log_message_timestamp_type": "CreateTime"},
+                incremental=False)
 
     @cluster(num_nodes=3, log_allow_list=IAM_ROLES_API_CALL_ALLOW_LIST)
     def test_cloud_validation(self):

@@ -8,7 +8,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import Enum
 import random
 import string
 import itertools
@@ -24,7 +23,8 @@ from rptest.services.redpanda import ResourceSettings, SISettings
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.util import wait_for_segments_removal
+from rptest.util import wait_for_segments_removal, expect_exception
+from rptest.clients.kcl import KCL
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
@@ -331,6 +331,36 @@ class CreateSITopicsTest(RedpandaTest):
             "true", "DYNAMIC_TOPIC_CONFIG")
         assert explicit_si_configs["redpanda.remote.write"] == (
             "false", "DYNAMIC_TOPIC_CONFIG")
+
+    @cluster(num_nodes=1)
+    def topic_alter_config_test(self):
+        """
+        Intentionally use the legacy (deprecated in Kafka 2.3.0) AlterConfig
+        admin RPC, to check it works with our custom topic properties
+        """
+        rpk = RpkTool(self.redpanda)
+        topic = topic_name()
+        rpk.create_topic(topic=topic, partitions=1, replicas=1)
+
+        # Older KCL has support for the legacy AlterConfig RPC: latest rpk and kafka CLI do not.
+        kcl = KCL(self.redpanda)
+
+        examples = {
+            'redpanda.remote.delete': 'true',
+            'redpanda.remote.write': 'true',
+            'redpanda.remote.read': 'true',
+            'retention.local.target.bytes': '123456',
+            'retention.local.target.ms': '123456'
+        }
+
+        for k, v in examples.items():
+            kcl.alter_topic_config({k: v}, incremental=False, topic=topic)
+
+        # As a control, confirm that if we did pass an invalid property, we would have got an error
+        with expect_exception(RuntimeError, lambda e: "invalid" in str(e)):
+            kcl.alter_topic_config({"redpanda.invalid.property": 'true'},
+                                   incremental=False,
+                                   topic=topic)
 
 
 # When quickly recreating topics after deleting them, redpanda's topic
