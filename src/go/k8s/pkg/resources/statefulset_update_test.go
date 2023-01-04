@@ -10,12 +10,19 @@
 package resources //nolint:testpackage // needed to test private method
 
 import (
+	"context"
 	"testing"
 
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestShouldUpdate_AnnotationChange(t *testing.T) {
@@ -64,4 +71,79 @@ func TestShouldUpdate_AnnotationChange(t *testing.T) {
 	update, err = ssres.shouldUpdate(false, stsWithAnnotation, stsWithAnnotation)
 	require.NoError(t, err)
 	require.False(t, update)
+}
+
+func TestPutInMaintenanceMode(t *testing.T) {
+	tcs := []struct {
+		name              string
+		maintenanceStatus *admin.MaintenanceStatus
+		errorRequired     error
+	}{
+		{
+			"maintenance finished",
+			&admin.MaintenanceStatus{
+				Finished: true,
+			},
+			nil,
+		},
+		{
+			"maintenance draining",
+			&admin.MaintenanceStatus{
+				Draining: true,
+			},
+			ErrMaintenanceNotFinished,
+		},
+		{
+			"maintenance failed",
+			&admin.MaintenanceStatus{
+				Failed: 1,
+			},
+			ErrMaintenanceNotFinished,
+		},
+		{
+			"maintenance has errors",
+			&admin.MaintenanceStatus{
+				Errors: true,
+			},
+			ErrMaintenanceNotFinished,
+		},
+		{
+			"maintenance did not finished",
+			&admin.MaintenanceStatus{
+				Finished: false,
+			},
+			ErrMaintenanceNotFinished,
+		},
+		{
+			"maintenance was not returned",
+			nil,
+			ErrMaintenanceMissing,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			ssres := StatefulSetResource{
+				adminAPIClientFactory: func(
+					ctx context.Context,
+					k8sClient client.Reader,
+					redpandaCluster *redpandav1alpha1.Cluster,
+					fqdn string,
+					adminTLSProvider types.AdminTLSConfigProvider,
+					ordinals ...int32,
+				) (adminutils.AdminAPIClient, error) {
+					return &adminutils.MockAdminAPI{
+						Log:               ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI"),
+						MaintenanceStatus: tc.maintenanceStatus,
+					}, nil
+				},
+			}
+			err := ssres.putInMaintenanceMode(context.Background(), 0)
+			if tc.errorRequired == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.errorRequired)
+			}
+		})
+	}
 }

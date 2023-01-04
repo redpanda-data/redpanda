@@ -25,17 +25,18 @@ import (
 )
 
 type MockAdminAPI struct {
-	config           admin.Config
-	schema           admin.ConfigSchema
-	patches          []configuration.CentralConfigurationPatch
-	unavailable      bool
-	invalid          []string
-	unknown          []string
-	directValidation bool
-	brokers          []admin.Broker
-	monitor          sync.Mutex
-	Log              logr.Logger
-	clusterHealth    bool
+	config            admin.Config
+	schema            admin.ConfigSchema
+	patches           []configuration.CentralConfigurationPatch
+	unavailable       bool
+	invalid           []string
+	unknown           []string
+	directValidation  bool
+	brokers           []admin.Broker
+	monitor           sync.Mutex
+	Log               logr.Logger
+	clusterHealth     bool
+	MaintenanceStatus *admin.MaintenanceStatus
 }
 
 var _ AdminAPIClient = &MockAdminAPI{Log: ctrl.Log.WithName("AdminAPIClient").WithName("mockAdminAPI")}
@@ -420,6 +421,18 @@ func (m *MockAdminAPI) SetBrokerStatus(
 		}
 	}
 	return fmt.Errorf("unknown broker %d", id)
+}
+
+func (m *MockAdminAPI) Broker(_ context.Context, nodeID int) (admin.Broker, error) {
+	t := true
+	return admin.Broker{
+		NodeID:           nodeID,
+		NumCores:         2,
+		MembershipStatus: "",
+		IsAlive:          &t,
+		Version:          "unversioned",
+		Maintenance:      m.MaintenanceStatus,
+	}, nil
 }
 
 func makeCopy(input, output interface{}) {
