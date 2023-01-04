@@ -472,3 +472,243 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_delta) {
     delta_delta_column col(initial_delta);
     prefix_truncate_test_case(10, col);
 }
+
+template<class column_t>
+void at_with_hint_test_case(const int64_t num_elements, column_t& column) {
+    struct hint_t {
+        std::optional<typename column_t::hint_t> pos;
+        uint32_t index;
+    };
+    size_t total_size = 0;
+    std::vector<hint_t> hints;
+    std::vector<std::pair<int64_t, size_t>> samples;
+    int64_t value = 0;
+    for (int64_t i = 0; i < num_elements; i++) {
+        value += random_generators::get_int(1, 100);
+        column.append(value);
+        if (random_generators::get_int(10) == 0) {
+            samples.emplace_back(value, total_size);
+        }
+        if (i % 16 == 0) {
+            auto hint = column.get_current_stream_pos();
+            hints.push_back(hint_t{
+              .pos = hint,
+              .index = static_cast<uint32_t>(i),
+            });
+        }
+        total_size++;
+    }
+    BOOST_REQUIRE_EQUAL(total_size, column.size());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(samples.begin(), samples.end(), g);
+
+    size_t num_skips = 0;
+    for (auto [expected, index] : samples) {
+        auto h_it = std::lower_bound(
+          hints.rbegin(),
+          hints.rend(),
+          hint_t{.index = static_cast<uint32_t>(index)},
+          [](const hint_t& lhs, const hint_t& rhs) {
+              return lhs.index > rhs.index;
+          });
+        if (h_it == hints.rend()) {
+            // We won't be able to find the hint for the first row
+            num_skips++;
+            continue;
+        }
+        auto it = h_it->pos.has_value() ? column.at(index, h_it->pos.value())
+                                        : column.at(index);
+        BOOST_REQUIRE(it != column.end());
+        auto actual = *it;
+        BOOST_REQUIRE_EQUAL(actual, expected);
+        BOOST_REQUIRE_EQUAL(it.index(), index);
+    }
+    BOOST_REQUIRE_LE(num_skips, 16);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_with_hint_xor) {
+    delta_xor_frame frame(initial_xor);
+    at_with_hint_test_case(0x1000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_with_hint_delta) {
+    delta_delta_frame frame(initial_delta);
+    at_with_hint_test_case(0x1000, frame);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_with_hint_xor) {
+    delta_xor_column column(initial_xor);
+    at_with_hint_test_case(0x1000, column);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_with_hint_delta) {
+    delta_delta_column column(initial_delta);
+    at_with_hint_test_case(0x1000, column);
+}
+
+std::vector<segment_meta> generate_metadata(size_t sz) {
+    // #include "cloud_storage/tests/7_333.json.h"
+
+    namespace rg = random_generators;
+    std::vector<segment_meta> manifest;
+    segment_meta curr{
+      .is_compacted = false,
+      .size_bytes = 812,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(0),
+      .base_timestamp = model::timestamp(1646430092103),
+      .max_timestamp = model::timestamp(1646430092103),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(0),
+      .delta_offset_end = model::offset_delta(0),
+      .sname_format = segment_name_format::v2,
+    };
+    bool short_segment_run = false;
+    for (size_t i = 0; i < sz; i++) {
+        auto s = curr;
+        manifest.push_back(s);
+        if (short_segment_run) {
+            curr.base_offset = model::next_offset(curr.committed_offset);
+            curr.committed_offset = curr.committed_offset
+                                    + model::offset(rg::get_int(1, 10));
+            curr.size_bytes = rg::get_int(1, 200);
+            curr.base_timestamp = curr.max_timestamp;
+            curr.max_timestamp = model::timestamp(
+              curr.max_timestamp.value() + rg::get_int(0, 1000));
+            curr.delta_offset = curr.delta_offset_end;
+            curr.delta_offset_end = curr.delta_offset_end
+                                    + model::offset_delta(rg::get_int(5));
+            if (rg::get_int(50) == 0) {
+                curr.segment_term = curr.segment_term
+                                    + model::term_id(rg::get_int(1, 20));
+                curr.archiver_term = curr.archiver_term
+                                     + model::term_id(rg::get_int(1, 20));
+            }
+        } else {
+            curr.base_offset = model::next_offset(curr.committed_offset);
+            curr.committed_offset = curr.committed_offset
+                                    + model::offset(rg::get_int(1, 1000));
+            curr.size_bytes = rg::get_int(1, 200000);
+            curr.base_timestamp = curr.max_timestamp;
+            curr.max_timestamp = model::timestamp(
+              curr.max_timestamp.value() + rg::get_int(0, 100000));
+            curr.delta_offset = curr.delta_offset_end;
+            curr.delta_offset_end = curr.delta_offset_end
+                                    + model::offset_delta(rg::get_int(15));
+            if (rg::get_int(50) == 0) {
+                curr.segment_term = curr.segment_term
+                                    + model::term_id(rg::get_int(1, 20));
+                curr.archiver_term = curr.archiver_term
+                                     + model::term_id(rg::get_int(1, 20));
+            }
+        }
+        if (rg::get_int(200) == 0) {
+            short_segment_run = !short_segment_run;
+        }
+    }
+    return manifest;
+}
+
+static ss::logger test("test-logger-s");
+
+void test_compression_ratio() {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(1000000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    auto [inflated_size, actual_size] = store.inflated_actual_size();
+    vlog(
+      test.info,
+      "compression ratio after inserting {} elements",
+      manifest.size());
+    vlog(
+      test.info,
+      "ratio: {}",
+      (static_cast<double>(actual_size) / inflated_size));
+    vlog(test.info, "inflated: {}", human::bytes(inflated_size));
+    vlog(test.info, "actual: {}", human::bytes(actual_size));
+    BOOST_REQUIRE(inflated_size / 4 > actual_size);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_compression_ratio) {
+    test_compression_ratio();
+}
+
+void test_cstore_iter() {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(100000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    auto it = store.begin();
+    for (size_t i = 0; i < store.size(); i++) {
+        BOOST_REQUIRE(*it == manifest[i]);
+        ++it;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_iter) { test_cstore_iter(); }
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_find) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(10000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    for (size_t i = 0; i < store.size(); i++) {
+        auto it = store.find(manifest[i].base_offset);
+        BOOST_REQUIRE(it != store.end());
+        BOOST_REQUIRE(*it == manifest[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_lower_bound) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(10000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    for (size_t i = 0; i < store.size(); i++) {
+        auto it = store.lower_bound(manifest[i].base_offset);
+        BOOST_REQUIRE(it != store.end());
+        BOOST_REQUIRE(*it == manifest[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_upper_bound) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(10000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    for (size_t i = 0; i < store.size(); i++) {
+        auto it = store.upper_bound(manifest[i].base_offset - model::offset(1));
+        BOOST_REQUIRE(it != store.end());
+        BOOST_REQUIRE(*it == manifest[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(10000);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    for (size_t i = 0; i < store.size(); i++) {
+        BOOST_REQUIRE(store.contains(manifest[i].base_offset));
+    }
+}
