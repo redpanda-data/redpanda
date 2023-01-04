@@ -2911,7 +2911,7 @@ ss::future<> rm_stm::clear_old_tx_pids() {
     }
 
     vlog(
-      _ctx_log.trace,
+      _ctx_log.debug,
       "Found {} old transaction pids for delete",
       pids_for_delete.size());
 
@@ -2934,7 +2934,7 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
     }
 
     vlog(
-      _ctx_log.trace,
+      _ctx_log.debug,
       "Found {} old idempotent pids for delete",
       _log_state.lru_idempotent_pids.size() - _max_concurrent_producer_ids());
 
@@ -3050,9 +3050,10 @@ ss::future<> rm_stm::maybe_log_tx_stats() {
       "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
     _ctx_log.debug(
       "tx memory snapshot stats: {{mem_state: {}, log_state: "
-      "{} }}",
+      "{} inflight_requests: {} }}",
       _mem_state,
-      _log_state);
+      _log_state,
+      _inflight_requests.size());
 }
 
 void rm_stm::log_tx_stats() {
