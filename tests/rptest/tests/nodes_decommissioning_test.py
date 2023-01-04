@@ -624,6 +624,10 @@ class NodesDecommissioningTest(EndToEndTest):
 
                 wait_until(has_partitions, 180, 2)
 
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
+
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(new_bootstrap=True)
     @parametrize(new_bootstrap=False)
