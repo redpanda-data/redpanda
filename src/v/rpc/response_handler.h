@@ -35,13 +35,12 @@ public:
     requires requires(Func f) {
         { f() } -> std::same_as<void>;
     }
-    void
-    with_timeout(rpc::clock_type::time_point timeout, Func&& timeout_action) {
+    void with_timeout(rpc::timeout_spec timeout, Func&& timeout_action) {
         _timeout_timer = std::make_unique<rpc::timer_type>(
           [this, f = std::forward<Func>(timeout_action)]() mutable {
               complete_with_timeout(std::forward<Func>(f));
           });
-        _timeout_timer->arm(timeout);
+        _timeout_timer->arm(timeout.timeout_at());
     }
 
     ss::future<response_ptr> get_future() { return _promise.get_future(); }
