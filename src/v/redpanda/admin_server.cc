@@ -3303,6 +3303,13 @@ void admin_server::register_debug_routes() {
 
           return ss::make_ready_future<ss::json::json_return_type>(ret);
       });
+
+    register_route<user>(
+      seastar::httpd::debug_json::is_node_isolated,
+      [this](std::unique_ptr<ss::httpd::request>) {
+          return ss::make_ready_future<ss::json::json_return_type>(
+            _metadata_cache.local().is_node_isolated());
+      });
 }
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(
