@@ -18,6 +18,7 @@
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
+#include "utils/bottomless_token_bucket.h"
 
 #include <cstdint>
 #include <optional>
@@ -1563,7 +1564,33 @@ configuration::configuration()
       "Maximum capacity of rate limit accumulation"
       "in controller configuration operations limit",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::nullopt) {}
+      std::nullopt)
+  , kafka_throughput_limit_node_in_bps(
+      *this,
+      "kafka_throughput_limit_node_in_bps",
+      "Node wide throughput ingress limit - maximum kafka traffic throughput "
+      "allowed on the ingress side of each node, in bytes/s. Default is no "
+      "limit.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1})
+  , kafka_throughput_limit_node_out_bps(
+      *this,
+      "kafka_throughput_limit_node_out_bps",
+      "Node wide throughput egress limit - maximum kafka traffic throughput "
+      "allowed on the egress side of each node, in bytes/s. Default is no "
+      "limit.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = ss::smp::count})
+  , kafka_quota_balancer_window(
+      *this,
+      "kafka_quota_balancer_window_ms",
+      "Time window used to average current throughput measurement for quota "
+      "balancer, in milliseconds",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      5000ms,
+      {.min = 1ms, .max = bottomless_token_bucket::max_width}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
