@@ -13,12 +13,14 @@
 #include "cloud_storage/types.h"
 #include "utils/delta_for.h"
 
+#include <absl/container/btree_map.h>
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <tuple>
 #include <variant>
 
 namespace cloud_storage {
@@ -40,9 +42,11 @@ public:
     explicit segment_meta_frame_const_iterator(
       decoder_t decoder,
       const std::array<value_t, buffer_depth>& head,
-      uint32_t size)
+      uint32_t size,
+      uint32_t pos = 0)
       : _head(head)
       , _decoder(std::move(decoder))
+      , _pos(pos)
       , _size(size) {
         if (!_decoder->read(_read_buf)) {
             _read_buf = _head;
@@ -106,6 +110,8 @@ public:
 
     using delta_alg = delta_t;
 
+    using hint_t = deltafor_stream_pos_t<value_t>;
+
     explicit segment_meta_column_frame(delta_alg d)
       : _delta_alg(std::move(d)) {}
 
@@ -116,6 +122,7 @@ public:
             if (!_tail.has_value()) {
                 _tail.emplace(_head.at(0), _delta_alg);
             }
+            _last_row = _tail->get_position();
             _tail->add(_head);
         }
     }
@@ -153,11 +160,16 @@ public:
             if (!_tail.has_value()) {
                 _tail.emplace(_head.at(0), _delta_alg);
             }
+            _last_row = _tail->get_position();
             tx.emplace(_tail->tx_start(), *this);
             tx->add(_head);
         }
         return tx;
     }
+
+    /// Get stream position object which can be used as a "hint" to speed up
+    /// index lookup operations.
+    std::optional<hint_t> get_current_stream_pos() const { return _last_row; }
 
     const_iterator at(size_t index) const {
         if (index >= _size) {
@@ -165,6 +177,26 @@ public:
         }
         auto it = begin();
         std::advance(it, index);
+        return it;
+    }
+
+    /// Get element by index, use 'hint' to speedup the operation.
+    ///
+    /// The 'hint' has to correspond to any index lower or equal to
+    /// 'index'. The 'hint' values has to be stored externally.
+    const_iterator at(size_t index, const hint_t& hint) const {
+        if (index >= _size) {
+            return end();
+        }
+        decoder_t decoder(
+          _tail->get_initial_value(),
+          _tail->get_row_count(),
+          _tail->share(),
+          _delta_alg);
+        decoder.skip(hint);
+        auto curr_ix = hint.num_rows * details::FOR_buffer_depth;
+        auto it = const_iterator(std::move(decoder), _head, _size, curr_ix);
+        std::advance(it, index - curr_ix);
         return it;
     }
 
@@ -244,6 +276,7 @@ private:
     mutable std::optional<encoder_t> _tail{std::nullopt};
     const delta_t _delta_alg;
     size_t _size{0};
+    std::optional<hint_t> _last_row;
 };
 
 /// Column iterator
@@ -265,6 +298,7 @@ class segment_meta_column_const_iterator
 public:
     using frame_t = segment_meta_column_frame<value_t, delta_t>;
     using frame_iter_t = typename frame_t::const_iterator;
+    using hint_t = typename frame_t::hint_t;
 
 private:
     using outer_iter_t = typename std::list<frame_iter_t>::iterator;
@@ -285,6 +319,20 @@ private:
     static iter_list_t make_snapshot_at(iter_t begin, iter_t end, size_t ix) {
         iter_list_t snap;
         auto intr = begin->at(ix);
+        snap.push_back(std::move(intr));
+        std::advance(begin, 1);
+        for (auto it = begin; it != end; ++it) {
+            auto i = it->begin();
+            snap.push_back(std::move(i));
+        }
+        return snap;
+    }
+
+    template<class iter_t>
+    static iter_list_t
+    make_snapshot_at(iter_t begin, iter_t end, size_t ix, const hint_t& row) {
+        iter_list_t snap;
+        auto intr = begin->at(ix, row);
         snap.push_back(std::move(intr));
         std::advance(begin, 1);
         for (auto it = begin; it != end; ++it) {
@@ -344,6 +392,19 @@ public:
           _snapshot.empty() ? frame_iter_t{} : std::move(_snapshot.front()))
       , _ix_column(column_ix) {}
 
+    template<class iterator_t>
+    explicit segment_meta_column_const_iterator(
+      iterator_t begin,
+      iterator_t end,
+      uint32_t intra_frame_ix,
+      const hint_t& row,
+      uint32_t column_ix)
+      : _snapshot(make_snapshot_at(begin, end, intra_frame_ix, row))
+      , _outer_it(_snapshot.begin())
+      , _inner_it(
+          _snapshot.empty() ? frame_iter_t{} : std::move(_snapshot.front()))
+      , _ix_column(column_ix) {}
+
     /// Create iterator that points to the end of any column
     segment_meta_column_const_iterator()
       : _outer_it(_snapshot.end()) {}
@@ -379,7 +440,11 @@ class segment_meta_column_impl {
     using decoder_t = deltafor_decoder<value_t, delta_alg>;
 
 public:
-    static constexpr size_t max_frame_size = 0x1000;
+    /// Position in the column, can be used by
+    /// index lookup operations
+    using hint_t = typename frame_t::hint_t;
+
+    static constexpr size_t max_frame_size = 0x400;
     using const_iterator
       = segment_meta_column_const_iterator<value_t, delta_alg>;
 
@@ -391,6 +456,15 @@ public:
             _frames.emplace_back(_delta_alg);
         }
         _frames.back().append(value);
+    }
+
+    /// Get stream position object which can be used as a "hint" to speed up
+    /// index lookup operations.
+    std::optional<hint_t> get_current_stream_pos() const {
+        if (_frames.empty()) {
+            return std::nullopt;
+        }
+        return _frames.back().get_current_stream_pos();
     }
 
     struct column_tx_t {
@@ -461,6 +535,19 @@ public:
         std::advance(it, ix_outer);
         auto ix_total = ix_outer * max_frame_size + ix_inner;
         return const_iterator(it, _frames.end(), ix_inner, ix_total);
+    }
+
+    /// Get element by index, use 'hint' to speedup the operation.
+    ///
+    /// The 'hint' has to correspond to any index lower or equal to
+    /// 'index'. The 'hint' values has to be stored externally.
+    const_iterator at(size_t index, const hint_t& hint) const {
+        auto ix_outer = index / max_frame_size;
+        auto ix_inner = index % max_frame_size;
+        auto it = _frames.begin();
+        std::advance(it, ix_outer);
+        auto ix_total = ix_outer * max_frame_size + ix_inner;
+        return const_iterator(it, _frames.end(), ix_inner, hint, ix_total);
     }
 
     size_t size() const {
@@ -536,11 +623,11 @@ protected:
 
 /// Segment metadata column.
 ///
-/// Contains a list of frames. The frames are not overlapping with each other.
-/// The iterator is used to scan both all frames seamlessly.
-/// This specialization is for xor-delta algorithm. It doesn't allow skipping
-/// frames so all search operations require full scan. Random access by index
-/// can skip frames since indexes are monotonic.
+/// Contains a list of frames. The frames are not overlapping with each
+/// other. The iterator is used to scan both all frames seamlessly. This
+/// specialization is for xor-delta algorithm. It doesn't allow skipping
+/// frames so all search operations require full scan. Random access by
+/// index can skip frames since indexes are monotonic.
 template<class value_t>
 class segment_meta_column<value_t, details::delta_xor>
   : public segment_meta_column_impl<
@@ -602,9 +689,9 @@ public:
         auto it = this->_frames.begin();
         size_t index = 0;
         for (; it != this->_frames.end(); ++it) {
-            // The code is only used with equal/greater/greater_equal predicates
-            // to implement find/lower_bound/upper_bound. Because of that we can
-            // hardcode the '>=' operation here.
+            // The code is only used with equal/greater/greater_equal
+            // predicates to implement find/lower_bound/upper_bound. Because
+            // of that we can hardcode the '>=' operation here.
             if (it->last_value().has_value() && *it->last_value() >= value) {
                 break;
             }

@@ -9,11 +9,16 @@
  */
 
 #include "cloud_storage/segment_meta_cstore.h"
+#include "model/fundamental.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "utils/delta_for.h"
 
 #include <seastar/testing/perf_tests.hh>
+
+#include <absl/container/btree_map.h>
+
+#include <vector>
 
 using namespace cloud_storage;
 
