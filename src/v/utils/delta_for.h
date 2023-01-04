@@ -114,6 +114,17 @@ struct delta_delta {
 
 } // namespace details
 
+/// Position in the delta_for encoded data stream
+template<class T>
+struct deltafor_stream_pos_t {
+    /// Initial value for the next row
+    T initial;
+    /// Offset of the next row
+    uint32_t offset;
+    /// Number of rows before the next row
+    uint32_t num_rows;
+};
+
 /** \brief Delta-FOR encoder
  *
  * The algorithm uses differential encoding followed by the
@@ -229,6 +240,15 @@ public:
         _data.append(&nbits, 1);
         pack(buf, nbits);
         _cnt++;
+    }
+
+    /// Return ppsition inside the stream
+    deltafor_stream_pos_t<TVal> get_position() const {
+        return {
+          .initial = _last,
+          .offset = uint32_t(_data.size_bytes()),
+          .num_rows = _cnt,
+        };
     }
 
     // State of the transaction
@@ -735,6 +755,13 @@ public:
         _initial = _delta.decode(_initial, row);
         _pos++;
         return true;
+    }
+
+    /// Skip rows
+    void skip(const deltafor_stream_pos_t<TVal>& st) {
+        _data.skip(st.offset);
+        _initial = st.initial;
+        _pos = st.num_rows;
     }
 
 private:
