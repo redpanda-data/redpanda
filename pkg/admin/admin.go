@@ -92,6 +92,7 @@ type AdminAPIClient interface {
 	GetLicenseInfo(ctx context.Context) (admin.License, error)
 
 	Brokers(ctx context.Context) ([]admin.Broker, error)
+	Broker(ctx context.Context, nodeID int) (admin.Broker, error)
 	DecommissionBroker(ctx context.Context, node int) error
 	RecommissionBroker(ctx context.Context, node int) error
 

@@ -157,29 +157,11 @@ func (r *StatefulSetResource) rollingUpdate(
 		volumes[vol.Name] = new(interface{})
 	}
 
-	opts := []patch.CalculateOption{
-		patch.IgnoreStatusFields(),
-		ignoreKubernetesTokenVolumeMounts(),
-		ignoreDefaultToleration(),
-		ignoreExistingVolumes(volumes),
-	}
-
 	for i := range podList.Items {
 		pod := podList.Items[i]
 
-		patchResult, err := patch.DefaultPatchMaker.Calculate(&pod, &artificialPod, opts...)
-		if err != nil {
+		if err = r.podEviction(ctx, &pod, &artificialPod, volumes); err != nil {
 			return err
-		}
-
-		if !patchResult.IsEmpty() {
-			r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
-				"pod-name", pod.Name,
-				"patch", patchResult.Patch)
-			if err = r.Delete(ctx, &pod); err != nil {
-				return fmt.Errorf("unable to remove Redpanda pod: %w", err)
-			}
-			return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
 		}
 
 		if !utils.IsPodReady(&pod) {
@@ -202,6 +184,89 @@ func (r *StatefulSetResource) rollingUpdate(
 		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
 			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPod *corev1.Pod, newVolumes map[string]interface{}) error {
+	opts := []patch.CalculateOption{
+		patch.IgnoreStatusFields(),
+		ignoreKubernetesTokenVolumeMounts(),
+		ignoreDefaultToleration(),
+		ignoreExistingVolumes(newVolumes),
+	}
+
+	patchResult, err := patch.DefaultPatchMaker.Calculate(pod, artificialPod, opts...)
+	if err != nil {
+		return err
+	}
+
+	if patchResult.IsEmpty() {
+		return nil
+	}
+
+	var ordinal int64
+	ordinal, err = utils.GetPodOrdinal(pod.Name, r.pandaCluster.Name)
+	if err != nil {
+		return fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", r.pandaCluster.Name, pod.Name, err)
+	}
+
+	if *r.pandaCluster.Spec.Replicas > 1 {
+		if err = r.putInMaintenanceMode(ctx, int32(ordinal)); err != nil {
+			// As maintenance mode can not be easily watched using controller runtime the requeue error
+			// is always returned. That way a rolling update will not finish when operator waits for
+			// maintenance mode finished.
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("putting node (%s) into maintenance mode: %v", pod.Name, err),
+			}
+		}
+	}
+
+	r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
+		"pod-name", pod.Name,
+		"patch", patchResult.Patch)
+
+	if err = r.Delete(ctx, pod); err != nil {
+		return fmt.Errorf("unable to remove Redpanda pod: %w", err)
+	}
+
+	return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
+}
+
+var (
+	ErrMaintenanceNotFinished = errors.New("maintenance mode is not finished")
+	ErrMaintenanceMissing     = errors.New("maintenance definition not returned")
+)
+
+func (r *StatefulSetResource) putInMaintenanceMode(ctx context.Context, ordinal int32) error {
+	adminAPIClient, err := r.getAdminAPIClient(ctx, ordinal)
+	if err != nil {
+		return fmt.Errorf("creating admin API client: %w", err)
+	}
+
+	nodeConf, err := adminAPIClient.GetNodeConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("getting node config: %w", err)
+	}
+
+	err = adminAPIClient.EnableMaintenanceMode(ctx, nodeConf.NodeID)
+	if err != nil {
+		return fmt.Errorf("enabling maintenance mode: %w", err)
+	}
+
+	br, err := adminAPIClient.Broker(ctx, nodeConf.NodeID)
+	if err != nil {
+		return fmt.Errorf("getting broker infromations: %w", err)
+	}
+
+	if br.Maintenance == nil {
+		return ErrMaintenanceMissing
+	}
+
+	if !br.Maintenance.Finished {
+		return fmt.Errorf("draining (%t), errors (%t), failed (%d), finished (%t): %w", br.Maintenance.Draining, br.Maintenance.Errors, br.Maintenance.Failed, br.Maintenance.Finished, ErrMaintenanceNotFinished)
 	}
 
 	return nil
