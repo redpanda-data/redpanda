@@ -860,8 +860,23 @@ class PartitionBalancerTest(PartitionBalancerService):
             # back to normal recovery speed
             self.logger.info("bringing back recovery speed")
             # use raw admin interface to avoid waiting for the killed node
-            admin.patch_cluster_config(
-                {"raft_learner_recovery_rate": 100_000_000})
+            new_version = admin.patch_cluster_config(
+                {"raft_learner_recovery_rate": 100_000_000})['config_version']
+
+            alive_nodes = [
+                n for n in self.redpanda.nodes
+                if self.redpanda.idx(n) is not to_kill_id
+            ]
+
+            def config_applied():
+                status = admin.get_cluster_config_status(node=survivor_node)
+                self.logger.debug(
+                    f"cluster status: {status}, checking for live nodes: {alive_nodes}"
+                )
+                return all(k["config_version"] >= new_version for k in status
+                           if k["node_id"] in alive_nodes)
+
+            wait_until(config_applied, timeout_sec=60, backoff_sec=2)
 
         # Check that the node has been successfully decommissioned.
         # We have to bring back failed node because otherwise decommission won't finish.
