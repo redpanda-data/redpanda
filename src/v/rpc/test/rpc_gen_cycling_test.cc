@@ -456,7 +456,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                   .echo(
                     echo::echo_req{.str = data},
                     rpc::client_opts(
-                      rpc::no_timeout,
+                      rpc::timeout_spec::none,
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
                   .get0();
