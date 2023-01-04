@@ -130,6 +130,16 @@ public:
      */
     ss::future<std::error_code>
       replace_configuration(std::vector<broker_revision>, model::revision_id);
+
+    /**
+     * New simplified configuration change API, accepting only vnode instead of
+     * full broker object
+     */
+    ss::future<std::error_code> add_group_member(vnode, model::revision_id);
+    ss::future<std::error_code> remove_member(vnode, model::revision_id);
+    ss::future<std::error_code>
+      replace_configuration(std::vector<vnode>, model::revision_id);
+
     // Abort ongoing configuration change - may cause data loss
     ss::future<std::error_code> abort_configuration_change(model::revision_id);
     // Revert current configuration change - this is safe and will never cause

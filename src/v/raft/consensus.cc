@@ -1030,6 +1030,52 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
+ss::future<std::error_code>
+consensus::add_group_member(vnode node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Adding member: {}", node);
+    return change_configuration(
+      [node, new_revision](group_configuration current) mutable {
+          using ret_t = result<group_configuration>;
+          if (current.contains(node)) {
+              return ret_t{errc::node_already_exists};
+          }
+          current.set_version(raft::group_configuration::v_5);
+          current.add(node, new_revision);
+
+          return ret_t{std::move(current)};
+      });
+}
+
+ss::future<std::error_code>
+consensus::remove_member(vnode node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Removing member: {}", node);
+    return change_configuration(
+      [node, new_revision](group_configuration current) {
+          using ret_t = result<group_configuration>;
+          if (!current.contains(node)) {
+              return ret_t{errc::node_does_not_exists};
+          }
+          current.set_version(raft::group_configuration::v_5);
+          current.remove(node, new_revision);
+
+          if (current.current_config().voters.empty()) {
+              return ret_t{errc::invalid_configuration_update};
+          }
+          return ret_t{std::move(current)};
+      });
+}
+
+ss::future<std::error_code> consensus::replace_configuration(
+  std::vector<vnode> nodes, model::revision_id new_revision) {
+    return change_configuration([nodes = std::move(nodes), new_revision](
+                                  group_configuration current) mutable {
+        current.set_version(raft::group_configuration::v_5);
+        current.replace(nodes, new_revision);
+
+        return result<group_configuration>{std::move(current)};
+    });
+}
+
 template<typename Func>
 ss::future<std::error_code>
 consensus::interrupt_configuration_change(model::revision_id revision, Func f) {
@@ -1331,13 +1377,14 @@ ss::future<> consensus::do_start() {
                 // set last heartbeat timestamp to prevent skipping first
                 // election
                 _hbeat = clock_type::time_point::min();
-                auto conf = _configuration_manager.get_latest().brokers();
-                if (!conf.empty() && _self.id() == conf.begin()->id()) {
+                auto conf
+                  = _configuration_manager.get_latest().current_config();
+                if (!conf.voters.empty() && _self == conf.voters.front()) {
                     // Arm immediate election for single node scenarios
                     // or for the very first start of the preferred leader
                     // in a multi-node group.  Otherwise use standard election
                     // timeout.
-                    if (conf.size() > 1 && _term > model::term_id{0}) {
+                    if (conf.voters.size() > 1 && _term > model::term_id{0}) {
                         next_election += _jit.next_duration();
                     }
                 } else {
