@@ -428,8 +428,8 @@ private:
 ///
 /// There are two specializations of this template. One for delta_xor
 /// algorithm and another one for delta_delta. The latter one is guaranteed
-/// to be used with monotonic sequences which makes some serach optimizations
-/// possible.
+/// to be used with monotonic sequences which makes some serach
+/// optimizations possible.
 template<class value_t, class delta_t>
 class segment_meta_column;
 
@@ -709,26 +709,85 @@ public:
     }
 };
 
+/// Column-store iterator
+///
+/// The iterator materializes segment_meta structs when
+/// it's dereferenced. The implementation can be configured
+/// to touch only specific fields of the struct.
+class segment_meta_materializing_iterator
+  : public boost::iterator_facade<
+      segment_meta_materializing_iterator,
+      const segment_meta,
+      boost::iterators::forward_traversal_tag> {
+public:
+    class impl;
+
+    segment_meta_materializing_iterator() = default;
+    segment_meta_materializing_iterator(
+      const segment_meta_materializing_iterator&)
+      = delete;
+    segment_meta_materializing_iterator&
+    operator=(const segment_meta_materializing_iterator&)
+      = delete;
+    segment_meta_materializing_iterator(segment_meta_materializing_iterator&&)
+      = default;
+    segment_meta_materializing_iterator&
+    operator=(segment_meta_materializing_iterator&&)
+      = default;
+    explicit segment_meta_materializing_iterator(std::unique_ptr<impl>);
+
+    ~segment_meta_materializing_iterator();
+
+private:
+    friend class boost::iterator_core_access;
+    const segment_meta& dereference() const;
+
+    void increment();
+
+    bool equal(const segment_meta_materializing_iterator& other) const;
+
+    std::unique_ptr<impl> _impl;
+};
+
+/// Columnar storage for segment metadata.
+/// The object stores segment_meta values using
+/// a dedicated column for every field in the segment_meta
+/// struct
 class segment_meta_cstore {
     class impl;
 
 public:
-    using const_iterator = int;
-    using const_reverse_iterator = int;
+    using const_iterator = segment_meta_materializing_iterator;
 
-    const_iterator begin();
-    const_iterator end();
+    segment_meta_cstore();
+    ~segment_meta_cstore();
 
-    std::optional<segment_meta> last_segment();
+    /// Return iterator
+    const_iterator begin() const;
+    const_iterator end() const;
 
+    /// Return last segment's metadata (or nullopt if empty)
+    std::optional<segment_meta> last_segment() const;
+
+    /// Find element and return its iterator
     const_iterator find(model::offset) const;
+
+    /// Check if the offset is present
     bool contains(model::offset) const;
+
+    /// Return true if data structure is empty
     bool empty() const;
+
+    /// Return size of the collection
+    size_t size() const;
+
+    /// Upper/lower bound search operations
     const_iterator upper_bound(model::offset) const;
     const_iterator lower_bound(model::offset) const;
 
-    std::pair<const_iterator, bool>
-      insert(std::pair<model::offset, segment_meta>);
+    void insert(const segment_meta&);
+
+    std::pair<size_t, size_t> inflated_actual_size() const;
 
 private:
     std::unique_ptr<impl> _impl;
