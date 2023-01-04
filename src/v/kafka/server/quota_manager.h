@@ -15,6 +15,7 @@
 #include "kafka/server/token_bucket_rate_tracker.h"
 #include "resource_mgmt/rate.h"
 #include "seastarx.h"
+#include "utils/bottomless_token_bucket.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -105,6 +106,28 @@ public:
       uint32_t mutations,
       clock::time_point now = clock::now());
 
+    /// @p enforce delay to enforce in this call
+    /// @p request delay to request from the client via throttle_ms
+    struct shard_delays_t {
+        clock::duration enforce{0};
+        clock::duration request{0};
+    };
+
+    /// Determine throttling required by shard level TP quotas.
+    /// @param connection_throttle_until (in,out) until what time the client
+    /// on this conection should throttle until. If it does not, this throttling
+    /// will be enforced on the next call. In: value from the last call, out:
+    /// value saved until the next call.
+    shard_delays_t get_shard_delays(
+      clock::time_point& connection_throttle_until,
+      clock::time_point now) const;
+
+    void record_request_tp(
+      size_t request_size, clock::time_point now = clock::now()) noexcept;
+
+    void record_response_tp(
+      size_t request_size, clock::time_point now = clock::now()) noexcept;
+
 private:
     std::chrono::milliseconds do_record_partition_mutations(
       std::optional<std::string_view> client_id,
@@ -144,6 +167,10 @@ private:
     std::optional<int64_t> get_client_target_fetch_tp_rate(
       const std::optional<std::string_view>& quota_id);
 
+    using shard_quota_t = bottomless_token_bucket::quota_t;
+    shard_quota_t get_shard_ingress_quota_default() const;
+    shard_quota_t get_shard_egress_quota_default() const;
+
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
@@ -156,7 +183,15 @@ private:
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
       _target_fetch_tp_rate_per_client_group;
 
+    config::binding<std::optional<uint64_t>>
+      _kafka_throughput_limit_node_in_bps;
+    config::binding<std::optional<uint64_t>>
+      _kafka_throughput_limit_node_out_bps;
+    config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
+
     client_quotas_t _client_quotas;
+    bottomless_token_bucket _shard_ingress_quota;
+    bottomless_token_bucket _shard_egress_quota;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
