@@ -54,6 +54,8 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		logsUntil     string
 		logsSizeLimit string
 
+		controllerLogsSizeLimit string
+
 		timeout time.Duration
 	)
 	command := &cobra.Command{
@@ -84,14 +86,16 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
+			controllerLogsLimit, err := units.FromHumanSize(controllerLogsSizeLimit)
+			out.MaybeDie(err, "unable to parse --controller-logs-size-limit: %v", err)
 			// to execute the appropriate bundle we look for
 			// kubernetes_service_* env variables as an indicator that we are
 			// in a k8s environment
 			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 			if len(host) == 0 || len(port) == 0 {
-				err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
+				err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), int(controllerLogsLimit), timeout, path)
 			} else {
-				err = executeK8SBundle(cmd.Context(), fs, cfg, cl, admin, timeout, path)
+				err = executeK8SBundle(cmd.Context(), fs, cfg, cl, admin, timeout, int(controllerLogsLimit), path)
 			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
@@ -136,6 +140,12 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		"100MiB",
 		"Read the logs until the given size is reached. Multipliers are also supported, e.g. 3MB, 1GiB",
 	)
+	command.Flags().StringVar(
+		&controllerLogsSizeLimit,
+		"controller-logs-size-limit",
+		"20MB",
+		"Sets the limit of the controller log size that can be stored in the bundle. Multipliers are also supported, e.g. 3MB, 1GiB",
+	)
 
 	common.AddKafkaFlags(
 		command,
@@ -167,6 +177,9 @@ The following are the data sources that are bundled in the compressed file:
 
  - Kafka metadata: Broker configs, topic configs, start/committed/end offsets,
    groups, group commits.
+
+ - Controller logs: The controller logs directory up to a limit set by
+   --controller-logs-size-limit flag
 
  - Data directory structure: A file describing the data directory's contents.
 

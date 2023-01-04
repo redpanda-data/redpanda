@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"github.com/beevik/ntp"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
+	cp "github.com/otiai10/copy"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	osutil "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
@@ -101,7 +103,7 @@ func executeBundle(
 	cl *kgo.Client,
 	admin *admin.AdminAPI,
 	logsSince, logsUntil string,
-	logsLimitBytes int,
+	logsLimitBytes, controllerLogLimitBytes int,
 	timeout time.Duration,
 	path string,
 ) error {
@@ -147,6 +149,7 @@ func executeBundle(
 		saveIP(ctx, ps),
 		saveLspci(ctx, ps),
 		saveDmidecode(ctx, ps),
+		saveControllerLogDir(fs, ps, conf, controllerLogLimitBytes),
 	}
 
 	for _, s := range steps {
@@ -225,6 +228,28 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 		return fmt.Errorf("couldn't save '%s': %w", filename, err)
 	}
 	return nil
+}
+
+// writeDirToZip walks the 'srcDir' and writes the content in 'destDir'
+// directory in the zip writer.
+func writeDirToZip(ps *stepParams, srcDir, destDir string) error {
+	return filepath.WalkDir(srcDir, func(_ string, f fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !f.IsDir() {
+			filename := f.Name()
+			file, err := os.ReadFile(filepath.Join(srcDir, filename))
+			if err != nil {
+				return err
+			}
+			err = writeFileToZip(ps, filepath.Join(destDir, filename), file)
+			if err != nil {
+				return err
+			}
+		}
+		return err
+	})
 }
 
 // Runs a command and pipes its output to a new file in the zip writer.
@@ -711,6 +736,45 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 			"dmidecode.txt",
 			"dmidecode",
 		)
+	}
+}
+
+func saveControllerLogDir(cmdFs afero.Fs, ps *stepParams, cfg *config.Config, logLimitBytes int) step {
+	return func() error {
+		controllerDir := filepath.Join(cfg.Redpanda.Directory, "redpanda", "controller", "0_0")
+
+		// We don't need the .base_index files to parse out the messages.
+		exclude := regexp.MustCompile(`^*.base_index`)
+		size, err := osutil.DirSize(controllerDir, exclude)
+		if err != nil {
+			return err
+		}
+
+		if int(size) > logLimitBytes {
+			// TODO: This will be changed to a custom truncation of the logs.
+			return fmt.Errorf("controller logs not stored, size is too big (%v). You can adjust the limit by changing --controller-logs-size-limit flag", units.HumanSize(float64(size)))
+		}
+
+		// Create a temporary directory to store the filtered files and add them
+		// to the zip writer.
+		tmpDir, err := afero.TempDir(cmdFs, "", "controller-")
+		if err != nil {
+			return err
+		}
+		defer cmdFs.RemoveAll(tmpDir)
+
+		copyOpts := cp.Options{
+			Skip: func(_ os.FileInfo, src, _ string) (bool, error) {
+				return exclude.MatchString(src), nil
+			},
+			PreserveTimes: true,
+		}
+		err = cp.Copy(controllerDir, tmpDir, copyOpts)
+		if err != nil {
+			return err
+		}
+
+		return writeDirToZip(ps, tmpDir, "controller")
 	}
 }
 

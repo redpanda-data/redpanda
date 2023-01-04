@@ -32,6 +32,7 @@ func executeK8SBundle(
 	cl *kgo.Client,
 	admin *admin.AdminAPI,
 	timeout time.Duration,
+	controllerLogLimitBytes int,
 	path string,
 ) error {
 	fmt.Println("Creating bundle file...")
@@ -67,6 +68,7 @@ func executeK8SBundle(
 		saveNTPDrift(ps),
 		savePrometheusMetrics(ctx, ps, admin),
 		saveDiskUsage(ctx, ps, conf),
+		saveControllerLogDir(fs, ps, conf, controllerLogLimitBytes),
 	}
 	for _, s := range steps {
 		grp.Go(s)
