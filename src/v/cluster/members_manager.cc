@@ -123,19 +123,20 @@ bool members_manager::is_already_member() const {
 }
 
 ss::future<> members_manager::maybe_update_current_node_configuration() {
-    auto active_configuration = _raft0->config().find_broker(_self.id());
+    auto current_properties = _members_table.local().get_node_metadata_ref(
+      _self.id());
     vassert(
-      active_configuration.has_value(),
+      current_properties.has_value(),
       "Current broker is expected to be present in members configuration");
 
     // configuration is up to date, do nothing
-    if (active_configuration.value() == _self) {
+    if (current_properties->get().broker == _self) {
         return ss::now();
     }
     vlog(
       clusterlog.debug,
       "Redpanda broker configuration changed from {} to {}",
-      active_configuration.value(),
+      current_properties.value().get().broker,
       _self);
     return dispatch_configuration_update(_self)
       .then([] {
@@ -727,7 +728,7 @@ auto members_manager::dispatch_rpc_to_leader(
         return fut_t::convert(errc::no_leader_controller);
     }
 
-    auto leader = _raft0->config().find_broker(*leader_id);
+    auto leader = _members_table.local().get_node_metadata_ref(*leader_id);
 
     if (!leader) {
         return fut_t::convert(errc::no_leader_controller);
@@ -737,7 +738,7 @@ auto members_manager::dispatch_rpc_to_leader(
       _self.id(),
       _connection_cache,
       *leader_id,
-      leader->rpc_address(),
+      leader->get().broker.rpc_address(),
       _rpc_tls_config,
       connection_timeout,
       std::forward<Func>(f));
