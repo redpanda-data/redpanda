@@ -163,6 +163,11 @@ public:
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
 
+    auto first_write_ts()
+      -> std::optional<std::chrono::system_clock::time_point> {
+        return _first_write;
+    }
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
@@ -219,6 +224,11 @@ private:
     ss::gate _gate;
 
     absl::btree_map<size_t, model::offset> _inflight;
+
+    // Timestamp from server time of first data written to this segment,
+    // field is set when a raft_data batch is appended.
+    // Used to implement segment.ms
+    std::optional<std::chrono::system_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
