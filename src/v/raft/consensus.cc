@@ -965,7 +965,7 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
-          maybe_upgrade_configuration(latest_cfg);
+          maybe_upgrade_configuration_to_v4(latest_cfg);
           result<group_configuration> res = f(std::move(latest_cfg));
           if (res) {
               if (res.value().revision_id() < config().revision_id()) {
@@ -987,13 +987,14 @@ ss::future<std::error_code> consensus::add_group_member(
     vlog(_ctxlog.trace, "Adding member: {}", node);
     return change_configuration([node = std::move(node), new_revision](
                                   group_configuration current) mutable {
+        using ret_t = result<group_configuration>;
         if (current.contains_broker(node.id())) {
-            return result<group_configuration>(errc::node_already_exists);
+            return ret_t{errc::node_already_exists};
         }
+        current.add_broker(std::move(node), new_revision);
         current.set_revision(new_revision);
-        current.add(std::move(node), new_revision);
 
-        return result<group_configuration>(std::move(current));
+        return ret_t{std::move(current)};
     });
 }
 
@@ -1002,17 +1003,17 @@ consensus::remove_member(model::node_id id, model::revision_id new_revision) {
     vlog(_ctxlog.trace, "Removing member: {}", id);
     return change_configuration(
       [id, new_revision](group_configuration current) {
+          using ret_t = result<group_configuration>;
           if (!current.contains_broker(id)) {
-              return result<group_configuration>(errc::node_does_not_exists);
+              return ret_t{errc::node_does_not_exists};
           }
           current.set_revision(new_revision);
-          current.remove(id);
+          current.remove_broker(id);
 
           if (current.current_config().voters.empty()) {
-              return result<group_configuration>(
-                errc::invalid_configuration_update);
+              return ret_t{errc::invalid_configuration_update};
           }
-          return result<group_configuration>(std::move(current));
+          return ret_t{std::move(current)};
       });
 }
 
@@ -1022,9 +1023,10 @@ ss::future<std::error_code> consensus::replace_configuration(
     return change_configuration(
       [new_brokers = std::move(new_brokers),
        new_revision](group_configuration current) mutable {
-          current.replace(std::move(new_brokers), new_revision);
+          using ret_t = result<group_configuration>;
+          current.replace_brokers(std::move(new_brokers), new_revision);
           current.set_revision(new_revision);
-          return result<group_configuration>(std::move(current));
+          return ret_t{std::move(current)};
       });
 }
 
@@ -2195,7 +2197,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
-          maybe_upgrade_configuration(cfg);
+          maybe_upgrade_configuration_to_v4(cfg);
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {
@@ -2223,13 +2225,13 @@ ss::future<std::error_code> consensus::replicate_configuration(
       });
 }
 
-void consensus::maybe_upgrade_configuration(group_configuration& cfg) {
-    if (unlikely(cfg.version() < group_configuration::version_t(4))) {
+void consensus::maybe_upgrade_configuration_to_v4(group_configuration& cfg) {
+    if (unlikely(cfg.version() < group_configuration::v_4)) {
         if (
           _features.is_active(features::feature::raft_improved_configuration)
           && cfg.get_state() == configuration_state::simple) {
             vlog(_ctxlog.debug, "Upgrading configuration version");
-            cfg.set_version(group_configuration::current_version);
+            cfg.set_version(raft::group_configuration::v_4);
         }
     }
 }

@@ -960,8 +960,7 @@ members_manager::handle_join_request(join_node_request const req) {
     // we do not use revisions in raft0 configuration, it is always revision
     // 0 which is perfectly fine. this will work like revision less raft
     // protocol.
-    co_return co_await _raft0
-      ->add_group_members({req.node}, model::revision_id(0))
+    co_return co_await _raft0->add_group_member(req.node, model::revision_id(0))
       .then([broker = req.node](std::error_code ec) {
           if (!ec) {
               return ret_t(join_node_reply{true, broker.id()});

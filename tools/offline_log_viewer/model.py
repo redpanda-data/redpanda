@@ -85,7 +85,8 @@ def read_raft_config(rdr):
     cfg = {}
 
     cfg['version'] = rdr.read_int8()
-    cfg['brokers'] = rdr.read_vector(read_broker)
+    if cfg['version'] < 5:
+        cfg['brokers'] = rdr.read_vector(read_broker)
     cfg['current_config'] = read_group_nodes(rdr)
     cfg['prev_config'] = rdr.read_optional(read_group_nodes)
     cfg['revision'] = rdr.read_int64()

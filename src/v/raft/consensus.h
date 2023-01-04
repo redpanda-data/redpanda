@@ -606,7 +606,7 @@ private:
         return false;
     }
 
-    void maybe_upgrade_configuration(group_configuration&);
+    void maybe_upgrade_configuration_to_v4(group_configuration&);
 
     void update_confirmed_term();
     // args

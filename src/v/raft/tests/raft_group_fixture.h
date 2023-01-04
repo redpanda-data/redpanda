@@ -434,7 +434,8 @@ struct raft_group {
           ntp,
           broker,
           _id,
-          raft::group_configuration({}, model::revision_id(0)),
+          raft::group_configuration(
+            std::vector<model::broker>{}, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,

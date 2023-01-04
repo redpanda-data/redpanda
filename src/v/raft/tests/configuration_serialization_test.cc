@@ -309,12 +309,40 @@ iobuf serialize_v4() {
     return buffer;
 }
 
+iobuf serialize_v5() {
+    iobuf buffer;
+
+    raft::group_nodes current;
+    current.learners.emplace_back(node_0.id, model::revision_id(15));
+    current.voters.emplace_back(node_1.id, model::revision_id(10));
+
+    std::optional<raft::group_nodes> old = raft::group_nodes{};
+    old->voters.emplace_back(node_2.id, model::revision_id(5));
+
+    raft::configuration_update update{};
+
+    update.replicas_to_add.emplace_back(
+      model::node_id(10), model::revision_id(12));
+    update.replicas_to_remove.emplace_back(
+      model::node_id(12), model::revision_id(15));
+
+    reflection::serialize(
+      buffer,
+      raft::group_configuration(
+        std::move(current),
+        model::revision_id(15),
+        std::move(update),
+        std::move(old)));
+
+    return buffer;
+}
 SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     iobuf v0 = serialize_v0();
     iobuf v1 = serialize_v1();
     iobuf v2 = serialize_v2();
     iobuf v3 = serialize_v3();
     iobuf v4 = serialize_v4();
+    iobuf v5 = serialize_v5();
 
     auto cfg_v0 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v0));
@@ -330,6 +358,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
 
     auto cfg_v4 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v4));
+
+    auto cfg_v5 = reflection::from_iobuf<raft::group_configuration>(
+      std::move(v5));
 
     BOOST_REQUIRE_EQUAL(cfg_v0.brokers(), cfg_v1.brokers());
     BOOST_REQUIRE_EQUAL(cfg_v1.brokers(), cfg_v2.brokers());
@@ -348,6 +379,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().learners.size(),
       cfg_v4.current_config().learners.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().learners.size(),
+      cfg_v5.current_config().learners.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters.size(),
@@ -361,6 +395,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().voters.size(),
       cfg_v4.current_config().voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().voters.size(),
+      cfg_v5.current_config().voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters.size(), cfg_v1.old_config()->voters.size());
@@ -370,6 +407,8 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v2.old_config()->voters.size(), cfg_v3.old_config()->voters.size());
     BOOST_REQUIRE_EQUAL(
       cfg_v3.old_config()->voters.size(), cfg_v4.old_config()->voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.old_config()->voters.size(), cfg_v5.old_config()->voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
@@ -386,6 +425,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().learners[0].id(),
       cfg_v4.current_config().learners[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().learners[0].id(),
+      cfg_v5.current_config().learners[0].id());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters[0].id(),
@@ -399,12 +441,16 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().voters[0].id(),
       cfg_v4.current_config().voters[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().voters[0].id(),
+      cfg_v5.current_config().voters[0].id());
 
     BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), raft::no_revision);
     BOOST_REQUIRE_EQUAL(cfg_v1.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v2.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v3.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v4.revision_id(), model::revision_id(15));
+    BOOST_REQUIRE_EQUAL(cfg_v5.revision_id(), model::revision_id(15));
 }
 
 SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {
