@@ -84,4 +84,22 @@ T random_choice(std::initializer_list<T> choices) {
     return std::move(choice);
 }
 
+template<typename T>
+T get_real() {
+    std::uniform_real_distribution<T> dist;
+    return dist(internal::gen);
+}
+
+template<typename T>
+T get_real(T min, T max) {
+    std::uniform_real_distribution<T> dist(min, max);
+    return dist(internal::gen);
+}
+
+template<typename T>
+T get_real(T max) {
+    std::uniform_real_distribution<T> dist(0, max);
+    return dist(internal::gen);
+}
+
 } // namespace random_generators
