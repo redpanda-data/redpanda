@@ -388,11 +388,6 @@ public:
     std::optional<std::vector<model::broker_shard>>
     get_target_replica_set(const model::ntp&) const;
 
-    const absl::node_hash_map<model::ntp, in_progress_update>&
-    in_progress_updates() const {
-        return _updates_in_progress;
-    }
-
     /**
      * Lists all NTPs that replicas are being move to a node
      */
@@ -431,7 +426,6 @@ private:
         ss::abort_source::subscription sub;
         uint64_t id;
     };
-    void deallocate_topic_partitions(const std::vector<partition_assignment>&);
 
     void notify_waiters();
 
