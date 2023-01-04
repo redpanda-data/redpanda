@@ -35,8 +35,6 @@ class OfflineLogViewer:
         except json.decoder.JSONDecodeError:
             # Log the bad output before re-raising
             self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
-            import time
-            time.sleep(3600)
             raise
 
     def read_controller(self, node):
