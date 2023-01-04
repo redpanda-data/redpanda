@@ -117,6 +117,21 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/is_node_isolated",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get is node isolated",
+                    "type": "boolean",
+                    "nickname": "is_node_isolated",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
