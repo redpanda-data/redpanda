@@ -9,6 +9,7 @@
 
 #include "model/metadata.h"
 #include "raft/errc.h"
+#include "raft/group_configuration.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "storage/api.h"
 #include "test_utils/async.h"
@@ -25,13 +26,15 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     auto new_node = gr.create_new_node(model::node_id(2));
     res = retry_with_leader(gr, 5, 1s, [new_node](raft_node& leader) {
               return leader.consensus
-                ->add_group_member(new_node, model::revision_id(0))
+                ->add_group_member(
+                  raft::vnode(new_node.id(), model::revision_id(0)),
+                  model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
 
     validate_logs_replication(gr);
     auto& leader = gr.get_member(gr.get_leader_id().value());
-    BOOST_REQUIRE_EQUAL(leader.consensus->config().brokers().size(), 2);
+    BOOST_REQUIRE_EQUAL(leader.consensus->config().all_nodes().size(), 2);
 };
 
 /**
@@ -90,7 +93,9 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                            ->first;
     res = retry_with_leader(gr, 5, 1s, [non_leader_id](raft_node& leader) {
               return leader.consensus
-                ->remove_member(non_leader_id, model::revision_id(0))
+                ->remove_member(
+                  raft::vnode(non_leader_id, model::revision_id{0}),
+                  model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
     BOOST_REQUIRE(res);
@@ -101,7 +106,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
             return false;
         }
         auto& leader = gr.get_member(*leader_id);
-        return leader.consensus->config().brokers().size() == 2;
+        return leader.consensus->config().all_nodes().size() == 2;
     }).get0();
 
     auto write_ok = replicate_random_batches(gr, 2).get0();
@@ -123,7 +128,9 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
     auto old_leader_id = wait_for_group_leader(gr);
     res = retry_with_leader(gr, 5, 1s, [old_leader_id](raft_node& leader) {
               return leader.consensus
-                ->remove_member(old_leader_id, model::revision_id(0))
+                ->remove_member(
+                  raft::vnode(old_leader_id, model::revision_id{0}),
+                  model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
 
@@ -133,7 +140,7 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
             return false;
         }
         auto& leader = gr.get_member(*leader_id);
-        return leader.consensus->config().brokers().size() == 2
+        return leader.consensus->config().all_nodes().size() == 2
                && leader_id != old_leader_id;
     }).get0();
 
@@ -162,11 +169,9 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
 
     // all nodes are replaced with new node
     gr.create_new_node(model::node_id(5));
-    std::vector<raft::broker_revision> new_members;
+    std::vector<raft::vnode> new_members;
     new_members.reserve(1);
-    new_members.push_back(raft::broker_revision{
-      .broker = gr.get_member(model::node_id(5)).broker,
-      .rev = model::revision_id(0)});
+    new_members.emplace_back(model::node_id(5), model::revision_id(0));
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus
@@ -227,7 +232,8 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     auto new_leader_id = gr.get_leader_id();
     if (new_leader_id) {
         auto& new_leader = gr.get_member(*new_leader_id);
-        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          new_leader.consensus->config().all_nodes().size(), 1);
     }
     validate_offset_translation(gr);
 }
@@ -243,10 +249,9 @@ FIXTURE_TEST(
     gr.create_new_node(model::node_id(5));
     auto broker = gr.get_member(model::node_id(5)).broker;
     gr.disable_node(model::node_id(5));
-    std::vector<raft::broker_revision> new_members;
+    std::vector<raft::vnode> new_members;
     new_members.reserve(1);
-    new_members.push_back(
-      raft::broker_revision{.broker = broker, .rev = model::revision_id(0)});
+    new_members.emplace_back(model::node_id(5), model::revision_id(0));
     // replace configuration with other node, the target node is stopped
     // to keep the transient state in which the old node is the only voter in
     // raft group
@@ -280,13 +285,9 @@ FIXTURE_TEST(abort_configuration_change, raft_test_fixture) {
     gr.enable_all();
     auto res = replicate_random_batches(gr, 5).get();
     // try to move raft group to
-    std::vector<raft::broker_revision> new_members;
+    std::vector<raft::vnode> new_members;
     new_members.reserve(1);
-    // replace configuration with the node that does not exists
-    new_members.push_back(raft::broker_revision{
-      .broker = gr.make_broker(model::node_id(10)),
-      .rev = model::revision_id(0)});
-
+    new_members.emplace_back(model::node_id(10), model::revision_id(0));
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus
                 ->replace_configuration(new_members, model::revision_id(0))
@@ -312,7 +313,7 @@ FIXTURE_TEST(abort_configuration_change, raft_test_fixture) {
     BOOST_REQUIRE(res);
 
     auto current_cfg = gr.get_member(model::node_id(0)).consensus->config();
-    BOOST_REQUIRE_EQUAL(current_cfg.brokers().size(), 1);
+    BOOST_REQUIRE_EQUAL(current_cfg.all_nodes().size(), 1);
     BOOST_REQUIRE(current_cfg.get_state() == raft::configuration_state::simple);
 
     auto logs_before = gr.read_all_logs();
@@ -332,11 +333,9 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
     auto res = replicate_random_batches(gr, 5).get0();
     // all nodes are replaced with new node
     gr.create_new_node(model::node_id(5));
-    std::vector<raft::broker_revision> new_members;
+    std::vector<raft::vnode> new_members;
     new_members.reserve(1);
-    new_members.push_back(raft::broker_revision{
-      .broker = gr.get_member(model::node_id(5)).broker,
-      .rev = model::revision_id(0)});
+    new_members.emplace_back(model::node_id(5), model::revision_id(0));
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
               return leader.consensus
@@ -375,7 +374,8 @@ FIXTURE_TEST(revert_configuration_change, raft_test_fixture) {
     auto new_leader_id = gr.get_leader_id();
     if (new_leader_id) {
         auto& new_leader = gr.get_member(*new_leader_id);
-        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 3);
+        BOOST_REQUIRE_EQUAL(
+          new_leader.consensus->config().all_nodes().size(), 3);
     }
     validate_offset_translation(gr);
 }

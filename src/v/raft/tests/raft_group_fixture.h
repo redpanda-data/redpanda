@@ -173,12 +173,6 @@ struct raft_node {
           recovery_mem_quota,
           feature_table.local(),
           std::nullopt);
-
-        // create connections to initial nodes
-        consensus->config().for_each_broker(
-          [this, self_id](const model::broker& broker) {
-              create_connection_to(self_id, broker);
-          });
     }
 
     raft_node(const raft_node&) = delete;
@@ -407,13 +401,14 @@ struct raft_group {
 
     void enable_node(model::node_id node_id) {
         auto ntp = node_ntp(_id, node_id);
+        auto broker = make_broker(node_id);
         tstlog.info("Enabling node {} in group {}", node_id, _id);
         auto [it, _] = _members.try_emplace(
           node_id,
           ntp,
-          make_broker(node_id),
+          broker,
           _id,
-          raft::group_configuration(_initial_brokers, model::revision_id(0)),
+          get_raft_cfg(),
           raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
@@ -423,6 +418,10 @@ struct raft_group {
           _cleanup_policy,
           _segment_size);
         it->second.start();
+        for (auto& [_, n] : _members) {
+            n.create_connection_to(n.id(), broker);
+            it->second.create_connection_to(broker.id(), n.broker);
+        }
     }
 
     model::broker create_new_node(model::node_id node_id) {
@@ -435,7 +434,7 @@ struct raft_group {
           broker,
           _id,
           raft::group_configuration(
-            std::vector<model::broker>{}, model::revision_id(0)),
+            std::vector<raft::vnode>{}, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
@@ -533,6 +532,16 @@ struct raft_group {
     uint32_t get_elections_count() const { return _elections_count; }
 
     const ss::sstring& get_data_dir() const { return _storage_dir; }
+
+    raft::group_configuration get_raft_cfg() {
+        std::vector<raft::vnode> nodes;
+        nodes.reserve(_initial_brokers.size());
+        for (auto& b : _initial_brokers) {
+            nodes.emplace_back(b.id(), model::revision_id(0));
+        }
+
+        return {std::move(nodes), model::revision_id(0)};
+    }
 
 private:
     uint16_t base_port = 35000;
