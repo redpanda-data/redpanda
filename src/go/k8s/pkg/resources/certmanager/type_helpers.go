@@ -138,7 +138,7 @@ type apiCertificates struct {
 	clientCertificates []resources.Resource
 	rootResources      []resources.Resource
 	tlsEnabled         bool
-	internalTlsEnabled bool
+	internalTLSEnabled bool
 	// true if api is using our own generated self-signed issuer
 	selfSignedNodeCertificate bool
 
@@ -253,7 +253,7 @@ func (cc *ClusterCertificates) prepareAPI(
 	}
 	result := tlsEnabledAPICertificates(cc.pandaCluster.Namespace)
 	if internalTLSListener != nil {
-		result.internalTlsEnabled = true
+		result.internalTLSEnabled = true
 	}
 
 	// TODO(#3550): Do not create rootIssuer if nodeSecretRef is passed and mTLS is disabled
@@ -673,7 +673,7 @@ func (cc *ClusterCertificates) GetTLSConfig(
 
 // KafkaClientBrokerTLS returns configuration to connect to kafka api with tls
 func (cc *ClusterCertificates) KafkaClientBrokerTLS(mountPoints *resourcetypes.TLSMountPoints) *config.ServerTLS {
-	if !cc.kafkaAPI.internalTlsEnabled {
+	if !cc.kafkaAPI.internalTLSEnabled {
 		return nil
 	}
 	result := config.ServerTLS{
