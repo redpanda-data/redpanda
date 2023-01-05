@@ -144,7 +144,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader() || _paused) {
+        if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
             try {
                 vlog(
@@ -197,7 +197,7 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader() || _paused) {
+        if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
             try {
                 vlog(
@@ -569,8 +569,8 @@ void ntp_archiver::update_probe() {
 }
 
 bool ntp_archiver::can_update_archival_metadata() const {
-    return !_as.abort_requested() && !_gate.is_closed()
-           && _parent.is_elected_leader() && _parent.term() == _start_term;
+    return !_as.abort_requested() && !_gate.is_closed() && _parent.is_leader()
+           && _parent.term() == _start_term;
 }
 
 bool ntp_archiver::may_begin_uploads() const {
@@ -719,7 +719,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 
 std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
     auto original_term = _parent.term();
-    auto lost_leadership = !_parent.is_elected_leader()
+    auto lost_leadership = !_parent.is_leader()
                            || _parent.term() != original_term;
     if (unlikely(lost_leadership)) {
         return fmt::format(
@@ -727,7 +727,7 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
           "current leadership status: {}, "
           "current term: {}, "
           "original term: {}",
-          _parent.is_elected_leader(),
+          _parent.is_leader(),
           _parent.term(),
           original_term);
     } else {
