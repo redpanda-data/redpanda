@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"github.com/fatih/color"
+	mTerm "github.com/moby/term"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud"
@@ -118,6 +119,10 @@ func Execute() {
 	walk(root, func(c *cobra.Command) {
 		c.Flags().BoolP("help", "h", false, "Help for "+c.Name())
 	})
+
+	cobra.AddTemplateFunc("wrappedLocalFlagUsages", wrappedLocalFlagUsages)
+	cobra.AddTemplateFunc("wrappedGlobalFlagUsages", wrappedGlobalFlagUsages)
+	root.SetUsageTemplate(usageTemplate)
 
 	err := root.Execute()
 	if len(os.Args) > 1 {
@@ -425,3 +430,45 @@ func walk(c *cobra.Command, f func(*cobra.Command)) {
 		walk(c, f)
 	}
 }
+
+func wrappedLocalFlagUsages(cmd *cobra.Command) string {
+	width := 80
+	if ws, err := mTerm.GetWinsize(0); err == nil {
+		width = int(ws.Width)
+	}
+	return cmd.LocalFlags().FlagUsagesWrapped(width)
+}
+
+func wrappedGlobalFlagUsages(cmd *cobra.Command) string {
+	width := 80
+	if ws, err := mTerm.GetWinsize(0); err == nil {
+		width = int(ws.Width)
+	}
+	return cmd.InheritedFlags().FlagUsagesWrapped(width)
+}
+
+// This is the same Cobra usage template but using the wrapped flag usages.
+var usageTemplate = `Usage:{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}
+
+Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{ wrappedLocalFlagUsages . | trimRightSpace}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{ wrappedGlobalFlagUsages . | trimRightSpace}}{{end}}{{if .HasHelpSubCommands}}
+
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`
