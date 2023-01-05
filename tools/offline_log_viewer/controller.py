@@ -309,6 +309,8 @@ def decode_user_command_serde(k_rdr: Reader, rdr: Reader):
                 'iterations': rdr.read_int32(),
             })
     elif cmd['type'] == 6:
+        # skip one byte, unused field
+        rdr.read_int8()
         cmd['user'] = k_rdr.read_string()
 
     return cmd
@@ -391,7 +393,7 @@ def read_acl_binding_filter_serde(k_rdr: Reader):
                 k_rdr.read_optional(lambda k_rdr: decode_acl_resource(
                     k_rdr.read_serde_enum())),
                 'name':
-                k_rdr.read_envelope(Reader.read_string),
+                k_rdr.read_optional(Reader.read_string),
                 'pattern':
                 k_rdr.read_optional(lambda k_rdr:
                                     decode_serialized_pattern_type(
@@ -431,6 +433,8 @@ def read_acl_binding_filter_serde(k_rdr: Reader):
 def decode_acl_command_serde(k_rdr: Reader, rdr: Reader):
     cmd = {}
     cmd['type'] = rdr.read_int8()
+    # skip one byte, unused field
+    rdr.read_int8()
     cmd['str_type'] = decode_acls_cmd_type(cmd['type'])
     if cmd['type'] == 8:
         cmd['acls'] = k_rdr.read_envelope(
