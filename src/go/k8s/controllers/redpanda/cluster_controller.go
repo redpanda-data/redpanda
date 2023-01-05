@@ -551,7 +551,7 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1
 		return -1, fmt.Errorf("creating pki: %w", err)
 	}
 
-	ordinal, err := strconv.ParseInt(pod.Name[len(rp.Name)+1:], 10, 0)
+	ordinal, err := utils.GetPodOrdinal(pod.Name, rp.Name)
 	if err != nil {
 		return -1, fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", rp.Name, pod.Name, err)
 	}
