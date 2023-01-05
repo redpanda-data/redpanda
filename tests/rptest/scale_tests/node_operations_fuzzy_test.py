@@ -142,11 +142,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
             fi.start()
 
         executor = NodeOpsExecutor(self.redpanda, self.logger, lock)
-        fi = None
-        if enable_failures:
-            fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
-                                                 lock)
-            fi.start()
 
         op_cnt = 30
         for i, op in enumerate(
