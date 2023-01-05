@@ -15,7 +15,6 @@ set(handlers_srcs
   server/handlers/list_offsets.cc
   server/handlers/fetch.cc
   server/handlers/join_group.cc
-  server/handlers/heartbeat.cc
   server/handlers/leave_group.cc
   server/handlers/sync_group.cc
   server/handlers/init_producer_id.cc

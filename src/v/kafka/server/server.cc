@@ -16,6 +16,7 @@
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_router.h"
+#include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -246,6 +247,22 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
           return ss::make_exception_future(eptr);
       })
       .finally([ctx] {});
+}
+
+template<>
+ss::future<response_ptr> heartbeat_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    heartbeat_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+
+    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
+        co_return co_await ctx.respond(
+          heartbeat_response(error_code::group_authorization_failed));
+    }
+
+    auto resp = co_await ctx.groups().heartbeat(std::move(request));
+    co_return co_await ctx.respond(resp);
 }
 
 } // namespace kafka
