@@ -250,6 +250,7 @@ func TestStartCommand(t *testing.T) {
 				"topic_partitions_per_shard":    1000,
 				"fetch_reads_debounce_timeout":  10,
 				"group_initial_rebalance_delay": 0,
+				"log_segment_size_min":          1,
 			}
 
 			conf, err := new(config.Params).Load(fs)
@@ -1491,6 +1492,7 @@ func TestStartCommand(t *testing.T) {
 				"topic_partitions_per_shard":    1000,
 				"fetch_reads_debounce_timeout":  10,
 				"group_initial_rebalance_delay": 0,
+				"log_segment_size_min":          1,
 			}
 			require.Equal(st, expectedClusterFields, conf.Redpanda.Other)
 		},
@@ -1542,6 +1544,7 @@ func TestStartCommand(t *testing.T) {
 				"topic_partitions_per_shard":    1000,
 				"fetch_reads_debounce_timeout":  10,
 				"group_initial_rebalance_delay": 0,
+				"log_segment_size_min":          1,
 			}
 			require.Nil(st, conf.Redpanda.ID)
 			require.Equal(st, true, conf.Redpanda.DeveloperMode)
@@ -1584,6 +1587,7 @@ func TestStartCommand(t *testing.T) {
 				"topic_partitions_per_shard":    1000,
 				"fetch_reads_debounce_timeout":  10,
 				"group_initial_rebalance_delay": 0,
+				"log_segment_size_min":          1,
 			}
 			require.Exactly(st, expectedClusterFields, conf.Redpanda.Other)
 		},

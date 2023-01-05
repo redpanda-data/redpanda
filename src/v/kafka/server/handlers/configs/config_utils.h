@@ -199,4 +199,137 @@ ss::future<std::vector<R>> unsupported_broker_configuration(
     return ss::make_ready_future<std::vector<R>>(std::move(responses));
 }
 
+class validation_error final : std::exception {
+public:
+    explicit validation_error(ss::sstring what)
+      : _what(std::move(what)) {}
+
+    const char* what() const noexcept final { return _what.c_str(); }
+
+private:
+    ss::sstring _what;
+};
+
+template<typename T>
+struct noop_validator {
+    std::optional<ss::sstring> operator()(const T&) { return std::nullopt; }
+};
+
+struct segment_size_validator {
+    std::optional<ss::sstring> operator()(const size_t& value) {
+        // use reasonable defaults even if they are not set in configuration
+        size_t min
+          = config::shard_local_cfg().log_segment_size_min.value().value_or(1);
+        size_t max
+          = config::shard_local_cfg().log_segment_size_max.value().value_or(
+            std::numeric_limits<size_t>::max());
+
+        if (value < min || value > max) {
+            return fmt::format(
+              "segment size {} is outside of allowed range [{}, {}]",
+              value,
+              min,
+              max);
+        }
+        return std::nullopt;
+    }
+};
+
+template<typename T, typename Validator = noop_validator<T>>
+requires requires(const T& value, const ss::sstring& str, Validator validator) {
+    { boost::lexical_cast<T>(str) } -> std::convertible_to<T>;
+    { validator(value) } -> std::convertible_to<std::optional<ss::sstring>>;
+}
+void parse_and_set_optional(
+  cluster::property_update<std::optional<T>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  Validator validator = noop_validator<T>{}) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value if preset, otherwise do nothing
+    if (op == config_resource_operation::set && value) {
+        auto v = boost::lexical_cast<T>(*value);
+        auto v_error = validator(v);
+        if (v_error) {
+            throw validation_error(*v_error);
+        }
+        property.value = std::move(v);
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+static void parse_and_set_bool(
+  cluster::property_update<bool>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  bool default_value) {
+    // A remove on a concrete (non-nullable) property is a reset to default,
+    // as is an assignment to nullopt.
+    if (
+      op == config_resource_operation::remove
+      || (op == config_resource_operation::set && !value)) {
+        property.op = cluster::incremental_update_operation::set;
+        property.value = default_value;
+        return;
+    }
+
+    if (op == config_resource_operation::set && value) {
+        try {
+            property.value = string_switch<bool>(*value)
+                               .match("true", true)
+                               .match("false", false);
+        } catch (std::runtime_error) {
+            // Our callers expect this exception type on malformed values
+            throw boost::bad_lexical_cast();
+        }
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+template<typename T>
+void parse_and_set_tristate(
+  cluster::property_update<tristate<T>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value
+    if (op == config_resource_operation::set) {
+        auto parsed = boost::lexical_cast<int64_t>(*value);
+        if (parsed <= 0) {
+            property.value = tristate<T>{};
+        } else {
+            property.value = tristate<T>(std::make_optional<T>(parsed));
+        }
+
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+static void parse_and_set_topic_replication_factor(
+  cluster::property_update<std::optional<cluster::replication_factor>>&
+    property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // set property value
+    if (op == config_resource_operation::set) {
+        property.value = std::nullopt;
+        if (value) {
+            property.value = cluster::parsing_replication_factor(*value);
+        }
+        property.op = cluster::incremental_update_operation::set;
+    }
+    return;
+}
+
 } // namespace kafka

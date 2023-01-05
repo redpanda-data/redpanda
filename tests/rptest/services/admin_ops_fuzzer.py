@@ -148,9 +148,9 @@ class UpdateTopicOperation(Operation):
         TopicSpec.PROPERTY_TIMESTAMP_TYPE:
         lambda: random.choice(['CreateTime', 'LogAppendTime']),
         TopicSpec.PROPERTY_SEGMENT_SIZE:
-        lambda: random.randint(10 * 2 ^ 20, 512 * 2 ^ 20),
+        lambda: random.randint(10 * 2**20, 512 * 2**20),
         TopicSpec.PROPERTY_RETENTION_BYTES:
-        lambda: random.randint(10 * 2 ^ 20, 512 * 2 ^ 20),
+        lambda: random.randint(10 * 2**20, 512 * 2**20),
         TopicSpec.PROPERTY_RETENTION_TIME:
         lambda: random.randint(10000, 1000000)
     }

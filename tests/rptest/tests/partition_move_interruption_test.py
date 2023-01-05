@@ -153,7 +153,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.start_redpanda(num_nodes=5,
                             extra_rp_conf={
                                 "default_topic_replications": 3,
-                                "compacted_log_segment_size": 1 * (2 ^ 20)
+                                "compacted_log_segment_size": 1 * (2**20)
                             })
         # skip compacted topics tests in debug mode
         if compacted and self.debug_mode:
@@ -216,7 +216,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 "default_topic_replications": 3,
                 # make segments small to ensure that they are compacted during
                 # the test (only sealed i.e. not being written segments are compacted)
-                "compacted_log_segment_size": 1 * (2 ^ 20),
+                "compacted_log_segment_size": 1 * (2**20),
             })
 
         # skip compacted topics tests in debug mode

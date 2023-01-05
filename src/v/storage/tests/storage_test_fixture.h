@@ -34,6 +34,9 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/core.h>
 
+#include <cstdint>
+#include <optional>
+
 using namespace std::chrono_literals; // NOLINT
 
 inline ss::logger tlog{"test_log"};
@@ -199,6 +202,9 @@ public:
         // avoid double metric registrations
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
+            config::shard_local_cfg()
+              .get("log_segment_size_min")
+              .set_value(std::optional<uint64_t>{});
         }).get0();
         kvstore.start().get();
     }
