@@ -20,21 +20,18 @@
 
 namespace kafka {
 
-static void decode_request(request_context& ctx, join_group_request& req) {
-    req.decode(ctx.reader(), ctx.header().version);
-    req.version = ctx.header().version;
-    if (ctx.header().client_id) {
-        req.client_id = kafka::client_id(ss::sstring(*ctx.header().client_id));
-    }
-    req.client_host = kafka::client_host(
-      fmt::format("{}", ctx.connection()->client_host()));
-}
-
 template<>
 process_result_stages join_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request;
-    decode_request(ctx, request);
+    request.decode(ctx.reader(), ctx.header().version);
+    request.version = ctx.header().version;
+    if (ctx.header().client_id) {
+        request.client_id = kafka::client_id(
+          ss::sstring(*ctx.header().client_id));
+    }
+    request.client_host = kafka::client_host(
+      fmt::format("{}", ctx.connection()->client_host()));
     log_request(ctx.header(), request);
 
     if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
