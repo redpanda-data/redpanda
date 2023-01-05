@@ -20,7 +20,6 @@ set(handlers_srcs
   server/handlers/alter_configs.cc
   server/handlers/describe_groups.cc
   server/handlers/incremental_alter_configs.cc
-  server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
   server/handlers/create_acls.cc
