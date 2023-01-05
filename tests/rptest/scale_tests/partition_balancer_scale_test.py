@@ -112,7 +112,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             # FIXME: this is not enough data to keep up a background load through
             # the test.
             # https://github.com/redpanda-data/redpanda/issues/6245
-            message_size = 128 * (2 ^ 10)
+            message_size = 128 * (2**10)
             message_cnt = 2000000
             consumers = 8
             partitions_count = 18000
@@ -120,7 +120,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             # FIXME: this is not enough data to keep up a background load through
             # the test.
             # https://github.com/redpanda-data/redpanda/issues/6245
-            message_size = 512 * (2 ^ 10)
+            message_size = 512 * (2**10)
             message_cnt = 5000000
             consumers = 8
             partitions_count = 200
@@ -182,14 +182,14 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             max_concurrent_moves = 5
             timeout = 80
         elif type == self.MANY_PARTITIONS:
-            message_size = 128 * (2 ^ 10)
+            message_size = 128 * (2**10)
             message_cnt = 2000000
             consumers = 8
             partitions_count = 18000
             max_concurrent_moves = 400
             timeout = 300
         else:
-            message_size = 512 * (2 ^ 10)
+            message_size = 512 * (2**10)
             message_cnt = 5000000
             consumers = 8
             partitions_count = 200
