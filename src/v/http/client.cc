@@ -196,6 +196,7 @@ ss::future<ss::temporary_buffer<char>> client::receive() {
 ss::future<> client::send(ss::scattered_message<char> msg) {
     _probe->add_outbound_bytes(msg.size());
     return _out.write(std::move(msg))
+      .discard_result()
       .handle_exception([this](std::exception_ptr e) {
           _probe->register_transport_error();
           return ss::make_exception_future<>(e);
