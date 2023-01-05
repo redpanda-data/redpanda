@@ -17,6 +17,7 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/handlers/heartbeat.h"
+#include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -263,6 +264,32 @@ ss::future<response_ptr> heartbeat_handler::handle(
 
     auto resp = co_await ctx.groups().heartbeat(std::move(request));
     co_return co_await ctx.respond(resp);
+}
+
+template<>
+ss::future<response_ptr> sasl_authenticate_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    sasl_authenticate_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+    vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
+
+    auto result = ctx.sasl()->authenticate(std::move(request.data.auth_bytes));
+    if (likely(result)) {
+        sasl_authenticate_response_data data{
+          .error_code = error_code::none,
+          .error_message = std::nullopt,
+          .auth_bytes = std::move(result.value()),
+        };
+        return ctx.respond(sasl_authenticate_response(std::move(data)));
+    }
+
+    sasl_authenticate_response_data data{
+      .error_code = error_code::sasl_authentication_failed,
+      .error_message = ssx::sformat(
+        "SASL authentication failed: {}", result.error().message()),
+    };
+    return ctx.respond(sasl_authenticate_response(std::move(data)));
 }
 
 } // namespace kafka
