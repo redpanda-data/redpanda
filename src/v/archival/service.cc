@@ -323,7 +323,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
       std::move(to_create), concurrency, [this](const model::ntp& ntp) {
           auto log = _partition_manager.local().log(ntp);
           auto part = _partition_manager.local().get(ntp);
-          if (!log.has_value() || !part || !part->is_elected_leader()) {
+          if (!log.has_value() || !part || !part->is_leader()) {
               return ss::now();
           }
           if (
@@ -382,7 +382,7 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
         // we will change this in the future when we will add DR
         if (
           ntp.ns == model::kafka_namespace && !_archivers.contains(ntp)
-          && p->is_elected_leader()) {
+          && p->is_leader()) {
             to_create.push_back(ntp);
         }
     }
