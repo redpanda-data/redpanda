@@ -1022,6 +1022,51 @@ ss::future<> disk_log_impl::maybe_roll(
     return ss::make_ready_future<>();
 }
 
+ss::future<> disk_log_impl::do_housekeeping(
+  std::chrono::system_clock::time_point system_time) {
+    if (_segs.empty()) {
+        co_return;
+    }
+    auto last = _segs.back();
+    if (!last->has_appender()) {
+        // skip, rolling is already happening
+        co_return;
+    }
+    auto first_write_ts = last->first_write_ts();
+    if (!first_write_ts) {
+        // skip check, no writes yet in this segment
+        co_return;
+    }
+
+    auto seg_ms = config().segment_ms();
+    if (!seg_ms.has_value()) {
+        // skip, disabled or no default value
+        co_return;
+    }
+
+    auto& local_config = config::shard_local_cfg();
+    // clamp user provided value with (hopefully sane) server min and max
+    // values, this should protect against overflow UB
+    if (
+      first_write_ts.value()
+        + std::clamp(
+          seg_ms.value(),
+          local_config.log_segment_ms_min(),
+          local_config.log_segment_ms_max())
+      > system_time) {
+        // skip, time hasn't expired
+        co_return;
+    }
+
+    auto pc = last->appender()
+                .get_priority_class(); // note: has_appender is true, the
+                                       // bouncer condition checked this
+    co_await last->release_appender(_readers_cache.get());
+    auto offsets = last->offsets();
+    co_return co_await new_segment(
+      offsets.committed_offset + model::offset{1}, offsets.term, pc);
+}
+
 ss::future<model::record_batch_reader>
 disk_log_impl::make_unchecked_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);

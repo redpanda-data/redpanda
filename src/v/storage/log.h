@@ -52,6 +52,11 @@ public:
         virtual ss::future<> truncate(truncate_config) = 0;
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
 
+        // TODO should compact be merged in this?
+        // run housekeeping task, like rolling segments
+        virtual ss::future<>
+        do_housekeeping(std::chrono::system_clock::time_point server_time) = 0;
+
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;

@@ -162,6 +162,11 @@ struct mem_log_impl final : log::impl {
     ss::future<> compact(compaction_config cfg) final {
         return gc(cfg.eviction_time, cfg.max_bytes);
     }
+
+    ss::future<>
+    do_housekeeping(std::chrono::system_clock::time_point) final override {
+        return ss::now();
+    }
     std::ostream& print(std::ostream& o) const final {
         fmt::print(o, "{{mem_log_impl:{}}}", offsets());
         return o;

@@ -66,6 +66,8 @@ public:
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
+    ss::future<>
+      do_housekeeping(std::chrono::system_clock::time_point) final override;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
     void set_collectible_offset(model::offset) final;
