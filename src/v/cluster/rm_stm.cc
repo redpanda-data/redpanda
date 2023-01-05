@@ -16,12 +16,15 @@
 #include "kafka/protocol/response_writer.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
 #include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
+#include "utils/human.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -263,6 +266,22 @@ rm_stm::rm_stm(
   ss::sharded<features::feature_table>& feature_table,
   config::binding<uint64_t> max_concurrent_producer_ids)
   : persisted_stm("tx.snapshot", logger, c)
+  , _tx_locks(
+      mt::
+        map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(
+          _tx_root_tracker.create_child("tx-locks")))
+  , _inflight_requests(mt::map<
+                       absl::flat_hash_map,
+                       model::producer_identity,
+                       ss::lw_shared_ptr<inflight_requests>>(
+      _tx_root_tracker.create_child("in-flight")))
+  , _idempotent_producer_locks(mt::map<
+                               absl::flat_hash_map,
+                               model::producer_identity,
+                               ss::lw_shared_ptr<ss::basic_rwlock<>>>(
+      _tx_root_tracker.create_child("idempotent-producer-locks")))
+  , _log_state(_tx_root_tracker)
+  , _mem_state(_tx_root_tracker)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
@@ -280,12 +299,17 @@ rm_stm::rm_stm(
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class())
   , _feature_table(feature_table)
+  , _log_stats_interval_s(
+      config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+    setup_metrics();
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
     }
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
+    _log_stats_timer.set_callback([this] { log_tx_stats(); });
+    _log_stats_timer.arm(clock_type::now() + _log_stats_interval_s());
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -1103,6 +1127,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
+    _log_stats_timer.cancel();
     return raft::state_machine::stop().then([this] {
         for (const auto& entry : _log_state.seq_table) {
             _log_state.unlink_lru_pid(entry.second);
@@ -1920,7 +1945,8 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
     auto ready = co_await persisted_stm::sync(timeout);
     if (ready) {
         if (_mem_state.term != _insync_term) {
-            _mem_state = mem_state{.term = _insync_term};
+            _mem_state = mem_state{_tx_root_tracker};
+            _mem_state.term = _insync_term;
         }
     }
     co_return ready;
@@ -2813,8 +2839,8 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_eviction() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          _log_state = {};
-          _mem_state = {};
+          _log_state = log_state{_tx_root_tracker};
+          _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
           return ss::now();
       });
@@ -2929,4 +2955,119 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
     }
 }
 
+std::ostream&
+operator<<(std::ostream& o, const rm_stm::inflight_requests& reqs) {
+    fmt::print(
+      o,
+      "{{ tail: {}, term: {}, request cache size: {} }}",
+      reqs.tail_seq,
+      reqs.term,
+      reqs.cache.size());
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const rm_stm::mem_state& state) {
+    fmt::print(
+      o,
+      "{{ estimated: {}, tx_start: {}, tx_starts: {}, expected: {}, preparing: "
+      "{} }}",
+      state.estimated.size(),
+      state.tx_start.size(),
+      state.tx_starts.size(),
+      state.expected.size(),
+      state.preparing.size());
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
+    fmt::print(
+      o,
+      "{{ fence_epochs: {}, ongoing_m: {}, ongoing_set: {}, prepared: {}, "
+      "aborted: {}, abort_indexes: {}, seq_table: {}, tx_seqs: {}, expiration: "
+      "{}}}",
+      state.fence_pid_epoch.size(),
+      state.ongoing_map.size(),
+      state.ongoing_set.size(),
+      state.prepared.size(),
+      state.aborted.size(),
+      state.abort_indexes.size(),
+      state.seq_table.size(),
+      state.tx_seqs.size(),
+      state.expiration.size());
+    return o;
+}
+
+void rm_stm::setup_metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+
+    const auto& ntp = _c->ntp();
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("tx:partition"),
+      {
+        sm::make_gauge(
+          "idempotency_num_pids_inflight",
+          [this] { return _inflight_requests.size(); },
+          sm::description(
+            "Number of pids with in flight idempotent produce requests."),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "tx_num_inflight_requests",
+          [this] { return _log_state.ongoing_map.size(); },
+          sm::description("Number of ongoing transactional requests."),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "tx_mem_tracker_consumption_bytes",
+          [this] { return _tx_root_tracker.consumption(); },
+          sm::description("Total memory bytes in use by tx subsystem."),
+          labels)
+          .aggregate(aggregate_labels),
+      });
+}
+
+ss::future<> rm_stm::maybe_log_tx_stats() {
+    if (likely(!_ctx_log.logger().is_enabled(ss::log_level::debug))) {
+        co_return;
+    }
+    auto units = co_await _state_lock.hold_read_lock();
+    _ctx_log.debug(
+      "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
+    _ctx_log.debug(
+      "tx memory snapshot stats: {{mem_state: {}, log_state: "
+      "{} }}",
+      _mem_state,
+      _log_state);
+}
+
+void rm_stm::log_tx_stats() {
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          _ctx_log.info(
+                            "tx root mem_tracker consumption: {}",
+                            human::bytes(static_cast<double>(
+                              _tx_root_tracker.consumption())));
+                          return maybe_log_tx_stats().then([this] {
+                              if (!_gate.is_closed()) {
+                                  _log_stats_timer.rearm(
+                                    clock_type::now()
+                                    + _log_stats_interval_s());
+                              }
+                          });
+                      }).handle_exception([](const std::exception_ptr&) {});
+}
 } // namespace cluster
