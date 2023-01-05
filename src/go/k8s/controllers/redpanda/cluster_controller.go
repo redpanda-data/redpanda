@@ -185,12 +185,9 @@ func (r *ClusterReconciler) Reconcile(
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}
-	pki, err := certmanager.NewPki(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
-	}
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
-	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
+	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 	secretResource := resources.PreStartStopScriptSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
@@ -228,7 +225,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	for _, res := range toApply {
-		err = res.Ensure(ctx)
+		err := res.Ensure(ctx)
 
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
@@ -358,7 +355,7 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 	return nil
 }
 
-//nolint:funlen,gocyclo // refactor in the next iteration
+//nolint:funlen // refactor in the next iteration
 func (r *ClusterReconciler) handlePodFinalizer(
 	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
 ) error {
@@ -417,10 +414,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 		headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
 		clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
 
-		pki, err := certmanager.NewPki(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
-		if err != nil {
-			return fmt.Errorf("creating pki: %w", err)
-		}
+		pki := certmanager.NewPki(r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 
 		adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
 		if err != nil {
@@ -546,10 +540,7 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1
 	headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
 	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
 
-	pki, err := certmanager.NewPki(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
-	if err != nil {
-		return -1, fmt.Errorf("creating pki: %w", err)
-	}
+	pki := certmanager.NewPki(r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 
 	ordinal, err := utils.GetPodOrdinal(pod.Name, rp.Name)
 	if err != nil {

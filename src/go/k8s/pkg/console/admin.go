@@ -32,8 +32,7 @@ func NewAdminAPI(
 ) (adminutils.AdminAPIClient, error) {
 	headlessSvc := resources.NewHeadlessService(cl, cluster, scheme, nil, log)
 	clusterSvc := resources.NewClusterService(cl, cluster, scheme, nil, log)
-	pki, err := certmanager.NewPki(
-		ctx,
+	pki := certmanager.NewPki(
 		cl,
 		cluster,
 		headlessSvc.HeadlessServiceFQDN(clusterDomain),
@@ -41,9 +40,6 @@ func NewAdminAPI(
 		scheme,
 		log,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("creating PKI: %w", err)
-	}
 	adminTLSConfigProvider := pki.AdminAPIConfigProvider()
 	adminAPIClient, err := adminAPI(
 		ctx,

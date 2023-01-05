@@ -39,15 +39,13 @@ func TestKafkaAPIWithMultipleTLSListeners(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
-			pkiRes, err := certmanager.NewPki(
-				context.TODO(),
+			pkiRes := certmanager.NewPki(
 				c,
 				&tc.cluster,
 				"cluster.local1",
 				"cluster.local",
 				scheme.Scheme,
 				ctrl.Log.WithName("test"))
-			require.NoError(t, err)
 			require.NoError(t, pkiRes.Ensure(context.TODO()))
 
 			for _, cert := range tc.expectedCertificates {
