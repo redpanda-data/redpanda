@@ -41,7 +41,7 @@ namespace cloud_storage {
 using namespace std::chrono_literals;
 
 remote::remote(
-  s3_connection_limit limit,
+  connection_limit limit,
   const cloud_storage_clients::client_configuration& conf,
   model::cloud_credentials_source cloud_credentials_source)
   : _pool(limit(), conf)
@@ -677,7 +677,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
               [](const auto& cfg) {
                   using cfg_type = std::decay_t<decltype(cfg)>;
                   if constexpr (std::is_same_v<
-                                  cloud_storage_clients::configuration,
+                                  cloud_storage_clients::s3_configuration,
                                   cfg_type>) {
                       return cloud_roles::aws_region_name{cfg.region};
                   } else {
@@ -721,7 +721,7 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
       [](const auto& cfg) {
           using cfg_type = std::decay_t<decltype(cfg)>;
           if constexpr (std::is_same_v<
-                          cloud_storage_clients::configuration,
+                          cloud_storage_clients::s3_configuration,
                           cfg_type>) {
               return cloud_roles::aws_credentials{
                 cfg.access_key.value(),

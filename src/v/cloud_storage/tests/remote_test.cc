@@ -81,7 +81,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({expectation{
       .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -99,7 +99,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -116,7 +116,7 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -149,7 +149,7 @@ FIXTURE_TEST(
   test_upload_segment_lost_leadership, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -180,7 +180,7 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -210,7 +210,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -252,7 +252,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -271,7 +271,7 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -303,7 +303,7 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("1-2-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
@@ -317,7 +317,7 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto name = segment_name("0-1-v1.log");
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{1});
@@ -399,7 +399,7 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
     retry_chain_node fib(100ms, 20ms);
     auto upload_size = b.get_disk_log_impl().size_bytes() - 40;
 
-    remote remote(s3_connection_limit(10), conf, config_file);
+    remote remote(connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
     set_expectations_and_listen({});

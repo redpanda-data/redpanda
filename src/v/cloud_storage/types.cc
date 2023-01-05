@@ -142,7 +142,7 @@ ss::future<configuration> configuration::get_config() {
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
     auto s3_conf
-      = co_await cloud_storage_clients::configuration::make_configuration(
+      = co_await cloud_storage_clients::s3_configuration::make_configuration(
         access_key,
         secret_key,
         region,
@@ -152,7 +152,7 @@ ss::future<configuration> configuration::get_config() {
 
     configuration cfg{
       .client_config = std::move(s3_conf),
-      .connection_limit = s3_connection_limit(
+      .connection_limit = cloud_storage::connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
       .metrics_disabled = remote_metrics_disabled(
         static_cast<bool>(disable_metrics)),

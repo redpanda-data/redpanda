@@ -292,14 +292,13 @@ struct configured_test_pair {
     ss::shared_ptr<cloud_storage_clients::s3_client> client;
 };
 
-cloud_storage_clients::configuration transport_configuration() {
+cloud_storage_clients::s3_configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    cloud_storage_clients::configuration conf{
-      .uri = cloud_storage_clients::access_point_uri(httpd_host_name),
-      .access_key = cloud_roles::public_key_str("acess-key"),
-      .secret_key = cloud_roles::private_key_str("secret-key"),
-      .region = cloud_roles::aws_region_name("us-east-1"),
-    };
+    cloud_storage_clients::s3_configuration conf;
+    conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
+    conf.access_key = cloud_roles::public_key_str("acess-key");
+    conf.secret_key = cloud_roles::private_key_str("secret-key");
+    conf.region = cloud_roles::aws_region_name("us-east-1");
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
       net::metrics_disabled::yes,
@@ -310,7 +309,7 @@ cloud_storage_clients::configuration transport_configuration() {
 }
 
 static ss::lw_shared_ptr<cloud_roles::apply_credentials>
-make_credentials(const cloud_storage_clients::configuration& cfg) {
+make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
     return ss::make_lw_shared(
       cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
         cfg.access_key.value(),
@@ -322,7 +321,7 @@ make_credentials(const cloud_storage_clients::configuration& cfg) {
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 configured_test_pair
-started_client_and_server(const cloud_storage_clients::configuration& conf) {
+started_client_and_server(const cloud_storage_clients::s3_configuration& conf) {
     auto client = ss::make_shared<cloud_storage_clients::s3_client>(
       conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
@@ -658,7 +657,7 @@ struct configured_server_and_client_pool {
 configured_server_and_client_pool started_pool_and_server(
   size_t size,
   cloud_storage_clients::client_pool_overdraft_policy policy,
-  const cloud_storage_clients::configuration& conf) {
+  const cloud_storage_clients::s3_configuration& conf) {
     auto credentials = cloud_roles::aws_credentials{
       conf.access_key.value(),
       conf.secret_key.value(),

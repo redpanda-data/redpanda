@@ -864,6 +864,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         syschecks::systemd_message("Starting cloud storage api").get();
         ss::sharded<cloud_storage::configuration> cloud_configs;
         cloud_configs.start().get();
+        auto stop_config = ss::defer(
+          [&cloud_configs] { cloud_configs.stop().get(); });
         cloud_configs
           .invoke_on_all([](cloud_storage::configuration& c) {
               return cloud_storage::configuration::get_config().then(
@@ -877,8 +879,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           cloud_configs.local().bucket_name,
           std::ref(cloud_storage_api))
           .get();
-
-        cloud_configs.stop().get();
     }
 
     syschecks::systemd_message("Creating tm_stm_cache").get();
