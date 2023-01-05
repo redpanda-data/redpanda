@@ -45,6 +45,58 @@ namespace rpc {
 struct client_context_impl;
 
 /**
+ * @brief A structure for tracking various points in time associated with a
+ * specific RPC request, for more detailed diagnosis when an RPC times out.
+ */
+struct timing_info {
+    using clock_type = rpc::clock_type;
+    using time_point = clock_type::time_point;
+
+    constexpr static time_point unset = time_point::min();
+
+    /**
+     * The originally configured timeout, usually created when the client_opts
+     * object is constructed.
+     */
+    timeout_spec timeout = timeout_spec::none;
+
+    /**
+     * The moment in time the request was enqueued in the _requests array, i.e.,
+     * now waiting in line to be sent. This
+     * is often immediately followed by being dispatched, though not always:
+     * since we dispatch in-order, any lower-sequence number requests which
+     * haven't been dispatched yet will prevent this from being dispatched.
+     */
+    time_point enqueued_at = unset;
+
+    /**
+     * The moment in time we dispatched the request: that is, it was the next
+     * request to be sent and we called .write on the output stream: note that
+     * this does not perform the write (since that's an async method), but it
+     * means that the task responsible for doing the write has been set up.
+     */
+    time_point dispatched_at = unset;
+
+    /**
+     * The moment in time the future associated with the write to the output
+     * stream completes. As this is a buffered_output_stream, it does not
+     * necessarily mean the underlying stream has been flushed (as this happens
+     * only sometimes), so doesn't even mean the kernel has been notified of the
+     * buffers yet.
+     */
+    time_point written_at = unset;
+
+    /**
+     * True if the batched output stream write associated with this request was
+     * flushed at the time of writing. That is, the written_at timestamp is set
+     * when the write occurs, but the output stream will internally decide
+     * whether to flush not depending on concurrent writers
+     *
+     */
+    bool flushed = false;
+};
+
+/**
  * Transport implementation used for internal RPC traffic.
  *
  * As callers send buffers over the wire, the transport associates each with an
@@ -88,6 +140,7 @@ private:
     struct entry {
         std::unique_ptr<ss::scattered_message<char>> scattered_message;
         client_opts::resource_units_t resource_units;
+        uint32_t correlation_id;
     };
     using requests_queue_t
       = absl::btree_map<sequence_t, std::unique_ptr<entry>>;
@@ -107,14 +160,37 @@ private:
     make_response_handler(netbuf&, const rpc::client_opts&, sequence_t);
 
     ssx::semaphore _memory;
+
     /**
-     * Map of response handlers to use when processing a buffer read from the
-     * wire.
+     * @brief Get the timing info for the request with the given correlation ID.
+     *
+     * A pointer to the timing info object embedded in the _correlations map, or
+     * nullptr the correlation no longer exists (e.g., because the request has
+     * completed).
+     *
+     * This pointer is only valid until the next suspension point, since the
+     * entry may be deleted at any point if the current fiber suspends.
+     */
+    timing_info* get_timing(uint32_t correlation);
+
+    /**
+     * @brief Holds the response handler and timing information for an
+     * outstanding request.
+     */
+    struct response_entry {
+        internal::response_handler handler;
+        timing_info timing;
+    };
+
+    /**
+     * Map of correlation IDs to response handlers to use when processing a
+     * response read from the wire. We also track the timing info for the
+     * request in this map.
      *
      * NOTE: _correlation_idx is unrelated to the sequence type used to define
      * on-wire ordering below.
      */
-    absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
+    absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
     ss::metrics::metric_groups _metrics;
