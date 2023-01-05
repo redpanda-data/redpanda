@@ -545,6 +545,8 @@ class NodesDecommissioningTest(EndToEndTest):
         self.await_startup(min_records=self.records_to_wait(), timeout_sec=120)
         # throttle recovery
         rpk = RpkTool(self.redpanda)
+        self.redpanda.clean_node(self.redpanda.nodes[-1],
+                                 preserve_current_install=True)
         self.redpanda.start_node(self.redpanda.nodes[-1])
         rpk.cluster_config_set("raft_learner_recovery_rate", str(10))
         # wait for rebalancing to start
