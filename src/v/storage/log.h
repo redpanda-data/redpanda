@@ -175,6 +175,10 @@ public:
 
     ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
 
+    ss::future<>
+    housekeeping(std::chrono::system_clock::time_point system_time) {
+        return _impl->do_housekeeping(system_time);
+    }
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
