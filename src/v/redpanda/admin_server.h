@@ -15,7 +15,9 @@
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
 #include "model/metadata.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "request_auth.h"
+#include "rp_services.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 
@@ -54,7 +56,8 @@ public:
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<archival::scheduler_service>&,
       ss::sharded<rpc::connection_cache>&,
-      ss::sharded<cluster::node_status_table>&);
+      ss::sharded<cluster::node_status_table>&,
+      pandaproxy::schema_registry::api*);
 
     ss::future<> start();
     ss::future<> stop();
@@ -231,6 +234,7 @@ private:
     void register_debug_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
+    void register_redpanda_service_restart_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::httpd::request>, const request_auth_result&);
@@ -306,6 +310,9 @@ private:
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
 
+    ss::future<ss::json::json_return_type>
+      redpanda_services_restart_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
@@ -334,6 +341,8 @@ private:
     void rearm_log_level_timer();
     void log_level_timer_handler();
 
+    ss::future<> restart_redpanda_service(service_kind service);
+
     ss::http_server _server;
     admin_server_cfg _cfg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
@@ -346,4 +355,5 @@ private:
     bool _ready{false};
     ss::sharded<archival::scheduler_service>& _archival_service;
     ss::sharded<cluster::node_status_table>& _node_status_table;
+    pandaproxy::schema_registry::api* _schema_registry;
 };

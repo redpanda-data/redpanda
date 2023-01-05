@@ -53,6 +53,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "net/dns.h"
+#include "pandaproxy/schema_registry/api.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster.json.h"
@@ -63,6 +64,7 @@
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
+#include "redpanda/admin/api-doc/redpanda_services_restart.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -110,7 +112,8 @@ admin_server::admin_server(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<archival::scheduler_service>& archival_service,
   ss::sharded<rpc::connection_cache>& connection_cache,
-  ss::sharded<cluster::node_status_table>& node_status_table)
+  ss::sharded<cluster::node_status_table>& node_status_table,
+  pandaproxy::schema_registry::api* schema_registry)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -122,7 +125,8 @@ admin_server::admin_server(
   , _connection_cache(connection_cache)
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _archival_service(archival_service)
-  , _node_status_table(node_status_table) {}
+  , _node_status_table(node_status_table)
+  , _schema_registry(schema_registry) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -172,6 +176,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "debug");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "cluster");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "redpanda_services_restart");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -186,6 +192,7 @@ void admin_server::configure_admin_routes() {
     register_debug_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
+    register_redpanda_service_restart_routes();
 }
 
 static json::validator make_set_replicas_validator() {
@@ -3192,5 +3199,47 @@ void admin_server::register_shadow_indexing_routes() {
       ss::httpd::shadow_indexing_json::sync_local_state,
       [this](std::unique_ptr<ss::httpd::request> req) {
           return sync_local_state_handler(std::move(req));
+      });
+}
+
+ss::future<> admin_server::restart_redpanda_service(service_kind service) {
+    if (service == service_kind::schema_registry) {
+        // Checks specific to schema registry
+        if (_schema_registry == nullptr) {
+            throw ss::httpd::server_error_exception(
+              "Schema Registry is undefined. Is it set in the .yaml config "
+              "file?");
+        }
+
+        try {
+            co_await _schema_registry->restart();
+        } catch (...) {
+            throw ss::httpd::server_error_exception(
+              "Unknown issue restarting schema_registry");
+        }
+    }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::redpanda_services_restart_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    auto service_param = req->get_query_param("service");
+    std::optional<service_kind> service = from_string_view<service_kind>(
+      service_param);
+    if (!service.has_value()) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("Invalid service: {}", service));
+    }
+
+    vlog(logger.info, "Restart redpanda service: {}", service);
+    co_await restart_redpanda_service(*service);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+void admin_server::register_redpanda_service_restart_routes() {
+    register_route<superuser>(
+      ss::httpd::redpanda_services_restart_json::redpanda_services_restart,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return redpanda_services_restart_handler(std::move(req));
       });
 }
