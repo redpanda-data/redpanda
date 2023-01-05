@@ -776,3 +776,8 @@ class Admin:
             raise
         if len(r.text) > 0:
             return r.json()["cluster_uuid"]
+
+    def redpanda_services_restart(self, rp_service: Optional[str] = None):
+        service_param = f"service={rp_service if rp_service is not None else ''}"
+        return self._request("PUT",
+                             f"redpanda-services/restart?{service_param}")
