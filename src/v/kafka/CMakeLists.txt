@@ -5,7 +5,6 @@ set(handlers_srcs
   server/handlers/metadata.cc
   server/handlers/add_partitions_to_txn.cc
   server/handlers/txn_offset_commit.cc
-  server/handlers/add_offsets_to_txn.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc
   server/handlers/offset_fetch.cc
