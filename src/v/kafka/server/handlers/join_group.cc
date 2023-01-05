@@ -20,11 +20,6 @@
 
 namespace kafka {
 
-std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
-    fmt::print(o, "{}:{}", p.name, p.metadata.size());
-    return o;
-}
-
 static void decode_request(request_context& ctx, join_group_request& req) {
     req.decode(ctx.reader(), ctx.header().version);
     req.version = ctx.header().version;
