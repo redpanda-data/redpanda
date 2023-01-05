@@ -62,6 +62,9 @@ public:
         // Controls whether topic deletion should imply deletion in S3
         std::optional<bool> remote_delete;
 
+        // time before rolling a segment, from first write
+        tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -217,6 +220,19 @@ public:
         } else {
             return _overrides->remote_delete.value_or(default_remote_delete);
         }
+    }
+
+    auto segment_ms() const -> std::optional<std::chrono::milliseconds> {
+        if (_overrides) {
+            if (_overrides->segment_ms.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->segment_ms.has_value()) {
+                return _overrides->segment_ms.value();
+            }
+            // fall through to server config
+        }
+        return config::shard_local_cfg().log_segment_ms;
     }
 
 private:
