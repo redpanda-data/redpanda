@@ -134,6 +134,8 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
 }
 
 iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
+    const auto kbatch_copy = iobuf_to_bytes(kbatch);
+
     // The batch size given in the kafka header does not include the offset
     // preceeding the length field nor the size of the length field itself.
     constexpr size_t kafka_length_diff
@@ -169,6 +171,7 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
         vlog(klog.error, "batch has invalid CRC: {}", header);
+        vlog(klog.error, "batch bytes: {}", bytes_to_base64(kbatch_copy));
         return remainder;
     }
 
