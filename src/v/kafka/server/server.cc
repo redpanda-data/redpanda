@@ -17,6 +17,7 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/handlers/delete_groups.h"
+#include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/handlers/join_group.h"
 #include "kafka/server/handlers/leave_group.h"
@@ -475,6 +476,56 @@ ss::future<response_ptr> delete_groups_handler::handle(
     }
 
     co_return co_await ctx.respond(delete_groups_response(std::move(results)));
+}
+
+template<>
+ss::future<response_ptr> end_txn_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    return ss::do_with(std::move(ctx), [](request_context& ctx) {
+        end_txn_request request;
+        request.decode(ctx.reader(), ctx.header().version);
+        log_request(ctx.header(), request);
+        cluster::end_tx_request tx_request{
+          .transactional_id = request.data.transactional_id,
+          .producer_id = request.data.producer_id,
+          .producer_epoch = request.data.producer_epoch,
+          .committed = request.data.committed};
+        return ctx.tx_gateway_frontend()
+          .end_txn(
+            tx_request, config::shard_local_cfg().create_topic_timeout_ms())
+          .then([&ctx](cluster::end_tx_reply tx_response) {
+              end_txn_response_data data;
+              switch (tx_response.error_code) {
+              case cluster::tx_errc::none:
+                  data.error_code = error_code::none;
+                  break;
+              case cluster::tx_errc::not_coordinator:
+                  data.error_code = error_code::not_coordinator;
+                  break;
+              case cluster::tx_errc::coordinator_not_available:
+                  data.error_code = error_code::coordinator_not_available;
+                  break;
+              case cluster::tx_errc::fenced:
+                  data.error_code = error_code::invalid_producer_epoch;
+                  break;
+              case cluster::tx_errc::invalid_producer_id_mapping:
+                  data.error_code = error_code::invalid_producer_id_mapping;
+                  break;
+              case cluster::tx_errc::invalid_txn_state:
+                  data.error_code = error_code::invalid_txn_state;
+                  break;
+              case cluster::tx_errc::timeout:
+                  data.error_code = error_code::request_timed_out;
+                  break;
+              default:
+                  data.error_code = error_code::unknown_server_error;
+                  break;
+              }
+              end_txn_response response;
+              response.data = data;
+              return ctx.respond(response);
+          });
+    });
 }
 
 } // namespace kafka
