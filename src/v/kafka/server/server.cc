@@ -18,6 +18,7 @@
 #include "kafka/server/group_router.h"
 #include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/handlers/leave_group.h"
+#include "kafka/server/handlers/list_groups.h"
 #include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/handlers/sync_group.h"
 #include "kafka/server/logger.h"
@@ -332,6 +333,37 @@ ss::future<response_ptr> leave_group_handler::handle(
     }
 
     auto resp = co_await ctx.groups().leave_group(std::move(request));
+    co_return co_await ctx.respond(std::move(resp));
+}
+
+template<>
+ss::future<response_ptr> list_groups_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    list_groups_request request{};
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+    auto&& [error, groups] = co_await ctx.groups().list_groups();
+
+    list_groups_response resp;
+    resp.data.error_code = error;
+    resp.data.groups = std::move(groups);
+
+    if (ctx.authorized(
+          security::acl_operation::describe, security::default_cluster_name)) {
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    // remove groups from response that should not be visible
+    auto non_visible_it = std::partition(
+      resp.data.groups.begin(),
+      resp.data.groups.end(),
+      [&ctx](const listed_group& group) {
+          return ctx.authorized(
+            security::acl_operation::describe, group.group_id);
+      });
+
+    resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+
     co_return co_await ctx.respond(std::move(resp));
 }
 
