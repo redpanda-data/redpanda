@@ -6,7 +6,6 @@ set(handlers_srcs
   server/handlers/txn_offset_commit.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc
-  server/handlers/offset_fetch.cc
   server/handlers/produce.cc
   server/handlers/list_offsets.cc
   server/handlers/fetch.cc
