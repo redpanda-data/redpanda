@@ -29,18 +29,14 @@ import (
 )
 
 const (
-	redpandaCertVolName = "tlscert"
-	// originally this volume contained only client CA but for pandaproxy and
-	// schema registry we need to also include the certs. Now the name of the
-	// volume does not align with its contents but changing this would mean we
-	// force restart of redpanda when updating to this version
-	redpandaClientVolName         = "tlsca"
-	adminAPICertVolName           = "tlsadmincert"
-	adminAPIClientCAVolName       = "tlsadminca"
-	pandaProxyCertVolName         = "tlspandaproxycert"
-	pandaProxyClientCAVolName     = "tlspandaproxyca"
-	schemaRegistryCertVolName     = "tlsschemaregistrycert"
-	schemaRegistryClientCAVolName = "tlsschemaregistryca"
+	redpandaCertVolName       = "tlscert"
+	redpandaCAVolName         = "tlsca"
+	adminAPICertVolName       = "tlsadmincert"
+	adminAPICAVolName         = "tlsadminca"
+	pandaProxyCertVolName     = "tlspandaproxycert"
+	pandaProxyCAVolName       = "tlspandaproxyca"
+	schemaRegistryCertVolName = "tlsschemaregistrycert"
+	schemaRegistryCAVolName   = "tlsschemaregistryca"
 )
 
 // Helper functions and types for Listeners
@@ -136,8 +132,6 @@ type apiCertificates struct {
 	clientCertificates []resources.Resource
 	rootResources      []resources.Resource
 	tlsEnabled         bool
-	// true if api is using our own generated self-signed issuer
-	selfSignedNodeCertificate bool
 
 	// CR allows to specify node certificate, if not provided this will be nil
 	externalNodeCertificate *corev1.ObjectReference
@@ -251,7 +245,6 @@ func (cc *ClusterCertificates) prepareAPI(
 	// every time both listeners share the same set of certificates
 	nodeSecretRef := tlsListeners[0].GetTLS().NodeSecretRef
 	result.externalNodeCertificate = nodeSecretRef
-	result.selfSignedNodeCertificate = tlsListeners[0].GetTLS().IssuerRef == nil && nodeSecretRef == nil
 	if nodeSecretRef == nil || nodeSecretRef.Name == "" {
 		certName := NewCertName(cc.pandaCluster.Name, nodeCertSuffix)
 		certsKey := types.NamespacedName{Name: string(certName), Namespace: cc.pandaCluster.Namespace}
@@ -466,21 +459,19 @@ func (cc *ClusterCertificates) Volumes() (
 	var mounts []corev1.VolumeMount
 	mountPoints := resourcetypes.GetTLSMountPoints()
 
-	// kafka client certs are needed for pandaproxy and schema registry if enabled
-	shouldIncludeKafkaClientCerts := len(cc.kafkaAPI.clientCertificates) > 0
-	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaClientVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir, cc.kafkaAPI.selfSignedNodeCertificate, shouldIncludeKafkaClientCerts)
+	vol, mount := secretVolumesForTLS(cc.kafkaAPI.nodeCertificateName(), cc.kafkaAPI.clientCertificates, redpandaCertVolName, redpandaCAVolName, mountPoints.KafkaAPI.NodeCertMountDir, mountPoints.KafkaAPI.ClientCAMountDir)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.adminAPI.nodeCertificateName(), cc.adminAPI.clientCertificates, adminAPICertVolName, adminAPIClientCAVolName, mountPoints.AdminAPI.NodeCertMountDir, mountPoints.AdminAPI.ClientCAMountDir, false, false)
+	vol, mount = secretVolumesForTLS(cc.adminAPI.nodeCertificateName(), cc.adminAPI.clientCertificates, adminAPICertVolName, adminAPICAVolName, mountPoints.AdminAPI.NodeCertMountDir, mountPoints.AdminAPI.ClientCAMountDir)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.pandaProxyAPI.nodeCertificateName(), cc.pandaProxyAPI.clientCertificates, pandaProxyCertVolName, pandaProxyClientCAVolName, mountPoints.PandaProxyAPI.NodeCertMountDir, mountPoints.PandaProxyAPI.ClientCAMountDir, false, false)
+	vol, mount = secretVolumesForTLS(cc.pandaProxyAPI.nodeCertificateName(), cc.pandaProxyAPI.clientCertificates, pandaProxyCertVolName, pandaProxyCAVolName, mountPoints.PandaProxyAPI.NodeCertMountDir, mountPoints.PandaProxyAPI.ClientCAMountDir)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
-	vol, mount = secretVolumesForTLS(cc.schemaRegistryAPI.nodeCertificateName(), cc.schemaRegistryAPI.clientCertificates, schemaRegistryCertVolName, schemaRegistryClientCAVolName, mountPoints.SchemaRegistryAPI.NodeCertMountDir, mountPoints.SchemaRegistryAPI.ClientCAMountDir, false, false)
+	vol, mount = secretVolumesForTLS(cc.schemaRegistryAPI.nodeCertificateName(), cc.schemaRegistryAPI.clientCertificates, schemaRegistryCertVolName, schemaRegistryCAVolName, mountPoints.SchemaRegistryAPI.NodeCertMountDir, mountPoints.SchemaRegistryAPI.ClientCAMountDir)
 	vols = append(vols, vol...)
 	mounts = append(mounts, mount...)
 
@@ -490,8 +481,7 @@ func (cc *ClusterCertificates) Volumes() (
 func secretVolumesForTLS(
 	nodeCertificate *types.NamespacedName,
 	clientCertificates []resources.Resource,
-	volumeName, clientVolumeName, mountDir, caMountDir string,
-	shouldIncludeNodeCa, shouldIncludeClientCert bool,
+	volumeName, caVolumeName, mountDir, caMountDir string,
 ) ([]corev1.Volume, []corev1.VolumeMount) {
 	var vols []corev1.Volume
 	var mounts []corev1.VolumeMount
@@ -500,7 +490,7 @@ func secretVolumesForTLS(
 	}
 
 	// mount node certificate's private key
-	nodeVolume := corev1.Volume{
+	vols = append(vols, corev1.Volume{
 		Name: volumeName,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
@@ -517,16 +507,7 @@ func secretVolumesForTLS(
 				},
 			},
 		},
-	}
-
-	if shouldIncludeNodeCa {
-		nodeVolume.VolumeSource.Secret.Items = append(nodeVolume.VolumeSource.Secret.Items, corev1.KeyToPath{
-			Key:  cmmetav1.TLSCAKey,
-			Path: cmmetav1.TLSCAKey,
-		})
-	}
-
-	vols = append(vols, nodeVolume)
+	})
 	mounts = append(mounts, corev1.VolumeMount{
 		Name:      volumeName,
 		MountPath: mountDir,
@@ -535,8 +516,8 @@ func secretVolumesForTLS(
 	// if mutual TLS is enabled, mount also client cerificate CA to be able to
 	// verify client certificates
 	if len(clientCertificates) > 0 {
-		clientCertVolume := corev1.Volume{
-			Name: clientVolumeName,
+		vols = append(vols, corev1.Volume{
+			Name: caVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: clientCertificates[0].Key().Name,
@@ -548,19 +529,9 @@ func secretVolumesForTLS(
 					},
 				},
 			},
-		}
-		if shouldIncludeClientCert {
-			clientCertVolume.VolumeSource.Secret.Items = append(clientCertVolume.VolumeSource.Secret.Items, corev1.KeyToPath{
-				Key:  corev1.TLSPrivateKeyKey,
-				Path: corev1.TLSPrivateKeyKey,
-			}, corev1.KeyToPath{
-				Key:  corev1.TLSCertKey,
-				Path: corev1.TLSCertKey,
-			})
-		}
-		vols = append(vols, clientCertVolume)
+		})
 		mounts = append(mounts, corev1.VolumeMount{
-			Name:      clientVolumeName,
+			Name:      caVolumeName,
 			MountPath: caMountDir,
 		})
 	}
