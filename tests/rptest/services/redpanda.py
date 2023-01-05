@@ -717,19 +717,21 @@ class RedpandaService(Service):
         env_preamble = " ".join(
             [f"{k}={v}" for (k, v) in self._environment.items()])
 
+        # set llvm_profile var for code coverae
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            llvm_profile_file = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" "
+        else:
+            llvm_profile_file = ""
+
         cmd = (
-            f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
+            f"{preamble} {env_preamble} {llvm_profile_file} nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
             f" --default-log-level {self._log_level}"
             f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
-
-        # set llvm_profile var for code coverae
-        # each node will create its own copy of the .profraw file
-        # since each node creates a redpanda broker.
-        if self.cov_enabled():
-            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
 
         node.account.ssh(cmd)
 
