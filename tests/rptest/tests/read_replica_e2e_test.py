@@ -51,7 +51,6 @@ class TestReadReplicaService(EndToEndTest):
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
         self.rr_settings = SISettings(
-            cloud_storage_bucket='none',
             bypass_bucket_creation=True,
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,

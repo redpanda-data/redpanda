@@ -371,7 +371,6 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     def __init__(self, test_context: TestContext):
         si_settings = SISettings(log_segment_size=self.segment_size,
                                  cloud_storage_cache_size=20 * 2**30,
-                                 cloud_storage_bucket='while-busy-bucket',
                                  cloud_storage_enable_remote_read=False,
                                  cloud_storage_enable_remote_write=False)
 
