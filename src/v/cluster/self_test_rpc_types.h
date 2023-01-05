@@ -48,13 +48,13 @@ struct diskcheck_opts
 
     ss::lowres_clock::duration duration;
 
-    static diskcheck_opts from_json(const json::Document& doc) {
+    static diskcheck_opts from_json(const json::Value& obj) {
         static const auto default_duration = 5;
         return cluster::diskcheck_opts{
-          .name = doc.HasMember("name") ? doc["name"].GetString() : "",
+          .name = obj.HasMember("name") ? obj["name"].GetString() : "",
           .duration = std::chrono::seconds(
-            doc.HasMember("disk_test_execution_time")
-              ? doc["disk_test_execution_time"].GetInt()
+            obj.HasMember("disk_test_execution_time")
+              ? obj["disk_test_execution_time"].GetInt()
               : default_duration)};
     }
 
@@ -75,13 +75,13 @@ struct netcheck_opts
 
     ss::lowres_clock::duration duration;
 
-    static netcheck_opts from_json(const json::Document& doc) {
+    static netcheck_opts from_json(const json::Value& obj) {
         static const auto default_duration = 5;
         return cluster::netcheck_opts{
-          .name = doc.HasMember("name") ? doc["name"].GetString() : "",
+          .name = obj.HasMember("name") ? obj["name"].GetString() : "",
           .duration = std::chrono::seconds(
-            doc.HasMember("network_test_execution_time")
-              ? doc["network_test_execution_time"].GetInt()
+            obj.HasMember("network_test_execution_time")
+              ? obj["network_test_execution_time"].GetInt()
               : default_duration)};
     }
 
@@ -151,21 +151,17 @@ struct start_test_request
     using rpc_adl_exempt = std::true_type;
 
     uuid_t id;
-    std::optional<diskcheck_opts> dto;
-    std::optional<netcheck_opts> nto;
+    std::vector<diskcheck_opts> dtos;
+    std::vector<netcheck_opts> ntos;
 
     friend std::ostream&
     operator<<(std::ostream& o, const start_test_request& r) {
         std::stringstream ss;
-        if (r.dto) {
-            fmt::print(ss, "diskcheck_opts: {}", *r.dto);
-        } else {
-            fmt::print(ss, "diskcheck_opts: <no_value>");
+        for (auto& v : r.dtos) {
+            fmt::print(ss, "diskcheck_opts: {}", v);
         }
-        if (r.nto) {
-            fmt::print(ss, "netcheck_opts: {}", *r.nto);
-        } else {
-            fmt::print(ss, "netcheck_opts: <no_value>");
+        for (auto& v : r.ntos) {
+            fmt::print(ss, "netcheck_opts: {}", v);
         }
         fmt::print(o, "{{id: {} {}}}", r.id, ss.str());
         return o;

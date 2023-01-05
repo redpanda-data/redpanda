@@ -125,10 +125,9 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
-ss::future<uuid_t> self_test_frontend::start_test(
-  std::optional<diskcheck_opts> dto, std::optional<netcheck_opts> nto) {
+ss::future<uuid_t> self_test_frontend::start_test(start_test_request req) {
     auto gate_holder = _gate.hold();
-    if (!dto && !nto) {
+    if (req.dtos.empty() && req.ntos.empty()) {
         throw self_test_exception("No tests specified to run");
     }
     const auto stopped_results = co_await stop_test();
@@ -141,7 +140,6 @@ ss::future<uuid_t> self_test_frontend::start_test(
 
     /// Invoke command to start test on all nodes, using the same test id
     const auto id = uuid_t::create();
-    start_test_request req{.id = id, .dto = dto, .nto = nto};
     auto state = co_await invoke_on_all_nodes(
       [req](auto& handle) { return handle->start_test(req); });
     co_return id;

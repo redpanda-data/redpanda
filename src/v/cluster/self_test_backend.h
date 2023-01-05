@@ -55,7 +55,7 @@ public:
 
 private:
     ss::future<std::vector<self_test_result>> do_start_test(
-      std::optional<diskcheck_opts> dto, std::optional<netcheck_opts> nto);
+      std::vector<diskcheck_opts> dtos, std::vector<netcheck_opts> ntos);
 
 private:
     // cached values
