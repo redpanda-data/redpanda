@@ -27,7 +27,7 @@ func ReplaceFile(fs afero.Fs, filename string, contents []byte, newPerms os.File
 	}
 	// Create a temp file first.
 	layout := "20060102150405" // year-month-day-hour-min-sec
-	bFilename := "redpanda-" + time.Now().Format(layout) + ".yaml"
+	bFilename := "redpanda-" + time.Now().Format(layout)
 	temp := filepath.Join(filepath.Dir(filename), bFilename)
 
 	err = afero.WriteFile(fs, temp, contents, newPerms)
