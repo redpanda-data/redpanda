@@ -759,7 +759,7 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
       so.start_offset);
     if (!_manifest->advance_start_offset(so.start_offset)) {
         vlog(
-          _logger.warn,
+          _logger.error,
           "Can't truncate manifest up to offset {}, offset out of range",
           so.start_offset);
     } else {
