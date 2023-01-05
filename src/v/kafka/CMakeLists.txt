@@ -20,7 +20,6 @@ set(handlers_srcs
   server/handlers/delete_topics.cc
   server/handlers/alter_configs.cc
   server/handlers/describe_groups.cc
-  server/handlers/sasl_handshake.cc
   server/handlers/incremental_alter_configs.cc
   server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc

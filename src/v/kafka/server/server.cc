@@ -20,6 +20,7 @@
 #include "kafka/server/handlers/leave_group.h"
 #include "kafka/server/handlers/list_groups.h"
 #include "kafka/server/handlers/sasl_authenticate.h"
+#include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/handlers/sync_group.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
@@ -29,6 +30,7 @@
 #include "security/exceptions.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 
@@ -45,6 +47,10 @@
 #include <exception>
 #include <limits>
 #include <memory>
+
+static const std::vector<ss::sstring> supported_sasl_mechanisms = {
+  security::scram_sha256_authenticator::name,
+  security::scram_sha512_authenticator::name};
 
 namespace kafka {
 
@@ -365,6 +371,39 @@ ss::future<response_ptr> list_groups_handler::handle(
     resp.data.groups.erase(non_visible_it, resp.data.groups.end());
 
     co_return co_await ctx.respond(std::move(resp));
+}
+
+template<>
+ss::future<response_ptr> sasl_handshake_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    sasl_handshake_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+    vlog(klog.debug, "Received SASL_HANDSHAKE {}", request);
+
+    /*
+     * configure sasl for the current connection context. see the sasl
+     * authenticate request for the next phase of the auth process.
+     */
+    auto error = error_code::none;
+
+    if (request.data.mechanism == security::scram_sha256_authenticator::name) {
+        ctx.sasl()->set_mechanism(
+          std::make_unique<security::scram_sha256_authenticator::auth>(
+            ctx.credentials()));
+
+    } else if (
+      request.data.mechanism == security::scram_sha512_authenticator::name) {
+        ctx.sasl()->set_mechanism(
+          std::make_unique<security::scram_sha512_authenticator::auth>(
+            ctx.credentials()));
+
+    } else {
+        error = error_code::unsupported_sasl_mechanism;
+    }
+
+    return ctx.respond(
+      sasl_handshake_response(error, supported_sasl_mechanisms));
 }
 
 } // namespace kafka
