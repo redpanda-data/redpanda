@@ -353,9 +353,8 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
           deadline, _as);
         builder.add_segments(std::move(mdiff));
         if (
-          new_start_offset.has_value()
-          && old_start_offset.value_or(model::offset())
-               != new_start_offset.value()) {
+          new_start_offset.has_value() && old_start_offset.has_value()
+          && old_start_offset.value() != new_start_offset.value()) {
             builder.truncate(new_start_offset.value());
             needs_cleanup = true;
         }
