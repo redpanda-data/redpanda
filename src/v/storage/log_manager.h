@@ -205,7 +205,7 @@ public:
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
-    using compaction_list_type
+    using housekeeping_list_type
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
     ss::future<log> do_manage(ntp_config);
@@ -230,9 +230,9 @@ private:
     kvstore& _kvstore;
     storage_resources& _resources;
     simple_time_jitter<ss::lowres_clock> _jitter;
-    ss::timer<ss::lowres_clock> _compaction_timer;
+    ss::timer<ss::lowres_clock> _housekeeping_timer;
     logs_type _logs;
-    compaction_list_type _logs_list;
+    housekeeping_list_type _logs_list;
     batch_cache _batch_cache;
     ss::gate _open_gate;
     ss::abort_source _abort_source;

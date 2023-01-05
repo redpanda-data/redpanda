@@ -130,14 +130,14 @@ log_manager::log_manager(
   , _resources(resources)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
-    _compaction_timer.set_callback([this] { trigger_housekeeping(); });
-    _compaction_timer.rearm(_jitter());
+    _housekeeping_timer.set_callback([this] { trigger_housekeeping(); });
+    _housekeeping_timer.rearm(_jitter());
 
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
-        if (_compaction_timer.cancel()) {
-            _compaction_timer.rearm(_jitter());
+        if (_housekeeping_timer.cancel()) {
+            _housekeeping_timer.rearm(_jitter());
         }
     });
 }
@@ -151,7 +151,7 @@ void log_manager::trigger_housekeeping() {
                                     return;
                                 }
 
-                                _compaction_timer.rearm(next_housekeeping);
+                                _housekeeping_timer.rearm(next_housekeeping);
                             });
                       }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
@@ -178,7 +178,7 @@ ss::future<> log_manager::clean_close(storage::log& log) {
 }
 
 ss::future<> log_manager::stop() {
-    _compaction_timer.cancel();
+    _housekeeping_timer.cancel();
     _abort_source.request_abort();
 
     co_await _open_gate.close();
@@ -500,7 +500,7 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
              << ", cache:" << m._batch_cache
-             << ", compaction_timer.armed:" << m._compaction_timer.armed()
+             << ", compaction_timer.armed:" << m._housekeeping_timer.armed()
              << "}";
 }
 } // namespace storage
