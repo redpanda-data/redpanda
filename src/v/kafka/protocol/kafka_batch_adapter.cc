@@ -123,7 +123,7 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     if (unlikely((uint32_t)expected_crc != crc.value())) {
         valid_crc = false;
         vlog(
-          klog.error,
+          klog.info,
           "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
           "Got:{}",
           expected_crc,
@@ -170,8 +170,8 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
-        vlog(klog.error, "batch has invalid CRC: {}", header);
-        vlog(klog.error, "batch bytes: {}", bytes_to_base64(kbatch_copy));
+        vlog(klog.info, "batch has invalid CRC: {}", header);
+        vlog(klog.info, "batch bytes: {}", bytes_to_base64(kbatch_copy));
         return remainder;
     }
 

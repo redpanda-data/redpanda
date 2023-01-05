@@ -440,6 +440,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         }
 
         if (unlikely(!part.records->adapter.valid_crc)) {
+            vlog(klog.info, "SENDING BACK CORRUPT MESSAGE ERROR");
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
