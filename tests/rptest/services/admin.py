@@ -785,3 +785,8 @@ class Admin:
 
     def self_test_status(self):
         return self._request("GET", "debug/self_test/status").json()
+
+    def redpanda_services_restart(self, rp_service: Optional[str] = None):
+        service_param = f"service={rp_service if rp_service is not None else ''}"
+        return self._request("PUT",
+                             f"redpanda-services/restart?{service_param}")
