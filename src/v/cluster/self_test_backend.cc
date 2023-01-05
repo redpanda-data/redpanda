@@ -23,8 +23,15 @@
 
 namespace cluster {
 
-self_test_backend::self_test_backend(ss::scheduling_group sg)
-  : _st_sg(sg) {}
+self_test_backend::self_test_backend(
+  model::node_id self,
+  ss::sharded<node::local_monitor>& nlm,
+  ss::sharded<rpc::connection_cache>& connections,
+  ss::scheduling_group sg)
+  : _self(self)
+  , _st_sg(sg)
+  , _disk_test(nlm)
+  , _network_test(self, connections) {}
 
 ss::future<> self_test_backend::start() {
     co_await _disk_test.start();
@@ -45,10 +52,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     for (auto& dto : dtos) {
         try {
             dto.sg = _st_sg;
-            auto dtr = co_await _disk_test.run(dto).then([](auto result) {
-                vlog(clusterlog.info, "Disk self test finished with success");
-                return result;
-            });
+            auto dtr = co_await _disk_test.run(dto).then(
+              [](auto result) { return result; });
             std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
@@ -60,14 +65,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         try {
             if (!nto.peers.empty()) {
                 nto.sg = _st_sg;
-                vlog(clusterlog.info, "Starting network self test...");
                 auto ntr = co_await _network_test.run(nto).then(
-                  [](auto results) {
-                      vlog(
-                        clusterlog.info,
-                        "Network self test finished with success");
-                      return results;
-                  });
+                  [](auto results) { return results; });
                 std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
             } else {
                 results.push_back(self_test_result{
@@ -92,16 +91,15 @@ get_status_response self_test_backend::start_test(start_test_request req) {
           clusterlog.info, "Starting redpanda self-tests with id: {}", req.id);
         (void)do_start_test(req.dtos, req.ntos)
           .then([this, id = req.id](auto results) {
+              for (auto& r : results) {
+                  r.test_id = id;
+              }
               _prev_run = get_status_response{
                 .id = id,
                 .status = self_test_status::idle,
                 .results = std::move(results)};
           })
-          .finally([this, units = std::move(units)] {
-              /// TODO: No need for this when disk + network tests are written
-              _disk_test.reset();
-              _network_test.reset();
-          });
+          .finally([units = std::move(units)] {});
     } else {
         vlog(
           clusterlog.info,

@@ -10,7 +10,10 @@
  */
 #pragma once
 
-#include "self_test_benchmarks.h"
+#include "cluster/node/local_monitor.h"
+#include "rpc/connection_cache.h"
+#include "self_test/diskcheck.h"
+#include "self_test/netcheck.h"
 #include "self_test_rpc_types.h"
 #include "utils/mutex.h"
 #include "utils/uuid.h"
@@ -31,7 +34,11 @@ class self_test_backend {
 public:
     static constexpr ss::shard_id shard = 0;
 
-    explicit self_test_backend(ss::scheduling_group sg);
+    self_test_backend(
+      model::node_id self,
+      ss::sharded<node::local_monitor>& nlm,
+      ss::sharded<rpc::connection_cache>& connections,
+      ss::scheduling_group sg);
 
     ss::future<> start();
     ss::future<> stop();
@@ -81,10 +88,11 @@ private:
     get_status_response _prev_run{.status = self_test_status::idle};
     previous_netcheck_entity _prev_nc;
 
+    model::node_id _self;
     ss::gate _gate;
     ss::scheduling_group _st_sg;
     mutex _lock;
-    diskcheck _disk_test;
-    networkcheck _network_test;
+    self_test::diskcheck _disk_test;
+    self_test::netcheck _network_test;
 };
 } // namespace cluster
