@@ -210,7 +210,7 @@ class AddPartitionsOperation(Operation):
             return False
 
         rpk = ctx.rpk()
-        current = len(list(rpk.describe_topic(self.topic)))
+        current = len(list(rpk.describe_topic(self.topic, tolerant=True)))
         to_add = random.randint(1, 5)
         self.total = current + to_add
         ctx.redpanda.logger.info(
