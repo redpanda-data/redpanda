@@ -33,7 +33,17 @@ private:
     std::string msg;
 };
 
-/// \brief batch operations for zero copy interface of an output_stream<char>
+/**
+ * @brief Wrap a seastar output stream to provide batching of flush calls.
+ *
+ * When used for zero-copy operations, a seastar output stream does not send
+ * data further downstream to the sink (i.e., the kernel) until flush() is
+ * called. Rather than calling flush after every write (e.g., a full rpc request
+ * payload), class attempts to reduce the number of flush calls by supressing
+ * flushes when multiple writes are in progress on the stream: a flush occurs
+ * only when the last pending writer completes or when a configured amount of
+ * unflushed bytes have accumulated.
+ */
 class batched_output_stream {
 public:
     static constexpr size_t default_max_unflushed_bytes = 1024 * 1024;
