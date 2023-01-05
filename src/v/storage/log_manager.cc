@@ -29,8 +29,8 @@
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
-#include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
+#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -372,31 +372,27 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        _resources.update_partition_count(_logs.size());
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
-        }
-        // 'ss::shared_ptr<>' make a copy
-        storage::log lg = handle.mapped()->handle;
-        vlog(stlog.info, "Removing: {}", lg);
-        // NOTE: it is ok to *not* externally synchronize the log here
-        // because remove, takes a write lock on each individual segments
-        // waiting for all of them to be closed before actually removing the
-        // underlying log. If there is a background operation like
-        // compaction or so, it will block correctly.
-        auto ntp_dir = lg.config().work_directory();
-        ss::sstring topic_dir = lg.config().topic_directory().string();
-        return lg.remove()
-          .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
-          .then([this, dir = std::move(topic_dir)]() mutable {
-              // We always dispatch topic directory deletion to core 0 as
-              // requests may come from different cores
-              return dispatch_topic_dir_deletion(std::move(dir));
-          })
-          .finally([lg] {});
-    });
+    gate_guard g(_open_gate);
+    auto handle = _logs.extract(ntp);
+    _resources.update_partition_count(_logs.size());
+    if (handle.empty()) {
+        co_return;
+    }
+    // 'ss::shared_ptr<>' make a copy
+    storage::log lg = handle.mapped()->handle;
+    vlog(stlog.info, "Removing: {}", lg);
+    // NOTE: it is ok to *not* externally synchronize the log here
+    // because remove, takes a write lock on each individual segments
+    // waiting for all of them to be closed before actually removing the
+    // underlying log. If there is a background operation like
+    // compaction or so, it will block correctly.
+    auto ntp_dir = lg.config().work_directory();
+    ss::sstring topic_dir = lg.config().topic_directory().string();
+    co_await lg.remove();
+    co_await remove_file(ntp_dir);
+    // We always dispatch topic directory deletion to core 0 as requests may
+    // come from different cores
+    co_await dispatch_topic_dir_deletion(topic_dir);
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
