@@ -602,16 +602,16 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
         update_node_append_timestamp(target);
         vlog(
           _ctxlog.trace, "Sending empty append entries request to {}", target);
-        auto f
-          = _client_protocol
-              .append_entries(
-                target.id(),
-                std::move(req),
-                rpc::client_opts(_replicate_append_timeout + clock_type::now()))
-              .then([this, id = target.id(), seq, dirty_offset](
-                      result<append_entries_reply> reply) {
-                  process_append_entries_reply(id, reply, seq, dirty_offset);
-              });
+        auto f = _client_protocol
+                   .append_entries(
+                     target.id(),
+                     std::move(req),
+                     rpc::client_opts(_replicate_append_timeout))
+                   .then([this, id = target.id(), seq, dirty_offset](
+                           result<append_entries_reply> reply) {
+                       process_append_entries_reply(
+                         id, reply, seq, dirty_offset);
+                   });
 
         send_futures.push_back(std::move(f));
     });
