@@ -19,6 +19,8 @@ class fast_prng {
 public:
     fast_prng() noexcept
       : _rng(absl::MakeSeedSeq()) {}
+    explicit fast_prng(unsigned int seed) noexcept
+      : _rng(seed) {}
     ~fast_prng() noexcept = default;
     fast_prng(const fast_prng&) = delete;
     fast_prng& operator=(const fast_prng&) = delete;
