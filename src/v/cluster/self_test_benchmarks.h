@@ -73,7 +73,7 @@ private:
 
 class diskcheck final : public self_test_stub {
 public:
-    ss::future<self_test_result> run(diskcheck_opts opts) {
+    ss::future<std::vector<self_test_result>> run(diskcheck_opts opts) {
         auto start = ss::lowres_clock::now();
         auto was_cancelled = co_await gated_sleep(opts.duration);
         auto result = self_test_result{
@@ -81,7 +81,7 @@ public:
         if (was_cancelled) {
             result.warning = "Test aborted during run";
         }
-        co_return result;
+        co_return std::vector<self_test_result>{result};
     }
 };
 

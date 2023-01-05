@@ -40,11 +40,11 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         /// Disk
         try {
             vlog(clusterlog.info, "Starting disk self test...");
-            results.push_back(
-              co_await _disk_test.run(*dto).then([](auto result) {
-                  vlog(clusterlog.info, "Disk self test finished with success");
-                  return result;
-              }));
+            auto dtr = co_await _disk_test.run(*dto).then([](auto result) {
+                vlog(clusterlog.info, "Disk self test finished with success");
+                return result;
+            });
+            std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
             results.push_back(
