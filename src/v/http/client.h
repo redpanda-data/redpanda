@@ -285,3 +285,29 @@ struct fmt::formatter<http::client::request_header> {
         return fmt::format_to(ctx.out(), "{}", s.str());
     }
 };
+
+template<>
+struct fmt::formatter<http::client::response_header> {
+    char presentation = 'u'; // 'u' for unchanged, 'l' for one line
+    constexpr auto parse(format_parse_context& ctx) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        if (it != end && (*it == 'l' || *it == 'u')) presentation = *it++;
+        if (it != end && *it != '}') throw format_error("invalid format");
+        return it;
+    }
+
+    auto format(http::client::response_header& h, auto& ctx) const {
+        if (presentation == 'u') {
+            std::stringstream s;
+            s << h;
+            return fmt::format_to(ctx.out(), "{}", s.str());
+        }
+        // format one line
+        auto out = ctx.out();
+        for (auto& f : h) {
+            out = fmt::format_to(out, "[{}: {}];", f.name_string(), f.value());
+        }
+        return out;
+    }
+};
