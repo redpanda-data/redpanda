@@ -1755,8 +1755,8 @@ tx_gateway_frontend::do_end_txn(
               tx.tx_seq,
               term,
               tx.status);
-            outcome->set_value(tx_errc::unknown_server_error);
-            co_return tx_errc::unknown_server_error;
+            outcome->set_value(tx_errc::invalid_txn_state);
+            co_return tx_errc::invalid_txn_state;
         }
     } else {
         if (tx.status == tm_transaction::tx_status::killed) {
