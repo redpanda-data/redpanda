@@ -208,6 +208,10 @@
                     "type": "string",
                     "description": "Name of the test run"
                 },
+                "info": {
+                    "type": "string",
+                    "description": "Additional test labels, metadata and/or information"
+                },
                 "duration": {
                     "type": "long",
                     "description": "Length of time the test took to complete"
