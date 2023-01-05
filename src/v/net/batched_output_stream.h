@@ -59,7 +59,19 @@ public:
     batched_output_stream(const batched_output_stream&) = delete;
     batched_output_stream& operator=(const batched_output_stream&) = delete;
 
-    ss::future<> write(ss::scattered_message<char> msg);
+    /**
+     * @brief Write the given payload to the underlying stream and maybe flush.
+     *
+     * Writes the scattered message to the underlying output stream, flushing if
+     * this is the only (last) writer trying to write to this stream or if the
+     * _cache_size has been reached.
+     *
+     * @param msg the message to write to the underlying stream
+     * @return ss::future<bool> a future which resolves when the flush, if any,
+     * completes with the wrapped value indicating wheter a flush occurred on
+     * this write (true) or not (false)
+     */
+    ss::future<bool> write(ss::scattered_message<char> msg);
     ss::future<> flush();
 
     /// \brief calls output_stream<char>::close()
