@@ -65,6 +65,7 @@ message Test2 {
 
 log_config = LoggingConfig('info',
                            logger_levels={
+                               'admin_api_server': 'trace',
                                'security': 'trace',
                                'pandaproxy': 'trace',
                                'kafka/client': 'trace'
@@ -1222,6 +1223,118 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             for n in self.redpanda.nodes:
                 check_connection(n.account.hostname)
             move_leader()
+
+    @cluster(num_nodes=3)
+    def test_restart_schema_registry(self):
+        # Create several schemas on one subject and return the list schemas and schema ids
+        def register_schemas(subject: str):
+            schemas = [
+                json.dumps({"schema": schema1_def}),
+                json.dumps({"schema": schema2_def}),
+                json.dumps({"schema": schema3_def})
+            ]
+            schema_ids = []
+
+            for schema in schemas:
+                self.logger.debug(f"Post schema {json.loads(schema)}")
+                result_raw = self._post_subjects_subject_versions(
+                    subject=subject, data=schema)
+                self.logger.debug(result_raw)
+                assert result_raw.status_code == requests.codes.ok
+                res = result_raw.json()
+                self.logger.debug(res)
+                assert "id" in res
+                schema_ids.append(result_raw.json()["id"])
+
+            return schemas, schema_ids
+
+        # Given a list of subjects, check that they exist on the registry
+        def check_subjects(subjects: list[str]):
+            result_raw = self._get_subjects()
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+            res_subjects = result_raw.json()
+            self.logger.debug(res_subjects)
+            assert type(res_subjects) == type([])
+            res_subjects.sort()
+            subjects.sort()
+            assert res_subjects == subjects
+
+        # Given the subject and list of versions, check that the version numbers match
+        def check_subject_versions(subject: str, subject_versions: list[int]):
+            result_raw = self._get_subjects_subject_versions(subject=subject)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+            res_versions = result_raw.json()
+            self.logger.debug(res_versions)
+            assert type(res_versions) == type([])
+            res_versions.sort()
+            subject_versions.sort()
+            assert res_versions == subject_versions
+
+        # Given the subject, list of schemas, list of versions, and list of ids,
+        # check the schema that maps to the id
+        def check_each_schema(subject: str, schemas: list[str],
+                              schema_ids: list[int],
+                              subject_versions: list[int]):
+            for version in subject_versions:
+                self.logger.debug(
+                    f"Fetch schema version {version} on subject {subject}")
+                result_raw = self._get_subjects_subject_versions_version(
+                    subject=subject, version=version)
+                self.logger.debug(result_raw)
+                assert result_raw.status_code == requests.codes.ok
+                res = result_raw.json()
+                self.logger.debug(res)
+                assert type(res) == type({})
+                assert "subject" in res
+                assert "version" in res
+                assert "id" in res
+                assert "schema" in res
+                assert res["subject"] == subject
+                assert res["version"] == version
+                assert res["id"] in schema_ids
+                schema = json.loads(schemas[version - 1])
+                assert res["schema"] == schema["schema"]
+
+        admin = Admin(self.redpanda)
+
+        num_subjects = 3
+        subjects = {}
+        for _ in range(num_subjects):
+            subjects[f"{create_topic_names(1)[0]}-key"] = {
+                "schemas": [],
+                "schema_ids": [],
+                "subject_versions": []
+            }
+
+        self.logger.debug("Register and check schemas before restart")
+        for subject in subjects:
+            schemas, schema_ids = register_schemas(subject)
+            result_raw = self._get_subjects_subject_versions(subject=subject)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+            subject_versions = result_raw.json()
+            check_subject_versions(subject, subject_versions)
+            check_each_schema(subject, schemas, schema_ids, subject_versions)
+            subjects[subject]["schemas"] = schemas
+            subjects[subject]["schema_ids"] = schema_ids
+            subjects[subject]["subject_versions"] = subject_versions
+        check_subjects(list(subjects.keys()))
+
+        self.logger.debug("Restart the schema registry")
+        result_raw = admin.redpanda_services_restart(
+            rp_service='schema-registry')
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Check schemas after restart")
+        check_subjects(list(subjects.keys()))
+        for subject in subjects:
+            check_subject_versions(subject, subjects[subject]["schema_ids"])
+            check_each_schema(subject, subjects[subject]["schemas"],
+                              subjects[subject]["schema_ids"],
+                              subjects[subject]["subject_versions"])
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
