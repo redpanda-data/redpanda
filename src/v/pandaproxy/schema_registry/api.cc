@@ -70,4 +70,9 @@ ss::future<> api::stop() {
     }
 }
 
+ss::future<> api::restart() {
+    co_await stop();
+    co_await start();
+}
+
 } // namespace pandaproxy::schema_registry

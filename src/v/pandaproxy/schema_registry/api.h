@@ -42,6 +42,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> restart();
 
 private:
     model::node_id _node_id;
