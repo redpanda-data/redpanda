@@ -20,6 +20,8 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
+
 
 class RandomNodeOperationsTest(EndToEndTest):
 
@@ -108,3 +110,11 @@ class RandomNodeOperationsTest(EndToEndTest):
                             enable_idempotence=False,
                             producer_timeout_sec=self.producer_timeout,
                             consumer_timeout_sec=self.consumer_timeout)
+
+        # Validate that the controller log written during the test is readable by offline log viewer
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.started_nodes():
+            controller_records = log_viewer.read_controller(node=node)
+            self.logger.info(
+                f"Read {len(controller_records)} controller records from node {node.name} successfully"
+            )
