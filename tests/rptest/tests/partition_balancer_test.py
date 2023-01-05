@@ -198,11 +198,12 @@ class PartitionBalancerService(EndToEndTest):
 
     class NodeStopper:
         """Stop/kill/freeze one node at a time and wait for partition balancer."""
-        def __init__(self, test):
+        def __init__(self, test, exclude_unavailable_nodes=False):
             self.test = test
             self.f_injector = FailureInjector(test.redpanda)
             self.cur_failure = None
             self.logger = test.logger
+            self.exclude_unavailable_nodes = exclude_unavailable_nodes
 
         def __enter__(self):
             return self
@@ -233,6 +234,9 @@ class PartitionBalancerService(EndToEndTest):
                     self.logger.info(
                         f"made {self.cur_failure.node.account.hostname} available"
                     )
+                if self.exclude_unavailable_nodes:
+                    self.test.redpanda.add_to_started_nodes(
+                        self.cur_failure.node)
                 self.cur_failure = None
 
         def make_unavailable(self,
@@ -255,6 +259,9 @@ class PartitionBalancerService(EndToEndTest):
             self.cur_failure = FailureSpec(random.choice(failure_types), node)
             self.f_injector._start_func(self.cur_failure.type)(
                 self.cur_failure.node)
+            if self.exclude_unavailable_nodes:
+                self.test.redpanda.remove_from_started_nodes(node)
+
             self.logger.info(f"made {node.account.hostname} unavailable")
 
 
@@ -581,7 +588,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.logger.info(f"partition counts: {node2partition_count}")
             return node2partition_count
 
-        with self.NodeStopper(self) as ns:
+        with self.NodeStopper(self, exclude_unavailable_nodes=True) as ns:
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
                 try:
