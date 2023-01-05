@@ -278,7 +278,8 @@ class SISettings:
                 int] = None,
             cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                 int] = None,
-            bypass_bucket_creation: bool = False):
+            bypass_bucket_creation: bool = False,
+            cloud_storage_housekeeping_interval_ms: Optional[int] = None):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -296,6 +297,7 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
 
     def load_context(self, logger, test_context):
         """
@@ -357,6 +359,9 @@ class SISettings:
         if self.cloud_storage_segment_max_upload_interval_sec:
             conf[
                 'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
+        if self.cloud_storage_housekeeping_interval_ms:
+            conf[
+                'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
         return conf
 
 
