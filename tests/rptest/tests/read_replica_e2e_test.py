@@ -118,7 +118,8 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_max_connections=5,
             log_segment_size=TestReadReplicaService.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-            cloud_storage_segment_max_upload_interval_sec=5)
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_housekeeping_interval_ms=10)
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
@@ -192,6 +193,7 @@ class TestReadReplicaService(EndToEndTest):
         rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
 
         self.start_second_cluster()
+
         # wait until the read replica topic creation succeeds
         wait_until(
             self.create_read_replica_topic_success,
@@ -323,6 +325,8 @@ class TestReadReplicaService(EndToEndTest):
 
         # Let replica consumer run to completion, assert no s3 writes
         self.run_consumer_validation()
+        # Check read-replica logs
+        self.second_cluster.raise_on_bad_logs()
 
         post_usage = self._bucket_usage()
         self.logger.info(f"post_usage {post_usage}")
