@@ -75,6 +75,7 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/metrics.h"
+#include "utils/string_switch.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -98,6 +99,7 @@
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <type_traits>
 #include <unordered_map>
 
 using namespace std::chrono_literals;
@@ -3347,6 +3349,28 @@ void admin_server::register_shadow_indexing_routes() {
       });
 }
 
+constexpr std::string_view to_string_view(service_kind kind) {
+    switch (kind) {
+    case service_kind::schema_registry:
+        return "schema-registry";
+    }
+    return "invalid";
+}
+
+template<typename E>
+std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+  from_string_view(std::string_view);
+
+template<>
+constexpr std::optional<service_kind>
+from_string_view<service_kind>(std::string_view sv) {
+    return string_switch<std::optional<service_kind>>(sv)
+      .match(
+        to_string_view(service_kind::schema_registry),
+        service_kind::schema_registry)
+      .default_match(std::nullopt);
+}
+
 ss::future<> admin_server::restart_redpanda_service(service_kind service) {
     if (service == service_kind::schema_registry) {
         // Checks specific to schema registry
@@ -3358,7 +3382,11 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
 
         try {
             co_await _schema_registry->restart();
-        } catch (...) {
+        } catch (const std::exception& ex) {
+            vlog(
+              logger.error,
+              "Unknown issue restarting schema_registry: {}",
+              ex.what());
             throw ss::httpd::server_error_exception(
               "Unknown issue restarting schema_registry");
         }
@@ -3373,10 +3401,10 @@ admin_server::redpanda_services_restart_handler(
       service_param);
     if (!service.has_value()) {
         throw ss::httpd::not_found_exception(
-          fmt::format("Invalid service: {}", service));
+          fmt::format("Invalid service: {}", service_param));
     }
 
-    vlog(logger.info, "Restart redpanda service: {}", service);
+    vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
     co_await restart_redpanda_service(*service);
     co_return ss::json::json_return_type(ss::json::json_void());
 }
