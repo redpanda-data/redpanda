@@ -17,6 +17,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <optional>
+#include <vector>
 
 namespace config {
 
@@ -28,5 +29,8 @@ validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit);
 
 std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
   const std::unordered_map<ss::sstring, config::client_group_quota>&);
+
+std::optional<ss::sstring>
+validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms);
 
 }; // namespace config
