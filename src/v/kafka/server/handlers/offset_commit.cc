@@ -28,31 +28,6 @@
 
 namespace kafka {
 
-struct offset_commit_ctx {
-    request_context rctx;
-    offset_commit_request request;
-    ss::smp_service_group ssg;
-
-    // topic partitions found not to existent prior to processing. responses for
-    // these are patched back into the final response after processing.
-    absl::
-      flat_hash_map<model::topic, std::vector<offset_commit_response_partition>>
-        nonexistent_tps;
-
-    // topic partitions that principal is not authorized to read
-    absl::
-      flat_hash_map<model::topic, std::vector<offset_commit_response_partition>>
-        unauthorized_tps;
-
-    offset_commit_ctx(
-      request_context&& rctx,
-      offset_commit_request&& request,
-      ss::smp_service_group ssg)
-      : rctx(std::move(rctx))
-      , request(std::move(request))
-      , ssg(ssg) {}
-};
-
 template<>
 process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
@@ -63,6 +38,33 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     // check authorization for this group
     const auto group_authorized = ctx.authorized(
       security::acl_operation::read, request.data.group_id);
+
+    struct offset_commit_ctx {
+        request_context rctx;
+        offset_commit_request request;
+        ss::smp_service_group ssg;
+
+        // topic partitions found not to existent prior to processing. responses
+        // for these are patched back into the final response after processing.
+        absl::flat_hash_map<
+          model::topic,
+          std::vector<offset_commit_response_partition>>
+          nonexistent_tps;
+
+        // topic partitions that principal is not authorized to read
+        absl::flat_hash_map<
+          model::topic,
+          std::vector<offset_commit_response_partition>>
+          unauthorized_tps;
+
+        offset_commit_ctx(
+          request_context&& rctx,
+          offset_commit_request&& request,
+          ss::smp_service_group ssg)
+          : rctx(std::move(rctx))
+          , request(std::move(request))
+          , ssg(ssg) {}
+    };
 
     offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
