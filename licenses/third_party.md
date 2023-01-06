@@ -23,6 +23,7 @@ please keep this up to date with every new library use.
 | gnutls          | LGPL v2.1                          |
 | HdrHistogram    | BSD 2                              |
 | hwloc           | BSD                                |
+| krb5            | MIT                                |
 | libcxx          | Apache License 2                   |
 | libcxxabi       | Apache License 2                   |
 | libnumactl      | LGPL v2.1                          |

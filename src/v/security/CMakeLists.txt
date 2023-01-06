@@ -14,6 +14,8 @@ v_cc_library(
     absl::flat_hash_set
     cryptopp
     re2
+    gssapi_krb5
+    krb5
  )
 
 add_subdirectory(tests)

@@ -30,6 +30,8 @@ deb_deps=(
   curl
   git
   golang-go
+  libkrb5-dev
+  libgssapi-krb5-2
   libsnappy-dev
   libxxhash-dev
   libzstd-dev
@@ -50,6 +52,8 @@ fedora_deps=(
   curl
   git
   golang
+  krb5-libs
+  krb5-devel
   libzstd-devel
   libzstd-static
   llvm
