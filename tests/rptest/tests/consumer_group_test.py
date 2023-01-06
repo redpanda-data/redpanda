@@ -8,6 +8,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 
 from rptest.clients.rpk import RpkException, RpkTool
@@ -32,7 +33,10 @@ class ConsumerGroupTest(RedpandaTest):
             num_brokers=3,
             *args,
             # disable leader balancer to make sure that group will not be realoaded because of leadership changes
-            extra_rp_conf={"enable_leader_balancer": False},
+            extra_rp_conf={
+                "enable_leader_balancer": False,
+                "default_topic_replications": 3
+            },
             **kwargs)
 
     def make_consumer_properties(base_properties, instance_id=None):
@@ -153,6 +157,32 @@ class ConsumerGroupTest(RedpandaTest):
             c.stop()
             c.wait()
             c.free()
+
+        gd = RpkTool(self.redpanda).group_describe(group=group)
+        viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.nodes:
+            consumer_offsets_partitions = viewer.read_consumer_offsets(
+                node=node)
+            offsets = {}
+            groups = set()
+            for partition in consumer_offsets_partitions:
+                for r in partition['records']:
+                    self.logger.info(f"{r}")
+                    if r['key']['type'] == 'group_metadata':
+                        groups.add(r['key']['group_id'])
+                    elif r['key']['type'] == 'offset_commit':
+                        tp = f"{r['key']['topic']}/{r['key']['partition']}"
+                        if tp not in offsets:
+                            offsets[tp] = -1
+                        offsets[tp] = max(r['value']['committed_offset'],
+                                          offsets[tp])
+
+            assert len(groups) == 1 and group in groups
+            assert all([
+                f"{p.topic}/{p.partition}" in offsets
+                and offsets[f"{p.topic}/{p.partition}"] == p.current_offset
+                for p in gd.partitions
+            ])
 
     @cluster(num_nodes=6)
     def test_mixed_consumers_join(self):

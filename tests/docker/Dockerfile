@@ -179,4 +179,11 @@ RUN mkdir -p /opt/scripts && \
     curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
     chmod +x /opt/scripts/seastar-addr2line
 
+RUN mkdir -p /opt/scripts/offline_log_viewer
+COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
+
+RUN mkdir -p /opt/scripts/consumer_offsets_recovery
+COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
+RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
+
 CMD service ssh start && tail -f /dev/null

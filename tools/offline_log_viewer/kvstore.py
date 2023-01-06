@@ -97,7 +97,7 @@ class KvStoreRecordDecoder:
 
         keyspace = k_rdr.read_int8()
 
-        key_buf = self.k_stream.read()
+        key_buf = k_rdr.stream.read()
 
         ret['key_space'] = self._decode_ks(keyspace)
         ret['key_buf'] = key_buf
@@ -216,6 +216,8 @@ def decode_offset_translator_key(k):
 def decode_storage_key_name(key_type):
     if key_type == 0:
         return "start offset"
+    elif key_type == 1:
+        return "clean segment"
 
     return "unknown"
 
@@ -329,12 +331,20 @@ class KvStore:
 
         if entry['data'] is not None:
             self.kv[key] = entry['data']
+        else:
+            try:
+                del self.kv[key]
+            except KeyError:
+                # Missing key, that's okay for a deletion
+                pass
 
     def decode(self):
+        snapshot_offset = None
         if os.path.exists(f"{self.ntp.path}/snapshot"):
             snap = KvSnapshot(f"{self.ntp.path}/snapshot")
             snap.decode()
             logger.info(f"snapshot last offset: {snap.last_offset}")
+            snapshot_offset = snap.last_offset
             for r in snap.data_batch:
                 d = KvStoreRecordDecoder(r,
                                          snap.data_batch,
@@ -347,6 +357,10 @@ class KvStore:
             s = Segment(path)
             for batch in s:
                 for r in batch:
+                    offset = batch.header.base_offset + r.offset_delta
+                    if snapshot_offset is not None and offset <= snapshot_offset:
+                        continue
+
                     d = KvStoreRecordDecoder(r,
                                              batch,
                                              value_is_optional_type=True)
