@@ -829,6 +829,25 @@ configuration::configuration()
       "required. see also `kafka_enable_authorization`",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , sasl_mechanisms(
+      *this,
+      "sasl_mechanisms",
+      "A list of supported SASL mechanisms. `SCRAM` is allowed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"SCRAM"},
+      validate_sasl_mechanisms)
+  , sasl_kerberos_keytab(
+      *this,
+      "sasl_kerberos_keytab",
+      "The location of the Kerberos keytab file for Redpanda",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "/var/lib/redpanda/redpanda.keytab")
+  , sasl_kerberos_principal(
+      *this,
+      "sasl_kerberos_principal",
+      "The primary of the Kerberos Service Principal Name (SPN) for Redpanda",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "redpanda")
   , kafka_enable_authorization(
       *this,
       "kafka_enable_authorization",
