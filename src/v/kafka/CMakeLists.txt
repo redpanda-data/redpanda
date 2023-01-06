@@ -3,34 +3,18 @@ add_subdirectory(protocol)
 set(handlers_srcs
   server/handlers/api_versions.cc
   server/handlers/metadata.cc
-  server/handlers/add_partitions_to_txn.cc
   server/handlers/txn_offset_commit.cc
-  server/handlers/add_offsets_to_txn.cc
-  server/handlers/end_txn.cc
-  server/handlers/list_groups.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc
-  server/handlers/offset_fetch.cc
   server/handlers/produce.cc
   server/handlers/list_offsets.cc
   server/handlers/fetch.cc
-  server/handlers/join_group.cc
-  server/handlers/heartbeat.cc
-  server/handlers/leave_group.cc
-  server/handlers/sync_group.cc
-  server/handlers/init_producer_id.cc
   server/handlers/create_topics.cc
-  server/handlers/offset_commit.cc
-  server/handlers/delete_topics.cc
   server/handlers/alter_configs.cc
   server/handlers/describe_groups.cc
-  server/handlers/sasl_handshake.cc
-  server/handlers/sasl_authenticate.cc
   server/handlers/incremental_alter_configs.cc
-  server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
-  server/handlers/create_acls.cc
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
   server/handlers/offset_for_leader_epoch.cc

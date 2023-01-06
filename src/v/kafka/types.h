@@ -106,7 +106,10 @@ struct member_protocol {
         return name == o.name && metadata == o.metadata;
     }
 
-    friend std::ostream& operator<<(std::ostream&, const member_protocol&);
+    friend std::ostream&
+    operator<<(std::ostream& os, const member_protocol& p) {
+        return os << p.name << ":" << p.metadata.size();
+    }
 };
 
 using assignments_type = std::unordered_map<member_id, bytes>;
