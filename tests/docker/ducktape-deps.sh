@@ -20,11 +20,15 @@ function install_system_deps() {
     curl \
     dmidecode \
     cmake \
+    krb5-admin-server \
+    krb5-kdc \
+    krb5-user \
     iproute2 \
     iptables \
     libatomic1 \
     libyajl-dev \
     libsasl2-dev \
+    libsasl2-modules-gssapi-mit \
     libssl-dev \
     net-tools \
     lsof \
