@@ -9,7 +9,7 @@
 
 //go:build !linux
 
-package debug
+package bundle
 
 import (
 	"context"

@@ -10,27 +10,10 @@
 package debug
 
 import (
-	"time"
-
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug/bundle"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
-
-type bundleParams struct {
-	fs                      afero.Fs
-	cfg                     *config.Config
-	cl                      *kgo.Client
-	admin                   *admin.AdminAPI
-	logsSince               string
-	logsUntil               string
-	path                    string
-	logsLimitBytes          int
-	controllerLogLimitBytes int
-	timeout                 time.Duration
-}
 
 func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
@@ -39,7 +22,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newBundleCommand(fs),
+		bundle.NewCommand(fs),
 		NewInfoCommand(),
 	)
 

@@ -10,7 +10,7 @@
 //go:build linux
 // +build linux
 
-package debug
+package bundle
 
 import (
 	"io"

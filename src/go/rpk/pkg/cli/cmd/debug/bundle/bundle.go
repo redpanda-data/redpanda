@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package debug
+package bundle
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Use the same date specs as journalctl (see `man journalctl`).
@@ -30,7 +31,20 @@ const (
 	outputFlag   = "output"
 )
 
-func newBundleCommand(fs afero.Fs) *cobra.Command {
+type bundleParams struct {
+	fs                      afero.Fs
+	cfg                     *config.Config
+	cl                      *kgo.Client
+	admin                   *admin.AdminAPI
+	logsSince               string
+	logsUntil               string
+	path                    string
+	logsLimitBytes          int
+	controllerLogLimitBytes int
+	timeout                 time.Duration
+}
+
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 		outFile    string

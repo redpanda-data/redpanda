@@ -9,7 +9,7 @@
 
 //go:build linux
 
-package debug
+package bundle
 
 import (
 	"archive/zip"
@@ -54,7 +54,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveNTPDrift(ps),
 		savePrometheusMetrics(ctx, ps, bp.admin),
 		saveDiskUsage(ctx, ps, bp.cfg),
-		saveControllerLogDir(bp.fs, ps, bp.cfg, bp.controllerLogLimitBytes),
+		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
 	}
 	for _, s := range steps {
 		grp.Go(s)
