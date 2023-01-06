@@ -364,7 +364,9 @@ ss::future<upload_result> remote::upload_segment(
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
             _probe.upload_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
+            if (!lazy_abort_source.abort_requested()) {
+                co_await ss::sleep_abortable(permit.delay, _as);
+            }
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
