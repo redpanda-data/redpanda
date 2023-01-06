@@ -20,4 +20,16 @@ using public_metrics_disabled
   = seastar::bool_class<struct public_metrics_disabled_tag>;
 using clock_type = seastar::lowres_clock;
 
+/**
+ * Subclass this exception for exceptions related to authentication, so that
+ * the `net` layer's error handling can use appropriate severity when
+ * logging the exceptions (we log client errors as WARN, and other unexpected
+ * server-side exceptions at ERROR).
+ */
+class authentication_exception : public std::runtime_error {
+protected:
+    explicit authentication_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
+
 } // namespace net
