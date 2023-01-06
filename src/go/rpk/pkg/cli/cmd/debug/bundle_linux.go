@@ -113,7 +113,7 @@ func executeBundle(
 		mode,
 	)
 	if err != nil {
-		return fmt.Errorf("couldn't create bundle file: %w", err)
+		return fmt.Errorf("unable to create bundle file: %v", err)
 	}
 	defer f.Close()
 
