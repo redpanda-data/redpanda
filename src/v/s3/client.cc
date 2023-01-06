@@ -520,12 +520,12 @@ ss::future<http::client::response_stream_ref> client::get_object(
                       && result == boost::beast::http::status::not_found) {
                         vlog(
                           s3_log.debug,
-                          "S3 replied with expected error: {}",
+                          "S3 replied with expected error: {:l}",
                           ref->get_headers());
                     } else {
                         vlog(
                           s3_log.warn,
-                          "S3 replied with error: {}",
+                          "S3 replied with error: {:l}",
                           ref->get_headers());
                     }
                     return drain_response_stream(std::move(ref))
@@ -561,14 +561,14 @@ ss::future<client::head_object_result> client::head_object(
                   if (status == boost::beast::http::status::not_found) {
                       vlog(
                         s3_log.debug,
-                        "Object not available, error: {}",
+                        "Object not available, error: {:l}",
                         ref->get_headers());
                       return parse_head_error_response<head_object_result>(
                         ref->get_headers(), key);
                   } else if (status != boost::beast::http::status::ok) {
                       vlog(
                         s3_log.warn,
-                        "S3 replied with error: {}",
+                        "S3 replied with error: {:l}",
                         ref->get_headers());
                       return parse_head_error_response<head_object_result>(
                         ref->get_headers(), key);
@@ -623,7 +623,7 @@ ss::future<> client::put_object(
                     if (status != boost::beast::http::status::ok) {
                         vlog(
                           s3_log.warn,
-                          "S3 replied with error: {}",
+                          "S3 replied with error: {:l}",
                           ref->get_headers());
                         return parse_rest_error_response<>(
                           status, std::move(res));
@@ -680,7 +680,7 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
                           // We received error response so the outbuf contains
                           // error digest instead of the result of the query
                           vlog(
-                            s3_log.warn, "S3 replied with error: {}", header);
+                            s3_log.warn, "S3 replied with error: {:l}", header);
                           return parse_rest_error_response<
                             client::list_bucket_result>(
                             header.result(), std::move(outbuf));
@@ -712,7 +712,7 @@ ss::future<> client::delete_object(
                      != boost::beast::http::status::no_content) { // expect 204
                   vlog(
                     s3_log.warn,
-                    "S3 replied with error: {}",
+                    "S3 replied with error: {:l}",
                     ref->get_headers());
                   return parse_rest_error_response<>(status, std::move(res));
               }
