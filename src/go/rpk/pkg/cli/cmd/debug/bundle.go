@@ -88,14 +88,27 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 
 			controllerLogsLimit, err := units.FromHumanSize(controllerLogsSizeLimit)
 			out.MaybeDie(err, "unable to parse --controller-logs-size-limit: %v", err)
+			bp := bundleParams{
+				fs:                      fs,
+				cfg:                     cfg,
+				cl:                      cl,
+				admin:                   admin,
+				logsSince:               logsSince,
+				logsUntil:               logsUntil,
+				path:                    path,
+				logsLimitBytes:          int(logsLimit),
+				controllerLogLimitBytes: int(controllerLogsLimit),
+				timeout:                 timeout,
+			}
+
 			// to execute the appropriate bundle we look for
 			// kubernetes_service_* env variables as an indicator that we are
 			// in a k8s environment
 			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 			if len(host) == 0 || len(port) == 0 {
-				err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), int(controllerLogsLimit), timeout, path)
+				err = executeBundle(cmd.Context(), bp)
 			} else {
-				err = executeK8SBundle(cmd.Context(), fs, cfg, cl, admin, timeout, int(controllerLogsLimit), path)
+				err = executeK8SBundle(cmd.Context(), bp)
 			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},

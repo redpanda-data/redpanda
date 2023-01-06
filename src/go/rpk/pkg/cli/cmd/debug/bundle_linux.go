@@ -96,21 +96,11 @@ func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string,
 	return finalPath, nil
 }
 
-func executeBundle(
-	ctx context.Context,
-	fs afero.Fs,
-	conf *config.Config,
-	cl *kgo.Client,
-	admin *admin.AdminAPI,
-	logsSince, logsUntil string,
-	logsLimitBytes, controllerLogLimitBytes int,
-	timeout time.Duration,
-	path string,
-) error {
+func executeBundle(ctx context.Context, bp bundleParams) error {
 	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
-	f, err := fs.OpenFile(
-		path,
+	f, err := bp.fs.OpenFile(
+		bp.path,
 		os.O_CREATE|os.O_WRONLY,
 		mode,
 	)
@@ -125,31 +115,31 @@ func executeBundle(
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      fs,
+		fs:      bp.fs,
 		w:       w,
-		timeout: timeout,
+		timeout: bp.timeout,
 	}
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, cl),
-		saveDataDirStructure(ps, conf),
-		saveConfig(ps, conf),
+		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveDataDirStructure(ps, bp.cfg),
+		saveConfig(ps, bp.cfg),
 		saveCPUInfo(ps),
 		saveInterrupts(ps),
-		saveResourceUsageData(ps, conf),
+		saveResourceUsageData(ps, bp.cfg),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ctx, ps, admin),
+		savePrometheusMetrics(ctx, ps, bp.admin),
 		saveDNSData(ctx, ps),
-		saveDiskUsage(ctx, ps, conf),
-		saveLogs(ctx, ps, logsSince, logsUntil, logsLimitBytes),
+		saveDiskUsage(ctx, ps, bp.cfg),
+		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
 		saveSocketData(ctx, ps),
 		saveTopOutput(ctx, ps),
 		saveVmstat(ctx, ps),
 		saveIP(ctx, ps),
 		saveLspci(ctx, ps),
 		saveDmidecode(ctx, ps),
-		saveControllerLogDir(fs, ps, conf, controllerLogLimitBytes),
+		saveControllerLogDir(bp.fs, ps, bp.cfg, bp.controllerLogLimitBytes),
 	}
 
 	for _, s := range steps {
@@ -165,7 +155,7 @@ func executeBundle(
 		log.Info(errs.Error())
 	}
 
-	log.Infof("Debug bundle saved to '%s'", path)
+	log.Infof("Debug bundle saved to '%s'", bp.path)
 	return nil
 }
 
