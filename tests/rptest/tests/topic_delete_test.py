@@ -22,7 +22,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import SISettings
-from rptest.util import wait_for_segments_removal, firewall_blocked
+from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
 
 
@@ -96,6 +96,14 @@ def topic_storage_purged(redpanda, topic_name):
         map(lambda n: topic_name not in n.ns["kafka"].topics, storage.nodes))
 
     if not logs_removed:
+        redpanda.logger.info(f"Files remain for topic {topic_name}:")
+        for n in storage.nodes:
+            ns = n.ns["kafka"]
+            for topic_name, topic in ns.topics.items():
+                for p_id, p in topic.partitions.items():
+                    for f in p.files:
+                        redpanda.logger.info(f"  {n.name}: {f}")
+
         return False
 
     # Once logs are removed, also do more expensive inspection of
@@ -106,6 +114,9 @@ def topic_storage_purged(redpanda, topic_name):
 
     topic_key_counts = get_kvstore_topic_key_counts(redpanda)
     if any([v > 0 for v in topic_key_counts.values()]):
+        redpanda.logger.info("Topic keys remain in KVStore")
+        for node, count in topic_key_counts.items():
+            redpanda.logger.info(f"  {node}: {count}")
         return False
 
     return True
@@ -194,8 +205,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         and remote storage for the topic.
         """
         # Set retention to 5MB
+        local_retention = 5 * 1024 * 1024
         self.kafka_tools.alter_topic_config(
-            topic_name, {'retention.local.target.bytes': 5 * 1024 * 1024})
+            topic_name, {'retention.local.target.bytes': local_retention})
 
         # Write out 10MB per partition
         self.kafka_tools.produce(topic_name,
@@ -204,7 +216,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         # Wait for segments evicted from local storage
         for i in range(0, self.partition_count):
-            wait_for_segments_removal(self.redpanda, topic_name, i, 5)
+            wait_for_local_storage_truncate(self.redpanda,
+                                            topic_name,
+                                            i,
+                                            local_retention,
+                                            timeout_sec=30)
 
         # Confirm objects in remote storage
         objects = self.s3_client.list_objects(
