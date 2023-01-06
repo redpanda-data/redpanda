@@ -541,13 +541,6 @@ configuration::configuration()
       "How often look for the inactive transactions and abort them",
       {.visibility = visibility::tunable},
       10s)
-  , tx_log_stats_interval_s(
-      *this,
-      "tx_log_stats_interval_s",
-      "How often to log per partition tx stats, works only with debug logging "
-      "enabled.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10s)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",
