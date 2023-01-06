@@ -327,7 +327,6 @@ ss::future<upload_result> remote::upload_segment(
 
         auto reader_handle = co_await reset_str();
         auto path = cloud_storage_clients::object_key(segment_path());
-        vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
         // Segment upload attempt
         auto res = co_await lease.client->put_object(
           bucket,
@@ -871,9 +870,14 @@ ss::future<upload_result> remote::upload_object(
 
 ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
 
-bool lazy_abort_source::abort_requested() { return _predicate(*this); }
-void lazy_abort_source::abort_reason(ss::sstring reason) {
-    _abort_reason = std::move(reason);
+bool lazy_abort_source::abort_requested() {
+    auto maybe_abort = _predicate();
+    if (maybe_abort.has_value()) {
+        _abort_reason = *maybe_abort;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 ss::future<>

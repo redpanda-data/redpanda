@@ -76,7 +76,7 @@ static constexpr std::string_view list_response = R"XML(
 )XML";
 
 static cloud_storage::lazy_abort_source always_continue{
-  "no-op", [](auto&) { return false; }};
+  []() { return std::nullopt; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
@@ -177,7 +177,7 @@ FIXTURE_TEST(
     };
     retry_chain_node fib(100ms, 20ms);
     auto lost_leadership = lazy_abort_source{
-      "lost leadership", [](auto&) { return true; }};
+      []() { return "lost leadership"; }};
     auto res = remote
                  .upload_segment(
                    cloud_storage_clients::bucket_name("bucket"),

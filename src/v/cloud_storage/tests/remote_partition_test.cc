@@ -64,7 +64,7 @@ using namespace cloud_storage;
 inline ss::logger test_log("test"); // NOLINT
 
 static cloud_storage::lazy_abort_source always_continue{
-  "no-op", [](auto&) { return false; }};
+  []() { return std::nullopt; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};

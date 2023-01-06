@@ -40,21 +40,17 @@ class materialized_segments;
 struct lazy_abort_source {
     /// Predicate to be evaluated before an operation. Evaluates to true when
     /// the operation should be aborted, false otherwise.
-    using predicate_t = ss::noncopyable_function<bool(lazy_abort_source&)>;
+    using predicate_t = ss::noncopyable_function<std::optional<ss::sstring>()>;
 
-    lazy_abort_source(ss::sstring abort_reason, predicate_t predicate)
-      : _abort_reason{std::move(abort_reason)}
-      , _predicate{std::move(predicate)} {}
+    lazy_abort_source(predicate_t predicate)
+      : _predicate{std::move(predicate)} {}
 
     bool abort_requested();
 
     ss::sstring abort_reason() const;
 
-    void abort_reason(ss::sstring reason);
-
 private:
     ss::sstring _abort_reason;
-
     predicate_t _predicate;
 };
 

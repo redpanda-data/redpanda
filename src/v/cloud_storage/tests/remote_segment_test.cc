@@ -55,8 +55,8 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
-static cloud_storage::lazy_abort_source always_continue("no-op", [](auto&) {
-    return false;
+static cloud_storage::lazy_abort_source always_continue([]() {
+    return std::nullopt;
 });
 
 /**

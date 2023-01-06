@@ -627,11 +627,7 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
-      "lost leadership or term changed during upload, "
-      "current leadership status: {}, "
-      "current term: {}, "
-      "original term: {}",
-      [this](auto& s) { return archiver_lost_leadership(s); },
+      [this]() { return upload_should_abort(); },
     };
 
     auto reset_func =
@@ -655,20 +651,22 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       _segment_tags);
 }
 
-bool ntp_archiver::archiver_lost_leadership(
-  cloud_storage::lazy_abort_source& las) {
+std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
     auto original_term = _parent.term();
     auto lost_leadership = !_parent.is_elected_leader()
                            || _parent.term() != original_term;
     if (unlikely(lost_leadership)) {
-        std::string reason{las.abort_reason()};
-        las.abort_reason(fmt::format(
-          fmt::runtime(reason),
+        return fmt::format(
+          "lost leadership or term changed during upload, "
+          "current leadership status: {}, "
+          "current term: {}, "
+          "original term: {}",
           _parent.is_elected_leader(),
           _parent.term(),
-          original_term));
+          original_term);
+    } else {
+        return std::nullopt;
     }
-    return lost_leadership;
 }
 
 ss::future<cloud_storage::upload_result>
