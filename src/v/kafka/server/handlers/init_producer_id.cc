@@ -27,23 +27,6 @@
 
 namespace kafka {
 
-namespace {
-
-// Provided pid in init_producer_id request can not be {x >= 0, -1} or
-// {-1, x >= 0}.
-bool is_invalid_pid(model::producer_identity expected_pid) {
-    if (expected_pid == model::unknown_pid) {
-        return false;
-    }
-
-    if (expected_pid.id < 0 || expected_pid.epoch < 0) {
-        return true;
-    }
-    return false;
-}
-
-} // namespace
-
 template<>
 ss::future<response_ptr> init_producer_id_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
@@ -65,7 +48,21 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             model::producer_identity expected_pid = model::producer_identity{
               request.data.producer_id, request.data.producer_epoch};
 
-            if (is_invalid_pid(expected_pid)) {
+            // Provided pid in init_producer_id request can not be {x >= 0, -1}
+            // or {-1, x >= 0}.
+            const bool is_invalid_pid =
+              [](model::producer_identity expected_pid) {
+                  if (expected_pid == model::unknown_pid) {
+                      return false;
+                  }
+
+                  if (expected_pid.id < 0 || expected_pid.epoch < 0) {
+                      return true;
+                  }
+                  return false;
+              }(expected_pid);
+
+            if (is_invalid_pid) {
                 init_producer_id_response reply;
                 reply.data.error_code = error_code::invalid_request;
                 return ctx.respond(reply);
