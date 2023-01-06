@@ -16,7 +16,6 @@ set(handlers_srcs
   server/handlers/incremental_alter_configs.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
-  server/handlers/create_acls.cc
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
   server/handlers/offset_for_leader_epoch.cc

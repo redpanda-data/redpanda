@@ -20,8 +20,10 @@
 #include "kafka/server/group_router.h"
 #include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
+#include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/delete_groups.h"
 #include "kafka/server/handlers/delete_topics.h"
+#include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/handlers/init_producer_id.h"
@@ -969,6 +971,85 @@ ss::future<response_ptr> init_producer_id_handler::handle(
               return ctx.respond(reply);
           });
     });
+}
+
+template<>
+ss::future<response_ptr> create_acls_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
+    create_acls_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+
+    if (!ctx.authorized(
+          security::acl_operation::alter, security::default_cluster_name)) {
+        creatable_acl_result result;
+        result.error_code = error_code::cluster_authorization_failed;
+        create_acls_response resp;
+        resp.data.results.assign(request.data.creations.size(), result);
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    // <bindings index> | error
+    std::vector<std::variant<size_t, creatable_acl_result>> result_index;
+    result_index.reserve(request.data.creations.size());
+
+    // bindings to create. optimized for common case
+    std::vector<security::acl_binding> bindings;
+    bindings.reserve(request.data.creations.size());
+
+    for (const auto& acl : request.data.creations) {
+        try {
+            auto binding = details::to_acl_binding(acl);
+            result_index.emplace_back(bindings.size());
+            bindings.push_back(std::move(binding));
+
+        } catch (const details::acl_conversion_error& e) {
+            result_index.emplace_back(creatable_acl_result{
+              .error_code = error_code::invalid_request,
+              .error_message = e.what(),
+            });
+        }
+    }
+
+    const auto num_bindings = bindings.size();
+
+    auto results = co_await ctx.security_frontend().create_acls(
+      std::move(bindings), 5s);
+
+    // kafka: put things back in the same order :(
+    create_acls_response response;
+    response.data.results.reserve(result_index.size());
+
+    // this is an important step because the loop below that constructs the
+    // response unconditionally indexes into the result set.
+    if (unlikely(results.size() != num_bindings)) {
+        vlog(
+          klog.error,
+          "Unexpected result size creating ACLs: {} (expected {})",
+          results.size(),
+          num_bindings);
+
+        response.data.results.assign(
+          result_index.size(),
+          creatable_acl_result{.error_code = error_code::unknown_server_error});
+
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    for (auto& result : result_index) {
+        ss::visit(
+          result,
+          [&response, &results](size_t i) {
+              auto ec = map_topic_error_code(results[i]);
+              response.data.results.push_back(
+                creatable_acl_result{.error_code = ec});
+          },
+          [&response](creatable_acl_result r) {
+              response.data.results.push_back(std::move(r));
+          });
+    }
+
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka
