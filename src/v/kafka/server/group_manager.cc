@@ -408,76 +408,37 @@ ss::future<> group_manager::recover_partition(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
   group_recovery_consumer_state ctx) {
+    static constexpr size_t group_batch_size = 64;
     for (auto& [_, group] : _groups) {
         if (group->partition()->ntp() == p->partition->ntp()) {
             group->reset_tx_state(term);
         }
     }
     p->term = term;
+    co_await ss::max_concurrent_for_each(
+      ctx.groups, group_batch_size, [this, term, p](auto& pair) {
+          return do_recover_group(
+            term, p, std::move(pair.first), std::move(pair.second));
+      });
+}
 
-    for (auto& [group_id, group_stm] : ctx.groups) {
-        if (group_stm.has_data()) {
-            auto group = get_group(group_id);
-            vlog(
-              klog.info,
-              "Recovering {} - {}",
-              group_id,
-              group_stm.get_metadata());
-            for (const auto& member : group_stm.get_metadata().members) {
-                vlog(
-                  klog.debug,
-                  "Recovering group {} member {}",
-                  group_id,
-                  member);
-            }
-            if (!group) {
-                group = ss::make_lw_shared<kafka::group>(
-                  group_id,
-                  group_stm.get_metadata(),
-                  _conf,
-                  p->partition,
-                  _tx_frontend,
-                  _feature_table,
-                  _serializer_factory(),
-                  _enable_group_metrics);
-                group->reset_tx_state(term);
-                _groups.emplace(group_id, group);
-                group->reschedule_all_member_heartbeats();
-            }
-
-            for (auto& [tp, meta] : group_stm.offsets()) {
-                group->try_upsert_offset(
-                  tp,
-                  group::offset_metadata{
-                    meta.log_offset,
-                    meta.metadata.offset,
-                    meta.metadata.metadata,
-                  });
-            }
-
-            for (auto& [id, epoch] : group_stm.fences()) {
-                group->try_set_fence(id, epoch);
-            }
-
-            for (auto& [id, txseq] : group_stm.tx_seqs()) {
-                group->try_set_tx_seq(id, txseq);
-            }
-
-            for (auto& [id, timeout] : group_stm.timeouts()) {
-                group->try_set_timeout(id, timeout);
-            }
-        }
-    }
-
-    for (auto& [group_id, group_stm] : ctx.groups) {
-        if (group_stm.prepared_txs().size() == 0) {
-            continue;
-        }
+ss::future<> group_manager::do_recover_group(
+  model::term_id term,
+  ss::lw_shared_ptr<attached_partition> p,
+  group_id group_id,
+  group_stm group_stm) {
+    if (group_stm.has_data()) {
         auto group = get_group(group_id);
+        vlog(
+          klog.info, "Recovering {} - {}", group_id, group_stm.get_metadata());
+        for (const auto& member : group_stm.get_metadata().members) {
+            vlog(klog.debug, "Recovering group {} member {}", group_id, member);
+        }
+
         if (!group) {
             group = ss::make_lw_shared<kafka::group>(
               group_id,
-              group_state::empty,
+              group_stm.get_metadata(),
               _conf,
               p->partition,
               _tx_frontend,
@@ -486,7 +447,19 @@ ss::future<> group_manager::recover_partition(
               _enable_group_metrics);
             group->reset_tx_state(term);
             _groups.emplace(group_id, group);
+            group->reschedule_all_member_heartbeats();
         }
+
+        for (auto& [tp, meta] : group_stm.offsets()) {
+            group->try_upsert_offset(
+              tp,
+              group::offset_metadata{
+                meta.log_offset,
+                meta.metadata.offset,
+                meta.metadata.metadata,
+              });
+        }
+
         for (const auto& [_, tx] : group_stm.prepared_txs()) {
             group->insert_prepared(tx);
         }
@@ -499,28 +472,17 @@ ss::future<> group_manager::recover_partition(
         for (auto& [id, timeout] : group_stm.timeouts()) {
             group->try_set_timeout(id, timeout);
         }
-    }
 
-    /*
-     * <kafka>if the cache already contains a group which should be removed,
-     * raise an error. Note that it is possible (however unlikely) for a
-     * consumer group to be removed, and then to be used only for offset storage
-     * (i.e. by "simple" consumers)</kafka>
-     */
-    for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.is_removed()) {
-            if (_groups.contains(group_id) && group_stm.offsets().size() > 0) {
+            if (group_stm.offsets().size() > 0) {
                 klog.warn(
-                  "Unexpected active group unload {} loading {}",
+                  "Unexpected active group unload {} while loading {}",
                   group_id,
                   p->partition->ntp());
             }
         }
     }
-
-    _groups.rehash(0);
-
-    return ss::make_ready_future<>();
+    co_return;
 }
 
 group::join_group_stages group_manager::join_group(join_group_request&& r) {
