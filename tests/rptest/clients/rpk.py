@@ -319,9 +319,20 @@ class RpkTool:
     def alter_topic_config(self, topic, set_key, set_value):
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
         out = self._run_topic(cmd)
-        if 'INVALID' in out:
+        lines = out.splitlines()
+        lines = list(map(lambda x: x.strip(), lines))
+        if len(lines) != 2:
             raise RpkException(
-                f"Invalid topic config {topic} {set_key}={set_value}")
+                f"Unexpected output, expected two lines, got {len(lines)} on setting {topic} {set_key}={set_value}"
+            )
+        if not re.match("^TOPIC\\s+STATUS$", lines[0]):
+            raise RpkException(
+                f"Unexpected output, expected 'TOPIC\\s+STATUS' got '{lines[0]}' on setting {topic} {set_key}={set_value}"
+            )
+        if not re.match(f"^{topic}\\s+OK$", lines[1]):
+            raise RpkException(
+                f"Unexpected output, expected '{topic}\\s+OK' got '{lines[1]}' on setting {topic} {set_key}={set_value}"
+            )
 
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
