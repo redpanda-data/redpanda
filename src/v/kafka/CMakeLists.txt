@@ -10,7 +10,6 @@ set(handlers_srcs
   server/handlers/list_offsets.cc
   server/handlers/fetch.cc
   server/handlers/create_topics.cc
-  server/handlers/offset_commit.cc
   server/handlers/alter_configs.cc
   server/handlers/describe_groups.cc
   server/handlers/incremental_alter_configs.cc
