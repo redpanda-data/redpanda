@@ -116,7 +116,20 @@ static inline void print_exceptional_future(
     auto disconnected = is_disconnect_exception(ex);
 
     if (!disconnected) {
-        vlog(log.error, "Error[{}] remote address: {} - {}", ctx, address, ex);
+        if (is_auth_error(ex)) {
+            vlog(
+              log.warn,
+              "Authentication Failure[{}] remote address: {} - {}",
+              ctx,
+              address,
+              ex);
+        } else {
+            // Authentication exceptions are logged at WARN, not ERROR, because
+            // they generally point to a misbehaving client rather than a fault
+            // in the server.
+            vlog(
+              log.error, "Error[{}] remote address: {} - {}", ctx, address, ex);
+        }
     } else {
         vlog(
           log.info,

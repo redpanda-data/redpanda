@@ -95,6 +95,18 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     return std::nullopt;
 }
 
+bool is_auth_error(std::exception_ptr e) {
+    try {
+        rethrow_exception(e);
+    } catch (const authentication_exception& e) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+
+    __builtin_unreachable();
+}
+
 connection::connection(
   boost::intrusive::list<connection>& hook,
   ss::sstring name,
