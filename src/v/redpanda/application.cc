@@ -643,7 +643,8 @@ void application::configure_admin_server() {
       std::ref(metadata_cache),
       std::ref(_connection_cache),
       std::ref(node_status_table),
-      std::ref(self_test_frontend))
+      std::ref(self_test_frontend),
+      _schema_registry.get())
       .get();
 }
 

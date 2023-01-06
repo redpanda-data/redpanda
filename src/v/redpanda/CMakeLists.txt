@@ -11,7 +11,8 @@ set(swags
   transaction
   cluster
   debug
-  shadow_indexing)
+  shadow_indexing
+  redpanda_services_restart)
 
 set(swag_files)
 foreach(swag ${swags})
