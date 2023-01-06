@@ -578,13 +578,22 @@ ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
     co_await _gate.close();
-
-    for (auto& s : _segments) {
+    // Remove materialized_segment_state from the list that contains it, to
+    // avoid it getting registered for eviction and stop.
+    for (auto& pair : _segments) {
         vlog(
-          _ctxlog.debug,
-          "remote partition stop {}",
-          s.second->base_rp_offset());
-        co_await s.second->stop();
+          _ctxlog.debug, "unlinking segment {}", pair.second->base_rp_offset());
+        pair.second->unlink();
+    }
+
+    // Swap segment map into a local variable to avoid map mutation while the
+    // segments are being stopped.
+    decltype(_segments) segments_to_stop;
+    segments_to_stop.swap(_segments);
+    for (auto& [offset, segment] : segments_to_stop) {
+        vlog(
+          _ctxlog.debug, "remote partition stop {}", segment->base_rp_offset());
+        co_await segment->stop();
     }
 
     // We may have some segment or reader objects enqueued for stop in
