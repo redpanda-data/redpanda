@@ -3045,9 +3045,12 @@ ss::future<> rm_stm::maybe_log_tx_stats() {
     if (likely(!_ctx_log.logger().is_enabled(ss::log_level::debug))) {
         co_return;
     }
-    auto units = co_await _state_lock.hold_read_lock();
+    _ctx_log.debug(
+      "tx root mem_tracker aggregate consumption: {}",
+      human::bytes(static_cast<double>(_tx_root_tracker.consumption())));
     _ctx_log.debug(
       "tx mem tracker breakdown: {}", _tx_root_tracker.pretty_print_json());
+    auto units = co_await _state_lock.hold_read_lock();
     _ctx_log.debug(
       "tx memory snapshot stats: {{mem_state: {}, log_state: "
       "{} inflight_requests: {} }}",
@@ -3058,10 +3061,6 @@ ss::future<> rm_stm::maybe_log_tx_stats() {
 
 void rm_stm::log_tx_stats() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-                          _ctx_log.info(
-                            "tx root mem_tracker consumption: {}",
-                            human::bytes(static_cast<double>(
-                              _tx_root_tracker.consumption())));
                           return maybe_log_tx_stats().then([this] {
                               if (!_gate.is_closed()) {
                                   _log_stats_timer.rearm(
