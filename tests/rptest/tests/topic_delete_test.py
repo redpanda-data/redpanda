@@ -240,10 +240,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         gives up.
         """
         self._populate_topic(self.topic)
-        objects_before = set(
-            self.redpanda.s3_client.list_objects(
-                self.si_settings.cloud_storage_bucket, topic=self.topic))
-        assert len(objects_before) > 0
+        keys_before = set(o.Key for o in self.redpanda.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket, topic=self.topic))
+        assert len(keys_before) > 0
 
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.delete_topic(self.topic)
@@ -261,10 +260,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             time.sleep(90)
 
             # Confirm our firewall block is really working, nothing was deleted
-            objects_after = set(
-                self.redpanda.s3_client.list_objects(
-                    self.si_settings.cloud_storage_bucket))
-            assert len(objects_after) >= len(objects_before)
+            keys_after = set(o.Key
+                             for o in self.redpanda.s3_client.list_objects(
+                                 self.si_settings.cloud_storage_bucket))
+            assert len(keys_after) >= len(keys_before)
 
         # Check that after the controller backend experiences errors trying
         # to execute partition deletion, it is still happily able to execute
@@ -295,7 +294,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         final_objects = set(
             self.s3_client.list_objects(self.si_settings.cloud_storage_bucket,
                                         topic=self.topic))
-        assert len(final_objects) >= len(objects_before)
+        assert len(final_objects) >= len(keys_before)
 
     def _topic_remote_deleted(self, topic_name: str):
         """Return true if all objects removed from cloud storage"""
@@ -322,9 +321,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._populate_topic(self.topic)
 
-        objects_before = set(
-            self.redpanda.s3_client.list_objects(
-                self.si_settings.cloud_storage_bucket))
+        keys_before = set(o.Key for o in self.redpanda.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket))
 
         # Delete topic
         self.kafka_tools.delete_topic(self.topic)
@@ -335,15 +333,15 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    backoff_sec=1)
 
         if disable_delete:
-            # Unfortunately there is no alternative ot sleeping here:
+            # Unfortunately there is no alternative to sleeping here:
             # we need to confirm not only that objects aren't deleted
             # instantly, but that they also are not deleted after some
             # delay.
             time.sleep(10)
-            objects_after = set(
-                self.redpanda.s3_client.list_objects(
-                    self.si_settings.cloud_storage_bucket))
-            objects_deleted = objects_before - objects_after
+            keys_after = set(o.Key
+                             for o in self.redpanda.s3_client.list_objects(
+                                 self.si_settings.cloud_storage_bucket))
+            objects_deleted = keys_before - keys_after
             self.logger.debug(
                 f"Objects deleted after topic deletion: {objects_deleted}")
             assert len(objects_deleted) == 0
@@ -377,9 +375,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._populate_topic(self.topic)
 
-        objects_before = set(o.Key
-                             for o in self.redpanda.s3_client.list_objects(
-                                 self.si_settings.cloud_storage_bucket))
+        keys_before = set(o.Key for o in self.redpanda.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket))
 
         def get_nodes(partition):
             return list(r['node_id'] for r in partition['replicas'])
@@ -403,11 +400,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # Some additional time in case a buggy deletion path is async
         time.sleep(5)
 
-        objects_after = set(o.Key
-                            for o in self.redpanda.s3_client.list_objects(
-                                self.si_settings.cloud_storage_bucket))
+        keys_after = set(o.Key for o in self.redpanda.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket))
 
-        deleted = objects_before - objects_after
+        deleted = keys_before - keys_after
         self.logger.debug(f"Objects deleted after partition move: {deleted}")
         assert len(deleted) == 0
 
