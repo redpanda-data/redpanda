@@ -11,7 +11,7 @@ import time
 import json
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, ok_to_fail
 from requests.exceptions import HTTPError
 
 from rptest.services.cluster import cluster
@@ -211,6 +211,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             self.si_settings.cloud_storage_bucket, topic=topic_name)
         assert sum(1 for _ in objects) > 0
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8071
     @cluster(
         num_nodes=3,
         log_allow_list=[
@@ -292,6 +293,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         return empty
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8046
     @cluster(num_nodes=3)
     @parametrize(disable_delete=False)
     @parametrize(disable_delete=True)
