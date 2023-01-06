@@ -32,35 +32,6 @@
 
 namespace kafka {
 
-std::vector<model::topic_namespace>
-create_topic_namespaces(std::vector<model::topic> topic_names) {
-    std::vector<model::topic_namespace> ret;
-    ret.reserve(topic_names.size());
-    std::transform(
-      std::begin(topic_names),
-      std::end(topic_names),
-      std::back_inserter(ret),
-      [](model::topic& tp) {
-          return model::topic_namespace(model::kafka_namespace, std::move(tp));
-      });
-    return ret;
-}
-
-delete_topics_response create_response(std::vector<cluster::topic_result> res) {
-    delete_topics_response resp;
-    resp.data.responses.reserve(res.size());
-    std::transform(
-      res.begin(),
-      res.end(),
-      std::back_inserter(resp.data.responses),
-      [](cluster::topic_result tr) {
-          return deletable_topic_result{
-            .name = std::move(tr.tp_ns.tp),
-            .error_code = map_topic_error_code(tr.ec)};
-      });
-    return resp;
-}
-
 template<>
 ss::future<response_ptr>
 delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
@@ -111,12 +82,35 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       quota_exceeded_it, request.data.topic_names.end());
 
     if (!request.data.topic_names.empty()) {
+        // construct namespaced topic set from request
+        std::vector<model::topic_namespace> topics;
+        topics.reserve(request.data.topic_names.size());
+        std::transform(
+          std::begin(request.data.topic_names),
+          std::end(request.data.topic_names),
+          std::back_inserter(topics),
+          [](model::topic& tp) {
+              return model::topic_namespace(
+                model::kafka_namespace, std::move(tp));
+          });
         auto tout = request.data.timeout_ms + model::timeout_clock::now();
         res = co_await ctx.topics_frontend().delete_topics(
-          create_topic_namespaces(std::move(request.data.topic_names)), tout);
+          std::move(topics), tout);
     }
 
-    auto resp = create_response(std::move(res));
+    // initialize response with topic placeholders
+    delete_topics_response resp;
+    resp.data.responses.reserve(res.size());
+    std::transform(
+      res.begin(),
+      res.end(),
+      std::back_inserter(resp.data.responses),
+      [](cluster::topic_result tr) {
+          return deletable_topic_result{
+            .name = std::move(tr.tp_ns.tp),
+            .error_code = map_topic_error_code(tr.ec)};
+      });
+
     resp.data.throttle_time_ms = resp_delay;
     for (auto& topic : unauthorized) {
         resp.data.responses.push_back(deletable_topic_result{
