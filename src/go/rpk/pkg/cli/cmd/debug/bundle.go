@@ -24,11 +24,15 @@ import (
 )
 
 // Use the same date specs as journalctl (see `man journalctl`).
-const timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
+const (
+	timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
+	outputFlag   = "output"
+)
 
 func newBundleCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
+		outFile    string
 
 		brokers   []string
 		user      string
@@ -56,6 +60,9 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
+			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
+			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
+
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -76,15 +83,25 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
+			err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}
 	command.Flags().StringVar(
 		&adminURL,
-		"admin-url",
+		config.FlagAdminHosts2,
 		"",
-		"The address to the broker's admin API. Defaults to the one in the config file",
+		"Comma-separated list of admin API addresses (<IP>:<port>)",
+	)
+	command.Flags().StringVar(&adminURL, "admin-url", "", "")
+	command.Flags().MarkDeprecated("admin-url", "use --"+config.FlagAdminHosts2)
+
+	command.Flags().StringVarP(
+		&outFile,
+		outputFlag,
+		"o",
+		"",
+		"The file path where the debug file will be written (default ./<timestamp>-bundle.zip)",
 	)
 	command.Flags().DurationVar(
 		&timeout,

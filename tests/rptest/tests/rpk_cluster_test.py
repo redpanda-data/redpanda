@@ -59,10 +59,11 @@ class RpkClusterTest(RedpandaTest):
         # commands are run on redpanda nodes.
 
         working_dir = "/tmp"
+        file_path = os.path.join(working_dir, "bundle.zip")
         node = self.redpanda.nodes[0]
 
         rpk_remote = RpkRemoteTool(self.redpanda, node)
-        output = rpk_remote.debug_bundle(working_dir)
+        output = rpk_remote.debug_bundle(file_path)
         lines = output.split("\n")
 
         # On error, rpk bundle returns 0 but writes error description to stdout
@@ -98,12 +99,11 @@ class RpkClusterTest(RedpandaTest):
                 filtered_errors.append(l)
 
         assert not filtered_errors
-        assert output_file is not None
+        assert output_file == file_path
 
-        output_path = os.path.join(working_dir, output_file)
-        node.account.copy_from(output_path, working_dir)
+        node.account.copy_from(output_file, working_dir)
 
-        zf = zipfile.ZipFile(output_path)
+        zf = zipfile.ZipFile(output_file)
         files = zf.namelist()
         assert 'redpanda.yaml' in files
         assert 'redpanda.log' in files

@@ -32,5 +32,9 @@ func executeBundle(
 	int,
 	time.Duration,
 ) error {
-	return errors.New("rpk debug bundle is unsupported on your operating system")
+	return errors.New("rpk debug bundle is not supported on your operating system")
+}
+
+func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {
+	return "", errors.New("rpk debug bundle is not supported on your operating system")
 }

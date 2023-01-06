@@ -32,11 +32,15 @@ class RpkRemoteTool:
 
         return self._run_config(cmd, path=path, timeout=timeout)
 
-    def debug_bundle(self, working_dir):
+    def debug_bundle(self, output_file):
         # Run the bundle command.  It outputs into pwd, so switch to working dir first
-        return self._execute(
-            ["cd", working_dir, ";",
-             self._rpk_binary(), "debug", "bundle"])
+        return self._execute([
+            self._rpk_binary(),
+            'debug',
+            'bundle',
+            "--output",
+            output_file,
+        ])
 
     def cluster_config_force_reset(self, property_name):
         return self._execute([
