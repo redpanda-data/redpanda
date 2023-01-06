@@ -112,18 +112,7 @@ FIXTURE_TEST(metadata_rt_test, fixture) {
     offset_key.partition = random_named_int<model::partition_id>();
 
     roundtrip_test(offset_key);
-    // version 1
-    kafka::offset_metadata_value offset_md_v1;
-    offset_md_v1.version = kafka::group_metadata_version(1);
 
-    offset_md_v1.offset = random_named_int<model::offset>();
-    offset_md_v1.metadata = random_named_string<ss::sstring>();
-    offset_md_v1.commit_timestamp = model::timestamp::now();
-    offset_md_v1.expiry_timestamp = model::timestamp::now();
-
-    roundtrip_test(offset_md_v1);
-
-    // version 3
     kafka::offset_metadata_value offset_md;
 
     offset_md.offset = random_named_int<model::offset>();
