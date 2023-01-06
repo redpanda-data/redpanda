@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     scram_algorithm.cc
     scram_authenticator.cc
+    gssapi_authenticator.cc
     credential.cc
     acl.cc
     mtls.cc

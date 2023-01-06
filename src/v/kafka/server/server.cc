@@ -14,6 +14,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/errors.h"
@@ -42,6 +43,7 @@
 #include "net/connection.h"
 #include "security/errc.h"
 #include "security/exceptions.h"
+#include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -429,6 +431,19 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
             ctx.sasl()->set_mechanism(
               std::make_unique<security::scram_sha512_authenticator::auth>(
                 ctx.credentials()));
+        }
+    }
+
+    const bool has_kafka_gssapi = ctx.feature_table().local().is_active(
+      features::feature::kafka_gssapi);
+    if (has_kafka_gssapi && supports("GSSAPI")) {
+        supported_sasl_mechanisms.emplace_back(
+          security::gssapi_authenticator::name);
+
+        if (request.data.mechanism == security::gssapi_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::gssapi_authenticator>(
+                ctx.connection()->server().thread_worker()));
         }
     }
 
