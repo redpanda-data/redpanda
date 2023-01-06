@@ -320,15 +320,6 @@ request_creator::make_delete_objects_request(
 
 // client //
 
-/// Parse timestamp in format that S3 uses
-static std::chrono::system_clock::time_point
-parse_timestamp(std::string_view sv) {
-    std::tm tm = {};
-    std::stringstream ss({sv.data(), sv.size()});
-    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
-    return std::chrono::system_clock::from_time_t(timegm(&tm));
-}
-
 static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
     try {
         for (auto& frag : buf) {
@@ -348,7 +339,7 @@ static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
                     } else if (item_tag == "Size") {
                         item.size_bytes = item_value.get_value<size_t>();
                     } else if (item_tag == "LastModified") {
-                        item.last_modified = parse_timestamp(
+                        item.last_modified = util::parse_timestamp(
                           item_value.get_value<ss::sstring>());
                     } else if (item_tag == "ETag") {
                         item.etag = item_value.get_value<ss::sstring>();
@@ -729,35 +720,20 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& resp) mutable {
-          // chunked encoding is used so we don't know output size in
-          // advance
-          return ss::do_with(
-            resp->as_input_stream(),
-            iobuf(),
-            [resp](ss::input_stream<char>& stream, iobuf& outbuf) mutable {
-                return ss::do_until(
-                         [&stream] { return stream.eof(); },
-                         [&stream, &outbuf] {
-                             return stream.read().then(
-                               [&outbuf](ss::temporary_buffer<char>&& chunk) {
-                                   outbuf.append(std::move(chunk));
-                               });
-                         })
-                  .then([&outbuf, resp] {
-                      const auto& header = resp->get_headers();
-                      if (header.result() != boost::beast::http::status::ok) {
-                          // We received error response so the outbuf contains
-                          // error digest instead of the result of the query
-                          vlog(
-                            s3_log.warn, "S3 replied with error: {:l}", header);
-                          return parse_rest_error_response<
-                            s3_client::list_bucket_result>(
-                            header.result(), std::move(outbuf));
-                      }
-                      auto res = iobuf_to_list_bucket_result(std::move(outbuf));
-                      return ss::make_ready_future<list_bucket_result>(
-                        std::move(res));
-                  });
+          return util::drain_chunked_response_stream(resp).then(
+            [resp](iobuf outbuf) {
+                const auto& header = resp->get_headers();
+                if (header.result() != boost::beast::http::status::ok) {
+                    // We received error response so the outbuf contains
+                    // error digest instead of the result of the query
+                    vlog(s3_log.warn, "S3 replied with error: {:l}", header);
+                    return parse_rest_error_response<
+                      s3_client::list_bucket_result>(
+                      header.result(), std::move(outbuf));
+                }
+                auto res = iobuf_to_list_bucket_result(std::move(outbuf));
+                return ss::make_ready_future<list_bucket_result>(
+                  std::move(res));
             });
       });
 }
