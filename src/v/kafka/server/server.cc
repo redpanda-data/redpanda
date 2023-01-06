@@ -57,16 +57,14 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <exception>
 #include <limits>
 #include <memory>
-
-static const std::vector<ss::sstring> supported_sasl_mechanisms = {
-  security::scram_sha256_authenticator::name,
-  security::scram_sha512_authenticator::name};
 
 namespace kafka {
 
@@ -400,29 +398,46 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
     log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_HANDSHAKE {}", request);
 
+    const auto& configured = config::shard_local_cfg().sasl_mechanisms();
+    auto supports = [&configured](std::string_view value) {
+        return absl::c_find(configured, value) != configured.end();
+    };
+
     /*
      * configure sasl for the current connection context. see the sasl
      * authenticate request for the next phase of the auth process.
      */
     auto error = error_code::none;
 
-    if (request.data.mechanism == security::scram_sha256_authenticator::name) {
-        ctx.sasl()->set_mechanism(
-          std::make_unique<security::scram_sha256_authenticator::auth>(
-            ctx.credentials()));
+    std::vector<ss::sstring> supported_sasl_mechanisms;
+    if (supports("SCRAM")) {
+        supported_sasl_mechanisms.insert(
+          supported_sasl_mechanisms.end(),
+          {security::scram_sha256_authenticator::name,
+           security::scram_sha512_authenticator::name});
 
-    } else if (
-      request.data.mechanism == security::scram_sha512_authenticator::name) {
-        ctx.sasl()->set_mechanism(
-          std::make_unique<security::scram_sha512_authenticator::auth>(
-            ctx.credentials()));
+        if (
+          request.data.mechanism
+          == security::scram_sha256_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::scram_sha256_authenticator::auth>(
+                ctx.credentials()));
 
-    } else {
+        } else if (
+          request.data.mechanism
+          == security::scram_sha512_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::scram_sha512_authenticator::auth>(
+                ctx.credentials()));
+        }
+    }
+
+    if (!ctx.sasl()->has_mechanism()) {
         error = error_code::unsupported_sasl_mechanism;
     }
 
     return ctx.respond(
-      sasl_handshake_response(error, supported_sasl_mechanisms));
+      sasl_handshake_response(error, std::move(supported_sasl_mechanisms)));
 }
 
 template<>
