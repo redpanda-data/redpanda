@@ -43,8 +43,7 @@ rp_test(
     moving_average_test.cc
     human_test.cc
     fragmented_vector_test.cc
-    tracking_allocator_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
+  LIBRARIES Boost::unit_test_framework v::utils
   LABELS utils
 )

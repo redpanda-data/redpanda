@@ -132,7 +132,6 @@ struct configuration final : public config_store {
     property<uint64_t> transaction_coordinator_log_segment_size;
     property<std::chrono::milliseconds>
       abort_timed_out_transactions_interval_ms;
-    property<std::chrono::seconds> tx_log_stats_interval_s;
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;

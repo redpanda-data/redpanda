@@ -66,8 +66,6 @@ public:
           std::forward<Args>(args)...);
     }
 
-    const ss::logger& logger() const { return _logger; }
-
 private:
     ss::logger& _logger;
     ss::sstring _prefix;
