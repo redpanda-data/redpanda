@@ -70,9 +70,8 @@ ss::future<> connection_context::process_one_request() {
                     conn->shutdown_input();
                 });
           }
-          co_return co_await parse_header(conn->input())
-            .then([this,
-                   s = sz.value()](std::optional<request_header> h) mutable {
+          auto s = sz.value();
+          auto h = co_await parse_header(conn->input());
                 _server.probe().add_bytes_received(s);
                 if (!h) {
                     vlog(
@@ -80,9 +79,9 @@ ss::future<> connection_context::process_one_request() {
                       "could not parse header from client: {}",
                       conn->addr);
                     _server.probe().header_corrupted();
-                    return ss::make_ready_future<>();
+                    co_return co_await ss::make_ready_future<>();
                 }
-                return dispatch_method_once(std::move(h.value()), s)
+                co_return co_await dispatch_method_once(std::move(h.value()), s)
                   .handle_exception_type(
                     [this](const kafka_api_version_not_supported_exception& e) {
                         vlog(
@@ -103,7 +102,6 @@ ss::future<> connection_context::process_one_request() {
                         "(std::bad_alloc)",
                         conn->addr);
                   });
-            });
 }
 
 /*
