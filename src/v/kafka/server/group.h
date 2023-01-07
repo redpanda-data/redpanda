@@ -638,13 +638,10 @@ public:
     void add_offset_tombstone_record(
       const kafka::group_id& group,
       const model::topic_partition& tp,
-      group_metadata_serializer& serializer,
       storage::record_batch_builder& builder);
 
     void add_group_tombstone_record(
-      const kafka::group_id& group,
-      group_metadata_serializer& serializer,
-      storage::record_batch_builder& builder);
+      const kafka::group_id& group, storage::record_batch_builder& builder);
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
