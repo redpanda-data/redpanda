@@ -41,13 +41,12 @@ using namespace std::chrono_literals;
 namespace kafka {
 
 ss::future<> connection_context::process_one_request() {
-    return parse_size(conn->input())
-      .then([this](std::optional<size_t> sz) mutable {
+    auto sz = co_await parse_size(conn->input());
           if (!sz) {
-              return ss::make_ready_future<>();
+              co_return co_await ss::make_ready_future<>();
           }
           if (sz > _max_request_size()) {
-              return ss::make_exception_future<>(
+              co_return co_await ss::make_exception_future<>(
                 net::invalid_request_error(fmt::format(
                   "request size {} is larger than the configured max {}",
                   sz,
@@ -65,13 +64,13 @@ ss::future<> connection_context::process_one_request() {
                 && sasl()->state()
                      == security::sasl_server::sasl_state::authenticate
                 && sasl()->handshake_v0())) {
-              return handle_auth_v0(*sz).handle_exception(
+              co_return co_await handle_auth_v0(*sz).handle_exception(
                 [this](std::exception_ptr e) {
                     vlog(klog.info, "Detected error processing request: {}", e);
                     conn->shutdown_input();
                 });
           }
-          return parse_header(conn->input())
+          co_return co_await parse_header(conn->input())
             .then([this,
                    s = sz.value()](std::optional<request_header> h) mutable {
                 _server.probe().add_bytes_received(s);
@@ -105,7 +104,6 @@ ss::future<> connection_context::process_one_request() {
                         conn->addr);
                   });
             });
-      });
 }
 
 /*
