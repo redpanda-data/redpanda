@@ -1,0 +1,18 @@
+pull_request_rules:
+  - name: enqueue on label
+    conditions:
+      - base=dev
+      - label=merge-queue
+    actions:
+      queue:
+        name: dev
+        merge_bot_account: vbotbuildovich
+        update_bot_account: vbotbuildovich
+queue_rules:
+  - name: dev
+    speculative_checks: 2
+    batch_size: 4
+    draft_bot_account: vbotbuildovich
+    conditions:
+      - base=dev
+      - label=merge-queue
