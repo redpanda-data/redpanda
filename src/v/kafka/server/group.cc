@@ -2652,8 +2652,7 @@ described_group group::describe() const {
     return desc;
 }
 
-namespace {
-void add_offset_tombstone_record(
+void group::add_offset_tombstone_record(
   const kafka::group_id& group,
   const model::topic_partition& tp,
   group_metadata_serializer& serializer,
@@ -2667,7 +2666,7 @@ void add_offset_tombstone_record(
     builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
 
-void add_group_tombstone_record(
+void group::add_group_tombstone_record(
   const kafka::group_id& group,
   group_metadata_serializer& serializer,
   storage::record_batch_builder& builder) {
@@ -2677,7 +2676,6 @@ void add_group_tombstone_record(
     auto kv = serializer.to_kv(group_metadata_kv{.key = std::move(key)});
     builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
-} // namespace
 
 ss::future<error_code> group::remove() {
     switch (state()) {
