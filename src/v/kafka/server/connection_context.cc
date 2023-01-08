@@ -42,16 +42,17 @@ namespace kafka {
 
 ss::future<> connection_context::process_one_request() {
     auto sz = co_await parse_size(conn->input());
-    if (!sz) {
-        co_return co_await ss::make_ready_future<>();
+    if (!sz.has_value()) {
+        co_return;
     }
-    if (sz > _max_request_size()) {
-        co_return co_await ss::make_exception_future<>(
-          net::invalid_request_error(fmt::format(
-            "request size {} is larger than the configured max {}",
-            sz,
-            _max_request_size())));
+
+    if (sz.value() > _max_request_size()) {
+        throw net::invalid_request_error(fmt::format(
+          "request size {} is larger than the configured max {}",
+          sz,
+          _max_request_size()));
     }
+
     /*
      * Intercept the wire protocol when:
      *
@@ -73,16 +74,18 @@ ss::future<> connection_context::process_one_request() {
             conn->shutdown_input();
         }
     }
-    auto s = sz.value();
+
     auto h = co_await parse_header(conn->input());
-    _server.probe().add_bytes_received(s);
+    _server.probe().add_bytes_received(sz.value());
     if (!h) {
         vlog(klog.debug, "could not parse header from client: {}", conn->addr);
         _server.probe().header_corrupted();
-        co_return co_await ss::make_ready_future<>();
+        co_return;
     }
+
     try {
-        co_return co_await dispatch_method_once(std::move(h.value()), s);
+        co_return co_await dispatch_method_once(
+          std::move(h.value()), sz.value());
     } catch (const kafka_api_version_not_supported_exception& e) {
         vlog(
           klog.warn,
@@ -91,14 +94,12 @@ ss::future<> connection_context::process_one_request() {
           e.what());
         conn->shutdown_input();
     } catch (const std::bad_alloc&) {
-        // In general, dispatch_method_once does not throw,
-        // but bad_allocs are an exception.  Log it cleanly
-        // to avoid this bubbling up as an unhandled
-        // exceptional future.
+        // In general, dispatch_method_once does not throw, but bad_allocs are
+        // an exception. Log it cleanly to avoid this bubbling up as an
+        // unhandled exceptional future.
         vlog(
           klog.error,
-          "Request from {} failed on memory exhaustion "
-          "(std::bad_alloc)",
+          "Request from {} failed on memory exhaustion (std::bad_alloc)",
           conn->addr);
     }
 }
