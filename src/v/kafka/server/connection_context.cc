@@ -82,17 +82,16 @@ ss::future<> connection_context::process_one_request() {
                     _server.probe().header_corrupted();
                     co_return co_await ss::make_ready_future<>();
                 }
-                co_return co_await dispatch_method_once(std::move(h.value()), s)
-                  .handle_exception_type(
-                    [this](const kafka_api_version_not_supported_exception& e) {
+                try {
+                co_return co_await dispatch_method_once(std::move(h.value()), s);
+                } catch (const kafka_api_version_not_supported_exception& e) {
                         vlog(
                           klog.warn,
                           "Error while processing request from {} - {}",
                           conn->addr,
                           e.what());
                         conn->shutdown_input();
-                    })
-                  .handle_exception_type([this](const std::bad_alloc&) {
+                } catch (const std::bad_alloc&) {
                       // In general, dispatch_method_once does not throw,
                       // but bad_allocs are an exception.  Log it cleanly
                       // to avoid this bubbling up as an unhandled
@@ -102,7 +101,7 @@ ss::future<> connection_context::process_one_request() {
                         "Request from {} failed on memory exhaustion "
                         "(std::bad_alloc)",
                         conn->addr);
-                  });
+                }
 }
 
 /*
