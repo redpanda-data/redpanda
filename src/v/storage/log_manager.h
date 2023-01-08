@@ -20,7 +20,6 @@
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
 #include "storage/segment.h"
-#include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
