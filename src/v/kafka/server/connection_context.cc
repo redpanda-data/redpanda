@@ -64,11 +64,12 @@ ss::future<> connection_context::process_one_request() {
                 && sasl()->state()
                      == security::sasl_server::sasl_state::authenticate
                 && sasl()->handshake_v0())) {
-              co_return co_await handle_auth_v0(*sz).handle_exception(
-                [this](std::exception_ptr e) {
-                    vlog(klog.info, "Detected error processing request: {}", e);
+              try {
+              co_return co_await handle_auth_v0(*sz);
+              } catch (...) {
+                    vlog(klog.info, "Detected error processing request: {}", std::current_exception());
                     conn->shutdown_input();
-                });
+              }
           }
           auto s = sz.value();
           auto h = co_await parse_header(conn->input());
