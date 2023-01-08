@@ -71,7 +71,7 @@ point of the change, e.g.
   * Short description of how this PR improves existing behavior.
 
 If the changes in this PR do not need to be mentioned in the release
-notes, then don't add a sub-sction and simply list `none`, e.g.
+notes, then don't add a sub-section and simply list `none`, e.g.
 
   * none
 
