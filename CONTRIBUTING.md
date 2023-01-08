@@ -2,7 +2,7 @@
 
 Welcome! This guide is intended to help developers that are new to the community
 navigate the process of making contributions to the Redpanda project. Please be
-sure to also checkout our [code of conduct](CODE_OF_CONDUCT.md). We work hard to
+sure to also read our [code of conduct](CODE_OF_CONDUCT.md). We work hard to
 make this a welcoming community for all, and we're excited that you are here!
 
 The basics:
@@ -16,7 +16,7 @@ The basics:
   
 * We ask that developers sign our [contributor license
   agreement](https://github.com/redpanda-data/redpanda/tree/dev/licenses). The
-  process of signing the CLA is automated, and you'll be prompted instructions
+  process of signing the CLA is automated, and you'll be prompted with instructions
   the first time you submit a pull request to the project.
 
 # Submitting changes
@@ -129,9 +129,9 @@ important.  First let's take a look at formatting.
 It may be surprising that we consider commit message formatting to be important
 enough to have its own section in the contributors guide. There are a couple
 reasons for this.  First, in our experience we have found that adopting a
-standard for issues related to style and formatting help reduce cognitive load
+standard for issues related to style and formatting helps reduce cognitive load
 when consuming content like code or technical writing. But from a practical
-stand point, many developers use terminal based editors with restrictions on
+standpoint, many developers use terminal based editors with restrictions on
 line width which is the primary dimension to the formatting guidelines of commit
 messages.
 
@@ -189,7 +189,7 @@ a commit message is in good shape:
 
 Good technical communication takes a lot of practice, and what makes sense to
 one person isn't always optimal for another reader. So our suggestion is to
-error on the side of more detail, and not stress about making it perfect. Read
+err on the side of more detail, and not stress about making it perfect. Read
 on below if you are curious for more details about these bullet points.
 
 ### Explanation and advice
@@ -213,7 +213,7 @@ is to treat each commit as being likely involved in such a process.
 A good rule of thumb is one paragraph for describing why the change is being
 made. This should generally stand independent of the physical change being made,
 and describe the state of the system being transitioned _away from_, why that
-state no longer desirable, and how the new state addresses those shortcomings.
+state is no longer desirable, and how the new state addresses those shortcomings.
 
 It is much harder to decide what technical details are important or non-obvious.
 But, if you happened to think one aspect of the changes were interesting or
@@ -236,9 +236,9 @@ Describe, in plain language, the motivation behind the change (bug fix, feature,
 
 ```
 Some users complain the `abort` button is hard to find. Talked with design
-team and they suggested increasing the size of the button as oppposed
-to changing the color or moving its position. So, increased width of
-button to match width of other buttons on the page.
+team and they suggested increasing the size of the button instead of
+changing the color or moving its position. So, increased width of button
+to match the width of other buttons on the page.
 ```
 
 If any of the git commits in the PR address a bug, link the issue that the PR will address using the `Fixes` [keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword), e.g.
@@ -368,7 +368,7 @@ Indicate this by adding a bullet point with `none`, e.g.
 
 ### Example PR Body
 
-A collection of ficticious PR bodies that have a valid, expected format.
+A collection of fictitious PR bodies that have a valid, expected format.
 
 #### Example Feature PR Body
 
@@ -378,9 +378,9 @@ An example of a PR to `dev` branch that adds a new feature for the next release 
 Closes #999456
 
 Some users complain the `abort` button is hard to find. Talked with design
-team and they suggested increasing the size of the button as oppposed
-to changing the color or moving its position. So, increased width of
-button to match width of other buttons on the page.
+team and they suggested increasing the size of the button instead of
+changing the color or moving its position. So, increased width of button
+to match the width of other buttons on the page.
 
 ## Backports Required
 
