@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "test_utils/http_imposter.h"
+#include "http/tests/http_imposter.h"
 
 #include "utils/uuid.h"
 #include "vlog.h"

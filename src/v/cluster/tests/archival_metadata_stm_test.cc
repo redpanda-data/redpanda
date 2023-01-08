@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
 #include "features/feature_table.h"
+#include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -23,7 +24,6 @@
 #include "raft/types.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
-#include "test_utils/http_imposter.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>

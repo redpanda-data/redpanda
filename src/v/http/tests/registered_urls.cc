@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "registered_urls.h"
+#include "http/tests/registered_urls.h"
 
 #include "vassert.h"
 
