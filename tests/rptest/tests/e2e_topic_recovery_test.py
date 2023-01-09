@@ -122,7 +122,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         objects = list(self.redpanda.get_objects_from_si())
         for o in objects:
             if o.key.endswith("/manifest.json") and self.topic in o.key:
-                data = self.redpanda.s3_client.get_object_data(
+                data = self.redpanda.cloud_storage_client.get_object_data(
                     self._bucket, o.key)
                 manifest = json.loads(data)
                 last_upl_offset = manifest['last_offset']

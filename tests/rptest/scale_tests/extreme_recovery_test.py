@@ -174,14 +174,15 @@ class ExtremeRecoveryTest(TopicRecoveryTest):
         # This test requires dedicated system resources
         assert self.redpanda.dedicated_nodes
 
-        assert self.s3_client
+        assert self.cloud_storage_client
         topics = [
             TopicSpec(partition_count=RecoveryScale.part_per_topic,
                       replication_factor=3)
             for i in range(RecoveryScale.NUM_TOPICS)
         ]
 
-        extreme_recovery = RecoveryScale(self.test_context, self.s3_client,
+        extreme_recovery = RecoveryScale(self.test_context,
+                                         self.cloud_storage_client,
                                          self.kafka_tools, self.rpk,
                                          self.s3_bucket, self.logger, topics,
                                          self.rpk_producer_maker)

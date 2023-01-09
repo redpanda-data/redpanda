@@ -92,8 +92,8 @@ class RedpandaTest(Test):
         return os.environ.get('CI', None) != 'false'
 
     @property
-    def s3_client(self):
-        return self.redpanda.s3_client
+    def cloud_storage_client(self):
+        return self.redpanda.cloud_storage_client
 
     def setUp(self):
         self.redpanda.start()

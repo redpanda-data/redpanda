@@ -587,7 +587,8 @@ class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
         produce_until_segments(self.redpanda, topic.name, 0, total_segments)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot([topic], self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot([topic],
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")

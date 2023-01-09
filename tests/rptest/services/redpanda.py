@@ -637,7 +637,7 @@ class RedpandaService(Service):
         else:
             self._si_settings = None
 
-        self.s3_client: Optional[S3Client] = None
+        self.cloud_storage_client: Optional[S3Client] = None
 
         # enable asan abort / core dumps by default
         self._environment = dict(
@@ -1345,7 +1345,7 @@ class RedpandaService(Service):
         self.start_service(node, start_wasm_service)
 
     def start_si(self):
-        self.s3_client = S3Client(
+        self.cloud_storage_client = S3Client(
             region=self._si_settings.cloud_storage_region,
             access_key=self._si_settings.cloud_storage_access_key,
             secret_key=self._si_settings.cloud_storage_secret_key,
@@ -1356,20 +1356,21 @@ class RedpandaService(Service):
         self.logger.debug(
             f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}")
         if not self._si_settings.bypass_bucket_creation:
-            self.s3_client.create_bucket(
+            self.cloud_storage_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
     def delete_bucket_from_si(self):
-        assert self.s3_client is not None
+        assert self.cloud_storage_client is not None
 
-        failed_deletions = self.s3_client.empty_bucket(
+        failed_deletions = self.cloud_storage_client.empty_bucket(
             self._si_settings.cloud_storage_bucket)
         assert len(failed_deletions) == 0
-        self.s3_client.delete_bucket(self._si_settings.cloud_storage_bucket)
+        self.cloud_storage_client.delete_bucket(
+            self._si_settings.cloud_storage_bucket)
 
     def get_objects_from_si(self):
-        assert self.s3_client is not None
-        return self.s3_client.list_objects(
+        assert self.cloud_storage_client is not None
+        return self.cloud_storage_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
     def set_cluster_config(self,
@@ -1523,7 +1524,7 @@ class RedpandaService(Service):
         )
 
         manifests_to_dump = []
-        for o in self.s3_client.list_objects(
+        for o in self.cloud_storage_client.list_objects(
                 self._si_settings.cloud_storage_bucket):
             key = o.key
             if key_dump_limit > 0:
@@ -1542,7 +1543,7 @@ class RedpandaService(Service):
         with zipfile.ZipFile(archive_path, mode='w') as archive:
             for m in manifests_to_dump:
                 self.logger.info(f"Fetching manifest {m}")
-                body = self.s3_client.get_object_data(
+                body = self.cloud_storage_client.get_object_data(
                     self._si_settings.cloud_storage_bucket, m)
                 filename = m.replace("/", "_")
                 with archive.open(filename, "w") as outstr:
@@ -1756,7 +1757,7 @@ class RedpandaService(Service):
 
     def clean(self, **kwargs):
         super().clean(**kwargs)
-        if self.s3_client:
+        if self.cloud_storage_client:
             self.delete_bucket_from_si()
 
     def clean_node(self,

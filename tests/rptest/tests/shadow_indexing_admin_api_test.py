@@ -67,7 +67,7 @@ class SIAdminApiTest(RedpandaTest):
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
@@ -109,8 +109,8 @@ class SIAdminApiTest(RedpandaTest):
 
         segment_to_remove = self.find_deletion_candidate()
         self.logger.info(f"trying to remove segment {segment_to_remove}")
-        self.s3_client.delete_object(self.s3_bucket_name, segment_to_remove,
-                                     True)
+        self.cloud_storage_client.delete_object(self.s3_bucket_name,
+                                                segment_to_remove, True)
 
         self.logger.info("trying to sync remote partition")
         for node in self.redpanda.nodes:
@@ -130,7 +130,7 @@ class SIAdminApiTest(RedpandaTest):
             assert part.start_offset > 0, f"start-offset of the partition is {part.start_offset}, should be greater than 0"
 
     def find_deletion_candidate(self):
-        for obj in self.s3_client.list_objects(self.s3_bucket_name):
+        for obj in self.cloud_storage_client.list_objects(self.s3_bucket_name):
             if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.key):
                 return obj.key
         return None

@@ -143,9 +143,9 @@ class TestReadReplicaService(EndToEndTest):
             "because topic manifest is not in S3.")
 
     def _bucket_usage(self) -> BucketUsage:
-        assert self.redpanda and self.redpanda.s3_client
+        assert self.redpanda and self.redpanda.cloud_storage_client
         keys: set[str] = set()
-        s3 = self.redpanda.s3_client
+        s3 = self.redpanda.cloud_storage_client
         num_objects = total_bytes = 0
         bucket = self.si_settings.cloud_storage_bucket
         for o in s3.list_objects(bucket):
@@ -187,12 +187,12 @@ class TestReadReplicaService(EndToEndTest):
             second_rpk.produce(self.topic_name, "", "test payload")
 
         objects_before = set(
-            self.redpanda.s3_client.list_objects(
+            self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket))
         assert len(objects_before) > 0
         second_rpk.delete_topic(self.topic_name)
         objects_after = set(
-            self.redpanda.s3_client.list_objects(
+            self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket))
         if len(objects_after) < len(objects_before):
             deleted = objects_before - objects_after

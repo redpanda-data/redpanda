@@ -689,7 +689,8 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.logger.debug(f"Deleting {topic_name} and checking S3 result")
 
         before_objects = set(
-            o.key for o in self.s3_client.list_objects(self._s3_bucket)
+            o.key
+            for o in self.cloud_storage_client.list_objects(self._s3_bucket)
             if topic_name in o.key)
 
         # Test is meaningless if there were no objects to start with
@@ -698,8 +699,8 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.rpk.delete_topic(topic_name)
 
         def is_empty():
-            return sum(1 for o in self.s3_client.list_objects(self._s3_bucket)
-                       if topic_name in o.key) == 0
+            return sum(1 for o in self.cloud_storage_client.list_objects(
+                self._s3_bucket) if topic_name in o.key) == 0
 
         if expect_s3_deletion:
             wait_until(is_empty, timeout_sec=10, backoff_sec=1)
@@ -710,7 +711,8 @@ class CreateTopicUpgradeTest(RedpandaTest):
             sleep(10)
 
         after_objects = set(
-            o.key for o in self.s3_client.list_objects(self._s3_bucket)
+            o.key
+            for o in self.cloud_storage_client.list_objects(self._s3_bucket)
             if topic_name in o.key)
         deleted_objects = before_objects - after_objects
         if expect_s3_deletion:

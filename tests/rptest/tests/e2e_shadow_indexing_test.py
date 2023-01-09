@@ -77,8 +77,8 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
-        assert self.redpanda and self.redpanda.s3_client
-        self.redpanda.s3_client.empty_bucket(self.s3_bucket_name)
+        assert self.redpanda and self.redpanda.cloud_storage_client
+        self.redpanda.cloud_storage_client.empty_bucket(self.s3_bucket_name)
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
@@ -209,7 +209,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
@@ -242,7 +243,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
@@ -322,7 +324,8 @@ class EndToEndCloudRetentionTest(EndToEndShadowIndexingBase):
         self.start_producer(throughput=10000)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
@@ -403,7 +406,8 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Wait for there to be some segments.
         def manifest_has_segments():
-            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
                                                     0)
@@ -413,7 +417,8 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Give ample time for would-be segment deletions to occur.
         time.sleep(5)
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
         assert "0-1-v1.log" in manifest["segments"], manifest

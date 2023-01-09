@@ -177,7 +177,7 @@ class ArchivalTest(RedpandaTest):
                                         'true')
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3)
@@ -197,7 +197,8 @@ class ArchivalTest(RedpandaTest):
             # Topic manifest can be present in the bucket because topic is created before
             # firewall is blocked. No segments or partition manifest should be present.
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
-            objects = self.s3_client.list_objects(self.s3_bucket_name)
+            objects = self.cloud_storage_client.list_objects(
+                self.s3_bucket_name)
             keys = [x.key for x in objects]
 
             assert len(keys) < 2, \
@@ -460,7 +461,8 @@ class ArchivalTest(RedpandaTest):
                 f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
             )
             assert not id is None
-        manifest = self.s3_client.get_object_data(self.s3_bucket_name, id)
+        manifest = self.cloud_storage_client.get_object_data(
+            self.s3_bucket_name, id)
         self.logger.info(f"manifest found: {manifest}")
         return json.loads(manifest)
 
@@ -636,16 +638,16 @@ class ArchivalTest(RedpandaTest):
         try:
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
             partition_manifest_id = "d0000000/meta/kafka/panda-topic/0_9/manifest.json"
-            manifest = self.s3_client.get_object_data(self.s3_bucket_name,
-                                                      partition_manifest_id)
+            manifest = self.cloud_storage_client.get_object_data(
+                self.s3_bucket_name, partition_manifest_id)
             results = [topic_manifest_id, partition_manifest_id]
             for id in manifest['segments'].keys():
                 results.append(id)
             self.logger.debug(f"ListObjects(source: manifest): {results}")
         except:
             results = [
-                loc.key
-                for loc in self.s3_client.list_objects(self.s3_bucket_name)
+                loc.key for loc in self.cloud_storage_client.list_objects(
+                    self.s3_bucket_name)
             ]
             self.logger.debug(f"ListObjects: {results}")
         return results
@@ -768,7 +770,7 @@ class ArchivalTest(RedpandaTest):
             manifest_extension = ".json"
             return not path.endswith(manifest_extension)
 
-        objects = self.s3_client.list_objects(self.s3_bucket_name)
+        objects = self.cloud_storage_client.list_objects(self.s3_bucket_name)
         self.logger.info(
             f"got {len(list(objects))} objects from bucket {self.s3_bucket_name}"
         )
@@ -777,8 +779,8 @@ class ArchivalTest(RedpandaTest):
 
         return {
             normalize(it.key): (it.etag, it.content_length)
-            for it in self.s3_client.list_objects(self.s3_bucket_name)
-            if included(it.key)
+            for it in self.cloud_storage_client.list_objects(
+                self.s3_bucket_name) if included(it.key)
         }
 
     def _get_partial_checksum(self, hostname, normalized_path, tail_bytes):
