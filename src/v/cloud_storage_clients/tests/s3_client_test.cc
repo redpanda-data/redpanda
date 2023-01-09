@@ -87,6 +87,7 @@ static constexpr const char* list_objects_payload = R"xml(
   <MaxKeys>1000</MaxKeys>
   <Delimiter>/</Delimiter>
   <IsTruncated>false</IsTruncated>
+  <NextContinuationToken>next</NextContinuationToken>
   <Contents>
     <Key>test-key1</Key>
     <LastModified>2021-01-10T01:00:00.000Z</LastModified>
@@ -160,6 +161,7 @@ void set_routes(ss::httpd::routes& r) {
     auto list_objects_response = new function_handler(
       [](const_req req, reply& reply) {
           BOOST_REQUIRE(!req.get_header("x-amz-content-sha256").empty());
+          BOOST_REQUIRE_EQUAL(req.get_query_param("list-type"), "2");
           auto prefix = req.get_header("prefix");
           if (prefix == "test") {
               // normal response
@@ -168,6 +170,9 @@ void set_routes(ss::httpd::routes& r) {
               // error
               reply.set_status(reply::status_type::internal_server_error);
               return error_payload;
+          } else if (prefix == "test-cont") {
+              BOOST_REQUIRE_EQUAL(req.get_header("continuation-token"), "ctok");
+              return list_objects_payload;
           }
           return "";
       },
@@ -559,6 +564,9 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
         BOOST_REQUIRE_EQUAL(lst.contents[1].size_bytes, 222);
         BOOST_REQUIRE_EQUAL(
           strtime(lst.contents[1].last_modified), "2021-01-10T02:00:00.000Z");
+
+        BOOST_REQUIRE(!result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "next");
         server->stop().get();
     });
 }
@@ -577,6 +585,24 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
           result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+        server->stop().get();
+    });
+}
+
+SEASTAR_TEST_CASE(test_list_objects_with_continuation) {
+    return ss::async([] {
+        const auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        const auto result = client
+                              ->list_objects(
+                                cloud_storage_clients::bucket_name{
+                                  "test-bucket"},
+                                cloud_storage_clients::object_key{"test-cont"},
+                                {},
+                                {},
+                                "ctok")
+                              .get0();
+        BOOST_REQUIRE(result);
         server->stop().get();
     });
 }

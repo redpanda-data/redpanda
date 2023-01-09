@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote.h"
 
+#include "bytes/iostream.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/remote_segment.h"
@@ -620,6 +621,250 @@ ss::future<upload_result> remote::delete_object(
           *result);
     }
     co_return *result;
+}
+
+ss::future<upload_result> remote::delete_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  std::vector<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent) {
+    ss::gate::holder gh{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto lease = co_await _pool.acquire();
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Delete objects count {}", keys.size());
+    std::optional<upload_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        auto res = co_await lease.client->delete_objects(
+          bucket, keys, fib.get_timeout());
+
+        if (res) {
+            co_return upload_result::success;
+        }
+
+        lease.client->shutdown();
+
+        switch (res.error()) {
+        case cloud_storage_clients::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case cloud_storage_clients::error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "DeleteObjects {}, {} backoff required",
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::fail:
+            result = upload_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            vassert(
+              false,
+              "Unexpected notfound outcome received when deleting objects {} "
+              "from bucket {}",
+              keys.size(),
+              bucket);
+            break;
+        }
+    }
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "DeleteObjects {}, {}, backoff quota exceded, objects not deleted",
+          keys.size(),
+          bucket);
+        result = upload_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "DeleteObjects {}, {}, objects not deleted, error: {}",
+          keys.size(),
+          bucket,
+          *result);
+    }
+    co_return *result;
+}
+
+ss::future<remote::list_result> remote::list_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  retry_chain_node& parent,
+  std::optional<cloud_storage_clients::object_key> prefix) {
+    ss::gate::holder gh{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto lease = co_await _pool.acquire();
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "List objects {}", bucket);
+    std::optional<list_result> result;
+
+    bool items_remaining = true;
+    std::optional<ss::sstring> continuation_token = std::nullopt;
+
+    // Gathers the items from a series of successful ListObjectsV2 calls
+    list_bucket_items items;
+
+    // Keep iterating until the ListObjectsV2 calls has more items to return
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        auto res = co_await lease.client->list_objects(
+          bucket,
+          prefix,
+          std::nullopt,
+          std::nullopt,
+          continuation_token,
+          fib.get_timeout());
+
+        if (res) {
+            auto list_result = res.value();
+            // Successful call, prepare for future calls by getting
+            // continuation_token if result was truncated
+            items_remaining = list_result.is_truncated;
+            continuation_token.emplace(list_result.next_continuation_token);
+            std::copy(
+              std::make_move_iterator(list_result.contents.begin()),
+              std::make_move_iterator(list_result.contents.end()),
+              std::back_inserter(items));
+
+            // Continue to list the remaining items
+            if (items_remaining) {
+                continue;
+            }
+
+            co_return items;
+        }
+
+        lease.client->shutdown();
+
+        switch (res.error()) {
+        case cloud_storage_clients::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case cloud_storage_clients::error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "ListObjectsV2 {}, {} backoff required",
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::fail:
+            result = cloud_storage_clients::error_outcome::fail;
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            vassert(
+              false,
+              "Unexpected key_not_found outcome received when listing bucket "
+              "{}",
+              bucket);
+        }
+    }
+
+    if (!result) {
+        vlog(ctxlog.warn, "ListObjectsV2 {}, backoff quota exceeded", bucket);
+        result = cloud_storage_clients::error_outcome::fail;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "ListObjectsV2 {}, unexpected error: {}",
+          bucket,
+          result->error());
+    }
+    co_return *result;
+}
+
+ss::future<upload_result> remote::upload_object(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& object_path,
+  ss::sstring payload,
+  retry_chain_node& parent) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto permit = fib.retry();
+    auto content_length = payload.size();
+    vlog(
+      ctxlog.debug,
+      "Uploading object to path {}, length {}",
+      object_path,
+      content_length);
+    std::optional<upload_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        auto lease = co_await _pool.acquire();
+
+        auto path = cloud_storage_clients::object_key(object_path());
+        vlog(ctxlog.debug, "Uploading object to path {}", object_path);
+
+        iobuf buffer;
+        buffer.append(payload.data(), payload.size());
+        auto res = co_await lease.client->put_object(
+          bucket,
+          path,
+          content_length,
+          make_iobuf_input_stream(std::move(buffer)),
+          {{"rp-type", "recovery-lock"}},
+          fib.get_timeout());
+
+        if (res) {
+            co_return upload_result::success;
+        }
+
+        lease.client->shutdown();
+        switch (res.error()) {
+        case cloud_storage_clients::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case cloud_storage_clients::error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Uploading object {} to {}, {} backoff required",
+              path,
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::fail:
+            result = upload_result::failed;
+            break;
+        }
+    }
+
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Uploading object {} to {}, backoff quota exceded, object not "
+          "uploaded",
+          object_path,
+          bucket);
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Uploading object {} to {}, {}, object not uploaded",
+          object_path,
+          bucket,
+          *result);
+    }
+    co_return upload_result::timedout;
 }
 
 ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }

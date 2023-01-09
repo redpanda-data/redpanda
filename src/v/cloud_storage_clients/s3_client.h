@@ -98,7 +98,8 @@ public:
       const bucket_name& name,
       std::optional<object_key> prefix,
       std::optional<object_key> start_after,
-      std::optional<size_t> max_keys);
+      std::optional<size_t> max_keys,
+      std::optional<ss::sstring> continuation_token);
 
 private:
     access_point_uri _ap;
@@ -168,6 +169,7 @@ public:
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
+      std::optional<ss::sstring> continuation_token = std::nullopt,
       const ss::lowres_clock::duration& timeout
       = http::default_connect_timeout) override;
 
@@ -206,6 +208,7 @@ private:
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
+      std::optional<ss::sstring> continuation_token = std::nullopt,
       const ss::lowres_clock::duration& timeout
       = http::default_connect_timeout);
 
