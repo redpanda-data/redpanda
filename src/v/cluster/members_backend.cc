@@ -1,6 +1,7 @@
 #include "cluster/members_backend.h"
 
 #include "cluster/controller_api.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_frontend.h"
@@ -18,6 +19,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -30,6 +32,7 @@
 #include <functional>
 #include <optional>
 #include <ostream>
+#include <system_error>
 #include <vector>
 
 namespace cluster {
@@ -56,13 +59,10 @@ members_backend::members_backend(
   , _retry_timeout(config::shard_local_cfg().members_backend_retry_ms())
   , _max_concurrent_reallocations(
       config::shard_local_cfg()
-        .partition_autobalancing_concurrent_moves.bind()) {
-    _retry_timer.set_callback([this] { start_reconciliation_loop(); });
-}
+        .partition_autobalancing_concurrent_moves.bind()) {}
 
 ss::future<> members_backend::stop() {
     vlog(clusterlog.info, "Stopping Members Backend...");
-    _retry_timer.cancel();
     _new_updates.broken();
     return _bg.close();
 }
@@ -88,7 +88,8 @@ void members_backend::start() {
           [this] { return _as.local().abort_requested(); },
           [this] { return handle_updates(); });
     });
-    _retry_timer.arm(_retry_timeout);
+
+    start_reconciliation_loop();
 }
 
 ss::future<> members_backend::handle_updates() {
@@ -163,19 +164,28 @@ void members_backend::handle_single_update(
 }
 
 void members_backend::start_reconciliation_loop() {
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-                          return reconcile().finally([this] {
-                              if (!_as.local().abort_requested()) {
-                                  _retry_timer.arm(_retry_timeout);
-                              }
-                          });
-                      }).handle_exception([](const std::exception_ptr& e) {
-        // just log an exception, will retry
-        vlog(
-          clusterlog.trace,
-          "error encountered while handling cluster state reconciliation - {}",
-          e);
-    });
+    ssx::spawn_with_gate(_bg, [this] { return reconciliation_loop(); });
+}
+
+ss::future<> members_backend::reconciliation_loop() {
+    while (!_as.local().abort_requested()) {
+        try {
+            auto ec = co_await reconcile();
+            vlog(
+              clusterlog.trace, "reconciliation loop result: {}", ec.message());
+            if (!ec) {
+                continue;
+            }
+        } catch (...) {
+            vlog(
+              clusterlog.info,
+              "error encountered while handling cluster state reconciliation - "
+              "{}",
+              std::current_exception());
+        }
+        // when an error occurred wait before next retry
+        co_await ss::sleep_abortable(_retry_timeout, _as.local());
+    }
 }
 
 bool is_in_replica_set(
@@ -675,7 +685,7 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
     co_return;
 }
 
-ss::future<> members_backend::reconcile() {
+ss::future<std::error_code> members_backend::reconcile() {
     // if nothing to do, wait
     co_await _new_updates.wait([this] { return !_updates.empty(); });
     auto u = co_await _lock.get_units();
@@ -700,8 +710,13 @@ ss::future<> members_backend::reconcile() {
     // remove finished updates
     std::erase_if(
       _updates, [](const update_meta& meta) { return meta.finished; });
-    if (!_raft0->is_elected_leader() || _updates.empty()) {
-        co_return;
+
+    if (_updates.empty()) {
+        co_return errc::success;
+    }
+
+    if (!_raft0->is_elected_leader()) {
+        co_return errc::not_leader;
     }
 
     // use linearizable barrier to make sure leader is up to date and all
@@ -715,7 +730,7 @@ ss::future<> members_backend::reconcile() {
               clusterlog.debug,
               "error waiting for all raft0 updates to be applied - {}",
               barrier_result.error().message());
-
+            co_return barrier_result.error();
         } else {
             vlog(
               clusterlog.trace,
@@ -724,7 +739,7 @@ ss::future<> members_backend::reconcile() {
               barrier_result.value(),
               _raft0->dirty_offset());
         }
-        co_return;
+        co_return errc::not_leader;
     }
 
     // process one update at a time
@@ -774,7 +789,7 @@ ss::future<> members_backend::reconcile() {
                       "update - {}",
                       meta.update,
                       err.message());
-                    co_return;
+                    co_return err;
                 }
             }
             meta.finished = true;
@@ -784,7 +799,7 @@ ss::future<> members_backend::reconcile() {
               "[update: {}] no need reallocations, finished: {}",
               meta.update,
               meta.finished);
-            co_return;
+            co_return errc::success;
         }
     }
 
@@ -807,7 +822,7 @@ ss::future<> members_backend::reconcile() {
               clusterlog.debug,
               "reconcile: node {} is gone, returning",
               meta.update->id);
-            co_return;
+            co_return errc::success;
         }
         const auto is_draining = node->get().state.get_membership_state()
                                  == model::membership_state::draining;
@@ -865,6 +880,8 @@ ss::future<> members_backend::reconcile() {
       meta.partition_reallocations, [](const partition_reallocation& r) {
           return r.state == reallocation_state::finished;
       });
+
+    co_return errc::success;
 }
 
 bool members_backend::should_stop_rebalancing_update(

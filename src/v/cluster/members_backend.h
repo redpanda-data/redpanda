@@ -107,7 +107,8 @@ private:
     using node_replicas_map_t
       = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
-    ss::future<> reconcile();
+    ss::future<> reconciliation_loop();
+    ss::future<std::error_code> reconcile();
     ss::future<> reallocate_replica_set(partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
@@ -153,7 +154,6 @@ private:
     // replicas reallocations in progress
     std::vector<update_meta> _updates;
     std::chrono::milliseconds _retry_timeout;
-    ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
