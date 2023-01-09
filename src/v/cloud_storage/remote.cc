@@ -167,7 +167,8 @@ ss::future<download_result> remote::do_download_manifest(
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 retry_permit.delay));
             _probe.manifest_download_backoff();
-            co_await ss::sleep_abortable(retry_permit.delay, _as);
+            co_await ss::sleep_abortable(
+              retry_permit.delay, fib.root_abort_source());
             retry_permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::bucket_not_found:
@@ -258,7 +259,7 @@ ss::future<upload_result> remote::upload_manifest(
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
             _probe.manifest_upload_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
@@ -379,7 +380,8 @@ ss::future<upload_result> remote::upload_segment(
                 permit.delay));
             _probe.upload_backoff();
             if (!lazy_abort_source.abort_requested()) {
-                co_await ss::sleep_abortable(permit.delay, _as);
+                co_await ss::sleep_abortable(
+                  permit.delay, fib.root_abort_source());
             }
             permit = fib.retry();
             break;
@@ -473,7 +475,7 @@ ss::future<download_result> remote::download_segment(
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
             _probe.download_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::bucket_not_found:
@@ -546,7 +548,7 @@ ss::future<download_result> remote::segment_exists(
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            co_await ss::sleep_abortable(permit.delay, _as);
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::bucket_not_found:
@@ -617,7 +619,7 @@ ss::future<upload_result> remote::delete_object(
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            co_await ss::sleep_abortable(permit.delay, _as);
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::bucket_not_found:
