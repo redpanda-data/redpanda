@@ -418,6 +418,10 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     self->conn->shutdown_input();
                 });
           });
+    })
+    .handle_exception_type([](const ss::sleep_aborted&) {
+        // shutdown started while force-throttling
+        return ss::make_ready_future<>();
     });
 }
 
