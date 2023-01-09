@@ -46,7 +46,6 @@ struct lazy_abort_source {
       : _predicate{std::move(predicate)} {}
 
     bool abort_requested();
-
     ss::sstring abort_reason() const;
 
 private:

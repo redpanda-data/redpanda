@@ -325,6 +325,21 @@ ss::future<upload_result> remote::upload_segment(
             co_return upload_result::cancelled;
         }
 
+        // If the uploading partition wishes to stop while an upload is in
+        // progress, enable this by forcefully shutting down the HTTP client.
+        auto as_sub = fib.root_abort_source().subscribe(
+          // Lifetimes:
+          // - `lease` is scoped to this function, as is the
+          // abort source subscription: as will always be deregistered
+          // before lease is destroyed.
+          // - `ctxlog` is also function scoped.
+          [&lease, &ctxlog]() noexcept {
+              vlog(
+                ctxlog.debug,
+                "Cancelling in-flight requests on partition shutdown");
+              lease.client->shutdown();
+          });
+
         auto reader_handle = co_await reset_str();
         auto path = cloud_storage_clients::object_key(segment_path());
         // Segment upload attempt
