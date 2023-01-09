@@ -715,7 +715,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             continue;
         } catch (...) {
             vlog(
-              clusterlog.error,
+              clusterlog.warn,
               "[{}] exception while executing partition operation: {} - {}",
               it->ntp,
               *it,
