@@ -270,6 +270,12 @@ public:
         return ss::sstring(mbuf.data(), mbuf.size());
     }
 
+
+    /// Find abort source in the root of the tree
+    /// Always traverses the tree back to the root and returns the abort
+    /// source if it was set in the root c-tor.
+    ss::abort_source& root_abort_source();
+
     /// \brief Request retry
     ///
     /// The retry can be allowed or disallowed. The caller can call this
@@ -323,11 +329,6 @@ private:
     /// Method returns nullptr if not root
     ss::abort_source* get_abort_source();
     const ss::abort_source* get_abort_source() const;
-
-    /// Find abort source in the root of the tree
-    /// Always traverses the tree back to the root and returns the abort
-    /// source if it was set in the root c-tor.
-    ss::abort_source* find_abort_source();
 
     /// This node's id
     uint16_t _id;
