@@ -116,6 +116,10 @@ class NodesDecommissioningTest(EndToEndTest):
         rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set("raft_learner_recovery_rate", str(rate))
 
+    @property
+    def node_removed_timeout(self):
+        return 240 if self.debug_mode else 120
+
     @cluster(
         num_nodes=6,
         # A decom can look like a restart in terms of logs from peers dropping
@@ -144,7 +148,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(
             lambda: self._node_removed(to_decommission_id, survivor_node),
-            timeout_sec=120,
+            timeout_sec=self.node_removed_timeout,
             backoff_sec=2)
 
         # Stop the decommissioned node, because redpanda internally does not
@@ -175,7 +179,7 @@ class NodesDecommissioningTest(EndToEndTest):
         admin.decommission_broker(id=node_id)
 
         wait_until(lambda: self._node_removed(node_id, survivor_node),
-                   timeout_sec=120,
+                   timeout_sec=self.node_removed_timeout,
                    backoff_sec=2)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
@@ -231,7 +235,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(2 << 30)
 
         wait_until(lambda: self._node_removed(to_decommission, survivor_node),
-                   timeout_sec=120,
+                   timeout_sec=self.node_removed_timeout,
                    backoff_sec=2)
 
         # stop decommissioned node
@@ -312,7 +316,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         survivor_node = self._not_decommissioned_node(to_decommission)
         wait_until(lambda: self._node_removed(to_decommission, survivor_node),
-                   60, 2)
+                   self.node_removed_timeout, 2)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_do_not_stop_all_moves_node(self):
@@ -425,7 +429,7 @@ class NodesDecommissioningTest(EndToEndTest):
                     return False
             return True
 
-        wait_until(node_removed, 60, 2)
+        wait_until(node_removed, self.node_removed_timeout, 2)
 
     def producer_throughput(self):
         return 1000 if self.debug_mode else 100000
@@ -479,7 +483,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(2 << 30)
 
         wait_until(lambda: self._node_removed(to_decommission_id, first_node),
-                   60, 2)
+                   self.node_removed_timeout, 2)
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -509,7 +513,7 @@ class NodesDecommissioningTest(EndToEndTest):
         admin.cancel_all_reconfigurations()
         self._set_recovery_rate(2 << 30)
         wait_until(lambda: self._node_removed(node_id, survivor_node),
-                   timeout_sec=120,
+                   timeout_sec=self.node_removed_timeout,
                    backoff_sec=2)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
@@ -539,7 +543,7 @@ class NodesDecommissioningTest(EndToEndTest):
             admin.decommission_broker(id=node_id)
             wait_until(lambda: self._partitions_moving(node=survivor_node) or
                        self._node_removed(node_id, survivor_node),
-                       timeout_sec=60,
+                       timeout_sec=self.node_removed_timeout,
                        backoff_sec=1)
             if self._node_removed(node_id, survivor_node):
                 break
@@ -600,8 +604,8 @@ class NodesDecommissioningTest(EndToEndTest):
                 decom_node = node_by_id(id)
                 admin.decommission_broker(id)
                 survivor_node = self._not_decommissioned_node(id)
-                wait_until(lambda: self._node_removed(id, survivor_node), 240,
-                           2)
+                wait_until(lambda: self._node_removed(id, survivor_node),
+                           self.node_removed_timeout, 2)
 
                 def has_partitions():
                     id = self.redpanda.node_id(node=decom_node,
