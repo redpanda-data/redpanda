@@ -2652,32 +2652,27 @@ described_group group::describe() const {
     return desc;
 }
 
-namespace {
-void add_offset_tombstone_record(
+void group::add_offset_tombstone_record(
   const kafka::group_id& group,
   const model::topic_partition& tp,
-  group_metadata_serializer& serializer,
   storage::record_batch_builder& builder) {
     offset_metadata_key key{
       .group_id = group,
       .topic = tp.topic,
       .partition = tp.partition,
     };
-    auto kv = serializer.to_kv(offset_metadata_kv{.key = std::move(key)});
+    auto kv = _md_serializer.to_kv(offset_metadata_kv{.key = std::move(key)});
     builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
 
-void add_group_tombstone_record(
-  const kafka::group_id& group,
-  group_metadata_serializer& serializer,
-  storage::record_batch_builder& builder) {
+void group::add_group_tombstone_record(
+  const kafka::group_id& group, storage::record_batch_builder& builder) {
     group_metadata_key key{
       .group_id = group,
     };
-    auto kv = serializer.to_kv(group_metadata_kv{.key = std::move(key)});
+    auto kv = _md_serializer.to_kv(group_metadata_kv{.key = std::move(key)});
     builder.add_raw_kv(std::move(kv.key), std::nullopt);
 }
-} // namespace
 
 ss::future<error_code> group::remove() {
     switch (state()) {
@@ -2697,11 +2692,11 @@ ss::future<error_code> group::remove() {
       model::record_batch_type::raft_data, model::offset(0));
 
     for (auto& offset : _offsets) {
-        add_offset_tombstone_record(_id, offset.first, _md_serializer, builder);
+        add_offset_tombstone_record(_id, offset.first, builder);
     }
 
     // build group tombstone
-    add_group_tombstone_record(_id, _md_serializer, builder);
+    add_group_tombstone_record(_id, builder);
 
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -2782,12 +2777,12 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
     for (auto& offset : removed) {
         vlog(
           klog.trace, "Removing offset for group {} tp {}", _id, offset.first);
-        add_offset_tombstone_record(_id, offset.first, _md_serializer, builder);
+        add_offset_tombstone_record(_id, offset.first, builder);
     }
 
     // gc the group?
     if (in_state(group_state::dead) && generation() > 0) {
-        add_group_tombstone_record(_id, _md_serializer, builder);
+        add_group_tombstone_record(_id, builder);
     }
 
     auto batch = std::move(builder).build();
