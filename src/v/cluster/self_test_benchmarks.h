@@ -77,8 +77,7 @@ public:
         auto start = ss::lowres_clock::now();
         auto was_cancelled = co_await gated_sleep(opts.duration);
         auto result = self_test_result{
-          .name = "Stub disk test",
-          .duration = ss::lowres_clock::now() - start};
+          .name = opts.name, .duration = ss::lowres_clock::now() - start};
         if (was_cancelled) {
             result.warning = "Test aborted during run";
         }
@@ -92,8 +91,7 @@ public:
         auto start = ss::lowres_clock::now();
         auto was_cancelled = co_await gated_sleep(opts.duration);
         auto result = self_test_result{
-          .name = "Stub network test",
-          .duration = ss::lowres_clock::now() - start};
+          .name = opts.name, .duration = ss::lowres_clock::now() - start};
         if (was_cancelled) {
             result.warning = "Test aborted during run";
         }

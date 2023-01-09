@@ -43,11 +43,15 @@ inline std::ostream& operator<<(std::ostream& o, self_test_status sts) {
 struct diskcheck_opts
   : serde::
       envelope<diskcheck_opts, serde::version<0>, serde::compat_version<0>> {
+    /// Descriptive name given to test run
+    ss::sstring name;
+
     ss::lowres_clock::duration duration;
 
     static diskcheck_opts from_json(const json::Document& doc) {
         static const auto default_duration = 5;
         return cluster::diskcheck_opts{
+          .name = doc.HasMember("name") ? doc["name"].GetString() : "",
           .duration = std::chrono::seconds(
             doc.HasMember("disk_test_execution_time")
               ? doc["disk_test_execution_time"].GetInt()
@@ -56,7 +60,8 @@ struct diskcheck_opts
 
     friend std::ostream&
     operator<<(std::ostream& o, const diskcheck_opts& opts) {
-        fmt::print(o, "{{duration: {}}}", opts.duration.count());
+        fmt::print(
+          o, "{{name: {} duration: {}}}", opts.name, opts.duration.count());
         return o;
     }
 };
@@ -65,11 +70,15 @@ struct diskcheck_opts
 struct netcheck_opts
   : serde::
       envelope<netcheck_opts, serde::version<0>, serde::compat_version<0>> {
+    /// Descriptive name given to test run
+    ss::sstring name;
+
     ss::lowres_clock::duration duration;
 
     static netcheck_opts from_json(const json::Document& doc) {
         static const auto default_duration = 5;
         return cluster::netcheck_opts{
+          .name = doc.HasMember("name") ? doc["name"].GetString() : "",
           .duration = std::chrono::seconds(
             doc.HasMember("network_test_execution_time")
               ? doc["network_test_execution_time"].GetInt()
@@ -78,7 +87,11 @@ struct netcheck_opts
 
     friend std::ostream&
     operator<<(std::ostream& o, const netcheck_opts& opts) {
-        fmt::print(o, "{{test_duration: {}}}", opts.duration.count());
+        fmt::print(
+          o,
+          "{{name: {} test_duration: {}}}",
+          opts.name,
+          opts.duration.count());
         return o;
     }
 };

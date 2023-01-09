@@ -47,7 +47,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
               }));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
-            results.push_back(self_test_result{.error = ex.what()});
+            results.push_back(
+              self_test_result{.name = dto->name, .error = ex.what()});
         }
     }
     if (nto) {
@@ -62,7 +63,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Network self test finished with error");
-            results.push_back(self_test_result{.error = ex.what()});
+            results.push_back(
+              self_test_result{.name = nto->name, .error = ex.what()});
         }
     }
     co_return results;
