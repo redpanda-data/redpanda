@@ -141,7 +141,7 @@ ss::future<uuid_t> self_test_frontend::start_test(start_test_request req) {
     /// Invoke command to start test on all nodes, using the same test id
     const auto id = uuid_t::create();
     auto state = co_await invoke_on_all_nodes(
-      [req](auto& handle) { return handle->start_test(req); });
+      [req](model::node_id, auto& handle) { return handle->start_test(req); });
     co_return id;
 }
 
@@ -155,7 +155,7 @@ self_test_frontend::stop_test() {
         /// from its participants list, retries (if occur) will only occur
         /// on previously unreachable nodes
         test_state = co_await invoke_on_all_nodes(
-          [](auto& handle) { return handle->stop_test(); });
+          [](model::node_id, auto& handle) { return handle->stop_test(); });
         if (!test_state.finished()) {
             vlog(
               clusterlog.warn,
@@ -172,7 +172,7 @@ self_test_frontend::stop_test() {
 ss::future<self_test_frontend::global_test_state> self_test_frontend::status() {
     auto gate_holder = _gate.hold();
     co_return co_await invoke_on_all_nodes(
-      [](auto& handle) { return handle->get_status(); });
+      [](model::node_id, auto& handle) { return handle->get_status(); });
 }
 
 template<typename Func>
@@ -191,7 +191,9 @@ self_test_frontend::invoke_on_all_nodes(Func f) {
           }
           return ss::do_with(
                    std::move(handle),
-                   [f = std::move(f)](auto& handle) { return f(handle); })
+                   [node_id, f = std::move(f)](auto& handle) {
+                       return f(node_id, handle);
+                   })
             .then([node_id](node_test_state result) {
                 return std::pair<const model::node_id, node_test_state>(
                   node_id, std::move(result));
