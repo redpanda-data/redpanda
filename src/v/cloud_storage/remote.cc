@@ -424,6 +424,20 @@ ss::future<download_result> remote::download_segment(
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
     auto lease = co_await _pool.acquire();
+
+    auto as_sub = parent.root_abort_source().subscribe(
+      // Lifetimes:
+      // - `lease` is scoped to this function, as is the
+      // abort source subscription: as will always be deregistered
+      // before lease is destroyed.
+      // - `ctxlog` is also function scoped.
+      [&lease, &ctxlog]() noexcept {
+          vlog(
+            ctxlog.debug,
+            "Cancelling in-flight requests on partition shutdown");
+          lease.client->shutdown();
+      });
+
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
