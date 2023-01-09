@@ -300,14 +300,16 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
 
-    auto result = ctx.sasl()->authenticate(std::move(request.data.auth_bytes));
+    auto result = co_await ctx.sasl()->authenticate(
+      std::move(request.data.auth_bytes));
     if (likely(result)) {
         sasl_authenticate_response_data data{
           .error_code = error_code::none,
           .error_message = std::nullopt,
           .auth_bytes = std::move(result.value()),
         };
-        return ctx.respond(sasl_authenticate_response(std::move(data)));
+        co_return co_await ctx.respond(
+          sasl_authenticate_response(std::move(data)));
     }
 
     sasl_authenticate_response_data data{
@@ -315,7 +317,7 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
       .error_message = ssx::sformat(
         "SASL authentication failed: {}", result.error().message()),
     };
-    return ctx.respond(sasl_authenticate_response(std::move(data)));
+    co_return co_await ctx.respond(sasl_authenticate_response(std::move(data)));
 }
 
 template<>
