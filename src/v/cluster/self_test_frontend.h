@@ -71,7 +71,12 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    ss::future<uuid_t> start_test(start_test_request);
+    /// Plan + test parameters
+    ///
+    /// Launches the indicated self_tests on the specified nodes
+    ss::future<uuid_t>
+    start_test(start_test_request req, std::vector<model::node_id> ids);
+
     ss::future<global_test_state> stop_test();
     ss::future<global_test_state> status();
 

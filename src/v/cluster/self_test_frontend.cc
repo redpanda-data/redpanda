@@ -125,11 +125,30 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
-ss::future<uuid_t> self_test_frontend::start_test(start_test_request req) {
+ss::future<uuid_t> self_test_frontend::start_test(
+  start_test_request req, std::vector<model::node_id> ids) {
     auto gate_holder = _gate.hold();
+    if (ids.empty()) {
+        throw self_test_exception("No node ids provided");
+    }
     if (req.dtos.empty() && req.ntos.empty()) {
         throw self_test_exception("No tests specified to run");
     }
+    /// Validate input
+    const auto brokers = _members.local().node_ids();
+    using nid_set_t = absl::flat_hash_set<model::node_id>;
+    const nid_set_t ids_set{ids.begin(), ids.end()};
+    const nid_set_t brokers_set{brokers.begin(), brokers.end()};
+    if (std::any_of(
+          ids_set.begin(),
+          ids_set.end(),
+          [&brokers_set](const model::node_id& id) {
+              return !brokers_set.contains(id);
+          })) {
+        throw self_test_exception("Request to start self test contained "
+                                  "node_ids that aren't part of the cluster");
+    }
+
     const auto stopped_results = co_await stop_test();
     if (!stopped_results.finished()) {
         vlog(
@@ -139,10 +158,17 @@ ss::future<uuid_t> self_test_frontend::start_test(start_test_request req) {
     }
 
     /// Invoke command to start test on all nodes, using the same test id
-    const auto id = uuid_t::create();
+    const auto test_id = uuid_t::create();
     auto state = co_await invoke_on_all_nodes(
-      [req](model::node_id, auto& handle) { return handle->start_test(req); });
-    co_return id;
+      [test_id, ids_set, req](model::node_id nid, auto& handle) {
+          /// Clear last results of nodes who don't participate in this run
+          if (!ids_set.contains(nid)) {
+              return handle->start_test(start_test_request{.id = test_id});
+          } else {
+              return handle->start_test(req);
+          }
+      });
+    co_return test_id;
 }
 
 ss::future<self_test_frontend::global_test_state>

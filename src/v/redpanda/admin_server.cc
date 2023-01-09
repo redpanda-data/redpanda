@@ -2940,6 +2940,12 @@ static json::validator make_self_test_start_validator() {
 {
     "type": "object",
     "properties": {
+        "nodes": {
+            "type": "array",
+            "items": {
+                "type": "number"
+            }
+        },
         "tests": {
             "type": "array",
             "items": {
@@ -2970,8 +2976,18 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
     }
     auto doc = parse_json_body(*req);
     apply_validator(self_test_start_validator, doc);
+    std::vector<model::node_id> ids;
     cluster::start_test_request r;
     if (!doc.IsNull()) {
+        if (doc.HasMember("nodes")) {
+            const auto& node_ids = doc["nodes"].GetArray();
+            for (const auto& element : node_ids) {
+                ids.emplace_back(element.GetInt());
+            }
+        } else {
+            /// If not provided, default is to start the test on all nodes
+            ids = _controller->get_members_table().local().node_ids();
+        }
         if (doc.HasMember("tests")) {
             const auto& params = doc["tests"].GetArray();
             for (const auto& element : params) {
@@ -2996,8 +3012,9 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
     }
     try {
         auto tid = co_await _self_test_frontend.invoke_on(
-          cluster::self_test_frontend::shard, [r](auto& self_test_frontend) {
-              return self_test_frontend.start_test(r);
+          cluster::self_test_frontend::shard,
+          [r, ids](auto& self_test_frontend) {
+              return self_test_frontend.start_test(r, ids);
           });
         vlog(logger.info, "Request to start self test succeeded: {}", tid);
         co_return ss::json::json_return_type(tid);
