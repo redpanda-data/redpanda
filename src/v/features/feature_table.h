@@ -47,6 +47,7 @@ enum class feature : std::uint64_t {
     ephemeral_secrets = 1ULL << 14U,
     seeds_driven_bootstrap_capable = 1ULL << 15U,
     tm_stm_cache = 1ULL << 16U,
+    kafka_gssapi = 1ULL << 17U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 63U,
@@ -200,6 +201,12 @@ constexpr static std::array feature_schema{
     "tm_stm_cache",
     feature::tm_stm_cache,
     feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{8},
+    "kafka_gssapi",
+    feature::kafka_gssapi,
+    feature_spec::available_policy::explicit_only,
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{2001},
