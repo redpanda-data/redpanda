@@ -750,7 +750,7 @@ ss::future<bool> remote_partition::tolerant_delete_object(
  *    S3, not the state of the archival metadata stm (which can be out
  *    of date if e.g. we were not the leader)
  */
-ss::future<> remote_partition::erase() {
+ss::future<> remote_partition::erase(ss::abort_source& as) {
     // TODO: Edge case 1
     // There is a rare race in which objects might get left behind in S3.
     //
@@ -774,7 +774,11 @@ ss::future<> remote_partition::erase() {
 
     static constexpr ss::lowres_clock::duration erase_timeout = 60s;
     static constexpr ss::lowres_clock::duration erase_backoff = 1s;
-    retry_chain_node local_rtc(erase_timeout, erase_backoff, &_rtc);
+
+    // This function is called after ::stop, so we may not use our
+    // main retry_chain_node which is bound to our abort source,
+    // and construct a special one.
+    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
 
     // Read the partition manifest fresh: we might already have
     // dropped local archival_stm state related to this partition.

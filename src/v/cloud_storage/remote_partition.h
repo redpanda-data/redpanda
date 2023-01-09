@@ -117,7 +117,7 @@ public:
       retry_chain_node& parent);
 
     /// Remove objects from S3
-    ss::future<> erase();
+    ss::future<> erase(ss::abort_source&);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);

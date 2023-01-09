@@ -511,7 +511,7 @@ ss::future<> partition::remove_persistent_state() {
     }
 }
 
-ss::future<> partition::remove_remote_persistent_state() {
+ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
     // Backward compatibility: even if remote.delete is true, only do
     // deletion if the partition is in full tiered storage mode (this
     // excludes read replica clusters from deleting data in S3)
@@ -527,7 +527,7 @@ ss::future<> partition::remove_remote_persistent_state() {
           get_ntp_config(),
           get_ntp_config().is_archival_enabled(),
           get_ntp_config().is_read_replica_mode_enabled());
-        co_await _cloud_storage_partition->erase();
+        co_await _cloud_storage_partition->erase(as);
     } else {
         vlog(
           clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());

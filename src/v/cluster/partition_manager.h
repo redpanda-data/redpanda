@@ -208,6 +208,12 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
     ss::gate _gate;
+
+    // In general, all our background work is in partition objects which
+    // have their own abort source.  This abort source is only for work that
+    // happens after partition stop, during deletion.
+    ss::abort_source _as;
+
     bool _block_new_leadership{false};
 
     config::binding<uint64_t> _max_concurrent_producer_ids;
