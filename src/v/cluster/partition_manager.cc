@@ -203,6 +203,7 @@ partition_manager::maybe_download_log(
 }
 
 ss::future<> partition_manager::stop_partitions() {
+    _as.request_abort();
     co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
@@ -256,20 +257,19 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
       .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
       .then([partition] { return partition->stop(); })
       .then([partition] { return partition->remove_persistent_state(); })
-      .then([partition, mode] {
+      .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
+      .then([this, partition, mode] {
           if (mode == partition_removal_mode::global) {
-              return partition->remove_remote_persistent_state();
+              return partition->remove_remote_persistent_state(_as);
           } else {
               return ss::now();
           }
       })
-      .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }
 
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     auto partition = get(ntp);
-
     if (!partition) {
         return ss::make_exception_future<>(std::invalid_argument(fmt::format(
           "Can not shutdown partition. NTP {} is not present in partition "
