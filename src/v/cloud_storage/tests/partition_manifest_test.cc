@@ -272,6 +272,141 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
     return make_iobuf_input_stream(std::move(i));
 }
 
+namespace {
+
+ss::logger test_log("partition_manifest_test");
+
+// Returns a manifest with segments with the corresponding offset bounds, with
+// the last offsets in the list referring to the exclusive end of the returned
+// manifest.
+partition_manifest
+manifest_for(std::vector<std::pair<model::offset, kafka::offset>> o) {
+    partition_manifest manifest;
+    manifest.update(make_manifest_stream(empty_manifest_json)).get0();
+    for (int i = 0; i < o.size() - 1; i++) {
+        segment_meta seg{
+          .is_compacted = false,
+          .size_bytes = 1024,
+          .base_offset = o[i].first,
+          .committed_offset = model::offset(o[i + 1].first() - 1),
+          .delta_offset = model::offset_delta(o[i].first() - o[i].second()),
+          .delta_offset_end = model::offset_delta(
+            o[i + 1].first() - o[i + 1].second()),
+        };
+        manifest.add(
+          segment_name(fmt::format("{}-1-v1.log", o[i].first())), seg);
+    }
+    return manifest;
+}
+
+} // anonymous namespace
+
+SEASTAR_THREAD_TEST_CASE(test_segment_contains_by_kafka_offset) {
+    // Returns true if a kafka::offset lookup returns the segment with the
+    // expected base offsets.
+    const auto check_offset = [](
+                                const partition_manifest& m,
+                                kafka::offset ko,
+                                model::offset expected_base_mo,
+                                kafka::offset expected_base_ko) {
+        const auto it = m.segment_containing(ko);
+        bool success = it != m.end()
+                       // Check that the segment base offsets match the segment
+                       // we were expecting...
+                       && it->second.base_offset == expected_base_mo
+                       && it->second.base_kafka_offset() == expected_base_ko
+                       // ...and as a sanity check, make sure the kafka::offset
+                       // falls in the segment.
+                       && it->second.base_kafka_offset() <= ko
+                       && it->second.committed_kafka_offset() >= ko;
+        if (success) {
+            return true;
+        }
+        if (it == m.end()) {
+            test_log.error("no segment for {}", ko);
+            return false;
+        }
+        test_log.error(
+          "segment {} doesn't match the expected base model::offset {} or "
+          "kafka::offset {}, or doesn't include "
+          "{} in its range",
+          it->second,
+          expected_base_mo,
+          expected_base_ko,
+          ko);
+        return false;
+    };
+
+    // Returns true if a kafka::offset lookup returns that no such segment is
+    // returned.
+    const auto check_no_offset =
+      [](const partition_manifest& m, kafka::offset ko) {
+          const auto it = m.segment_containing(ko);
+          bool success = it == m.end();
+          if (success) {
+              return true;
+          }
+          test_log.error(
+            "unexpected segment for kafka::offset {}: {}", ko, it->second);
+          return false;
+      };
+
+    // mo: 0      10     20     30
+    //     [a    ][b    ][c    ]end
+    // ko: 0      5      10     15
+    partition_manifest full_manifest = manifest_for({
+      {model::offset(0), kafka::offset(0)},
+      {model::offset(10), kafka::offset(5)},
+      {model::offset(20), kafka::offset(10)},
+      {model::offset(30), kafka::offset(15)},
+    });
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(0), model::offset(0), kafka::offset(0)));
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(4), model::offset(0), kafka::offset(0)));
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(5), model::offset(10), kafka::offset(5)));
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(9), model::offset(10), kafka::offset(5)));
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(10), model::offset(20), kafka::offset(10)));
+    BOOST_REQUIRE(check_offset(
+      full_manifest, kafka::offset(14), model::offset(20), kafka::offset(10)));
+    BOOST_REQUIRE(check_no_offset(full_manifest, kafka::offset(15)));
+
+    // mo: 10     20     30
+    //     [b    ][c    ]end
+    // ko: 5      10     15
+    partition_manifest truncated_manifest = manifest_for({
+      {model::offset(10), kafka::offset(5)},
+      {model::offset(20), kafka::offset(10)},
+      {model::offset(30), kafka::offset(15)},
+    });
+    BOOST_REQUIRE(check_no_offset(truncated_manifest, kafka::offset(0)));
+    BOOST_REQUIRE(check_no_offset(truncated_manifest, kafka::offset(4)));
+    BOOST_REQUIRE(check_offset(
+      truncated_manifest,
+      kafka::offset(5),
+      model::offset(10),
+      kafka::offset(5)));
+    BOOST_REQUIRE(check_offset(
+      truncated_manifest,
+      kafka::offset(9),
+      model::offset(10),
+      kafka::offset(5)));
+    BOOST_REQUIRE(check_offset(
+      truncated_manifest,
+      kafka::offset(10),
+      model::offset(20),
+      kafka::offset(10)));
+    BOOST_REQUIRE(check_offset(
+      truncated_manifest,
+      kafka::offset(14),
+      model::offset(20),
+      kafka::offset(10)));
+    BOOST_REQUIRE(check_no_offset(full_manifest, kafka::offset(15)));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_segment_contains) {
     partition_manifest m;
     m.update(make_manifest_stream(manifest_with_gaps)).get0();

@@ -285,42 +285,43 @@ partition_manifest::get_start_kafka_offset() const {
 partition_manifest::const_iterator
 partition_manifest::segment_containing(kafka::offset o) const {
     vlog(cst_log.debug, "Metadata lookup using kafka offset {}", o);
+    if (_segments.empty()) {
+        return end();
+    }
     // Kafka offset is always <= log offset.
     // To find a segment by its kafka offset we can simply query
     // manifest by log offset and then traverse forward until we
-    // will find matching segment.
-    auto it = segment_containing(kafka::offset_cast(o));
-    if (it == end()) {
-        return it;
-    }
-    auto prev = end();
+    // find a matching segment.
+    auto it = _segments.lower_bound(kafka::offset_cast(o));
+    // We need to find first element which has greater kafka offset than
+    // the target and step back. It is possible to have a segment that
+    // doesn't have data batches. This scan has to skip segments like that.
     while (it != end()) {
-        auto base = it->second.base_offset - it->second.delta_offset;
-        if (base > o) {
-            // We need to find first element which has greater kafka
-            // offset then the target and step back. It is possible
-            // to have a segment that doesn't have data batches. This
-            // scan has to skip segments like that.
-            break;
+        if (it->second.base_kafka_offset() > o) {
+            // The beginning of the manifest already has a base offset that
+            // doesn't satisfy the query.
+            if (it == begin()) {
+                return end();
+            }
+            // On the first segment we see with a base kafka offset higher than
+            // 'o', return its previous segment.
+            return std::prev(it);
         }
-        prev = it;
         it = std::next(it);
     }
-    if (it == end()) {
-        if (prev->second.delta_offset_end != model::offset_delta{}) {
-            // In case if 'prev' points to the last segment it's not guaranteed
-            // that the segment contains the required kafka offset. We need an
-            // extra check using delta_offset_end. If the field is not set then
-            // we will return the last segment. This is OK since
-            // delta_offset_end will always be set for new segments.
-            auto m = prev->second.committed_offset
-                     - prev->second.delta_offset_end;
-            if (m < o) {
-                prev = end();
-            }
+    // All segments had base kafka offsets lower than 'o'.
+    auto back = std::prev(it);
+    if (back->second.delta_offset_end != model::offset_delta{}) {
+        // If 'prev' points to the last segment, it's not guaranteed that
+        // the segment contains the required kafka offset. We need an extra
+        // check using delta_offset_end. If the field is not set then we
+        // will return the last segment. This is OK since delta_offset_end
+        // will always be set for new segments.
+        if (back->second.committed_kafka_offset() < o) {
+            return end();
         }
     }
-    return prev;
+    return back;
 }
 
 model::offset partition_manifest::get_last_uploaded_compacted_offset() const {
@@ -1312,7 +1313,6 @@ partition_manifest::segment_containing(model::offset o) const {
         return end();
     }
 
-    // Make sure to only compare based on the offset and not the term.
     auto it = _segments.upper_bound(o);
     if (it == _segments.begin()) {
         return end();
