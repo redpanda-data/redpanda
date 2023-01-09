@@ -33,12 +33,6 @@ static constexpr size_t max_retry_chain_depth = 8;
 static constexpr uint16_t max_retry_count = std::numeric_limits<uint16_t>::max()
                                             - 1;
 
-retry_chain_node::retry_chain_node()
-  : _id(fiber_count++) // generate new head id
-  , _backoff{0}
-  , _deadline{ss::lowres_clock::time_point::min()}
-  , _parent() {}
-
 retry_chain_node::retry_chain_node(ss::abort_source& as)
   : _id(fiber_count++) // generate new head id
   , _backoff{0}

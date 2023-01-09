@@ -176,7 +176,8 @@ public:
       const storage::log_reader_config& config,
       ss::shared_ptr<remote_partition> part,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
-      : _ctxlog(cst_log, _rtc, part->get_ntp().path())
+      : _rtc(part->_as)
+      , _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
       , _gate_guard(_partition->_gate) {
@@ -471,7 +472,7 @@ remote_partition::remote_partition(
   remote& api,
   cache& c,
   cloud_storage_clients::bucket_name bucket)
-  : _rtc()
+  : _rtc(_as)
   , _ctxlog(cst_log, _rtc, m.get_ntp().path())
   , _api(api)
   , _cache(c)
@@ -580,6 +581,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
+    _as.request_abort();
     co_await _gate.close();
     // Remove materialized_segment_state from the list that contains it, to
     // avoid it getting registered for eviction and stop.

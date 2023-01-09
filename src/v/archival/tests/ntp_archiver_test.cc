@@ -35,6 +35,8 @@ using namespace archival;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static ss::abort_source never_abort;
+
 static const auto manifest_namespace = model::ns("kafka");      // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
@@ -118,7 +120,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    retry_chain_node fib;
+    retry_chain_node fib(never_abort);
     auto res = upload_next_with_retries(archiver).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
@@ -235,7 +237,7 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    retry_chain_node fib;
+    retry_chain_node fib(never_abort);
     auto res = upload_next_with_retries(archiver).get0();
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
     BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
@@ -714,7 +716,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     archival::ntp_archiver archiver(get_ntp_conf(), arch_conf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    retry_chain_node fib;
+    retry_chain_node fib(never_abort);
 
     auto res = upload_next_with_retries(archiver).get0();
 
@@ -926,7 +928,7 @@ static void test_partial_upload_impl(
     archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    retry_chain_node fib;
+    retry_chain_node fib(never_abort);
     part->stop_archiver().get();
     test.listen();
     auto res = upload_next_with_retries(archiver, lso).get0();

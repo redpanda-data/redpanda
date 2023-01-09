@@ -1104,7 +1104,7 @@ uint64_t ntp_archiver::estimate_backlog_size() {
 
 ss::future<std::optional<cloud_storage::partition_manifest>>
 ntp_archiver::maybe_truncate_manifest() {
-    retry_chain_node rtc;
+    retry_chain_node rtc(_as);
     ss::gate::holder gh(_gate);
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     vlog(ctxlog.info, "archival metadata cleanup started");

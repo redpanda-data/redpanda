@@ -200,8 +200,9 @@ public:
     using milliseconds_uint16_t
       = std::chrono::duration<uint16_t, std::chrono::milliseconds::period>;
 
-    /// Create a head of the chain without backoff
-    retry_chain_node();
+    // No default constructor: we always need an abort source.
+    retry_chain_node() = delete;
+
     /// Create a head of the chain without backoff but with abort_source
     explicit retry_chain_node(ss::abort_source& as);
     /// Creates a head with the provided abort_source, deadline, and
