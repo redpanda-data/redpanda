@@ -1009,20 +1009,19 @@ class RedpandaService(Service):
         preamble, res_args = self._resource_settings.to_cli(
             dedicated_node=self._dedicated_nodes)
 
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            self._environment.update(
+                dict(LLVM_PROFILE_FILE=
+                     f"\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\""))
+
         # Pass environment variables via FOO=BAR shell expressions
         env_preamble = " ".join(
             [f"{k}={v}" for (k, v) in self._environment.items()])
 
-        # set llvm_profile var for code coverae
-        # each node will create its own copy of the .profraw file
-        # since each node creates a redpanda broker.
-        if self.cov_enabled():
-            llvm_profile_file = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" "
-        else:
-            llvm_profile_file = ""
-
         cmd = (
-            f"{preamble} {env_preamble} {llvm_profile_file} nohup {self.find_binary('redpanda')}"
+            f"{preamble} {env_preamble} nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
             f" {self._log_config.to_args()} "
             " --abort-on-seastar-bad-alloc "
