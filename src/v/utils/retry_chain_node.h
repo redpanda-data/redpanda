@@ -202,14 +202,6 @@ public:
 
     /// Create a head of the chain without backoff
     retry_chain_node();
-    /// Creates a head with the provided deadline and
-    /// backoff granularity.
-    retry_chain_node(
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff);
-    retry_chain_node(
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff);
     /// Create a head of the chain without backoff but with abort_source
     explicit retry_chain_node(ss::abort_source& as);
     /// Creates a head with the provided abort_source, deadline, and
@@ -269,7 +261,6 @@ public:
         bii = ']';
         return ss::sstring(mbuf.data(), mbuf.size());
     }
-
 
     /// Find abort source in the root of the tree
     /// Always traverses the tree back to the root and returns the abort

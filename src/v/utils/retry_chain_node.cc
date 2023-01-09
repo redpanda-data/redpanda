@@ -39,23 +39,6 @@ retry_chain_node::retry_chain_node()
   , _deadline{ss::lowres_clock::time_point::min()}
   , _parent() {}
 
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::time_point deadline,
-  ss::lowres_clock::duration backoff)
-  : _id(fiber_count++) // generate new head id
-  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
-  , _deadline{deadline}
-  , _parent() {
-    vassert(
-      backoff <= milliseconds_uint16_t::max(),
-      "Initial backoff {} is too large",
-      backoff);
-}
-
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::duration timeout, ss::lowres_clock::duration backoff)
-  : retry_chain_node(ss::lowres_clock::now() + timeout, backoff) {}
-
 retry_chain_node::retry_chain_node(ss::abort_source& as)
   : _id(fiber_count++) // generate new head id
   , _backoff{0}
@@ -183,7 +166,7 @@ ss::sstring retry_chain_node::operator()() const {
 }
 
 retry_permit retry_chain_node::retry(retry_strategy st) {
-    auto &as = root_abort_source();
+    auto& as = root_abort_source();
     as.check();
 
     auto now = ss::lowres_clock::now();

@@ -63,6 +63,8 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static ss::abort_source never_abort;
+
 static cloud_storage::lazy_abort_source always_continue{
   []() { return std::nullopt; }};
 
@@ -453,7 +455,7 @@ static void reupload_compacted_segments(
             m.add(s.sname, meta);
             auto url = m.generate_segment_path(*m.get(meta.base_offset));
             vlog(test_log.debug, "reuploading segment {}", url);
-            retry_chain_node rtc(10s, 1s);
+            retry_chain_node rtc(never_abort, 10s, 1s);
             bytes bb;
             bb.resize(body.size());
             std::memcpy(bb.data(), body.data(), body.size());
@@ -616,7 +618,7 @@ static auto setup_s3_imposter(
 static partition_manifest hydrate_manifest(
   remote& api, const cloud_storage_clients::bucket_name& bucket) {
     partition_manifest m(manifest_ntp, manifest_revision);
-    retry_chain_node rtc(1s, 200ms);
+    retry_chain_node rtc(never_abort, 1s, 200ms);
     auto key = m.get_manifest_path();
     auto res = api.download_manifest(bucket, key, m, rtc).get();
     BOOST_REQUIRE(res == cloud_storage::download_result::success);
@@ -1590,7 +1592,7 @@ static void remove_segment_from_s3(
     auto meta = m.get(o);
     BOOST_REQUIRE(meta != nullptr);
     auto path = m.generate_segment_path(*meta);
-    retry_chain_node fib(10s, 1s);
+    retry_chain_node fib(never_abort, 10s, 1s);
     auto res = api
                  .delete_object(
                    bucket, cloud_storage_clients::object_key(path()), fib)
