@@ -222,7 +222,7 @@ class BaseCase:
 
     def _list_objects(self):
         """Return list of all topics in the bucket (only names)"""
-        results = [loc.Key for loc in self._s3.list_objects(self._bucket)]
+        results = [loc.key for loc in self._s3.list_objects(self._bucket)]
         self.logger.info(f"ListObjects: {results}")
         return results
 
@@ -571,7 +571,7 @@ class MissingSegment(BaseCase):
 
     def _delete(self, key):
         self._deleted_segment_size = self._s3.get_object_meta(
-            self._bucket, key).ContentLength
+            self._bucket, key).content_length
         self.logger.info(
             f"deleting segment file {key} of size {self._deleted_segment_size}"
         )
@@ -659,9 +659,9 @@ class FastCheck(BaseCase):
             if s3_snapshot.is_segment_part_of_a_manifest(item)
         ]
         for seg in segments:
-            components = parse_s3_segment_path(seg.Key)
+            components = parse_s3_segment_path(seg.key)
             ntp = components.ntp
-            segment_data = self._s3.get_object_data(self._bucket, seg.Key)
+            segment_data = self._s3.get_object_data(self._bucket, seg.key)
             segment_size = len(segment_data)
             segment = SegmentReader(io.BytesIO(segment_data))
             # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
@@ -1108,7 +1108,7 @@ class TopicRecoveryTest(RedpandaTest):
             assert self.s3_client
             lst = self.s3_client.list_objects(self.s3_bucket)
             for obj in lst:
-                self.logger.debug(f'checking S3 object: {obj.Key}')
+                self.logger.debug(f'checking S3 object: {obj.key}')
                 if path_matcher.is_partition_manifest(obj):
                     manifests.append(obj)
                 elif path_matcher.is_topic_manifest(obj):
@@ -1136,8 +1136,8 @@ class TopicRecoveryTest(RedpandaTest):
                         tmp_size += size
                 size_on_disk = max(tmp_size, size_on_disk)
 
-            size_in_cloud = sum(obj.ContentLength for obj in segments
-                                if obj.ContentLength > EMPTY_SEGMENT_SIZE)
+            size_in_cloud = sum(obj.content_length for obj in segments
+                                if obj.content_length > EMPTY_SEGMENT_SIZE)
             self.logger.debug(
                 f'segments in cloud: {pprint.pformat(segments, indent=2)}, '
                 f'size in cloud: {size_in_cloud}')

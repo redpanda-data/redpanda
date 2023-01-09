@@ -100,7 +100,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
             objects = list(self.redpanda.get_objects_from_si())
             total_size = 0
             for o in objects:
-                total_size += o.ContentLength
+                total_size += o.content_length
             return total_size > self._segment_size
 
         wait_until(s3_has_some_data, timeout_sec=300, backoff_sec=5)

@@ -183,7 +183,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
-            self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
+            self.logger.info(f"S3 object: {o.key}, {o.content_length}")
 
         wrote_at_least = self._producer.produce_status.acked
 

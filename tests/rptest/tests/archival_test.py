@@ -198,7 +198,7 @@ class ArchivalTest(RedpandaTest):
             # firewall is blocked. No segments or partition manifest should be present.
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
             objects = self.s3_client.list_objects(self.s3_bucket_name)
-            keys = [x.Key for x in objects]
+            keys = [x.key for x in objects]
 
             assert len(keys) < 2, \
                 f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys}"
@@ -644,7 +644,7 @@ class ArchivalTest(RedpandaTest):
             self.logger.debug(f"ListObjects(source: manifest): {results}")
         except:
             results = [
-                loc.Key
+                loc.key
                 for loc in self.s3_client.list_objects(self.s3_bucket_name)
             ]
             self.logger.debug(f"ListObjects: {results}")
@@ -776,9 +776,9 @@ class ArchivalTest(RedpandaTest):
             self.logger.info(f"object: {o}")
 
         return {
-            normalize(it.Key): (it.ETag, it.ContentLength)
+            normalize(it.key): (it.etag, it.content_length)
             for it in self.s3_client.list_objects(self.s3_bucket_name)
-            if included(it.Key)
+            if included(it.key)
         }
 
     def _get_partial_checksum(self, hostname, normalized_path, tail_bytes):

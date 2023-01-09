@@ -150,8 +150,8 @@ class TestReadReplicaService(EndToEndTest):
         bucket = self.si_settings.cloud_storage_bucket
         for o in s3.list_objects(bucket):
             num_objects += 1
-            total_bytes += o.ContentLength
-            keys.add(o.Key)
+            total_bytes += o.content_length
+            keys.add(o.key)
         self.redpanda.logger.info(f"bucket usage {num_objects} objects, " +
                                   f"{total_bytes} bytes for {bucket}")
         return BucketUsage(num_objects, total_bytes, keys)

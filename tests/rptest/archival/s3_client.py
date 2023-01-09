@@ -1,11 +1,12 @@
+from rptest.archival.shared_client_utils import key_to_topic
+
 import boto3
-import re
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from time import sleep
-from functools import wraps
-import time
+
 import datetime
+from functools import wraps
+from time import sleep
 from typing import Iterator, NamedTuple, Union, Optional
 
 
@@ -13,12 +14,11 @@ class SlowDown(Exception):
     pass
 
 
-class S3ObjectMetadata(NamedTuple):
-    # TODO change to snake_case
-    Bucket: str
-    Key: str
-    ETag: str
-    ContentLength: int
+class ObjectMetadata(NamedTuple):
+    key: str
+    bucket: str
+    etag: str
+    content_length: int
 
 
 def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
@@ -80,7 +80,7 @@ class S3Client:
         except Exception:
             self.logger.warn("Error deleting bucket, contents:")
             for o in self.list_objects(name):
-                self.logger.warn(f"  {o.Key}")
+                self.logger.warn(f"  {o.key}")
             raise
 
     def empty_bucket(self, name):
@@ -90,8 +90,8 @@ class S3Client:
         try:
             self.logger.debug(f"running bucket cleanup on {name}")
             for obj in self.list_objects(bucket=name):
-                keys.append(obj.Key)
-                self.logger.debug(f"found key {obj.Key}")
+                keys.append(obj.key)
+                self.logger.debug(f"found key {obj.key}")
         except Exception as e:
             # Expected to fail if bucket doesn't exist
             self.logger.debug(f"empty_bucket error: {e}")
@@ -136,7 +136,7 @@ class S3Client:
                 now = datetime.datetime.now()
                 if now > deadline:
                     raise TimeoutError()
-                time.sleep(5)
+                sleep(5)
         except ClientError as err:
             self.logger.debug(f"error response while polling {err}")
 
@@ -157,7 +157,7 @@ class S3Client:
                 raise TimeoutError()
             # aws boto3 uses 5s interval for polling
             # using head_object API call
-            time.sleep(5)
+            sleep(5)
 
     @retry_on_slowdown()
     def _delete_object(self, bucket, key):
@@ -261,10 +261,10 @@ class S3Client:
         """Get object metadata without downloading it"""
         resp = self._get_object(bucket, key)
         # Note: ETag field contains md5 hash enclosed in double quotes that have to be removed
-        return S3ObjectMetadata(Bucket=bucket,
-                                Key=key,
-                                ETag=resp['ETag'][1:-1],
-                                ContentLength=resp['ContentLength'])
+        return ObjectMetadata(bucket=bucket,
+                              key=key,
+                              etag=resp['ETag'][1:-1],
+                              content_length=resp['ContentLength'])
 
     def write_object_to_file(self, bucket, key, dest_path):
         """Get object and write it to file"""
@@ -290,20 +290,9 @@ class S3Client:
             else:
                 raise
 
-    def _key_to_topic(self, key: str):
-        # Segment objects: <hash>/<ns>/<topic>/<partition>_<revision>/...
-        # Manifest objects: <hash>/meta/<ns>/<topic>/<partition>_<revision>/...
-        # Topic manifest objects: <hash>/meta/<ns>/<topic>/topic_manifest.json
-        m = re.search(".+/(.+)/(.+)/(\d+_\d+/|topic_manifest.json)", key)
-        if m is None:
-            return None
-        else:
-            return m.group(2)
-
-    def list_objects(
-            self,
-            bucket,
-            topic: Optional[str] = None) -> Iterator[S3ObjectMetadata]:
+    def list_objects(self,
+                     bucket,
+                     topic: Optional[str] = None) -> Iterator[ObjectMetadata]:
         """
         :param bucket: S3 bucket name
         :param topic: Optional, if set then only return objects belonging to this topic
@@ -316,17 +305,16 @@ class S3Client:
             truncated = bool(res['IsTruncated'])
             if 'Contents' in res:
                 for item in res['Contents']:
-
                     # Apply optional topic filtering
-                    if topic is not None and self._key_to_topic(
+                    if topic is not None and key_to_topic(
                             item['Key']) != topic:
                         self.logger.debug(f"Skip {item['Key']} for {topic}")
                         continue
 
-                    yield S3ObjectMetadata(Bucket=bucket,
-                                           Key=item['Key'],
-                                           ETag=item['ETag'][1:-1],
-                                           ContentLength=item['Size'])
+                    yield ObjectMetadata(bucket=bucket,
+                                         key=item['Key'],
+                                         etag=item['ETag'][1:-1],
+                                         content_length=item['Size'])
 
     def list_buckets(self) -> dict[str, Union[list, dict]]:
         try:

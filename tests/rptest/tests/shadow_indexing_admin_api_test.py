@@ -131,6 +131,6 @@ class SIAdminApiTest(RedpandaTest):
 
     def find_deletion_candidate(self):
         for obj in self.s3_client.list_objects(self.s3_bucket_name):
-            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.Key):
-                return obj.Key
+            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.key):
+                return obj.key
         return None

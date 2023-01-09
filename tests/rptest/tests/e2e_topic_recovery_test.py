@@ -121,13 +121,13 @@ class EndToEndTopicRecovery(RedpandaTest):
     def _s3_has_all_data(self, num_messages):
         objects = list(self.redpanda.get_objects_from_si())
         for o in objects:
-            if o.Key.endswith("/manifest.json") and self.topic in o.Key:
+            if o.key.endswith("/manifest.json") and self.topic in o.key:
                 data = self.redpanda.s3_client.get_object_data(
-                    self._bucket, o.Key)
+                    self._bucket, o.key)
                 manifest = json.loads(data)
                 last_upl_offset = manifest['last_offset']
                 self.logger.info(
-                    f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
+                    f"Found manifest at {o.key}, last_offset is {last_upl_offset}"
                 )
                 # We have one partition so this invariant holds
                 # it has to be changed when the number of partitions

@@ -111,7 +111,7 @@ class CloudRetentionTest(PreallocNodesTest):
 
         def check_bucket_size():
             try:
-                size = sum(obj.ContentLength
+                size = sum(obj.content_length
                            for obj in self.s3_client.list_objects(
                                self.si_settings.cloud_storage_bucket))
                 self.logger.info(f"bucket size: {size}")

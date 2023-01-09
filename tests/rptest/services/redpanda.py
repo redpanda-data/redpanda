@@ -1359,10 +1359,6 @@ class RedpandaService(Service):
             self.s3_client.create_bucket(
                 self._si_settings.cloud_storage_bucket)
 
-    def list_buckets(self) -> dict[str, Union[list, dict]]:
-        assert self.s3_client is not None
-        return self.s3_client.list_buckets()
-
     def delete_bucket_from_si(self):
         assert self.s3_client is not None
 
@@ -1529,7 +1525,7 @@ class RedpandaService(Service):
         manifests_to_dump = []
         for o in self.s3_client.list_objects(
                 self._si_settings.cloud_storage_bucket):
-            key = o.Key
+            key = o.key
             if key_dump_limit > 0:
                 self.logger.info(f"  {key}")
                 key_dump_limit -= 1
