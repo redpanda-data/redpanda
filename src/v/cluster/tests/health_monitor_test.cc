@@ -150,23 +150,29 @@ cluster::topic_configuration topic_cfg(
       ns, model::topic(name), paritions, replication);
 }
 
-void contains_exactly_ntp_leaders(
+bool contains_exactly_ntp_leaders(
+  ss::logger& logger,
   const std::unordered_set<model::ntp>& expected,
   const std::vector<cluster::topic_status>& topics) {
     auto left = expected;
     for (const auto& t_l : topics) {
         for (const auto& p_l : t_l.partitions) {
             model::ntp ntp(t_l.tp_ns.ns, t_l.tp_ns.tp, p_l.id);
-            BOOST_REQUIRE_MESSAGE(
-              left.erase(ntp) == 1,
-              fmt::format(
-                "ntp {} is present in report, but is not expected", ntp));
+            if (left.erase(ntp) == 0) {
+                vlog(
+                  logger.debug,
+                  "ntp {} is present in report, but is not expected",
+                  ntp);
+                return false;
+            }
         }
     }
-    BOOST_REQUIRE_MESSAGE(
-      left.empty(),
-      fmt::format(
-        "ntps {} are expected but were not present in report", left.size()));
+    if (!left.empty()) {
+        for (auto& ntp : left) {
+            vlog(logger.debug, "Missing ntp {} from topic status", ntp);
+        }
+    }
+    return left.empty();
 }
 
 model::ntp ntp(model::ns ns, ss::sstring tp, int pid) {
@@ -220,20 +226,6 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
           }};
     };
 
-    tests::cooperative_spin_wait_with_timeout(10s, [&n1] {
-        auto all = filter_template();
-        // get all leaders
-        return n1->controller->get_health_monitor()
-          .local()
-          .get_cluster_health(
-            all, cluster::force_refresh::yes, model::no_timeout)
-          .then([](result<cluster::cluster_health_report> report) {
-              return report.has_value()
-                     && report.value().node_reports.size() == 3
-                     && report.value().node_reports.begin()->topics.size() == 5;
-          });
-    }).get();
-
     auto f_1 = filter_template();
     // test filtering by ntp
     cluster::partitions_filter::topic_map_t kafka_topics_map;
@@ -260,46 +252,53 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
 
     f_1.node_report_filter.ntp_filters.namespaces.emplace(
       model::kafka_internal_namespace, std::move(internal_topic_map));
+
     /**
      * Requested kafka/tp-1/0, kafka/tp-1/2, kafka/tp-2/0,
      * redpanda/controller/0, all partitions of kafka-internal/internal-1
      */
-
-    auto report = n1->controller->get_health_monitor()
-                    .local()
-                    .get_cluster_health(
-                      f_1, cluster::force_refresh::yes, model::no_timeout)
-                    .get0();
-    BOOST_TEST_REQUIRE(report.has_value());
-
-    contains_exactly_ntp_leaders(
-      {
-        ntp(model::kafka_namespace, "tp-1", 0),
-        ntp(model::kafka_namespace, "tp-1", 2),
-        ntp(model::kafka_namespace, "tp-2", 0),
-        ntp(model::kafka_internal_namespace, "internal-1", 0),
-        ntp(model::kafka_internal_namespace, "internal-1", 1),
-        ntp(model::redpanda_ns, "controller", 0),
-      },
-      report.value().node_reports.begin()->topics);
+    tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        return n1->controller->get_health_monitor()
+          .local()
+          .get_cluster_health(
+            f_1, cluster::force_refresh::yes, model::no_timeout)
+          .then([](result<cluster::cluster_health_report> report) {
+              return report.has_value()
+                     && report.value().node_reports.size() == 3
+                     && contains_exactly_ntp_leaders(
+                       g_seastar_test_log,
+                       {
+                         ntp(model::kafka_namespace, "tp-1", 0),
+                         ntp(model::kafka_namespace, "tp-1", 2),
+                         ntp(model::kafka_namespace, "tp-2", 0),
+                         ntp(model::kafka_internal_namespace, "internal-1", 0),
+                         ntp(model::kafka_internal_namespace, "internal-1", 1),
+                         ntp(model::redpanda_ns, "controller", 0),
+                       },
+                       report.value().node_reports.begin()->topics);
+          });
+    }).get();
 
     // check filtering in node report
-    auto node_report = n1->controller->get_health_monitor()
-                         .local()
-                         .collect_node_health(f_1.node_report_filter)
-                         .get();
-
-    BOOST_TEST_REQUIRE(node_report.has_value());
-    contains_exactly_ntp_leaders(
-      {
-        ntp(model::kafka_namespace, "tp-1", 0),
-        ntp(model::kafka_namespace, "tp-1", 2),
-        ntp(model::kafka_namespace, "tp-2", 0),
-        ntp(model::kafka_internal_namespace, "internal-1", 0),
-        ntp(model::kafka_internal_namespace, "internal-1", 1),
-        ntp(model::redpanda_ns, "controller", 0),
-      },
-      node_report.value().topics);
+    tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        return n1->controller->get_health_monitor()
+          .local()
+          .collect_node_health(f_1.node_report_filter)
+          .then([](result<cluster::node_health_report> report) {
+              return report.has_value()
+                     && contains_exactly_ntp_leaders(
+                       g_seastar_test_log,
+                       {
+                         ntp(model::kafka_namespace, "tp-1", 0),
+                         ntp(model::kafka_namespace, "tp-1", 2),
+                         ntp(model::kafka_namespace, "tp-2", 0),
+                         ntp(model::kafka_internal_namespace, "internal-1", 0),
+                         ntp(model::kafka_internal_namespace, "internal-1", 1),
+                         ntp(model::redpanda_ns, "controller", 0),
+                       },
+                       report.value().topics);
+          });
+    }).get();
 }
 
 FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
