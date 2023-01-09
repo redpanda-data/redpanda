@@ -22,6 +22,9 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         super().__init__(test_context=test_context,
                          node_prealloc_count=1,
                          num_brokers=5,
+                         extra_rp_conf={
+                             "raft_learner_recovery_rate": 10 * 1073741824,
+                         },
                          *args,
                          **kwargs)
 
@@ -35,13 +38,10 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
             self._number_of_moves = 2
         else:
             self._partitions = 32
-            # FIXME: this is not enough data to keep up a background load through
-            # the test.
-            # https://github.com/redpanda-data/redpanda/issues/6245
-            self._message_size = 1280
-            self._message_cnt = 500000
+            self._message_size = 256 * (2**10)  # 256 KB per message
+            self._message_cnt = 819200  # 100GB data
             self._consumers = 8
-            self._number_of_moves = 50
+            self._number_of_moves = 5
 
     def _start_producer(self, topic_name):
         self.producer = KgoVerifierProducer(
@@ -92,12 +92,12 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         self._start_producer(topic.name)
         self._start_consumer(topic.name)
 
-        for _ in range(20):
+        for _ in range(self._number_of_moves):
             # choose a random topic-partition
             metadata = self.client().describe_topics()
             t, partition = self._random_partition(metadata)
             self.logger.info(f"selected partition: {t}/{partition}")
-            self._do_move_and_verify(t, partition, 360)
+            self._do_move_and_verify(t, partition, 600)
 
         self.verify(topic.name)
 

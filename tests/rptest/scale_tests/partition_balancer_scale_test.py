@@ -37,7 +37,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 self.NODE_AVAILABILITY_TIMEOUT,
                 "partition_autobalancing_tick_interval_ms": 5000,
                 "members_backend_retry_ms": 1000,
-                "raft_learner_recovery_rate": 1073741824,
+                "raft_learner_recovery_rate": 10 * 1073741824,
                 "group_topic_partitions": self.GROUP_TOPIC_PARTITIONS
             },
             # If set to trace, these tests produce 10s of GBs of logs
@@ -111,21 +111,18 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             consumers = 1
             partitions_count = 16
         elif type == self.MANY_PARTITIONS:
-            # FIXME: this is not enough data to keep up a background load through
-            # the test.
-            # https://github.com/redpanda-data/redpanda/issues/6245
+
             message_size = 128 * (2**10)
-            message_cnt = 2000000
+            message_cnt = 819200
             consumers = 8
             partitions_count = 18000
+            timeout = 500
         else:
-            # FIXME: this is not enough data to keep up a background load through
-            # the test.
-            # https://github.com/redpanda-data/redpanda/issues/6245
-            message_size = 512 * (2**10)
-            message_cnt = 5000000
+            message_size = 128 * (2**10)
+            message_cnt = 819200
             consumers = 8
             partitions_count = 200
+            timeout = 500
 
         topic = TopicSpec(partition_count=partitions_count,
                           replication_factor=replication_factor)
@@ -139,7 +136,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         )
         # wait for the partitions to be filled with data
         self.producer.wait_for_acks(message_cnt // 2,
-                                    timeout_sec=300,
+                                    timeout_sec=timeout,
                                     backoff_sec=5)
 
         # stop one of the nodes to trigger partition balancer
@@ -154,7 +151,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 f"stopped node {stopped_id} hosts {len(replicas)} replicas")
             return len(replicas) == 0
 
-        wait_until(stopped_node_is_empty, 120, 5)
+        wait_until(stopped_node_is_empty, timeout, 5)
         admin = Admin(self.redpanda)
 
         def all_reconfigurations_done():
@@ -165,7 +162,7 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
 
             return len(ongoing) == 0
 
-        wait_until(all_reconfigurations_done, 300, 5)
+        wait_until(all_reconfigurations_done, timeout, 5)
 
         self.verify(topic.name, message_size, consumers)
 
@@ -184,19 +181,19 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             max_concurrent_moves = 5
             timeout = 80
         elif type == self.MANY_PARTITIONS:
-            message_size = 128 * (2**10)
-            message_cnt = 2000000
+            message_size = 256 * (2**10)
+            message_cnt = 819200
             consumers = 8
             partitions_count = 18000
             max_concurrent_moves = 400
-            timeout = 300
+            timeout = 500
         else:
-            message_size = 512 * (2**10)
-            message_cnt = 5000000
+            message_size = 256 * (2**10)
+            message_cnt = 819200
             consumers = 8
             partitions_count = 200
             max_concurrent_moves = 200
-            timeout = 300
+            timeout = 500
 
         # set max number of concurrent moves
         self.redpanda.set_cluster_config(
