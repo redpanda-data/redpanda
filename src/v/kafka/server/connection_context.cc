@@ -41,71 +41,67 @@ using namespace std::chrono_literals;
 namespace kafka {
 
 ss::future<> connection_context::process_one_request() {
-    return parse_size(conn->input())
-      .then([this](std::optional<size_t> sz) mutable {
-          if (!sz) {
-              return ss::make_ready_future<>();
-          }
-          if (sz > _max_request_size()) {
-              return ss::make_exception_future<>(
-                net::invalid_request_error(fmt::format(
-                  "request size {} is larger than the configured max {}",
-                  sz,
-                  _max_request_size())));
-          }
-          /*
-           * Intercept the wire protocol when:
-           *
-           * 1. sasl is enabled (implied by 2)
-           * 2. during auth phase
-           * 3. handshake was v0
-           */
-          if (unlikely(
-                sasl()
-                && sasl()->state()
-                     == security::sasl_server::sasl_state::authenticate
-                && sasl()->handshake_v0())) {
-              return handle_auth_v0(*sz).handle_exception(
-                [this](std::exception_ptr e) {
-                    vlog(klog.info, "Detected error processing request: {}", e);
-                    conn->shutdown_input();
-                });
-          }
-          return parse_header(conn->input())
-            .then([this,
-                   s = sz.value()](std::optional<request_header> h) mutable {
-                _server.probe().add_bytes_received(s);
-                if (!h) {
-                    vlog(
-                      klog.debug,
-                      "could not parse header from client: {}",
-                      conn->addr);
-                    _server.probe().header_corrupted();
-                    return ss::make_ready_future<>();
-                }
-                return dispatch_method_once(std::move(h.value()), s)
-                  .handle_exception_type(
-                    [this](const kafka_api_version_not_supported_exception& e) {
-                        vlog(
-                          klog.warn,
-                          "Error while processing request from {} - {}",
-                          conn->addr,
-                          e.what());
-                        conn->shutdown_input();
-                    })
-                  .handle_exception_type([this](const std::bad_alloc&) {
-                      // In general, dispatch_method_once does not throw,
-                      // but bad_allocs are an exception.  Log it cleanly
-                      // to avoid this bubbling up as an unhandled
-                      // exceptional future.
-                      vlog(
-                        klog.error,
-                        "Request from {} failed on memory exhaustion "
-                        "(std::bad_alloc)",
-                        conn->addr);
-                  });
-            });
-      });
+    auto sz = co_await parse_size(conn->input());
+    if (!sz.has_value()) {
+        co_return;
+    }
+
+    if (sz.value() > _max_request_size()) {
+        throw net::invalid_request_error(fmt::format(
+          "request size {} is larger than the configured max {}",
+          sz,
+          _max_request_size()));
+    }
+
+    /*
+     * Intercept the wire protocol when:
+     *
+     * 1. sasl is enabled (implied by 2)
+     * 2. during auth phase
+     * 3. handshake was v0
+     */
+    if (unlikely(
+          sasl()
+          && sasl()->state() == security::sasl_server::sasl_state::authenticate
+          && sasl()->handshake_v0())) {
+        try {
+            co_return co_await handle_auth_v0(*sz);
+        } catch (...) {
+            vlog(
+              klog.info,
+              "Detected error processing request: {}",
+              std::current_exception());
+            conn->shutdown_input();
+        }
+    }
+
+    auto h = co_await parse_header(conn->input());
+    _server.probe().add_bytes_received(sz.value());
+    if (!h) {
+        vlog(klog.debug, "could not parse header from client: {}", conn->addr);
+        _server.probe().header_corrupted();
+        co_return;
+    }
+
+    try {
+        co_return co_await dispatch_method_once(
+          std::move(h.value()), sz.value());
+    } catch (const kafka_api_version_not_supported_exception& e) {
+        vlog(
+          klog.warn,
+          "Error while processing request from {} - {}",
+          conn->addr,
+          e.what());
+        conn->shutdown_input();
+    } catch (const std::bad_alloc&) {
+        // In general, dispatch_method_once does not throw, but bad_allocs are
+        // an exception. Log it cleanly to avoid this bubbling up as an
+        // unhandled exceptional future.
+        vlog(
+          klog.error,
+          "Request from {} failed on memory exhaustion (std::bad_alloc)",
+          conn->addr);
+    }
 }
 
 /*
