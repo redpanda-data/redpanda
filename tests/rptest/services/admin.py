@@ -285,7 +285,7 @@ class Admin:
         elif node is None:
             # Pick a random node to run this request on.  If that node gives
             # connection errors we will retry on other nodes.
-            node = random.choice(self.redpanda.nodes)
+            node = random.choice(self.redpanda.started_nodes())
             retry_connection = True
         else:
             # We were called with a specific node to run on -- do no retry on

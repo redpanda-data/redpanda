@@ -210,7 +210,7 @@ class AddPartitionsOperation(Operation):
             return False
 
         rpk = ctx.rpk()
-        current = len(list(rpk.describe_topic(self.topic)))
+        current = len(list(rpk.describe_topic(self.topic, tolerant=True)))
         to_add = random.randint(1, 5)
         self.total = current + to_add
         ctx.redpanda.logger.info(
@@ -396,6 +396,7 @@ class AdminOperationsFuzzer():
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
         self._stopping = Event()
         self.executed = 0
+        self.attempted = 0
         self.history = []
         self.error = None
 
@@ -456,15 +457,16 @@ class AdminOperationsFuzzer():
 
             def validate_result():
                 try:
-                    op.validate(self.operation_ctx)
+                    return op.validate(self.operation_ctx)
                 except Exception as e:
                     self.redpanda.logger.debug(
-                        f"Error validating operation {op_type} - {e}")
+                        f"Error validating operation {op_type}", exc_info=True)
                     return False
 
             try:
+                self.attempted += 1
                 if self.execute_with_retries(op_type, op):
-                    wait_until(lambda: validate_result,
+                    wait_until(validate_result,
                                timeout_sec=self.operation_timeout,
                                backoff_sec=1)
                     self.executed += 1
@@ -474,7 +476,8 @@ class AdminOperationsFuzzer():
                         f"Skipped operation: {op_type}, current cluster state does not allow executing the operation"
                     )
             except Exception as e:
-                self.redpanda.logger.error(f"Operation: {op_type} error: {e}")
+                self.redpanda.logger.debug(f"Operation: {op_type}",
+                                           exc_info=True)
                 self.error = e
                 self._stopping.set()
 
@@ -498,8 +501,8 @@ class AdminOperationsFuzzer():
             except Exception as e:
                 error = e
                 self.redpanda.logger.info(
-                    f"Operation: {op_type} error: {error}, retries left: {self.retries-retry}/{self.retries}"
-                )
+                    f"Operation: {op_type}, retries left: {self.retries-retry}/{self.retries}",
+                    exc_info=True)
                 sleep(self.retries_interval)
         raise error
 
@@ -535,6 +538,35 @@ class AdminOperationsFuzzer():
 
         assert self.error is None, f"Encountered an error in admin operations fuzzer: {self.error}"
 
+    def ensure_progress(self):
+        executed = self.executed
+        attempted = self.attempted
+
+        def check():
+            # Drop out immediately if the main loop errored out.
+            if self.error:
+                self.redpanda.logger.error(
+                    f"wait: terminating for error {self.error}")
+                raise self.error
+
+            # the attempted condition gurantees that we measure progress
+            # by use an operation which started after ensure_progress is
+            # invoked
+            if self.executed > executed and self.attempted > attempted:
+                return True
+            elif self._stopping.is_set():
+                # We cannot ever reach the count, error out
+                self.redpanda.logger.error(f"wait: terminating for stop")
+                raise RuntimeError(f"Stopped without observing progress")
+            return False
+
+        # we use 2*self.operation_timeout to give time (self.operation_timeout) for
+        # the operation started before ensure_progress is invoked to finish prior to
+        # measuring the real indicator (next self.operation_timeout)
+        wait_until(check,
+                   timeout_sec=2 * self.operation_timeout,
+                   backoff_sec=2)
+
     def wait(self, count, timeout):
         def check():
             # Drop out immediately if the main loop errored out.
@@ -551,5 +583,6 @@ class AdminOperationsFuzzer():
                 raise RuntimeError(
                     f"Stopped without reaching target ({self.executed}/{count})"
                 )
+            return False
 
         wait_until(check, timeout_sec=timeout, backoff_sec=2)
