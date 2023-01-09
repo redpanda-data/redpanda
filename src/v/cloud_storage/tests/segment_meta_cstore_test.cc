@@ -712,3 +712,38 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
         BOOST_REQUIRE(store.contains(manifest[i].base_offset));
     }
 }
+
+void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(test_size);
+    for (const auto& sm : manifest) {
+        store.insert(sm);
+    }
+
+    // Truncate the generated manifest and the column store
+    // and check that all operations can be perfomed.
+    auto ix = random_generators::get_int(1, (int)max_truncate_ix);
+    auto iter = manifest.begin();
+    std::advance(iter, ix);
+    auto start_offset = iter->base_offset;
+    manifest.erase(manifest.begin(), iter);
+    store.prefix_truncate(start_offset);
+
+    BOOST_REQUIRE_EQUAL(store.begin()->base_offset, start_offset);
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+    for (size_t i = 0; i < store.size(); i++) {
+        BOOST_REQUIRE(store.contains(manifest[i].base_offset));
+        BOOST_REQUIRE_EQUAL(*store.find(manifest[i].base_offset), manifest[i]);
+        BOOST_REQUIRE_EQUAL(*store.at(i), manifest[i]);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_small) {
+    test_cstore_prefix_truncate(10000, 100);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_full) {
+    test_cstore_prefix_truncate(10000, 2000);
+}

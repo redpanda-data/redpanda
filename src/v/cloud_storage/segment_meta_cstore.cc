@@ -128,8 +128,9 @@ class column_store {
     // assertion. To prevent this we need to insert a nullopt when the
     // frame starts.
 
-    using hint_map_t = absl::
-      btree_map<uint32_t, std::optional<hint_vec_t>, std::greater<uint32_t>>;
+    using greater = std::greater<int64_t>;
+    using hint_map_t
+      = absl::btree_map<int64_t, std::optional<hint_vec_t>, greater>;
 
 public:
     using iterators_t = std::tuple<
@@ -212,9 +213,9 @@ public:
                   *_segment_term.get_current_stream_pos(),
                   *_delta_offset_end.get_current_stream_pos(),
                   *_sname_format.get_current_stream_pos());
-                _hints.insert(std::make_pair(ix, tup));
+                _hints.insert(std::make_pair(meta.base_offset(), tup));
             } else {
-                _hints.insert(std::make_pair(ix, std::nullopt));
+                _hints.insert(std::make_pair(meta.base_offset(), std::nullopt));
             }
         }
     }
@@ -316,8 +317,9 @@ public:
         if (base_offset_iter == _base_offset.end()) {
             return end();
         }
-        uint32_t ix = base_offset_iter.index();
-        auto hint_it = _hints.lower_bound(ix);
+        auto bo = *base_offset_iter;
+        auto ix = base_offset_iter.index();
+        auto hint_it = _hints.lower_bound(bo);
         if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
             return iterators_t(
               _is_compacted.at(ix),
@@ -371,6 +373,42 @@ public:
     auto upper_bound(int64_t bo) const {
         auto it = _base_offset.upper_bound(bo);
         return materialize(std::move(it));
+    }
+
+    /// Search by index
+    auto at(size_t ix) const {
+        auto it = _base_offset.at(ix);
+        return materialize(std::move(it));
+    }
+
+    void prefix_truncate(int64_t bo) {
+        auto lb = _base_offset.lower_bound(bo);
+        if (lb == _base_offset.end()) {
+            return;
+        }
+        auto ix = lb.index();
+        _base_offset.prefix_truncate_ix(ix);
+        _is_compacted.prefix_truncate_ix(ix);
+        _size_bytes.prefix_truncate_ix(ix);
+        _committed_offset.prefix_truncate_ix(ix);
+        _base_timestamp.prefix_truncate_ix(ix);
+        _max_timestamp.prefix_truncate_ix(ix);
+        _delta_offset.prefix_truncate_ix(ix);
+        _ntp_revision.prefix_truncate_ix(ix);
+        _archiver_term.prefix_truncate_ix(ix);
+        _segment_term.prefix_truncate_ix(ix);
+        _delta_offset_end.prefix_truncate_ix(ix);
+        _sname_format.prefix_truncate_ix(ix);
+        // We need to remove hints that belong to the first frame.
+        // This frame was truncated and therefore the hints that
+        // belong to it are no longer valid.
+        const auto& frame = _base_offset.get_frame_by_element_index(ix).get();
+        auto frame_max_offset = frame.last_value();
+        auto it = _hints.upper_bound(frame_max_offset.value_or(bo));
+        // The elements are ordered by base offset from large to small
+        // so the hints that belong to removed and truncated frames are
+        // at the end.
+        _hints.erase(it, _hints.end());
     }
 
     /// Return two values: inflated size (size without compression) followed
@@ -510,6 +548,16 @@ public:
 
     bool contains(model::offset o) { return _col.contains(o()); }
 
+    void prefix_truncate(model::offset new_start_offset) {
+        _col.prefix_truncate(new_start_offset());
+    }
+
+    std::unique_ptr<segment_meta_materializing_iterator::impl>
+    at(size_t ix) const {
+        return std::make_unique<segment_meta_materializing_iterator::impl>(
+          _col.at(ix));
+    }
+
 private:
     column_store _col;
 };
@@ -559,5 +607,13 @@ segment_meta_cstore::lower_bound(model::offset o) const {
 }
 
 void segment_meta_cstore::insert(const segment_meta& s) { _impl->insert(s); }
+
+void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
+    return _impl->prefix_truncate(new_start_offset);
+}
+
+segment_meta_cstore::const_iterator segment_meta_cstore::at(size_t ix) const {
+    return const_iterator(_impl->at(ix));
+}
 
 } // namespace cloud_storage

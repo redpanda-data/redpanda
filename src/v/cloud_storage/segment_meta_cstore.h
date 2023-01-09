@@ -258,6 +258,18 @@ public:
         _head = tmp._head;
         _tail = std::move(tmp._tail);
         _size = tmp._size;
+        _last_row = tmp._last_row;
+    }
+
+    void prefix_truncate_ix(uint32_t ix) {
+        segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
+        for (auto it = at(ix); it != end(); ++it) {
+            tmp.append(*it);
+        }
+        _head = tmp._head;
+        _tail = std::move(tmp._tail);
+        _size = tmp._size;
+        _last_row = tmp._last_row;
     }
 
 private:
@@ -458,6 +470,19 @@ public:
         _frames.back().append(value);
     }
 
+    /// Return frame that contains value with index
+    std::reference_wrapper<const frame_t>
+    get_frame_by_element_index(size_t ix) {
+        for (auto it = _frames.begin(); it != _frames.end(); ++it) {
+            if (it->size() <= ix) {
+                ix -= it->size();
+            } else {
+                return *it;
+            }
+        }
+        vassert(false, "Invalid index {}", ix);
+    }
+
     /// Get stream position object which can be used as a "hint" to speed up
     /// index lookup operations.
     std::optional<hint_t> get_current_stream_pos() const {
@@ -529,12 +554,15 @@ public:
     }
 
     const_iterator at(size_t index) const {
-        auto ix_outer = index / max_frame_size;
-        auto ix_inner = index % max_frame_size;
-        auto it = _frames.begin();
-        std::advance(it, ix_outer);
-        auto ix_total = ix_outer * max_frame_size + ix_inner;
-        return const_iterator(it, _frames.end(), ix_inner, ix_total);
+        auto inner = index;
+        for (auto it = _frames.begin(); it != _frames.end(); ++it) {
+            if (it->size() <= inner) {
+                inner -= it->size();
+            } else {
+                return const_iterator(it, _frames.end(), inner, index);
+            }
+        }
+        return end();
     }
 
     /// Get element by index, use 'hint' to speedup the operation.
@@ -542,19 +570,26 @@ public:
     /// The 'hint' has to correspond to any index lower or equal to
     /// 'index'. The 'hint' values has to be stored externally.
     const_iterator at(size_t index, const hint_t& hint) const {
-        auto ix_outer = index / max_frame_size;
-        auto ix_inner = index % max_frame_size;
-        auto it = _frames.begin();
-        std::advance(it, ix_outer);
-        auto ix_total = ix_outer * max_frame_size + ix_inner;
-        return const_iterator(it, _frames.end(), ix_inner, hint, ix_total);
+        auto inner = index;
+        for (auto it = _frames.begin(); it != _frames.end(); ++it) {
+            if (it->size() <= inner) {
+                inner -= it->size();
+            } else {
+                return const_iterator(it, _frames.end(), inner, hint, index);
+            }
+        }
+        return end();
     }
 
     size_t size() const {
         if (_frames.empty()) {
             return 0;
         }
-        return max_frame_size * (_frames.size() - 1) + _frames.back().size();
+        size_t total = 0;
+        for (const auto& f : _frames) {
+            total += f.size();
+        }
+        return total;
     }
 
     size_t mem_use() const {
@@ -608,6 +643,20 @@ public:
             }
         }
         _frames.erase(_frames.begin(), st);
+    }
+
+    void prefix_truncate_ix(uint32_t ix) {
+        for (auto it = _frames.begin(); it != _frames.end(); it++) {
+            if (it->size() <= ix) {
+                ix -= it->size();
+            } else {
+                it->prefix_truncate_ix(ix);
+                std::list<frame_t> frames;
+                frames.splice(frames.end(), _frames, it, _frames.end());
+                std::swap(frames, _frames);
+                break;
+            }
+        }
     }
 
 protected:
@@ -695,7 +744,7 @@ public:
             if (it->last_value().has_value() && *it->last_value() >= value) {
                 break;
             }
-            index += base_t::max_frame_size;
+            index += it->size();
         }
         if (it != this->_frames.end()) {
             auto start = const_iterator(it, this->_frames.end(), 0, index);
@@ -784,10 +833,13 @@ public:
     /// Upper/lower bound search operations
     const_iterator upper_bound(model::offset) const;
     const_iterator lower_bound(model::offset) const;
+    const_iterator at(size_t ix) const;
 
     void insert(const segment_meta&);
 
     std::pair<size_t, size_t> inflated_actual_size() const;
+
+    void prefix_truncate(model::offset);
 
 private:
     std::unique_ptr<impl> _impl;
