@@ -62,8 +62,8 @@ class NodesDecommissioningTest(EndToEndTest):
     def _not_decommissioned_node(self, *args):
         decom_node_ids = args
         return [
-            n for n in self.redpanda.nodes
-            if self.redpanda.idx(n) not in decom_node_ids
+            n for n in self.redpanda.started_nodes()
+            if self.redpanda.node_id(n) not in decom_node_ids
         ][0]
 
     def _node_removed(self, removed_id, node_to_query):
@@ -310,14 +310,9 @@ class NodesDecommissioningTest(EndToEndTest):
         self._wait_until_status(to_decommission, 'draining')
         self._set_recovery_rate(1024 * 1024 * 1024)
 
-        def node_removed():
-            brokers = admin.get_brokers()
-            for broker in brokers:
-                if broker['node_id'] == to_decommission:
-                    return False
-            return True
-
-        wait_until(node_removed, 60, 2)
+        survivor_node = self._not_decommissioned_node(to_decommission)
+        wait_until(lambda: self._node_removed(to_decommission, survivor_node),
+                   60, 2)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_do_not_stop_all_moves_node(self):
@@ -483,14 +478,8 @@ class NodesDecommissioningTest(EndToEndTest):
         # shut the broker down
         self._set_recovery_rate(2 << 30)
 
-        def node_removed():
-            brokers = admin.get_brokers(node=first_node)
-            for broker in brokers:
-                if broker['node_id'] == to_decommission_id:
-                    return False
-            return True
-
-        wait_until(node_removed, 60, 2)
+        wait_until(lambda: self._node_removed(to_decommission_id, first_node),
+                   60, 2)
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -610,15 +599,9 @@ class NodesDecommissioningTest(EndToEndTest):
 
                 decom_node = node_by_id(id)
                 admin.decommission_broker(id)
-
-                def node_removed():
-                    brokers = admin.get_brokers()
-                    for broker in brokers:
-                        if broker['node_id'] == id:
-                            return False
-                    return True
-
-                wait_until(node_removed, 240, 2)
+                survivor_node = self._not_decommissioned_node(id)
+                wait_until(lambda: self._node_removed(id, survivor_node), 240,
+                           2)
 
                 def has_partitions():
                     id = self.redpanda.node_id(node=decom_node,
