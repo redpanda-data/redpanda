@@ -86,13 +86,11 @@ public:
           std::vector<model::broker_shard> target_replicas,
           reconfiguration_state state,
           model::revision_id update_revision,
-          replicas_revision_map replicas_revisions,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
           , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
-          , _replicas_revisions(std::move(replicas_revisions))
           , _probe(probe) {
             _probe.handle_update(_previous_replicas, _target_replicas);
         }
@@ -132,10 +130,6 @@ public:
             return _target_replicas;
         }
 
-        const replicas_revision_map& get_replicas_revisions() const {
-            return _replicas_revisions;
-        }
-
         const model::revision_id& get_update_revision() const {
             return _update_revision;
         }
@@ -149,15 +143,19 @@ public:
         std::vector<model::broker_shard> _target_replicas;
         reconfiguration_state _state;
         model::revision_id _update_revision;
-        replicas_revision_map _replicas_revisions;
         topic_table_probe& _probe;
+    };
+
+    struct partition_meta {
+        /// Replica revision map reflecting *only the finished partition
+        /// updates* (i.e. it only gets updated when the update_finished command
+        /// is processed).
+        replicas_revision_map replicas_revisions;
     };
 
     struct topic_metadata_item {
         topic_metadata metadata;
-        // replicas revisions for each partition
-        absl::node_hash_map<model::partition_id, replicas_revision_map>
-          replica_revisions;
+        absl::node_hash_map<model::partition_id, partition_meta> partitions;
 
         bool is_topic_replicable() const {
             return metadata.is_topic_replicable();
