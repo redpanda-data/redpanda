@@ -352,7 +352,7 @@ OLD_NODE_JOIN_LOG_ALLOW_LIST = [
 ]
 
 
-class FeaturesNodeJoinTest(RedpandaTest):
+class FeaturesNodeJoinTest(FeaturesTestBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=4, **kwargs)
 
