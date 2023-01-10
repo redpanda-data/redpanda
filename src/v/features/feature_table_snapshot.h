@@ -53,7 +53,7 @@ struct feature_table_snapshot
     cluster::cluster_version version{cluster::invalid_version};
     std::optional<security::license> license;
     std::vector<feature_state_snapshot> states;
-    cluster::cluster_version original_version;
+    cluster::cluster_version original_version{cluster::invalid_version};
 
     auto serde_fields() {
         return std::tie(
