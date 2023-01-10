@@ -25,6 +25,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/scheduling.hh>
 
 #include <utility>
 
@@ -132,10 +133,14 @@ public:
     ///
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
+    /// \param tiered_storage_bg_eviction scheduling priority of the background
+    /// eviction loop
     remote(
       connection_limit limit,
       const cloud_storage_clients::client_configuration& conf,
-      model::cloud_credentials_source cloud_credentials_source);
+      model::cloud_credentials_source cloud_credentials_source,
+      ss::scheduling_group tiered_storage_bg_eviction
+      = ss::default_scheduling_group());
 
     ~remote();
 

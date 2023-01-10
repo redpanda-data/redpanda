@@ -38,6 +38,8 @@ public:
           "archival_upload", 100);
         _node_status = co_await ss::create_scheduling_group("node_status", 50);
         _self_test = co_await ss::create_scheduling_group("self_test", 100);
+        _tiered_storage_bg_eviction = co_await ss::create_scheduling_group(
+          "tiered_storage_background_eviction", 100);
     }
 
     ss::future<> destroy_groups() {
@@ -52,6 +54,7 @@ public:
         co_await destroy_scheduling_group(_archival_upload);
         co_await destroy_scheduling_group(_node_status);
         co_await destroy_scheduling_group(_self_test);
+        co_await destroy_scheduling_group(_tiered_storage_bg_eviction);
         co_return;
     }
 
@@ -70,6 +73,9 @@ public:
     ss::scheduling_group archival_upload() { return _archival_upload; }
     ss::scheduling_group node_status() { return _node_status; }
     ss::scheduling_group self_test_sg() { return _self_test; }
+    ss::scheduling_group tiered_storage_bg_eviction() {
+        return _tiered_storage_bg_eviction;
+    }
 
     std::vector<std::reference_wrapper<const ss::scheduling_group>>
     all_scheduling_groups() const {
@@ -102,4 +108,5 @@ private:
     ss::scheduling_group _archival_upload;
     ss::scheduling_group _node_status;
     ss::scheduling_group _self_test;
+    ss::scheduling_group _tiered_storage_bg_eviction;
 };

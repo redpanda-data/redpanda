@@ -96,4 +96,8 @@ model::offset materialized_segment_state::base_rp_offset() const {
     return segment->get_base_rp_offset();
 }
 
+size_t materialized_segment_state::reclaimable_memory() const {
+    return segment->estimate_memory_use();
+}
+
 } // namespace cloud_storage

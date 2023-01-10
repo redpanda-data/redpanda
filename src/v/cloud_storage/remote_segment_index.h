@@ -56,6 +56,11 @@ public:
     void
     add(model::offset rp_offset, kafka::offset kaf_offset, int64_t file_offset);
 
+    size_t estimate_memory_use() const {
+        return _file_index.size_bytes() + _rp_index.size_bytes()
+               + _kaf_index.size_bytes();
+    }
+
     struct find_result {
         model::offset rp_offset;
         kafka::offset kaf_offset;

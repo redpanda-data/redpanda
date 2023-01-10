@@ -14,6 +14,7 @@
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"
 #include "random/simple_time_jitter.h"
+#include "resource_mgmt/available_memory.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/adjustable_semaphore.h"
@@ -21,6 +22,8 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/memory.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>
 
@@ -45,7 +48,7 @@ class remote_probe;
  */
 class materialized_segments {
 public:
-    materialized_segments();
+    explicit materialized_segments(ss::scheduling_group);
 
     ss::future<> start();
     ss::future<> stop();
@@ -64,6 +67,15 @@ public:
     /// Wait until any evicted items in the _eviction_list have been removed.
     ss::future<> flush_evicted();
 
+    struct reclaimable_memory_t {
+        size_t readers_memory_use_estimate;
+        size_t num_readers;
+        size_t segments_memory_use_estimate;
+        size_t num_segments;
+    };
+    /// Calculate amount of memory that can be freed by evicting this segment
+    reclaimable_memory_t reclaimable_memory() const;
+
 private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
@@ -81,6 +93,8 @@ private:
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
+
+    ss::memory::reclaiming_result reclaim(ss::memory::reclaimer::request req);
 
     /// Special item in eviction_list that holds a promise and sets it
     /// when the eviction fiber calls stop() (see flush_evicted)
@@ -151,6 +165,9 @@ private:
 
     // Permit probe to query object counts
     friend class remote_probe;
+
+    ss::memory::reclaimer _reclaimer;
+    ss::scheduling_group _eviction_sg;
 };
 
 } // namespace cloud_storage
