@@ -46,6 +46,7 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
+#include "ssx/thread_worker.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 
@@ -88,7 +89,8 @@ server::server(
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
-  std::optional<qdc_monitor::config> qdc_config) noexcept
+  std::optional<qdc_monitor::config> qdc_config,
+  ssx::thread_worker& tw) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
   , _topics_frontend(tf)
@@ -112,7 +114,8 @@ server::server(
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _coproc_partition_manager(coproc_partition_manager)
   , _mtls_principal_mapper(
-      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind()) {
+      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
+  , _thread_worker(tw) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

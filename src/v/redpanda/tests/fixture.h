@@ -129,7 +129,8 @@ public:
           app.controller->get_api(),
           app.tx_gateway_frontend,
           app.cp_partition_manager,
-          std::nullopt);
+          std::nullopt,
+          *app.thread_worker);
 
         configs.stop().get();
     }

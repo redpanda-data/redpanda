@@ -43,6 +43,7 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "seastarx.h"
+#include "ssx/fwd.h"
 #include "ssx/metrics.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
@@ -125,6 +126,8 @@ public:
 
     std::unique_ptr<cluster::controller> controller;
     std::unique_ptr<coproc::api> coprocessing;
+
+    std::unique_ptr<ssx::thread_worker> thread_worker;
 
 private:
     using deferred_actions
