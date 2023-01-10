@@ -12,6 +12,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "model/metadata.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
@@ -71,6 +72,7 @@ ss::future<> api::stop() {
 }
 
 ss::future<> api::restart() {
+    vlog(plog.info, "Restarting the schema registry");
     co_await stop();
     co_await start();
 }

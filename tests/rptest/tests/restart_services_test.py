@@ -12,15 +12,21 @@ import requests
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import ResourceSettings, LoggingConfig, SchemaRegistryConfig
+from rptest.services.redpanda import RedpandaService, ResourceSettings, LoggingConfig, SchemaRegistryConfig
+from ducktape.utils.util import wait_until
 
 log_config = LoggingConfig('info',
                            logger_levels={
                                'admin_api_server': 'trace',
-                               'security': 'trace',
-                               'pandaproxy': 'trace',
                                'kafka/client': 'trace'
                            })
+
+
+def check_service_restart(redpanda: RedpandaService, pattern: str):
+    wait_until(
+        lambda: redpanda.search_log_any(pattern),
+        timeout_sec=5,
+        err_msg=f"Failed to restart service. Searched pattern: {pattern}")
 
 
 class RestartServicesTest(RedpandaTest):
@@ -58,5 +64,6 @@ class RestartServicesTest(RedpandaTest):
         self.logger.debug("Check schema registry restart")
         result_raw = admin.redpanda_services_restart(
             rp_service='schema-registry')
+        check_service_restart(self.redpanda, "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
