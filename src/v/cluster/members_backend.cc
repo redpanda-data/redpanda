@@ -881,7 +881,7 @@ ss::future<std::error_code> members_backend::reconcile() {
           return r.state == reallocation_state::finished;
       });
 
-    co_return errc::success;
+    co_return errc::update_in_progress;
 }
 
 bool members_backend::should_stop_rebalancing_update(
