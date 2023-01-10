@@ -39,7 +39,7 @@ struct mux_state_machine_fixture {
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
     void start_raft(storage::ntp_config::default_overrides overrides = {}) {
-        ss::smp::invoke_on_all([](){
+        ss::smp::invoke_on_all([]() {
             // We want immediate elections, to avoid a sleep at the start of
             // every instantiation of a test setup.
             config::shard_local_cfg().raft_election_timeout_ms.set_value(10ms);

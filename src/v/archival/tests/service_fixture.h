@@ -132,7 +132,9 @@ public:
     archiver_fixture();
     ~archiver_fixture();
 
-    std::tuple<ss::lw_shared_ptr<archival::configuration>, cloud_storage::configuration>
+    std::tuple<
+      ss::lw_shared_ptr<archival::configuration>,
+      cloud_storage::configuration>
     get_configurations();
     std::unique_ptr<storage::disk_log_builder> get_started_log_builder(
       model::ntp ntp, model::revision_id rev = model::revision_id(0));

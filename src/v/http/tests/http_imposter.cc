@@ -28,7 +28,8 @@ static ss::logger http_imposter_log("http_imposter"); // NOLINT
 extern uint16_t unit_test_httpd_port_number();
 
 http_imposter_fixture::http_imposter_fixture()
-  : _server_addr{ss::ipv4_addr{httpd_host_name.data(), unit_test_httpd_port_number()}} {
+  : _server_addr{
+    ss::ipv4_addr{httpd_host_name.data(), unit_test_httpd_port_number()}} {
     _id = fmt::format("{}", uuid_t::create());
     _server.start().get();
 }
@@ -43,7 +44,6 @@ http_imposter_fixture::~http_imposter_fixture() { _server.stop().get(); }
 
 uint16_t http_imposter_fixture::httpd_port_number() {
     return unit_test_httpd_port_number();
-
 }
 
 void http_imposter_fixture::start_request_masking(

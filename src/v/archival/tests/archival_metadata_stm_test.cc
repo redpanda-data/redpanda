@@ -55,9 +55,9 @@ struct archival_metadata_stm_base_fixture
     operator=(archival_metadata_stm_base_fixture&&)
       = delete;
 
-    static cloud_storage_clients::s3_configuration get_s3_configuration(uint16_t port) {
-        net::unresolved_address server_addr(
-          ss::sstring(httpd_host_name), port);
+    static cloud_storage_clients::s3_configuration
+    get_s3_configuration(uint16_t port) {
+        net::unresolved_address server_addr(ss::sstring(httpd_host_name), port);
         cloud_storage_clients::s3_configuration conf;
         conf.uri = cloud_storage_clients::access_point_uri(
           ss::sstring(httpd_host_name));
@@ -79,14 +79,15 @@ struct archival_metadata_stm_base_fixture
         // Cloud storage config
         cloud_cfg.start().get();
         cloud_cfg
-          .invoke_on_all([port=httpd_port_number()](cloud_storage::configuration& cfg) {
-              cfg.bucket_name = cloud_storage_clients::bucket_name(
-                "panda-bucket");
-              cfg.metrics_disabled
-                = cloud_storage::remote_metrics_disabled::yes;
-              cfg.connection_limit = cloud_storage::connection_limit(10);
-              cfg.client_config = get_s3_configuration(port);
-          })
+          .invoke_on_all(
+            [port = httpd_port_number()](cloud_storage::configuration& cfg) {
+                cfg.bucket_name = cloud_storage_clients::bucket_name(
+                  "panda-bucket");
+                cfg.metrics_disabled
+                  = cloud_storage::remote_metrics_disabled::yes;
+                cfg.connection_limit = cloud_storage::connection_limit(10);
+                cfg.client_config = get_s3_configuration(port);
+            })
           .get();
         // Cloud storage remote api
         cloud_api.start(std::ref(cloud_cfg)).get();

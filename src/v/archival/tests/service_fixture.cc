@@ -47,28 +47,24 @@ using namespace std::chrono_literals;
 inline ss::logger fixt_log("fixture"); // NOLINT
 
 /// For http_imposter to run this binary with a unique port
-uint16_t unit_test_httpd_port_number() {
-    return 4441;
-}
-
+uint16_t unit_test_httpd_port_number() { return 4441; }
 
 archiver_fixture::archiver_fixture()
-  : redpanda_thread_fixture(
-  redpanda_thread_fixture::init_cloud_storage_tag{}) {
-    ss::smp::invoke_on_all([port=httpd_port_number()]() {
-      auto& cfg = config::shard_local_cfg();
-      cfg.cloud_storage_enabled.set_value(true);
-      cfg.cloud_storage_api_endpoint.set_value(
-        std::optional<ss::sstring>{httpd_host_name});
-      cfg.cloud_storage_api_endpoint_port.set_value(int16_t(port));
-      cfg.cloud_storage_access_key.set_value(
-        std::optional<ss::sstring>{"access-key"});
-      cfg.cloud_storage_secret_key.set_value(
-        std::optional<ss::sstring>{"secret-key"});
-      cfg.cloud_storage_region.set_value(
-        std::optional<ss::sstring>{"us-east1"});
-      cfg.cloud_storage_bucket.set_value(
-        std::optional<ss::sstring>{"test-bucket"});
+  : redpanda_thread_fixture(redpanda_thread_fixture::init_cloud_storage_tag{}) {
+    ss::smp::invoke_on_all([port = httpd_port_number()]() {
+        auto& cfg = config::shard_local_cfg();
+        cfg.cloud_storage_enabled.set_value(true);
+        cfg.cloud_storage_api_endpoint.set_value(
+          std::optional<ss::sstring>{httpd_host_name});
+        cfg.cloud_storage_api_endpoint_port.set_value(int16_t(port));
+        cfg.cloud_storage_access_key.set_value(
+          std::optional<ss::sstring>{"access-key"});
+        cfg.cloud_storage_secret_key.set_value(
+          std::optional<ss::sstring>{"secret-key"});
+        cfg.cloud_storage_region.set_value(
+          std::optional<ss::sstring>{"us-east1"});
+        cfg.cloud_storage_bucket.set_value(
+          std::optional<ss::sstring>{"test-bucket"});
     }).get0();
 }
 
@@ -159,7 +155,8 @@ std::tuple<
   ss::lw_shared_ptr<archival::configuration>,
   cloud_storage::configuration>
 archiver_fixture::get_configurations() {
-    net::unresolved_address server_addr(ss::sstring(httpd_host_name), httpd_port_number());
+    net::unresolved_address server_addr(
+      ss::sstring(httpd_host_name), httpd_port_number());
     cloud_storage_clients::s3_configuration s3conf;
     s3conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
     s3conf.access_key = cloud_roles::public_key_str("acess-key");
