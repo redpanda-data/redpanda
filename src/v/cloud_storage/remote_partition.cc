@@ -107,10 +107,10 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             mit = _manifest.segment_containing(ko);
         }
         if (mit == _manifest.end()) {
-            // Segment that matches exactly can't be found
-            // in the manifest. In this case we want to start
-            // scanning from the begining of the partition if
-            // some conditions are met.
+            // Segment that matches exactly can't be found in the manifest. In
+            // this case we want to start scanning from the begining of the
+            // partition if the start of the manifest is contained by the scan
+            // range.
             auto so = _manifest.get_start_kafka_offset().value_or(
               kafka::offset::min());
             if (config.start_offset < so && config.max_offset > so) {
