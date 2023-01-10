@@ -78,7 +78,6 @@ ss::future<> feature_backend::save_snapshot() {
       _feature_table.local());
 
     auto val_bytes = serde::to_iobuf(snapshot);
-    auto key_bytes = serde::to_iobuf(ss::sstring("feature_table"));
 
     co_await _storage.local().kvs().put(
       storage::kvstore::key_space::controller,
