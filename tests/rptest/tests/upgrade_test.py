@@ -614,3 +614,51 @@ class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
         # Assert manifest has not been mutated by comparing sizes
         total_cloud_size_after_upgrade = cloud_log_size()
         assert total_cloud_size_before_upgrade <= total_cloud_size_after_upgrade, f"Mismatch in cloud storage size after upgrade, bytes before: {total_cloud_size_before_upgrade} bytes_after: {total_cloud_size_after_upgrade}"
+
+
+class RedpandaInstallerTest(RedpandaTest):
+    def setUp(self):
+        super().setUp()
+        # ensure that _installer._head_version is set
+        self.redpanda._installer.start()
+
+    @cluster(num_nodes=1)
+    def test_install_by_line(self):
+        """
+        Smoke test that checks RedpandaInstaller.install
+        this isn't actually doing upgrades in the traditional sense,
+        instead is intentionally wiping and restarting the cluster with new binaries
+        """
+
+        # base step, exercise edge case of asking to install a release that is actually HEAD
+        head_version, head_version_str = self.redpanda._installer.install(
+            self.redpanda.nodes,
+            version=self.redpanda._installer._head_version[0:2])
+        self.logger.info(f"base step: install(HEAD) -> {head_version_str}")
+        self.redpanda.start(clean_nodes=True)
+        reported_version = self.redpanda.get_version(self.redpanda.nodes[0])
+        assert reported_version == head_version_str, \
+            f"installed a different version {reported_version} than advertised {head_version_str}"
+
+        # loop: run down the versions and check them
+        version = self.redpanda._installer.highest_from_prior_feature_version(
+            head_version)
+        limit = 3
+        while limit > 0 and version:
+            # ask to install a line and check that latest is installed
+            line = version[0:2]
+            installed_version, installed_version_str = self.redpanda._installer.install(
+                self.redpanda.nodes, line)
+            self.logger.info(f"install {installed_version_str} from {line=}")
+            assert version == installed_version, \
+                f"highest feature version {version} and latest in line version {installed_version} do not match"
+
+            self.redpanda.start(clean_nodes=True)
+            reported_version = self.redpanda.get_version(
+                self.redpanda.nodes[0])
+            assert reported_version == installed_version_str, \
+                f"installed a different version {reported_version} than advertised {installed_version_str}"
+
+            version = self.redpanda._installer.highest_from_prior_feature_version(
+                version)
+            limit = limit - 1
