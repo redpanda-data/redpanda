@@ -322,6 +322,10 @@ class RpkTool:
         if 'INVALID' in out:
             raise RpkException(
                 f"Invalid topic config {topic} {set_key}={set_value}")
+        elif 'NOT_CONTROLLER' in out:
+            raise RpkException(
+                f"Request sent to node which is not controller,"
+                "unable to set {topic} configuration {set_key}={set_value}")
 
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
