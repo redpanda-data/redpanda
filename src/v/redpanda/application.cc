@@ -11,6 +11,7 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_controller.h"
+#include "archival/upload_housekeeping_service.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_recovery_manager.h"
@@ -1014,6 +1015,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           cloud_configs.local().bucket_name,
           std::ref(cloud_storage_api))
           .get();
+
+        construct_service(
+          _archival_upload_housekeeping, std::ref(cloud_storage_api))
+          .get();
     }
 
     syschecks::systemd_message("Creating tm_stm_cache").get();
@@ -1042,6 +1047,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         }),
       std::ref(feature_table),
       std::ref(tm_stm_cache),
+      std::ref(_archival_upload_housekeeping),
       ss::sharded_parameter([] {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }))

@@ -10,6 +10,7 @@
 #include "cluster/partition.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
@@ -38,6 +39,7 @@ partition::partition(
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
+  ss::sharded<archival::upload_housekeeping_service>& upload_hks,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(r)
@@ -51,7 +53,8 @@ partition::partition(
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(archival_conf)
-  , _cloud_storage_api(cloud_storage_api) {
+  , _cloud_storage_api(cloud_storage_api)
+  , _upload_housekeeping(upload_hks) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -422,6 +425,7 @@ void partition::maybe_construct_archiver() {
       && _raft->log().config().is_archival_enabled()) {
         _archiver = std::make_unique<archival::ntp_archiver>(
           log().config(), _archival_conf, _cloud_storage_api.local(), *this);
+        _upload_housekeeping.local().register_archiver(*_archiver);
     }
 }
 

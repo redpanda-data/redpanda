@@ -51,6 +51,7 @@ public:
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
+      ss::sharded<archival::upload_housekeeping_service>&,
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
@@ -343,6 +344,8 @@ private:
     // Populated for partition 0 only, used by cloud storage uploads
     // to generate topic manifests.
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
+
+    ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

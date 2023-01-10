@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -56,6 +57,8 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
 /// topic was assigned when it was just created.
 class ntp_archiver {
 public:
+    friend class upload_housekeeping_service;
+
     /// Iterator type used to retrieve candidates for upload
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
@@ -341,6 +344,8 @@ private:
     const cloud_storage_clients::object_tag_formatter _segment_tags;
     const cloud_storage_clients::object_tag_formatter _manifest_tags;
     const cloud_storage_clients::object_tag_formatter _tx_tags;
+
+    intrusive_list_hook _list_hook{};
 };
 
 } // namespace archival

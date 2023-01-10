@@ -238,6 +238,8 @@ private:
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
+    ss::sharded<archival::upload_housekeeping_service>
+      _archival_upload_housekeeping;
 
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
