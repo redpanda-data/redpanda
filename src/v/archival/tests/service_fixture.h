@@ -15,11 +15,11 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
-#include "test_utils/http_imposter.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>

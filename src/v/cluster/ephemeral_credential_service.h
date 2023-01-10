@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/ephemeral_credential_service_impl.h"
+#include "cluster/ephemeral_credential_rpc_service.h"
 #include "cluster/fwd.h"
 
 namespace cluster {

@@ -2,7 +2,7 @@ find_package(Roaring REQUIRED)
 include(rpcgen)
 rpcgen(
   TARGET bootstrap_rpc
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap.json
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/cluster_bootstrap.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cluster_bootstrap_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
@@ -50,8 +50,8 @@ rpcgen(
 
 rpcgen(
   TARGET ephemeral_credential_rpc
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ephemeral_credential_service_impl.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/ephemeral_credential_service_impl.h
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ephemeral_credential_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/ephemeral_credential_rpc_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 

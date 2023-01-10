@@ -15,7 +15,6 @@
 #include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "storage/parser.h"
 
 #include <seastar/util/log.hh>
 

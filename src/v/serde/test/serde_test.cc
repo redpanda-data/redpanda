@@ -15,7 +15,6 @@
 #include "serde/serde.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
-#include "utils/uuid.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
@@ -222,87 +221,6 @@ SEASTAR_THREAD_TEST_CASE(vector_test) {
     auto parser = iobuf_parser{std::move(b)};
     auto const m = serde::read<std::vector<int>>(parser);
     BOOST_CHECK((m == std::vector{1, 2, 3}));
-}
-
-SEASTAR_THREAD_TEST_CASE(uuid_test) {
-    auto b = iobuf();
-    uuid_t u = uuid_t::create();
-    serde::write(b, u);
-
-    auto parser = iobuf_parser{std::move(b)};
-    const auto r = serde::read<uuid_t>(parser);
-    BOOST_REQUIRE_EQUAL(u, r);
-}
-
-struct uuid_struct
-  : serde::envelope<uuid_struct, serde::version<0>, serde::compat_version<0>> {
-    uuid_t single;
-    std::optional<uuid_t> opt1;
-    std::optional<uuid_t> opt2;
-    std::vector<uuid_t> vec;
-    std::vector<std::optional<uuid_t>> opt_vec;
-};
-
-template<typename map_t>
-void verify_uuid_map() {
-    map_t m = {
-      {uuid_t::create(), 0},
-      {uuid_t::create(), 1},
-      {uuid_t::create(), 2},
-    };
-    auto b = iobuf();
-    serde::write(b, m);
-    auto parser = iobuf_parser{std::move(b)};
-    const auto r = serde::read<map_t>(parser);
-    BOOST_CHECK_EQUAL(m.size(), r.size());
-    for (const auto& [k, v] : m) {
-        const auto r_it = r.find(k);
-        BOOST_CHECK(m.end() != r_it);
-        BOOST_CHECK_EQUAL(v, r_it->second);
-    }
-}
-
-namespace std {
-template<>
-struct hash<uuid_t> {
-    size_t operator()(const uuid_t& u) const {
-        return boost::hash<uuid_t::underlying_t>()(u.uuid());
-    }
-};
-} // namespace std
-
-SEASTAR_THREAD_TEST_CASE(complex_uuid_types_test) {
-    uuid_struct us;
-    us.single = uuid_t::create();
-    us.opt1 = std::make_optional<uuid_t>(uuid_t::create());
-    us.opt2 = std::nullopt;
-    us.vec = {
-      uuid_t::create(),
-      uuid_t::create(),
-      uuid_t::create(),
-    };
-    us.opt_vec = {
-      std::make_optional<uuid_t>(uuid_t::create()),
-      std::nullopt,
-      std::make_optional<uuid_t>(uuid_t::create()),
-      std::nullopt,
-    };
-    auto b = iobuf();
-    serde::write(b, us);
-    auto parser = iobuf_parser{std::move(b)};
-    const auto r = serde::read<uuid_struct>(parser);
-    BOOST_CHECK_EQUAL(us.single, r.single);
-    BOOST_CHECK(us.opt1 == r.opt1);
-    BOOST_CHECK(us.opt2 == r.opt2);
-    BOOST_CHECK_EQUAL(us.vec, r.vec);
-    BOOST_CHECK_EQUAL(us.opt_vec.size(), r.opt_vec.size());
-    for (int i = 0; i < us.opt_vec.size(); ++i) {
-        BOOST_CHECK(us.opt_vec[i] == r.opt_vec[i]);
-    }
-
-    // Map types.
-    verify_uuid_map<std::unordered_map<uuid_t, int>>();
-    verify_uuid_map<absl::flat_hash_map<uuid_t, int>>();
 }
 
 // struct with differing sizes:

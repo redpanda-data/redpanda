@@ -88,6 +88,14 @@ struct server_final_match {
     bytes signature;
 };
 
+/*
+ * some older versions of re2 don't have operator for implicit cast to
+ * string_view so add this helper to support older re2.
+ */
+static std::string_view spv(const re2::StringPiece& sp) {
+    return {sp.data(), sp.size()};
+}
+
 static std::optional<client_first_match>
 parse_client_first(std::string_view message) {
     static thread_local const re2::RE2 re(
@@ -105,10 +113,10 @@ parse_client_first(std::string_view message) {
     }
 
     return client_first_match{
-      .authzid = ss::sstring(authzid),
-      .username = ss::sstring(username),
-      .nonce = ss::sstring(nonce),
-      .extensions = ss::sstring(extensions),
+      .authzid = ss::sstring(spv(authzid)),
+      .username = ss::sstring(spv(username)),
+      .nonce = ss::sstring(spv(nonce)),
+      .extensions = ss::sstring(spv(extensions)),
     };
 }
 
@@ -128,8 +136,8 @@ parse_server_first(std::string_view message) {
     }
 
     return server_first_match{
-      .nonce = ss::sstring(nonce),
-      .salt = base64_to_bytes(salt),
+      .nonce = ss::sstring(spv(nonce)),
+      .salt = base64_to_bytes(spv(salt)),
       .iterations = iterations,
     };
 }
@@ -151,10 +159,10 @@ parse_client_final(std::string_view message) {
     }
 
     return client_final_match{
-      .channel_binding = base64_to_bytes(channel_binding),
-      .nonce = ss::sstring(nonce),
-      .extensions = ss::sstring(extensions),
-      .proof = base64_to_bytes(proof),
+      .channel_binding = base64_to_bytes(spv(channel_binding)),
+      .nonce = ss::sstring(spv(nonce)),
+      .extensions = ss::sstring(spv(extensions)),
+      .proof = base64_to_bytes(spv(proof)),
     };
 }
 
@@ -173,10 +181,10 @@ parse_server_final(std::string_view message) {
 
     if (error.empty()) {
         return server_final_match{
-          .signature = base64_to_bytes(signature),
+          .signature = base64_to_bytes(spv(signature)),
         };
     }
-    return server_final_match{.error = ss::sstring(error)};
+    return server_final_match{.error = ss::sstring(spv(error))};
 }
 
 namespace security {

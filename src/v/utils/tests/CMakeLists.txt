@@ -16,7 +16,7 @@ rp_test(
     delta_for_test.cc
     token_bucket_test.cc
     uuid_test.cc
-  LIBRARIES v::seastar_testing_main v::utils v::bytes
+  LIBRARIES v::seastar_testing_main v::utils v::bytes absl::flat_hash_set
   ARGS "-- -c 1"
   LABELS utils
 )
