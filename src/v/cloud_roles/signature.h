@@ -18,28 +18,27 @@
 #include "utils/named_type.h"
 #include "vassert.h"
 
+#include <fmt/chrono.h>
+
 #include <chrono>
 #include <string_view>
 
 namespace cloud_roles {
 
 /// \brief Internal s3 client error code
-enum class s3_client_error_code : int {
+enum class signing_error_code : int {
     invalid_uri,
     invalid_uri_params,
     not_enough_arguments,
 };
 
-std::error_code make_error_code(s3_client_error_code ec) noexcept;
+std::error_code make_error_code(signing_error_code ec) noexcept;
 
-/// Time source for the signature_v4.
+/// Time source for signature_v4 and signature_abs. Supports
+/// two formats: ISO8601 and RFC9110.
 /// Can be used to get and format current time or to
 /// format the pre-defined time for testing.
 class time_source {
-    static constexpr int formatted_date_len = 9; // format is 20201231\0
-    static constexpr int formatted_datetime_len
-      = 17; // format is 20201231T123100Z\0
-
 public:
     /// \brief Initialize time-source
     /// Defult time-source uses std::chrono::system_clock.
@@ -58,17 +57,23 @@ public:
     ~time_source() noexcept = default;
 
     /// Return formatted date in ISO8601 format
+    /// Example: 20201231
     ss::sstring format_date() const;
 
     /// Return formatted date in ISO8601 format
+    /// Example: 20201231T123100Z
     ss::sstring format_datetime() const;
+
+    /// Return formatted datetime according to RFC9110
+    /// Example: Tue, 15 Nov 2010 08:12:31 GMT
+    ss::sstring format_http_datetime() const;
 
 private:
     template<class Fn>
     explicit time_source(Fn&& fn, int);
 
     /// Format date-time according to format string
-    ss::sstring format(const char* fmt) const;
+    ss::sstring format(auto fmt) const;
 
     static timestamp default_source();
     ss::noncopyable_function<timestamp()> _gettime_fn;
@@ -121,6 +126,44 @@ private:
     public_key_str _access_key;
     /// Secret key
     private_key_str _private_key;
+};
+
+class signature_abs {
+public:
+    /// \brief Initialize the ABS signature generator
+    ///
+    /// \param storage_account is the storage account to which the
+    /// request will be sent
+    /// \param shared_key is a user provided Shared Key
+    /// \param time_source is a source of timestamps for the signature
+    signature_abs(
+      storage_account storage_account,
+      private_key_str shared_key,
+      time_source c = time_source());
+
+    /// \brief Sign http header
+    /// Calculate the digest based on the header fields and add auth fields to
+    /// header.
+    ///
+    /// \param header is an in/out parameter that contains request headers
+    std::error_code sign_header(http::client::request_header& header) const;
+
+private:
+    result<ss::sstring>
+    get_string_to_sign(http::client::request_header& header) const;
+
+    result<ss::sstring> get_canonicalized_resource(
+      const http::client::request_header& header) const;
+
+    ss::sstring
+    get_canonicalized_headers(const http::client::request_header& header) const;
+
+    /// Time of the signing key
+    time_source _sig_time;
+    /// Name of the storage account in use
+    storage_account _storage_account;
+    /// Shared key
+    private_key_str _shared_key;
 };
 
 template<class Fn>

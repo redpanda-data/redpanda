@@ -85,6 +85,7 @@ using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
 using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
 using timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
+using storage_account = named_type<ss::sstring, struct storage_account_tag>;
 
 struct aws_credentials {
     public_key_str access_key_id;
@@ -93,9 +94,15 @@ struct aws_credentials {
     aws_region_name region;
 };
 
+struct abs_credentials {
+    storage_account storage_account;
+    private_key_str shared_key;
+};
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
-using credentials = std::variant<aws_credentials, gcp_credentials>;
+using credentials
+  = std::variant<aws_credentials, gcp_credentials, abs_credentials>;
 
 std::ostream& operator<<(std::ostream& os, const credentials& c);
 
