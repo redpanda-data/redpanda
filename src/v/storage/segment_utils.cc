@@ -470,6 +470,10 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
+        const ss::sstring staging_file = s->reader().path().to_staging();
+        if (co_await ss::file_exists(staging_file)) {
+            co_await ss::remove_file(staging_file);
+        }
         co_return std::nullopt;
     }
 

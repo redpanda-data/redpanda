@@ -31,6 +31,7 @@
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
+#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -46,6 +47,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -372,31 +374,51 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        _resources.update_partition_count(_logs.size());
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
-        }
-        // 'ss::shared_ptr<>' make a copy
-        storage::log lg = handle.mapped()->handle;
-        vlog(stlog.info, "Removing: {}", lg);
-        // NOTE: it is ok to *not* externally synchronize the log here
-        // because remove, takes a write lock on each individual segments
-        // waiting for all of them to be closed before actually removing the
-        // underlying log. If there is a background operation like
-        // compaction or so, it will block correctly.
-        auto ntp_dir = lg.config().work_directory();
-        ss::sstring topic_dir = lg.config().topic_directory().string();
-        return lg.remove()
-          .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
-          .then([this, dir = std::move(topic_dir)]() mutable {
-              // We always dispatch topic directory deletion to core 0 as
-              // requests may come from different cores
-              return dispatch_topic_dir_deletion(std::move(dir));
-          })
-          .finally([lg] {});
-    });
+    gate_guard g(_open_gate);
+    auto handle = _logs.extract(ntp);
+    _resources.update_partition_count(_logs.size());
+    if (handle.empty()) {
+        co_return;
+    }
+    // 'ss::shared_ptr<>' make a copy
+    storage::log lg = handle.mapped()->handle;
+    vlog(stlog.info, "Removing: {}", lg);
+    // NOTE: it is ok to *not* externally synchronize the log here
+    // because remove, takes a write lock on each individual segments
+    // waiting for all of them to be closed before actually removing the
+    // underlying log. If there is a background operation like
+    // compaction or so, it will block correctly.
+    auto ntp_dir = lg.config().work_directory();
+    ss::sstring topic_dir = lg.config().topic_directory().string();
+    co_await lg.remove();
+    directory_walker walker;
+    co_await walker.walk(
+      ntp_dir, [&ntp_dir](const ss::directory_entry& de) -> ss::future<> {
+          // Concurrent truncations and compactions may conflict with each
+          // other, resulting in a mutual inability to use their staging files.
+          // If this has happened, clean up all staging files so we can fully
+          // remove the NTP directory.
+          //
+          // TODO: we should more consistently clean up the staging operations
+          // to clean up after themselves on failure.
+          if (boost::algorithm::ends_with(de.name, ".staging")) {
+              // It isn't necessarily problematic to get here since we can
+              // proceed with removal, but it points to a missing cleanup which
+              // can be problematic for users, as it needlessly consumes space.
+              // Log verbosely to make it easier to catch.
+              auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
+              vlog(
+                stlog.error,
+                "Leftover staging file found, removing: {}",
+                file_path);
+              return ss::remove_file(file_path);
+          }
+          return ss::make_ready_future<>();
+      });
+    co_await remove_file(ntp_dir);
+    // We always dispatch topic directory deletion to core 0 as requests may
+    // come from different cores
+    co_await dispatch_topic_dir_deletion(topic_dir);
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
