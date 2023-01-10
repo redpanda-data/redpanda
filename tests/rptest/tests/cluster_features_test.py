@@ -31,6 +31,12 @@ OLD_VERSION = (22, 1)
 
 
 class FeaturesTestBase(RedpandaTest):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.admin = Admin(self.redpanda)
+        self.installer = self.redpanda._installer
+
     """
     Test cases defined in this parent class are executed as part
     of subclasses that define node count below.
@@ -86,8 +92,6 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
-
-        self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=3)
     def test_get_features(self):
@@ -217,8 +221,6 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
 
     def setUp(self):
         self.installer.install(self.redpanda.nodes, OLD_VERSION)
@@ -308,8 +310,6 @@ class FeaturesSingleNodeTest(FeaturesTestBase):
         # Skip immediate parent constructor
         super().__init__(*args, num_brokers=1, **kwargs)
 
-        self.admin = Admin(self.redpanda)
-
     @cluster(num_nodes=1)
     def test_get_features(self):
         self._assert_default_features()
@@ -321,8 +321,6 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
 
     def setUp(self):
         self.installer.install(self.redpanda.nodes, OLD_VERSION)
@@ -357,9 +355,6 @@ OLD_NODE_JOIN_LOG_ALLOW_LIST = [
 class FeaturesNodeJoinTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=4, **kwargs)
-
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
 
     def setUp(self):
         # We will start nodes by hand during test.
