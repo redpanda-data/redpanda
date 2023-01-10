@@ -187,12 +187,14 @@ public:
         return authorized;
     }
 
+    ss::future<> process();
     ss::future<> process_one_request();
-    bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
     uint16_t client_port() const { return conn ? conn->addr.port() : 0; }
 
 private:
+    bool is_finished_parsing() const;
+
     // Reserve units from memory from the memory semaphore in proportion
     // to the number of bytes the request procesisng is expected to
     // take.
