@@ -47,7 +47,7 @@ struct feature_state_snapshot
 struct feature_table_snapshot
   : serde::envelope<
       feature_table_snapshot,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     model::offset applied_offset;
     cluster::cluster_version version{cluster::invalid_version};
