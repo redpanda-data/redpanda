@@ -56,7 +56,7 @@ ss::future<> quota_manager::start() {
     return ss::make_ready_future<>();
 }
 
-quota_manager::underlying_t::iterator
+quota_manager::client_quotas_t::iterator
 quota_manager::maybe_add_and_retrieve_quota(
   const std::optional<std::string_view>& quota_id,
   const clock::time_point& now) {
@@ -71,9 +71,9 @@ quota_manager::maybe_add_and_retrieve_quota(
     // equal_to<> overload. this is a general issue we'll be looking at. for
     // now, these client-name strings are small. This will be solved in
     // c++20 via Hash::transparent_key_equal.
-    auto [it, inserted] = _quotas.try_emplace(
+    auto [it, inserted] = _client_quotas.try_emplace(
       ss::sstring(qid),
-      quota{
+      client_quota{
         now,
         clock::duration(0),
         {static_cast<size_t>(_default_num_windows()), _default_window_width()},
@@ -94,9 +94,9 @@ quota_manager::maybe_add_and_retrieve_quota(
     return it;
 }
 
-// If client is part of some group then client qota is group
-// else client quota is client_id
-static std::optional<std::string_view> get_client_quota(
+// If client is part of some group then client quota ID is a group
+// else client quota ID is client_id
+static std::optional<std::string_view> get_client_quota_id(
   const std::optional<std::string_view>& client_id,
   const std::unordered_map<ss::sstring, config::client_group_quota>&
     group_quota) {
@@ -162,7 +162,7 @@ std::chrono::milliseconds quota_manager::do_record_partition_mutations(
       ss::this_shard_id() == quota_manager_shard,
       "This method can only be executed from quota manager home shard");
 
-    auto quota_id = get_client_quota(client_id, {});
+    auto quota_id = get_client_quota_id(client_id, {});
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
     const auto units = it->second.pm_rate->record_and_measure(mutations, now);
     auto delay_ms = 0ms;
@@ -237,7 +237,7 @@ throttle_delay quota_manager::record_produce_tp_and_throttle(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
-    auto quota_id = get_client_quota(
+    auto quota_id = get_client_quota_id(
       client_id, _target_produce_tp_rate_per_client_group());
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
 
@@ -257,7 +257,7 @@ void quota_manager::record_fetch_tp(
   std::optional<std::string_view> client_id,
   uint64_t bytes,
   clock::time_point now) {
-    auto quota_id = get_client_quota(
+    auto quota_id = get_client_quota_id(
       client_id, _target_fetch_tp_rate_per_client_group());
     auto it = maybe_add_and_retrieve_quota(quota_id, now);
     it->second.tp_fetch_rate.record(bytes, now);
@@ -265,7 +265,7 @@ void quota_manager::record_fetch_tp(
 
 throttle_delay quota_manager::throttle_fetch_tp(
   std::optional<std::string_view> client_id, clock::time_point now) {
-    auto quota_id = get_client_quota(
+    auto quota_id = get_client_quota_id(
       client_id, _target_fetch_tp_rate_per_client_group());
     auto target_tp_rate = get_client_target_fetch_tp_rate(quota_id);
 
@@ -289,7 +289,8 @@ void quota_manager::gc(clock::duration full_window) {
     auto expire_age = full_window * 10;
     // c++20: replace with std::erase_if
     absl::erase_if(
-      _quotas, [now, expire_age](const std::pair<ss::sstring, quota>& q) {
+      _client_quotas,
+      [now, expire_age](const std::pair<ss::sstring, client_quota>& q) {
           return (now - q.second.last_seen) > expire_age;
       });
 }

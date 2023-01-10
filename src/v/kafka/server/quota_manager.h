@@ -118,25 +118,26 @@ private:
       const clock::time_point& now,
       rate_tracker& rate_tracker);
 
+    // Accounting for quota on per-client and per-client-group basis
     // last_seen: used for gc keepalive
     // delay: last calculated delay
     // tp_rate: throughput tracking
     // pm_rate: partition mutation quota tracking - only on home shard
-    struct quota {
+    struct client_quota {
         clock::time_point last_seen;
         clock::duration delay;
         rate_tracker tp_produce_rate;
         rate_tracker tp_fetch_rate;
         std::optional<token_bucket_rate_tracker> pm_rate;
     };
-    using underlying_t = absl::flat_hash_map<ss::sstring, quota>;
+    using client_quotas_t = absl::flat_hash_map<ss::sstring, client_quota>;
 
 private:
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
     void gc(clock::duration full_window);
 
-    underlying_t::iterator maybe_add_and_retrieve_quota(
+    client_quotas_t::iterator maybe_add_and_retrieve_quota(
       const std::optional<std::string_view>&, const clock::time_point&);
     int64_t get_client_target_produce_tp_rate(
       const std::optional<std::string_view>& quota_id);
@@ -155,7 +156,7 @@ private:
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
       _target_fetch_tp_rate_per_client_group;
 
-    underlying_t _quotas;
+    client_quotas_t _client_quotas;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
