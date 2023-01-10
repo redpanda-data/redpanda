@@ -31,7 +31,7 @@ class feature_table;
 struct feature_state_snapshot
   : serde::envelope<
       feature_state_snapshot,
-      serde::version<1>,
+      serde::version<0>,
       serde::compat_version<0>> {
     ss::sstring name;
     feature_state::state state;
