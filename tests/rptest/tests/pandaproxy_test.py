@@ -13,7 +13,8 @@ import json
 import uuid
 import requests
 import socket
-import subprocess
+import urllib.request
+import ssl
 import threading
 from rptest.services.cluster import cluster
 from ducktape.mark import matrix
@@ -1671,6 +1672,24 @@ class PandaProxyMTLSTest(PandaProxyMTLSBase):
         result = result_raw.json()
         self.logger.debug(result)
         assert result[0] == self.topic
+
+    @cluster(num_nodes=3)
+    def test_mtls_urllib(self):
+        """
+        Some bugs reproduce with some HTTP clients but not others.  We use
+        `requests` for all our other testing: check that a request issued
+        with `urllib` works.
+
+        Reproducer for https://github.com/redpanda-data/redpanda/issues/8020
+        """
+        context = ssl.SSLContext()
+        context.load_verify_locations(
+            cafile=self.admin_user.certificate.ca.crt)
+        context.load_cert_chain(self.admin_user.certificate.crt,
+                                self.admin_user.certificate.key, None)
+        url = f"{self._base_uri(None, tls_enabled=True)}/topics"
+        response = urllib.request.urlopen(url, context=context)
+        assert response.status == 200
 
 
 class PandaProxyMTLSAndBasicAuthTest(PandaProxyMTLSBase):
