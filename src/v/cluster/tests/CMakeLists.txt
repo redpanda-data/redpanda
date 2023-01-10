@@ -21,41 +21,54 @@ set(srcs
     simple_batch_builder_test.cc
     serialization_rt_test.cc
     cluster_utils_tests.cc
-    cluster_tests.cc
-    metadata_dissemination_test.cc
     notification_latch_test.cc
-    autocreate_test.cc
-    controller_state_test.cc
     commands_serialization_test.cc
     topic_table_test.cc
     topic_updates_dispatcher_test.cc
     controller_backend_test.cc
-    configuration_change_test.cc
     idempotency_tests.cc
     feature_barrier_test.cc
     tm_stm_tests.cc
     rm_stm_tests.cc
-    controller_api_tests.cc
-    decommissioning_tests.cc
-    replicas_rebalancing_tests.cc
-    create_partitions_test.cc
     id_allocator_stm_test.cc
-    health_monitor_test.cc
     topic_configuration_compat_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
-    archival_metadata_stm_test.cc
-    ephemeral_credential_test.cc)
+    )
 
 foreach(cluster_test_src ${srcs})
 get_filename_component(test_name ${cluster_test_src} NAME_WE)
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_${test_name}
+  BINARY_NAME ${test_name}
   SOURCES ${cluster_test_src}
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster v::http_test_utils
   LABELS cluster
 )
+endforeach()
+
+set(srcs
+        cluster_tests.cc
+        configuration_change_test.cc
+        autocreate_test.cc
+        controller_api_tests.cc
+        controller_state_test.cc
+        create_partitions_test.cc
+        decommissioning_tests.cc
+        ephemeral_credential_test.cc
+        health_monitor_test.cc
+        metadata_dissemination_test.cc
+        replicas_rebalancing_tests.cc)
+
+foreach(cluster_test_src ${srcs})
+    get_filename_component(test_name ${cluster_test_src} NAME_WE)
+    rp_test(
+            FIXTURE_TEST
+            BINARY_NAME cluster_${test_name}
+            SOURCES ${cluster_test_src}
+            LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::cluster
+            LABELS cluster
+    )
 endforeach()
 
 # These 2 files have a `using namespace cluster;` and removing that
@@ -66,8 +79,8 @@ set_source_files_properties(
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME partition_moving_test
+  FIXTURE_TEST
+  BINARY_NAME cluster_partition_moving
   SOURCES partition_moving_test.cc
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
   DEFINITIONS SEASTAR_TESTING_MAIN

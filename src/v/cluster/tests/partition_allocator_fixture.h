@@ -22,7 +22,7 @@
 #include "units.h"
 
 struct partition_allocator_fixture {
-    static constexpr uint32_t partitions_per_shard = 7000;
+    static constexpr uint32_t partitions_per_shard = 1000;
     static constexpr uint32_t partitions_reserve_shard0 = 2;
 
     partition_allocator_fixture()

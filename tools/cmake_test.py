@@ -192,7 +192,7 @@ class TestRunner():
         else:
             args = list(map(str, args))
 
-        if "rpunit" in binary:
+        if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
                 "--default-log-level=trace", "--logger-log-level='io=debug'",

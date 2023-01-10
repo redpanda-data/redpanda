@@ -23,8 +23,8 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME test_kafka_client_fixture
+  FIXTURE_TEST
+  BINARY_NAME kafka_client
   SOURCES
     consumer_group.cc
     fetch.cc

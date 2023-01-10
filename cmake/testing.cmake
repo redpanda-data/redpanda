@@ -2,30 +2,26 @@ include(CMakeParseArguments)
 enable_testing()
 set(RUNNER "${PROJECT_SOURCE_DIR}/tools/cmake_test.py")
 option(RP_ENABLE_TESTS "Useful for disabling all tests" ON)
-option(RP_ENABLE_INTEGRATION_TESTS "control if integrations are bulit and ran" ON)
+option(RP_ENABLE_FIXTURE_TESTS "control if integrations are bulit and ran" ON)
 option(RP_ENABLE_UNIT_TESTS "control if unit tests are bulit and ran" ON)
 option(RP_ENABLE_BENCHMARK_TESTS "control if benchmarks are bulit and ran" ON)
-option(RP_ENABLE_HONEY_BADGER_TESTS "control if honey_badger tests are bulit and ran" ON)
 if(NOT RP_ENABLE_TESTS)
-  set(RP_ENABLE_INTEGRATION_TESTS  OFF)
+  set(RP_ENABLE_FIXTURE_TESTS  OFF)
   set(RP_ENABLE_UNIT_TESTS  OFF)
   set(RP_ENABLE_BENCHMARK_TESTS  OFF)
-  set(RP_ENABLE_HONEY_BADGER_TESTS OFF)
 endif()
 
-set(INTEGRATION_TESTS "")
+set(FIXTURE_TESTS "")
 set(UNIT_TESTS "")
 set(BENCHMARK_TESTS "")
-set(HONEY_BADGER_TESTS "")
 
-message(STATUS "RP_ENABLE_INTEGRATION_TESTS=${RP_ENABLE_INTEGRATION_TESTS}")
+message(STATUS "RP_ENABLE_FIXTURE_TESTS=${RP_ENABLE_FIXTURE_TESTS}")
 message(STATUS "RP_ENABLE_UNIT_TESTS=${RP_ENABLE_UNIT_TESTS}")
 message(STATUS "RP_ENABLE_BENCHMARK_TESTS=${RP_ENABLE_BENCHMARK_TESTS}")
-message(STATUS "RP_ENABLE_HONEY_BADGER_TESTS=${RP_ENABLE_HONEY_BADGER_TESTS}")
 
 function (rp_test)
   set(options
-    INTEGRATION_TEST UNIT_TEST BENCHMARK_TEST HBADGER_TEST)
+    FIXTURE_TEST UNIT_TEST BENCHMARK_TEST)
   set(oneValueArgs BINARY_NAME TIMEOUT PREPARE_COMMAND POST_COMMAND)
   set(multiValueArgs
     INCLUDES
@@ -44,9 +40,9 @@ function (rp_test)
     set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rpunit")
     set(UNIT_TESTS "${UNIT_TESTS} ${RP_TEST_BINARY_NAME}")
   endif()
-  if(RP_TEST_INTEGRATION_TEST AND RP_ENABLE_INTEGRATION_TESTS)
-    set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rpint")
-    set(INTEGRATION_TESTS "${INTEGRATION_TESTS} ${RP_TEST_BINARY_NAME}")
+  if(RP_TEST_FIXTURE_TEST AND RP_ENABLE_FIXTURE_TESTS)
+    set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rpfixture")
+    set(FIXTURE_TESTS "${FIXTURE_TESTS} ${RP_TEST_BINARY_NAME}")
   endif()
   if(RP_TEST_BENCHMARK_TEST AND RP_ENABLE_BENCHMARK_TESTS)
     if(CMAKE_BUILD_TYPE MATCHES Debug)
@@ -55,10 +51,6 @@ function (rp_test)
     endif()
     set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rpbench")
     set(BENCHMARK_TESTS "${BENCHMARK_TESTS} ${RP_TEST_BINARY_NAME}")
-  endif()
-  if(RP_TEST_HBADGER_TEST AND RP_ENABLE_HONEY_BADGER_TESTS)
-    set(RP_TEST_BINARY_NAME "${RP_TEST_BINARY_NAME}_rphbadger")
-    set(HONEY_BADGER_TESTS "${HONEY_BADGER_TESTS} ${RP_TEST_BINARY_NAME}")
   endif()
 
   set(files_to_copy_list "")
@@ -105,6 +97,26 @@ function (rp_test)
     endif()
   endforeach()
 
+  if(RP_TEST_UNIT_TEST)
+  if(NOT RP_TEST_ARGS)
+    # For tests that don't set some explicit args (some of them do a -c 1), set
+    # an explicit core count, to avoid unit tests running differently on machines
+    # with different core counts (this also speeds up some tests running on many-core
+    # machines.
+    set(RP_TEST_ARGS "-- -c 4")
+  endif()
+  endif()
+
+  if(RP_TEST_BENCHMARK_TEST)
+    if(NOT RP_TEST_ARGS)
+      # For tests that don't set some explicit args (some of them do a -c 1), set
+      # an explicit core count, to avoid unit tests running differently on machines
+      # with different core counts (this also speeds up some tests running on many-core
+      # machines.
+      set(RP_TEST_ARGS "-c 1")
+    endif()
+  endif()
+
   if(NOT skip_test)
     add_test (
       NAME ${RP_TEST_BINARY_NAME}
@@ -122,5 +134,5 @@ endfunction()
 if(RP_ENABLE_TESTS)
   add_custom_target(check
     COMMAND ctest --output-on-failure
-    DEPENDS "${UNIT_TESTS} ${INTEGRATION_TESTS} ${BENCHMARK_TESTS}")
+    DEPENDS "${UNIT_TESTS} ${FIXTURE_TESTS} ${BENCHMARK_TESTS}")
 endif()

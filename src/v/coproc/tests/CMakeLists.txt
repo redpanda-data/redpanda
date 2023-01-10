@@ -14,8 +14,8 @@ set(fixture_deps
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME coproc_fixture_unstable
+  FIXTURE_TEST
+  BINARY_NAME coproc_unstable
   SOURCES
     ${fixture_srcs}
     retry_logic_tests.cc

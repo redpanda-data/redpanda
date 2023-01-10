@@ -21,8 +21,8 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME pandaproxy_fixture
+  FIXTURE_TEST
+  BINARY_NAME pandaproxy
   SOURCES
     test_config_utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK

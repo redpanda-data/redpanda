@@ -33,6 +33,8 @@
 /// be retrieved using the GET request or deleted using the DELETE request.
 class s3_imposter_fixture {
 public:
+    uint16_t httpd_port_number();
+
     s3_imposter_fixture();
     ~s3_imposter_fixture();
 
@@ -65,7 +67,7 @@ public:
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 
-    static cloud_storage_clients::s3_configuration get_configuration();
+    cloud_storage_clients::s3_configuration get_configuration();
 
 private:
     void set_routes(

@@ -35,7 +35,7 @@ FIXTURE_TEST(test_simple_token_request, http_imposter_fixture) {
     ss::abort_source as;
 
     auto cl = cloud_roles::gcp_refresh_impl{
-      httpd_host_name.data(), httpd_port_number, region, as};
+      httpd_host_name.data(), httpd_port_number(), region, as};
     auto resp = cl.fetch_credentials().get0();
     BOOST_REQUIRE(std::holds_alternative<iobuf>(resp));
     BOOST_REQUIRE_EQUAL(
@@ -48,7 +48,7 @@ FIXTURE_TEST(test_bad_response_handling, http_imposter_fixture) {
     ss::abort_source as;
 
     auto cl = cloud_roles::gcp_refresh_impl{
-      httpd_host_name.data(), httpd_port_number, region, as};
+      httpd_host_name.data(), httpd_port_number(), region, as};
     auto resp = cl.fetch_credentials().get0();
     BOOST_REQUIRE(std::holds_alternative<cloud_roles::api_request_error>(resp));
     auto error = std::get<cloud_roles::api_request_error>(resp);
@@ -65,7 +65,7 @@ FIXTURE_TEST(test_gateway_down, http_imposter_fixture) {
     ss::abort_source as;
 
     auto cl = cloud_roles::gcp_refresh_impl{
-      httpd_host_name.data(), httpd_port_number, region, as};
+      httpd_host_name.data(), httpd_port_number(), region, as};
     auto resp = cl.fetch_credentials().get0();
     BOOST_REQUIRE(std::holds_alternative<cloud_roles::api_request_error>(resp));
     auto error = std::get<cloud_roles::api_request_error>(resp);
@@ -85,7 +85,7 @@ FIXTURE_TEST(test_aws_role_fetch_on_startup, http_imposter_fixture) {
     ss::abort_source as;
 
     auto cl = cloud_roles::aws_refresh_impl{
-      httpd_host_name.data(), httpd_port_number, region, as};
+      httpd_host_name.data(), httpd_port_number(), region, as};
     auto resp = cl.fetch_credentials().get0();
     // assert that calls are made in order:
     // 1. to find the role
@@ -120,7 +120,7 @@ FIXTURE_TEST(test_sts_credentials_fetch, http_imposter_fixture) {
     BOOST_REQUIRE_EQUAL(wrote, token.size());
 
     auto cl = cloud_roles::aws_sts_refresh_impl{
-      httpd_host_name.data(), httpd_port_number, region, as};
+      httpd_host_name.data(), httpd_port_number(), region, as};
     auto resp = cl.fetch_credentials().get0();
 
     token_f.close().get0();

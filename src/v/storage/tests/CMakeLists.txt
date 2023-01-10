@@ -20,7 +20,6 @@ rp_test(
     log_segment_reader_test.cc
     log_manager_test.cc
     offset_assignment_test.cc
-    storage_e2e_test.cc
     log_truncate_test.cc
     offset_index_utils_tests.cc
     compaction_index_format_tests.cc
@@ -38,6 +37,17 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
+)
+
+
+rp_test(
+        UNIT_TEST
+        BINARY_NAME storage_e2e_single_thread
+        SOURCES
+        storage_e2e_test.cc
+        LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
+        LABELS storage
+        ARGS "-- -c 1"
 )
 
 # Putting this first, last, or in the middle of the other single thread tests

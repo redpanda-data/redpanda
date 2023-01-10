@@ -46,8 +46,31 @@ using namespace std::chrono_literals;
 
 inline ss::logger fixt_log("fixture"); // NOLINT
 
-static constexpr int16_t httpd_port_number = 4430;
-static constexpr const char* httpd_host_name = "127.0.0.1";
+/// For http_imposter to run this binary with a unique port
+uint16_t unit_test_httpd_port_number() { return 4441; }
+
+archiver_fixture::archiver_fixture()
+  : redpanda_thread_fixture(redpanda_thread_fixture::init_cloud_storage_tag{}) {
+    ss::smp::invoke_on_all([port = httpd_port_number()]() {
+        auto& cfg = config::shard_local_cfg();
+        cfg.cloud_storage_enabled.set_value(true);
+        cfg.cloud_storage_api_endpoint.set_value(
+          std::optional<ss::sstring>{httpd_host_name});
+        cfg.cloud_storage_api_endpoint_port.set_value(int16_t(port));
+        cfg.cloud_storage_access_key.set_value(
+          std::optional<ss::sstring>{"access-key"});
+        cfg.cloud_storage_secret_key.set_value(
+          std::optional<ss::sstring>{"secret-key"});
+        cfg.cloud_storage_region.set_value(
+          std::optional<ss::sstring>{"us-east1"});
+        cfg.cloud_storage_bucket.set_value(
+          std::optional<ss::sstring>{"test-bucket"});
+    }).get0();
+}
+
+archiver_fixture::~archiver_fixture() {
+    config::shard_local_cfg().cloud_storage_enabled.set_value(false);
+}
 
 static cloud_storage::partition_manifest
 load_manifest_from_str(std::string_view v) {
@@ -131,8 +154,9 @@ segment_layout write_random_batches_with_single_record(
 std::tuple<
   ss::lw_shared_ptr<archival::configuration>,
   cloud_storage::configuration>
-get_configurations() {
-    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
+archiver_fixture::get_configurations() {
+    net::unresolved_address server_addr(
+      ss::sstring(httpd_host_name), httpd_port_number());
     cloud_storage_clients::s3_configuration s3conf;
     s3conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
     s3conf.access_key = cloud_roles::public_key_str("acess-key");
@@ -452,28 +476,6 @@ void segment_matcher<Fixture>::verify_manifest_content(
 }
 
 template class segment_matcher<archiver_fixture>;
-
-enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
-    ss::smp::invoke_on_all([]() {
-        auto& cfg = config::shard_local_cfg();
-        cfg.cloud_storage_enabled.set_value(true);
-        cfg.cloud_storage_api_endpoint.set_value(
-          std::optional<ss::sstring>{httpd_host_name});
-        cfg.cloud_storage_api_endpoint_port.set_value(httpd_port_number);
-        cfg.cloud_storage_access_key.set_value(
-          std::optional<ss::sstring>{"access-key"});
-        cfg.cloud_storage_secret_key.set_value(
-          std::optional<ss::sstring>{"secret-key"});
-        cfg.cloud_storage_region.set_value(
-          std::optional<ss::sstring>{"us-east1"});
-        cfg.cloud_storage_bucket.set_value(
-          std::optional<ss::sstring>{"test-bucket"});
-    }).get0();
-}
-
-enable_cloud_storage_fixture::~enable_cloud_storage_fixture() {
-    config::shard_local_cfg().cloud_storage_enabled.set_value(false);
-}
 
 cloud_storage::partition_manifest load_manifest(std::string_view v) {
     cloud_storage::partition_manifest m;
