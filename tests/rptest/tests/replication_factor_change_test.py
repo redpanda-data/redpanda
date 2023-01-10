@@ -61,7 +61,9 @@ class ReplicationFactorChangeTest(RedpandaTest):
         self.replication_factor = 3
         new_rf = -1
 
-        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+        with expect_exception(
+                RpkException, lambda e: "INVALID_REPLICATION_FACTOR" in e.msg
+                or "INVALID_CONFIG" in e.msg):
             self._rpk.alter_topic_config(self.topic_name, self.rf_property,
                                          new_rf)
 
@@ -69,14 +71,18 @@ class ReplicationFactorChangeTest(RedpandaTest):
         self.check_rf(self.replication_factor)
 
         new_rf = 0
-        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+        with expect_exception(
+                RpkException, lambda e: "INVALID_REPLICATION_FACTOR" in e.msg
+                or "INVALID_CONFIG" in e.msg):
             self._rpk.alter_topic_config(self.topic_name, self.rf_property,
                                          new_rf)
         assert len(self.admin.list_reconfigurations()) == 0
         self.check_rf(self.replication_factor)
 
         new_rf = 10000
-        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+        with expect_exception(
+                RpkException, lambda e: "INVALID_REPLICATION_FACTOR" in e.msg
+                or "INVALID_CONFIG" in e.msg):
             self._rpk.alter_topic_config(self.topic_name, self.rf_property,
                                          new_rf)
         assert len(self.admin.list_reconfigurations()) == 0

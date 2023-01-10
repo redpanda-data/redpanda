@@ -117,7 +117,8 @@ class DeleteTopicOperation(Operation):
         self.topic = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Deleting topic: {self.topic}")
@@ -162,14 +163,13 @@ class UpdateTopicOperation(Operation):
         self.value = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
-
         if self.topic is None:
-            return False
-
-        self.property = random.choice(
-            list(UpdateTopicOperation.properties.keys()))
-        self.value = UpdateTopicOperation.properties[self.property]()
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+            if self.topic is None:
+                return False
+            self.property = random.choice(
+                list(UpdateTopicOperation.properties.keys()))
+            self.value = UpdateTopicOperation.properties[self.property]()
 
         ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} with: {self.property}={self.value}")
@@ -203,20 +203,24 @@ class AddPartitionsOperation(Operation):
         self.prefix = prefix
         self.topic = None
         self.total = None
+        self.current = None
+        self.to_add = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
-
         rpk = ctx.rpk()
-        current = len(list(rpk.describe_topic(self.topic, tolerant=True)))
-        to_add = random.randint(1, 5)
-        self.total = current + to_add
+        if self.total is None:
+            self.current = len(
+                list(rpk.describe_topic(self.topic, tolerant=True)))
+            self.to_add = random.randint(1, 5)
+            self.total = self.current + self.to_add
         ctx.redpanda.logger.info(
-            f"Updating topic: {self.topic} partitions count, current: {current} adding: {to_add} partitions"
+            f"Updating topic: {self.topic} partitions count, current: {self.current} adding: {self.to_add} partitions"
         )
-        rpk.add_topic_partitions(self.topic, to_add)
+        rpk.add_topic_partitions(self.topic, self.to_add)
         return True
 
     def validate(self, ctx):
@@ -301,7 +305,8 @@ class CreateAclOperation(Operation):
         self.user = None
 
     def execute(self, ctx):
-        self.user = _choice_random_user(ctx, prefix=self.prefix)
+        if self.user is None:
+            self.user = _choice_random_user(ctx, prefix=self.prefix)
         if self.user is None:
             return False
 
