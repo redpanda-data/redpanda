@@ -213,10 +213,10 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
       mtls_state,
       config::shard_local_cfg().kafka_request_max_bytes.bind());
 
-    co_return co_await ss::do_until(
-      [ctx] { return ctx->is_finished_parsing(); },
-      [ctx] { return ctx->process_one_request(); })
-      .handle_exception([ctx, authn_method](std::exception_ptr eptr) {
+    try {
+        co_await ctx->process();
+    } catch (...) {
+          auto eptr = std::current_exception();
           auto disconnected = net::is_disconnect_exception(eptr);
           if (authn_method == config::broker_authn_method::sasl) {
               /*
@@ -269,9 +269,8 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
                     eptr);
               }
           }
-          return ss::make_exception_future(eptr);
-      })
-      .finally([ctx] {});
+          std::rethrow_exception(eptr);
+    }
 }
 
 template<>

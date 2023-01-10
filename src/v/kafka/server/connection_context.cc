@@ -40,6 +40,15 @@ using namespace std::chrono_literals;
 
 namespace kafka {
 
+ss::future<> connection_context::process() {
+    while (true) {
+        if (is_finished_parsing()) {
+            break;
+        }
+        co_await process_one_request();
+    }
+}
+
 ss::future<> connection_context::process_one_request() {
     auto sz = co_await parse_size(conn->input());
     if (!sz.has_value()) {
