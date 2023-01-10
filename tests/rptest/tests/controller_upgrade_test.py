@@ -10,6 +10,7 @@
 import re
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
@@ -40,6 +41,7 @@ ALLOWED_LOGS = [
 
 
 class ControllerUpgradeTest(EndToEndTest):
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8102
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST + ALLOWED_LOGS)
     def test_updating_cluster_when_executing_operations(self):
         '''
