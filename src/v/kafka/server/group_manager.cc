@@ -41,7 +41,6 @@ group_manager::group_manager(
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer_factory serializer_factory,
-  config::configuration& conf,
   enable_group_metrics enable_metrics)
   : _tp_ns(std::move(tp_ns))
   , _gm(gm)
@@ -50,7 +49,7 @@ group_manager::group_manager(
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table)
   , _serializer_factory(std::move(serializer_factory))
-  , _conf(conf)
+  , _conf(config::shard_local_cfg())
   , _self(cluster::make_self_broker(config::node()))
   , _enable_group_metrics(enable_metrics) {}
 

@@ -124,7 +124,6 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       ss::sharded<features::feature_table>&,
       group_metadata_serializer_factory,
-      config::configuration& conf,
       enable_group_metrics group_metrics);
 
     ss::future<> start();
