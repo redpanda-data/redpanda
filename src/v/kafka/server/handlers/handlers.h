@@ -35,6 +35,7 @@
 #include "kafka/server/handlers/leave_group.h"
 #include "kafka/server/handlers/list_groups.h"
 #include "kafka/server/handlers/list_offsets.h"
+#include "kafka/server/handlers/list_partition_reassignments.h"
 #include "kafka/server/handlers/metadata.h"
 #include "kafka/server/handlers/offset_commit.h"
 #include "kafka/server/handlers/offset_fetch.h"
@@ -88,7 +89,8 @@ using request_types = make_request_types<
   end_txn_handler,
   create_partitions_handler,
   offset_for_leader_epoch_handler,
-  alter_partition_reassignments_handler>;
+  alter_partition_reassignments_handler,
+  list_partition_reassignments_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
