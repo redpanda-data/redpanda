@@ -78,6 +78,90 @@ def generate_random_workload(available_nodes):
                 yield NodeOperation(op, idx, random.choice([True, False]))
 
 
+class NodeDecommissionWaiter():
+    def __init__(self, redpanda, node_id, logger, progress_timeout=30):
+        self.redpanda = redpanda
+        self.node_id = node_id
+        self.logger = logger
+        self.admin = Admin(self.redpanda)
+        self.last_update = None
+        self.last_replicas_left = None
+        self.last_partitions_bytes_left = None
+        self.progress_timeout = progress_timeout
+
+    def _not_decommissioned_node(self):
+        return [
+            n for n in self.redpanda.started_nodes()
+            if self.redpanda.node_id(n) != self.node_id
+        ][0]
+
+    def _made_progress(self):
+        return (time.time() - self.last_update) < self.progress_timeout
+
+    def _node_removed(self):
+        brokers = self.admin.get_brokers(node=self._not_decommissioned_node())
+        for b in brokers:
+            if b['node_id'] == self.node_id:
+                return False
+        return True
+
+    def _collect_partitions_bytes_left(self, status):
+        if 'partitions' not in status:
+            return None
+
+        total_left = 0
+
+        for p in status['partitions']:
+            total_left += p['bytes_left_to_move']
+
+        return total_left
+
+    def wait_for_removal(self):
+        self.last_update = time.time()
+        # wait for removal only if progress was reported
+        while self._made_progress():
+            try:
+                decommission_status = self.admin.get_decommission_status(
+                    self.node_id, self._not_decommissioned_node())
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 400:
+                    time.sleep(1)
+                    continue
+                else:
+                    raise e
+
+            self.logger.debug(
+                f"Node {self.node_id} decommission status: {decommission_status}"
+            )
+
+            replicas_left = decommission_status['replicas_left']
+            partitions_bytes_left = self._collect_partitions_bytes_left(
+                decommission_status)
+            self.logger.info(
+                f"total replicas left to move: (current: {replicas_left}, previous: {self.last_replicas_left}), "
+                f"partition bytes left to move: (current: {partitions_bytes_left}, previous: {self.last_partitions_bytes_left})"
+            )
+            # check if node bytes left changed
+            if self.last_replicas_left is None or replicas_left < self.last_replicas_left:
+                self.last_replicas_left = replicas_left
+                self.last_update = time.time()
+            if partitions_bytes_left is not None and partitions_bytes_left > 0:
+                # check if currently moving partitions bytes left changed
+                if self.last_partitions_bytes_left is None or partitions_bytes_left < self.last_partitions_bytes_left:
+                    self.last_partitions_bytes_left = partitions_bytes_left
+                    self.last_update = time.time()
+
+            if decommission_status["finished"] == True:
+                break
+            time.sleep(1)
+
+        assert self._made_progress(
+        ), f"Node {self.node_id} decommissioning stopped making progress"
+
+        assert self._node_removed(
+        ), f"Node {self.node_id} still exists in the cluster but decommission operation status reported it is finished"
+
+
 class NodeOpsExecutor():
     def __init__(self, redpanda: RedpandaService, logger,
                  lock: threading.Lock):
