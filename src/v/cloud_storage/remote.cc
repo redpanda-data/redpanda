@@ -131,6 +131,8 @@ ss::future<download_result> remote::do_download_manifest(
     vlog(ctxlog.debug, "Download manifest {}", key());
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
+        notify_external_subscribers(
+          api_activity_notification::manifest_download, parent);
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout(), expect_missing);
 
@@ -221,6 +223,8 @@ ss::future<upload_result> remote::upload_manifest(
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
+        notify_external_subscribers(
+          api_activity_notification::manifest_upload, parent);
         auto [is, size] = manifest.serialize();
         const auto res = co_await lease.client->put_object(
           bucket, path, size, std::move(is), tags, fib.get_timeout());
@@ -292,6 +296,31 @@ ss::future<upload_result> remote::upload_manifest(
     co_return *result;
 }
 
+void remote::notify_external_subscribers(
+  api_activity_notification event, const retry_chain_node& caller) {
+    for (auto& flt : _filters) {
+        if (flt._events_to_ignore.contains(event)) {
+            continue;
+        }
+        if (
+          flt._source_to_ignore.has_value()
+          && flt._source_to_ignore->get().same_root(caller)) {
+            continue;
+        }
+        // Invariant: the filter._promise is always initialized
+        // by the 'subscribe' method.
+        vassert(
+          flt._promise.has_value(),
+          "Filter object is not initialized properly");
+        flt._promise->set_value(event);
+        flt._promise = std::nullopt;
+        // NOTE: the filter object can be reused by the owner
+    }
+
+    _filters.remove_if(
+      [](const event_filter& f) { return !f._promise.has_value(); });
+}
+
 ss::future<upload_result> remote::upload_segment(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
@@ -312,6 +341,8 @@ ss::future<upload_result> remote::upload_segment(
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.acquire(fib.root_abort_source());
+        notify_external_subscribers(
+          api_activity_notification::segment_upload, parent);
 
         // Client acquisition can take some time. Do a check before starting
         // the upload if we can still continue.
@@ -415,6 +446,8 @@ ss::future<download_result> remote::download_segment(
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification::segment_download, parent);
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout());
 
@@ -563,6 +596,8 @@ ss::future<upload_result> remote::delete_object(
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification::segment_delete, parent);
         // NOTE: DeleteObject in S3 doesn't return an error
         // if the object doesn't exist. Because of that we're
         // using 'upload_result' type as a return type. No need
@@ -638,6 +673,8 @@ ss::future<upload_result> remote::delete_objects(
     vlog(ctxlog.debug, "Delete objects count {}", keys.size());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification::segment_delete, parent);
         auto res = co_await lease.client->delete_objects(
           bucket, keys, fib.get_timeout());
 
@@ -1048,5 +1085,14 @@ const cloud_storage_clients::object_tag_formatter
 const cloud_storage_clients::object_tag_formatter
   remote::default_partition_manifest_tags
   = {{"rp-type", "partition-manifest"}};
+
+ss::future<api_activity_notification>
+remote::subscribe(remote::event_filter& filter) {
+    vassert(filter._hook.is_linked() == false, "Filter is already in use");
+    filter._hook = {};
+    _filters.push_back(filter);
+    filter._promise.emplace();
+    return filter._promise->get_future();
+}
 
 } // namespace cloud_storage
